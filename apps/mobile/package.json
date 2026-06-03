@@ -18,8 +18,8 @@
   },
   "dependencies": {
     "@agentpress/shared": "file:./lib/agentpress-shared",
-    "@expo/vector-icons": "^15.0.3",
     "@expensify/react-native-live-markdown": "0.1.317",
+    "@expo/vector-icons": "^15.0.3",
     "@gorhom/bottom-sheet": "^5.2.6",
     "@react-native-async-storage/async-storage": "^2.2.0",
     "@react-native-masked-view/masked-view": "^0.3.2",
@@ -81,7 +81,6 @@
     "react-native-worklets": "0.6.0",
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^3.4.14",
-    "tailwindcss-animate": "^1.0.7",
     "zustand": "^5.0.8"
   },
   "devDependencies": {

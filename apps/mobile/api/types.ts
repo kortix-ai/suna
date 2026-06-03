@@ -257,12 +257,6 @@ export interface TriggerResponse {
   config: Record<string, any>;
 }
 
-export interface GitHubTriggerConfig {
-  secret: string;
-  events: string[];
-  repository?: string;
-}
-
 export interface TriggerApp {
   slug: string;
   name: string;
