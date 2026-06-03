@@ -171,7 +171,6 @@ const envSchema = z.object({
   XAI_API_URL:                 optUrl('https://api.x.ai/v1'),
   GEMINI_API_URL:              optUrl('https://generativelanguage.googleapis.com/v1beta'),
   GROQ_API_URL:                optUrl('https://api.groq.com/openai/v1'),
-  LLM_GATEWAY_ENABLED:         optBoolFalse,
   // ── Billing — Stripe (optional, only for cloud billing) ──────────────────
   STRIPE_SECRET_KEY:           optStr,
   STRIPE_WEBHOOK_SECRET:       optStr,
@@ -479,7 +478,6 @@ export const config = {
   XAI_API_URL: env.XAI_API_URL,
   GEMINI_API_URL: env.GEMINI_API_URL,
   GROQ_API_URL: env.GROQ_API_URL,
-  LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   // ─── Stripe (Billing) ─────────────────────────────────────────────────────
   STRIPE_SECRET_KEY: env.STRIPE_SECRET_KEY,
   STRIPE_WEBHOOK_SECRET: env.STRIPE_WEBHOOK_SECRET,
