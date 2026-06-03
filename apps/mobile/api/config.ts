@@ -2,7 +2,7 @@ import { Platform } from 'react-native';
 import { supabase } from './supabase';
 import { log } from '@/lib/logger';
 
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000/v1';
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8008/v1';
 
 export function getServerUrl(): string {
   let url = BACKEND_URL;
