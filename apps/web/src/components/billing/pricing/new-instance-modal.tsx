@@ -12,11 +12,12 @@ import { isBillingEnabled } from '@/lib/config';
 import { createCheckoutSession } from '@/lib/api/billing';
 import { useServerTypes } from '@/hooks/instance/use-server-types';
 import { useAuth } from '@/components/AuthProvider';
-import { INSTANCE_CONFIG } from '@/components/instance/config';
 import { Skeleton } from '@/components/ui/skeleton';
 import Image from 'next/image';
 
 // ─── Tier metadata (display-only) ────────────────────────────────────────────
+
+const BILLING_LOCATION = 'hel1';
 
 const TIER_META: Record<string, { subtitle: string }> = {
   pro:   { subtitle: 'Great starting point for most workloads' },
@@ -42,7 +43,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
   const defaultReturnUrl = typeof window !== 'undefined' ? `${window.location.origin}/projects?subscription=success` : '/projects';
   const resolvedReturnUrl = returnUrl || defaultReturnUrl;
 
-  const location = INSTANCE_CONFIG.fallbackRegion; // EU-only
+  const location = BILLING_LOCATION;
   const [selected, setSelected] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

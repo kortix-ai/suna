@@ -12,9 +12,7 @@
       "https://kortix.com",
       "https://*.kortix.com",
       "https://kortix.cloud",
-      "https://*.kortix.cloud",
-      "https://justavps.com",
-      "https://*.justavps.com"
+      "https://*.kortix.cloud"
     ]
   },
   "permissions": [

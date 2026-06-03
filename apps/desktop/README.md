@@ -35,8 +35,8 @@ titlebar.
 
 Release builds set `KORTIX_DESKTOP_DEFAULT_URL` at compile time:
 
-- dev builds: `https://dev.kortix.com/dashboard`
-- production builds: `https://kortix.com/dashboard`
+- dev builds: `https://dev.kortix.com/projects`
+- production builds: `https://kortix.com/projects`
 
 For local debugging, override at runtime with `KORTIX_DESKTOP_URL`.
 

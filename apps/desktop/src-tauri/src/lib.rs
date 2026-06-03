@@ -94,7 +94,7 @@ const WINDOW_OPEN_SHIM: &str = r#"
   };
   /* Page-agnostic top strip: ANY mousedown in the top 32px of the window
      is a drag candidate, so users can grab the title-bar zone on pages
-     with no sidebar/tablist (e.g. /instances, /auth). */
+     with no sidebar/tablist (e.g. /auth). */
   var TOP_STRIP_PX = 32;
   document.addEventListener('mousedown', function(e) {
     if (e.button !== 0) return;
@@ -131,7 +131,7 @@ use tauri::{LogicalPosition, TitleBarStyle};
 
 const DEFAULT_URL: &str = match option_env!("KORTIX_DESKTOP_DEFAULT_URL") {
     Some(url) => url,
-    None => "http://localhost:3000/dashboard",
+    None => "http://localhost:3000/projects",
 };
 
 fn app_url() -> String {
@@ -158,8 +158,6 @@ fn is_internal(url: &url::Url) -> bool {
         || host.ends_with(".kortix.com")
         || host == "kortix.cloud"
         || host.ends_with(".kortix.cloud")
-        || host == "justavps.com"
-        || host.ends_with(".justavps.com")
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -196,53 +194,51 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .invoke_handler(tauri::generate_handler![set_zoom, open_external])
         .setup(|app| {
-            let url = app_url().parse::<url::Url>().expect("valid KORTIX_DESKTOP_URL");
+            let url = app_url()
+                .parse::<url::Url>()
+                .expect("valid KORTIX_DESKTOP_URL");
             let app_handle = app.handle().clone();
 
-            let mut builder = WebviewWindowBuilder::new(
-                app,
-                "main",
-                WebviewUrl::External(url),
-            )
-            .title("Kortix")
-            .inner_size(1440.0, 920.0)
-            .min_inner_size(720.0, 480.0)
-            .center()
-            .resizable(true)
-            .decorations(true)
-            .visible(false)
-            // Browser-like user agent so server-side and 3rd-party libs that
-            // sniff for `Mozilla/Safari` don't treat the desktop webview as a
-            // bot/non-browser. We keep the `KortixDesktop/0.1.0` token
-            // appended so middleware/`isDesktop()` checks still match.
-            .user_agent(
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
+            let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
+                .title("Kortix")
+                .inner_size(1440.0, 920.0)
+                .min_inner_size(720.0, 480.0)
+                .center()
+                .resizable(true)
+                .decorations(true)
+                .visible(false)
+                // Browser-like user agent so server-side and 3rd-party libs that
+                // sniff for `Mozilla/Safari` don't treat the desktop webview as a
+                // bot/non-browser. We keep the `KortixDesktop/0.1.0` token
+                // appended so middleware/`isDesktop()` checks still match.
+                .user_agent(
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
                  AppleWebKit/605.1.15 (KHTML, like Gecko) \
                  Version/17.0 Safari/605.1.15 KortixDesktop/0.1.0",
-            )
-            // Disable Tauri's native OS drag-drop interceptor so HTML5
-            // dragenter/dragover/drop events reach the webview. Without this
-            // the chat input (and any other dropzone) never sees a file drop
-            // — the OS hands the drop to Tauri's handler and the page is
-            // none the wiser.
-            .disable_drag_drop_handler()
-            // Opaque window. We previously used transparent(true) + vibrancy,
-            // but in the bundled .app (where this MUST run on macOS so the
-            // OS dispatches `kortix://` to it) the layering renders the
-            // webview as a blank white surface. Opaque + a subtle dark
-            // background (set on <body> in CSS for desktop) is reliable.
-            .initialization_script(WINDOW_OPEN_SHIM)
-            .on_navigation(move |url| {
-                if is_internal(url) {
-                    return true;
-                }
-                // External — open in the user's default browser. OAuth providers
-                // (Google in particular) reject embedded webviews, and isolating
-                // those flows means cookies stay in the user's primary browser.
-                #[allow(deprecated)]
-                let _ = app_handle.shell().open(url.to_string(), None);
-                false
-            });
+                )
+                // Disable Tauri's native OS drag-drop interceptor so HTML5
+                // dragenter/dragover/drop events reach the webview. Without this
+                // the chat input (and any other dropzone) never sees a file drop
+                // — the OS hands the drop to Tauri's handler and the page is
+                // none the wiser.
+                .disable_drag_drop_handler()
+                // Opaque window. We previously used transparent(true) + vibrancy,
+                // but in the bundled .app (where this MUST run on macOS so the
+                // OS dispatches `kortix://` to it) the layering renders the
+                // webview as a blank white surface. Opaque + a subtle dark
+                // background (set on <body> in CSS for desktop) is reliable.
+                .initialization_script(WINDOW_OPEN_SHIM)
+                .on_navigation(move |url| {
+                    if is_internal(url) {
+                        return true;
+                    }
+                    // External — open in the user's default browser. OAuth providers
+                    // (Google in particular) reject embedded webviews, and isolating
+                    // those flows means cookies stay in the user's primary browser.
+                    #[allow(deprecated)]
+                    let _ = app_handle.shell().open(url.to_string(), None);
+                    false
+                });
 
             #[cfg(target_os = "macos")]
             {
@@ -297,11 +293,7 @@ pub fn run() {
                         Err(_) => continue,
                     };
                     // kortix://auth/callback?code=...  →  <app_url>/auth/callback?code=...
-                    let path = format!(
-                        "/{}{}",
-                        incoming.host_str().unwrap_or(""),
-                        incoming.path()
-                    );
+                    let path = format!("/{}{}", incoming.host_str().unwrap_or(""), incoming.path());
                     let path = path.trim_end_matches('/').to_string();
                     target.set_path(if path.is_empty() { "/" } else { &path });
                     target.set_query(incoming.query());
@@ -325,7 +317,9 @@ pub fn run() {
             let close_handle = app.handle().clone();
             app.listen_any("tauri://webview-created", move |event| {
                 #[derive(serde::Deserialize)]
-                struct Payload { label: String }
+                struct Payload {
+                    label: String,
+                }
                 if let Ok(p) = serde_json::from_str::<Payload>(event.payload()) {
                     if p.label != "main" {
                         if let Some(w) = close_handle.get_webview_window(&p.label) {
