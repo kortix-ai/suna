@@ -4601,16 +4601,16 @@ function parseTriggerDraft(
   const type = (body as any).type === 'webhook' ? 'webhook' : (body as any).type === 'cron' ? 'cron' : null;
   if (!type) return { error: 'type must be "cron" or "webhook"' };
 
-  const promptTemplate = normalizeString((body as any).prompt_template ?? (body as any).promptTemplate);
+  const promptTemplate = normalizeString((body as any).prompt_template);
   if (!promptTemplate) return { error: 'prompt_template is required' };
 
-  const agent = normalizeString((body as any).agent ?? (body as any).agent_name) ?? 'default';
+  const agent = normalizeString((body as any).agent) ?? 'default';
   const enabled = normalizeBoolean((body as any).enabled) ?? true;
 
   if (type === 'cron') {
     const timezone = normalizeString((body as any).timezone) ?? 'UTC';
     // One-off ("run once") schedules carry `run_at` instead of `cron`.
-    const runAtRaw = normalizeString((body as any).run_at ?? (body as any).runAt);
+    const runAtRaw = normalizeString((body as any).run_at);
     if (runAtRaw) {
       const parsed = Date.parse(runAtRaw);
       if (Number.isNaN(parsed)) {
@@ -4629,7 +4629,7 @@ function parseTriggerDraft(
         secretEnv: null,
       };
     }
-    const cron = normalizeString((body as any).cron ?? (body as any).schedule);
+    const cron = normalizeString((body as any).cron);
     if (!cron) return { error: 'cron triggers must declare a `cron` expression or a one-off `run_at`' };
     return {
       slug,
@@ -4645,7 +4645,7 @@ function parseTriggerDraft(
     };
   }
 
-  const secretEnv = normalizeString((body as any).secret_env ?? (body as any).secretEnv);
+  const secretEnv = normalizeString((body as any).secret_env);
   if (!secretEnv) return { error: 'webhook triggers must declare `secret_env`' };
   if (!/^[A-Z_][A-Z0-9_]*$/.test(secretEnv)) {
     return { error: `secret_env must look like a project_secrets name (got "${secretEnv}")` };
