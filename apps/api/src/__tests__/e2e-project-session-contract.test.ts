@@ -866,6 +866,25 @@ describe('project session API contract', () => {
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
   });
 
+  test('rejects legacy session create request aliases', async () => {
+    const app = createApp();
+    const cases = [
+      [{ provider: 'daytona', baseRef: 'main' }, 'base_ref'],
+      [{ provider: 'daytona', base_ref: 'main', agentName: 'reviewer' }, 'agent_name'],
+      [{ provider: 'daytona', base_ref: 'main', sandboxSlug: 'dev' }, 'sandbox_slug'],
+    ] as const;
+
+    for (const [body, canonical] of cases) {
+      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toContain(canonical);
+    }
+  });
+
   test('accepts a client-created session branch without recreating it server-side', async () => {
     const app = createApp();
     const clientSessionId = '11111111-1111-4111-a111-111111111111';

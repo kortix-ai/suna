@@ -1864,8 +1864,19 @@ export async function createProjectSession(input: {
   const projectId = project.projectId;
   const accountId = project.accountId;
 
-  const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? project.defaultBranch;
-  const agentName = normalizeString(body.agent_name ?? body.agentName) ?? 'default';
+  const legacyAliases: Array<[string, string]> = [
+    ['baseRef', 'base_ref'],
+    ['agentName', 'agent_name'],
+    ['sandboxSlug', 'sandbox_slug'],
+  ];
+  for (const [alias, canonical] of legacyAliases) {
+    if (Object.prototype.hasOwnProperty.call(body, alias)) {
+      return { error: { status: 400, body: { error: `Use ${canonical} instead of legacy ${alias}` } } };
+    }
+  }
+
+  const baseRef = normalizeString(body.base_ref) ?? project.defaultBranch;
+  const agentName = normalizeString(body.agent_name) ?? 'default';
   // Explicit request wins; otherwise fall back to the project's default sandbox
   // template (`[sandbox] default` in kortix.toml, synced to project metadata),
   // so EVERY session — UI, triggers, channels — inherits the project's chosen
@@ -1874,7 +1885,7 @@ export async function createProjectSession(input: {
     (project.metadata as Record<string, unknown> | null | undefined)?.default_sandbox_slug,
   );
   const sandboxSlug =
-    normalizeString(body.sandbox_slug ?? body.sandboxSlug) ?? projectDefaultSandboxSlug ?? undefined;
+    normalizeString(body.sandbox_slug) ?? projectDefaultSandboxSlug ?? undefined;
   const requestedProvider = normalizeString(body.provider);
   let providerName: SandboxProviderName = config.getDefaultProvider();
   if (requestedProvider) {
