@@ -478,8 +478,13 @@ export default function ProjectsPage() {
                   onValueChange={(v) => setViewMode(v as ProjectsViewMode)}
                 >
                   <TabsList size="sm">
-                    <TabsTrigger value="all">All accounts</TabsTrigger>
-                    <TabsTrigger value="account" className="max-w-[10rem]">
+                    <TabsTrigger value="all" className="cursor-pointer">
+                      All accounts
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="account"
+                      className="max-w-[10rem] cursor-pointer"
+                    >
                       <span className="truncate">
                         {activeAccount?.name || 'This account'}
                       </span>
