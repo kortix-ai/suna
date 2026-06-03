@@ -13,7 +13,7 @@ interface PresentationViewerState {
   closePresentation: () => void;
 }
 
-export const usePresentationViewerStore = create<PresentationViewerState>()(
+const usePresentationViewerStore = create<PresentationViewerState>()(
   devtools(
     (set) => ({
       isOpen: false,
