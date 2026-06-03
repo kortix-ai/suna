@@ -54,9 +54,6 @@ importers:
       '@dotenvx/dotenvx':
         specifier: ^1.69.2
         version: 1.71.0
-      agent-tunnel:
-        specifier: workspace:@kortix/agent-tunnel@*
-        version: link:packages/agent-tunnel
 
   apps/api:
     dependencies:
