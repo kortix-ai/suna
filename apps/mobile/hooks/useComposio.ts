@@ -49,22 +49,6 @@ interface CreateComposioProfileRequest {
   use_custom_auth?: boolean;
 }
 
-interface CreateComposioProfileResponse {
-  success: boolean;
-  profile_id: string;
-  redirect_url?: string;
-  mcp_url: string;
-}
-
-interface AuthConfigField {
-  name: string;
-  displayName: string;
-  type: string;
-  required: boolean;
-  description?: string;
-  default?: string;
-}
-
 const composioKeys = {
   all: ['composio'] as const,
   apps: () => [...composioKeys.all, 'apps'] as const,

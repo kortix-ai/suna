@@ -238,31 +238,6 @@ export type QuestionAnswer = string[];
 // Agents, Models, Providers
 // ---------------------------------------------------------------------------
 
-interface Agent {
-  id: string;
-  name: string;
-  description?: string;
-}
-
-interface Model {
-  id: string;
-  name: string;
-  providerID: string;
-  default?: boolean;
-}
-
-interface Provider {
-  id: string;
-  name: string;
-  models: Model[];
-}
-
-interface Command {
-  name: string;
-  description?: string;
-  arguments?: Record<string, any>;
-}
-
 // ---------------------------------------------------------------------------
 // View-model types
 // ---------------------------------------------------------------------------

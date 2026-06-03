@@ -24,15 +24,6 @@ import type {
   ToolInfo,
 } from './types';
 
-interface Diagnostic {
-  range: {
-    start: { line: number; character: number };
-    end: { line: number; character: number };
-  };
-  message: string;
-  severity?: number;
-}
-
 // ============================================================================
 // Type guards
 // ============================================================================
