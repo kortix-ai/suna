@@ -78,7 +78,6 @@ mock.module('../billing/repositories/transactions', () => ({
   insertLedgerEntry: async (data: any) => ({ id: 'ledger_mock', ...data }),
   getTransactions: async () => ({ rows: [], total: 0 }),
   getTransactionsSummary: async () => mockTransactionsSummary,
-  getUsageRecords: async () => ({ rows: [], total: 0 }),
   insertPurchase: async (data: any) => ({ id: 'purchase_mock', ...data }),
   getPurchaseByPaymentIntent: async () => null,
   updatePurchaseStatus: async () => {},
@@ -315,6 +314,23 @@ describe('Billing: removed deduction routes', () => {
 
     expect(deduct.status).toBe(404);
     expect(deductUsage.status).toBe(404);
+  });
+});
+
+describe('Billing: removed payment report routes', () => {
+  test('legacy transaction summary and credit usage endpoints are not mounted', async () => {
+    const app = createBillingTestApp();
+    const summary = await app.request('/v1/billing/transactions/summary', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer test_token' },
+    });
+    const creditUsage = await app.request('/v1/billing/credit-usage', {
+      method: 'GET',
+      headers: { Authorization: 'Bearer test_token' },
+    });
+
+    expect(summary.status).toBe(404);
+    expect(creditUsage.status).toBe(404);
   });
 });
 

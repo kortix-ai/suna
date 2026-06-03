@@ -6,8 +6,6 @@ import { canPurchaseCredits, resolveCreditPriceId } from '../services/tiers';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import {
   getTransactions,
-  getTransactionsSummary,
-  getUsageRecords,
   insertPurchase,
 } from '../repositories/transactions';
 import { BillingError } from '../../errors';
@@ -103,13 +101,6 @@ paymentsRouter.get('/transactions', async (c) => {
   });
 });
 
-paymentsRouter.get('/transactions/summary', async (c) => {
-  const accountId = await resolveScopedAccountId(c, 'query');
-  const days = Number(c.req.query('days') ?? 30);
-  const summary = await getTransactionsSummary(accountId, days);
-  return c.json(summary);
-});
-
 // ─── Auto-topup ──────────────────────────────────────────────────────────────
 
 paymentsRouter.get('/auto-topup/settings', async (c) => {
@@ -138,24 +129,4 @@ paymentsRouter.post('/auto-topup/configure', async (c) => {
   });
 
   return c.json(result);
-});
-
-// ─── Credit usage ────────────────────────────────────────────────────────────
-
-paymentsRouter.get('/credit-usage', async (c) => {
-  const accountId = await resolveScopedAccountId(c, 'query');
-  const limit = Number(c.req.query('limit') ?? 50);
-  const offset = Number(c.req.query('offset') ?? 0);
-
-  const { rows, total } = await getUsageRecords(accountId, limit, offset);
-
-  const records = rows.map((r) => ({
-    id: r.id,
-    amount_dollars: Number(r.amountDollars),
-    description: r.description,
-    usage_type: r.usageType,
-    created_at: r.createdAt,
-  }));
-
-  return c.json({ records, count: total });
 });
