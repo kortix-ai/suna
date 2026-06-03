@@ -45,14 +45,14 @@ command -v pnpm >/dev/null 2>&1 || { echo "pnpm is required" >&2; exit 1; }
 
 printf "[build-local-images] Building frontend standalone output...\n"
 (
-  cd "$REPO_ROOT/apps/web"
-  rm -rf .next
+  cd "$REPO_ROOT"
+  rm -rf apps/web/.next
   NEXT_PUBLIC_BILLING_ENABLED=false \
   NEXT_PUBLIC_BACKEND_URL=http://localhost:8008/v1 \
   NEXT_PUBLIC_SUPABASE_URL=https://placeholder.supabase.co \
   NEXT_PUBLIC_SUPABASE_ANON_KEY=local-build-placeholder-anon-key \
   NEXT_OUTPUT=standalone \
-  pnpm exec next build --experimental-app-only
+  pnpm --filter Kortix-Computer-Frontend exec next build --experimental-app-only
 )
 
 printf "[build-local-images] Repairing frontend standalone Next package...\n"
