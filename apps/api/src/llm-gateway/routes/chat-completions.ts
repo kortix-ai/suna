@@ -1,8 +1,10 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import type { LlmGatewayConfig, LlmGatewayHooks, UsageEvent } from '../types';
+import type { AppEnv } from '../../types';
 import { callOpenRouter } from '../services/openrouter-client';
 import { calculateCost } from '../services/pricing';
 import { extractUsageFromJson, extractUsageFromSseBuffer, type ExtractedUsage } from '../services/usage-extractor';
+import { makeOpenApiApp, json, errors } from '../../openapi';
 
 function newRequestId(): string {
   return `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
@@ -38,10 +40,36 @@ function supportsReasoning(model: string): boolean {
 export function createChatCompletionsRoute(
   config: LlmGatewayConfig,
   hooks: LlmGatewayHooks,
-): Hono {
-  const app = new Hono();
+) {
+  const app = makeOpenApiApp<AppEnv>();
 
-  app.post('/chat/completions', async (c) => {
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/chat/completions',
+      tags: ['llm'],
+      summary: 'OpenAI-compatible chat completions (proxied + metered via OpenRouter)',
+      description:
+        'Accepts an OpenAI/OpenRouter-compatible chat-completions body (model, messages, stream, reasoning, …). ' +
+        'The body is parsed manually by the handler (which injects reasoning for capable models and toggles the ' +
+        'stream flag), so no request schema is attached and no currently-valid input is rejected. Returns a JSON ' +
+        'completion when stream=false, or an SSE stream (text/event-stream) when stream=true.',
+      // NOTE: intentionally NO `request.body` schema — attaching one would make the
+      // zod-openapi validator parse/validate the body before the handler and change
+      // the existing auth/JSON 401/400 error contract (rule: preserve behavior).
+      responses: {
+        200: {
+          description:
+            'Chat completion. JSON completion object when stream=false, or a Server-Sent Events stream (text/event-stream) when stream=true.',
+          content: {
+            'application/json': { schema: z.any() },
+            'text/event-stream': { schema: z.string() },
+          },
+        },
+        ...errors(400, 401, 402, 500, 502),
+      },
+    }),
+    async (c) => {
     const requestId = newRequestId();
     const token = bearer(c.req.header('authorization'));
 
@@ -195,7 +223,8 @@ export function createChatCompletionsRoute(
         connection: 'keep-alive',
       },
     });
-  });
+    },
+  );
 
   return app;
 }

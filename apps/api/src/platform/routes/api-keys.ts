@@ -1,9 +1,11 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 import { and, eq } from 'drizzle-orm';
 import { accountMembers, kortixApiKeys, sandboxes, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { supabaseAuth } from '../../middleware/auth';
+import type { AppEnv } from '../../types';
+import { makeOpenApiApp, json, auth } from '../../openapi';
 import {
   createApiKey,
   deleteApiKey,
@@ -160,19 +162,120 @@ async function updateSandboxServiceKey(ref: SandboxRef, secretKey: string) {
     .where(eq(sandboxes.sandboxId, ref.sandboxId));
 }
 
-export const apiKeysRouter = new Hono();
+// ─── Schemas ─────────────────────────────────────────────────────────────────
+// api-keys is SANDBOX-scoped: GET requires ?sandbox_id, POST requires sandbox_id
+// in the body. Validation stays MANUAL inside the handlers (missing → custom
+// {success:false} 400 envelope, unknown → 404 via requireSandboxAccess); the
+// schemas below only DOCUMENT the surface — they do not gate requests, so they
+// can't reject currently-valid calls.
+
+const ApiKeySchema = z
+  .object({
+    key_id: z.string(),
+    public_key: z.string(),
+    sandbox_id: z.string(),
+    title: z.string(),
+    description: z.string().optional(),
+    type: z.string(),
+    status: z.string(),
+    expires_at: z.string().optional(),
+    last_used_at: z.string().optional(),
+    created_at: z.string(),
+  })
+  .openapi('ApiKey');
+
+const CreatedApiKeySchema = z
+  .object({
+    key_id: z.string(),
+    public_key: z.string(),
+    secret_key: z.string(),
+    sandbox_id: z.string(),
+    title: z.string(),
+    description: z.string().optional(),
+    type: z.string(),
+    status: z.string(),
+    expires_at: z.string().optional(),
+    created_at: z.string(),
+  })
+  .openapi('CreatedApiKey');
+
+const KeyIdParamSchema = z.object({ keyId: z.string() });
+
+/**
+ * These routes return custom `{success:false, …}` envelopes for their own 400/404
+ * cases (not the shared `{error,message,status}` shape), so declare them explicitly
+ * so the typed handlers accept the exact bodies the handlers produce.
+ */
+const FailEnvelopeSchema = z
+  .object({
+    success: z.boolean(),
+    error: z.string().optional(),
+    message: z.string().optional(),
+  })
+  .openapi('ApiKeyError');
+
+const failResponse = (description: string) => json(FailEnvelopeSchema, description);
+
+export const apiKeysRouter = makeOpenApiApp<AppEnv>();
 
 apiKeysRouter.use('*', supabaseAuth);
 
-apiKeysRouter.get('/', async (c) => {
+apiKeysRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['platform'],
+    summary: 'List API keys for a sandbox',
+    ...auth,
+    request: {
+      query: z.object({ sandbox_id: z.string().optional() }),
+    },
+    responses: {
+      200: json(
+        z.object({ success: z.boolean(), data: z.array(ApiKeySchema) }),
+        'API keys for the sandbox',
+      ),
+      400: failResponse('sandbox_id is required'),
+    },
+  }),
+  async (c) => {
   const sandboxId = c.req.query('sandbox_id');
   if (!sandboxId) return c.json({ success: false, error: 'sandbox_id is required' }, 400);
   await requireSandboxAccess(c, sandboxId);
   const rows = await listApiKeys(sandboxId);
   return c.json({ success: true, data: rows.map(serializeKey) });
-});
+  },
+);
 
-apiKeysRouter.post('/', async (c) => {
+apiKeysRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/',
+    tags: ['platform'],
+    summary: 'Create an API key for a sandbox',
+    ...auth,
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              sandbox_id: z.string(),
+              title: z.string().optional(),
+              description: z.string().optional(),
+              expires_in_days: z.number().optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      201: json(
+        z.object({ success: z.boolean(), data: CreatedApiKeySchema }),
+        'The created API key (includes the one-time secret)',
+      ),
+    },
+  }),
+  async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const sandboxId = typeof body.sandbox_id === 'string' ? body.sandbox_id : '';
   const title = typeof body.title === 'string' && body.title.trim() ? body.title.trim() : 'API Key';
@@ -192,23 +295,72 @@ apiKeysRouter.post('/', async (c) => {
     type: 'user',
   });
   return c.json({ success: true, data: serializeCreatedKey(created) }, 201);
-});
+  },
+);
 
-apiKeysRouter.patch('/:keyId/revoke', async (c) => {
+apiKeysRouter.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{keyId}/revoke',
+    tags: ['platform'],
+    summary: 'Revoke an API key',
+    ...auth,
+    request: { params: KeyIdParamSchema },
+    responses: {
+      200: json(z.object({ success: z.boolean(), message: z.string() }), 'API key revoked'),
+      404: failResponse('API key was not active'),
+    },
+  }),
+  async (c) => {
   const key = await requireKeyAccess(c, c.req.param('keyId'));
   const ok = await revokeApiKey(key.keyId, key.accountId);
   if (!ok) return c.json({ success: false, message: 'API key was not active' }, 404);
   return c.json({ success: true, message: 'API key revoked' });
-});
+  },
+);
 
-apiKeysRouter.delete('/:keyId', async (c) => {
+apiKeysRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{keyId}',
+    tags: ['platform'],
+    summary: 'Delete an API key',
+    ...auth,
+    request: { params: KeyIdParamSchema },
+    responses: {
+      200: json(z.object({ success: z.boolean(), message: z.string() }), 'API key deleted'),
+      404: failResponse('API key not found'),
+    },
+  }),
+  async (c) => {
   const key = await requireKeyAccess(c, c.req.param('keyId'));
   const ok = await deleteApiKey(key.keyId, key.accountId);
   if (!ok) return c.json({ success: false, message: 'API key not found' }, 404);
   return c.json({ success: true, message: 'API key deleted' });
-});
+  },
+);
 
-apiKeysRouter.post('/:keyId/regenerate', async (c) => {
+apiKeysRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{keyId}/regenerate',
+    tags: ['platform'],
+    summary: 'Regenerate a sandbox-managed API key',
+    ...auth,
+    request: { params: KeyIdParamSchema },
+    responses: {
+      200: json(
+        z.object({
+          success: z.boolean(),
+          data: CreatedApiKeySchema,
+          sandbox_updated: z.boolean(),
+        }),
+        'The regenerated key; the sandbox service key was updated',
+      ),
+      400: failResponse('Only sandbox-managed keys can be regenerated'),
+    },
+  }),
+  async (c) => {
   const key = await requireKeyAccess(c, c.req.param('keyId'));
   if (key.type !== 'sandbox') {
     return c.json({ success: false, error: 'Only sandbox-managed keys can be regenerated' }, 400);
@@ -230,4 +382,5 @@ apiKeysRouter.post('/:keyId/regenerate', async (c) => {
     data: serializeCreatedKey(created),
     sandbox_updated: true,
   });
-});
+  },
+);

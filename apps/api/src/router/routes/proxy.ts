@@ -1,5 +1,5 @@
-import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { makeOpenApiApp } from '../../openapi';
 import {
   getProxyServices,
   matchAllowedRoute,
@@ -19,7 +19,11 @@ import {
 } from '../../shared/actor-context';
 import { getTraceHeaders } from '../../lib/request-context';
 
-const proxy = new Hono();
+// Catch-all billed proxy. Every route here is a Hono `.all()` (concrete method
+// unknown at definition time → cannot use createRoute), so these intentionally do
+// NOT appear in the OpenAPI spec. We still use makeOpenApiApp for a consistent app
+// type across the router so `.route('/', proxy)` composes with the other sub-apps.
+const proxy = makeOpenApiApp();
 
 const services = getProxyServices();
 

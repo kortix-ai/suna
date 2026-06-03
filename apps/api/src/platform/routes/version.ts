@@ -1,4 +1,6 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
+import type { AppEnv } from '../../types';
+import { makeOpenApiApp, json } from '../../openapi';
 import { config } from '../../config';
 
 /**
@@ -209,33 +211,131 @@ async function getAllVersions(): Promise<VersionEntry[]> {
   return versions;
 }
 
-const versionRouter = new Hono();
+const ChannelSchema = z.enum(['stable', 'dev']);
 
-versionRouter.get('/', (c) => {
-  return c.json({
-    version: getRunningVersion(),
-    channel: getRunningChannel(),
-  });
-});
+const RunningVersionSchema = z
+  .object({
+    version: z.string(),
+    channel: ChannelSchema,
+  })
+  .openapi('SandboxRunningVersion');
 
-versionRouter.get('/latest', async (c) => {
-  const channel = (c.req.query('channel') || 'stable') as VersionChannel;
-  const latest = channel === 'dev' ? await getLatestDev() : await getLatestStable();
-  return c.json(latest);
-});
+const LatestVersionSchema = z
+  .object({
+    version: z.string(),
+    channel: ChannelSchema,
+    date: z.string().optional(),
+    title: z.string().optional(),
+    sha: z.string().optional(),
+  })
+  .openapi('SandboxLatestVersion');
 
-versionRouter.get('/all', async (c) => {
-  const versions = await getAllVersions();
-  return c.json({
-    versions,
-    current: {
+const VersionEntrySchema = z
+  .object({
+    version: z.string(),
+    channel: ChannelSchema,
+    date: z.string(),
+    title: z.string(),
+    body: z.string().optional(),
+    sha: z.string().optional(),
+    current: z.boolean(),
+  })
+  .openapi('SandboxVersionEntry');
+
+const AllVersionsSchema = z
+  .object({
+    versions: z.array(VersionEntrySchema),
+    current: RunningVersionSchema,
+  })
+  .openapi('SandboxAllVersions');
+
+// Entries are assembled as `Record<string, unknown>` (version/channel/date/title/
+// description/changes, plus `sha` on dev). Keep the schema permissive so it
+// documents the surface without constraining the opaque map the handler returns.
+const ChangelogEntrySchema = z
+  .record(z.string(), z.unknown())
+  .openapi('SandboxChangelogEntry');
+
+const ChangelogSchema = z
+  .object({ changelog: z.array(ChangelogEntrySchema) })
+  .openapi('SandboxChangelog');
+
+const versionRouter = makeOpenApiApp<AppEnv>();
+
+versionRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['platform'],
+    summary: 'Running sandbox version and channel',
+    responses: {
+      200: json(RunningVersionSchema, 'The sandbox version this server is running'),
+    },
+  }),
+  (c) => {
+    return c.json({
       version: getRunningVersion(),
       channel: getRunningChannel(),
-    },
-  });
-});
+    });
+  },
+);
 
-versionRouter.get('/changelog', async (c) => {
+versionRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/latest',
+    tags: ['platform'],
+    summary: 'Latest available sandbox version for a channel',
+    request: {
+      query: z.object({ channel: ChannelSchema.optional() }),
+    },
+    responses: {
+      200: json(LatestVersionSchema, 'Latest version for the requested channel (stable by default)'),
+    },
+  }),
+  async (c) => {
+    const channel = (c.req.query('channel') || 'stable') as VersionChannel;
+    const latest = channel === 'dev' ? await getLatestDev() : await getLatestStable();
+    return c.json(latest);
+  },
+);
+
+versionRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/all',
+    tags: ['platform'],
+    summary: 'All known sandbox versions plus the current running version',
+    responses: {
+      200: json(AllVersionsSchema, 'All versions across channels and the current running version'),
+    },
+  }),
+  async (c) => {
+    const versions = await getAllVersions();
+    return c.json({
+      versions,
+      current: {
+        version: getRunningVersion(),
+        channel: getRunningChannel(),
+      },
+    });
+  },
+);
+
+versionRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/changelog',
+    tags: ['platform'],
+    summary: 'Sandbox changelog entries for a channel',
+    request: {
+      query: z.object({ channel: z.string().optional() }),
+    },
+    responses: {
+      200: json(ChangelogSchema, 'Changelog entries (stable, dev, or all)'),
+    },
+  }),
+  async (c) => {
   const channel = c.req.query('channel') || 'all';
   const entries: Array<Record<string, unknown>> = [];
 
@@ -273,7 +373,8 @@ versionRouter.get('/changelog', async (c) => {
 
   entries.sort((a, b) => String(b.date ?? '').localeCompare(String(a.date ?? '')));
   return c.json({ changelog: entries });
-});
+  },
+);
 
 export { versionRouter };
 
