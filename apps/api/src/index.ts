@@ -29,6 +29,7 @@ import { initModelPricing, stopModelPricing } from './router/config/model-pricin
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
+import { startLeaderElection, stopLeaderElection, isLeader } from './shared/leader-election';
 import { oauthApp } from './oauth';
 import {
   projectWebhooksApp,
@@ -246,6 +247,7 @@ app.get('/health', (c) => {
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     tunnel: getTunnelServiceStatus(),
+    leader: isLeader(),
   });
 });
 
@@ -258,6 +260,7 @@ app.get('/v1/health', (c) => {
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     tunnel: getTunnelServiceStatus(),
+    leader: isLeader(),
   });
 });
 
@@ -627,37 +630,69 @@ let schemaReady = false;
 
 // Ensure DB schema exists before starting services that depend on it.
 // This is idempotent — safe to run on every startup.
-// Start background services after the schema is ready. The access-control cache
-// and tunnel service serve request-path needs; the rest are background WORKERS
-// (queue drainer, project maintenance, trigger scheduler, startup pre-build,
-// legacy-migration worker, grant-expiry sweeper). Every API node runs them.
-async function startBackgroundServices() {
+// Services that run on EVERY replica. The access-control cache and tunnel
+// service serve request-path needs (per-node caches + the WS acceptor), so they
+// must be live on each node behind the load balancer.
+async function startReplicaServices() {
   startAccessControlCache();
   startTunnelService();
+}
 
+// Singleton background WORKERS — must run on EXACTLY ONE replica at a time
+// (the elected leader). On ECS Fargate the API runs as N replicas (prod: min 2,
+// up to 10); running these on every replica would double-fire cron triggers
+// (N duplicate paid agent sessions + duplicate external side effects),
+// over-provision the warm pool, and double-run legacy migrations. Leader
+// election (shared/leader-election.ts) starts/stops these via onAcquire/onRelease.
+// The guard makes start/stop idempotent across leadership flaps.
+let singletonWorkersRunning = false;
+async function startSingletonWorkers() {
+  if (singletonWorkersRunning) return;
+  singletonWorkersRunning = true;
   startDrainer();
   startProjectMaintenance();
   startProjectTriggerScheduler();
-  // Mint the global platform-default sandbox image once per boot so the first
-  // session anywhere lands on a cache hit. Idempotent + best-effort; the
-  // session-boot graceful path is the lazy fallback if this is skipped.
+  // Mint the global platform-default sandbox image once per leadership term so
+  // the first session anywhere lands on a cache hit. Idempotent + best-effort;
+  // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
   startLegacyMigrationWorker();
-  // IAM V2 time-bounded grants: tick every 60s, emit one audit event
-  // per row that just transitioned to expired. Engine already filters
-  // expired rows out of authorize() so correctness doesn't depend on
-  // this — it's purely for the audit trail.
+  // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
+  // that just transitioned to expired. Engine already filters expired rows out
+  // of authorize() so correctness doesn't depend on this — it's the audit trail.
   const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   startGrantExpirySweeper();
+}
+async function stopSingletonWorkers() {
+  if (!singletonWorkersRunning) return;
+  singletonWorkersRunning = false;
+  stopDrainer();
+  stopProjectTriggerScheduler();
+  stopProjectMaintenance();
+  stopLegacyMigrationWorker();
+  const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
+  stopGrantExpirySweeper();
+}
+
+// Boot the per-node services, then begin leader election. The leader runs the
+// singleton workers; every other replica just serves requests. Works with one
+// replica (sole leader) or many (exactly one leader), and with no DATABASE_URL
+// (self-host single node → sole leader, no coordination).
+async function bootServices() {
+  await startReplicaServices();
+  startLeaderElection({
+    onAcquire: () => startSingletonWorkers(),
+    onRelease: () => stopSingletonWorkers(),
+  });
 }
 
 // Graceful shutdown
 async function shutdown(signal: string) {
   appLogger.info(`Shutting down gracefully`, { signal });
-  stopDrainer();
-  stopProjectTriggerScheduler();
-  stopProjectMaintenance();
-  stopLegacyMigrationWorker();
+  // Releases the lease (so a peer takes over immediately instead of waiting out
+  // the TTL) and stops the singleton workers via onRelease — but only if this
+  // node was the leader. Then stop the per-node services.
+  await stopLeaderElection();
   stopModelPricing();
   stopTunnelService();
   stopAccessControlCache();
@@ -679,12 +714,12 @@ if (import.meta.main) {
       // boot-time system-role seed + membership-policy backfill from V1
       // are no longer needed. Permissions resolve directly from
       // account_members.account_role and project_members.project_role.
-      await startBackgroundServices();
+      await bootServices();
     })
     .catch(async (err) => {
       console.error('[startup] ensureSchema failed, starting services anyway:', err);
       schemaReady = true;
-      await startBackgroundServices();
+      await bootServices();
     });
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
