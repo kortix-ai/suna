@@ -75,12 +75,6 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
     onClose();
   };
 
-  const handleUpdatesPress = () => {
-    haptics.tap();
-    useTabStore.getState().navigateToPage('page:updates');
-    onClose();
-  };
-
   return (
     <View
       style={{
@@ -137,48 +131,6 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
           </View>
         ))}
 
-        {/* Updates */}
-        <View style={{ marginBottom: 8 }}>
-          <RNText
-            style={{
-              fontSize: 11,
-              fontFamily: 'Roobert-Medium',
-              color: sectionColor,
-              letterSpacing: 1,
-              paddingHorizontal: 16,
-              paddingTop: 16,
-              paddingBottom: 8,
-            }}
-          >
-            SYSTEM
-          </RNText>
-
-          <TouchableOpacity
-            onPress={handleUpdatesPress}
-            activeOpacity={0.6}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              paddingHorizontal: 16,
-              paddingVertical: 11,
-              gap: 12,
-            }}
-          >
-            <View style={{ position: 'relative' }}>
-              <Ionicons name="arrow-down-circle-outline" size={18} color={mutedColor} />
-            </View>
-            <RNText
-              style={{
-                fontSize: 15,
-                fontFamily: 'Roobert',
-                color: fgColor,
-                flex: 1,
-              }}
-            >
-              Updates
-            </RNText>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
     </View>
   );

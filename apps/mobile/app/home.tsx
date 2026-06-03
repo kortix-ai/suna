@@ -56,7 +56,6 @@ import { ProjectsPage } from '@/components/pages/ProjectsPage';
 import { ProjectDetailPage } from '@/components/pages/ProjectDetailPage';
 import { useKortixProjects, type KortixProject } from '@/lib/kortix';
 import { haptics } from '@/lib/haptics';
-import { UpdatesPage } from '@/components/pages/UpdatesPage';
 import { RunningServicesPage } from '@/components/pages/RunningServicesPage';
 import { BrowserPage } from '@/components/pages/BrowserPage';
 import { FilesPage } from '@/components/pages/FilesPage';
@@ -1610,17 +1609,6 @@ export default function HomeScreen() {
           /* Active page tab — Terminal */
           ) : activePageId === 'page:terminal' && PAGE_TABS[activePageId] && !showTabsOverview ? (
             <TerminalPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Updates */
-          ) : activePageId === 'page:updates' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <UpdatesPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
