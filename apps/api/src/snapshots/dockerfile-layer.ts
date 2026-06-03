@@ -110,9 +110,15 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     'USER root',
     // tmux: lets the agent run long-running processes (dev servers for preview)
     // in a detached session that survives the agent\'s bash tool call.
+    // iproute2 (`ip`) + iputils-arping are REQUIRED on Platinum: a warm-pool
+    // clone is a memory-restored VM that keeps its snapshot-baked IP until the
+    // host's reconfigure_net runs `ip addr flush/add` + a gratuitous `arping`
+    // inside the guest. Without these the IP never changes → the guest stays on
+    // the baked IP while the edge routes to the allocated IP → every request
+    // 502s. (Harmless on Daytona, which doesn't memory-restore.)
     'RUN apt-get update \\',
     '    && apt-get install -y --no-install-recommends \\',
-    '        ca-certificates curl git gzip nodejs npm unzip tmux \\',
+    '        ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping \\',
     '    && rm -rf /var/lib/apt/lists/*',
     '',
     `RUN npm install -g --no-audit --no-fund "opencode-ai@${opencodeVersion}" \\`,
