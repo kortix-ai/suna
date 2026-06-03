@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { ownerEmail, ownerPassword, getAccessToken, apiBase } from '../helpers/auth';
+import { ownerEmail, ownerPassword, getAccessToken } from '../helpers/auth';
 
 test.describe('04 — Authentication flow', () => {
   test.setTimeout(120_000);
