@@ -2,9 +2,9 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   FolderPlus,
   Loader2,
@@ -25,6 +25,7 @@ import {
   archiveProject,
   listAccounts,
   listProjectsForAccount,
+  type KortixAccount,
   type KortixProject,
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
@@ -41,7 +42,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import {
+  useProjectsViewStore,
+  type ProjectsViewMode,
+} from '@/stores/projects-view-store';
 import { billingApi } from '@/lib/api/billing';
 import { invalidateAccountState } from '@/hooks/billing';
 
@@ -135,15 +141,104 @@ function ProjectCard({
   );
 }
 
+// "New project" trigger. In single-account view it's a plain button against the
+// active account. In all-accounts view a project has to be created *somewhere*,
+// so it becomes a picker of the accounts the user can create in (collapsing to a
+// direct button when there's exactly one such account).
+function NewProjectControl({
+  viewAll,
+  creatableAccounts,
+  activeAccountId,
+  canCreateActive,
+  onPick,
+  label,
+  fullWidth,
+}: {
+  viewAll: boolean;
+  creatableAccounts: KortixAccount[];
+  activeAccountId: string | null;
+  canCreateActive: boolean;
+  onPick: (accountId: string) => void;
+  label: string;
+  fullWidth?: boolean;
+}) {
+  const classes = cn('h-9 gap-1.5', fullWidth && 'w-full');
+
+  if (!viewAll) {
+    return (
+      <Button
+        onClick={() => activeAccountId && onPick(activeAccountId)}
+        disabled={!activeAccountId || !canCreateActive}
+        size="sm"
+        className={classes}
+      >
+        <Plus className="h-4 w-4" />
+        {label}
+      </Button>
+    );
+  }
+
+  if (creatableAccounts.length === 0) {
+    return (
+      <Button disabled size="sm" className={classes}>
+        <Plus className="h-4 w-4" />
+        {label}
+      </Button>
+    );
+  }
+
+  if (creatableAccounts.length === 1) {
+    const only = creatableAccounts[0];
+    return (
+      <Button onClick={() => onPick(only.account_id)} size="sm" className={classes}>
+        <Plus className="h-4 w-4" />
+        {label}
+      </Button>
+    );
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" className={classes}>
+          <Plus className="h-4 w-4" />
+          {label}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+          Create in
+        </div>
+        {creatableAccounts.map((account) => (
+          <DropdownMenuItem
+            key={account.account_id}
+            onSelect={() => onPick(account.account_id)}
+            className="flex items-center gap-2.5"
+          >
+            <EntityAvatar label={account.name || 'Account'} size="xs" />
+            <span className="min-w-0 flex-1 truncate text-sm">
+              {account.name || 'Account'}
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 export default function ProjectsPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
+  const { viewMode, setViewMode } = useProjectsViewStore();
   const [query, setQuery] = useState('');
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  // Which account a newly-created project lands in. In "all accounts" view the
+  // user picks it via the New-project dropdown; otherwise it's the active one.
+  const [createAccountId, setCreateAccountId] = useState<string | null>(null);
   const searchParams = useSearchParams();
 
   useEffect(() => {
@@ -223,6 +318,55 @@ export default function ProjectsPage() {
   const canCreateProjects =
     activeAccount?.account_role === 'owner' || activeAccount?.account_role === 'admin';
 
+  // "All accounts" is only meaningful when the user actually has more than one.
+  // For solo users the page behaves exactly as before (no toggle, no headers).
+  const accounts = useMemo(() => accountsQuery.data ?? [], [accountsQuery.data]);
+  const isMultiAccount = accounts.length > 1;
+  const viewAll = isMultiAccount && viewMode === 'all';
+
+  // Accounts the user can create projects in — drives the New-project picker.
+  const creatableAccounts = useMemo(
+    () => accounts.filter((a) => a.account_role === 'owner' || a.account_role === 'admin'),
+    [accounts],
+  );
+
+  // In "all" view we fetch projects for every account. These reuse the exact
+  // same ['projects', accountId] cache keys as the single-account query above,
+  // so toggling between views is instant once each account has loaded once.
+  const allAccountQueries = useQueries({
+    queries: viewAll
+      ? accounts.map((a) => ({
+          queryKey: ['projects', a.account_id],
+          queryFn: () => listProjectsForAccount(a.account_id),
+          staleTime: 20_000,
+        }))
+      : [],
+  });
+
+  const filterProjects = useCallback(
+    (items: KortixProject[]) => {
+      const q = query.trim().toLowerCase();
+      if (!q) return items;
+      return items.filter((project) =>
+        [project.name, project.repo_url, project.default_branch]
+          // repo_url / default_branch can be null for repo-less projects;
+          // optional chaining short-circuits the whole chain to undefined.
+          .some((value) => value?.toLowerCase().includes(q)),
+      );
+    },
+    [query],
+  );
+
+  // Per-account groups for the "all" view, search-filtered, empties dropped.
+  const accountGroups = viewAll
+    ? accounts
+        .map((account, i) => ({
+          account,
+          projects: filterProjects(allAccountQueries[i]?.data ?? []),
+        }))
+        .filter((group) => group.projects.length > 0)
+    : [];
+
   // Legacy machines live right in the projects grid as cards with a "must be
   // migrated" badge, so they're impossible to miss and feel like everything
   // else. The query only runs for users who actually have any.
@@ -251,17 +395,10 @@ export default function ProjectsPage() {
     },
   });
 
-  const filtered = useMemo(() => {
-    const items = projectsQuery.data ?? [];
-    const q = query.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((project) =>
-      [project.name, project.repo_url, project.default_branch]
-        // repo_url / default_branch can be null for repo-less projects;
-        // optional chaining short-circuits the whole chain to undefined.
-        .some((value) => value?.toLowerCase().includes(q)),
-    );
-  }, [projectsQuery.data, query]);
+  const filtered = useMemo(
+    () => filterProjects(projectsQuery.data ?? []),
+    [filterProjects, projectsQuery.data],
+  );
 
   const projectIds = useMemo(
     () => new Set((projectsQuery.data ?? []).map((p) => p.project_id)),
@@ -300,6 +437,28 @@ export default function ProjectsPage() {
     filtered.length === 0 &&
     legacyMachines.length === 0;
 
+  // All-accounts view flags. allRawTotal counts unfiltered projects across every
+  // account so the empty state distinguishes "no projects anywhere" from "no
+  // search matches".
+  const allRawTotal = viewAll
+    ? accounts.reduce((n, _a, i) => n + (allAccountQueries[i]?.data?.length ?? 0), 0)
+    : 0;
+  const allFilteredTotal = accountGroups.reduce((n, g) => n + g.projects.length, 0);
+  const showAllLoading =
+    viewAll && (accountsQuery.isLoading || allAccountQueries.some((q) => q.isLoading));
+  const showAllEmpty = viewAll && !showAllLoading && allRawTotal === 0 && totalLegacy === 0;
+  const showAllNoResults =
+    viewAll &&
+    !showAllLoading &&
+    allRawTotal + totalLegacy > 0 &&
+    allFilteredTotal === 0 &&
+    legacyMachines.length === 0;
+
+  const openCreateModal = (accountId: string | null) => {
+    setCreateAccountId(accountId);
+    setModalOpen(true);
+  };
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <AppHeader user={user} breadcrumb="Projects" />
@@ -313,6 +472,21 @@ export default function ProjectsPage() {
               <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appProjectsPage.line216JsxTextYourWorkspacesOnePlacePickUpWhereYou')}</p>
             </div>
             <div className="flex w-full items-center gap-2 sm:w-auto">
+              {isMultiAccount && (
+                <Tabs
+                  value={viewMode}
+                  onValueChange={(v) => setViewMode(v as ProjectsViewMode)}
+                >
+                  <TabsList size="sm">
+                    <TabsTrigger value="all">All accounts</TabsTrigger>
+                    <TabsTrigger value="account" className="max-w-[10rem]">
+                      <span className="truncate">
+                        {activeAccount?.name || 'This account'}
+                      </span>
+                    </TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              )}
               <div className="relative flex-1 sm:w-72">
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -322,88 +496,182 @@ export default function ProjectsPage() {
                   className="h-9 pl-9 text-sm"
                 />
               </div>
-              <Button
-                onClick={() => setModalOpen(true)}
-                disabled={!activeAccountId || !canCreateProjects}
-                size="sm"
-                className="h-9 gap-1.5"
-              >
-                <Plus className="h-4 w-4" />{tHardcodedUi.raw('appProjectsPage.line236JsxTextNewProject')}</Button>
+              <NewProjectControl
+                viewAll={viewAll}
+                creatableAccounts={creatableAccounts}
+                activeAccountId={activeAccountId}
+                canCreateActive={canCreateProjects}
+                onPick={openCreateModal}
+                label={tHardcodedUi.raw('appProjectsPage.line236JsxTextNewProject')}
+              />
             </div>
           </div>
 
-          {showProjectsLoading && (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-[92px] rounded-2xl" />
-              ))}
-            </div>
-          )}
+          {!viewAll && (
+            <>
+              {showProjectsLoading && (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-[92px] rounded-2xl" />
+                  ))}
+                </div>
+              )}
 
-          {projectsQuery.isError && (
-            <SectionCard
-              tone="destructive"
-              title={tHardcodedUi.raw('appProjectsPage.line252JsxAttrTitleFailedToLoadProjects')}
-              description={(projectsQuery.error as Error).message}
-            >
-              <Button variant="outline" size="sm" onClick={() => projectsQuery.refetch()}>
-                Retry
-              </Button>
-            </SectionCard>
-          )}
-
-          {showEmptyState && (
-            <SectionCard flush>
-              <EmptyState
-                icon={FolderPlus}
-                title="No projects yet"
-                description="A project is a dedicated space for one company, product, or idea."
-                action={
-                  <Button
-                    onClick={() => setModalOpen(true)}
-                    disabled={!canCreateProjects}
-                    size="sm"
-                    className="gap-1.5"
-                  >
-                    <Plus className="h-4 w-4" />
-                    Create your first project
+              {projectsQuery.isError && (
+                <SectionCard
+                  tone="destructive"
+                  title={tHardcodedUi.raw('appProjectsPage.line252JsxAttrTitleFailedToLoadProjects')}
+                  description={(projectsQuery.error as Error).message}
+                >
+                  <Button variant="outline" size="sm" onClick={() => projectsQuery.refetch()}>
+                    Retry
                   </Button>
-                }
-              />
-            </SectionCard>
+                </SectionCard>
+              )}
+
+              {showEmptyState && (
+                <SectionCard flush>
+                  <EmptyState
+                    icon={FolderPlus}
+                    title="No projects yet"
+                    description="A project is a dedicated space for one company, product, or idea."
+                    action={
+                      <Button
+                        onClick={() => openCreateModal(activeAccountId)}
+                        disabled={!canCreateProjects}
+                        size="sm"
+                        className="gap-1.5"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Create your first project
+                      </Button>
+                    }
+                  />
+                </SectionCard>
+              )}
+
+              {showNoResults && (
+                <SectionCard flush>
+                  <EmptyState
+                    icon={Search}
+                    size="sm"
+                    title={`No matches for "${query}"`}
+                    description={tHardcodedUi.raw('appProjectsPage.line288JsxAttrDescriptionTryADifferentSearchTerm')}
+                  />
+                </SectionCard>
+              )}
+
+              {(filtered.length > 0 || legacyMachines.length > 0) && (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {legacyMachines.map((machine) => (
+                    <LegacyMachineCard
+                      key={machine.sandbox_id}
+                      machine={machine}
+                      starting={startMigration.isPending && startMigration.variables === machine.sandbox_id}
+                      onMigrate={() => handleMigrate(machine.sandbox_id)}
+                      onOpenProject={(projectId) => router.push(`/projects/${projectId}`)}
+                    />
+                  ))}
+                  {filtered.map((project) => (
+                    <ProjectCard
+                      key={project.project_id}
+                      project={project}
+                      onOpen={() => router.push(`/projects/${project.project_id}`)}
+                      onArchive={() => archiveMutation.mutate(project.project_id)}
+                      archiving={archivingId === project.project_id}
+                    />
+                  ))}
+                </div>
+              )}
+            </>
           )}
 
-          {showNoResults && (
-            <SectionCard flush>
-              <EmptyState
-                icon={Search}
-                size="sm"
-                title={`No matches for "${query}"`}
-                description={tHardcodedUi.raw('appProjectsPage.line288JsxAttrDescriptionTryADifferentSearchTerm')}
-              />
-            </SectionCard>
-          )}
+          {viewAll && (
+            <div className="space-y-10">
+              {showAllLoading && (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <Skeleton key={i} className="h-[92px] rounded-2xl" />
+                  ))}
+                </div>
+              )}
 
-          {(filtered.length > 0 || legacyMachines.length > 0) && (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {legacyMachines.map((machine) => (
-                <LegacyMachineCard
-                  key={machine.sandbox_id}
-                  machine={machine}
-                  starting={startMigration.isPending && startMigration.variables === machine.sandbox_id}
-                  onMigrate={() => handleMigrate(machine.sandbox_id)}
-                  onOpenProject={(projectId) => router.push(`/projects/${projectId}`)}
-                />
-              ))}
-              {filtered.map((project) => (
-                <ProjectCard
-                  key={project.project_id}
-                  project={project}
-                  onOpen={() => router.push(`/projects/${project.project_id}`)}
-                  onArchive={() => archiveMutation.mutate(project.project_id)}
-                  archiving={archivingId === project.project_id}
-                />
-              ))}
+              {showAllEmpty && (
+                <SectionCard flush>
+                  <EmptyState
+                    icon={FolderPlus}
+                    title="No projects yet"
+                    description="A project is a dedicated space for one company, product, or idea."
+                    action={
+                      <NewProjectControl
+                        viewAll
+                        creatableAccounts={creatableAccounts}
+                        activeAccountId={activeAccountId}
+                        canCreateActive={canCreateProjects}
+                        onPick={openCreateModal}
+                        label="Create your first project"
+                      />
+                    }
+                  />
+                </SectionCard>
+              )}
+
+              {showAllNoResults && (
+                <SectionCard flush>
+                  <EmptyState
+                    icon={Search}
+                    size="sm"
+                    title={`No matches for "${query}"`}
+                    description={tHardcodedUi.raw('appProjectsPage.line288JsxAttrDescriptionTryADifferentSearchTerm')}
+                  />
+                </SectionCard>
+              )}
+
+              {!showAllLoading && legacyMachines.length > 0 && (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {legacyMachines.map((machine) => (
+                    <LegacyMachineCard
+                      key={machine.sandbox_id}
+                      machine={machine}
+                      starting={startMigration.isPending && startMigration.variables === machine.sandbox_id}
+                      onMigrate={() => handleMigrate(machine.sandbox_id)}
+                      onOpenProject={(projectId) => router.push(`/projects/${projectId}`)}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {!showAllLoading &&
+                accountGroups.map((group) => (
+                  <section key={group.account.account_id} className="space-y-4">
+                    <div className="flex items-center gap-2.5">
+                      <EntityAvatar label={group.account.name || 'Account'} size="sm" />
+                      <h2 className="text-sm font-semibold tracking-tight text-foreground">
+                        {group.account.name || 'Account'}
+                      </h2>
+                      <span className="text-xs text-muted-foreground">
+                        {group.projects.length}
+                      </span>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {group.projects.map((project) => (
+                        <ProjectCard
+                          key={project.project_id}
+                          project={project}
+                          onOpen={() => {
+                            // Switch the active account so deeper navigation
+                            // (members, settings, billing) follows the project
+                            // you just opened, not the previously-active one.
+                            setSelectedAccountId(group.account.account_id);
+                            router.push(`/projects/${project.project_id}`);
+                          }}
+                          onArchive={() => archiveMutation.mutate(project.project_id)}
+                          archiving={archivingId === project.project_id}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ))}
             </div>
           )}
         </div>
@@ -411,8 +679,11 @@ export default function ProjectsPage() {
 
       <ProjectCreateModal
         open={modalOpen}
-        onOpenChange={setModalOpen}
-        accountId={activeAccountId}
+        onOpenChange={(o) => {
+          setModalOpen(o);
+          if (!o) setCreateAccountId(null);
+        }}
+        accountId={createAccountId ?? activeAccountId}
       />
 
       <PersonalOnboardingWelcome />
