@@ -503,3 +503,36 @@ jobs:
             echo "### Frontend → **prod** (Vercel)"
             echo "Vercel auto-deploys the \`prod\` branch (new.kortix.com → api-prod; kortix.com after apex cutover). No action needed here."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Keep main's VERSION honest (post-publish, never premature) ──────────────
+  # promote.yml does NOT bump main's VERSION (publishing is gated on the prod
+  # merge). After a release publishes, advance main's VERSION to the NEXT dev
+  # target (released patch + 1) so the single source of truth tracks prod: this
+  # is what the Vercel dev frontend, desktop builds, and the API image default
+  # read. `[skip ci]` keeps it from re-triggering the dev pipeline.
+  sync-main-version:
+    name: Sync main VERSION → next dev target
+    needs: [version, github-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Advance main's VERSION to released patch + 1
+        env:
+          RELEASED: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          IFS='.' read -r MA MI PA <<< "$RELEASED"
+          NEXT="${MA}.${MI}.$((PA + 1))"
+          cur="$(tr -d '[:space:]' < VERSION 2>/dev/null || true)"
+          if [ "$cur" = "$NEXT" ]; then echo "main already at $NEXT — nothing to do."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          printf '%s\n' "$NEXT" > VERSION
+          git add VERSION
+          git commit -m "chore(release): main VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
+          git push origin HEAD:main

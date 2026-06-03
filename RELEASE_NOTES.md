@@ -1,3 +1,3 @@
-SOC 2 compliance baseline + gated release flow
+Live-prove auto version-sync
 
-AWS security baseline (CloudTrail KMS, GuardDuty, VPC flow logs, S3 hardening, AWS Backup, WAF, IAM group-based access), Drata compliance-as-code pipeline, and the review-gated production release flow. First release cut through the new PR-gated promote.
+Second release through the gated flow to validate the sync-main-version job end-to-end (main should auto-advance 0.9.16 → 0.9.17 after publish). No app changes beyond the release-flow + version-coherence work.
