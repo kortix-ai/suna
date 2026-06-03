@@ -9,12 +9,11 @@
  */
 
 import { Hono } from 'hono'
-import { resolveProvider } from '../index'
+import { resolveProvider, type ResolvedProvider } from '../provider'
 import { combinedAuth } from '../../middleware/auth'
 import { canAccessPreviewSandbox } from '../../shared/preview-ownership'
 
 const shareApp = new Hono()
-type ResolvedProvider = NonNullable<Awaited<ReturnType<typeof resolveProvider>>>
 
 function buildSandboxShareBaseUrl(resolved: ResolvedProvider): string | null {
   if (resolved.baseUrl) {
