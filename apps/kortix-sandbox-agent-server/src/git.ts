@@ -555,7 +555,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   await configureRepoGitIdentity(cfg, target)
 }
 
-export type RepoInfo = {
+type RepoInfo = {
   path: string
   branch: string | null
   commit: string | null
@@ -575,7 +575,7 @@ export async function readRepoInfo(target: string): Promise<RepoInfo | null> {
   }
 }
 
-export type CommitPushResult = {
+type CommitPushResult = {
   /** A new commit was created from dirty working-tree changes. */
   committed: boolean
   /** New commits were pushed to origin (false when the remote was already up to date). */
