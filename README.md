@@ -140,15 +140,14 @@ dotenvx-armor login                        # grants this machine decryption
 pnpm dev                                   # dev-local.sh decrypts apps/api/.env on boot
 ```
 
-There are three encrypted profiles, one file each (each with its own keypair in `apps/api/.env.keys`):
+There are two encrypted profiles, one file each (each with its own keypair in `apps/api/.env.keys`):
 
 | Profile | File | Used by |
 | --- | --- | --- |
 | local | `apps/api/.env` | `pnpm dev` / `pnpm dev:api` (default) |
 | dev | `apps/api/.env.dev` | `dotenvx run -f apps/api/.env.dev -- …` |
-| prod | `apps/api/.env.prod` | `pnpm dev:prod` (run locally against prod) |
 
-To add or rotate a secret in a profile: `pnpm dlx @dotenvx/dotenvx set KEY value -f apps/api/.env[.dev|.prod]` (re-encrypts in place), then commit. `apps/web` and `supabase` env stay as plain local files — `apps/web/.env` is client-facing (`NEXT_PUBLIC_*`) and `supabase/.env` is read by the Supabase CLI directly.
+Production secrets are **not** kept in the repo — the prod runtime injects them. To add or rotate a secret in a profile: `pnpm dlx @dotenvx/dotenvx set KEY value -f apps/api/.env[.dev]` (re-encrypts in place), then commit. `apps/web` and `supabase` env stay as plain local files — `apps/web/.env` is client-facing (`NEXT_PUBLIC_*`) and `supabase/.env` is read by the Supabase CLI directly.
 
 CI doesn't need any of these today (builds use placeholders, and the `secret-scan` workflow allowlists the encrypted file via `.gitleaks.toml`). If a future job needs real values, add the dotenvx private key as a single `DOTENV_PRIVATE_KEY` GitHub Actions secret and prefix the step with `dotenvx run -- …` — it decrypts `apps/api/.env` in memory, no other secrets required.
 

@@ -17,15 +17,14 @@ pnpm dev          # web + API + Supabase + tunnel
 
 The API's secrets live **encrypted in the repo** with [dotenvx](https://dotenvx.com). Every value in `apps/api/.env` is AES-encrypted (`KEY=encrypted:…`). The **public key** that encrypts them sits in the file and is safe to commit; the **private key** that decrypts them never touches git. So the secrets are safe in version control — only the key is sensitive.
 
-There are three profiles, one file each, every one with its own keypair:
+There are two profiles, one file each, every one with its own keypair:
 
 | Profile | File | Used by |
 | --- | --- | --- |
 | local | `apps/api/.env` | `pnpm dev` |
 | dev | `apps/api/.env.dev` | `dotenvx run -f apps/api/.env.dev -- …` |
-| prod | `apps/api/.env.prod` | `pnpm dev:prod` |
 
-The private keys are held off your machine in [Dotenv Armor](https://dotenvx.com/armor). `pnpm dev` decrypts them **in memory** at boot via `dotenvx run` — nothing plaintext is ever written to disk.
+The private keys are held off your machine in [Dotenv Armor](https://dotenvx.com/armor). `pnpm dev` decrypts them **in memory** at boot via `dotenvx run` — nothing plaintext is ever written to disk. (Production secrets are not kept in the repo; the prod runtime injects them.)
 
 ## First time on a new machine
 
@@ -41,7 +40,7 @@ dotenvx-armor login
 ### Pull the keys from the cloud
 ```sh
 cd apps/api
-for f in .env .env.dev .env.prod; do dotenvx-armor pull -f "$f"; done
+for f in .env .env.dev; do dotenvx-armor pull -f "$f"; done
 ```
 </Step>
 <Step>
@@ -57,9 +56,8 @@ pnpm dev
 | Task | Command |
 | --- | --- |
 | Run locally | `pnpm dev` |
-| Run against prod data | `pnpm dev:prod` |
 | Read a secret | `dotenvx get KEY -f apps/api/.env` |
-| Add / change a secret | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev` / `.env.prod`), then commit |
+| Add / change a secret | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev`), then commit |
 | Share a new/rotated key with the team | `dotenvx-armor push -f <file>` (one file at a time) |
 
 <Callout type="warn">

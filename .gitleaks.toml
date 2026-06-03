@@ -15,5 +15,4 @@ description = "dotenvx-encrypted apps/api profiles (AES ciphertext + non-secret 
 paths = [
   '''apps/api/\.env$''',
   '''apps/api/\.env\.dev$''',
-  '''apps/api/\.env\.prod$''',
 ]

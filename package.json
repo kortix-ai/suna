@@ -3,7 +3,6 @@
   "private": true,
   "scripts": {
     "dev": "bash scripts/dev-local.sh",
-    "dev:prod": "bash scripts/dev-prod.sh",
     "dev:web": "pnpm --filter Kortix-Computer-Frontend dev",
     "dev:frontend": "pnpm --filter Kortix-Computer-Frontend dev",
     "dev:mobile": "pnpm --filter ./apps/mobile dev",
