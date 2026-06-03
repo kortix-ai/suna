@@ -6,9 +6,8 @@
 #
 # This is the SAME module set prod uses (../prod) — dev just runs smaller
 # numbers + Fargate Spot. App code still ships via CI; Terraform owns the infra.
-# Nothing here is applied automatically. See README.md for the Lightsail→ECS
-# cutover plan. (The legacy Lightsail box lives in modules/api-host, no longer
-# referenced here.)
+# Nothing here is applied automatically. CI builds images and rolls the ECS
+# service; Terraform owns the surrounding infrastructure.
 
 terraform {
   required_version = ">= 1.5"

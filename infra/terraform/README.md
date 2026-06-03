@@ -6,21 +6,20 @@ separate root module under `environments/` with its own state.
 ```
 infra/terraform/
   modules/
-    api-host/          # reusable: a Lightsail box that serves the kortix-api
+    acm-cloudflare/    # ACM certs validated through Cloudflare DNS
+    cloudflare-dns/    # Cloudflare DNS records
+    ecs-api/           # ECS Fargate API service + ALB + autoscaling
+    network/           # VPC, subnets, NAT, and security groups
   environments/
-    dev/               # dev-api.kortix.com  (Lightsail kortix-dev, us-west-2)
-    prod/              # prod (api.kortix.com) — added after dev is proven
+    dev/               # dev-api.kortix.com
+    prod/              # api.kortix.com
 ```
 
-## Why Lightsail (today) → ECS (later)
+## Runtime Model
 
-The dev + prod APIs currently run as Docker containers on AWS **Lightsail**
-instances behind nginx (blue/green on ports 8008/8009), deployed over SSH by
-`.github/workflows/deploy-dev.yml` / `release.yml`. This Terraform **adopts the
-existing live boxes** (via `terraform import`) so the infra is reproducible and
-the nginx/keepalive config can't be lost on a rebuild — it does NOT recreate
-them. The longer-term SOC2 target (autoscaling, no OS to patch) is ECS Fargate
-+ ALB; that migration is a separate environment module added once dev is stable.
+The API environments are ECS Fargate services behind ALBs. Terraform owns the
+network, certificates, load balancers, ECS services, autoscaling, and optional
+Cloudflare DNS records. CI owns image builds and service rolls.
 
 ## State
 
@@ -38,24 +37,9 @@ terraform plan      # should show NO changes against the live box
 terraform apply     # only after a clean plan
 ```
 
-## Importing the existing dev box (one-time)
-
-Already-running resources are adopted, never recreated:
-
-```bash
-cd infra/terraform/environments/dev
-bash import.sh      # imports the Lightsail instance, static IP, attachment, ports
-terraform plan      # confirm parity (empty/near-empty diff)
-```
-
 ## What is NOT in Terraform (yet)
 
-- **Cloudflare DNS** (`dev-api.kortix.com` → box IP, orange-cloud) — needs a
-  `CLOUDFLARE_API_TOKEN`; wired as an optional module, disabled until the token
-  is provided as `TF_VAR_cloudflare_api_token`.
 - **The Vercel frontend** (dev.kortix.com) — managed by Vercel's own GitHub
   integration, not Terraform.
-- **In-box provisioning** (nginx config, Docker, deploy scripts) — currently
-  applied via `cloud-init`/user-data is NOT retroactively settable on a running
-  Lightsail box; the canonical nginx config is committed at
-  `modules/api-host/files/nginx-kortix-api.conf` so a rebuild restores it.
+- **Application secrets** — store them in AWS Secrets Manager or SSM and pass
+  ARNs through each environment's `api_secrets` map.
