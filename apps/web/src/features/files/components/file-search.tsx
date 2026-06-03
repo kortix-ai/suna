@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Search, FileText, Folder, X } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { useFileSearch } from '../hooks/use-file-search';
+import { useFileSearch } from '../hooks';
 import { useFilesStore } from '../store/files-store';
 import { cn } from '@/lib/utils';
 

@@ -7,7 +7,7 @@ import { readFileAsBlob } from '../api/opencode-files';
 
 // ── Query keys ─────────────────────────────────────────────────────────────
 
-const binaryBlobKeys = {
+export const binaryBlobKeys = {
   all: ['opencode-files', 'binary-blob'] as const,
   file: (serverUrl: string, serverVersion: number, filePath: string) =>
     ['opencode-files', 'binary-blob', serverUrl, serverVersion, filePath] as const,

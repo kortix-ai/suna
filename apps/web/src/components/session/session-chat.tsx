@@ -3,7 +3,9 @@
 import { useTranslations } from 'next-intl';
 import {
   ArrowDown,
+  ArrowUp,
   AlertTriangle,
+  ArrowUpLeft,
   Brain,
   Check,
   CheckCircle,
@@ -11,25 +13,31 @@ import {
   ChevronRight,
   Globe,
   Search,
+  ChevronUp,
   Copy,
+  Cpu,
   ExternalLink,
   FileText,
   GitFork,
   Image as ImageIcon,
   Layers,
+  ListPlus,
   Loader2,
   MessageSquare,
   Pencil,
   Reply,
   Scissors,
+  Send,
   Terminal,
   Timer,
+  X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { SandboxImage } from '@/components/session/sandbox-image';
 
+import { ConnectProviderDialog } from '@/components/session/model-selector';
 import {
   type AttachedFile,
   SessionChatInput,
@@ -89,6 +97,7 @@ import {
 } from '@/hooks/opencode/use-opencode-local';
 import type {
   PromptPart,
+  ProviderListResponse,
 } from '@/hooks/opencode/use-opencode-sessions';
 import {
   ascendingId,
@@ -120,6 +129,7 @@ import {
 import { SubSessionModal } from '@/components/session/sub-session-modal';
 import { ChatMinimap } from '@/components/session/chat-minimap';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
+import { toast as sonnerToast } from 'sonner';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { usePendingFilesStore } from '@/stores/pending-files-store';
@@ -157,6 +167,7 @@ import {
   getTurnStatus,
   getWorkingState,
   groupMessagesIntoTurns,
+  hasDiffs,
   isAgentPart,
   isAttachment,
   isCompactionPart,
@@ -164,20 +175,26 @@ import {
   isLastUserMessage,
   isPatchPart,
   isReasoningPart,
+  isShellMode,
   isSnapshotPart,
   isTextPart,
   isToolPart,
   isToolPartHidden,
   type MessageWithParts,
   type Part,
+  type PartWithMessage,
+  type PatchPart,
   type PermissionRequest,
   type QuestionRequest,
   type ReasoningPart,
+  type RetryInfo,
+  type SnapshotPart,
   shouldShowToolPart,
   splitUserParts,
   type TextPart,
   type ToolPart,
   type Turn,
+  type TurnCostInfo,
 } from '@/ui';
 
 // ============================================================================
@@ -1256,6 +1273,57 @@ function SystemNotificationCard({
 
 /** True when a turn's user message contains only system notification XML
  *  with no real user-authored text. */
+function isNotificationOnlyMessage(parts: Part[]): boolean {
+  if (parts.length === 0) return false;
+  const textParts = parts.filter(
+    (p) =>
+      isTextPart(p) &&
+      !(p as TextPart).synthetic &&
+      !(p as any).ignored,
+  ) as TextPart[];
+  if (textParts.length === 0) return false;
+  const raw = textParts.map((p) => p.text || '').join('\n');
+  const { cleanText, notifications } = parseSystemNotifications(
+    stripKortixSystemTags(raw),
+  );
+  return notifications.length > 0 && !cleanText.trim();
+}
+
+// ============================================================================
+// NotificationTurn — lightweight turn for system notification messages
+// ============================================================================
+
+/** Renders notification-only turns (PTY exits, agent completions, etc.)
+ *  inline with the conversation flow, styled like tool-call cards. */
+function NotificationTurn({ turn }: { turn: Turn }) {
+  const rawText = useMemo(() => {
+    return turn.userMessage.parts
+      .filter(
+        (p) =>
+          isTextPart(p) &&
+          !(p as TextPart).synthetic &&
+          !(p as any).ignored,
+      )
+      .map((p) => (p as TextPart).text || '')
+      .join('\n');
+  }, [turn.userMessage.parts]);
+
+  const { notifications } = useMemo(
+    () => parseSystemNotifications(stripKortixSystemTags(rawText)),
+    [rawText],
+  );
+
+  if (notifications.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1.5 w-full">
+      {notifications.map((n, i) => (
+        <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
+      ))}
+    </div>
+  );
+}
+
 // ============================================================================
 // Edit Part Dialog — inline editing for text parts
 // ============================================================================
@@ -1379,11 +1447,15 @@ function ConfirmForkDialog({
 
 function PartActions({
   part,
+  isBusy,
   onEditFork,
+  loading,
   className,
 }: {
   part: Part;
+  isBusy: boolean;
   onEditFork: (newText: string) => void;
+  loading?: boolean;
   className?: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -1424,6 +1496,7 @@ function PartActions({
           onEditFork(newText);
           setEditOpen(false);
         }}
+        loading={loading}
       />
     </>
   );
@@ -1591,11 +1664,11 @@ function UserMessageRow({
     () => parseProjectReferences(textAfterFiles),
     [textAfterFiles],
   );
-  const { cleanText: textAfterFileMentions } = useMemo(
+  const { cleanText: textAfterFileMentions, files: fileMentionRefs } = useMemo(
     () => parseFileMentionReferences(textAfterProjects),
     [textAfterProjects],
   );
-  const { cleanText: textAfterAgentMentions } = useMemo(
+  const { cleanText: textAfterAgentMentions, agents: agentMentionRefs } = useMemo(
     () => parseAgentMentionReferences(textAfterFileMentions),
     [textAfterFileMentions],
   );
@@ -1613,6 +1686,11 @@ function UserMessageRow({
     () => parseSystemNotifications(textAfterSessions),
     [textAfterSessions],
   );
+  // Silence unused-variable warnings — these parsed refs are currently only
+  // consumed as stripping side-effects.
+  void fileMentionRefs;
+  void agentMentionRefs;
+
   // Resolve effective command info: use runtime-tracked info or fall back to template matching
   const effectiveCommandInfo = useMemo(
     () => commandInfo ?? detectCommandFromText(rawText, commands),
@@ -1685,6 +1763,7 @@ function UserMessageRow({
 
   const [expanded, setExpanded] = useState(false);
   const [canExpand, setCanExpand] = useState(false);
+  const [copied, setCopied] = useState(false);
   const textRef = useRef<HTMLDivElement>(null);
 
   // Use ResizeObserver + rAF to reliably detect overflow after layout settles
@@ -1708,6 +1787,13 @@ function UserMessageRow({
       ro.disconnect();
     };
   }, [text, expanded]);
+
+  const handleCopy = async () => {
+    if (!text) return;
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   // Build highlighted text segments
   const segments = useMemo(() => {
@@ -2202,6 +2288,9 @@ function ThrottledMarkdown({
   return <UnifiedMarkdown content={displayContent} isStreaming={isStreaming} />;
 }
 
+/**
+ * @deprecated Use `ActivityCard`. Kept only to avoid ripple edits elsewhere.
+ */
 function GroupedReasoningCard({
   parts,
   isStreaming,
@@ -2210,20 +2299,67 @@ function GroupedReasoningCard({
   isStreaming: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [streamSeconds, setStreamSeconds] = useState(0);
 
+  // Determine if the last part is still streaming
   const lastPart = parts[parts.length - 1];
   const lastEnd = (lastPart as any).time?.end;
   const reasoningStreaming =
     isStreaming && !(typeof lastEnd === 'number' && lastEnd > 0);
 
+  // Find the earliest start across all parts for the live timer
+  const earliestStart = useMemo(() => {
+    let earliest: number | undefined;
+    for (const p of parts) {
+      const s = (p as any).time?.start;
+      if (typeof s === 'number' && (earliest === undefined || s < earliest))
+        earliest = s;
+    }
+    return earliest;
+  }, [parts]);
+
+  useEffect(() => {
+    if (!reasoningStreaming || typeof earliestStart !== 'number') {
+      setStreamSeconds(0);
+      return;
+    }
+    const update = () =>
+      setStreamSeconds(
+        Math.max(0, Math.round((Date.now() - earliestStart) / 1000)),
+      );
+    update();
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
+  }, [reasoningStreaming, earliestStart]);
+
+  // Aggregate total duration from all completed parts
+  const totalDuration = useMemo(() => {
+    let total = 0;
+    let any = false;
+    for (const p of parts) {
+      const s = (p as any).time?.start;
+      const e = (p as any).time?.end;
+      if (typeof s === 'number' && typeof e === 'number' && e > s) {
+        total += e - s;
+        any = true;
+      }
+    }
+    return any ? total : undefined;
+  }, [parts]);
+
+  // Build a one-line preview from the first reasoning block
   const preview = useMemo(() => {
     for (const p of parts) {
-      const text = p.text?.trim();
-      if (!text) continue;
-      const boldMatch = text.match(/\*\*(.+?)\*\*/);
-      if (boldMatch) return boldMatch[1];
-      const firstLine = text.split('\n')[0].replace(/^#+\s*/, '');
-      return firstLine.length > 80 ? `${firstLine.slice(0, 77)}...` : firstLine;
+      const t = p.text?.trim();
+      if (t) {
+        // Extract the first bold heading or first sentence
+        const boldMatch = t.match(/\*\*(.+?)\*\*/);
+        if (boldMatch) return boldMatch[1];
+        const firstLine = t.split('\n')[0].replace(/^#+\s*/, '');
+        return firstLine.length > 80
+          ? firstLine.slice(0, 77) + '...'
+          : firstLine;
+      }
     }
     return '';
   }, [parts]);
@@ -2252,6 +2388,7 @@ function GroupedReasoningCard({
               reasoningStreaming && 'animate-pulse-heartbeat',
             )}
           />
+
           <span className="min-w-0 flex-1 truncate">
             {preview || 'Thinking'}
           </span>
@@ -2271,9 +2408,9 @@ function GroupedReasoningCard({
       <CollapsibleContent>
         <div className="ml-[18px] mt-0.5 mb-1.5 pl-3 border-l border-border/30">
           <div className="space-y-2 text-muted-foreground/50 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-xs [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-xs [&_.kortix-markdown_li]:!leading-[1.5] [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60">
-            {nonEmptyParts.map((part, index) => (
-              <div key={part.id ?? index}>
-                <ThrottledMarkdown content={part.text!} isStreaming={false} />
+            {nonEmptyParts.map((p, i) => (
+              <div key={p.id ?? i}>
+                <ThrottledMarkdown content={p.text!} isStreaming={false} />
               </div>
             ))}
           </div>
@@ -2283,6 +2420,27 @@ function GroupedReasoningCard({
   );
 }
 
+/**
+ * Unified "activity" card that collapses any run of agent-side work —
+ * reasoning + tool calls, in original order — into a single compact shelf.
+ * Text parts (and other user-facing dividers) break the run.
+ *
+ * Auto-opens while anything is still streaming/running; collapses once the
+ * burst settles. Respects manual user toggles thereafter.
+ */
+/**
+ * Folded Tier-1 "exploration" card.
+ *
+ * Holds a run of reasoning + Tier-1 tool calls and renders:
+ *   • Collapsed: `<icon> <verb> <N noun> · <current/last primary arg>   <timer>`
+ *     Verb comes from the run's categories (e.g. "Searched", "Read",
+ *     "Explored"), not a generic "N actions".
+ *   • Expanded:  reasoning blocks + compact per-tool rows (each row is the
+ *     existing ToolPartRenderer, which itself is expandable for full output).
+ *
+ * Auto-opens while anything is streaming; collapses once settled. Respects
+ * manual user toggles after the first click.
+ */
 /**
  * Same-tool group: collapses 2+ consecutive calls of the same tool into
  * one collapsible row. Header: "Read · 5 files · 3s". Expanded: flat
@@ -2485,6 +2643,8 @@ interface SessionTurnProps {
   permissions: PermissionRequest[];
   questions: QuestionRequest[];
   agentNames?: string[];
+  /** Whether this is the first turn in the session */
+  isFirstTurn: boolean;
   /** Whether the session is busy */
   isBusy: boolean;
   /** Whether this turn contains a compaction */
@@ -2493,6 +2653,8 @@ interface SessionTurnProps {
   onFork: (userMessageId: string) => Promise<void>;
   /** Fork the session at a user message and prefill with edited text */
   onEditFork: (userMessageId: string, newText: string) => Promise<void>;
+  /** Providers data for the Connect Provider dialog */
+  providers?: ProviderListResponse;
   /** Map of user message IDs to command info for rendering command pills */
   commandMessages?: Map<string, { name: string; args?: string }>;
   /** Available commands for template prefix matching (page refresh detection) */
@@ -2514,10 +2676,12 @@ function SessionTurn({
   permissions,
   questions,
   agentNames,
+  isFirstTurn,
   isBusy,
   isCompaction,
   onFork,
   onEditFork,
+  providers,
   commandMessages,
   commands,
   disableToolNavigation,
@@ -2526,6 +2690,8 @@ function SessionTurn({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [copied, setCopied] = useState(false);
   const [userCopied, setUserCopied] = useState(false);
+  const [connectProviderOpen, setConnectProviderOpen] = useState(false);
+  const [editForkLoading, setEditForkLoading] = useState(false);
 
   // Derived state from shared helpers
   const allParts = useMemo(() => collectTurnParts(turn), [turn]);
@@ -2827,6 +2993,11 @@ function SessionTurn({
     }
     return result;
   }, [questions, sessionId, turn.assistantMessages]);
+  const answeredQuestionIds = useMemo(
+    () => new Set(answeredQuestionParts.map(({ part }) => part.id)),
+    [answeredQuestionParts],
+  );
+
   // Inline content parts — interleaves text and answered question parts in natural order.
   // When a turn contains answered questions, we need to render text and questions
   // in their original order rather than extracting the last text as a separate "response".
@@ -3045,6 +3216,11 @@ function SessionTurn({
         {turnError && (
           <TurnErrorDisplay errorText={turnError} className="mt-2" />
         )}
+        <ConnectProviderDialog
+          open={connectProviderOpen}
+          onOpenChange={setConnectProviderOpen}
+          providers={providers}
+        />
       </div>
     );
   }
@@ -3197,9 +3373,11 @@ function SessionTurn({
                 return (
                   <PartActions
                     part={userTextPart}
+                    isBusy={isBusy}
                     onEditFork={(newText) =>
                       onEditFork(turn.userMessage.info.id, newText)
                     }
+                    loading={editForkLoading}
                   />
                 );
               })()}
@@ -3694,6 +3872,12 @@ function SessionTurn({
           </Tooltip>
         </div>
       )}
+
+      <ConnectProviderDialog
+        open={connectProviderOpen}
+        onOpenChange={setConnectProviderOpen}
+        providers={providers}
+      />
     </div>
   );
 }
@@ -3726,8 +3910,8 @@ export function SessionChat({
   const onboardingSessionId = useOnboardingModeStore((s) => s.sessionId);
   const disableToolNavigation =
     onboardingActive && onboardingSessionId === sessionId;
-  // When multiple session chats are mounted at once, only the visible tab may
-  // be treated as "active" — otherwise every busy
+  // Every open session tab is pre-mounted at once (see layout-content.tsx), so
+  // only the visible tab may be treated as "active" — otherwise every busy
   // session would react to global shortcuts (ESC-to-stop, auto question
   // handling) at the same time. The standalone project session route
   // (/projects/[id]/sessions/[sessionId]) mounts a single SessionChat whose id
@@ -3852,8 +4036,10 @@ export function SessionChat({
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
-  const { messages: syncMessages } = useSessionSync(sessionId);
+  const { messages: syncMessages, isLoading: syncMessagesLoading } =
+    useSessionSync(sessionId);
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
+  const messagesLoading = syncMessagesLoading;
   // Scope agents to the session's directory so project-local agents
   // (.opencode/agent/*.md under the project folder) are returned alongside
   // the globals. First render has no session yet — fall back to globals.
@@ -3906,6 +4092,10 @@ export function SessionChat({
   const [confirmForkMessageId, setConfirmForkMessageId] = useState<
     string | null
   >(null);
+  const [pendingCommand, setPendingCommand] = useState<{
+    name: string;
+    description?: string;
+  } | null>(null);
   const [commandError, setCommandError] = useState<string | null>(null);
   // Map of user message IDs → command info, so UserMessageRow can render
   // a compact command pill instead of the raw expanded template text.
@@ -3989,6 +4179,11 @@ export function SessionChat({
       const pendingPrompt = sessionStorage.getItem(
         `opencode_pending_prompt:${sessionId}`,
       );
+      console.log('[session-chat] pending prompt check', {
+        sessionId,
+        hasPending: !!pendingPrompt,
+        attempt,
+      });
       if (!pendingPrompt) {
         // Retry up to 5 times with 50ms delay to handle race condition
         if (attempt < 5) {
@@ -4034,8 +4229,10 @@ export function SessionChat({
         // ignore
       }
 
-      // Send the message through promptAsync; SSE drives the incremental UI
-      // updates and the error path hydrates the server-persisted messages.
+      // Send the message with retry. The useSendOpenCodeMessage hook already
+      // retries 3 times internally for transient errors. We add one additional
+      // outer retry (2 attempts total at this level) to cover cases where the
+      // SDK client itself fails to initialize or the server takes longer to start.
       const sendOpts =
         Object.keys(options).length > 0 ? (options as any) : undefined;
       const messageID = ascendingId('msg');
@@ -4102,6 +4299,11 @@ export function SessionChat({
       const pendingFiles = usePendingFilesStore
         .getState()
         .consumePendingFiles();
+
+      console.log('[session-chat] sending promptAsync for pending prompt', {
+        sessionId,
+        pendingFileCount: pendingFiles.length,
+      });
 
       // Upload local files and build the parts array (text + file refs)
       const sendPendingPrompt = async () => {
@@ -4174,6 +4376,12 @@ export function SessionChat({
           } as any),
         )
         .then((res: any) => {
+          console.log('[session-chat] promptAsync resolved', {
+            sessionId,
+            status: res?.response?.status,
+            hasError: !!res?.error,
+            res,
+          });
           // The SDK resolves (not rejects) on HTTP errors, returning
           // { error: ... } instead of throwing. Handle this case so
           // the UI doesn't stay stuck on "busy" forever.
@@ -4495,12 +4703,14 @@ export function SessionChat({
     if (hasPendingMessage) {
       setPendingUserMessage(null);
       setPendingUserMessageId(null);
+      setPendingCommand(null);
       return;
     }
     const len = messages?.length || 0;
     if (len > prevMsgLenRef.current) {
       setPendingUserMessage(null);
       setPendingUserMessageId(null);
+      setPendingCommand(null);
     }
   }, [messages, messages?.length, pendingUserMessage, pendingUserMessageId]);
 
@@ -4536,6 +4746,9 @@ export function SessionChat({
     spacerElRef,
     showScrollButton,
     scrollToBottom,
+    scrollToLastTurn,
+    scrollToEnd,
+    scrollToAbsoluteBottom,
     smoothScrollToAbsoluteBottom,
   } = useAutoScroll({
     working: isBusy && !hasActiveQuestion,
@@ -4879,6 +5092,7 @@ export function SessionChat({
     setPollingActive(false);
     setPendingUserMessage(null);
     setPendingUserMessageId(null);
+    setPendingCommand(null);
     setPendingSendInFlight(false);
     setPendingSendMessageId(null);
     setIsRetrying(false);
@@ -5412,8 +5626,12 @@ export function SessionChat({
   const handleStop = useCallback(() => {
     // Guard against rapid clicks — ignore if an abort is already in flight
     if (abortSession.isPending) {
+      console.log(
+        `[handleStop] Ignoring - abort already in flight for session ${sessionId}`,
+      );
       return;
     }
+    console.log(`[handleStop] Stopping session ${sessionId}`);
     // Optimistically mark the session idle so the UI updates immediately
     // (stop button hides, input re-enables) without waiting for the SSE
     // round-trip. Also clear the busy debounce timer to bypass the 2s delay.
@@ -5468,8 +5686,9 @@ export function SessionChat({
   }, [isActiveSessionTab, clearEscHint]);
 
   useEffect(() => {
-    // CRITICAL: when open session tabs are pre-mounted simultaneously, every
-    // mounted SessionChat would otherwise receive the same window keydown event and
+    // CRITICAL: all open session tabs are pre-mounted simultaneously by
+    // SessionTabsContainer (see layout-content.tsx), so every mounted
+    // SessionChat would otherwise receive the same window keydown event and
     // each busy session would independently advance its ESC counter and
     // abort itself on triple-ESC. Only the visible (active) session tab may
     // handle ESC — and never in read-only viewers (e.g. the sub-session
@@ -5554,6 +5773,7 @@ export function SessionChat({
         ? formatModelString(local.model.currentKey)
         : undefined;
       const handleCommandError = (err?: unknown) => {
+        setPendingCommand(null);
         setPendingUserMessage(null);
         setPendingUserMessageId(null);
         setPollingActive(false);
@@ -5562,6 +5782,10 @@ export function SessionChat({
         setCommandError(formatCommandError(err));
       };
 
+      setPendingCommand({
+        name: cmd.name,
+        description: args || cmd.description,
+      });
       pendingCommandStashRef.current = {
         name: cmd.name,
         args: args || cmd.description,
@@ -5917,12 +6141,14 @@ export function SessionChat({
                         permissions={pendingPermissions}
                         questions={pendingQuestions}
                         agentNames={agentNames}
+                        isFirstTurn={turnIndex === 0}
                         isBusy={isBusy}
                         isCompaction={hasCompaction}
                         onFork={async (userMessageId) => {
                           setConfirmForkMessageId(userMessageId);
                         }}
                         onEditFork={handleEditFork}
+                        providers={providers}
                         commandMessages={commandMessagesRef.current}
                         commands={commands}
                         disableToolNavigation={disableToolNavigation}

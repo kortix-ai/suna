@@ -21,7 +21,7 @@ export interface FileContent {
   mimeType?: string;
 }
 
-interface FilePatch {
+export interface FilePatch {
   oldFileName: string;
   newFileName: string;
   oldHeader?: string;
@@ -30,7 +30,7 @@ interface FilePatch {
   index?: string;
 }
 
-interface FilePatchHunk {
+export interface FilePatchHunk {
   oldStart: number;
   oldLines: number;
   newStart: number;
@@ -44,6 +44,15 @@ export interface GitFileStatus {
   added: number;
   removed: number;
   status: 'added' | 'deleted' | 'modified';
+}
+
+/** GET /find?pattern=<pat> response item */
+export interface FindMatch {
+  path: string;
+  lines: string;
+  line_number: number;
+  absolute_offset: number;
+  submatches: Array<{ start: number; end: number }>;
 }
 
 // ---------------------------------------------------------------------------
@@ -98,6 +107,21 @@ export interface FileCommitDiff {
   deletions: number;
   /** Change type */
   status: 'added' | 'modified' | 'deleted' | 'renamed';
+}
+
+/** LSS semantic search hit (from /lss/search endpoint) */
+export interface LssHit {
+  file_path: string;
+  score: number;
+  snippet: string;
+  rank_stage?: string;
+  indexed_at?: number;
+}
+
+/** LSS search response item (one per query) */
+export interface LssSearchResult {
+  query: string;
+  hits: LssHit[];
 }
 
 /** GET /project/current response */

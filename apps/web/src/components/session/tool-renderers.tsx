@@ -13,6 +13,7 @@ import {
   Check,
   CheckCircle,
   Circle,
+  CheckSquare,
   Clock,
   ChevronDown,
   ChevronRight,
@@ -62,6 +63,7 @@ import React, {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -78,6 +80,7 @@ import { TextShimmer } from '@/components/ui/text-shimmer';
 import {
   Tooltip,
   TooltipContent,
+  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
@@ -100,6 +103,7 @@ import {
   parseLocalhostUrl,
 } from '@/lib/utils/sandbox-url';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useServerStore } from '@/stores/server-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
 import {
@@ -129,17 +133,24 @@ import {
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
 
 import {
+  type ApplyPatchFile,
+  computeStatusFromPart,
   type Diagnostic,
   getChildSessionId,
   getChildSessionToolParts,
   getDiagnostics,
   getDirectory,
   getFilename,
+  getPermissionForTool,
   getToolInfo,
+  isToolPart,
+  type MessageWithParts,
   PERMISSION_LABELS,
   type PermissionRequest,
   type QuestionRequest,
+  shouldShowToolPart,
   stripAnsi,
+  type ToolInfo,
   type ToolPart,
   type TriggerTitle,
 } from '@/ui';
@@ -484,7 +495,7 @@ type ToolComponent = ComponentType<ToolProps>;
 
 const registry = new Map<string, ToolComponent>();
 
-const ToolRegistry = {
+export const ToolRegistry = {
   register(name: string, component: ToolComponent) {
     registry.set(name, component);
   },
@@ -686,6 +697,28 @@ function getAgentCardLabel(input: Record<string, unknown>): string {
   if (agentId) return `Agent ${agentId}`;
 
   return 'Worker task';
+}
+
+// ============================================================================
+// StatusIcon
+// ============================================================================
+
+function StatusIcon({ status }: { status: string }) {
+  switch (status) {
+    case 'completed':
+      return <Check className={cn('size-3 flex-shrink-0', STATUS_TEXT.success)} />;
+    case 'error':
+      return (
+        <CircleAlert className="size-3 text-muted-foreground flex-shrink-0" />
+      );
+    case 'running':
+    case 'pending':
+      return (
+        <Loader2 className="size-3 animate-spin text-muted-foreground flex-shrink-0" />
+      );
+    default:
+      return null;
+  }
 }
 
 // ============================================================================
@@ -989,7 +1022,7 @@ export const ToolActivateContext = createContext<((callID: string) => void) | nu
 /** Per-part zero-arg activate, bound to the part's callID by ToolPartRenderer. */
 const BoundActivateContext = createContext<(() => void) | null>(null);
 
-function BasicTool({
+export function BasicTool({
   icon,
   trigger,
   children,
@@ -1433,6 +1466,28 @@ function DiagnosticsDisplay({
         );
       })}
     </div>
+  );
+}
+
+// ============================================================================
+// DiffChanges
+// ============================================================================
+
+function DiffChanges({
+  additions,
+  deletions,
+}: {
+  additions: number;
+  deletions: number;
+}) {
+  if (additions === 0 && deletions === 0) return null;
+
+  return (
+    <DiffStat
+      additions={additions}
+      deletions={deletions}
+      className="text-xs ml-auto whitespace-nowrap"
+    />
   );
 }
 
@@ -2343,6 +2398,7 @@ function BashTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const hasOutput =
     !!sessionMeta || !!sessionMessages || !!structuredSections || !!plainOutput;
 
+  const isStreaming = status === 'pending' && running;
   const isWaiting = !command && running;
   const isStalePending =
     !command && !running && (status === 'pending' || status === 'running');
@@ -2409,6 +2465,7 @@ ToolRegistry.register('bash', BashTool);
 function PtySpawnTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
+  const status = partStatus(part);
 
   const parsed = useMemo(() => {
     const match = output.match(/<pty_spawned>([\s\S]*?)<\/pty_spawned>/);
@@ -2581,6 +2638,7 @@ ToolRegistry.register('pty_read', PtyReadTool);
 function PtyWriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
+  const output = partOutput(part);
   const ptyInput = (input.input as string) || (input.text as string) || '';
   const ptyId = (input.id as string) || (input.pty_id as string) || '';
 
@@ -2610,6 +2668,7 @@ ToolRegistry.register('pty_input', PtyWriteTool);
 function PtyKillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
+  const status = partStatus(part);
   const ptyId = (input.id as string) || (input.pty_id as string) || '';
 
   const cleanOutput = useMemo(() => {
@@ -2657,6 +2716,8 @@ function EditTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const directory = filePath ? getDirectory(filePath) : undefined;
   const diagnostics = getToolDiagnostics(part, filePath);
 
+  const additions = (filediff?.additions as number) ?? 0;
+  const deletions = (filediff?.deletions as number) ?? 0;
   const before =
     (filediff?.before as string) ??
     (input.oldString as string) ??
@@ -2723,6 +2784,7 @@ function WriteTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const streamingInput = partStreamingInput(part);
+  const metadata = partMetadata(part);
   const status = partStatus(part);
   const running = useContext(ToolRunningContext);
   const filePath =
@@ -3354,7 +3416,7 @@ function GlobTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   const status = partStatus(part);
   const { enabled: navigationEnabled } = useToolNavigation();
-  const { openFileWithList, toDisplayPath } = useOcFileOpen();
+  const { openFile, openFileWithList, toDisplayPath } = useOcFileOpen();
   const directory =
     getDirectory((input.path as string) || (streamingInput.path as string)) ||
     undefined;
@@ -3482,7 +3544,7 @@ function ListTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const output = partOutput(part);
   const status = partStatus(part);
   const { enabled: navigationEnabled } = useToolNavigation();
-  const { openFileWithList, toDisplayPath } = useOcFileOpen();
+  const { openFile, openFileWithList, toDisplayPath } = useOcFileOpen();
   const directory =
     getDirectory(input.path as string) || (input.path as string) || undefined;
 
@@ -4412,6 +4474,7 @@ function ImageGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
+  const status = partStatus(part);
   const prompt = input.prompt as string | undefined;
   const action = input.action as string | undefined;
 
@@ -4537,6 +4600,7 @@ ToolRegistry.register('image-gen', ImageGenTool);
 function VideoGenTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
+  const status = partStatus(part);
   const prompt = input.prompt as string | undefined;
 
   return (
@@ -4601,6 +4665,7 @@ function PresentationGenTool({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const output = partOutput(part);
+  const status = partStatus(part);
   const running = useContext(ToolRunningContext);
   const action = input.action as string | undefined;
   const presentationName = input.presentation_name as string | undefined;
@@ -5349,6 +5414,55 @@ function ContextInfoTool({ part }: ToolProps) {
 }
 ToolRegistry.register('context_info', ContextInfoTool);
 
+function RemovedIntegrationTool({
+  part,
+  defaultOpen,
+  forceOpen,
+  locked,
+}: ToolProps) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const output = partOutput(part);
+
+  return (
+    <BasicTool
+      icon={<Plug className="size-3.5 flex-shrink-0" />}
+      trigger={
+        <div className="flex items-center gap-1.5 min-w-0 flex-1">
+          <span className="font-medium text-xs text-foreground whitespace-nowrap">
+            {tHardcodedUi.raw('componentsSessionToolRenderers.line5270JsxTextLegacyIntegrationTool')}</span>
+          <span className="text-xs text-muted-foreground/60 font-medium whitespace-nowrap ml-auto">
+            removed
+          </span>
+        </div>
+      }
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      <div className="px-3 py-2.5 space-y-2">
+        <p className="text-xs text-muted-foreground leading-relaxed">
+          {tHardcodedUi.raw('componentsSessionToolRenderers.line5283JsxTextThisLegacyIntegrationToolSurfaceHasBeenRemoved')}</p>
+        {output ? (
+          <ToolOutputFallback
+            output={output}
+            isStreaming={partStatus(part) === 'running'}
+            toolName="legacy-integration"
+          />
+        ) : null}
+      </div>
+    </BasicTool>
+  );
+}
+[
+  'integration-list',
+  'integration-connect',
+  'integration-search',
+  'integration-actions',
+  'integration-run',
+  'integration-request',
+  'integration-exec',
+].forEach((toolName) => ToolRegistry.register(toolName, RemovedIntegrationTool));
+
 // ============================================================================
 // TaskTool — Sub-agent delegation
 // ============================================================================
@@ -5382,7 +5496,7 @@ function SubAgentActivity({
   );
 }
 
-function TaskTool({ part }: ToolProps) {
+function TaskTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
 
@@ -5466,7 +5580,7 @@ ToolRegistry.register('task', TaskTool);
 // step count badge, SubSessionModal on click.
 // ============================================================================
 
-function SessionSpawnTool({ part }: ToolProps) {
+function SessionSpawnTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
 
@@ -5559,6 +5673,7 @@ ToolRegistry.register('oc-session-start-background', SessionSpawnTool);
 function SessionReadTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const input = partInput(part);
   const output = partOutput(part);
+  const status = partStatus(part);
   const sessionId = (input.session_id as string) || '';
   const mode = (input.mode as string) || 'summary';
   const pattern = (input.pattern as string) || '';
@@ -5670,6 +5785,7 @@ function SessionGetTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
 	const input = partInput(part);
 	const output = partOutput(part);
+	const status = partStatus(part);
 	const sid = (input.session_id as string) || "";
 
 	// Parse the structured output
@@ -6025,6 +6141,7 @@ ToolRegistry.register('oc-session-search', SessionSearchTool);
 
 function SessionMessageTool({ part }: ToolProps) {
   const input = partInput(part);
+  const output = partOutput(part);
   const status = partStatus(part);
   const sessionId = (input.session_id as string) || '';
   const message = (input.message as string) || '';
@@ -6315,7 +6432,7 @@ function extractWorkerPreview(cleaned: string): string | null {
   return first.length > 120 ? first.slice(0, 120).trim() + '…' : first;
 }
 
-function AgentSpawnTool({ part, forceOpen: _forceOpen }: ToolProps) {
+function AgentSpawnTool({ part, forceOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const surface = useContext(ToolSurfaceContext);
   const input = partInput(part);
@@ -6585,6 +6702,7 @@ function AgentMessageTool({ part }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const input = partInput(part);
   const status = partStatus(part);
+  const output = partOutput(part);
   const rawMessage = (input.message as string) || '';
   const taskId = (input.id as string) || (input.agent_id as string) || '';
   const isRunning = status === 'running' || status === 'pending';
@@ -6876,6 +6994,25 @@ ToolRegistry.register('agent-task-list', AgentStatusTool);
 // Task Tools — inline compact chips, visible at a glance
 // ============================================================================
 
+function TaskCreateTool({ part }: ToolProps) {
+  const input = partInput(part);
+  const title = (input.title as string) || '';
+  const priority = (input.priority as string) || 'medium';
+  return (
+    <div className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/70">
+      <Circle className="size-3 text-muted-foreground/40 flex-shrink-0" />
+      <span className="text-foreground/80 truncate flex-1">{title}</span>
+      {priority === 'high' && (
+        <span className="text-xs font-medium text-foreground/50 bg-muted/60 px-1.5 py-px rounded">
+          high
+        </span>
+      )}
+    </div>
+  );
+}
+// task_create is now a canonical orchestration tool that may spawn workers,
+// so it is registered earlier to AgentSpawnTool instead of this compact legacy chip.
+
 function TaskListTool({ part }: ToolProps) {
   const output = partOutput(part);
   return (
@@ -6901,6 +7038,13 @@ ToolRegistry.register('task-get', TaskListTool);
 ToolRegistry.register('agent_task_get', TaskListTool);
 ToolRegistry.register('agent-task-get', TaskListTool);
 
+function TaskUpdateTool({ part }: ToolProps) {
+  // task_update is internal bookkeeping — hide it entirely.
+  // The agent_spawn card already shows task status and description.
+  return null;
+}
+// task_update is now registered earlier to AgentTaskUpdateTool.
+
 function TaskDoneTool({ part }: ToolProps) {
   const input = partInput(part);
   const result = (input.result as string) || '';
@@ -6916,7 +7060,7 @@ function TaskDoneTool({ part }: ToolProps) {
 ToolRegistry.register('task_done', TaskDoneTool);
 ToolRegistry.register('task-done', TaskDoneTool);
 
-function TaskDeleteTool() {
+function TaskDeleteTool({ part }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="flex items-center gap-2 px-2.5 py-1 text-xs text-muted-foreground/40">
@@ -6951,7 +7095,7 @@ function extractSkillFiles(output: string): string[] {
   return files;
 }
 
-function SkillTool({ part, forceOpen: _forceOpen }: ToolProps) {
+function SkillTool({ part, forceOpen }: ToolProps) {
   const input = partInput(part);
   const status = partStatus(part);
   const rawOutput = (part.state as any).output ?? '';
@@ -7414,6 +7558,7 @@ ToolRegistry.register('oc-connector-get', ConnectorGetTool);
 
 function ConnectorSetupTool({ part, defaultOpen, forceOpen }: ToolProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const input = partInput(part);
   const output = partOutput(part);
   const data = useMemo(() => parseConnectorSetupOutput(output || ''), [output]);
 
@@ -8150,7 +8295,7 @@ function parseErrorContent(error: string): {
   };
 }
 
-function ToolError({
+export function ToolError({
   error,
   toolName,
 }: {
@@ -8300,7 +8445,7 @@ function parseToolName(tool: string): {
   return { server, name, display };
 }
 
-function GenericTool({ part }: ToolProps) {
+export function GenericTool({ part }: ToolProps) {
   const output = partOutput(part);
   const input = partInput(part);
   const { server, display } = useMemo(

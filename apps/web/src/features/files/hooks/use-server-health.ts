@@ -17,7 +17,7 @@ import type { ServerHealth, OpenCodeProjectInfo } from '../types';
  * Returns a React Query-compatible shape for backward compatibility,
  * but the data comes from the Zustand store, not a separate HTTP call.
  */
-export function useServerHealth(_options?: { enabled?: boolean }) {
+export function useServerHealth(options?: { enabled?: boolean }) {
   const status = useSandboxConnectionStore((s) => s.status);
   const healthy = useSandboxConnectionStore((s) => s.healthy);
   const version = useSandboxConnectionStore((s) => s.openCodeVersion);

@@ -19,7 +19,7 @@ import {
  * `adaptMessagesToToolCalls` adapter: no conversion to a legacy shape, just
  * the native `ToolPart`s in call order.
  */
-function collectToolParts(
+export function collectToolParts(
   messages: MessageWithParts[] | undefined,
 ): ToolPart[] {
   if (!messages) return [];

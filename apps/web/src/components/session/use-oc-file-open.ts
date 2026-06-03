@@ -30,10 +30,10 @@ function toRelative(absPath: string, prefixes: string[]): string {
 /**
  * Fetch all candidate worktree/directory prefixes.
  *
- * CONSOLIDATED: First checks the React Query cache for the shared
- * project/current and path keys. Only makes SDK calls as a fallback if the
- * cache is empty, preventing duplicate /project/current and /path requests
- * that were previously made on every tool-view mount.
+ * CONSOLIDATED: First checks the React Query cache (shared with
+ * useOpenCodeCurrentProject and useOpenCodePathInfo). Only makes SDK calls
+ * as a fallback if the cache is empty. This prevents duplicate /project/current
+ * and /path requests that were previously made on every tool-view mount.
  */
 async function fetchPrefixesFromSdk(queryClient?: ReturnType<typeof useQueryClient>): Promise<string[]> {
   if (cachedPrefixes && cachedPrefixes.length > 0) return cachedPrefixes;

@@ -37,11 +37,70 @@ import {
   PROVIDER_LABELS,
   ProviderLogo,
 } from '@/components/providers/provider-branding';
+import { useProviderModalStore } from '@/stores/provider-modal-store';
+import type { ProviderModalTab } from '@/stores/provider-modal-store';
 import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
 
-import { Tag } from '@/components/ui/tag';
+// Re-export for consumers
+export { ConnectProviderContent } from '@/components/providers/connect-provider-content';
 
-type ProjectProviderModalTab = 'providers' | 'connected' | 'models';
+// ─── Backward-compat wrappers ────────────────────────────────────────────────
+
+export function ConnectProviderDialog({
+  open,
+  onOpenChange,
+  providers: _providers,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  providers: ProviderListResponse | undefined;
+}) {
+  const { openProviderModal, closeProviderModal } = useProviderModalStore();
+
+  useEffect(() => {
+    if (open) openProviderModal('providers');
+    else closeProviderModal();
+  }, [open, openProviderModal, closeProviderModal]);
+
+  const isStoreOpen = useProviderModalStore((s) => s.isOpen);
+  useEffect(() => {
+    if (!isStoreOpen && open) onOpenChange(false);
+  }, [isStoreOpen, open, onOpenChange]);
+
+  return null;
+}
+
+export function ManageModelsDialog({
+  open,
+  onOpenChange,
+  models: _models,
+  modelStore: _modelStore,
+  onConnectProvider: _onConnectProvider,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  models: FlatModel[];
+  modelStore: ReturnType<typeof useModelStore>;
+  onConnectProvider: () => void;
+}) {
+  const { openProviderModal, closeProviderModal } = useProviderModalStore();
+
+  useEffect(() => {
+    if (open) openProviderModal('models');
+    else closeProviderModal();
+  }, [open, openProviderModal, closeProviderModal]);
+
+  const isStoreOpen = useProviderModalStore((s) => s.isOpen);
+  useEffect(() => {
+    if (!isStoreOpen && open) onOpenChange(false);
+  }, [isStoreOpen, open, onOpenChange]);
+
+  return null;
+}
+
+// Import from canonical UI component and re-export for consumers
+import { Tag } from '@/components/ui/tag';
+export { Tag };
 
 // ─── ModelSelector ───────────────────────────────────────────────────────────
 
@@ -59,10 +118,13 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   // Reveal models the "latest" filter hides by default (older releases /
   // superseded models in a family). Off by default to keep the picker tidy.
   const [showHidden, setShowHidden] = useState(false);
+  const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
   const modelStore = useModelStore(models);
 
   // When mounted under /projects/[id]/..., route the action buttons to the
-  // per-project provider modal so credentials land in `project_secrets`.
+  // per-project provider modal so credentials land in `project_secrets`. On
+  // every other route (instance dashboard, /milano, /berlin, etc.) we keep
+  // the legacy GlobalProviderModal that writes to the active sandbox.
   const params = useParams<{ id?: string }>();
   const projectId = typeof params?.id === 'string' ? params.id : null;
   const [projectModalOpen, setProjectModalOpen] = useState(false);
@@ -135,14 +197,17 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     [onSelect],
   );
 
-  const handleOpenProviderModal = useCallback((tab: ProjectProviderModalTab) => {
+  const handleOpenProviderModal = useCallback((tab: ProviderModalTab) => {
     setOpen(false);
-    if (!projectId) return;
-    // Legacy tabs: 'providers' | 'connected' | 'models'. Map 'providers'
-    // (the "add" view in the old modal) to our 'catalog' tab.
-    setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
-    setProjectModalOpen(true);
-  }, [projectId]);
+    if (projectId) {
+      // Legacy tabs: 'providers' | 'connected' | 'models'. Map 'providers'
+      // (the "add" view in the old modal) to our 'catalog' tab.
+      setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
+      setProjectModalOpen(true);
+      return;
+    }
+    openProviderModal(tab);
+  }, [projectId, openProviderModal]);
 
   return (
     <>
@@ -180,7 +245,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
           placeholder={tHardcodedUi.raw('componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels')}
           value={search}
           onValueChange={setSearch}
-          rightElement={projectId ? (
+          rightElement={
             <div className="flex items-center gap-0.5 -mr-1 shrink-0">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -207,7 +272,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                 <TooltipContent side="top" className="text-xs">{tHardcodedUi.raw('componentsSessionModelSelector.line251JsxTextManageModels')}</TooltipContent>
               </Tooltip>
             </div>
-          ) : null}
+          }
         />
 
         <CommandList className="max-h-[380px]">

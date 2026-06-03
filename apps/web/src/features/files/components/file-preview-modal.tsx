@@ -5,7 +5,7 @@ import { STATUS_TEXT } from '@/components/ui/status';
 import { FilePreviewModal as BaseFilePreviewModal } from '@/features/file-viewer';
 import { cn } from '@/lib/utils';
 import { useFilesStore } from '../store/files-store';
-import { useGitStatus } from '../hooks/use-git-status';
+import { useGitStatus } from '../hooks';
 import { workspaceFileSource } from '../file-source';
 import { FileHistoryPopoverContent } from './file-history-popover';
 import { getFileIcon } from './file-icon';

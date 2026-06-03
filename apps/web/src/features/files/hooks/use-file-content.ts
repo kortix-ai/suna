@@ -1,6 +1,6 @@
 'use client';
 
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
 import { readFile } from '../api/opencode-files';
 import type { FileContent } from '../types';
@@ -38,4 +38,24 @@ export function useFileContent(
     },
     retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 5000),
   });
+}
+
+/**
+ * Utility to imperatively invalidate file content queries.
+ */
+export function useInvalidateFileContent() {
+  const queryClient = useQueryClient();
+  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+
+  return (filePath?: string) => {
+    if (filePath) {
+      queryClient.invalidateQueries({
+        queryKey: fileContentKeys.file(serverUrl, filePath),
+      });
+    } else {
+      queryClient.invalidateQueries({
+        queryKey: fileContentKeys.all,
+      });
+    }
+  };
 }

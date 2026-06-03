@@ -2,11 +2,15 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
+import { findText } from '../api/opencode-files';
+import type { FindMatch } from '../types';
 import { searchWorkspaceFilePaths } from '../search/workspace-search-service';
 
-const fileSearchKeys = {
+export const fileSearchKeys = {
   files: (serverUrl: string, query: string, type?: 'file' | 'directory', limit?: number) =>
     ['opencode-files', 'search', 'files', serverUrl, query, type ?? 'all', limit ?? 50] as const,
+  text: (serverUrl: string, pattern: string) =>
+    ['opencode-files', 'search', 'text', serverUrl, pattern] as const,
 };
 
 /**
@@ -28,6 +32,27 @@ export function useFileSearch(
     enabled: query.length > 0 && options?.enabled !== false,
     staleTime: 30_000,
     gcTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+}
+
+/**
+ * Search for text content across files (ripgrep).
+ * Uses GET /find?pattern=<pat>.
+ */
+export function useTextSearch(
+  pattern: string,
+  options?: { enabled?: boolean },
+) {
+  const serverUrl = useServerStore((s) => s.getActiveServerUrl());
+
+  return useQuery<FindMatch[]>({
+    queryKey: fileSearchKeys.text(serverUrl, pattern),
+    queryFn: () => findText(pattern),
+    enabled: pattern.length > 0 && options?.enabled !== false,
+    staleTime: 10_000,
+    gcTime: 2 * 60_000,
     refetchOnWindowFocus: false,
     retry: 1,
   });

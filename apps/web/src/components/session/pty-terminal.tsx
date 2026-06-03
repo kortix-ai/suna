@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect, useCallback, useImperativeHandle, forwardRef } from 'react';
+import { useRef, useEffect, useCallback, useState, useImperativeHandle, forwardRef } from 'react';
 import { cn } from '@/lib/utils';
 import { Terminal as XTerm, ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
@@ -131,9 +131,11 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
   // so the scrollback replayed on connect doesn't echo garbage at the prompt.
   const suppressReportsUntilRef = useRef(0);
 
+  const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const updatePty = useUpdatePty();
 
   const updateStatus = useCallback((s: ConnectionStatus) => {
+    setStatus(s);
     onStatusChange?.(s);
   }, [onStatusChange]);
 
@@ -278,6 +280,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
 
       // Bail out if a newer connection was requested while we were resolving the URL
       if (connectionIdRef.current !== myConnectionId || disposedRef.current) return;
+      console.log('[PtyTerminal] Connecting WebSocket:', wsUrl);
 
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -287,6 +290,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
           ws.close();
           return;
         }
+        console.log('[PtyTerminal] WebSocket connected');
         reconnectAttemptsRef.current = 0;
         // Suppress capability-query echoes while the server replays scrollback.
         // We deliberately do NOT reset()/clear() here — the PTY is persistent,
@@ -322,6 +326,7 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
 
       ws.onclose = (event) => {
         if (connectionIdRef.current !== myConnectionId || disposedRef.current) return;
+        console.log('[PtyTerminal] WebSocket closed:', event.code, event.reason);
         wsRef.current = null;
 
         const reason = (event.reason || '').toLowerCase();
