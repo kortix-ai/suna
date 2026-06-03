@@ -843,7 +843,7 @@ export interface AdminConnector {
   /** Credential storage model — one shared project credential vs each member's own. */
   credentialMode: 'shared' | 'per_user';
   actions: ConnectorAction[];
-  authSecret: string | null;
+  hasAuth: boolean;
   sharing: ConnectorSharing | null;
   secretSet: boolean;
 }

@@ -32,7 +32,7 @@ interface AdminConnector {
   status: 'active' | 'disabled' | 'needs_auth' | 'error';
   credentialMode: 'shared' | 'per_user';
   actions: ConnectorAction[];
-  authSecret: string | null;
+  hasAuth: boolean;
   sharing: ConnectorSharing | null;
   secretSet: boolean;
 }

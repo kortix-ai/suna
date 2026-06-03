@@ -159,7 +159,7 @@ const deps: ExecutorRouterDeps = {
       status: 'active',
       credentialMode: conn.credentialMode,
       actions: [],
-      authSecret: conn.hasAuth ? 'credential' : null,
+      hasAuth: conn.hasAuth,
       sharing: scopeToIntent(conn.shareScope, conn.grants),
       secretSet: conn.hasAuth
         ? world.credentials.has(credKey(conn.connectorId, conn.credentialMode === 'per_user' ? viewerUserId : null))
@@ -291,7 +291,7 @@ describe('admin routes', () => {
   test('list shows credential mode + sharing + secretSet', async () => {
     expect((await req(`/projects/${PROJECT}/connectors`)).status).toBe(403);
     const json = await (await req(`/projects/${PROJECT}/connectors`, { headers: { 'x-test-admin': ALICE } })).json();
-    expect(json.connectors[0]).toMatchObject({ slug: 'stripe', credentialMode: 'shared', secretSet: true, sharing: { mode: 'project' } });
+    expect(json.connectors[0]).toMatchObject({ slug: 'stripe', credentialMode: 'shared', hasAuth: true, secretSet: true, sharing: { mode: 'project' } });
   });
 
   test('sync returns count', async () => {

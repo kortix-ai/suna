@@ -301,7 +301,7 @@ function ConnectorRow({
         <>
           <Badge variant="outline" size="sm">{providerLabel(conn.provider)}</Badge>
           {conn.credentialMode === 'per_user' && <Badge variant="outline" size="sm">Per-user</Badge>}
-          {conn.authSecret && !conn.secretSet && <Badge variant="warning" size="sm">{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line283JsxTextNeedsAuth')}</Badge>}
+          {conn.hasAuth && !conn.secretSet && <Badge variant="warning" size="sm">{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line283JsxTextNeedsAuth')}</Badge>}
           {conn.status === 'error' && <Badge variant="destructive" size="sm">Error</Badge>}
           {conn.status === 'disabled' && <Badge variant="outline" size="sm">Disabled</Badge>}
           {conn.sharing && <Badge variant="secondary" size="sm">{sharingLabel(conn.sharing)}</Badge>}
@@ -313,7 +313,7 @@ function ConnectorRow({
         ) : (
           <InlineMeta>
             {`${conn.actions.length} ${conn.actions.length === 1 ? 'tool' : 'tools'}`}
-            {conn.authSecret ? (conn.secretSet ? 'credential set' : 'credential not set') : 'no auth'}
+            {conn.hasAuth ? (conn.secretSet ? 'credential set' : 'credential not set') : 'no auth'}
           </InlineMeta>
         )
       }
@@ -332,7 +332,7 @@ function ConnectorRow({
                 {connect.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Connect'}
               </Button>
             )}
-            {!isPipedream && conn.authSecret && !conn.secretSet && (
+            {!isPipedream && conn.hasAuth && !conn.secretSet && (
               <Button size="sm" variant="default" className="h-7 px-2 text-xs" onClick={onSetCredential}>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line315JsxTextSetCredential')}</Button>
             )}
             <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onViewTools} aria-label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line317JsxAttrAriaLabelViewTools')}><Wrench className="h-3.5 w-3.5" /></Button>
@@ -704,7 +704,8 @@ function SetCredentialDialog({
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
           <DialogTitle>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line701JsxTextSetCredentialFor')}{' '}{connector?.slug}</DialogTitle>
           <DialogDescription>
-            {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line703JsxTextStoredEncryptedAs')}<code className="font-mono">{connector?.authSecret}</code> {tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line703JsxTextAndResolvedServerSideNeverInjectedIntoThe')}</DialogDescription>
+            Credential values are stored encrypted and resolved server-side; they are never committed to the manifest.
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={(e) => { e.preventDefault(); if (value) save.mutate(); }}>
           <div className="space-y-1.5 px-6 py-5">

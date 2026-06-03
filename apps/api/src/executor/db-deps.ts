@@ -290,7 +290,7 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
       status: row.status,
       credentialMode: mode,
       actions: actions.map((a) => ({ path: a.path, name: a.name, description: a.description ?? '', risk: a.risk, inputSchema: a.inputSchema ?? null })),
-      authSecret: hasAuth ? 'credential' : null,
+      hasAuth,
       sharing: scopeToIntent(row.shareScope as 'project' | 'restricted', grants),
       secretSet,
     });

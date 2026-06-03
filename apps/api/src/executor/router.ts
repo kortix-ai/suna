@@ -44,7 +44,7 @@ export interface CatalogConnector {
 }
 
 export interface AdminConnectorView extends CatalogConnector {
-  authSecret: string | null;
+  hasAuth: boolean;
   /** Credential storage mode — shared project credential vs each member's own. */
   credentialMode: 'shared' | 'per_user';
   /** Current access (who can use), for the dashboard picker. */
