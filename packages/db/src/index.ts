@@ -107,10 +107,8 @@ export {
   platformRoleEnum,
   platformUserRoles,
   // Access Control
-  accessRequestStatusEnum,
   platformSettings,
   accessAllowlist,
-  accessRequests,
   // Pool
   poolResources,
   poolSandboxes,
