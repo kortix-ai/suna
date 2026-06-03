@@ -190,10 +190,14 @@ jobs:
             artifact: desktop-macos-arm64
             files: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
           - target_pretty: macos-x64
-            runner: macos-13
+            # macos-13 (Intel) GitHub-hosted runners are retired, so this job
+            # queued forever waiting for a runner. Cross-compile the x64 build
+            # on the Apple-Silicon runner via the x86_64 Rust target instead.
+            runner: macos-14
+            rust_target: x86_64-apple-darwin
             bundles: dmg
             artifact: desktop-macos-x64
-            files: apps/desktop/src-tauri/target/release/bundle/dmg/*.dmg
+            files: apps/desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
           - target_pretty: windows-x64
             runner: windows-2022
             bundles: msi
@@ -228,6 +232,10 @@ jobs:
           node-version: 22
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Rust cross-compile target
+        if: matrix.rust_target
+        run: rustup target add ${{ matrix.rust_target }}
 
       - name: Install pnpm
         run: corepack enable pnpm
@@ -318,7 +326,7 @@ jobs:
       # Apple env vars only when signing is enabled → Tauri signs + notarizes;
       # empty otherwise → unsigned bundle.
       - name: Build desktop installer
-        run: pnpm --filter @kortix/desktop tauri build --bundles ${{ matrix.bundles }}
+        run: pnpm --filter @kortix/desktop tauri build --bundles ${{ matrix.bundles }}${{ matrix.rust_target && format(' --target {0}', matrix.rust_target) || '' }}
         env:
           KORTIX_DESKTOP_DEFAULT_URL: ${{ env.DESKTOP_URL }}
           APPLE_CERTIFICATE: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_CERTIFICATE || '' }}
