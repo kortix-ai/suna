@@ -336,7 +336,7 @@ provider = "mcp"
     expect(errorPaths).toContain('connectors[0].url');
   });
 
-  test('auth.secret is required when type ≠ none', () => {
+  test('auth.secret is rejected', () => {
     const { errorPaths } = summarize(`
 kortix_version = 1
 [[connectors]]
@@ -345,6 +345,7 @@ provider = "openapi"
 spec = "https://example.com/openapi.json"
   [connectors.auth]
   type = "bearer"
+  secret = "STRIPE_API_KEY"
 `);
     expect(errorPaths).toContain('connectors[0].auth.secret');
   });

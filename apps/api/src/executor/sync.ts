@@ -134,8 +134,8 @@ async function upsertConnector(
 ): Promise<void> {
   const manifestHash = manifestHashForConnector(spec);
   const status = catalog?.error ? 'error' : spec.enabled ? 'active' : 'disabled';
-  // Credentials live in executor_credentials now; authSecret is legacy (kept nullable).
-  const authSecret = spec.auth.secret ?? null;
+  // Credentials live in executor_credentials; the legacy auth_secret column stays null.
+  const authSecret = null;
   const credentialMode = spec.credentialMode;
 
   // Cheap fields reconciled on every sync. `config` (which folds in the

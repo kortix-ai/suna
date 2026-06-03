@@ -248,8 +248,8 @@ Provider-specific fields:
 
 Optional. `type` = `bearer | basic | custom | none` (default `none`); `in` =
 `header` (default) or `query`; `name` (required when `type = "custom"`); `prefix`
-(optional); `secret` (optional secret name, `^[A-Z_][A-Z0-9_]{0,63}$`). Not
-allowed with `provider = "pipedream"`.
+(optional). The credential value is stored in the platform connector credential
+store, not in `kortix.toml`. Auth is not allowed with `provider = "pipedream"`.
 
 ### `[[connectors.policies]]`
 

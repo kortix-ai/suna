@@ -591,16 +591,10 @@ function validateConnectors(
             severity: 'error',
           });
         }
-        if (t !== 'none' && typeof auth.secret !== 'string') {
+        if (auth.secret !== undefined) {
           issues.push({
             path: `${where}.auth.secret`,
-            message: 'auth.secret (project-secret name) is required when type ≠ "none".',
-            severity: 'error',
-          });
-        } else if (typeof auth.secret === 'string' && !ENV_NAME_RE.test(auth.secret.trim())) {
-          issues.push({
-            path: `${where}.auth.secret`,
-            message: `"${auth.secret}" is not a valid env-var / secret name.`,
+            message: 'auth.secret is no longer supported; set connector credentials in the platform.',
             severity: 'error',
           });
         }

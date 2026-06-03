@@ -27,7 +27,6 @@ provider = "openapi"
 spec = "https://x/spec.json"
   [connectors.auth]
   type = "bearer"
-  secret = "STRIPE_API_KEY"
 `);
     expect(connectorConfig(spec, 'https://api.stripe.com')).toEqual({
       spec: 'https://x/spec.json',
@@ -73,7 +72,7 @@ base_url = "https://api.internal"
     expect(connectorConfig(http)).toMatchObject({ baseUrl: 'https://api.internal' });
   });
 
-  test('config strips the secret value (resolved server-side)', () => {
+  test('config keeps auth metadata only; credential resolves server-side', () => {
     const spec = specFrom(`
 [[connectors]]
 slug = "h"
@@ -83,7 +82,6 @@ base_url = "https://api"
   type = "custom"
   in = "query"
   name = "key"
-  secret = "API_TOKEN"
 `);
     expect((connectorConfig(spec) as any).auth).toEqual({ type: 'custom', in: 'query', name: 'key', prefix: null });
   });

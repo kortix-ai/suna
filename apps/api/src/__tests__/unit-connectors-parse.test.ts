@@ -71,7 +71,6 @@ spec = "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.js
 
   [connectors.auth]
   type = "bearer"
-  secret = "STRIPE_API_KEY"
 `);
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({
@@ -79,7 +78,7 @@ spec = "https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.js
       name: 'Stripe API',
       provider: 'openapi',
       spec: 'https://raw.githubusercontent.com/stripe/openapi/master/openapi/spec3.json',
-      auth: { type: 'bearer', in: 'header', name: null, prefix: null, secret: 'STRIPE_API_KEY' },
+      auth: { type: 'bearer', in: 'header', name: null, prefix: null },
     });
   });
 
@@ -103,14 +102,13 @@ endpoint = "https://api.internal/graphql"
 
   [connectors.auth]
   type = "bearer"
-  secret = "INTERNAL_GRAPH_TOKEN"
 `);
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({
       provider: 'graphql',
       endpoint: 'https://api.internal/graphql',
       spec: null,
-      auth: { type: 'bearer', secret: 'INTERNAL_GRAPH_TOKEN' },
+      auth: { type: 'bearer' },
     });
   });
 
@@ -125,14 +123,13 @@ transport = "sse"
   [connectors.auth]
   type = "custom"
   name = "X-API-Key"
-  secret = "NOTION_MCP_TOKEN"
 `);
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({
       provider: 'mcp',
       url: 'https://mcp.notion.com/mcp',
       transport: 'sse',
-      auth: { type: 'custom', in: 'header', name: 'X-API-Key', secret: 'NOTION_MCP_TOKEN' },
+      auth: { type: 'custom', in: 'header', name: 'X-API-Key' },
     });
   });
 
@@ -159,14 +156,13 @@ spec = ".kortix/executor/internal.http.toml"
   in = "query"
   name = "api_key"
   prefix = "tok_"
-  secret = "INTERNAL_API_TOKEN"
 `);
     expect(errors).toEqual([]);
     expect(specs[0]).toMatchObject({
       provider: 'http',
       baseUrl: 'https://api.internal',
       spec: '.kortix/executor/internal.http.toml',
-      auth: { type: 'custom', in: 'query', name: 'api_key', prefix: 'tok_', secret: 'INTERNAL_API_TOKEN' },
+      auth: { type: 'custom', in: 'query', name: 'api_key', prefix: 'tok_' },
     });
   });
 });
@@ -222,7 +218,6 @@ spec = "https://example.com/spec.json"
 
   [connectors.auth]
   type = "bearer"
-  secret = "STRIPE_API_KEY"
 
   [[connectors.policies]]
   match = "*.delete*"
@@ -369,7 +364,6 @@ spec = "https://x/y.json"
 
   [connectors.auth]
   type = "custom"
-  secret = "TOK"
 `);
     expect(errors[0]!.error).toContain('requires `name`');
   });
@@ -385,10 +379,10 @@ spec = "https://x/y.json"
   type = "bearer"
 `);
     expect(errors).toEqual([]);
-    expect(specs[0]!.auth).toMatchObject({ type: 'bearer', secret: null });
+    expect(specs[0]!.auth).toMatchObject({ type: 'bearer' });
   });
 
-  test('auth secret with invalid name', () => {
+  test('auth secret is rejected', () => {
     const { errors } = parseAndExtract(`
 [[connectors]]
 slug = "x"
@@ -397,9 +391,9 @@ spec = "https://x/y.json"
 
   [connectors.auth]
   type = "bearer"
-  secret = "lowercase-bad"
+  secret = "API_TOKEN"
 `);
-    expect(errors[0]!.error).toContain('project-secret name');
+    expect(errors[0]!.error).toContain('secret is no longer supported');
   });
 
   test('pipedream with auth table is rejected', () => {
@@ -411,7 +405,6 @@ app = "gmail"
 
   [connectors.auth]
   type = "bearer"
-  secret = "TOK"
 `);
     expect(errors[0]!.error).toContain('connected account');
   });

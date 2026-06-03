@@ -3,7 +3,7 @@
  *
  * A connector is one named integration the Executor can call — Pipedream,
  * MCP, OpenAPI, GraphQL, or raw HTTP. The manifest holds the *definition*
- * (provider, endpoint/spec, auth method + which project-secret to use) and,
+ * (provider, endpoint/spec, auth method) and,
  * for the policy layer, the connector-scoped `[[connectors.policies]]`. The
  * secret *value* and Pipedream OAuth live in the platform, never in git;
  * who-can-use-it (sharing) is platform-side too.
@@ -18,8 +18,6 @@
  *
  *     [connectors.auth]
  *     type   = "bearer"
- *     secret = "STRIPE_API_KEY"     # project-secret NAME; value set in dashboard
- *
  *     [[connectors.policies]]        # connector-scoped; built last
  *     match  = "*.delete*"
  *     action = "block"
@@ -36,7 +34,6 @@
  */
 import { createHash } from 'node:crypto';
 import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
-import { isValidSecretName } from './secrets';
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
@@ -55,8 +52,6 @@ interface ConnectorAuthSpec {
   name: string | null;
   /** Optional value prefix (e.g. `Bearer`). */
   prefix: string | null;
-  /** Name of the project secret holding the credential. Value set in the dashboard. */
-  secret: string | null;
 }
 
 /** Tool-call policy action — mirrors executor's `approve | require_approval | block`. */
@@ -112,7 +107,7 @@ interface LoadedConnectors {
   errors: ConnectorParseError[];
 }
 
-const NO_AUTH: ConnectorAuthSpec = { type: 'none', in: 'header', name: null, prefix: null, secret: null };
+const NO_AUTH: ConnectorAuthSpec = { type: 'none', in: 'header', name: null, prefix: null };
 
 /**
  * Pull `[[connectors]]` out of a parsed manifest. Never throws.
@@ -326,14 +321,11 @@ function parseAuth(
   }
   const prefix = typeof row.prefix === 'string' && row.prefix.trim() ? row.prefix.trim() : null;
 
-  // `secret` is optional — credentials live in the platform (executor_credentials),
-  // not as a named project secret. If present it's validated for back-compat.
-  const secret = typeof row.secret === 'string' && row.secret.trim() ? row.secret.trim() : null;
-  if (secret && !isValidSecretName(secret)) {
-    return err(slug, `[connectors.auth].secret "${secret}" must look like a project-secret name (^[A-Z_][A-Z0-9_]{0,63}$)`);
+  if (row.secret !== undefined) {
+    return err(slug, '[connectors.auth].secret is no longer supported; set the connector credential in the dashboard or CLI');
   }
 
-  return { ok: true, value: { type: type as ConnectorAuthType, in: inRaw, name, prefix, secret } };
+  return { ok: true, value: { type: type as ConnectorAuthType, in: inRaw, name, prefix } };
 }
 
 function parsePolicies(
