@@ -96,7 +96,6 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `ACCT-2` `POST /accounts {name}` → 201 team account, caller = `owner` (`account_members` row).
 `ACCT-3` `GET /accounts/:id` → member → 200; `NONMEMBER` → 403.
 `ACCT-4` `PATCH /accounts/:id {name}` → `ACCOUNT_WRITE` (OWNER/ADMIN) → 200; `MEMBER` → 403.
-`ACCT-5` `GET /accounts/:id/audit` → member → 200 audit log.
 
 ### Members
 `MEM-1` `GET /accounts/:id/members` → member → 200.

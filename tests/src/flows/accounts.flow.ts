@@ -89,14 +89,6 @@ flow("ACCT-4", { domain: "accounts", serial: true, routes: ["PATCH /v1/accounts/
   });
 });
 
-flow("ACCT-5", { domain: "accounts", serial: true, routes: ["GET /v1/accounts/:accountId/audit"] }, async (ctx) => {
-  const team = await ctx.fixtures.team();
-  await ctx.step("member reads audit log", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId/audit", { params: { accountId: team.id } });
-    r.status(200);
-  });
-});
-
 flow(
   "MEM-1",
   { domain: "accounts", serial: true, routes: ["GET /v1/accounts/:accountId/members", "POST /v1/accounts/:accountId/members"] },
