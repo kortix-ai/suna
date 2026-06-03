@@ -21,7 +21,6 @@ import {
   Check,
   Globe,
   Monitor,
-  Pencil,
   Plus,
   Server,
 } from 'lucide-react-native';
@@ -101,8 +100,6 @@ export default function InstancesScreen() {
   const { currentVersion: liveActiveVersion } = useGlobalSandboxUpdate();
 
   const addSheetRef = React.useRef<BottomSheetModal>(null);
-  const renameSheetRef = React.useRef<BottomSheetModal>(null);
-  const [renameTarget, setRenameTarget] = React.useState<SandboxInfo | null>(null);
   const creatingProgress = useInstanceProgress();
 
   // Auto-poll when any instance is provisioning
@@ -122,12 +119,6 @@ export default function InstancesScreen() {
     switchSandbox(instance);
   }, [sandboxId, switchSandbox]);
 
-  const handleRename = React.useCallback((instance: SandboxInfo) => {
-    haptics.medium();
-    setRenameTarget(instance);
-    renameSheetRef.current?.present();
-  }, []);
-
   const openAddSheet = React.useCallback(() => {
     haptics.medium();
     addSheetRef.current?.present();
@@ -135,12 +126,6 @@ export default function InstancesScreen() {
 
   const onInstanceAdded = React.useCallback(() => {
     addSheetRef.current?.dismiss();
-    refetch();
-  }, [refetch]);
-
-  const onRenamed = React.useCallback(() => {
-    renameSheetRef.current?.dismiss();
-    setRenameTarget(null);
     refetch();
   }, [refetch]);
 
@@ -227,15 +212,6 @@ export default function InstancesScreen() {
                             </Text>
                           </View>
                           <View className="flex-row items-center" style={{ gap: 8 }}>
-                            {!isProvisioning && (
-                              <Pressable
-                                onPress={() => handleRename(instance)}
-                                hitSlop={8}
-                                className="active:opacity-60"
-                              >
-                                <Icon as={Pencil} size={14} className="text-muted-foreground/40" strokeWidth={2.2} />
-                              </Pressable>
-                            )}
                             {isProvisioning && <ActivityIndicator size="small" />}
                             {isActive && !isProvisioning && (
                               <Icon as={Check} size={16} className="text-primary" strokeWidth={2.7} />
@@ -290,110 +266,9 @@ export default function InstancesScreen() {
       </View>
 
       <AddInstanceSheet ref={addSheetRef} isDark={isDark} onCreated={onInstanceAdded} onProgress={setInstanceProgress} />
-      <RenameSheet ref={renameSheetRef} isDark={isDark} instance={renameTarget} onRenamed={onRenamed} />
     </>
   );
 }
-
-// ─── Rename Bottom Sheet ────────────────────────────────────────────────────
-
-const RenameSheet = React.forwardRef<
-  BottomSheetModal,
-  { isDark: boolean; instance: SandboxInfo | null; onRenamed: () => void }
->(function RenameSheet({ isDark, instance, onRenamed }, ref) {
-  const insets = useSafeAreaInsets();
-  const [name, setName] = React.useState('');
-  const fgColor = isDark ? '#f8f8f8' : '#121215';
-  const themeColors = useThemeColors();
-
-  React.useEffect(() => {
-    if (instance) setName(instance.name);
-  }, [instance]);
-
-  const canSave = name.trim().length > 0 && name.trim() !== instance?.name;
-
-  const handleSave = React.useCallback(() => {
-    if (!canSave) return;
-    haptics.tap();
-    // TODO: wire to rename API when available
-    haptics.success();
-    Alert.alert('Renamed', `Instance renamed to "${name.trim()}".`);
-    onRenamed();
-  }, [canSave, name, onRenamed]);
-
-  return (
-    <BottomSheetModal
-      ref={ref}
-      index={0}
-      snapPoints={[260]}
-      enablePanDownToClose
-      backdropComponent={(props: BottomSheetBackdropProps) => (
-        <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
-      )}
-      handleIndicatorStyle={{
-        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
-        width: 36, height: 5, borderRadius: 3,
-      }}
-      backgroundStyle={{
-        backgroundColor: getSheetBg(isDark),
-        borderTopLeftRadius: 24, borderTopRightRadius: 24,
-      }}
-    >
-      <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 4, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
-        <Text className="text-lg font-roobert-semibold text-foreground">Rename Instance</Text>
-        <Text className="mt-0.5 mb-4 font-roobert text-xs text-muted-foreground">
-          Set a display name for this instance.
-        </Text>
-
-        <BottomSheetTextInput
-          value={name}
-          onChangeText={setName}
-          placeholder="Instance name"
-          placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
-          autoCapitalize="words"
-          autoCorrect={false}
-          returnKeyType="done"
-          onSubmitEditing={handleSave}
-          style={{
-            backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
-            borderWidth: 1,
-            borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
-            borderRadius: 14,
-            paddingHorizontal: 16,
-            paddingVertical: 14,
-            fontSize: 16,
-            fontFamily: 'Roobert',
-            color: fgColor,
-            marginBottom: 16,
-          }}
-        />
-
-        <Pressable
-          onPress={handleSave}
-          disabled={!canSave}
-          className="items-center rounded-full py-3.5 active:opacity-90"
-          style={{
-            backgroundColor: canSave
-              ? themeColors.primary
-              : isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)',
-            opacity: canSave ? 1 : 0.5,
-          }}
-        >
-          <Text
-            className="font-roobert-semibold text-[15px]"
-            style={{
-              color: canSave
-                ? themeColors.primaryForeground
-                : isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)',
-            }}
-          >
-            Save
-          </Text>
-        </Pressable>
-      </BottomSheetView>
-    </BottomSheetModal>
-  );
-});
 
 // ─── Add Instance Bottom Sheet ──────────────────────────────────────────────
 
