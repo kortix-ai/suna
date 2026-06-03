@@ -127,7 +127,6 @@ export function registerGlobalMocks() {
     insertLedgerEntry: async (data: any) =>
       mockRegistry.insertLedgerEntry ? mockRegistry.insertLedgerEntry(data) : { id: 'ledger_test', ...data },
     getTransactions: async () => ({ rows: [], total: 0 }),
-    getTransactionsSummary: async () => ({ totalCredits: 0, totalDebits: 0, count: 0 }),
     getPurchaseByPaymentIntent: async (id: string) =>
       mockRegistry.getPurchaseByPaymentIntent ? mockRegistry.getPurchaseByPaymentIntent(id) : null,
     updatePurchaseStatus: async (...args: any[]) =>

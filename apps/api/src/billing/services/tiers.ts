@@ -321,10 +321,6 @@ export function getBillingPeriodByPriceId(priceId: string): 'monthly' | 'yearly'
   return null;
 }
 
-export function getVisibleTiers(): TierConfig[] {
-  return Object.values(TIERS).filter((t) => !t.hidden && t.name !== 'none');
-}
-
 export function getMonthlyCredits(tierName: string): number {
   return getTier(tierName).monthlyCredits;
 }

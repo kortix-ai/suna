@@ -1,8 +1,8 @@
 /**
  * E2E tests for Billing HTTP routes.
  *
- * Tests: tier-configurations, credit-breakdown, usage-history,
- *        account deletion (status, request, cancel, delete-immediately).
+ * Tests: account deletion (status, request, cancel, delete-immediately)
+ *        and removed legacy billing route surfaces.
  *
  * Strategy:
  * - mock.module() replaces auth, services, and repositories
@@ -16,15 +16,6 @@ import { BillingError } from '../errors';
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
 const TEST_USER_ID = '00000000-0000-4000-a000-000000000001';
-
-let mockCreditBalance: any = {
-  balance: '100.0000',
-  expiringCredits: '80.0000',
-  nonExpiringCredits: '20.0000',
-  dailyCreditsBalance: '3.00',
-  tier: 'tier_6_50',
-};
-let mockTransactionsSummary: any = { totalCredits: 150, totalDebits: 50, count: 200 };
 
 let mockDeletionStatus: any = {
   has_pending_deletion: false,
@@ -65,8 +56,8 @@ mock.module('../billing/services/credits', () => ({
 
 // Credit accounts repository mock
 mock.module('../billing/repositories/credit-accounts', () => ({
-  getCreditAccount: async () => mockCreditBalance ? { accountId: TEST_USER_ID, ...mockCreditBalance } : null,
-  getCreditBalance: async () => mockCreditBalance,
+  getCreditAccount: async () => null,
+  getCreditBalance: async () => null,
   updateCreditAccount: async () => {},
   upsertCreditAccount: async () => {},
   getSubscriptionInfo: async () => null,
@@ -77,7 +68,6 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 mock.module('../billing/repositories/transactions', () => ({
   insertLedgerEntry: async (data: any) => ({ id: 'ledger_mock', ...data }),
   getTransactions: async () => ({ rows: [], total: 0 }),
-  getTransactionsSummary: async () => mockTransactionsSummary,
   insertPurchase: async (data: any) => ({ id: 'purchase_mock', ...data }),
   getPurchaseByPaymentIntent: async () => null,
   updatePurchaseStatus: async () => {},
@@ -190,14 +180,6 @@ function createBillingTestApp() {
 // ─── Reset ───────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
-  mockCreditBalance = {
-    balance: '100.0000',
-    expiringCredits: '80.0000',
-    nonExpiringCredits: '20.0000',
-    dailyCreditsBalance: '3.00',
-    tier: 'tier_6_50',
-  };
-  mockTransactionsSummary = { totalCredits: 150, totalDebits: 50, count: 200 };
   mockDeletionStatus = {
     has_pending_deletion: false,
     deletion_scheduled_for: null,
@@ -212,89 +194,25 @@ beforeEach(() => {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
-describe('Billing: tier-configurations', () => {
-  test('GET /v1/billing/tier-configurations returns visible tiers', async () => {
+describe('Billing: removed credit read routes', () => {
+  test('legacy tier, balance, and usage summary endpoints are not mounted', async () => {
     const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/tier-configurations', {
+    const tiers = await app.request('/v1/billing/tier-configurations', {
       method: 'GET',
       headers: { Authorization: 'Bearer test_token' },
     });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.tiers).toBeDefined();
-    expect(Array.isArray(body.tiers)).toBe(true);
-    expect(body.tiers.length).toBeGreaterThanOrEqual(1);
-
-    // Should include visible tiers
-    const tierNames = body.tiers.map((t: any) => t.name);
-    expect(tierNames).toContain('pro');
-
-    // Should NOT include hidden tiers ('free' is hidden from signup flows,
-    // 'none' is the internal no-access tier).
-    expect(tierNames).not.toContain('none');
-    expect(tierNames).not.toContain('free');
-
-    // Verify tier structure
-    const proTier = body.tiers.find((t: any) => t.name === 'pro');
-    expect(proTier.display_name).toBe('Pro');
-    expect(proTier.monthly_price).toBe(20);
-    expect(proTier.monthly_credits).toBe(0);
-
-  });
-});
-
-describe('Billing: credit-breakdown', () => {
-  test('GET /v1/billing/credit-breakdown returns balance breakdown', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/credit-breakdown', {
+    const breakdown = await app.request('/v1/billing/credit-breakdown', {
       method: 'GET',
       headers: { Authorization: 'Bearer test_token' },
     });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.total).toBe(100);
-    expect(body.expiring).toBe(80);
-    expect(body.non_expiring).toBe(20);
-    expect(body.daily).toBe(3);
-  });
-
-  test('returns zeros when no account found', async () => {
-    mockCreditBalance = null;
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/credit-breakdown', {
+    const usage = await app.request('/v1/billing/usage-history?days=7', {
       method: 'GET',
       headers: { Authorization: 'Bearer test_token' },
     });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.total).toBe(0);
-    expect(body.expiring).toBe(0);
-    expect(body.non_expiring).toBe(0);
-    expect(body.daily).toBe(0);
-  });
-});
 
-describe('Billing: usage-history', () => {
-  test('GET /v1/billing/usage-history returns summary', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/usage-history', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer test_token' },
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.totalCredits).toBe(150);
-    expect(body.totalDebits).toBe(50);
-    expect(body.count).toBe(200);
-  });
-
-  test('accepts days query parameter', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/usage-history?days=7', {
-      method: 'GET',
-      headers: { Authorization: 'Bearer test_token' },
-    });
-    expect(res.status).toBe(200);
+    expect(tiers.status).toBe(404);
+    expect(breakdown.status).toBe(404);
+    expect(usage.status).toBe(404);
   });
 });
 

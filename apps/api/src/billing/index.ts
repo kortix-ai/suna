@@ -5,7 +5,6 @@ import { config } from '../config';
 import { accountStateRouter } from './routes/account-state';
 import { subscriptionsRouter } from './routes/subscriptions';
 import { paymentsRouter } from './routes/payments';
-import { creditsRouter } from './routes/credits';
 import { webhooksRouter } from './routes/webhooks';
 import { accountDeletionRouter } from './routes/account-deletion';
 
@@ -39,10 +38,9 @@ billingApp.use('*', async (c, next) => {
   return next();
 });
 
-// Billing routes — subscriptions, payments, credits (all require billing enabled)
+// Billing routes — subscriptions and payments (all require billing enabled)
 billingApp.route('/', subscriptionsRouter);
 billingApp.route('/', paymentsRouter);
-billingApp.route('/', creditsRouter);
 
 // Account deletion (mounted at /v1/billing/account/*)
 billingApp.route('/account', accountDeletionRouter);
