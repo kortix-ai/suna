@@ -1,12 +1,12 @@
 import catalogJson from './catalog.generated.json' with { type: 'json' };
 
-export interface CatalogModel {
+interface CatalogModel {
   id: string;
   name: string;
   released?: string | null;
 }
 
-export interface CatalogProvider {
+interface CatalogProvider {
   id: string;
   name: string;
   env?: string[];
