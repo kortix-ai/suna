@@ -202,9 +202,9 @@ flow("INV-1", { domain: "accounts", serial: true, routes: ["GET /v1/accounts/:ac
   });
 });
 
-flow("DEL-1", { domain: "accounts", routes: ["GET /v1/account/deletion-status"] }, async (ctx) => {
+flow("DEL-1", { domain: "accounts", routes: ["GET /v1/billing/account/deletion-status"] }, async (ctx) => {
   await ctx.step("OWNER reads deletion status", async () => {
-    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/account/deletion-status");
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/billing/account/deletion-status");
     r.status(200);
   });
 });

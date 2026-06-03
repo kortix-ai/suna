@@ -202,15 +202,11 @@ flow(
   "DEL-3",
   {
     domain: "billing",
-    routes: ["DELETE /v1/account/delete-immediately", "DELETE /v1/billing/account/delete-immediately"],
+    routes: ["DELETE /v1/billing/account/delete-immediately"],
   },
   async (ctx) => {
     // Destructive — assert the auth boundary only (ANON), never delete a real account.
     await ctx.step("ANON delete-immediately → 401", async () => {
-      const r = await ctx.client.as(ctx.P.ANON).del("/v1/account/delete-immediately");
-      r.status(401);
-    });
-    await ctx.step("ANON billing-mirror delete-immediately → 401", async () => {
       const r = await ctx.client.as(ctx.P.ANON).del("/v1/billing/account/delete-immediately");
       r.status(401);
     });

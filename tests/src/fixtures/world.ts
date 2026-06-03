@@ -151,7 +151,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
         try {
           // delete-immediately resolves the caller's account; account_id in body
           // overrides for team accounts the OWNER controls.
-          await adminClient.del("/v1/account/delete-immediately", { body: { account_id: acct } });
+          await adminClient.del("/v1/billing/account/delete-immediately", { body: { account_id: acct } });
         } catch (err) {
           log.warn(`teardown run account ${acct} failed: ${(err as Error)?.message ?? err}`);
         }

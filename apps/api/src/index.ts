@@ -17,7 +17,7 @@ import { BillingError } from './errors';
 // ─── Sub-Service Imports ──────────────────────────────────────────────────── 
 
 import { router } from './router';
-import { billingApp, accountDeletionApp } from './billing';
+import { billingApp } from './billing';
 import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
@@ -395,7 +395,6 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
 }
 
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
-app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // api keys
 registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects

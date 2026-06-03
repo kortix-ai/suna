@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 290,
+  "count": 286,
   "routes": [
     {
       "method": "GET",
@@ -65,22 +65,6 @@
     {
       "method": "POST",
       "path": "/v1/account-invites/:inviteId/decline"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/account/cancel-deletion"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/account/delete-immediately"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/account/deletion-status"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/account/request-deletion"
     },
     {
       "method": "GET",

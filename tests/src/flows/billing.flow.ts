@@ -150,8 +150,7 @@ flow(
  * routes resolve the account from the CALLER's identity (resolveAccountId(userId)),
  * NOT a body account_id — so we drive them with a THROWAWAY user (a fresh team
  * member synthesized for this run, torn down by the world). We never touch OWNER's
- * own account. Covers both the `/v1/account/*` mount and the `/v1/billing/account/*`
- * mirror mount. ANON must be rejected (401) from the authed deletion routes.
+ * own account. ANON must be rejected (401) from the authed deletion routes.
  */
 flow(
   "DEL-2",
@@ -159,8 +158,6 @@ flow(
     domain: "billing",
     serial: true,
     routes: [
-      "POST /v1/account/request-deletion",
-      "POST /v1/account/cancel-deletion",
       "GET /v1/billing/account/deletion-status",
       "POST /v1/billing/account/request-deletion",
       "POST /v1/billing/account/cancel-deletion",
@@ -176,33 +173,32 @@ flow(
       const r = await ctx.client.as(ctx.P.ANON).get("/v1/billing/account/deletion-status");
       r.status(401);
     });
-    await ctx.step("throwaway user schedules deletion (/account mount) → 200", async () => {
-      const r = await asVictim.post("/v1/account/request-deletion", { reason: "ke2e" });
+    await ctx.step("throwaway user schedules deletion → 200", async () => {
+      const r = await asVictim.post("/v1/billing/account/request-deletion", { reason: "ke2e" });
       r.status(200);
     });
-    await ctx.step("deletion-status (billing mirror mount) reflects the pending request", async () => {
+    await ctx.step("deletion-status reflects the pending request", async () => {
       const r = await asVictim.get("/v1/billing/account/deletion-status");
       r.status(200);
     });
     await ctx.step("requesting again while pending → 400 (already exists)", async () => {
-      const r = await asVictim.post("/v1/account/request-deletion", { reason: "again" });
+      const r = await asVictim.post("/v1/billing/account/request-deletion", { reason: "again" });
       r.status([400, 409]);
     });
     await ctx.step("throwaway user cancels the deletion → 200", async () => {
-      const r = await asVictim.post("/v1/account/cancel-deletion", {});
+      const r = await asVictim.post("/v1/billing/account/cancel-deletion", {});
       r.status(200);
     });
     await ctx.step("cancel again with nothing pending → 400 (no active request)", async () => {
-      const r = await asVictim.post("/v1/account/cancel-deletion", {});
+      const r = await asVictim.post("/v1/billing/account/cancel-deletion", {});
       r.status([400, 404]);
     });
   },
 );
 
 /**
- * DEL-2b — billing-mirror deletion mount, exercised independently end-to-end on a
- * second throwaway user (schedule via /billing/account/request-deletion → cancel via
- * the mirror cancel). Confirms the mirror mount is fully wired, not just the status read.
+ * DEL-2b — deletion cancel path, exercised independently end-to-end on a
+ * second throwaway user.
  */
 flow(
   "DEL-2b",
@@ -216,11 +212,11 @@ flow(
     const victim = await team.addMember("member");
     const asVictim = ctx.client.as(victim);
 
-    await ctx.step("schedule deletion via billing mirror mount → 200", async () => {
+    await ctx.step("schedule deletion → 200", async () => {
       const r = await asVictim.post("/v1/billing/account/request-deletion", { reason: "ke2e-mirror" });
       r.status(200);
     });
-    await ctx.step("cancel deletion via billing mirror mount → 200", async () => {
+    await ctx.step("cancel deletion → 200", async () => {
       const r = await asVictim.post("/v1/billing/account/cancel-deletion", {});
       r.status(200);
     });

@@ -118,8 +118,8 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `TOK-4` project-scoped PAT (`projectId` set): allowed only on its own project + `/accounts/me`; **everything else → 403** (other project, `/accounts/*`, project-list, and all other surfaces — `enforceTokenProjectScope`).
 
 ### Account deletion
-`DEL-1` `GET /account/deletion-status` → state.
-`DEL-2` `POST /account/request-deletion` → schedules; `POST /account/cancel-deletion` → cancels; `DELETE /account/delete-immediately` → purges. (Mirror mount `/billing/account/*`.)
+`DEL-1` `GET /billing/account/deletion-status` → state.
+`DEL-2` `POST /billing/account/request-deletion` → schedules; `POST /billing/account/cancel-deletion` → cancels; `DELETE /billing/account/delete-immediately` → purges.
 
 ---
 
@@ -557,9 +557,9 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `BILL-10` per-seat: `POST /billing/claim-per-seat` → no-op/skipped on non-legacy.
 `AUTH-1` `POST /v1/auth/logout` → OWNER 200/204; ANON 200/401.
 `BILL-3b` `POST /billing/create-checkout-session` · `create-per-seat-checkout` · `create-portal-session` → Stripe URL or 400/500.
-`DEL-2b` `/billing/account/*` deletion mirror — request → cancel lifecycle.
+`DEL-2b` `/billing/account/*` deletion cancel lifecycle.
 `SESS-11` session sub-routes (commit-push/ensure-opencode/restart/wake) → unknown/non-uuid session → 4xx (happy paths need a funded session, run on dev-api).
 `SEC-5` `PUT/DELETE /projects/:id/secrets/:name/personal` → per-user secret override set/clear.
 `CONN-10` `POST /executor/projects/:id/connectors/:slug/connect[/finalize]` → pipedream; unknown connector → 404/501.
 `CONN-11` `POST /executor/webhook/pipedream` → public; bad/unsigned payload → rejected.
-`DEL-3` `DELETE /v1/account/delete-immediately` (+ /billing mirror) → ANON → 401 (auth boundary; destructive happy path not run).
+`DEL-3` `DELETE /v1/billing/account/delete-immediately` → ANON → 401 (auth boundary; destructive happy path not run).
