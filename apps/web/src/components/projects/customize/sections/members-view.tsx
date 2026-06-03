@@ -428,7 +428,27 @@ function ProjectAccessCard({
                 key={member.user_id}
                 leading={<UserAvatar email={member.email ?? ''} size="md" />}
                 title={userLabel(member)}
-                badges={<AccountRoleBadge role={member.account_role} />}
+                badges={
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <AccountRoleBadge role={member.account_role} />
+                    {/* Group indicator: which of THIS project's attached groups
+                        the member belongs to. Makes group-derived access (and
+                        why it isn't directly revocable here) obvious — the
+                        access is managed in the Group access section below. */}
+                    {(member.group_sources ?? []).map((g) => (
+                      <Badge
+                        key={g.group_id}
+                        variant="outline"
+                        size="sm"
+                        className="gap-1 font-normal"
+                        title={`In the "${g.group_name}" group — manage in Group access`}
+                      >
+                        <Users className="h-3 w-3" />
+                        {g.group_name}
+                      </Badge>
+                    ))}
+                  </div>
+                }
                 subtitle={
                   <InlineMeta>
                     <span>
