@@ -107,7 +107,7 @@ function GenericErrorCard({ errorText }: { errorText: string }) {
 
 // ── Public component ───────────────────────────────────────────────────────
 
-export interface SessionErrorBannerProps {
+interface SessionErrorBannerProps {
   errorText: string;
   isDark: boolean;
 }

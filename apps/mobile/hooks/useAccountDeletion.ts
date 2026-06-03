@@ -5,7 +5,7 @@ import { supabase } from '@/api/supabase';
 // Ported from web's use-account-deletion.ts (commit 325e62d).
 // Talks to the same backend routes mounted at /v1/billing/account/*.
 
-export interface AccountDeletionStatus {
+interface AccountDeletionStatus {
     has_pending_deletion: boolean;
     deletion_scheduled_for: string | null;
     requested_at: string | null;

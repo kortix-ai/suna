@@ -5,7 +5,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 export type SoundEvent = 'completion' | 'error' | 'notification' | 'send';
 export type SoundPack = 'off' | 'kortix';
 
-export interface SoundPreferences {
+interface SoundPreferences {
   pack: SoundPack;
   volume: number;
   events: Partial<Record<SoundEvent, boolean>>;

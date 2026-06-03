@@ -62,7 +62,7 @@ import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from 
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface AttachedFile {
+interface AttachedFile {
   /** Local URI on device (file:// or content://) */
   uri: string;
   /** Display name */
@@ -85,7 +85,7 @@ export type { TrackedMention } from './useMentions';
 
 // ─── AutoContinue configuration (shared with frontend) ────────────────────────
 
-export type AutoContinueMode = 'autowork' | 'autowork1' | 'autowork2' | 'autowork3';
+type AutoContinueMode = 'autowork' | 'autowork1' | 'autowork2' | 'autowork3';
 
 interface AutoContinueAlgorithm {
   id: AutoContinueMode;
