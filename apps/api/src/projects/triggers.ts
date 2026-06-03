@@ -299,7 +299,10 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
   const agent = typeof row.agent === 'string' && row.agent.trim() ? row.agent.trim() : 'default';
-  const enabled = coerceBool(row.enabled, true);
+  if (row.enabled !== undefined && typeof row.enabled !== 'boolean') {
+    return err(slug, 'enabled must be a boolean');
+  }
+  const enabled = row.enabled ?? true;
 
   const path = `${MANIFEST_FILENAME}#triggers.${slug}`;
 
@@ -377,17 +380,6 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
       secretEnv,
     },
   };
-}
-
-function coerceBool(value: unknown, fallback: boolean): boolean {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value !== 0;
-  if (typeof value === 'string') {
-    const v = value.trim().toLowerCase();
-    if (v === 'true' || v === '1' || v === 'yes' || v === 'on') return true;
-    if (v === 'false' || v === '0' || v === 'no' || v === 'off') return false;
-  }
-  return fallback;
 }
 
 function err(slug: string, message: string): ParseErr {

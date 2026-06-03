@@ -275,6 +275,20 @@ prompt = "x"
     expect(errors[0]!.error).toMatch(/cron triggers must declare/);
   });
 
+  test('enabled must be a boolean', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "string-enabled"
+type = "cron"
+cron = "* * * * * *"
+enabled = "false"
+prompt = "x"
+`));
+    const { specs, errors } = extractTriggers(parsed);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toMatch(/enabled must be a boolean/);
+  });
+
   test('rejects camelCase runAt in favor of run_at', () => {
     const parsed = parseManifestString(manifestWith(`
 [[triggers]]

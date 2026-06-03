@@ -200,7 +200,10 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
   }
 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
-  const enabled = coerceBool(row.enabled, true);
+  if (row.enabled !== undefined && typeof row.enabled !== 'boolean') {
+    return err(slug, 'enabled must be a boolean');
+  }
+  const enabled = row.enabled ?? true;
 
   // Credential mode — per-app default, overridable via `credential = "..."`.
   const credRaw = typeof row.credential === 'string' ? row.credential.trim().toLowerCase() : '';
@@ -352,17 +355,6 @@ function parsePolicies(
     out.push({ match, action: action as ConnectorPolicyAction });
   }
   return { ok: true, value: out };
-}
-
-function coerceBool(value: unknown, fallback: boolean): boolean {
-  if (typeof value === 'boolean') return value;
-  if (typeof value === 'number') return value !== 0;
-  if (typeof value === 'string') {
-    const v = value.trim().toLowerCase();
-    if (v === 'true' || v === '1' || v === 'yes' || v === 'on') return true;
-    if (v === 'false' || v === '0' || v === 'no' || v === 'off') return false;
-  }
-  return fallback;
 }
 
 function err(slug: string, message: string): ParseErr {

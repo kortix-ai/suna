@@ -204,7 +204,7 @@ prompt  = "Summarize yesterday's commits."
 | `prompt`  | yes      | string | —           | Mustache-style template.                                      |
 | `name`    | no       | string | `slug`      | Human label.                                                  |
 | `agent`   | no       | string | `"default"` | OpenCode agent name.                                          |
-| `enabled` | no       | bool   | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
+| `enabled` | no       | bool   | `true`      | When `false`, the scheduler / receiver skip the entry.             |
 
 Cron-only: `cron` (6-field croner `second minute hour day month weekday`) and `timezone` (IANA name, default `"UTC"`). Webhook-only: `secret_env` (name of a `project_secrets` entry holding the HMAC secret).
 

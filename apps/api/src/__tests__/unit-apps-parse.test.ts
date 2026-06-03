@@ -341,6 +341,21 @@ domains = ["x.style.dev"]
     expect(errors[0]!.error).toMatch(/Invalid slug/);
   });
 
+  test('enabled must be a boolean', () => {
+    const { specs, errors } = parseAndExtract(`
+[[apps]]
+slug = "string-enabled"
+enabled = "false"
+domains = ["x.style.dev"]
+
+  [apps.source]
+  type = "git"
+  repo = "https://github.com/me/x"
+`);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toMatch(/enabled must be a boolean/);
+  });
+
   test('provider field is ignored by the manifest parser', () => {
     const { specs, errors } = parseAndExtract(`
 [[apps]]

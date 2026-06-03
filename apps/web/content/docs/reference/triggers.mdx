@@ -79,7 +79,7 @@ The secret value lives in `project_secrets`; the manifest references it by name.
 | `prompt` | yes | string | — | Mustache-templated body. May be multi-line via `"""…"""`. |
 | `name` | no | string | `slug` | Human label. |
 | `agent` | no | string | `"default"` | OpenCode agent name from `<config_dir>/agents/<name>.md`. |
-| `enabled` | no | bool | `true` | When `false`, the scheduler / receiver skip the entry. Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
+| `enabled` | no | bool | `true` | When `false`, the scheduler / receiver skip the entry. |
 
 ### Cron-only fields
 

@@ -355,6 +355,18 @@ provider = "pipedream"
     expect(errors[0]!.error).toContain('requires `app`');
   });
 
+  test('enabled must be a boolean', () => {
+    const { specs, errors } = parseAndExtract(`
+[[connectors]]
+slug = "x"
+provider = "openapi"
+spec = "https://x/y.json"
+enabled = "false"
+`);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toContain('enabled must be a boolean');
+  });
+
   test('auth type custom without name', () => {
     const { errors } = parseAndExtract(`
 [[connectors]]
