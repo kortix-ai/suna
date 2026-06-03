@@ -17,14 +17,15 @@ pnpm dev          # web + API + Supabase + tunnel
 
 The API's secrets live **encrypted in the repo** with [dotenvx](https://dotenvx.com). Every value in `apps/api/.env` is AES-encrypted (`KEY=encrypted:…`). The **public key** that encrypts them sits in the file and is safe to commit; the **private key** that decrypts them never touches git. So the secrets are safe in version control — only the key is sensitive.
 
-There are two profiles, one file each, every one with its own keypair:
+There are three profiles, one file each, every one with its own keypair:
 
 | Profile | File | Used by |
 | --- | --- | --- |
 | local | `apps/api/.env` | `pnpm dev` |
 | dev | `apps/api/.env.dev` | `dotenvx run -f apps/api/.env.dev -- …` |
+| prod | `apps/api/.env.prod` | `dotenvx run -f apps/api/.env.prod -- …` (run locally against prod when needed) |
 
-The private keys are held off your machine in [Dotenv Armor](https://dotenvx.com/armor). `pnpm dev` decrypts them **in memory** at boot via `dotenvx run` — nothing plaintext is ever written to disk. (Production secrets are not kept in the repo; the prod runtime injects them.)
+The private keys are held off your machine in [Dotenv Armor](https://dotenvx.com/armor). `pnpm dev` decrypts them **in memory** at boot via `dotenvx run` — nothing plaintext is ever written to disk. (The deployed prod runtime still gets its own env injected; `.env.prod` here is only for running locally against prod.)
 
 ## First time on a new machine
 
@@ -40,7 +41,7 @@ dotenvx-armor login
 ### Pull the keys from the cloud
 ```sh
 cd apps/api
-for f in .env .env.dev; do dotenvx-armor pull -f "$f"; done
+for f in .env .env.dev .env.prod; do dotenvx-armor pull -f "$f"; done
 ```
 </Step>
 <Step>

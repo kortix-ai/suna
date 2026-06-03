@@ -28,7 +28,7 @@ This re-encrypts `apps/api/.env` in place (value becomes `KEY=encrypted:…`). T
 - Each value in `apps/api/.env` is AES-encrypted. The **public key** (encrypts) sits in the file and is safe to commit; the **private key** (decrypts) never touches git.
 - Private keys live in **Dotenv Armor** (cloud) and/or the gitignored `apps/api/.env.keys`.
 - At boot, `dotenvx run` decrypts **in memory** and injects real env vars — nothing plaintext hits disk.
-- Two profiles, one file each, each with its own keypair: `apps/api/.env` (local, the default) and `apps/api/.env.dev` (opt-in via `-f`). **Production secrets are NOT in the repo** — the prod runtime injects them; never add a prod profile here.
+- Three profiles, one file each, each with its own keypair: `apps/api/.env` (local, the default), `apps/api/.env.dev`, and `apps/api/.env.prod` — the latter two are opt-in via `-f` (e.g. `dotenvx run -f apps/api/.env.prod -- …`). The deployed prod runtime still injects its own env; `.env.prod` is only for running locally against prod.
 
 ## Commands
 
