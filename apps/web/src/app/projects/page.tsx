@@ -84,7 +84,7 @@ function ProjectCard({
   return (
     <div
       className={cn(
-        'group relative flex flex-col rounded-2xl border border-border/60 bg-card',
+        'group relative flex flex-col rounded-2xl border border-border/60 bg-background',
         'transition-all duration-150 hover:border-foreground/30 hover:bg-muted/30 hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.18)]',
       )}
     >
@@ -535,7 +535,7 @@ export default function ProjectsPage() {
               )}
 
               {showEmptyState && (
-                <SectionCard flush>
+                <SectionCard flush className="bg-background">
                   <EmptyState
                     icon={FolderPlus}
                     title="No projects yet"
@@ -556,7 +556,7 @@ export default function ProjectsPage() {
               )}
 
               {showNoResults && (
-                <SectionCard flush>
+                <SectionCard flush className="bg-background">
                   <EmptyState
                     icon={Search}
                     size="sm"
@@ -602,7 +602,7 @@ export default function ProjectsPage() {
               )}
 
               {showAllEmpty && (
-                <SectionCard flush>
+                <SectionCard flush className="bg-background">
                   <EmptyState
                     icon={FolderPlus}
                     title="No projects yet"
@@ -622,7 +622,7 @@ export default function ProjectsPage() {
               )}
 
               {showAllNoResults && (
-                <SectionCard flush>
+                <SectionCard flush className="bg-background">
                   <EmptyState
                     icon={Search}
                     size="sm"
