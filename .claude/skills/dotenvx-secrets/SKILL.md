@@ -66,7 +66,7 @@ Need a different value just on your machine? Put it in the gitignored `apps/api/
 ## Guardrails (don't bypass)
 
 - `apps/api/.env.keys`, `apps/api/.env.local`, `apps/web/.env`, `supabase/.env` are gitignored.
-- Version-controlled git hooks in `.githooks/` (enable per clone: `git config core.hooksPath .githooks`). Pre-commit **auto-encrypts** the three profile files and then blocks the commit if any unencrypted, non-gitignored `.env` remains; pre-push re-checks.
+- Version-controlled git hooks in `.githooks/` (enable per clone: `git config core.hooksPath .githooks`). **Every committable `.env` is dotenvx-managed, no exceptions:** the pre-commit hook discovers *any* staged `.env`/`.env.<env>` (new services included) and **auto-encrypts** it (`--no-armor`, mints a keypair into the adjacent `.env.keys` for new files), then blocks the commit if any unencrypted, non-gitignored `.env` remains; pre-push re-checks. Excluded: `.env.keys` (private keys) and `.env.example` (templates); gitignored files like `.env.local` / `supabase/.env` are never staged so they're untouched.
 - `.gitleaks.toml` allowlists the encrypted `apps/api/.env*` so `secret-scan` passes while still catching real plaintext anywhere else.
 - GitHub secret-scanning **push protection** is enabled on the repo.
 
