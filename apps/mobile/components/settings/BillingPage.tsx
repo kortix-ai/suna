@@ -13,8 +13,6 @@ import { SettingsHeader } from './SettingsHeader';
 import { PricingTierBadge } from '@/components/billing/PricingTierBadge';
 import {
   useAccountState,
-  useSubscriptionCommitment,
-  useScheduledChanges,
   billingKeys,
 } from '@/lib/billing';
 import { useAuthContext } from '@/contexts';
@@ -66,20 +64,6 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     enabled: visible && isAuthenticated,
   });
 
-  const {
-    data: commitmentData,
-    refetch: refetchCommitment,
-  } = useSubscriptionCommitment(accountState?.subscription?.subscription_id || undefined, {
-    enabled: visible && !!accountState?.subscription?.subscription_id,
-  });
-
-  const {
-    data: scheduledChangesData,
-    refetch: refetchScheduledChanges,
-  } = useScheduledChanges({
-    enabled: visible && isAuthenticated,
-  });
-
   const handleClose = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
@@ -87,10 +71,8 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
 
   const handleSubscriptionUpdate = useCallback(() => {
     refetchSubscription();
-    refetchCommitment();
-    refetchScheduledChanges();
     queryClient.invalidateQueries({ queryKey: billingKeys.all });
-  }, [refetchSubscription, refetchCommitment, refetchScheduledChanges, queryClient]);
+  }, [refetchSubscription, queryClient]);
 
 
   const handleCreditsExplained = useCallback(async () => {
@@ -250,16 +232,17 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
 
   const dailyRefreshTime = getDailyRefreshTime();
   const monthlyRefreshTime = getMonthlyRefreshTime();
+  const commitmentData = accountState?.subscription?.commitment;
   const hasCommitment = commitmentData?.has_commitment;
   const commitmentEndDate = commitmentData?.commitment_end_date
     ? new Date(commitmentData.commitment_end_date).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
-      })
+    })
     : null;
 
-  const scheduledChange = scheduledChangesData?.scheduled_change || accountState?.subscription?.scheduled_change;
+  const scheduledChange = accountState?.subscription?.scheduled_change;
   const subscription = accountState?.subscription;
 
   return (

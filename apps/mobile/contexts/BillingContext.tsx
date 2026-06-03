@@ -10,16 +10,22 @@
  */
 
 import React, { createContext, useContext, ReactNode } from 'react';
-import type { SubscriptionInfo, CreditBalance, BillingStatus } from '@/lib/billing';
 
 // ============================================================================
 // Context Types (unchanged — consumers depend on this shape)
 // ============================================================================
 
+interface DisabledSubscriptionInfo {
+  tier_key?: string;
+  tier?: {
+    name?: string;
+  };
+}
+
 export interface BillingContextType {
-  subscriptionData: SubscriptionInfo | null;
-  creditBalance: CreditBalance | null;
-  billingStatus: BillingStatus | null;
+  subscriptionData: DisabledSubscriptionInfo | null;
+  creditBalance: null;
+  billingStatus: null;
 
   isLoading: boolean;
   subscriptionLoading: boolean;
