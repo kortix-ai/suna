@@ -263,11 +263,22 @@ export async function pushStep(ctx: MigrationContext): Promise<void> {
     'cd "$WS"',
     'export HOME="$(mktemp -d)"',
     `git config --global --add safe.directory ${sq('*')}`,
+    // Preserve the user's OWN agents/skills/tools/commands before swapping the
+    // opencode runtime — otherwise migrated users lose everything they built.
+    // Back them up, replace .kortix/opencode wholesale with the current starter
+    // (fresh runtime + default agents/skills), then restore the user's set on top
+    // WITHOUT clobbering the refreshed defaults (cp -n): every net-new custom
+    // agent/skill the user had survives; platform defaults stay current.
+    // (.kortix/memory is left in place — it's outside .kortix/opencode and the
+    // starter overlay's cp -n never clobbers it.)
+    '__keep="$(mktemp -d)"',
+    'for __d in agents skills tools command; do [ -d ".kortix/opencode/$__d" ] && cp -a ".kortix/opencode/$__d" "$__keep/" 2>/dev/null || true; done',
     'rm -rf .kortix/opencode kortix.toml',
     '__ST="$(mktemp -d)"',
     `base64 -d ${sq(STARTER_REMOTE_B64)} | tar xzf - -C "$__ST"`,
     'cp -a -n "$__ST"/. .',
-    `rm -rf "$__ST" ${sq(STARTER_REMOTE_B64)}`,
+    'for __d in agents skills tools command; do [ -d "$__keep/$__d" ] && { mkdir -p ".kortix/opencode/$__d"; cp -a -n "$__keep/$__d/." ".kortix/opencode/$__d/" 2>/dev/null || true; }; done',
+    `rm -rf "$__ST" "$__keep" ${sq(STARTER_REMOTE_B64)}`,
     `printf '%s\\n' ${excludeLine} > .gitignore`,
     'rm -rf .git',
     'find . -type d -name .git -prune -exec rm -rf {} + 2>/dev/null || true',
