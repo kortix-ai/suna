@@ -37,7 +37,7 @@ const TTL_MS = 60_000;
 const RENEW_INTERVAL_MS = 20_000;
 const ACQUIRE_RETRY_MS = 15_000;
 
-export interface LeaderElectionHandlers {
+interface LeaderElectionHandlers {
   /** Called once when this node becomes leader (start singleton workers). */
   onAcquire: () => void | Promise<void>;
   /** Called when this node loses leadership (stop singleton workers). */

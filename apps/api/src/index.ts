@@ -21,7 +21,6 @@ import { billingApp } from './billing';
 import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
-import { queueApp, startDrainer, stopDrainer } from './queue';
 import { serversApp } from './servers';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { ensureSchema } from './ensure-schema';
@@ -446,9 +445,6 @@ app.route('/v1/oauth', oauthApp);
 app.use('/v1/servers/*', combinedAuth);
 app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/sync, DELETE /v1/servers/:id
 
-app.use('/v1/queue/*', combinedAuth);
-app.route('/v1/queue', queueApp);            // /v1/queue/sessions/:id, /v1/queue/messages/:id, /v1/queue/all, /v1/queue/status
-
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
 app.route('/v1/tunnel/device-auth', createDeviceAuthPublicRouter());
@@ -592,7 +588,6 @@ let singletonWorkersRunning = false;
 async function startSingletonWorkers() {
   if (singletonWorkersRunning) return;
   singletonWorkersRunning = true;
-  startDrainer();
   startProjectMaintenance();
   startProjectTriggerScheduler();
   // Mint the global platform-default sandbox image once per leadership term so
@@ -609,7 +604,6 @@ async function startSingletonWorkers() {
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
   singletonWorkersRunning = false;
-  stopDrainer();
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
   stopLegacyMigrationWorker();
