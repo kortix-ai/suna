@@ -61,10 +61,6 @@ export const STATUS_DOT: Record<StatusTone, string> = {
   neutral: 'bg-muted-foreground/40',
 };
 
-export function statusText(tone: StatusTone) {
-  return STATUS_TEXT[tone];
-}
-
 /**
  * A faint, tone-based status chip — the member of the status family for
  * "this row/item is success/warning/error/info" labels.

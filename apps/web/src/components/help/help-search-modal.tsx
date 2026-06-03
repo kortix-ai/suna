@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Coins, HelpCircle } from 'lucide-react';
+import { Coins } from 'lucide-react';
 import {
     Command,
     CommandEmpty,
@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/command';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
-import { useIsMobile } from '@/hooks/utils';
 
 interface HelpSearchModalProps {
     open: boolean;
@@ -35,7 +34,7 @@ const helpPages: HelpPage[] = [
     {
         title: 'What are Credits?',
         description: 'Learn about credit types, how they are consumed, and pricing',
-        url: '/credits-explained',
+        url: '/help/credits',
         category: 'Billing & Usage',
         icon: Coins,
         keywords: ['credits', 'billing', 'pricing', 'costs', 'usage', 'expiring', 'non-expiring', 'subscription'],
@@ -46,7 +45,6 @@ export function HelpSearchModal({ open, onOpenChange }: HelpSearchModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
     const [search, setSearch] = useState('');
     const router = useRouter();
-    const isMobile = useIsMobile();
 
     const filtered = search
         ? helpPages.filter((page) => {
@@ -129,4 +127,3 @@ export function HelpSearchModal({ open, onOpenChange }: HelpSearchModalProps) {
         </Dialog>
     );
 }
-

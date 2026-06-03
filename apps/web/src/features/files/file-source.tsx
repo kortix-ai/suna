@@ -1,7 +1,7 @@
 'use client';
 
 import type { FileSource } from '@/features/file-viewer';
-import { useFileContent } from './hooks';
+import { useFileContent } from './hooks/use-file-content';
 import { useBinaryBlob } from './hooks/use-binary-blob';
 import { downloadFile, uploadFile } from './api/opencode-files';
 import { FilePathBreadcrumbs } from './components/file-breadcrumbs';

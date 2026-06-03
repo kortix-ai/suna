@@ -5,7 +5,7 @@
  */
 
 /** Rank used to order members by account role. Unknown roles sort last (99). */
-export function accountRoleRank(role: string): number {
+function accountRoleRank(role: string): number {
   switch (role) {
     case 'owner':
       return 0;

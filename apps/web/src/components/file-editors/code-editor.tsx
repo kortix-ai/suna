@@ -29,14 +29,6 @@ import { diagnosticsExtension, injectDiagnosticStyles } from './codemirror-diagn
 // Using type assertion because TypeScript types are incomplete
 const langsTyped = langs as Record<string, (() => any) | undefined>;
 
-// Debug: uncomment to inspect available CodeMirror languages
-// if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-//   const availableLangs = Object.keys(langsTyped).filter(
-//     (key) => typeof langsTyped[key] === 'function'
-//   );
-//   console.log('[CodeEditor] Available languages:', availableLangs);
-// }
-
 // Helper function to safely get language extension
 const getLangExtension = (langKey: string): any => {
   try {
@@ -179,7 +171,7 @@ const languageMap: Record<string, () => any> = {
 };
 
 // Get language from file extension
-export function getLanguageFromExtension(fileName: string): string {
+function getLanguageFromExtension(fileName: string): string {
   const extension = fileName.split('.').pop()?.toLowerCase() || '';
   const fileNameLower = fileName.toLowerCase();
   const baseName = (fileNameLower.split('/').pop() ?? fileNameLower).split('.')[0];
@@ -338,7 +330,6 @@ interface CodeEditorProps {
 export function CodeEditor({
   content,
   originalContent,
-  hasUnsavedChanges: externalHasUnsaved,
   onUnsavedChange,
   fileName,
   language: propLanguage,
@@ -791,5 +782,3 @@ export function CodeEditor({
     </div>
   );
 }
-
-

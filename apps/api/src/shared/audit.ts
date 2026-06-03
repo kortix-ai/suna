@@ -5,7 +5,7 @@ import { dispatchAuditEvent } from './audit-webhooks';
 
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-export interface AuditEventInput {
+interface AuditEventInput {
   accountId?: string | null;
   actorUserId?: string | null;
   action: string;

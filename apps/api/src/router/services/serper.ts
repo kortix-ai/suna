@@ -60,7 +60,5 @@ export async function imageSearchSerper(
     height: item.imageHeight || null,
   }));
 
-  console.log(`[KORTIX] Image search for '${query}' returned ${results.length} results`);
-
   return results;
 }

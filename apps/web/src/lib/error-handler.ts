@@ -1,6 +1,6 @@
 import { toast } from '@/lib/toast';
-import { BillingError, isBillingError, formatBillingErrorForUI } from './api/errors';
-import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { BillingError, formatBillingErrorForUI } from './api/errors';
+import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { isBillingEnabled } from '@/lib/config';
@@ -287,10 +287,7 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
         duration: 6000,
       });
     } else {
-      usePricingModalStore.getState().openPricingModal({
-        isAlert: true,
-        alertTitle: errorUI.alertTitle,
-      });
+      useNewInstanceModalStore.getState().openNewInstanceModal(errorUI.alertTitle);
     }
     return;
   }
@@ -345,44 +342,4 @@ export const handleNetworkError = (error: any, context?: ErrorContext): void => 
   } else {
     handleApiError(error, context);
   }
-};
-
-export const handleApiSuccess = (message: string, description?: string): void => {
-  toast.success(message, {
-    description,
-    duration: 3000,
-  });
-};
-
-export const handleApiWarning = (message: string, description?: string): void => {
-  toast.warning(message, {
-    description,
-    duration: 4000,
-  });
-};
-
-export const handleApiInfo = (message: string, description?: string): void => {
-  toast.info(message, {
-    description,
-    duration: 3000,
-  });
-};
-
-/**
- * Re-export for backwards compatibility.
- */
-export { isBillingError };
-
-/**
- * Handle billing errors by opening the pricing modal with appropriate message.
- * Returns true if error was handled, false otherwise.
- * Use this in mutation onError callbacks.
- */
-export const handleBillingError = (error: any): boolean => {
-  if (!isBillingError(error)) {
-    return false;
-  }
-  
-  handleApiError(error);
-  return true;
 };

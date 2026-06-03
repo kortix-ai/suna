@@ -13,14 +13,11 @@ import {
   type UseQueryOptions,
 } from '@tanstack/react-query';
 import { log } from '@/lib/logger';
-import { Share } from 'react-native';
-import { API_URL, FRONTEND_SHARE_URL, getAuthHeaders, getAuthToken } from '@/api/config';
+import { API_URL, getAuthHeaders } from '@/api/config';
 import type {
   Thread,
   Message,
-  AgentRun,
   SendMessageInput,
-  UnifiedAgentStartResponse,
   ActiveAgentRun,
 } from '@/api/types';
 
@@ -34,7 +31,6 @@ export const chatKeys = {
   thread: (id: string) => [...chatKeys.threads(), id] as const,
   messages: (threadId: string) => [...chatKeys.thread(threadId), 'messages'] as const,
   runs: (threadId: string) => [...chatKeys.thread(threadId), 'runs'] as const,
-  run: (threadId: string, runId: string) => [...chatKeys.runs(threadId), runId] as const,
   activeRuns: () => [...chatKeys.all, 'active-runs'] as const,
 };
 
@@ -110,66 +106,6 @@ export function useUpdateThread(
   });
 }
 
-export function useDeleteThread(
-  options?: UseMutationOptions<void, Error, string>
-) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (threadId) => {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/threads/${threadId}`, {
-        method: 'DELETE',
-        headers,
-      });
-      if (!res.ok) throw new Error(`Failed to delete thread: ${res.status}`);
-    },
-    onSuccess: (_, threadId) => {
-      queryClient.invalidateQueries({ queryKey: chatKeys.threads() });
-      queryClient.removeQueries({ queryKey: chatKeys.thread(threadId) });
-    },
-    ...options,
-  });
-}
-
-export function useShareThread(
-  options?: UseMutationOptions<{ shareUrl: string }, Error, string>
-) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (threadId) => {
-      // Generate share URL immediately - it's deterministic
-      const shareUrl = `${FRONTEND_SHARE_URL}/share/${threadId}`;
-
-      // Open native share menu right away for instant UX
-      // Use message instead of url to prevent iOS duplication issue
-      await Share.share({
-        message: shareUrl,
-      });
-
-      // Make thread public in background (fire-and-forget)
-      getAuthHeaders().then((headers) => {
-        fetch(`${API_URL}/threads/${threadId}`, {
-          method: 'PATCH',
-          headers,
-          body: JSON.stringify({ is_public: true }),
-        }).then((res) => {
-          if (res.ok) {
-            queryClient.invalidateQueries({ queryKey: chatKeys.threads() });
-            queryClient.invalidateQueries({ queryKey: chatKeys.thread(threadId) });
-          }
-        }).catch((err) => {
-          log.error('Failed to make thread public:', err);
-        });
-      });
-
-      return { shareUrl };
-    },
-    ...options,
-  });
-}
-
 // ============================================================================
 // Message Hooks
 // ============================================================================
@@ -206,7 +142,7 @@ export function useMessages(
   });
 }
 
-export function useAddMessage(
+function useAddMessage(
   options?: UseMutationOptions<Message, Error, { threadId: string; message: string }>
 ) {
   const queryClient = useQueryClient();
@@ -382,111 +318,9 @@ export function useSendMessage(
   });
 }
 
-export function useDeleteMessage(
-  options?: UseMutationOptions<void, Error, { threadId: string; messageId: string }>
-) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ threadId, messageId }) => {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/threads/${threadId}/messages/${messageId}`, {
-        method: 'DELETE',
-        headers,
-      });
-      if (!res.ok) throw new Error(`Failed to delete message: ${res.status}`);
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: chatKeys.messages(variables.threadId) });
-    },
-    ...options,
-  });
-}
-
 // ============================================================================
 // Agent Run Hooks
 // ============================================================================
-
-export function useAgentRuns(
-  threadId: string | undefined,
-  options?: Omit<UseQueryOptions<AgentRun[], Error>, 'queryKey' | 'queryFn'>
-) {
-  return useQuery({
-    queryKey: chatKeys.runs(threadId || ''),
-    queryFn: async () => {
-      const headers = await getAuthHeaders();
-
-      try {
-        const res = await fetch(`${API_URL}/thread/${threadId}/agent-runs`, { headers });
-
-        if (res.status === 404) return [];
-
-        if (!res.ok) throw new Error(`Failed to fetch runs: ${res.status}`);
-
-        const data = await res.json();
-        return data.agent_runs || [];
-      } catch (error: any) {
-        if (error.message?.includes('404')) return [];
-        throw error;
-      }
-    },
-    enabled: !!threadId,
-    staleTime: 30 * 1000,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      const hasRunning = data?.some((run: AgentRun) => run.status === 'running');
-      return hasRunning ? 2000 : false;
-    },
-    ...options,
-  });
-}
-
-export function useAgentRun(
-  threadId: string | undefined,
-  runId: string | undefined,
-  options?: Omit<UseQueryOptions<AgentRun, Error>, 'queryKey' | 'queryFn'>
-) {
-  return useQuery({
-    queryKey: chatKeys.run(threadId || '', runId || ''),
-    queryFn: async () => {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/agent-run/${runId}`, { headers });
-      if (!res.ok) throw new Error(`Failed to fetch run: ${res.status}`);
-      return res.json();
-    },
-    enabled: !!threadId && !!runId,
-    staleTime: 30 * 1000,
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      return data?.status === 'running' ? 2000 : false;
-    },
-    ...options,
-  });
-}
-
-export function useCancelAgentRun(
-  options?: UseMutationOptions<void, Error, { threadId: string; runId: string }>
-) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ runId }) => {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/agent-run/${runId}/stop`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({}),
-      });
-      if (!res.ok) throw new Error(`Failed to cancel run: ${res.status}`);
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: chatKeys.runs(variables.threadId) });
-      queryClient.invalidateQueries({ queryKey: chatKeys.run(variables.threadId, variables.runId) });
-      queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
-    },
-    ...options,
-  });
-}
 
 export function useActiveAgentRuns(
   options?: Omit<UseQueryOptions<ActiveAgentRun[], Error>, 'queryKey' | 'queryFn'>
@@ -517,28 +351,6 @@ export function useActiveAgentRuns(
       // Smart polling: only poll every 15 seconds if there are active runs
       const hasActiveRuns = query.state.data && query.state.data.length > 0;
       return hasActiveRuns ? 15000 : false;
-    },
-    ...options,
-  });
-}
-
-export function useAgentRunStatus(
-  agentRunId: string | undefined,
-  options?: Omit<UseQueryOptions<AgentRun, Error>, 'queryKey' | 'queryFn'>
-) {
-  return useQuery({
-    queryKey: ['agent-run', agentRunId],
-    queryFn: async () => {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/agent-run/${agentRunId}`, { headers });
-      if (!res.ok) throw new Error(`Failed to fetch agent run: ${res.status}`);
-      return res.json();
-    },
-    enabled: !!agentRunId,
-    staleTime: 1 * 1000,
-    refetchInterval: (query) => {
-      const status = query.state.data?.status;
-      return status === 'running' ? 2000 : false;
     },
     ...options,
   });

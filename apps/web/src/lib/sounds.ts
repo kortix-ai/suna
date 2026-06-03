@@ -3,23 +3,7 @@
  *
  * Plays sound effects based on the user's selected sound pack and preferences.
  * Each pack maps sound events to mp3 files under `/sounds/<pack>/`.
- *
- * -----------------------------------------------------------------------
- * FILE PLACEMENT:
- *
- *   public/sounds/opencode/completion.mp3
- *   public/sounds/opencode/error.mp3
- *   public/sounds/opencode/notification.mp3
- *   public/sounds/opencode/send.mp3
- *
- *   public/sounds/kortix/completion.mp3
- *   public/sounds/kortix/error.mp3
- *   public/sounds/kortix/notification.mp3
- *   public/sounds/kortix/send.mp3
- *
- * Drop replacement mp3 files in these directories.  The filenames must
- * match the SoundEvent names exactly (completion, error, notification, send).
- * -----------------------------------------------------------------------
+ * Missing mp3 files fall back to synthesised tones.
  */
 
 import { useSoundStore, type SoundEvent, type SoundPack } from '@/stores/sound-store';

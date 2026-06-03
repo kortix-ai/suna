@@ -10,13 +10,11 @@ import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react'
 import {
   View,
   TouchableOpacity,
-  FlatList,
   ScrollView,
   ActivityIndicator,
   Alert,
   Animated,
   Modal,
-  Platform,
   StyleSheet,
 } from 'react-native';
 import { captureScreen } from 'react-native-view-shot';
@@ -57,12 +55,9 @@ import { ExportTranscriptSheet } from '@/components/session/ExportTranscriptShee
 import { ProjectsPage } from '@/components/pages/ProjectsPage';
 import { ProjectDetailPage } from '@/components/pages/ProjectDetailPage';
 import { useKortixProjects, type KortixProject } from '@/lib/kortix';
-import { LegacyChatsSection } from '@/components/menu/LegacyChatsSection';
 import { haptics } from '@/lib/haptics';
-import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import { PlaceholderPage } from '@/components/session/PlaceholderPage';
 import { UpdatesPage } from '@/components/pages/UpdatesPage';
-import { SSHPage } from '@/components/pages/SSHPage';
 import { RunningServicesPage } from '@/components/pages/RunningServicesPage';
 import { BrowserPage } from '@/components/pages/BrowserPage';
 import { FilesPage } from '@/components/pages/FilesPage';
@@ -315,7 +310,6 @@ function ConnectingToWorkspace({
 function SessionListItem({
   item,
   isActive,
-  isChild = false,
   childCount = 0,
   isExpanded = false,
   onToggleExpand,
@@ -325,8 +319,6 @@ function SessionListItem({
 }: {
   item: Session;
   isActive: boolean;
-  /** True when this row is rendered nested under a parent */
-  isChild?: boolean;
   /** Total number of direct children — shows a persistent toggle pill */
   childCount?: number;
   /** Whether this row's children are currently expanded */
@@ -485,7 +477,6 @@ function SessionGroup({
       <SessionListItem
         item={session}
         isActive={session.id === activeSessionId}
-        isChild={false}
         childCount={hasChildren ? childSessions.length : 0}
         isExpanded={isExpanded}
         onToggleExpand={hasChildren ? () => onToggleExpand(session.id) : undefined}
@@ -530,7 +521,6 @@ function SessionGroup({
                 key={child.id}
                 item={child}
                 isActive={child.id === activeSessionId}
-                isChild
                 onPress={onPress}
                 onArchive={onArchive}
                 onDelete={onDelete}
@@ -735,7 +725,6 @@ export default function HomeScreen() {
   const viewChangesSheetRef = useRef<BottomSheetModal>(null);
   const exportTranscriptSheetRef = useRef<BottomSheetModal>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>('light');
-  const { updateAvailable: hasUpdate } = useGlobalSandboxUpdate();
 
   // Files page ref (for BottomBar menu integration)
   const filesPageRef = useRef<FilesPageRef>(null);
@@ -787,23 +776,10 @@ export default function HomeScreen() {
   const openTabIds = useTabStore((s) => s.openTabIds);
   const openPageIds = useTabStore((s) => s.openPageIds);
   const tabStateById = useTabStore((s) => s.tabStateById);
-  const sessionHistory = useTabStore((s) => s.sessionHistory);
-  const historyIndex = useTabStore((s) => s.historyIndex);
   const navigateToSession = useTabStore((s) => s.navigateToSession);
   const closeTab = useTabStore((s) => s.closeTab);
   const closeAllTabs = useTabStore((s) => s.closeAllTabs);
   const setShowTabsOverview = useTabStore((s) => s.setShowTabsOverview);
-
-  const canGoBack = historyIndex > 0;
-  const canGoForward = historyIndex < sessionHistory.length - 1;
-
-  const handleHistoryBack = useCallback(() => {
-    useTabStore.getState().goBack();
-  }, []);
-
-  const handleHistoryForward = useCallback(() => {
-    useTabStore.getState().goForward();
-  }, []);
 
   // Data
   const { data: sessions = [], isLoading: sessionsLoading } =
@@ -1096,18 +1072,6 @@ export default function HomeScreen() {
     router.push('/(settings)/instances');
   }, [closeUserMenuSheet, router]);
 
-  const handleAddInstance = useCallback(() => {
-    closeUserMenuSheet();
-    setDrawerOpen(false);
-    router.push('/(settings)/instances');
-  }, [closeUserMenuSheet, router]);
-
-  const handleOpenChangelog = useCallback(() => {
-    closeUserMenuSheet();
-    setDrawerOpen(false);
-    useTabStore.getState().navigateToPage('page:updates');
-  }, [closeUserMenuSheet]);
-
   // Theme transition overlay — snapshot + crossfade to mirror web's view-transition blur effect
   const [themeTransitionUri, setThemeTransitionUri] = useState<string | null>(null);
   const themeTransitionOpacity = useRef(new Animated.Value(1)).current;
@@ -1361,9 +1325,6 @@ export default function HomeScreen() {
           </ScrollView>
         )}
 
-        {/* Previous Chats — pre-OpenCode threads with bulk-convert (matches web sidebar) */}
-        <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
-
         {/* Bottom: user info — card style matching desktop */}
         <View
           className="px-3 pt-2"
@@ -1386,9 +1347,6 @@ export default function HomeScreen() {
                   {userDisplayName.charAt(0)}
                 </Text>
               </View>
-              {hasUpdate && (
-                <View className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 border-2 border-background" />
-              )}
             </View>
             <View className="flex-1" style={{ gap: 2 }}>
               <Text
@@ -1430,7 +1388,6 @@ export default function HomeScreen() {
     userDisplayName,
     userEmail,
     planLabel,
-    hasUpdate,
     handleUserMenuOpen,
     handleNewSession,
     handleSessionPress,
@@ -1673,17 +1630,6 @@ export default function HomeScreen() {
               isRightDrawerOpen={rightDrawerOpen}
             />
 
-          /* Active page tab — SSH */
-          ) : activePageId === 'page:ssh' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <SSHPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
           /* Active page tab — Running Services */
           ) : activePageId === 'page:running-services' && PAGE_TABS[activePageId] && !showTabsOverview ? (
             <RunningServicesPage
@@ -1814,7 +1760,6 @@ export default function HomeScreen() {
           ) : activePageId && PAGE_TABS[activePageId] && !showTabsOverview ? (
             <PlaceholderPage
               page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
               onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
               isDrawerOpen={drawerOpen}
@@ -2096,9 +2041,7 @@ export default function HomeScreen() {
         sandboxLabel={sandboxLabel}
         sandboxHost={sandboxHost}
         onManageInstances={handleManageInstances}
-        onAddInstance={handleAddInstance}
         onOpenSettings={handleGoToSettings}
-        onOpenChangelog={handleOpenChangelog}
         onSignOut={handleSignOut}
         onSelectTheme={handleThemeSelect}
         activeTheme={themePreference}
@@ -2151,9 +2094,7 @@ export default function HomeScreen() {
           <Animated.Image
             source={{ uri: themeTransitionUri }}
             resizeMode="cover"
-            fadeDuration={0}
-            style={[StyleSheet.absoluteFillObject, { opacity: themeTransitionOpacity }]}
-            pointerEvents="none"
+            style={[StyleSheet.absoluteFillObject, { opacity: themeTransitionOpacity }] as any}
           />
         </Modal>
       )}

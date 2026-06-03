@@ -30,7 +30,6 @@ import {
   Power,
   Plug,
   AlertCircle,
-  Check,
   X,
   ExternalLink,
 } from 'lucide-react-native';
@@ -58,7 +57,6 @@ import {
   useMcpAuthCallback,
   flattenModels,
   type OpenCodeConfig,
-  type McpStatus,
 } from '@/lib/opencode/hooks/use-opencode-data';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -112,10 +110,10 @@ export const WorkspaceSettingsSheet = forwardRef<WorkspaceSettingsSheetRef, {}>(
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
 
   // Data
-  const { data: config, refetch: refetchConfig } = useOpenCodeConfig(sandboxUrl);
+  const { data: config } = useOpenCodeConfig(sandboxUrl);
   const { data: providersData } = useOpenCodeProviders(sandboxUrl);
   const { data: toolIds } = useOpenCodeToolIds(sandboxUrl);
-  const { data: mcpStatus, refetch: refetchMcp } = useOpenCodeMcpStatus(sandboxUrl);
+  const { data: mcpStatus } = useOpenCodeMcpStatus(sandboxUrl);
 
   // Mutations
   const updateConfig = useUpdateOpenCodeConfig(sandboxUrl);

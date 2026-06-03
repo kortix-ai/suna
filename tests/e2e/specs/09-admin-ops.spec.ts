@@ -180,9 +180,6 @@ async function assertAdminRouteClean(page: Page, path: string, expectedTexts: st
       if (url.includes('/_vercel/insights/') || url.includes('/_vercel/speed-insights/')) {
         return;
       }
-      if (url.includes('/dashboard?_rsc=')) {
-        return;
-      }
       badResponses.push(`${response.status()} ${response.request().method()} ${response.url()}`);
     }
   });
@@ -223,12 +220,10 @@ test.describe('09 - Admin operations console', () => {
       'Admin overview',
       'Operations',
       'Maintenance',
-      'Queued work',
     ]);
 
     await assertAdminRouteClean(page, '/admin/ops', [
       'Operations',
-      'Queued work',
       'LLM calls 24h',
       'Recent audit events',
       'Migration',

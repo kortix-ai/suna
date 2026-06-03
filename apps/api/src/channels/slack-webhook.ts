@@ -8,7 +8,6 @@ import {
   chatThreads,
   chatTurnStreams,
   projects,
-  projectSessions,
   sessionSandboxes,
 } from '@kortix/db';
 import { db } from '../shared/db';
@@ -197,10 +196,6 @@ async function startTurnStream(
   projectId: string,
   teamId: string,
   event: SlackEvent,
-  // firstStepTitle was the eager "Spinning up a sandbox" placeholder that
-  // appeared in the plan block before the agent did anything. We no longer
-  // pre-open the plan stream — the parameter stays for ABI but is ignored.
-  _unusedFirstStepTitle?: string,
 ): Promise<TurnStream | null> {
   if (!event.channel || !event.ts || !event.user) return null;
   const token = await loadSlackTokenForProject(projectId);
@@ -691,12 +686,11 @@ slackWebhookApp.post('/commands', async (c) => {
   const teamId = params.get('team_id') ?? '';
   const channelId = params.get('channel_id') ?? '';
 
-  const [sub, ...rest] = text.split(/\s+/);
-  const arg = rest.join(' ').trim();
+  const [sub] = text.split(/\s+/);
   const subLower = (sub || 'help').toLowerCase();
 
   try {
-    const response = await handleSlashCommand(subLower, arg, { teamId, channelId });
+    const response = await handleSlashCommand(subLower, { teamId, channelId });
     return c.json(response);
   } catch (err) {
     console.error('[slack-webhook] slash command failed', err);
@@ -855,7 +849,6 @@ type SlashResponse = { response_type: 'ephemeral' | 'in_channel'; text?: string;
 
 async function handleSlashCommand(
   sub: string,
-  arg: string,
   ctx: { teamId: string; channelId: string },
 ): Promise<SlashResponse> {
   switch (sub) {
@@ -882,11 +875,9 @@ async function handleSlashCommand(
         text: `Unknown subcommand \`${sub}\`. Try \`/kortix help\`.`,
       };
   }
-  void arg;
 }
 
 function slashHelp(): SlashResponse {
-  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
   return {
     response_type: 'ephemeral',
     blocks: [
@@ -953,7 +944,6 @@ async function slashProjects(ctx: { teamId: string; channelId: string }): Promis
       type: 'carousel',
       elements: rows.map((p) => {
         const isBound = p.projectId === current;
-        const og = repoOgImage(p.repoUrl);
         const card: Record<string, unknown> = {
           type: 'card',
           block_id: `proj_${p.projectId}`,
@@ -979,7 +969,6 @@ async function slashProjects(ctx: { teamId: string; channelId: string }): Promis
             }] : []),
           ],
         };
-        void og;
         return card;
       }),
     });
@@ -1043,7 +1032,6 @@ async function slashSwitch(ctx: { teamId: string; channelId: string }): Promise<
       type: 'carousel',
       elements: rows.map((p) => {
         const isBound = p.projectId === current;
-        const og = repoOgImage(p.repoUrl);
         const card: Record<string, unknown> = {
           type: 'card',
           block_id: `switch_${p.projectId}`,
@@ -1063,7 +1051,6 @@ async function slashSwitch(ctx: { teamId: string; channelId: string }): Promise<
             },
           ],
         };
-        void og;
         return card;
       }),
     });
@@ -1289,7 +1276,6 @@ async function handleAskSubmit(payload: SlackInteractionPayload, askId: string):
       pending.projectId,
       pending.teamId,
       pending.originatingEvent,
-      'Continuing…',
     );
     if (newHandle) {
       newHandle.sessionId = pending.sessionId;
@@ -1607,7 +1593,6 @@ const CHANNEL_INTRO_FALLBACK = "Kortix is now connected to this channel. Mention
 async function postChannelIntro(projectId: string, channelId: string): Promise<void> {
   const token = await loadSlackTokenForProject(projectId);
   if (!token) return;
-  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
   const blocks: Array<Record<string, unknown>> = [
     {
       type: 'header',
@@ -1964,7 +1949,7 @@ async function spawnAgentTurn(
       )
       .limit(1);
     if (existing) {
-      const handle = await startTurnStream(projectId, teamId, event, 'On it');
+      const handle = await startTurnStream(projectId, teamId, event);
       if (handle) {
         handle.sessionId = existing.sessionId;
         await saveStream(handle);
@@ -2014,7 +1999,7 @@ async function spawnAgentTurn(
     return;
   }
 
-  const handle = await startTurnStream(projectId, teamId, event, 'Spinning up a sandbox');
+  const handle = await startTurnStream(projectId, teamId, event);
 
   const result = await createProjectSession({
     project,
@@ -2178,7 +2163,7 @@ const TURN_INSTRUCTIONS = [
   '- One `slack send` per turn. It finalizes the live stream and can\'t be undone.',
 ].join('\n');
 
-function renderFollowUpPrompt(envelope: SlackEnvelope, event: SlackEvent): string {
+function renderFollowUpPrompt(_envelope: SlackEnvelope, event: SlackEvent): string {
   const user = event.user ?? 'unknown';
   const text = event.text ?? '';
   return [

@@ -30,15 +30,6 @@ export function parseTierRestrictionError(error: any): Error {
   return new Error(error?.message || 'Unknown error');
 }
 
-export function isTierRestrictionError(error: any): boolean {
-  const code = error?.code || error?.detail?.error_code;
-  return !!code && [
-    'THREAD_LIMIT_EXCEEDED', 'AGENT_RUN_LIMIT_EXCEEDED', 'PROJECT_LIMIT_EXCEEDED',
-    'AGENT_LIMIT_EXCEEDED', 'TRIGGER_LIMIT_EXCEEDED', 'MODEL_ACCESS_DENIED',
-    'CUSTOM_WORKER_LIMIT_EXCEEDED', 'INSUFFICIENT_CREDITS',
-  ].includes(code);
-}
-
 export function extractTierLimitErrorState(error: any): TierLimitErrorState | null {
   if (!error) return null;
   const code = error?.code || error?.detail?.error_code;
@@ -79,10 +70,4 @@ export function formatTierLimitErrorForUI(errorState: TierLimitErrorState): Tier
         alertSubtitle: errorState.message || 'Upgrade your plan for more capacity.',
       };
   }
-}
-
-export function formatTierErrorForUI(error: any): TierLimitErrorUI | null {
-  const state = extractTierLimitErrorState(error);
-  if (!state) return null;
-  return formatTierLimitErrorForUI(state);
 }

@@ -27,7 +27,6 @@ const includeGenerated = args.get('include-generated') === 'true';
 const ignoredPathParts = [
   '/.next/',
   '/node_modules/',
-  '/src/lib/llm-catalog.generated.json',
   '/src/components/ui/',
   '/src/app/fonts/',
   '/src/types/',

@@ -2,7 +2,7 @@
 
 import { useCallback } from 'react';
 import { useSubscriptionStore } from '@/stores/subscription-store';
-import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { isBillingEnabled } from '@/lib/config';
 import { toast } from '@/lib/toast';
 
@@ -18,8 +18,6 @@ interface UseDownloadRestrictionReturn {
   withRestrictionCheck: <T extends (...args: any[]) => any>(callback: T) => (...args: Parameters<T>) => ReturnType<T> | void;
   /** Manually show upgrade prompt (toast + modal) */
   showUpgradePrompt: () => void;
-  /** Alias for showUpgradePrompt for backward compatibility */
-  openUpgradeModal: () => void;
 }
 
 /**
@@ -49,7 +47,7 @@ interface UseDownloadRestrictionReturn {
  */
 export function useDownloadRestriction(options?: UseDownloadRestrictionOptions): UseDownloadRestrictionReturn {
   const accountState = useSubscriptionStore((state) => state.accountState);
-  const { openPricingModal } = usePricingModalStore();
+  const openNewInstanceModal = useNewInstanceModalStore((state) => state.openNewInstanceModal);
 
   const isFreeTier = accountState?.subscription && (
     accountState.subscription.tier_key === 'free' ||
@@ -71,11 +69,8 @@ export function useDownloadRestriction(options?: UseDownloadRestrictionOptions):
     });
     
     // Also open the pricing modal
-    openPricingModal({
-      isAlert: true,
-      alertTitle: `Upgrade to download your ${featureName} and more`,
-    });
-  }, [openPricingModal, options?.featureName]);
+    openNewInstanceModal(`Upgrade to download your ${featureName} and more`);
+  }, [openNewInstanceModal, options?.featureName]);
 
   const withRestrictionCheck = useCallback(<T extends (...args: any[]) => any>(callback: T) => {
     return (...args: Parameters<T>): ReturnType<T> | void => {
@@ -91,18 +86,5 @@ export function useDownloadRestriction(options?: UseDownloadRestrictionOptions):
     isRestricted: isRestricted ?? false,
     withRestrictionCheck,
     showUpgradePrompt,
-    // Keep openUpgradeModal as alias for backward compatibility
-    openUpgradeModal: showUpgradePrompt,
   };
 }
-
-// Re-export with old name for backward compatibility
-export { useDownloadRestriction as useDownloadRestrictionHook };
-
-
-
-
-
-
-
-

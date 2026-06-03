@@ -3,7 +3,7 @@
  * flow (mirrors triggers/apps). The manifest holds the connector definition +
  * credential MODE (shared/per_user, a static per-app default). ACCESS (who can
  * use) is dynamic and stored on the connector (not git). Credentials live in the
- * split store. See docs/specs/executor.md §3, §5–6.
+ * split store.
  */
 import { and, eq } from 'drizzle-orm';
 import { executorConnectors, projects } from '@kortix/db';
@@ -15,8 +15,8 @@ import {
   projectPoliciesToTomlEntries,
   projectPolicySettingsToToml,
   type ProjectPolicySpec,
-  type DefaultMode,
 } from '../projects/policies';
+import type { DefaultMode } from './policy';
 import { syncProjectConnectors, type SyncResult } from './sync';
 import { setConnectorSharingDb, upsertCredential } from './credentials';
 import type { SharingIntent } from './share';
@@ -37,7 +37,7 @@ export interface ConnectorDraft {
   auth?: { type?: 'none' | 'bearer' | 'basic' | 'custom'; in?: 'header' | 'query'; name?: string; prefix?: string };
 }
 
-export type CrudResult =
+type CrudResult =
   | { ok: true; sync?: SyncResult }
   | { ok: false; error: string; status: number };
 
@@ -161,7 +161,7 @@ export async function setConnectorCredentialShared(projectId: string, slug: stri
 
 // ─── Project-level policies (top-level [[policies]] + [policy]) ──────────────
 
-export interface ProjectPoliciesView {
+interface ProjectPoliciesView {
   policies: ProjectPolicySpec[];
   defaultMode: DefaultMode;
   errors: Array<{ path: string; error: string }>;

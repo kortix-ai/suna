@@ -6,9 +6,8 @@
  */
 
 import React from 'react';
-import { View, TouchableOpacity, Text as RNText } from 'react-native';
+import { View, Text as RNText } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
@@ -16,17 +15,15 @@ import { PageContent } from '@/components/ui/page-content';
 
 interface PlaceholderPageProps {
   page: PageTab;
-  onBack: () => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
   isRightDrawerOpen?: boolean;
 }
 
-export function PlaceholderPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: PlaceholderPageProps) {
+export function PlaceholderPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: PlaceholderPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
 
   const fgColor = isDark ? '#F8F8F8' : '#121215';
   const mutedColor = isDark ? '#888' : '#777';

@@ -28,14 +28,14 @@ const FOCUSABLE_SELECTOR = [
 ].join(',');
 
 /** The slice of a feature's files store the preview modal reads. */
-export interface FilePreviewState {
+interface FilePreviewState {
   selectedFilePath: string | null;
   panelMode: 'welcome' | 'viewer' | 'history';
   filePathList: string[];
   currentFileIndex: number;
 }
 
-export interface FilePreviewModalProps extends FilePreviewState {
+interface FilePreviewModalProps extends FilePreviewState {
   onClose: () => void;
   onNext: () => void;
   onPrev: () => void;

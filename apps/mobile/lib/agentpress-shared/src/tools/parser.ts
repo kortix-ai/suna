@@ -79,10 +79,6 @@ export function preprocessTextOnlyTools(content: string): string {
   return content;
 }
 
-export function stripXMLTags(content: string): string {
-  return content.replace(/<\/?[^>]+>/g, '');
-}
-
 export function getUserFriendlyToolName(toolName: string): string {
   const nameMap: Record<string, string> = {
     browser_action: 'Browser',

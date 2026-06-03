@@ -12,7 +12,7 @@ import { db } from '../../shared/db';
 const COMPUTE_DEBIT_TYPES = ['compute_debit'] as const;
 const LLM_DEBIT_TYPES = ['llm_debit', 'token_deduction', 'token_overage'] as const;
 
-export interface UsageBreakdown {
+interface UsageBreakdown {
   compute_usd: number;
   llm_usd: number;
   total_usd: number;

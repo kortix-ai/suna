@@ -35,7 +35,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocale] = useState<Locale>(defaultLocale);
   // Initialize with preloaded English translations to prevent blocking FCP
   const [messages, setMessages] = useState<any>(defaultTranslations);
-  const [isLoading, setIsLoading] = useState(false);
   const localeRef = useRef(locale);
 
   // Update ref and <html lang> when locale changes.
@@ -52,17 +51,15 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   // Load translations for a given locale - memoized to avoid stale closures
   const loadTranslations = useCallback(async (targetLocale: Locale) => {
-    setIsLoading(true);
     try {
       const translations = await getTranslations(targetLocale);
       // Verify critical sections exist
       if (!translations || typeof translations !== 'object') {
         throw new Error(`Invalid translations object for locale ${targetLocale}`);
       }
-      if (!translations.common || !translations.modes) {
+      if (!translations.common) {
         console.warn(`Missing sections in ${targetLocale}:`, {
           hasCommon: !!translations.common,
-          hasModes: !!translations.modes,
           keys: Object.keys(translations).slice(0, 10)
         });
       }
@@ -84,8 +81,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         setLocale(defaultLocale);
         localeRef.current = defaultLocale;
       }
-    } finally {
-      setIsLoading(false);
     }
   }, []);
 

@@ -12,7 +12,6 @@ import type {
   Agent,
   AgentsResponse,
   AgentsParams,
-  AgentCreateRequest,
   AgentUpdateRequest,
 } from '@/api/types';
 
@@ -111,34 +110,6 @@ export function useAgent(
   });
 }
 
-// ============================================================================
-// Agent Mutation Hooks
-// ============================================================================
-
-export function useCreateAgent(
-  options?: UseMutationOptions<Agent, Error, AgentCreateRequest>
-) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (agentData: AgentCreateRequest) => {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/agents`, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(agentData),
-      });
-      if (!res.ok) throw new Error(`Failed to create agent: ${res.status}`);
-      return res.json();
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
-      queryClient.setQueryData(agentKeys.detail(data.agent_id), data);
-    },
-    ...options,
-  });
-}
-
 export function useUpdateAgent(
   options?: UseMutationOptions<Agent, Error, { agentId: string; data: AgentUpdateRequest }>
 ) {
@@ -163,53 +134,3 @@ export function useUpdateAgent(
     ...options,
   });
 }
-
-export function useDeleteAgent(
-  options?: UseMutationOptions<void, Error, string>
-) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (agentId: string) => {
-      const headers = await getAuthHeaders();
-      const res = await fetch(`${API_URL}/agents/${agentId}`, {
-        method: 'DELETE',
-        headers,
-      });
-      if (!res.ok) throw new Error(`Failed to delete agent: ${res.status}`);
-    },
-    onSuccess: (_, agentId) => {
-      queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
-      queryClient.removeQueries({ queryKey: agentKeys.detail(agentId) });
-    },
-    ...options,
-  });
-}
-
-export function useCreateNewAgent(
-  options?: UseMutationOptions<Agent, Error, AgentCreateRequest>
-) {
-  const createAgentMutation = useCreateAgent();
-
-  return useMutation({
-    mutationFn: async (agentData: AgentCreateRequest) => {
-      const defaultAgentData: AgentCreateRequest = {
-        name: 'New Worker',
-        description: 'A newly created worker, open for configuration',
-        configured_mcps: [],
-        agentpress_tools: {},
-        is_default: false,
-        icon_name: 'brain',
-        icon_color: '#000000',
-        icon_background: '#F3F4F6',
-        ...agentData,
-      };
-      return createAgentMutation.mutateAsync(defaultAgentData);
-    },
-    ...options,
-  });
-}
-
-
-
-

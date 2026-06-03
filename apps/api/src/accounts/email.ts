@@ -7,7 +7,7 @@ const MAILTRAP_SEND_URL = 'https://send.api.mailtrap.io/api/send';
 const BRAND_WORDMARK = 'Kortix';
 const BRAND_FOOTER = 'Kortix — The Autonomous Company Operating System';
 
-export type EmailDeliveryResult =
+type EmailDeliveryResult =
   | { ok: true; provider: 'mailtrap'; status: number }
   | { ok: false; skipped: true; reason: 'missing_mailtrap_token' }
   | { ok: false; skipped?: false; provider: 'mailtrap'; status?: number; error: string };

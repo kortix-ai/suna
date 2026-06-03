@@ -1,23 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Image, Pressable, Linking } from 'react-native';
+import { View, ScrollView, Image } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Badge } from '@/components/ui/badge';
 import { Icon } from '@/components/ui/icon';
 import {
-  Globe,
-  CheckCircle,
-  AlertTriangle,
   Search,
   Info,
   Play,
   Database,
   DollarSign,
-  ChevronRight,
-  Settings,
   FileJson,
   Clock,
-  FileText,
-  ExternalLink,
 } from 'lucide-react-native';
 import { ToolViewProps } from '../types';
 import { ToolViewCard, LoadingState, JsonViewer } from '../shared';
@@ -30,17 +23,6 @@ import {
   extractApifyApprovalData,
 } from './_utils';
 import { ApifyApprovalView } from '../apify-approval/ApifyApprovalView';
-
-// Utility function
-function formatTimestamp(isoString?: string): string {
-  if (!isoString) return '';
-  try {
-    const date = new Date(isoString);
-    return isNaN(date.getTime()) ? 'Invalid date' : date.toLocaleString();
-  } catch (e) {
-    return 'Invalid date';
-  }
-}
 
 // View type configurations
 const VIEW_CONFIGS = {
@@ -87,33 +69,19 @@ export function ApifyToolView({
   threadId,
   onFileClick,
 }: ToolViewProps) {
-  const [progress, setProgress] = useState(0);
   const [elapsedTime, setElapsedTime] = useState(0);
 
   useEffect(() => {
     if (isStreaming) {
-      setProgress(0);
       setElapsedTime(0);
-      
-      const progressTimer = setInterval(() => {
-        setProgress((prevProgress) => {
-          if (prevProgress >= 95) {
-            return prevProgress;
-          }
-          return prevProgress + Math.random() * 3;
-        });
-      }, 500);
 
       const timeTimer = setInterval(() => {
         setElapsedTime((prev) => prev + 1);
       }, 1000);
 
       return () => {
-        clearInterval(progressTimer);
         clearInterval(timeTimer);
       };
-    } else {
-      setProgress(100);
     }
   }, [isStreaming]);
 
@@ -679,4 +647,3 @@ export function ApifyToolView({
     </ToolViewCard>
   );
 }
-

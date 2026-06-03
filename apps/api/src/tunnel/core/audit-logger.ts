@@ -2,7 +2,7 @@ import { tunnelAuditLogs } from '@kortix/db';
 import { db } from '../../shared/db';
 import type { TunnelCapability } from 'agent-tunnel';
 
-export interface AuditLogEntry {
+interface AuditLogEntry {
   tunnelId: string;
   accountId: string;
   capability: TunnelCapability;

@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useMemo, useCallback, useState, useRef } from 'react';
+import { useCallback, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import {
   Folder,
@@ -16,7 +16,6 @@ import {
   Copy,
   Scissors,
   ClipboardCopy,
-  RefreshCw,
   Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';

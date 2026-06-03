@@ -1,9 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  computeSnapshotHash,
-  currentRuntimeFingerprint,
-  formatSnapshotName,
-} from '../snapshots/hash';
+import { computeSnapshotHash } from '../snapshots/hash';
 
 const SAMPLE_DOCKERFILE = 'FROM ubuntu:24.04\nRUN apt-get install -y curl\n';
 const SAMPLE_TREE_OID = '1234567890abcdef1234567890abcdef12345678';
@@ -85,12 +81,12 @@ describe('computeSnapshotHash', () => {
     expect(a.contentHash).not.toBe(b.contentHash);
   });
 
-  test('runtimeFingerprint defaults to currentRuntimeFingerprint()', () => {
+  test('runtimeFingerprint defaults to the platform runtime marker', () => {
     const a = computeSnapshotHash({
       dockerfile: SAMPLE_DOCKERFILE,
       contextTreeOid: SAMPLE_TREE_OID,
     });
-    expect(a.runtimeFingerprint).toBe(currentRuntimeFingerprint());
+    expect(a.runtimeFingerprint.startsWith('kortix-runtime:')).toBe(true);
   });
 
   test('an empty / absent spec does not change the hash (no mass rebuild)', () => {
@@ -153,32 +149,5 @@ describe('computeSnapshotHash', () => {
       runtimeFingerprint: PINNED_FINGERPRINT,
     });
     expect(a.contentHash).toBe(b.contentHash);
-  });
-});
-
-describe('formatSnapshotName', () => {
-  test('is a pure content-hash name (no project tier)', () => {
-    const projectId = '12345678-90ab-cdef-1234-567890abcdef';
-    const name = formatSnapshotName(projectId, 'a'.repeat(64));
-    expect(name).toBe('kortix-snap-aaaaaaaaaaaa');
-  });
-
-  test('two distinct projects with identical content COLLAPSE to one name (starter sharing)', () => {
-    const hash = 'b'.repeat(64);
-    const a = formatSnapshotName('11111111-1111-1111-1111-111111111111', hash);
-    const b = formatSnapshotName('22222222-2222-2222-2222-222222222222', hash);
-    expect(a).toBe(b);
-  });
-
-  test('two commits in the same project with identical content collapse to one name', () => {
-    const projectId = '99999999-9999-9999-9999-999999999999';
-    const hash = computeSnapshotHash({
-      dockerfile: SAMPLE_DOCKERFILE,
-      contextTreeOid: SAMPLE_TREE_OID,
-      runtimeFingerprint: PINNED_FINGERPRINT,
-    }).contentHash;
-    const a = formatSnapshotName(projectId, hash);
-    const b = formatSnapshotName(projectId, hash);
-    expect(a).toBe(b);
   });
 });

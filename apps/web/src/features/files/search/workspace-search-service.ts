@@ -266,7 +266,7 @@ function shouldLoadIndex(
   return results.length < Math.min(limit, 10);
 }
 
-export async function searchWorkspaceFileEntries(
+async function searchWorkspaceFileEntries(
   query: string,
   options?: WorkspaceSearchRuntimeOptions,
 ): Promise<WorkspaceSearchEntry[]> {

@@ -51,6 +51,10 @@ mock.module('../sandbox-proxy', () => ({
   },
 }));
 
+mock.module('../snapshots/builder', () => ({
+  reconcileStaleBuilds: async () => ({ reconciled: 0 }),
+}));
+
 mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],

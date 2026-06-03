@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { supabaseAuth } from '../middleware/auth';
 import { config } from '../config';
 
@@ -11,16 +10,13 @@ import { webhooksRouter } from './routes/webhooks';
 import { accountDeletionRouter } from './routes/account-deletion';
 
 const billingApp = new Hono();
-const accountDeletionApp = new Hono();
 
 // Webhooks — NO auth (handlers verify signatures internally)
 billingApp.route('/webhooks', webhooksRouter);
-// Alias: /webhook → /webhooks (some providers send to singular form)
-billingApp.route('/webhook', webhooksRouter);
 
 // Auth for all billing routes except webhooks
 billingApp.use('*', async (c, next) => {
-  if (c.req.path.includes('/webhook')) {
+  if (c.req.path.includes('/webhooks')) {
     return next();
   }
   return supabaseAuth(c, next);
@@ -51,16 +47,6 @@ billingApp.route('/', creditsRouter);
 // Account deletion (mounted at /v1/billing/account/*)
 billingApp.route('/account', accountDeletionRouter);
 
-// Backwards-compatible account deletion API (mounted at /v1/account/*)
-accountDeletionApp.use('*', supabaseAuth);
-accountDeletionApp.use('*', async (c, next) => {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    return c.json({ error: 'Billing is not enabled', billing_disabled: true }, 404);
-  }
-  return next();
-});
-accountDeletionApp.route('/', accountDeletionRouter);
-
 // Yearly credit rotation cron endpoint
 billingApp.post('/cron/yearly-rotation', async (c: any) => {
   if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
@@ -83,4 +69,4 @@ if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
   }, YEARLY_ROTATION_INTERVAL_MS);
 }
 
-export { billingApp, accountDeletionApp };
+export { billingApp };

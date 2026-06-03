@@ -30,7 +30,7 @@ sandboxProxyApp.use('/:sandboxId/:port', createSandboxProxyRateLimitMiddleware()
 // (forwardToSandbox / resolvePreviewWsUpstream) uses backend.loadSandbox
 // directly — there is no separate provider cache anymore.
 
-export type ResolvedProvider = {
+type ResolvedProvider = {
   provider: SandboxProviderName;
   baseUrl: string;
   serviceKey: string;

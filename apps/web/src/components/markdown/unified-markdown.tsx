@@ -209,8 +209,8 @@ import {
   SHIKI_THEME_DARK_NAME,
   SHIKI_THEME_LIGHT_NAME,
 } from '@/lib/shiki-theme';
-export const SHIKI_THEME_DARK = SHIKI_THEME_DARK_NAME;
-export const SHIKI_THEME_LIGHT = SHIKI_THEME_LIGHT_NAME;
+const SHIKI_THEME_DARK = SHIKI_THEME_DARK_NAME;
+const SHIKI_THEME_LIGHT = SHIKI_THEME_LIGHT_NAME;
 
 // Normalise language aliases that Shiki might not recognise directly
 function normalizeLanguage(lang: string): string {
@@ -418,19 +418,6 @@ function highlightAsync(code: string, language: string, theme: string): Promise<
 
   shikiPending.set(key, p);
   return p;
-}
-
-// Find the best cached HTML for the current code by checking if any
-// cache entry is a prefix match (the code was shorter earlier during streaming).
-function findBestCachedHtml(code: string, language: string, theme: string): string | null {
-  // Exact match first
-  const exact = shikiCache.get(shikiKey(code, language, theme));
-  if (exact) return exact;
-  // Module-level prefix match from last highlighted result
-  const hlKey = `${language}:${theme}`;
-  const last = lastHighlightedMap.get(hlKey);
-  if (last && code.startsWith(last.code) && last.code.length > 0) return last.html;
-  return null;
 }
 
 export function HighlightedCode({ code, language, children }: { code: string; language: string; children: React.ReactNode }) {

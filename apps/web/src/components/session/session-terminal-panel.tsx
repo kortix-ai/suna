@@ -4,19 +4,12 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { CircleDashed, Plus, Terminal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useServerStore } from '@/stores/server-store';
 import {
   useOpenCodePtyList,
   useCreatePty,
 } from '@/hooks/opencode/use-opencode-pty';
 import { useOpenCodeRuntimeReady } from '@/hooks/opencode/use-opencode-sessions';
-
-// Lazy-load terminal components to avoid SSR issues with xterm.js
-const SSHTerminal = dynamic(
-  () => import('@/components/session/ssh-terminal').then((mod) => ({ default: mod.SSHTerminal })),
-  { ssr: false },
-);
 
 const PtyTerminal = dynamic(
   () => import('@/components/session/pty-terminal').then((mod) => ({ default: mod.PtyTerminal })),
@@ -28,17 +21,13 @@ const PTY_ENV = { TERM: 'xterm-256color', COLORTERM: 'truecolor' } as const;
 /**
  * Live terminal for the session side panel.
  *
- * Reuses the exact terminal components the tabbed terminal uses:
- *   - sandbox mode → a single shared {@link SSHTerminal} into the sandbox
- *   - opencode mode → a {@link PtyTerminal} bound to a PTY on the active server
- *
- * Unlike the tabbed terminal (which maps 1 tab ↔ 1 PTY), the panel keeps a
+ * Reuses the PTY terminal component the tabbed terminal uses. Unlike the
+ * tabbed terminal (which maps 1 tab ↔ 1 PTY), the panel keeps a
  * single ambient shell: it reuses the most recent PTY if one exists and lazily
  * spawns one otherwise. The PTY is intentionally NOT killed when the panel
  * closes — switching back to it should land you in the same shell.
  */
 export function SessionTerminalPanel({ hidden }: { hidden?: boolean } = {}) {
-  const currentSandboxId = useKortixComputerStore((s) => s.currentSandboxId);
   const serverUrl = useServerStore((s) => {
     const server = s.servers.find((srv) => srv.id === s.activeServerId);
     return server?.url ?? s.getActiveServerUrl();
@@ -71,7 +60,6 @@ export function SessionTerminalPanel({ hidden }: { hidden?: boolean } = {}) {
   }, [createPty]);
 
   useEffect(() => {
-    if (currentSandboxId) return; // sandbox mode uses SSHTerminal, no PTY needed
     if (!runtimeReady) return; // wait for the sandbox runtime — a create now would 404
     if (isLoading) return;
     if (pty) {
@@ -79,16 +67,7 @@ export function SessionTerminalPanel({ hidden }: { hidden?: boolean } = {}) {
       return;
     }
     ensurePty();
-  }, [currentSandboxId, runtimeReady, isLoading, pty, ensurePty]);
-
-  // Sandbox mode — shared SSH terminal into the sandbox.
-  if (currentSandboxId) {
-    return (
-      <div className="h-full w-full bg-[#0f0f14]">
-        <SSHTerminal sandboxId={currentSandboxId} className="h-full" />
-      </div>
-    );
-  }
+  }, [runtimeReady, isLoading, pty, ensurePty]);
 
   // Waiting for the sandbox runtime, or spinning up / loading the PTY list.
   if (!runtimeReady || isLoading || (!pty && (createPty.isPending || ensuringRef.current))) {

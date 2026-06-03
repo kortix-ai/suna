@@ -118,10 +118,8 @@ export function ConnectingScreen({
       <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
         <ProvisioningView
           label={labelOverride || serverLabel}
-          title={title || 'Provisioning workspace'}
           progress={provisioning.progress}
           stageLabel={provisioning.stageLabel}
-          stages={provisioning.stages}
           currentStage={provisioning.currentStage}
           machineInfo={provisioning.machineInfo}
           onBack={handleSwitch}
@@ -169,7 +167,6 @@ export function ConnectingScreen({
       <>
         <FullScreenShell showWorkspacePicker={!hideWorkspacePicker}>
           <UnreachableView
-            label={serverLabel}
             reconnectAttempts={reconnectAttempts}
             provider={effectiveProvider}
             recoveryPhase={recoveryPhase}
@@ -239,21 +236,11 @@ export interface ConnectingScreenProps {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Toast hook — kept as a no-op compatibility export for older shells.
-// ─────────────────────────────────────────────────────────────────────────────
-
-export function useConnectionToasts() {
-  // Mid-session connection state now stays in the background and is surfaced
-  // exclusively via the reconnect pill in the bottom-right corner. Avoid
-  // duplicate toast noise for transient drops and recoveries.
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Shared shell
 // ─────────────────────────────────────────────────────────────────────────────
 
 type SandboxConnectionStatus = 'connecting' | 'connected' | 'unreachable';
-export type Stage = 'auth' | 'routing' | 'reaching' | 'restoring';
+type Stage = 'auth' | 'routing' | 'reaching' | 'restoring';
 
 const STAGE_COPY: Record<Stage, string> = {
   auth: 'Authenticating',
@@ -322,19 +309,15 @@ function ProgressLine() {
 
 function ProvisioningView({
   label,
-  title,
   progress,
   stageLabel,
-  stages,
   currentStage,
   machineInfo,
   onBack,
 }: {
   label: string;
-  title: string;
   progress: number;
   stageLabel?: string;
-  stages?: ProvisioningStageInfo[] | null;
   currentStage?: string | null;
   machineInfo?: {
     ip: string;
@@ -510,7 +493,6 @@ function BackLink({ onClick }: { onClick: () => void }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function UnreachableView({
-  label,
   reconnectAttempts,
   provider,
   recoveryPhase,
@@ -519,7 +501,6 @@ function UnreachableView({
   onSwitch,
   sandboxId,
 }: {
-  label: string;
   reconnectAttempts: number;
   provider?: string;
   recoveryPhase: SandboxRecoveryPhase;

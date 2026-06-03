@@ -5,19 +5,16 @@ All tests for the Kortix platform, centralised in one place.
 ## Quick Start
 
 ```bash
-cd computer/tests
+cd suna
 
-# Full A-Z E2E (build images -> install -> browser tests)
-bash e2e/self-hosted-e2e.sh
+# Playwright E2E
+pnpm --filter @kortix/tests test:e2e
 
 # Browser tests only (stack already running)
-bash e2e/self-hosted-e2e.sh --browser-only
-
-# Shell tests only (installer structure, CLI, security)
-npm run test:shell
+pnpm --filter @kortix/tests test:e2e:browser
 
 # Everything
-npm test
+pnpm --filter @kortix/tests test
 ```
 
 ## Structure
@@ -29,10 +26,7 @@ tests/
   tsconfig.json
   README.md
 
-  e2e/                    # End-to-end (Playwright + orchestrator)
-    self-hosted-e2e.sh    #   Master: clean -> build -> install -> browser tests
-    test-self-hosted-install.sh  # Shell-based install + verify
-    test-auth-flow.sh     #   Quick auth smoke test
+  e2e/                    # End-to-end Playwright + Gate 5 verification
     specs/                #   Playwright specs (run in order)
       01-containers.spec.ts
       02-services.spec.ts
@@ -42,29 +36,18 @@ tests/
       09-admin-ops.spec.ts
       10-production-golden-paths.spec.ts
       11-production-boundaries.spec.ts
+      12-sandbox-templates.spec.ts
     helpers/              #   Shared TS utilities
       auth.ts
-      wait.ts
     scripts/              #   Helper scripts
-      reset-self-hosted-state.sh
-      run-full-self-hosted-e2e.sh
+      run-gate5-local-verification.sh
+      run-gate5-target-rehearsal.sh
+      verify-gate5-release-evidence.sh
 
-  shell/                  # Shell-based tests (no browser)
-    run-all.sh            #   Runs installer + CLI + security
-    installer/            #   get-kortix.sh structure validation
-      test-install.sh
-      test-e2e-install.sh
-    cli/                  #   Embedded CLI verification
-      test-cli.sh
-    security/             #   Auth, CORS, key sync validation
-      test-security.sh
-      test-auth-e2e.sh
+  shell/                  # Shell-based live checks
     vps/                  #   VPS deployment tests (run on VPS)
       test-vps-e2e.sh
 
-  docs/                   # Test documentation
-    AUTH_TESTING.md        #   Auth E2E test guide
-    E2E_MANUAL_CHECKLIST.md  # Manual verification checklist
 ```
 
 ## Test Categories
@@ -81,28 +64,24 @@ tests/
 | `09-admin-ops` | 2 | Admin overview and operations dashboard |
 | `10-production-golden-paths` | gated | SPEC 10.5 golden paths when enabled |
 | `11-production-boundaries` | gated | SPEC 10.6/10.7 boundaries, SLOs, and negative-space probes |
+| `12-sandbox-templates` | gated | Sandbox template and snapshot behavior |
 
-### Shell Tests (`tests/shell/`)
+### Shell Checks (`tests/shell/`)
 
 | Suite | What it verifies |
 |-------|------------------|
-| `installer/test-install.sh` | get-kortix.sh has correct structure, functions, compose |
-| `cli/test-cli.sh` | Embedded CLI has all commands, correct syntax |
-| `security/test-security.sh` | INTERNAL_SERVICE_KEY, CORS, port bindings, secrets |
-| `security/test-auth-e2e.sh` | Full auth chain: sandbox <-> API <-> frontend |
 | `vps/test-vps-e2e.sh` | Caddy HTTPS, basic auth, firewall (run on VPS) |
 
-## npm Scripts
+## pnpm Scripts
 
 ```bash
-npm test                    # Shell + Playwright
-npm run test:e2e            # Full A-Z orchestrator
-npm run test:e2e:browser    # Playwright only
-npm run test:shell          # All shell suites
-npm run test:shell:installer  # Installer structure
-npm run test:shell:cli      # CLI commands
-npm run test:shell:security # Security features
-npm run test:shell:auth     # Auth E2E (needs running stack)
+pnpm --filter @kortix/tests test                         # Playwright
+pnpm --filter @kortix/tests test:e2e                     # Playwright
+pnpm --filter @kortix/tests test:e2e:browser             # Playwright only
+pnpm --filter @kortix/tests test:e2e:gate5:local         # Local Gate 5 verifier
+pnpm --filter @kortix/tests test:e2e:gate5:target        # Target Gate 5 rehearsal
+pnpm --filter @kortix/tests test:e2e:gate5:verify-evidence
+pnpm --filter @kortix/tests test:shell:vps               # VPS checks
 ```
 
 ## Environment Variables
@@ -118,6 +97,6 @@ npm run test:shell:auth     # Auth E2E (needs running stack)
 ## Note on Unit Tests
 
 Unit tests that live with their packages (e.g. `apps/api/src/__tests__/`,
-`core/kortix-master/tests/`, `packages/*/test/`) stay in-place. They are
-run via each package's own `npm test` command. This directory only centralises
-integration, E2E, and cross-cutting tests.
+`packages/*/test/`) stay in-place. They are run through each package's own pnpm
+workspace scripts. This directory only centralises integration, E2E, and
+cross-cutting tests.

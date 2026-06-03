@@ -1,22 +1,13 @@
-/**
- * Agents Module
- * 
- * Agent management functionality
- */
-
-export * from './api';
-export * from './hooks';
-
-export { agentKeys, useAgents, useAgent, useCreateAgent, useUpdateAgent, useDeleteAgent } from './hooks';
+export { agentKeys, useAgents } from './hooks';
 
 /**
  * Check if an agent is the default Kortix/SUNA agent
  * Uses metadata and name checks - no hardcoded IDs
  */
-export const isKortixDefaultAgent = (agent?: { 
-  agent_id?: string; 
-  name?: string; 
-  metadata?: { is_suna_default?: boolean } 
+const isKortixDefaultAgent = (agent?: {
+  agent_id?: string;
+  name?: string;
+  metadata?: { is_suna_default?: boolean }
 } | null): boolean => {
   if (!agent) return false;
   
@@ -43,4 +34,3 @@ export const isKortixDefaultAgentId = (
   const agent = agents.find(a => a.agent_id === agentId);
   return isKortixDefaultAgent(agent);
 };
-

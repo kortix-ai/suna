@@ -5,7 +5,6 @@ import type { UnifiedMessage } from '@agentpress/shared';
 import { API_URL, getAuthToken } from '@/api/config';
 import { chatKeys } from '@/lib/chat';
 import {
-  type TextChunk,
   useAgentStreamCore,
   type StreamConfig,
   type UseAgentStreamCoreCallbacks,

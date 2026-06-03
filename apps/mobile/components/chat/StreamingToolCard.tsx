@@ -162,8 +162,6 @@ interface StreamingToolCardProps {
 export const StreamingToolCard = React.memo(function StreamingToolCard({ content, isCompleted: propIsCompleted, toolCall }: StreamingToolCardProps) {
   const scrollViewRef = useRef<ScrollView>(null);
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false);
-  const contentHeightRef = useRef(0);
-  const scrollViewHeightRef = useRef(0);
 
   const toolInfo = useMemo(() => {
     const rawToolName = extractToolNameFromStream(content);

@@ -4,7 +4,7 @@ import type { Config } from '../config'
 import { readRepoInfo } from '../git'
 import type { Opencode } from '../opencode'
 
-export type BootMark = { label: string; atMs: number }
+type BootMark = { label: string; atMs: number }
 
 export type SandboxBootState = {
   repoMaterializationError: string | null

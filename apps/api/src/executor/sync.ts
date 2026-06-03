@@ -5,9 +5,9 @@
  * (manifest = source of truth, like triggers); this populates the runtime view
  * the gateway + dashboard read. Catalog fetch is best-effort per connector:
  * a connector that can't be reached is stored with status='error' + 0 actions,
- * never failing the whole sweep. See docs/specs/executor.md §3, §7.
+ * never failing the whole sweep.
  */
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { parse as parseToml } from 'smol-toml';
 import {
   executorConnectorActions,
@@ -40,7 +40,7 @@ export interface SyncResult {
   errors: Array<{ slug: string; error: string }>;
 }
 
-export interface SyncOptions {
+interface SyncOptions {
   /**
    * Re-fetch every connector's catalog even when its manifest hash is
    * unchanged. The manual "Sync" button passes this (the user is explicitly
@@ -206,7 +206,7 @@ async function upsertConnector(
 }
 
 /** Fetch + normalize a connector's catalog. Best-effort; never throws. */
-export async function resolveCatalog(project: GitBackedProject, spec: ConnectorSpec): Promise<ResolvedCatalog> {
+async function resolveCatalog(project: GitBackedProject, spec: ConnectorSpec): Promise<ResolvedCatalog> {
   try {
     switch (spec.provider) {
       case 'openapi': {

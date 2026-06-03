@@ -131,7 +131,7 @@ async function touchActivity(
 }
 
 /**
- * Decide whether a session should be denied. Pure — exported for tests.
+ * Decide whether a session should be denied.
  *
  *   - nowMs: current time in milliseconds
  *   - iatSeconds: JWT.iat (seconds epoch); null = no max-lifetime check
@@ -141,7 +141,7 @@ async function touchActivity(
  *
  * Returns 'allow' or the reason for denial.
  */
-export function evaluateSessionGate(args: {
+function evaluateSessionGate(args: {
   nowMs: number;
   iatSeconds: number | null;
   maxLifetimeMinutes: number | null;

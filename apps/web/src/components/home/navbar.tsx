@@ -12,7 +12,6 @@ import { useRouter, usePathname } from 'next/navigation';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useTranslations } from 'next-intl';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { AppDownloadQR } from '@/components/common/app-download-qr';
 import { Button } from '@/components/ui/button';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import {
@@ -23,87 +22,11 @@ import {
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuSubContent,
-  ContextMenuSeparator,
 } from '@/components/ui/context-menu';
-
-
-// Apple logo SVG
-function AppleLogo({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-    </svg>
-  );
-}
-
-// Play icon SVG
-function PlayIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 406 455" fill="currentColor">
-      <path d="M382.634 187.308C413.301 205.014 413.301 249.277 382.634 266.983L69.0001 448.06C38.3334 465.765 3.84111e-05 443.633 3.9959e-05 408.222L5.57892e-05 46.0689C5.73371e-05 10.6581 38.3334 -11.4738 69.0001 6.23166L382.634 187.308Z"/>
-    </svg>
-  );
-}
-
-// macOS-style power button
-function PowerButton({ href, onClick, label = 'Launch Kortix' }: { href?: string; onClick?: () => void; label?: string }) {
-  const [hovered, setHovered] = useState(false);
-
-  const inner = (
-    <span
-      className="relative flex items-center justify-center size-[42px] rounded-full transition-colors duration-200 cursor-pointer select-none"
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {/* Power icon */}
-      <svg
-        viewBox="0 0 24 24"
-        className={cn("size-[22px] transition-colors duration-200", hovered ? "text-foreground" : "text-muted-foreground")}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={1.8}
-        strokeLinecap="round"
-      >
-        <path d="M7.19 5.54A8 8 0 1 0 16.83 5.5" />
-        <line x1="12" y1="2" x2="12" y2="12" />
-      </svg>
-
-      {/* Tooltip */}
-      <AnimatePresence>
-        {hovered && (
-          <motion.span
-            className="absolute -bottom-8 left-1/2 -translate-x-1/2 whitespace-nowrap text-xs text-foreground bg-background border border-border rounded-2xl px-2 py-0.5 pointer-events-none z-50 shadow-sm"
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.15 }}
-          >
-            {label}
-          </motion.span>
-        )}
-      </AnimatePresence>
-    </span>
-  );
-
-  if (href) {
-    return (
-      <Link href={href} onClick={onClick} suppressHydrationWarning>
-        {inner}
-      </Link>
-    );
-  }
-  return <button onClick={onClick}>{inner}</button>;
-}
 
 // Scroll threshold with hysteresis to prevent flickering
 const SCROLL_THRESHOLD_DOWN = 50;
 const SCROLL_THRESHOLD_UP = 20;
-
-const overlayVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1 },
-  exit: { opacity: 0 },
-};
 
 const drawerVariants = {
   hidden: { opacity: 0 },
@@ -189,7 +112,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   }, [handleScroll]);
 
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
-  const handleOverlayClick = () => setIsDrawerOpen(false);
 
   return (
     <header className={cn(
@@ -357,21 +279,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                     </Link>
                   </motion.li>
                 ))}
-                {/* Mobile App Link — commented out for now
-                <motion.li variants={drawerMenuVariants}>
-                  <Link
-                    href="/app"
-                    onClick={() => setIsDrawerOpen(false)}
-                    className={cn('block py-3 text-4xl font-medium tracking-tight transition-colors', 
-                      pathname === '/app'
-                        ? 'text-foreground'
-                        : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    Mobile
-                  </Link>
-                </motion.li>
-                */}
               </ul>
             </motion.nav>
 

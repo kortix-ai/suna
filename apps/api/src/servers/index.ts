@@ -16,7 +16,7 @@ import { eq, and } from 'drizzle-orm';
 import { serverEntries } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
-import { config, type SandboxProviderName } from '../config';
+import type { SandboxProviderName } from '../config';
 import { supabaseAuth } from '../middleware/auth';
 import { resolveAccountId } from '../shared/resolve-account';
 

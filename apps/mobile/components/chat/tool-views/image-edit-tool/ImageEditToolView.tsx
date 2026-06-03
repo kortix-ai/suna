@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Wand2, AlertCircle } from 'lucide-react-native';
+import { Wand2 } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractImageEditData } from './_utils';
 import { FileAttachmentsGrid } from '@/components/chat';
@@ -22,9 +22,6 @@ function formatTimestamp(isoString?: string): string {
 }
 
 export function ImageEditToolView({ toolCall, toolResult, isStreaming = false, assistantMessage, toolMessage, project, assistantTimestamp, toolTimestamp }: ToolViewProps) {
-  const [imageLoading, setImageLoading] = useState(true);
-  const [imageError, setImageError] = useState(false);
-
   if (!toolCall) {
     return null;
   }
@@ -43,7 +40,7 @@ export function ImageEditToolView({ toolCall, toolResult, isStreaming = false, a
 
   const fallbackSandboxId = effectiveSandboxId || assistantMessage?.sandbox_id;
   const extractedData = extractImageEditData({ toolCall, toolResult }, fallbackSandboxId);
-  const { mode, prompt, generatedImagePath, imagePath, imageUrl, width, height, error, success, sandboxId: extractedSandboxId } = extractedData;
+  const { mode, prompt, generatedImagePath, imageUrl, width, height, error, sandboxId: extractedSandboxId } = extractedData;
 
   // Prefer extracted sandbox ID from tool output, fallback to project/message
   const sandboxId = extractedSandboxId || fallbackSandboxId;

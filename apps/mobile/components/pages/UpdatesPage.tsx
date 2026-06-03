@@ -2,17 +2,14 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { haptics } from '@/lib/haptics';
 import {
-  ArrowDownToLine,
   GitCommit,
-  Menu,
   Tag,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Button } from '@/components/ui/button';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import {
   getAllVersions,
@@ -23,8 +20,6 @@ import { useTabStore, type PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors } from '@/lib/theme-colors';
-import { Ionicons } from '@expo/vector-icons';
-import { UpdateDialog } from '@/components/updates/UpdateDialog';
 
 // ─── Version type classification ─────────────────────────────────────────
 
@@ -79,7 +74,7 @@ function normalizeReleaseBody(body: string | undefined, version: string, title?:
   return body;
 }
 
-function detectChannel(version: string | undefined): VersionChannel {
+function detectChannel(version: string | null | undefined): VersionChannel {
   if (!version) return 'stable';
   return version.startsWith('dev-') ? 'dev' : 'stable';
 }
@@ -99,28 +94,15 @@ interface UpdatesPageProps {
   isRightDrawerOpen?: boolean;
 }
 
-export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: UpdatesPageProps) {
+export function UpdatesPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: UpdatesPageProps) {
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const themeColors = useThemeColors();
-  const queryClient = useQueryClient();
 
   const {
-    updateAvailable,
     currentVersion,
     latestVersion,
-    changelog,
-    update,
-    isUpdating,
-    phase,
-    phaseLabel,
-    phaseProgress,
-    phaseMessage,
-    updateResult,
-    updateError,
-    resetStatus,
-    refreshCurrentVersion,
   } = useGlobalSandboxUpdate();
 
   const currentChannel = detectChannel(currentVersion);
@@ -175,35 +157,6 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const hasDevBuilds = useMemo(() => {
     return Boolean(data?.versions?.some((v) => v.channel === 'dev'));
   }, [data?.versions]);
-
-  // Update dialog state
-  const [dialogOpen, setDialogOpen] = useState(false);
-
-  const handleOpenDialog = useCallback(() => {
-    haptics.medium();
-    setDialogOpen(true);
-  }, []);
-
-  const handleDialogClose = useCallback(() => {
-    setDialogOpen(false);
-    // Refresh version data after dialog closes (covers both success and cancel)
-    queryClient.invalidateQueries({ queryKey: ['sandbox', 'versions'] });
-    queryClient.invalidateQueries({ queryKey: ['sandbox', 'latest-version'] });
-    // Force a fresh read of the running version from the sandbox health
-    // endpoint. The sandbox restarts during update and may take a moment to
-    // report the new version, so re-fetch immediately and again shortly after.
-    refreshCurrentVersion();
-    setTimeout(refreshCurrentVersion, 2000);
-  }, [queryClient, refreshCurrentVersion]);
-
-  const handleDialogConfirm = useCallback(() => {
-    update();
-  }, [update]);
-
-  const handleDialogRetry = useCallback(() => {
-    resetStatus();
-    update();
-  }, [resetStatus, update]);
 
   const toggleDev = useCallback(() => {
     haptics.selection();
@@ -271,19 +224,6 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
             )}
           </View>
 
-          {/* Update button — opens dialog */}
-          {updateAvailable && latestVersion && (
-            <Button
-              onPress={handleOpenDialog}
-              className="mt-4 self-start"
-              style={{ backgroundColor: themeColors.primary }}
-            >
-              <Icon as={ArrowDownToLine} size={15} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
-              <Text className="font-roobert-semibold" style={{ color: themeColors.primaryForeground }}>
-                Update to {latestVersion.startsWith('dev-') ? latestVersion : `v${latestVersion}`}
-              </Text>
-            </Button>
-          )}
         </View>
 
         {/* Filter tabs */}
@@ -336,8 +276,6 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
               (entry.channel === 'stable' && entry.version === latestStable) ||
               (entry.channel === 'dev' && entry.version === latestDev);
             const versionType = parseVersionType(entry.version);
-            const isDev = versionType === 'dev';
-            const isMajor = versionType === 'major';
 
             return (
               <VersionEntryCard
@@ -362,21 +300,6 @@ export function UpdatesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
         </ScrollView>
       </PageContent>
 
-      {/* Update dialog */}
-      <UpdateDialog
-        open={dialogOpen}
-        phase={phase}
-        phaseMessage={phaseMessage}
-        phaseProgress={phaseProgress}
-        latestVersion={latestVersion}
-        changelog={changelog}
-        currentVersion={currentVersion}
-        errorMessage={updateError?.message ?? null}
-        updateResult={updateResult}
-        onClose={handleDialogClose}
-        onConfirm={handleDialogConfirm}
-        onRetry={handleDialogRetry}
-      />
     </View>
   );
 }
@@ -404,7 +327,6 @@ function VersionEntryCard({
 
   const isDev = versionType === 'dev';
   const isMajor = versionType === 'major';
-  const isMinor = versionType === 'minor';
 
   const displayVersion = isDev ? entry.version : `v${entry.version}`;
   const displayTitle = normalizeReleaseTitle(entry.title, entry.version);
@@ -531,7 +453,6 @@ function VersionEntryCard({
               expanded={expanded || !canExpandBody}
               isDev={isDev}
               isMajor={isMajor}
-              isDark={isDark}
             />
 
             {canExpandBody && (
@@ -566,13 +487,11 @@ function MarkdownBody({
   expanded,
   isDev,
   isMajor,
-  isDark,
 }: {
   body: string;
   expanded: boolean;
   isDev: boolean;
   isMajor: boolean;
-  isDark: boolean;
 }) {
   const maxLines = expanded ? undefined : isDev ? 6 : isMajor ? 16 : 12;
   const lines = body.split('\n');
@@ -645,4 +564,3 @@ function formatInlineMarkdown(text: string): string {
     .replace(/\*(.*?)\*/g, '$1')
     .replace(/`(.*?)`/g, '$1');
 }
-

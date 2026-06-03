@@ -2,36 +2,22 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   Activity,
-  BarChart2,
-  Bell,
-  ChevronRight,
-  Database,
-  MessageCircle,
   ShieldCheck,
-  TestTube,
-  Users,
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
 
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -43,15 +29,6 @@ interface NavItem {
   label: string;
   icon: LucideIcon;
 }
-
-const LEGACY_ITEMS: NavItem[] = [
-  { href: '/admin/accounts', label: 'Accounts', icon: Users },
-  { href: '/admin/sandbox-pool', label: 'Sandbox pool', icon: Database },
-  { href: '/admin/analytics', label: 'Analytics', icon: BarChart2 },
-  { href: '/admin/feedback', label: 'Feedback', icon: MessageCircle },
-  { href: '/admin/notifications', label: 'Notifications', icon: Bell },
-  { href: '/admin/stress-test', label: 'Stress test', icon: TestTube },
-];
 
 export function AdminSidebar() {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -70,9 +47,6 @@ export function AdminSidebar() {
       icon: Wrench,
     },
   ];
-
-  const legacyActive = LEGACY_ITEMS.some((item) => isActive(pathname, item.href));
-  const [legacyOpen, setLegacyOpen] = useState(legacyActive);
 
   return (
     <Sidebar collapsible="icon" variant="sidebar">
@@ -101,26 +75,6 @@ export function AdminSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        <Collapsible open={legacyOpen} onOpenChange={setLegacyOpen} className="group/collapsible">
-          <SidebarGroup>
-            <SidebarGroupLabel asChild>
-              <CollapsibleTrigger className="flex w-full items-center gap-1 hover:text-foreground transition-colors">
-                <span>Legacy</span>
-                <ChevronRight className="ml-auto h-3.5 w-3.5 transition-transform group-data-[state=open]/collapsible:rotate-90" />
-              </CollapsibleTrigger>
-            </SidebarGroupLabel>
-            <CollapsibleContent>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {LEGACY_ITEMS.map((item) => (
-                    <NavLink key={item.href} item={item} pathname={pathname} />
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </CollapsibleContent>
-          </SidebarGroup>
-        </Collapsible>
       </SidebarContent>
 
       <SidebarFooter className="border-t border-sidebar-border/60">

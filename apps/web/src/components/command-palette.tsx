@@ -33,7 +33,6 @@ import {
   ChevronRight,
   ArrowLeft,
   Check,
-  Folder,
   FolderGit2,
   FileText,
   Hash,
@@ -132,15 +131,9 @@ function sanitizeCmdkValue(value: string): string {
   return value.replace(/["'\\[\]]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// Legacy global-workspace registry items that don't belong in the new
-// project-shell palette (they point at the old tabbed shell routes). The new
-// project + app nav items (proj-*, nav-*) replace them. Kept in the registry
-// because the legacy right/left sidebars still render them.
-const LEGACY_PALETTE_HIDDEN = new Set([
-  'workspace', 'dashboard', 'scheduled-tasks', 'files', 'tunnel',
-  'running-services-cmd', 'agent-browser-cmd', 'internal-browser-cmd', 'desktop-cmd',
-  'templates', 'changelog', 'credits-explained', 'secrets-manager', 'api-keys',
-  'llm-providers', 'open-terminal', 'restart-config', 'restart-full', 'ssh-quick',
+// Registered shell actions that stay out of the project-shell palette.
+const SHELL_ACTIONS_HIDDEN_FROM_PALETTE = new Set([
+  'open-terminal', 'restart-config', 'restart-full',
 ]);
 
 // Registry nav items that open a sub-picker page instead of navigating directly.
@@ -534,20 +527,13 @@ export function CommandPalette() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [page, query, goBack]);
 
-  // Fuzzy match helper
-  const fuzzyMatch = useCallback((text: string, q: string): boolean => {
-    const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-    const haystack = text.toLowerCase();
-    return words.every((w) => haystack.includes(w));
-  }, []);
-
   const hasQuery = query.trim().length > 0;
   const queryLongEnough = query.trim().length >= 2;
   // ── Palette items ──
   const allPaletteItems = useMemo(() => {
     return getItemsForSurface('commandPalette')
       .filter((item) => {
-        if (LEGACY_PALETTE_HIDDEN.has(item.id)) return false;
+        if (SHELL_ACTIONS_HIDDEN_FROM_PALETTE.has(item.id)) return false;
         if (item.id === 'toggle-sidebar' && !sidebarCtx) return false;
         if (item.requiresBilling && !billingEnabled) return false;
         if (item.requiresSession && !currentSessionId) return false;
@@ -582,7 +568,7 @@ export function CommandPalette() {
   // Project-only agents (orchestrator/project-maintainer/worker/project-manager)
   // are hidden from the palette when the project paradigm is off —
   // their bodies reference project tools that aren't registered in default
-  // mode. Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
+  // mode.
   const visibleAgents = useMemo(() => {
     if (!agents) return [];
     const projectOnlyAgents = new Set(['project-manager']);
@@ -799,22 +785,6 @@ export function CommandPalette() {
 
   const showNoResults = hasQuery && queryLongEnough && !hasAnyResults;
 
-  const handleNavigate = useCallback(
-    (path: string, label?: string) => {
-      const type = path.startsWith('/settings')
-        ? 'settings' as const
-        : 'page' as const;
-      openTabAndNavigate({
-        id: `page:${path}`,
-        title: label || path.split('/').pop() || '',
-        type,
-        href: path,
-      }, router);
-      close();
-    },
-    [router, close],
-  );
-
   const handleSelectFile = useCallback(
     (_filePath: string, _lineNumber?: number) => {
       if (!projectId) return close();
@@ -969,21 +939,6 @@ export function CommandPalette() {
     setDiffOpen(true);
   }, [currentSessionId, close]);
 
-  // ── Registry action dispatcher ──
-  const handleOpenProviderModal = useCallback(() => {
-    close();
-    import('@/stores/provider-modal-store').then(({ useProviderModalStore }) => {
-      useProviderModalStore.getState().openProviderModal('connected');
-    });
-  }, [close]);
-
-  const handleGenerateSSHKey = useCallback(() => {
-    close();
-    import('@/stores/ssh-dialog-store').then(({ useSSHDialogStore }) => {
-      useSSHDialogStore.getState().openSSHDialog();
-    });
-  }, [close]);
-
   const handleRestartConfig = useCallback(() => {
     close();
     const serverUrl = useServerStore.getState().getActiveServerUrl();
@@ -1016,11 +971,9 @@ export function CommandPalette() {
     toggleSidebar: handleToggleSidebar,
     logout: handleLogout,
     openPlan: handleOpenPlan,
-    openProviderModal: handleOpenProviderModal,
-    generateSSHKey: handleGenerateSSHKey,
     restartConfig: handleRestartConfig,
     restartFull: handleRestartFull,
-  }), [handleNewSession, handleOpenTerminal, handleCompactSession, handleViewChanges, handleToggleSidebar, handleLogout, handleOpenPlan, handleOpenProviderModal, handleGenerateSSHKey, handleRestartConfig, handleRestartFull]);
+  }), [handleNewSession, handleOpenTerminal, handleCompactSession, handleViewChanges, handleToggleSidebar, handleLogout, handleOpenPlan, handleRestartConfig, handleRestartFull]);
 
   const handleRegistryItem = useCallback((item: MenuItemDef) => {
     switch (item.kind) {

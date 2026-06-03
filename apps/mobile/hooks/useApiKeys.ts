@@ -9,7 +9,7 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type APIKeyType = 'user' | 'sandbox';
+type APIKeyType = 'user' | 'sandbox';
 export type APIKeyStatus = 'active' | 'revoked' | 'expired';
 
 export interface APIKeyResponse {
@@ -25,7 +25,7 @@ export interface APIKeyResponse {
   created_at: string;
 }
 
-export interface APIKeyCreateRequest {
+interface APIKeyCreateRequest {
   sandbox_id: string;
   title: string;
   description?: string;
@@ -110,7 +110,7 @@ async function regenerateApiKey(keyId: string): Promise<APIKeyRegenerateResponse
 
 // ─── Query Keys ──────────────────────────────────────────────────────────────
 
-export const apiKeyKeys = {
+const apiKeyKeys = {
   all: ['api-keys'] as const,
   list: (sandboxId: string) => [...apiKeyKeys.all, sandboxId] as const,
 };

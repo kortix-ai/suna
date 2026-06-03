@@ -22,7 +22,6 @@ import {
 } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { WebView } from 'react-native-webview';
 import type { WebViewMessageEvent } from 'react-native-webview';
@@ -349,10 +348,9 @@ function buildTerminalHtml(params: {
 
 // ─── TerminalPage ────────────────────────────────────────────────────────────
 
-export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: TerminalPageProps) {
+export function TerminalPage({ onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: TerminalPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
   const { sandboxUrl } = useSandboxContext();
 
   const webViewRef = useRef<WebView>(null);
@@ -368,8 +366,6 @@ export function TerminalPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, is
   // Header follows system theme; terminal body is always dark
   const fgColor = isDark ? '#F8F8F8' : '#121215';
   const mutedColor = isDark ? '#71717a' : '#a1a1aa';
-  const headerBg = isDark ? '#121215' : '#F8F8F8';
-  const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
   // Terminal area is always dark
   const terminalBg = '#0f0f14';
   const themeColors = useThemeColors();

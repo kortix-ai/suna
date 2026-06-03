@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Activity, AlertTriangle, Clock, Database, Gauge, RefreshCw } from 'lucide-react';
+import { Activity, Clock, Database, Gauge, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -60,12 +60,11 @@ export default function AdminOpsPage() {
 
       <StatRow>
         <StatPill label="API" value={data.api.status.toUpperCase()} hint={data.api.env} tone="success" />
-        <StatPill label={tHardcodedUi.raw('appAdminOpsPage.line56JsxAttrLabelQueuedWork')} value={data.queues.queued_total} tone={data.queues.queued_total > 0 ? 'warning' : 'success'} />
         <StatPill label={tHardcodedUi.raw('appAdminOpsPage.line57JsxAttrLabelErroredSandboxes')} value={data.sandboxes.errored} tone={data.sandboxes.errored > 0 ? 'danger' : 'success'} />
         <StatPill label={tHardcodedUi.raw('appAdminOpsPage.line58JsxAttrLabelLlmCalls24h')} value={data.usage.calls_24h} hint={`$${data.usage.cost_usd_24h.toFixed(4)}`} />
       </StatRow>
 
-      <div className="grid gap-4 lg:grid-cols-4">
+      <div className="grid gap-4 lg:grid-cols-3">
         <SignalPanel icon={Gauge} title="Sessions">
           <StatusList values={data.sessions.by_status} />
         </SignalPanel>
@@ -73,12 +72,6 @@ export default function AdminOpsPage() {
           <StatusList values={data.sandboxes.by_status} />
           <div className="mt-4 border-t border-border/60 pt-4">
             <StatusList values={data.sandboxes.by_provider} />
-          </div>
-        </SignalPanel>
-        <SignalPanel icon={AlertTriangle} title="Queues">
-          <StatusList values={data.queues.trigger_events_by_status} label="Triggers" />
-          <div className="mt-4 border-t border-border/60 pt-4">
-            <StatusList values={data.queues.channel_events_by_status} label="Channels" />
           </div>
         </SignalPanel>
         <SignalPanel icon={Activity} title="Observability">

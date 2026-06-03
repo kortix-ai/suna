@@ -10,7 +10,7 @@
  * adapter implementation, not the interface.
  */
 
-export type AppSourceGit = {
+type AppSourceGit = {
   type: 'git';
   /** Full clone URL — `https://...` or `git@...`. */
   repo: string;
@@ -20,7 +20,7 @@ export type AppSourceGit = {
   rootPath?: string;
 };
 
-export type AppSourceTar = {
+type AppSourceTar = {
   type: 'tar';
   /** Pre-built tarball URL. */
   url: string;

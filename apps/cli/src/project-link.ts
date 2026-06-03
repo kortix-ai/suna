@@ -21,7 +21,7 @@ export interface ProjectLink {
   linked_at: string;
 }
 
-export function linkFilePath(cwd = process.cwd()): string {
+function linkFilePath(cwd = process.cwd()): string {
   return resolve(cwd, '.kortix', 'link.json');
 }
 

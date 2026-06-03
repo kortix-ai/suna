@@ -4,8 +4,6 @@ import { createModelsRoute } from './routes/models';
 import { createHealthRoute } from './routes/health';
 import type { LlmGatewayConfig, LlmGatewayHooks } from './types';
 
-export type { LlmGatewayConfig, LlmGatewayHooks, UsageEvent, AuthedPrincipal } from './types';
-
 export function createLlmGateway(
   config: LlmGatewayConfig,
   hooks: LlmGatewayHooks,

@@ -13,7 +13,7 @@ function randomState(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
 }
 
-export async function createAuthCallbackState(): Promise<string> {
+async function createAuthCallbackState(): Promise<string> {
   const state = randomState();
   await AsyncStorage.setItem(AUTH_CALLBACK_STATE_KEY, JSON.stringify({
     state,

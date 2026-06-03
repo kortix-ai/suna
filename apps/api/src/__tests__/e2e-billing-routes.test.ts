@@ -48,8 +48,8 @@ mock.module('../middleware/auth', () => ({
     c.set('userEmail', 'test@kortix.dev');
     await next();
   },
-  apiKeyAuth: async (c: any, next: any) => { await next(); },
-  combinedAuth: async (c: any, next: any) => { await next(); },
+  apiKeyAuth: async (_c: any, next: any) => { await next(); },
+  combinedAuth: async (_c: any, next: any) => { await next(); },
 }));
 
 mock.module('../shared/resolve-account', () => ({
@@ -59,25 +59,16 @@ mock.module('../shared/resolve-account', () => ({
 
 // Credits service mock
 mock.module('../billing/services/credits', () => ({
-  calculateTokenCost: (prompt: number, completion: number, model: string) => {
+  calculateTokenCost: (prompt: number, completion: number, _model: string) => {
     // Realistic: mirrors real calculateTokenCost with TOKEN_PRICE_MULTIPLIER=1.2
     // Uses anthropic-level pricing as default (inputPer1M=3, outputPer1M=15)
     const inputCost = (prompt / 1_000_000) * 3;
     const outputCost = (completion / 1_000_000) * 15;
     return (inputCost + outputCost) * 1.2;
   },
-  deductCredits: async (accountId: string, cost: number, desc: string) => {
+  deductCredits: async (_accountId: string, _cost: number, _desc: string) => {
     if (mockDeductError) throw mockDeductError;
     return mockDeductResult;
-  },
-  getBalance: async (accountId: string) => {
-    if (!mockCreditBalance) return { balance: 0, expiring: 0, nonExpiring: 0, daily: 0 };
-    return {
-      balance: Number(mockCreditBalance.balance),
-      expiring: Number(mockCreditBalance.expiringCredits),
-      nonExpiring: Number(mockCreditBalance.nonExpiringCredits),
-      daily: Number(mockCreditBalance.dailyCreditsBalance),
-    };
   },
   getCreditSummary: async () => ({ total: 100, daily: 3, monthly: 80, extra: 20, canRun: true }),
   grantCredits: async () => {},
@@ -91,7 +82,6 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditBalance: async () => mockCreditBalance,
   updateCreditAccount: async () => {},
   upsertCreditAccount: async () => {},
-  updateBalance: async () => {},
   getSubscriptionInfo: async () => null,
   getYearlyAccountsDueForRotation: async () => [],
 }));
@@ -109,11 +99,11 @@ mock.module('../billing/repositories/transactions', () => ({
 
 // Account deletion service mock
 mock.module('../billing/services/account-deletion', () => ({
-  getAccountDeletionStatus: async (accountId: string) => {
+  getAccountDeletionStatus: async (_accountId: string) => {
     if (mockDeletionError) throw mockDeletionError;
     return mockDeletionStatus;
   },
-  requestAccountDeletion: async (accountId: string, userId: string, reason?: string) => {
+  requestAccountDeletion: async (_accountId: string, _userId: string, _reason?: string) => {
     if (mockDeletionError) throw mockDeletionError;
     return mockDeletionRequestResult || {
       id: 'del_test_001',
@@ -124,11 +114,11 @@ mock.module('../billing/services/account-deletion', () => ({
       grace_period_days: 14,
     };
   },
-  cancelAccountDeletion: async (accountId: string) => {
+  cancelAccountDeletion: async (_accountId: string) => {
     if (mockDeletionError) throw mockDeletionError;
     return mockDeletionCancelResult || { success: true, message: 'Account deletion cancelled' };
   },
-  deleteAccountImmediately: async (accountId: string) => {
+  deleteAccountImmediately: async (_accountId: string) => {
     if (mockDeletionError) throw mockDeletionError;
     return mockDeletionDeleteResult || { success: true, message: 'Account deleted' };
   },
@@ -174,6 +164,7 @@ mock.module('../billing/repositories/customers', () => ({
   getCustomerByAccountId: async () => ({ id: 'cus_test_123', accountId: TEST_USER_ID, email: 'test@kortix.dev', provider: 'stripe', active: true }),
   getCustomerByStripeId: async () => null,
   upsertCustomer: async () => {},
+  deleteCustomerByStripeId: async () => {},
 }));
 
 // Account deletion repository mock
@@ -182,7 +173,6 @@ mock.module('../billing/repositories/account-deletion', () => ({
   createDeletionRequest: async () => null,
   cancelDeletionRequest: async () => {},
   markDeletionCompleted: async () => {},
-  getScheduledDeletions: async () => [],
 }));
 
 // ─── Import billing app AFTER mocks ──────────────────────────────────────────
@@ -430,6 +420,29 @@ describe('Billing: usage-history', () => {
       headers: { Authorization: 'Bearer test_token' },
     });
     expect(res.status).toBe(200);
+  });
+});
+
+describe('Billing: webhooks', () => {
+  test('POST /v1/billing/webhooks/stripe remains public and signature-checked', async () => {
+    const app = createBillingTestApp();
+    const res = await app.request('/v1/billing/webhooks/stripe', {
+      method: 'POST',
+      body: '{}',
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('Missing stripe-signature header');
+  });
+
+  test('legacy singular /v1/billing/webhook/stripe is not mounted', async () => {
+    const app = createBillingTestApp();
+    const res = await app.request('/v1/billing/webhook/stripe', {
+      method: 'POST',
+      headers: { 'stripe-signature': 'sig_test' },
+      body: '{}',
+    });
+    expect(res.status).toBe(404);
   });
 });
 

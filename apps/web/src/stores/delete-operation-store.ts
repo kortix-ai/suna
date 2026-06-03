@@ -27,7 +27,7 @@ interface DeleteOperationStore {
   ) => Promise<void>;
 }
 
-export const useDeleteOperationStore = create<DeleteOperationStore>()(
+const useDeleteOperationStore = create<DeleteOperationStore>()(
   devtools(
     (set, get) => ({
       isDeleting: false,
@@ -137,40 +137,6 @@ export const useDeleteOperationStore = create<DeleteOperationStore>()(
   )
 );
 
-// Hook for backward compatibility
-export function useDeleteOperation() {
-  const store = useDeleteOperationStore();
-  
-  return {
-    state: {
-      isDeleting: store.isDeleting,
-      targetId: store.targetId,
-      isActive: store.isActive,
-      operation: store.operation,
-    },
-    dispatch: (action: { type: string; id?: string; isActive?: boolean }) => {
-      switch (action.type) {
-        case 'START_DELETE':
-          if (action.id !== undefined && action.isActive !== undefined) {
-            store.startDelete(action.id, action.isActive);
-          }
-          break;
-        case 'DELETE_SUCCESS':
-          store.setDeleteSuccess();
-          break;
-        case 'DELETE_ERROR':
-          store.setDeleteError();
-          break;
-        case 'RESET':
-          store.reset();
-          break;
-      }
-    },
-    performDelete: store.performDelete,
-    isOperationInProgress: { current: store.isOperationInProgress },
-  };
-}
-
 // Hook to handle side effects (navigation, auto-reset)
 export function useDeleteOperationEffects() {
   const { operation, isActive, reset } = useDeleteOperationStore();
@@ -181,7 +147,7 @@ export function useDeleteOperationEffects() {
       const timer = setTimeout(() => {
         try {
           // Use window.location for reliable navigation
-          window.location.pathname = '/dashboard';
+          window.location.pathname = '/projects';
         } catch (error) {
           console.error('Navigation error:', error);
         }

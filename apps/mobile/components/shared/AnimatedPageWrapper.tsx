@@ -17,7 +17,7 @@ interface AnimatedPageWrapperProps {
   disableGesture?: boolean;
 }
 
-export function AnimatedPageWrapper({ visible, onClose, children, disableGesture = false }: AnimatedPageWrapperProps) {
+export function AnimatedPageWrapper({ visible, children }: AnimatedPageWrapperProps) {
   const translateX = useSharedValue(SCREEN_WIDTH);
   const [shouldRender, setShouldRender] = React.useState(false);
 

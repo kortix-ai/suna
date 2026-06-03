@@ -104,7 +104,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
               <Button
                 variant="ghost"
                 size="icon"
-                aria-label={`Manage policies for ${token.name}`}
+                aria-label={`View token access for ${token.name}`}
                 title={tHardcodedUi.raw('componentsSettingsCliTokensTab.line105JsxAttrTitleManagePermissionPolicies')}
                 onClick={() =>
                   router.push(`/accounts/${selectedAccountId}/tokens/${token.token_id}`)

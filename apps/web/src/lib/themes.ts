@@ -1,4 +1,4 @@
-export interface KortixTheme {
+interface KortixTheme {
   id: string;
   name: string;
   /** Hex color for the accent dot in the theme picker */
@@ -6,14 +6,14 @@ export interface KortixTheme {
   description: string;
 }
 
-export const DEFAULT_THEME_ID = 'graphite';
+const DEFAULT_THEME_ID = 'graphite';
 
 /**
  * Theme philosophy: Black & White + 1 accent color.
  * All backgrounds, surfaces, borders, and text are pure neutral (zero chroma).
  * Only primary, ring, sidebar-primary, and charts carry the accent hue.
  */
-export const THEMES: KortixTheme[] = [
+const THEMES: KortixTheme[] = [
   {
     id: 'graphite',
     name: 'Classic',
@@ -57,10 +57,6 @@ export const THEMES: KortixTheme[] = [
     description: 'Black & white with neon yellow accent',
   },
 ];
-
-export function getThemeById(id: string): KortixTheme | undefined {
-  return THEMES.find((t) => t.id === id);
-}
 
 /** Returns the CSS class name for a theme, or undefined for the default theme */
 export function getThemeClassName(id: string): string | undefined {

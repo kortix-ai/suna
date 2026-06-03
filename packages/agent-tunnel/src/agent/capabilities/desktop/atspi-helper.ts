@@ -267,7 +267,7 @@ if __name__ == "__main__":
 
 let written = false;
 
-export async function ensureHelper(): Promise<string> {
+async function ensureHelper(): Promise<string> {
   if (written && existsSync(HELPER_PATH)) return HELPER_PATH;
 
   if (existsSync(HELPER_PATH)) {

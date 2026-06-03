@@ -3,14 +3,10 @@
 import { useTranslations } from 'next-intl';
 
 /**
- * ProjectProviderModal — per-project port of the legacy global provider modal.
+ * ProjectProviderModal — per-project provider credential management.
  *
- * The legacy modal stored credentials in the active OpenCode sandbox via the
- * OpenCode SDK; this one stores them as plain project secrets so every session
- * sandbox for the project picks them up as env vars on boot.
- *
- * Layout intentionally mirrors the legacy three-tab UX so the muscle memory
- * carries over: Connected | Add provider | Models.
+ * Credentials are stored as project secrets so every session sandbox for the
+ * project picks them up as env vars on boot.
  */
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
@@ -23,7 +19,6 @@ import {
   ExternalLink,
   Info,
   Loader2,
-  Plug,
   Plus,
   Search,
   Unplug,
@@ -83,7 +78,6 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 
 const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
-const LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
 
 function providerCredentialSummary(provider: LlmProviderEntry): string {
   if (provider.id === 'openai') return 'OpenAI API key or ChatGPT subscription';
@@ -330,7 +324,6 @@ function ConnectedTab({
         ? [
             ...provider.envVars,
             CODEX_AUTH_JSON_SECRET_NAME,
-            LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
           ]
         : provider.envVars;
       await Promise.all(
@@ -1626,23 +1619,5 @@ function ModelsTab({
         ))}
       </div>
     </div>
-  );
-}
-
-/** Convenience: small trigger button that opens the modal. */
-export function ConnectProviderButton({ projectId }: { projectId: string }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <Button
-        variant="outline"
-        size="sm"
-        className="h-8 gap-1.5 text-xs"
-        onClick={() => setOpen(true)}
-      >
-        <Plug className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1323JsxTextConnectProvider')}</Button>
-      <ProjectProviderModal projectId={projectId} open={open} onOpenChange={setOpen} />
-    </>
   );
 }

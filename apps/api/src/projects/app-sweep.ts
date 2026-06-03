@@ -14,7 +14,7 @@ import { and, desc, eq } from 'drizzle-orm';
 import { deployments, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { DEFAULT_PROVIDER_NAME, getProvider } from '../deployments/providers';
-import type { DeploymentRequest } from '../deployments/providers';
+import type { DeploymentRequest } from '../deployments/providers/types';
 import {
   loadProjectApps,
   manifestHashForApp,
@@ -28,7 +28,7 @@ type DeploymentRow = typeof deployments.$inferSelect;
 
 let appSweepRunning = false;
 
-export interface AppSweepResult {
+interface AppSweepResult {
   scannedProjects: number;
   scannedApps: number;
   /** No-op because the stored hash already matches. */
@@ -140,7 +140,7 @@ export async function getLatestDeployment(
  * project's own repo URL so the most common case (deploy this project's
  * repo) works with zero TOML boilerplate.
  */
-export function buildDeploymentRequest(input: {
+function buildDeploymentRequest(input: {
   project: ProjectRow;
   spec: AppSpec;
 }): DeploymentRequest {

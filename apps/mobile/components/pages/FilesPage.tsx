@@ -8,8 +8,6 @@
 import React, { useState, useMemo, useCallback, useRef, useEffect, useImperativeHandle, forwardRef } from 'react';
 import {
   View,
-  TouchableOpacity,
-  Text as RNText,
   Pressable,
   ScrollView,
   Alert,
@@ -24,7 +22,6 @@ import { KortixLoader } from '@/components/ui';
 import {
   Upload,
   FolderPlus,
-  Trash2,
   AlertCircle,
   LayoutGrid,
   List,
@@ -35,12 +32,8 @@ import {
   X as XIcon,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
-import { Ionicons } from '@expo/vector-icons';
-import Animated, {
-  FadeIn,
-} from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
@@ -61,7 +54,6 @@ import {
   getFileIconComponent,
   getMutedIconColor,
 } from '@/components/files/FileItem';
-import { FileBreadcrumb } from '@/components/files/FileBreadcrumb';
 import { FileViewer } from '@/components/files/FileViewer';
 import {
   useOpenCodeFiles,
@@ -148,12 +140,11 @@ interface FilesPageProps {
 }
 
 export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function FilesPage(
-  { page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onFileSelectionChange, onRequestMenu },
+  { page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onFileSelectionChange, onRequestMenu },
   ref,
 ) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const { sandboxId, sandboxUrl } = useSandboxContext();
   const setTabState = useTabStore((s) => s.setTabState);

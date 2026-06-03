@@ -1,4 +1,4 @@
-export type WallpaperType = 'svg' | 'symbol' | 'aurora' | 'shader' | 'image';
+type WallpaperType = 'svg' | 'symbol' | 'aurora';
 
 export interface Wallpaper {
   id: string;
@@ -8,10 +8,6 @@ export interface Wallpaper {
   svgUrl?: string;
   /** For 'symbol' wallpapers — path to the symbol SVG shown centered at low opacity */
   symbolUrl?: string;
-  /** For 'image' wallpapers — path to the light-mode image */
-  lightUrl?: string;
-  /** For 'image' wallpapers — path to the dark-mode image */
-  darkUrl?: string;
   /** Small thumbnail for the picker */
   thumbnailUrl: string;
 }
@@ -37,27 +33,6 @@ export const WALLPAPERS: Wallpaper[] = [
     id: 'aurora',
     name: 'Aurora',
     type: 'aurora',
-    svgUrl: '/kortix-logomark-white.svg',
-    thumbnailUrl: '/kortix-logomark-white.svg',
-  },
-  {
-    id: 'nebula',
-    name: 'Pixel Beams',
-    type: 'shader',
-    svgUrl: '/kortix-logomark-white.svg',
-    thumbnailUrl: '/kortix-logomark-white.svg',
-  },
-  {
-    id: 'ascii-tunnel',
-    name: 'ASCII Tunnel',
-    type: 'shader',
-    svgUrl: '/kortix-logomark-white.svg',
-    thumbnailUrl: '/kortix-logomark-white.svg',
-  },
-  {
-    id: 'matrix',
-    name: 'Enter the Matrix',
-    type: 'shader',
     svgUrl: '/kortix-logomark-white.svg',
     thumbnailUrl: '/kortix-logomark-white.svg',
   },

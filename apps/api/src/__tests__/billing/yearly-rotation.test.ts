@@ -44,7 +44,6 @@ beforeEach(() => {
 // Import AFTER mocking
 const {
   processYearlyCreditRotation,
-  isYearlyAccountDueForRotation,
   calculateNextCreditGrant,
 } = await import('../../billing/services/yearly-rotation');
 
@@ -162,64 +161,6 @@ describe('processYearlyCreditRotation', () => {
 
     const result = await processYearlyCreditRotation();
     expect(result.processed).toBe(2);
-  });
-});
-
-describe('isYearlyAccountDueForRotation', () => {
-  test('true when nextCreditGrant <= now', () => {
-    const account = createMockCreditAccount({
-      planType: 'yearly',
-      tier: 'tier_6_50',
-      nextCreditGrant: new Date(Date.now() - 86400000).toISOString(),
-      stripeSubscriptionStatus: 'active',
-      paymentStatus: 'active',
-    });
-
-    expect(isYearlyAccountDueForRotation(account)).toBe(true);
-  });
-
-  test('false when nextCreditGrant > now', () => {
-    const account = createMockCreditAccount({
-      planType: 'yearly',
-      tier: 'tier_6_50',
-      nextCreditGrant: new Date(Date.now() + 86400000 * 15).toISOString(),
-      stripeSubscriptionStatus: 'active',
-      paymentStatus: 'active',
-    });
-
-    expect(isYearlyAccountDueForRotation(account)).toBe(false);
-  });
-
-  test('true when null (never rotated)', () => {
-    const account = createMockCreditAccount({
-      planType: 'yearly',
-      tier: 'tier_6_50',
-      nextCreditGrant: null,
-      stripeSubscriptionStatus: 'active',
-      paymentStatus: 'active',
-    });
-
-    expect(isYearlyAccountDueForRotation(account)).toBe(true);
-  });
-
-  test('false for monthly accounts', () => {
-    const account = createMockCreditAccount({
-      planType: 'monthly',
-      tier: 'tier_6_50',
-      nextCreditGrant: new Date(Date.now() - 86400000).toISOString(),
-    });
-
-    expect(isYearlyAccountDueForRotation(account)).toBe(false);
-  });
-
-  test('false for free tier', () => {
-    const account = createMockCreditAccount({
-      planType: 'yearly',
-      tier: 'free',
-      nextCreditGrant: new Date(Date.now() - 86400000).toISOString(),
-    });
-
-    expect(isYearlyAccountDueForRotation(account)).toBe(false);
   });
 });
 

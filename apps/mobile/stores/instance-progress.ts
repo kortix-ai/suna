@@ -10,10 +10,6 @@ export function setInstanceProgress(p: InstanceProgress) {
   _listeners.forEach((fn) => fn(p));
 }
 
-export function getInstanceProgress(): InstanceProgress {
-  return _progress;
-}
-
 export function useInstanceProgress(): InstanceProgress {
   const [progress, setProgress] = useState<InstanceProgress>(_progress);
   useEffect(() => {

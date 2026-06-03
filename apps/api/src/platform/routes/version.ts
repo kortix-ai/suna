@@ -16,7 +16,7 @@ const DOCKERHUB_REPO = 'kortix/kortix-sandbox';
 const DOCKERHUB_TAGS_URL = `https://hub.docker.com/v2/repositories/${DOCKERHUB_REPO}/tags`;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-export type VersionChannel = 'stable' | 'dev';
+type VersionChannel = 'stable' | 'dev';
 
 interface VersionEntry {
   version: string;
@@ -28,7 +28,7 @@ interface VersionEntry {
   current: boolean;
 }
 
-export interface LatestVersionResult {
+interface LatestVersionResult {
   version: string;
   channel: VersionChannel;
   date?: string;
@@ -277,27 +277,6 @@ versionRouter.get('/changelog', async (c) => {
 
 export { versionRouter };
 
-export function detectVersionChannel(version: string | null | undefined): VersionChannel {
+function detectVersionChannel(version: string | null | undefined): VersionChannel {
   return version?.startsWith('dev-') ? 'dev' : 'stable';
-}
-
-export function hasNewerSandboxVersion(current: string, latest: string, channel: VersionChannel): boolean {
-  if (channel === 'dev') return current !== latest;
-
-  const parse = (value: string) => value.replace(/^v/, '').split('.').map(Number);
-  const currentParts = parse(current);
-  const latestParts = parse(latest);
-
-  for (let i = 0; i < Math.max(currentParts.length, latestParts.length); i++) {
-    const currentPart = currentParts[i] ?? 0;
-    const latestPart = latestParts[i] ?? 0;
-    if (latestPart > currentPart) return true;
-    if (latestPart < currentPart) return false;
-  }
-
-  return false;
-}
-
-export async function getLatestVersionForChannel(channel: VersionChannel): Promise<LatestVersionResult> {
-  return channel === 'dev' ? getLatestDev() : getLatestStable();
 }

@@ -15,14 +15,9 @@ import {
   Switch,
   StyleSheet,
   Keyboard,
-  TouchableOpacity,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { Text as RNText } from 'react-native';
 import {
-  Search,
-  X,
-  Plus,
   Clock,
   Play,
   Pause,
@@ -36,8 +31,6 @@ import {
   SkipForward,
   Loader2,
   Pencil,
-  RotateCw,
-  Calendar,
   Save,
   Copy,
   Check,
@@ -45,9 +38,8 @@ import {
 import * as Clipboard from 'expo-clipboard';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
-import { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetModal, BottomSheetView, BottomSheetTextInput } from '@gorhom/bottom-sheet';
+import { BottomSheetBackdrop, BottomSheetScrollView, BottomSheetModal, BottomSheetTextInput } from '@gorhom/bottom-sheet';
 
 import { useThemeColors, getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
 import { SearchListHeader } from '@/components/ui/search-list-header';
@@ -69,8 +61,6 @@ import {
   formatDuration,
   type Trigger,
   type Execution,
-  type CreateTriggerData,
-  type UpdateTriggerData,
   type ExecutionStatus,
 } from '@/hooks/useScheduledTasks';
 
@@ -87,7 +77,6 @@ interface ScheduledTasksTabPageProps {
 
 export function ScheduledTasksTabPage({
   page,
-  onBack,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -95,8 +84,6 @@ export function ScheduledTasksTabPage({
 }: ScheduledTasksTabPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
@@ -125,14 +112,12 @@ function ScheduledTasksContent() {
 
   const { data: triggers, isLoading, error } = useScheduledTasks();
   const navigateToSession = useTabStore((s) => s.navigateToSession);
-  const createTask = useCreateScheduledTask();
   const deleteTask = useDeleteScheduledTask();
   const toggleTask = useToggleScheduledTask();
   const runTask = useRunScheduledTask();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedTrigger, setSelectedTrigger] = useState<Trigger | null>(null);
-  const [showCreateSheet, setShowCreateSheet] = useState(false);
 
   const detailSheetRef = useRef<BottomSheetModal>(null);
   const createSheetRef = useRef<BottomSheetModal>(null);
@@ -140,7 +125,6 @@ function ScheduledTasksContent() {
   // Colors
   const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
 
   // Filter + sort triggers
   const filteredTriggers = useMemo(() => {
@@ -334,10 +318,7 @@ function ScheduledTasksContent() {
 function TaskListItem({
   trigger,
   isDark,
-  theme,
   onPress,
-  onToggle,
-  onDelete,
 }: {
   trigger: Trigger;
   isDark: boolean;
@@ -459,7 +440,7 @@ function TaskDetailSheet({
   onRunNow,
   onOpenSession,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   trigger: Trigger | null;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
@@ -981,7 +962,6 @@ function WebhookUrlBlock({
 
 function ExecutionsTab({ triggerId, isDark, onOpenSession }: { triggerId: string; isDark: boolean; onOpenSession: (sessionId: string) => void }) {
   const { data: executions, isLoading } = useTaskExecutions(triggerId);
-  const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
 
   if (isLoading) {
@@ -1010,7 +990,6 @@ function ExecutionsTab({ triggerId, isDark, onOpenSession }: { triggerId: string
 }
 
 function ExecutionRow({ execution, isDark, onOpenSession }: { execution: Execution; isDark: boolean; onOpenSession: (sessionId: string) => void }) {
-  const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
   const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
 
@@ -1110,7 +1089,6 @@ const WEEKDAY_BUTTONS = [
 
 const MINUTE_INTERVALS = [1, 5, 10, 15, 30, 45];
 const HOUR_INTERVALS = [1, 2, 3, 4, 6, 8, 12];
-const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55];
 
 const TIMEZONES = [
@@ -1184,12 +1162,11 @@ function CreateTaskSheet({
   theme,
   renderBackdrop,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   renderBackdrop: (props: any) => React.ReactElement;
 }) {
-  const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const createTask = useCreateScheduledTask();
 

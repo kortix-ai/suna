@@ -44,49 +44,6 @@ export function parseProjectListOutput(output: string): ProjectEntry[] {
 	return projects;
 }
 
-export interface ProjectGetData {
-	name: string;
-	path: string;
-	description: string | null;
-	id: string;
-	sessions: Array<{ status: string; count: number }>;
-	contextExists: boolean;
-	contextPath: string;
-}
-
-export function parseProjectGetOutput(output: string): ProjectGetData | null {
-	if (!output || typeof output !== 'string') return null;
-
-	const nameMatch = output.match(/^##\s+(.+)$/m);
-	const pathMatch = output.match(/\*\*Path:\*\*\s+`([^`]+)`/);
-	const descMatch = output.match(/\*\*Description:\*\*\s+(.+)$/m);
-	const idMatch = output.match(/\*\*ID:\*\*\s+`([^`]+)`/);
-	const contextMatch = output.match(/\*\*Context:\*\*\s+`([^`]+)`\s*([✓✓])?/);
-	const contextExists = !!contextMatch?.[2];
-	const contextPath = contextMatch?.[1] || '';
-
-	// Sessions section
-	const sessions: Array<{ status: string; count: number }> = [];
-	const bulletRe = /^-\s+(running|completed|failed|pending):\s+(\d+)/gm;
-	let sm;
-	while ((sm = bulletRe.exec(output)) !== null) {
-		sessions.push({
-			status: sm[1],
-			count: parseInt(sm[2], 10) || 0,
-		});
-	}
-
-	return {
-		name: nameMatch?.[1] || 'Unknown Project',
-		path: pathMatch?.[1] || '',
-		description: descMatch?.[1] || null,
-		id: idMatch?.[1] || '',
-		sessions,
-		contextExists,
-		contextPath,
-	};
-}
-
 export interface ProjectSelectData {
 	name: string;
 	path: string;

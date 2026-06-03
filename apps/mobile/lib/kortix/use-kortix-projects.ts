@@ -1,5 +1,5 @@
 /**
- * Kortix Projects hooks — ported from apps/web/src/hooks/kortix/use-kortix-projects.ts
+ * Kortix Projects hooks — mobile copy of the earlier web project hooks.
  *
  * Fetches from kortix-master's /kortix/projects API through the sandbox URL.
  */
@@ -96,26 +96,6 @@ export interface KortixTask {
   updated_at: string;
 }
 
-export interface KortixAgent {
-  id: string;
-  project_id: string;
-  session_id: string;
-  parent_session_id: string;
-  agent_type: string;
-  description: string;
-  status: 'running' | 'completed' | 'failed' | 'stopped';
-  result: string | null;
-  verification_summary: string | null;
-  blocking_question: string | null;
-  owner_session_id: string | null;
-  owner_agent: string | null;
-  requested_by_session_id?: string | null;
-  started_at?: string | null;
-  completed_at?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
 // ── Fetch helper ─────────────────────────────────────────────────────────────
 
 async function kortixFetch<T>(sandboxUrl: string, path: string, init?: RequestInit): Promise<T> {
@@ -144,7 +124,6 @@ export const kortixKeys = {
   projectSessions: (url: string, id: string) =>
     ['kortix', 'projects', url, id, 'sessions'] as const,
   tasks: (url: string, projectId: string) => ['kortix', 'tasks', url, projectId] as const,
-  agents: (url: string, projectId: string) => ['kortix', 'agents', url, projectId] as const,
   connectors: (url: string) => ['kortix', 'connectors', url] as const,
 };
 
@@ -230,35 +209,6 @@ export function useKortixTasks(sandboxUrl: string | undefined, projectId: string
   });
 }
 
-/** Fetch a single task by ID (ported from web 26cf37f). */
-export function useKortixTask(sandboxUrl: string | undefined, id: string | undefined) {
-  return useQuery<KortixTask>({
-    queryKey: ['kortix', 'tasks', sandboxUrl || '', 'detail', id || ''],
-    queryFn: async () => {
-      const raw = await kortixFetch<any>(sandboxUrl!, `/kortix/tasks/${encodeURIComponent(id!)}`);
-      return normalizeTask(raw);
-    },
-    enabled: !!sandboxUrl && !!id,
-    refetchInterval: 5000,
-    retry: 2,
-  });
-}
-
-export function useKortixAgents(sandboxUrl: string | undefined, projectId: string | undefined) {
-  const qs = projectId ? `?project_id=${encodeURIComponent(projectId)}` : '';
-  return useQuery<KortixAgent[]>({
-    queryKey: kortixKeys.agents(sandboxUrl || '', projectId || ''),
-    queryFn: async () => {
-      try {
-        return await kortixFetch<KortixAgent[]>(sandboxUrl!, `/kortix/agents${qs}`);
-      } catch {
-        return [];
-      }
-    },
-    enabled: !!sandboxUrl && !!projectId,
-    refetchInterval: 5000,
-  });
-}
 // ── Mutation hooks ───────────────────────────────────────────────────────────
 
 export function useUpdateProject(sandboxUrl: string | undefined) {

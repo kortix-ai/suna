@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useCallback, useRef } from 'react';
-import { View, Pressable, StyleSheet, Keyboard, Modal, TextInput, ScrollView, Alert } from 'react-native';
+import React, { useMemo, useState, useCallback } from 'react';
+import { View, Pressable, StyleSheet, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Copy, Check, Edit3, X, Trash2 } from 'lucide-react-native';
@@ -45,7 +45,6 @@ function parseMarkdownParts(text: string): ContentPart[] {
   const parts: ContentPart[] = [];
   const lines = text.split('\n');
   let i = 0;
-  let charOffset = 0; // Track position in original text
 
   // Helper to calculate char offset at line index
   const getCharOffsetAtLine = (lineIndex: number): number => {
@@ -169,14 +168,12 @@ function parseMarkdownParts(text: string): ContentPart[] {
 function CodeBlock({
   code,
   language,
-  isDark,
   editable,
   onEdit,
   onDelete,
 }: {
   code: string;
   language?: string;
-  isDark: boolean;
   editable?: boolean;
   onEdit?: (newCode: string, newLanguage?: string) => void;
   onDelete?: () => void;
@@ -307,13 +304,11 @@ function parseMarkdownTable(text: string): { headers: string[]; cells: string[][
  */
 function SimpleTable({
   text,
-  isDark,
   editable,
   onEdit,
   onDelete,
 }: {
   text: string;
-  isDark: boolean;
   editable?: boolean;
   onEdit?: (newTable: string) => void;
   onDelete?: () => void;
@@ -457,10 +452,7 @@ export function HybridMarkdownEditor({
   isEditing,
 }: HybridMarkdownEditorProps) {
   // Track which markdown part is currently focused for selection mapping
-  const [focusedPartIndex, setFocusedPartIndex] = useState<number | null>(null);
-
-  // Track which part is actively being typed in (starts on first keystroke, not focus)
-  const [typingPartIndex, setTypingPartIndex] = useState<number | null>(null);
+  const [, setFocusedPartIndex] = useState<number | null>(null);
 
   // Parse parts
   const parts = useMemo(() => {
@@ -604,7 +596,6 @@ export function HybridMarkdownEditor({
               <CodeBlock
                 code={part.content}
                 language={part.language}
-                isDark={isDark}
                 editable={isEditMode} // Show edit/delete buttons in edit mode
                 onEdit={(newCode, newLang) => handlePartEdit(index, newCode, newLang)}
                 onDelete={() => handlePartDelete(index)}
@@ -618,7 +609,6 @@ export function HybridMarkdownEditor({
             <View key={`part-${index}`} style={needsSpacing && styles.partSpacing}>
               <SimpleTable
                 text={part.content}
-                isDark={isDark}
                 editable={isEditMode} // Show edit/delete buttons in edit mode
                 onEdit={(newTable) => handlePartEdit(index, newTable)}
                 onDelete={() => handlePartDelete(index)}
@@ -727,4 +717,3 @@ const styles = StyleSheet.create({
     margin: 0,
   },
 });
-

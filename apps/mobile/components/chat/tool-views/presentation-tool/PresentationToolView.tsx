@@ -3,7 +3,6 @@ import { View, ScrollView, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
-  Presentation,
   AlertTriangle,
   CheckCircle2,
   Maximize2,
@@ -12,7 +11,7 @@ import type { ToolViewProps } from '../types';
 import { useThread } from '@/lib/chat/hooks';
 import { PresentationSlideCard } from './PresentationSlideCard';
 import { FullScreenPresentationViewer } from './FullScreenPresentationViewer';
-import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
+import { ToolViewCard, StatusBadge } from '../shared';
 import { getToolMetadata } from '../tool-metadata';
 import { KortixLoader } from '@/components/ui';
 import * as Haptics from 'expo-haptics';
@@ -77,7 +76,7 @@ export function PresentationToolView({
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
   const toolName = toolCall.function_name;
-  const colorScheme = useColorScheme();
+  const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   const threadId = toolMessage?.thread_id || assistantMessage?.thread_id;
@@ -90,7 +89,7 @@ export function PresentationToolView({
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
-  const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoadedRef = useRef(false);
 
   const metadataCacheRef = useRef<Map<string, PresentationMetadata>>(new Map());

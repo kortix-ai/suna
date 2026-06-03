@@ -6,7 +6,7 @@
  * provider-neutral behaviour: create repo → mint push token → register project.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { accountMembers, projectMembers, projects } from '@kortix/db';
@@ -107,10 +107,6 @@ mock.module('../middleware/auth', () => ({
 // verifying provision/delete behavior, not the access-control engine itself.
 mockIamEngineAllowAll();
 
-// grantProjectRole syncs IAM policy rows; no-op those (they hit tables the
-// lightweight db mock doesn't model).
-mockIamMembershipSyncNoop();
-
 mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
@@ -126,7 +122,6 @@ mock.module('../projects/git', () => ({
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
   resolveCommitSha: async () => 'a'.repeat(40),
-  resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
@@ -135,8 +130,6 @@ mock.module('../projects/git', () => ({
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
   deleteRemoteSessionBranch: async () => undefined,
-  diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
-  getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
 }));
 
@@ -144,11 +137,11 @@ mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
+  reconcileStaleBuilds: async () => {},
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickProjectTemplatePrebuilds: () => {},
-  reconcileStaleBuilds: async () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));

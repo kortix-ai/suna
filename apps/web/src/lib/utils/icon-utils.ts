@@ -23,29 +23,6 @@ function toKebabCase(str: string): string {
 }
 
 /**
- * Validates if an icon name exists in lucide-react
- * Accepts both kebab-case and PascalCase formats
- */
-export function isValidIconName(iconName: string | null | undefined): boolean {
-  if (!iconName || typeof iconName !== 'string') {
-    return false;
-  }
-
-  // Check if it's already in PascalCase format
-  if (icons[iconName as keyof typeof icons]) {
-    return true;
-  }
-
-  // Try converting from kebab-case to PascalCase
-  const pascalCaseName = toPascalCase(iconName);
-  if (icons[pascalCaseName as keyof typeof icons]) {
-    return true;
-  }
-
-  return false;
-}
-
-/**
  * Normalizes an icon name to kebab-case format for use with DynamicIcon
  * DynamicIcon expects kebab-case names like "message-circle", not PascalCase
  * Returns null if the icon doesn't exist
@@ -70,4 +47,3 @@ export function normalizeIconName(iconName: string | null | undefined): string |
 
   return null;
 }
-

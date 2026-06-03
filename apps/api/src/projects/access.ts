@@ -44,15 +44,15 @@ export function parseProjectRole(value: unknown): ProjectRole | null {
 //
 // Pure so it's easy to test without spinning up the DB.
 
-export type AccessSourceTag = 'implicit' | 'direct' | 'group';
+type AccessSourceTag = 'implicit' | 'direct' | 'group';
 
-export interface GroupSource {
+interface GroupSource {
   group_id: string;
   group_name: string;
   role: ProjectRole;
 }
 
-export interface EffectiveAccessFold {
+interface EffectiveAccessFold {
   effective_project_role: ProjectRole | null;
   effective_source: AccessSourceTag | null;
   group_sources: GroupSource[];
@@ -64,7 +64,7 @@ const PROJECT_ROLE_RANK: Record<ProjectRole, number> = {
   manager: 3,
 };
 
-export function maxProjectRole(a: ProjectRole, b: ProjectRole): ProjectRole {
+function maxProjectRole(a: ProjectRole, b: ProjectRole): ProjectRole {
   return PROJECT_ROLE_RANK[a] >= PROJECT_ROLE_RANK[b] ? a : b;
 }
 

@@ -86,18 +86,6 @@ export function BillingProvider({ children }: BillingProviderProps) {
   return <BillingContext.Provider value={DISABLED_VALUE}>{children}</BillingContext.Provider>;
 }
 
-// ============================================================================
-// Hooks (same API, static returns)
-// ============================================================================
-
 export function useBillingContext(): BillingContextType {
   return useContext(BillingContext);
-}
-
-export function useHasCredits(_minimumCredits = 0): boolean {
-  return true; // Always has credits when billing is disabled
-}
-
-export function useSubscriptionTier(): string {
-  return 'none'; // No tier concept when billing is disabled
 }

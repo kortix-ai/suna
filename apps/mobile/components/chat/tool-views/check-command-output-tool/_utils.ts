@@ -7,33 +7,29 @@ export interface CheckCommandOutputData {
   success: boolean;
 }
 
-const parseContent = (content: any): any => {
-  if (typeof content === 'string') {
-    try {
-      return JSON.parse(content);
-    } catch (e) {
-      return content;
-    }
-  }
-  return content;
-};
-
 export function extractCheckCommandOutputData(
   toolCall: ToolCallData,
   toolResult?: ToolResultData,
-  isSuccess: boolean = true,
-  toolTimestamp?: string,
-  assistantTimestamp?: string
+  isSuccess: boolean = true
 ): CheckCommandOutputData {
   // Extract session_name from toolCall.arguments (from metadata)
-  const args = toolCall.arguments || {};
+  const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : typeof toolCall.arguments === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(toolCall.arguments);
+          } catch {
+            return {};
+          }
+        })()
+      : {};
   const sessionName: string | null = args.session_name || args.sessionName || null;
   
   // Extract output from toolResult.output (from metadata)
   let output: string | null = null;
   let status: string | null = null;
   let actualIsSuccess = isSuccess;
-  const actualTimestamp = toolTimestamp || assistantTimestamp;
 
   if (toolResult?.output) {
     if (typeof toolResult.output === 'object' && toolResult.output !== null) {
@@ -56,4 +52,3 @@ export function extractCheckCommandOutputData(
     success: actualIsSuccess,
   };
 }
-

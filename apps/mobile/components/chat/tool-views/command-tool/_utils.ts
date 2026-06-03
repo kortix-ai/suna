@@ -1,4 +1,4 @@
-import type { ToolCallData, ToolResultData } from '../types';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
 export interface CommandData {
   command: string | null;
@@ -19,8 +19,7 @@ export function extractCommandData(
   toolCall: ToolCallData,
   toolResult?: ToolResultData,
   isSuccess: boolean = true,
-  toolTimestamp?: string,
-  assistantTimestamp?: string
+  toolTimestamp?: string
 ): CommandData {
   // Extract command from toolCall.arguments (from metadata)
   // Handle both object and string (partial JSON during streaming)
@@ -78,4 +77,3 @@ export function extractCommandData(
     timestamp: toolTimestamp,
   };
 }
-

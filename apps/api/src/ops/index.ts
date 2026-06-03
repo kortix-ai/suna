@@ -113,7 +113,6 @@ opsApp.get('/overview', async (c) => {
     sessionStatus,
     sandboxStatus,
     sandboxProviders,
-    triggerEventStatus,
     audit24h,
     migrationStatus,
     usage,
@@ -141,10 +140,6 @@ opsApp.get('/overview', async (c) => {
       FROM kortix.session_sandboxes
       GROUP BY provider
     `),
-    // Triggers are file-defined (kortix.toml) now; the project_trigger_events
-    // table is gone and the git path doesn't persist events, so this is always
-    // empty. Field kept for dashboard compatibility.
-    Promise.resolve<Record<string, number>>({}),
     oneCount(sql`
       SELECT count(*)::int AS count
       FROM kortix.audit_events
@@ -159,7 +154,6 @@ opsApp.get('/overview', async (c) => {
     recentAuditEvents(),
   ]);
 
-  const queuedTriggerEvents = triggerEventStatus.queued ?? 0;
   const erroredSessions = sessionStatus.failed ?? 0;
   const erroredSandboxes = sandboxStatus.error ?? 0;
 
@@ -183,10 +177,6 @@ opsApp.get('/overview', async (c) => {
       by_status: sandboxStatus,
       by_provider: sandboxProviders,
       errored: erroredSandboxes,
-    },
-    queues: {
-      trigger_events_by_status: triggerEventStatus,
-      queued_total: queuedTriggerEvents,
     },
     audit: {
       events_24h: audit24h,

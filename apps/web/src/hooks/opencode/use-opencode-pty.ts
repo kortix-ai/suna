@@ -78,22 +78,6 @@ export function useCreatePty() {
   });
 }
 
-export function useRemovePty() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const client = getClient();
-      const result = await client.pty.remove({ ptyID: id } as any);
-      unwrap(result);
-    },
-    onSuccess: () => {
-      // SSE pty.deleted will also fire
-      queryClient.refetchQueries({ queryKey: ptyKeys.listPrefix(), type: 'active' });
-    },
-  });
-}
-
 export function useUpdatePty() {
   return useMutation({
     mutationFn: async ({

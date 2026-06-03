@@ -7,33 +7,8 @@ import {
   PROVIDER_LABELS as SHARED_PROVIDER_LABELS,
 } from '@kortix/shared/llm-catalog';
 
-export const POPULAR_PROVIDER_IDS = [
-  'anthropic',
-  'openai',
-  'github-copilot',
-  'google',
-  'openrouter',
-  'vercel',
-];
-
 export const MODEL_SELECTOR_PROVIDER_IDS: readonly string[] = SHARED_MODEL_SELECTOR_PROVIDER_IDS;
 export const PROVIDER_LABELS: Record<string, string> = SHARED_PROVIDER_LABELS;
-
-export const PROVIDER_HINTS: Record<string, string> = {
-  anthropic: 'Pro/Max or API key',
-  openai: 'Pro/Plus or API key',
-  'github-copilot': 'Use existing subscription',
-};
-
-export const PROVIDER_NOTES: Record<string, string> = {
-  opencode: 'One key for many hosted models',
-  anthropic: 'Claude Pro/Max subscription or your own API key',
-  openai: 'ChatGPT Pro/Plus subscription or your own API key',
-  'github-copilot': 'Reuse your existing Copilot plan',
-  google: 'Gemini models from Google AI Studio',
-  openrouter: 'Route across many providers',
-  vercel: 'Use Vercel AI Gateway credentials',
-};
 
 const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
   anthropic: { src: '/provider-icons/anthropic.svg', fallback: 'AN' },

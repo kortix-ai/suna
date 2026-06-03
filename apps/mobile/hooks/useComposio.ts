@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/api/supabase';
 import { API_URL } from '@/api/config';
@@ -69,7 +69,6 @@ const composioKeys = {
   all: ['composio'] as const,
   apps: () => [...composioKeys.all, 'apps'] as const,
   profiles: () => [...composioKeys.all, 'profiles'] as const,
-  tools: (profileId: string) => [...composioKeys.all, 'tools', profileId] as const,
   toolkitDetails: (slug: string) => [...composioKeys.all, 'toolkit', slug] as const,
   toolkitTools: (slug: string) => [...composioKeys.all, 'toolkit-tools', slug] as const,
 };
@@ -162,36 +161,7 @@ const useComposioToolkitDetails = (slug: string, options?: { enabled?: boolean }
       return response.json();
     },
     enabled: options?.enabled !== false && !!slug,
-    enabled: !!slug,
     staleTime: 10 * 60 * 1000,
-  });
-};
-
-const useComposioTools = (profileId: string) => {
-  return useQuery({
-    queryKey: composioKeys.tools(profileId),
-    queryFn: async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
-
-      const response = await fetch(`${API_URL}/composio/profiles/${profileId}/discover-tools`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to discover tools');
-      }
-
-      return response.json();
-    },
-    enabled: !!profileId,
-    staleTime: 5 * 60 * 1000,
   });
 };
 
@@ -221,46 +191,6 @@ const useComposioToolsBySlug = (slug: string, options?: { enabled?: boolean; lim
       }
 
       return response.json();
-    },
-    enabled: options?.enabled !== false && !!slug,
-    staleTime: 10 * 60 * 1000,
-  });
-};
-
-const useComposioToolsBySlugInfinite = (
-  slug: string,
-  options?: { enabled?: boolean; limit?: number }
-) => {
-  return useInfiniteQuery({
-    queryKey: [...composioKeys.toolkitTools(slug), 'infinite', options?.limit],
-    queryFn: async ({ pageParam }) => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) throw new Error('Not authenticated');
-
-      const response = await fetch(`${API_URL}/composio/tools/list`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          toolkit_slug: slug,
-          limit: options?.limit || 50,
-          cursor: pageParam,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch toolkit tools');
-      }
-
-      return response.json();
-    },
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => {
-      return lastPage.next_cursor || undefined;
     },
     enabled: options?.enabled !== false && !!slug,
     staleTime: 10 * 60 * 1000,
@@ -331,7 +261,7 @@ const useCreateComposioProfile = () => {
       log.log('✅ Profile created:', redactForLog(result));
       return result;
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: composioKeys.profiles() });
       queryClient.invalidateQueries({ queryKey: composioKeys.apps() });
     },
@@ -496,17 +426,11 @@ export {
   useComposioProfiles,
   useComposioToolkitDetails,
   useComposioToolkitIcon,
-  useComposioTools,
   useComposioToolsBySlug,
-  useComposioToolsBySlugInfinite,
   useCreateComposioProfile,
   useCheckProfileNameAvailability,
   useUpdateComposioTools,
-  composioKeys,
   type ComposioApp,
   type ComposioProfile,
   type ComposioTool,
-  type CreateComposioProfileRequest,
-  type CreateComposioProfileResponse,
-  type AuthConfigField,
 };

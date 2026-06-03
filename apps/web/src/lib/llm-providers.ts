@@ -3,8 +3,7 @@
  *
  * Data source: a slim snapshot of https://models.dev/api.json (the same data
  * OpenCode uses internally). The snapshot lives at
- * `packages/shared/src/llm-catalog/catalog.generated.json` and is regenerated
- * by `apps/web/scripts/refresh-llm-catalog.ts`.
+ * `packages/shared/src/llm-catalog/catalog.generated.json`.
  *
  * "Connecting" a provider writes its env vars to `project_secrets`. Sessions
  * pick those up as env vars at sandbox boot — so connecting Anthropic here is
@@ -14,7 +13,7 @@
 
 import { CATALOG as catalog } from '@kortix/shared/llm-catalog';
 
-export interface LlmProviderModel {
+interface LlmProviderModel {
   id: string;
   name: string;
   /**
@@ -166,18 +165,3 @@ export const LLM_PROVIDERS: LlmProviderEntry[] = order(RAW.providers.map(toEntry
 export const LLM_PROVIDER_BY_ID = new Map<string, LlmProviderEntry>(
   LLM_PROVIDERS.map((entry) => [entry.id, entry]),
 );
-
-/** Lookup by env-var name — used to mark "connected" status from secret names. */
-export const LLM_PROVIDER_BY_ENV_VAR = new Map<string, LlmProviderEntry>(
-  LLM_PROVIDERS.flatMap((entry) =>
-    entry.envVars.map((envVar) => [envVar, entry] as const),
-  ),
-);
-
-/** Catalog metadata for diagnostic display ("catalog refreshed N hours ago"). */
-export const LLM_CATALOG_META = {
-  source: RAW.source,
-  fetchedAt: RAW.fetched_at,
-  providerCount: RAW.provider_count,
-  modelCount: RAW.model_count,
-};

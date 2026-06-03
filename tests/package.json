@@ -2,12 +2,11 @@
   "name": "@kortix/tests",
   "version": "0.1.0",
   "private": true,
-  "description": "Unified Kortix test suite — E2E, shell, security, installer",
+  "description": "Unified Kortix test suite — Playwright and Gate 5 verification",
   "scripts": {
-    "test": "bash shell/run-all.sh && npx playwright test -c playwright.config.ts",
-    "test:e2e": "bash e2e/self-hosted-e2e.sh",
-    "test:e2e:install-only": "bash e2e/test-self-hosted-install.sh",
-    "test:e2e:browser": "npx playwright test -c playwright.config.ts",
+    "test": "playwright test -c playwright.config.ts",
+    "test:e2e": "playwright test -c playwright.config.ts",
+    "test:e2e:browser": "playwright test -c playwright.config.ts",
     "test:e2e:gate5:preflight": "GATE5_PREFLIGHT_ONLY=1 bash e2e/scripts/run-gate5-target-rehearsal.sh",
     "test:e2e:gate5:target": "bash e2e/scripts/run-gate5-target-rehearsal.sh",
     "test:e2e:gate5:local": "bash e2e/scripts/run-gate5-local-verification.sh",
@@ -19,13 +18,9 @@
     "test:e2e:gate5:record-negative": "bash e2e/scripts/record-gate5-negative-space-proof.sh",
     "test:e2e:gate5:record-ops-exceptions": "bash e2e/scripts/record-gate5-ops-exceptions.sh",
     "test:e2e:gate5:verify-evidence": "bash e2e/scripts/verify-gate5-release-evidence.sh",
-    "test:e2e:browser:headed": "npx playwright test -c playwright.config.ts --headed",
-    "test:shell": "bash shell/run-all.sh",
-    "test:shell:installer": "bash shell/installer/test-install.sh",
-    "test:shell:cli": "bash shell/cli/test-cli.sh",
-    "test:shell:security": "bash shell/security/test-security.sh",
+    "test:e2e:browser:headed": "playwright test -c playwright.config.ts --headed",
     "test:shell:vps": "bash shell/vps/test-vps-e2e.sh",
-    "playwright:install": "npx playwright install chromium"
+    "playwright:install": "playwright install chromium"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0"

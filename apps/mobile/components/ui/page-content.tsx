@@ -11,7 +11,7 @@
  */
 
 import * as React from 'react';
-import { StyleSheet, View, type ViewProps, type StyleProp, type ViewStyle } from 'react-native';
+import { View, type ViewProps, type StyleProp, type ViewStyle } from 'react-native';
 import { useColorScheme } from 'nativewind';
 
 export interface PageContentProps extends ViewProps {

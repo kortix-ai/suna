@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { eq, and, inArray, isNull } from 'drizzle-orm';
+import { eq, and, isNull } from 'drizzle-orm';
 import { db } from '../shared/db';
 import { randomAlphanumeric, verifySecretKey } from '../shared/crypto';
 import { supabaseAuth } from '../middleware/auth';
@@ -13,7 +13,6 @@ import {
   oauthAccessTokens,
   oauthRefreshTokens,
   accountMembers,
-  sandboxes,
 } from '@kortix/db';
 
 // ─── Token Hashing ──────────────────────────────────────────────────────────
@@ -582,41 +581,5 @@ oauthApp.get('/userinfo', oauthTokenAuth, async (c) => {
     user_id: userId,
     account_id: accountId,
     email: user?.email ?? '',
-  });
-});
-
-// ─── GET /claimable-machines ────────────────────────────────────────────────
-
-oauthApp.get('/claimable-machines', oauthTokenAuth, async (c) => {
-  const scopeError = requireOAuthScope(c, 'machines:read');
-  if (scopeError) return scopeError;
-
-  const accountId = (c as any).get('oauthAccountId') as string;
-
-  const rows = await db
-    .select({
-      sandbox_id: sandboxes.sandboxId,
-      external_id: sandboxes.externalId,
-      name: sandboxes.name,
-      status: sandboxes.status,
-      created_at: sandboxes.createdAt,
-    })
-    .from(sandboxes)
-    .where(
-      and(
-        eq(sandboxes.accountId, accountId),
-        eq(sandboxes.provider, 'justavps'),
-        inArray(sandboxes.status, ['active', 'provisioning']),
-      ),
-    );
-
-  return c.json({
-    machines: rows.map((r) => ({
-      sandbox_id: r.sandbox_id,
-      external_id: r.external_id,
-      name: r.name,
-      status: r.status,
-      created_at: r.created_at?.toISOString(),
-    })),
   });
 });

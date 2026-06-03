@@ -92,22 +92,3 @@ pnpm --filter @kortix/desktop icons src-tauri/icons/source.png
 
 `build-icon.py` requires Pillow (`pip install Pillow`). Edit the script to
 tweak background gradient, gloss intensity, or bevel highlight.
-
-## Phase 2 — patterns ported forward from the legacy Electron shell
-
-The pre-`SUNA-LEGACY-cutoff` app shipped these features. Each maps cleanly to a
-Tauri 2 plugin when we want to bring them back:
-
-- **Custom URL scheme `kortix://`** for deep links (auth callbacks, email
-  magic links, "open in app" buttons) → `tauri-plugin-deep-link`. The legacy
-  detection helper rewrote auth callback URLs to `kortix://auth/callback`
-  when running in Electron; the same swap belongs in `lib/desktop.ts` once
-  the protocol is registered.
-- **OAuth popup interception** via `webContents.on('will-navigate')` →
-  Tauri's `WindowEvent::Navigation` or letting the IDP redirect back to a
-  registered `kortix://` URL.
-- **System tray, global shortcuts, native menus** → `tauri-plugin-tray`,
-  `tauri-plugin-global-shortcut`, `tauri::menu`.
-- **Auto-update from a hosted manifest** → `tauri-plugin-updater`.
-- **Code-signing entitlements** for macOS hardened runtime are at
-  `src-tauri/Entitlements.plist` (carried over from the legacy app).

@@ -4,14 +4,12 @@ import { useTranslations } from 'next-intl';
 
 import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
 import {
-  Search,
   ServerOff,
   RefreshCw,
   FolderPlus,
   FilePlus,
   Upload,
   Clipboard,
-  FolderOpen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,13 +24,9 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useFilesStore } from '../store/files-store';
-import {
-  useFileList,
-  useServerHealth,
-  useFileEventInvalidation,
-  useGitStatus,
-  buildGitStatusMap,
-} from '../hooks';
+import { useFileList } from '../hooks/use-file-list';
+import { useServerHealth } from '../hooks/use-server-health';
+import { buildGitStatusMap, useGitStatus } from '../hooks/use-git-status';
 import {
   useFileUpload,
   useFileDelete,
@@ -45,7 +39,6 @@ import { downloadFile } from '../api/opencode-files';
 import { useDirectoryDownload } from '../hooks/use-directory-download';
 import { useServerStore } from '@/stores/server-store';
 import type { FileNode } from '../types';
-import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 
 import { DriveToolbar } from './drive-toolbar';
@@ -79,7 +72,6 @@ export function FileExplorerPage() {
   const isSearchOpen = useFilesStore((s) => s.isSearchOpen);
   const toggleSearch = useFilesStore((s) => s.toggleSearch);
   const closeSearch = useFilesStore((s) => s.closeSearch);
-  const openFile = useFilesStore((s) => s.openFile);
   const openFileWithList = useFilesStore((s) => s.openFileWithList);
 
   // Clipboard
@@ -90,8 +82,6 @@ export function FileExplorerPage() {
 
   const serverUrl = useServerStore((s) => s.getActiveServerUrl());
   const { data: health, isLoading: isHealthLoading, refetch } = useServerHealth();
-
-  useFileEventInvalidation();
 
   // File list
   const {

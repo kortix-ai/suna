@@ -12,7 +12,7 @@ import { C, stripAnsi, visibleWidth } from './style.ts';
  * Falls back to a numbered-prompt mode when stdin isn't a TTY (CI, pipe,
  * `script` wrapper). That keeps tests + non-interactive callers working.
  */
-export interface SelectItem<T> {
+interface SelectItem<T> {
   /** What gets returned when the user picks this row. */
   value: T;
   /** Primary line (shown bold when selected). */

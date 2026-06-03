@@ -7,7 +7,7 @@ interface ViewTransitionOptions {
   easing?: string;
 }
 
-export function startCircularTransition(
+function startCircularTransition(
   applyChange: () => void,
   opts: ViewTransitionOptions,
 ): void {

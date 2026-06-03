@@ -12,7 +12,7 @@ import { UnifiedMarkdown } from './unified-markdown';
  * at https://opencode.ai/docs/agents/ and similar conventions.
  */
 
-export type FrontmatterValue = string | Record<string, string>;
+type FrontmatterValue = string | Record<string, string>;
 
 export interface ParsedMarkdown {
   frontmatter: Record<string, FrontmatterValue> | null;
@@ -22,7 +22,7 @@ export interface ParsedMarkdown {
 /** Extract a leading `---\n…\n---` frontmatter block. Returns the parsed
  *  object plus the markdown body. If no block is found, returns the original
  *  content untouched. */
-export function parseFrontmatter(content: string): ParsedMarkdown {
+function parseFrontmatter(content: string): ParsedMarkdown {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!match) return { frontmatter: null, body: content };
 
@@ -109,7 +109,7 @@ export function MarkdownWithFrontmatter({
   );
 }
 
-export function MarkdownFrontmatterCard({
+function MarkdownFrontmatterCard({
   data,
   className,
 }: {

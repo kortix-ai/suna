@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '../types';
 
-export interface RealityDefenderIndicator {
+interface RealityDefenderIndicator {
   name: string;
   score: number;
   description: string;

@@ -9,7 +9,7 @@
 // Session
 // ---------------------------------------------------------------------------
 
-export interface FileDiff {
+interface FileDiff {
   path: string;
   additions: number;
   deletions: number;
@@ -50,7 +50,7 @@ export interface Session {
 // Messages
 // ---------------------------------------------------------------------------
 
-export interface Message {
+interface Message {
   id: string;
   role: 'user' | 'assistant';
   sessionID: string;
@@ -64,7 +64,6 @@ export interface Message {
   metadata?: Record<string, any>;
 }
 
-export type UserMessage = Message & { role: 'user' };
 export type AssistantMessage = Message & { role: 'assistant'; error?: string };
 
 // ---------------------------------------------------------------------------
@@ -108,25 +107,25 @@ export interface ToolPart {
   time?: { start?: number; end?: number };
 }
 
-export type ToolState = ToolStatePending | ToolStateRunning | ToolStateCompleted | ToolStateError;
+type ToolState = ToolStatePending | ToolStateRunning | ToolStateCompleted | ToolStateError;
 
-export interface ToolStatePending {
+interface ToolStatePending {
   status: 'pending';
   metadata?: Record<string, any>;
 }
 
-export interface ToolStateRunning {
+interface ToolStateRunning {
   status: 'running';
   metadata?: Record<string, any>;
 }
 
-export interface ToolStateCompleted {
+interface ToolStateCompleted {
   status: 'completed';
   output?: string;
   metadata?: Record<string, any>;
 }
 
-export interface ToolStateError {
+interface ToolStateError {
   status: 'error';
   error: string;
   metadata?: Record<string, any>;
@@ -140,19 +139,19 @@ export interface FilePart {
   url: string;
 }
 
-export interface AgentPart {
+interface AgentPart {
   type: 'agent';
   id: string;
   agentID: string;
   agentName?: string;
 }
 
-export interface SubtaskPart {
+interface SubtaskPart {
   type: 'subtask';
   id: string;
 }
 
-export interface StepStartPart {
+interface StepStartPart {
   type: 'step-start';
   id: string;
 }
@@ -169,22 +168,22 @@ export interface StepFinishPart {
   };
 }
 
-export interface SnapshotPart {
+interface SnapshotPart {
   type: 'snapshot';
   id: string;
 }
 
-export interface PatchPart {
+interface PatchPart {
   type: 'patch';
   id: string;
 }
 
-export interface RetryPart {
+interface RetryPart {
   type: 'retry';
   id: string;
 }
 
-export interface CompactionPart {
+interface CompactionPart {
   type: 'compaction';
   id: string;
 }
@@ -227,7 +226,7 @@ export interface QuestionInfo {
   custom?: boolean;
 }
 
-export interface QuestionOption {
+interface QuestionOption {
   label: string;
   description?: string;
 }
@@ -239,26 +238,26 @@ export type QuestionAnswer = string[];
 // Agents, Models, Providers
 // ---------------------------------------------------------------------------
 
-export interface Agent {
+interface Agent {
   id: string;
   name: string;
   description?: string;
 }
 
-export interface Model {
+interface Model {
   id: string;
   name: string;
   providerID: string;
   default?: boolean;
 }
 
-export interface Provider {
+interface Provider {
   id: string;
   name: string;
   models: Model[];
 }
 
-export interface Command {
+interface Command {
   name: string;
   description?: string;
   arguments?: Record<string, any>;
@@ -300,13 +299,3 @@ export interface RetryInfo {
   message: string;
   next: number;
 }
-
-export const PERMISSION_LABELS: Record<string, string> = {
-  bash: 'Run command',
-  edit: 'Edit file',
-  write: 'Write file',
-  read: 'Read file',
-  webfetch: 'Fetch URL',
-  mcp: 'Use MCP tool',
-  doom_loop: 'Repeated tool call',
-};

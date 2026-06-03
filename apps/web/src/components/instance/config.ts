@@ -2,9 +2,7 @@
  * Instance configuration — single source of truth for regions and feature flags.
  * Region IDs must match JustAVPS provider regions (hel1 = EU/Finland).
  *
- * Default server type and location come from the backend API response
- * (GET /platform/sandbox/justavps/server-types returns defaultServerType + defaultLocation).
- * The fallbackRegion is only used until the API responds.
+ * Default server type and location come from the local instance tier catalog.
  *
  * NOTE: US region removed — EU-only deployments for cost optimisation.
  */
@@ -15,6 +13,3 @@ export const INSTANCE_CONFIG = {
   ],
   regionPickerEnabled: false,
 } as const;
-
-export type RegionId = typeof INSTANCE_CONFIG.regions[number]['id'];
-export type RegionInfo = typeof INSTANCE_CONFIG.regions[number];

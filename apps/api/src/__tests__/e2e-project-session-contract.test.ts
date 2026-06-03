@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -32,7 +32,6 @@ let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
-let secretValues: Map<string, string>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
 let lastProvisionInput: {
@@ -88,13 +87,12 @@ function resetState() {
   };
   sessionSandboxRows = [];
   secretRows = [];
-  secretValues = new Map();
   gitConnectionRows = [];
   gitCredentialRows = [];
 }
 
-mock.module('../middleware/auth', () => ({
-  supabaseAuth: async (c: any, next: any) => {
+mock.module('../middleware/auth', () => {
+  const authMiddleware = async (c: any, next: any) => {
     if (c.req.header('Authorization') === `Bearer ${PROJECT_SANDBOX_TOKEN}`) {
       c.set('userId', ACCOUNT_ID);
       c.set('userEmail', '');
@@ -119,8 +117,12 @@ mock.module('../middleware/auth', () => ({
     c.set('userEmail', 'contract@example.test');
     c.set('authType', 'supabase');
     await next();
-  },
-}));
+  };
+  return {
+    combinedAuth: authMiddleware,
+    supabaseAuth: authMiddleware,
+  };
+});
 
 mock.module('../projects/git', () => ({
   createRemoteSessionBranch: async () => {
@@ -138,9 +140,7 @@ mock.module('../projects/git', () => ({
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
-  diffStat: async () => ({ filesChanged: 0, insertions: 0, deletions: 0 }),
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
-  getFileAtRef: async () => null,
   resolveCommitSha: async () => 'a'.repeat(40),
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
@@ -157,13 +157,17 @@ mock.module("../snapshots/builder", () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickProjectTemplatePrebuilds: () => {},
+  reconcileProjectTemplates: async () => {},
+  kickStartupPreBuild: () => {},
+  reconcileStaleBuilds: async () => ({ healed: 0 }),
+  ensurePlatformDefaultImage: async () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
-  verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
     nonce: 'test-nonce',
@@ -228,8 +232,6 @@ mock.module('../shared/resolve-account', () => ({
 
 mockIamEngineAllowAll();
 
-mockIamMembershipSyncNoop();
-
 mock.module('../repositories/account-tokens', () => ({
   createAccountToken: async () => ({ secretKey: PROJECT_RUNTIME_PAT }),
   listAccountTokens: async () => [],
@@ -242,8 +244,6 @@ mock.module('../repositories/account-tokens', () => ({
 mock.module('../shared/account-limits', () => ({
   resolveAccountTier: async () => 'free',
   maxConcurrentSessionsForTier: () => 1,
-  sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
-  clearAccountLimitCache: () => undefined,
 }));
 
 mock.module('../shared/supabase', () => ({
@@ -257,6 +257,7 @@ mock.module('../shared/supabase', () => ({
 }));
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
@@ -663,6 +664,8 @@ describe('project session API contract', () => {
       { body: { sandbox_url: 'https://sandbox.example' }, message: 'field is server-managed: sandbox_url' },
       { body: { sandboxUrl: 'https://sandbox.example' }, message: 'field is server-managed: sandboxUrl' },
       { body: { error: 'client-owned' }, message: 'field is server-managed: error' },
+      { body: { opencode_session_id: 'oc-123' }, message: 'field is server-managed: opencode_session_id' },
+      { body: { opencodeSessionId: 'oc-123' }, message: 'field is server-managed: opencodeSessionId' },
       { body: { random: 'field' }, message: 'field is not user-editable: random' },
     ];
 
@@ -727,7 +730,6 @@ describe('project session API contract', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'Human name',
-        opencode_session_id: 'oc-123',
         metadata: { custom: 'ok' },
       }),
     });
@@ -735,7 +737,7 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.name).toBe('Human name');
-    expect(body.opencode_session_id).toBe('oc-123');
+    expect(body.opencode_session_id).toBeNull();
     expect(body.status).toBe('provisioning');
     expect(body.metadata).toEqual({ existing: true, custom: 'ok', name: 'Human name' });
   });
@@ -745,7 +747,7 @@ describe('project session API contract', () => {
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'justavps' }),
+      body: JSON.stringify({ provider: 'unknown_provider' }),
     });
 
     expect(res.status).toBe(400);

@@ -147,7 +147,6 @@
   --exitToLeft: exitToLeft 250ms ease;
   --exitToRight: exitToRight 250ms ease;
   --animate-elliptical-orbit: elliptical-orbit 20s linear infinite;
-  --animate-shiny-text: shiny-text 8s infinite;
   @keyframes orbit {
     0% {
       transform: rotate(calc(var(--angle) * 1deg))
@@ -339,18 +338,6 @@
       transform: rotate(calc(var(--angle, 0) deg + 360deg))
         translate(var(--h-radius, 160px), 0)
         rotate(calc((var(--angle, 0) deg + 360deg) * -1));
-    }
-  }
-
-  @keyframes shiny-text {
-    0%,
-    90%,
-    100% {
-      background-position: calc(-100% - var(--shiny-width)) 0;
-    }
-    30%,
-    60% {
-      background-position: calc(100% + var(--shiny-width)) 0;
     }
   }
 
@@ -1125,55 +1112,6 @@
   transform: translateX(-100%);
 }
 
-/* stylelint-disable-next-line at-rule-no-unknown */
-@theme inline {
-  --animate-shiny-text: shiny-text 5s infinite;
-
-  @keyframes shiny-text {
-    0%,
-    90%,
-    100% {
-      background-position: calc(-100% - var(--shiny-width)) 0;
-    }
-    30%,
-    60% {
-      background-position: calc(100% + var(--shiny-width)) 0;
-    }
-  }
-  }
-
-.react-colorful {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-.react-colorful__saturation {
-  position: relative !important;
-  flex-grow: 1 !important;
-  border-radius: 8px 8px 0 0 !important;
-  border-bottom: none !important;
-  overflow: hidden !important;
-  min-height: 150px !important;
-}
-
-.react-colorful__hue {
-  position: relative !important;
-  height: 20px !important;
-  border-radius: 0 0 8px 8px !important;
-}
-
-.react-colorful__saturation-pointer,
-.react-colorful__hue-pointer {
-  width: 20px !important;
-  height: 20px !important;
-  border: 2px solid white !important;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.2), inset 0 0 0 1px rgba(0,0,0,0.1) !important;
-}
-
-.react-colorful__interactive:focus .react-colorful__pointer {
-  transform: scale(1.1);
-}
-
 /* Minimal scrollbar styles for thread content */
 .scrollbar-minimal {
   scrollbar-width: thin;
@@ -1202,28 +1140,6 @@
 .scrollbar-minimal.dark:hover::-webkit-scrollbar-thumb,
 .dark .scrollbar-minimal:hover::-webkit-scrollbar-thumb {
   background: oklch(0.7 0 0 / 0.3);
-}
-
-.novu-inbox-popover {
-  max-width: 420px;
-}
-
-@media (max-width: 768px) {
-  .novu-inbox-popover {
-    max-width: 380px;
-  }
-}
-
-@media (max-width: 480px) {
-  .novu-inbox-popover {
-    max-width: 320px;
-  }
-}
-
-@media (max-width: 320px) {
-  .novu-inbox-popover {
-    max-width: 280px;
-  }
 }
 
 .mesh-gradient-container {

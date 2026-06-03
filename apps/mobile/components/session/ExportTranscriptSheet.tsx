@@ -159,11 +159,10 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
           <View style={{ gap: 8, marginBottom: 16 }}>
             <OptionRow
               icon="person-outline"
-              label="Assistant metadata"
-              value={options.assistantMetadata}
-              onToggle={() => toggleOption('assistantMetadata')}
-              isDark={isDark}
-              fg={fg}
+	              label="Assistant metadata"
+	              value={options.assistantMetadata}
+	              onToggle={() => toggleOption('assistantMetadata')}
+	              fg={fg}
               muted={muted}
               cardBg={cardBg}
               border={border}
@@ -171,11 +170,10 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
             />
             <OptionRow
               icon="build-outline"
-              label="Tool call details"
-              value={options.toolDetails}
-              onToggle={() => toggleOption('toolDetails')}
-              isDark={isDark}
-              fg={fg}
+	              label="Tool call details"
+	              value={options.toolDetails}
+	              onToggle={() => toggleOption('toolDetails')}
+	              fg={fg}
               muted={muted}
               cardBg={cardBg}
               border={border}
@@ -183,11 +181,10 @@ export const ExportTranscriptSheet = forwardRef<BottomSheetModal, ExportTranscri
             />
             <OptionRow
               icon="bulb-outline"
-              label="Thinking / reasoning"
-              value={options.thinking}
-              onToggle={() => toggleOption('thinking')}
-              isDark={isDark}
-              fg={fg}
+	              label="Thinking / reasoning"
+	              value={options.thinking}
+	              onToggle={() => toggleOption('thinking')}
+	              fg={fg}
               muted={muted}
               cardBg={cardBg}
               border={border}
@@ -291,7 +288,6 @@ function OptionRow({
   label,
   value,
   onToggle,
-  isDark,
   fg,
   muted,
   cardBg,
@@ -302,7 +298,6 @@ function OptionRow({
   label: string;
   value: boolean;
   onToggle: () => void;
-  isDark: boolean;
   fg: string;
   muted: string;
   cardBg: string;

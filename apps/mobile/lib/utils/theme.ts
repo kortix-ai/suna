@@ -4,7 +4,7 @@ import { DarkTheme, DefaultTheme, type Theme } from '@react-navigation/native';
  * Theme values aligned with global.css Kortix brand palette.
  * These drive React Navigation chrome (headers, tab bars, etc.).
  */
-export const THEME = {
+const THEME = {
   light: {
     background: 'hsl(0 0% 96%)',            // #F5F5F5 – Kortix light bg
     foreground: 'hsl(218 12% 7%)',           // #121215 – Kortix Black

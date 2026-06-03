@@ -215,20 +215,6 @@ export function resetForServerSwitch() {
 	saveWasConnected(false);
 }
 
-export function markRecoveryRequested(phase: Exclude<SandboxRecoveryPhase, 'idle'>) {
-	const now = Date.now();
-	useSandboxConnectionStore.setState((state) => ({
-		recoveryPhase: phase,
-		restartRequestedAt: now,
-		status: state.status === "connected" ? "connecting" : state.status,
-		disconnectedAt: state.disconnectedAt ?? now,
-	}));
-}
-
-export function markHostRestartRequested() {
-	markRecoveryRequested("restarting_host");
-}
-
 /**
  * Called by the provisioning page right before redirecting to the dashboard.
  * Signals that the sandbox was already verified as healthy, so the dashboard

@@ -8,7 +8,3 @@ export const generateUUID = (): string => {
 export const generateOptimisticId = (): string => {
   return `optimistic-${generateUUID()}`;
 };
-
-export const isOptimisticId = (id: string | undefined | null): boolean => {
-  return !!id && id.startsWith('optimistic-');
-};

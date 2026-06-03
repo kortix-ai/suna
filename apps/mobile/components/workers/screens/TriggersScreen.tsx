@@ -154,7 +154,7 @@ export function TriggersScreen({ agentId, onUpdate, onUpgradePress }: TriggersSc
 
   const [isCreateDrawerVisible, setIsCreateDrawerVisible] = useState(false);
   const [editingTrigger, setEditingTrigger] = useState<TriggerConfiguration | null>(null);
-  const [deleteDialogTrigger, setDeleteDialogTrigger] = useState<TriggerConfiguration | null>(null);
+  const [, setDeleteDialogTrigger] = useState<TriggerConfiguration | null>(null);
   const [togglingTriggerId, setTogglingTriggerId] = useState<string | null>(null);
   const [deletingTriggerId, setDeletingTriggerId] = useState<string | null>(null);
 
@@ -237,7 +237,7 @@ export function TriggersScreen({ agentId, onUpdate, onUpgradePress }: TriggersSc
     }
   };
 
-  const handleTriggerCreated = (triggerId: string) => {
+  const handleTriggerCreated = (_triggerId: string) => {
     setIsCreateDrawerVisible(false);
     setEditingTrigger(null);
     refetch();
@@ -245,7 +245,7 @@ export function TriggersScreen({ agentId, onUpdate, onUpgradePress }: TriggersSc
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  const handleTriggerUpdated = (triggerId: string) => {
+  const handleTriggerUpdated = (_triggerId: string) => {
     setIsCreateDrawerVisible(false);
     setEditingTrigger(null);
     refetch();

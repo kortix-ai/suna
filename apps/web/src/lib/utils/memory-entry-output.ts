@@ -1,4 +1,4 @@
-export interface ParsedObservationMemory {
+interface ParsedObservationMemory {
   kind: 'observation';
   id: string;
   type: string;
@@ -13,7 +13,7 @@ export interface ParsedObservationMemory {
   filesRead: string[];
 }
 
-export interface ParsedLtmMemory {
+interface ParsedLtmMemory {
   kind: 'ltm';
   id: string;
   type: string;

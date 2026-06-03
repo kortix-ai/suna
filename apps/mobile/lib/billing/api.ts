@@ -96,105 +96,9 @@ export interface AccountState {
   };
 }
 
-// =============================================================================
-// MUTATION REQUEST/RESPONSE TYPES
-// =============================================================================
-
-export interface CreateCheckoutSessionRequest {
-  tier_key: string;
-  success_url: string;
-  cancel_url: string;
-  commitment_type?: 'monthly' | 'yearly' | 'yearly_commitment';
-}
-
-export interface CreateCheckoutSessionResponse {
-  status:
-    | 'upgraded'
-    | 'downgrade_scheduled'
-    | 'checkout_created'
-    | 'no_change'
-    | 'new'
-    | 'updated'
-    | 'scheduled'
-    | 'commitment_created'
-    | 'commitment_blocks_downgrade';
-  subscription_id?: string;
-  schedule_id?: string;
-  session_id?: string;
-  url?: string;
-  checkout_url?: string;
-  fe_checkout_url?: string;
-  effective_date?: string;
-  message?: string;
-  details?: {
-    is_upgrade?: boolean;
-    effective_date?: string;
-    current_price?: number;
-    new_price?: number;
-    commitment_end_date?: string;
-    months_remaining?: number;
-    invoice?: {
-      id: string;
-      amount: number;
-      currency: string;
-    };
-  };
-}
-
-export interface ScheduleDowngradeRequest {
-  target_tier_key: string;
-  commitment_type?: 'monthly' | 'yearly' | 'yearly_commitment';
-}
-
-export interface ScheduleDowngradeResponse {
-  success: boolean;
-  message: string;
-  scheduled_date: string;
-  current_tier: {
-    name: string;
-    display_name: string;
-    monthly_credits: number;
-  };
-  target_tier: {
-    name: string;
-    display_name: string;
-    monthly_credits: number;
-  };
-  billing_change: boolean;
-  current_billing_period: string;
-  target_billing_period: string;
-  change_description: string;
-}
-
 export interface CancelScheduledChangeResponse {
   success: boolean;
   message: string;
-}
-
-export interface CreatePortalSessionRequest {
-  return_url: string;
-}
-
-export interface CreatePortalSessionResponse {
-  portal_url: string;
-}
-
-export interface CancelSubscriptionRequest {
-  feedback?: string;
-}
-
-export interface PurchaseCreditsRequest {
-  amount: number;
-  success_url: string;
-  cancel_url: string;
-  package_id?: string;
-}
-
-export interface TokenUsage {
-  prompt_tokens: number;
-  completion_tokens: number;
-  model: string;
-  thread_id?: string;
 }
 
 // =============================================================================
@@ -280,127 +184,13 @@ export const billingApi = {
     return data;
   },
 
-  async createCheckoutSession(
-    request: CreateCheckoutSessionRequest
-  ): Promise<CreateCheckoutSessionResponse> {
-    return fetchApi<CreateCheckoutSessionResponse>('/billing/create-checkout-session', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  },
-
-  async cancelSubscription(
-    request?: CancelSubscriptionRequest
-  ): Promise<{ success: boolean; cancel_at: number; message: string }> {
-    return fetchApi('/billing/cancel-subscription', {
-      method: 'POST',
-      body: JSON.stringify(request || {}),
-    });
-  },
-
-  async reactivateSubscription(): Promise<{
-    success: boolean;
-    message: string;
-  }> {
-    return fetchApi('/billing/reactivate-subscription', {
-      method: 'POST',
-    });
-  },
-
-  async scheduleDowngrade(request: ScheduleDowngradeRequest): Promise<ScheduleDowngradeResponse> {
-    return fetchApi('/billing/schedule-downgrade', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  },
-
   async cancelScheduledChange(): Promise<CancelScheduledChangeResponse> {
     return fetchApi('/billing/cancel-scheduled-change', {
       method: 'POST',
     });
   },
 
-  async createPortalSession(
-    request: CreatePortalSessionRequest
-  ): Promise<CreatePortalSessionResponse> {
-    return fetchApi('/billing/create-portal-session', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  },
-
-  async purchaseCredits(request: PurchaseCreditsRequest): Promise<{ checkout_url: string }> {
-    return fetchApi('/billing/purchase-credits', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  },
-
-  async deductTokenUsage(usage: TokenUsage): Promise<{ success: boolean }> {
-    return fetchApi('/billing/deduct-token-usage', {
-      method: 'POST',
-      body: JSON.stringify(usage),
-    });
-  },
-
-  async syncSubscription(): Promise<{ success: boolean; message: string }> {
-    return fetchApi('/billing/sync-subscription', {
-      method: 'POST',
-    });
-  },
-
-  async getUsageHistory(days: number): Promise<any> {
-    return fetchApi(`/billing/usage-history?days=${days}`);
-  },
-
   async getTransactions(limit: number, offset: number): Promise<any> {
     return fetchApi(`/billing/transactions?limit=${limit}&offset=${offset}`);
   },
-
-  async getTrialStatus(): Promise<any> {
-    return fetchApi('/billing/trial/status');
-  },
-
-  async startTrial(request: {
-    success_url: string;
-    cancel_url: string;
-  }): Promise<{ checkout_url: string; session_id: string }> {
-    return fetchApi('/billing/trial/start', {
-      method: 'POST',
-      body: JSON.stringify(request),
-    });
-  },
-
-  async cancelTrial(): Promise<{ success: boolean; message: string }> {
-    return fetchApi('/billing/trial/cancel', {
-      method: 'POST',
-      body: JSON.stringify({}),
-    });
-  },
 };
-
-// =============================================================================
-// SELECTORS - Helper functions to extract data from account state
-// =============================================================================
-
-export const accountStateSelectors = {
-  canRun: (state: AccountState | undefined) => state?.credits.can_run ?? false,
-  totalCredits: (state: AccountState | undefined) => state?.credits.total ?? 0,
-  tierKey: (state: AccountState | undefined) => state?.subscription.tier_key ?? 'none',
-  tierDisplayName: (state: AccountState | undefined) =>
-    state?.subscription.tier_display_name ?? 'No Plan',
-  isTrial: (state: AccountState | undefined) => state?.subscription.is_trial ?? false,
-  isCancelled: (state: AccountState | undefined) => state?.subscription.is_cancelled ?? false,
-  allowedModels: (state: AccountState | undefined) => state?.models.filter((m) => m.allowed) ?? [],
-  isModelAllowed: (state: AccountState | undefined, modelId: string) =>
-    state?.models.find((m) => m.id === modelId)?.allowed ?? false,
-  scheduledChange: (state: AccountState | undefined) => state?.subscription.scheduled_change,
-  hasScheduledChange: (state: AccountState | undefined) =>
-    state?.subscription.has_scheduled_change ?? false,
-  canPurchaseCredits: (state: AccountState | undefined) =>
-    state?.subscription.can_purchase_credits ?? false,
-  dailyCreditsInfo: (state: AccountState | undefined) => state?.credits.daily_refresh,
-};
-
-// Re-export types for backward compatibility
-export type { SubscriptionInfo, CreditBalance, BillingStatus } from './hooks';

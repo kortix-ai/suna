@@ -16,7 +16,6 @@
 import {
   BarChart3,
   Building2,
-  FileText,
   Globe,
   Presentation,
   Scale,
@@ -85,12 +84,4 @@ export const STARTER_PROMPTS: StarterPrompt[] = [
     prompt:
       "I'll share a spreadsheet — analyze it, find the patterns and outliers, and write me a short summary with the takeaways I should act on.",
   },
-];
-
-/** Subset for compact surfaces (project home composer chips). */
-export const STARTER_PROMPTS_SHORT: StarterPrompt[] = [
-  STARTER_PROMPTS[0],
-  STARTER_PROMPTS[2],
-  STARTER_PROMPTS[3],
-  STARTER_PROMPTS[1],
 ];

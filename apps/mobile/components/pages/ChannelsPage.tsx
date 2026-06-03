@@ -20,11 +20,7 @@ import {
   Linking,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { Text as RNText } from 'react-native';
 import {
-  Plus,
-  Search,
-  X,
   ChevronRight,
   Trash2,
   Radio,
@@ -39,14 +35,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
-import BottomSheet, {
+import {
   BottomSheetBackdrop,
   BottomSheetModal,
-  BottomSheetView,
   BottomSheetTextInput,
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
 
+import { API_URL } from '@/api/config';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { SearchListHeader } from '@/components/ui/search-list-header';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
@@ -66,7 +62,6 @@ import {
 import {
   useTelegramVerifyToken,
   useTelegramConnect,
-  useSlackGenerateManifest,
   useSlackConnect,
 } from '@/hooks/useChannelWizards';
 import { useOpenCodeAgents, useOpenCodeProviders, flattenModels, filterToLatestModels } from '@/lib/opencode/hooks/use-opencode-data';
@@ -114,7 +109,6 @@ interface ChannelsTabPageProps {
 
 export function ChannelsTabPage({
   page,
-  onBack,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -122,8 +116,6 @@ export function ChannelsTabPage({
 }: ChannelsTabPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
@@ -154,7 +146,6 @@ function ChannelsContent() {
   const { data: channels, isLoading, error, refetch } = useChannels();
   const deleteChannelMut = useDeleteChannel();
   const toggleChannel = useToggleChannel();
-  const updateChannel = useUpdateChannel();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChannel, setSelectedChannel] = useState<ChannelConfig | null>(null);
@@ -165,7 +156,6 @@ function ChannelsContent() {
   // Colors
   const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
 
   // Filter + sort channels
   const filteredChannels = useMemo(() => {
@@ -305,16 +295,6 @@ function ChannelsContent() {
             Alert.alert('Error', 'Failed to toggle channel');
           }
         }}
-        onSave={async (channel, name) => {
-          try {
-            await updateChannel.mutateAsync({ id: (channel.id || channel.channelConfigId!), data: { name } });
-            setSelectedChannel((prev) => prev ? { ...prev, name } : null);
-            haptics.success();
-          } catch {
-            haptics.warning();
-            Alert.alert('Error', 'Failed to update channel');
-          }
-        }}
         onDelete={handleDelete}
         onClose={() => { detailSheetRef.current?.dismiss(); setSelectedChannel(null); }}
       />
@@ -401,18 +381,16 @@ function ChannelRow({ channel, isDark, onPress }: { channel: ChannelConfig; isDa
 
 function ChannelDetailSheet({
   sheetRef, channel, isDark, theme,
-  onToggle, onSave, onDelete, onClose,
+  onToggle, onDelete, onClose,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   channel: ChannelConfig | null;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   onToggle: (channel: ChannelConfig, enabled: boolean) => void;
-  onSave: (channel: ChannelConfig, name: string) => void;
   onDelete: (channel: ChannelConfig) => void;
   onClose: () => void;
 }) {
-  const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const { sandboxUrl } = useSandboxContext();
   const updateChannel = useUpdateChannel();
@@ -665,24 +643,6 @@ function ChannelDetailSheet({
   );
 }
 
-// ─── Detail Row (reusable) ───────────────────────────────────────────────────
-
-function DetailRow({ label, value, isDark, fg, muted, last, mono }: {
-  label: string; value: string; isDark: boolean; fg: string; muted: string; last?: boolean; mono?: boolean;
-}) {
-  return (
-    <View style={{
-      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-      paddingHorizontal: 14, paddingVertical: 11,
-      borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
-      borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
-    }}>
-      <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>{label}</Text>
-      <Text style={{ fontSize: 13, fontFamily: mono ? 'monospace' : 'Roobert-Medium', color: fg, maxWidth: '60%' }} numberOfLines={1}>{value}</Text>
-    </View>
-  );
-}
-
 // ─── Add Channel Sheet (with wizard routing) ─────────────────────────────────
 
 type WizardView = 'type-select' | 'telegram-wizard' | 'slack-wizard' | 'generic-config';
@@ -691,7 +651,7 @@ function AddChannelSheet({
   sheetRef, isDark, theme, renderBackdrop, sandboxUrl, sandboxUuid,
   onCreate, onCreated, isCreating,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   renderBackdrop: (props: any) => React.ReactElement;
@@ -701,7 +661,6 @@ function AddChannelSheet({
   onCreated: () => void;
   isCreating: boolean;
 }) {
-  const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const [view, setView] = useState<WizardView>('type-select');
   const [selectedType, setSelectedType] = useState<ChannelType | null>(null);
@@ -871,7 +830,7 @@ function AddChannelSheet({
 
 function TelegramWizard({
   isDark, theme, fg, muted, inputBg, borderColor,
-  sandboxUrl, sandboxId, onBack, onCreated,
+  sandboxUrl, onBack, onCreated,
 }: {
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
@@ -1099,9 +1058,71 @@ function randomBotName(): string {
   return `Kortix ${BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]}`;
 }
 
+function buildSlackManifest(projectId: string, botName: string): string {
+  const backendUrl = API_URL.replace(/\/$/, '');
+  const requestUrl = backendUrl
+    ? `${backendUrl}/webhooks/slack/${projectId}`
+    : `<set EXPO_PUBLIC_BACKEND_URL>/webhooks/slack/${projectId}`;
+  const displayName = botName.trim() || 'Kortix';
+
+  return JSON.stringify({
+    display_information: {
+      name: displayName,
+      description: 'Run a Kortix project from Slack',
+      background_color: '#0a0a0a',
+    },
+    features: {
+      bot_user: { display_name: displayName, always_online: true },
+    },
+    oauth_config: {
+      scopes: {
+        bot: [
+          'app_mentions:read',
+          'channels:history',
+          'channels:read',
+          'channels:join',
+          'chat:write',
+          'chat:write.public',
+          'files:read',
+          'files:write',
+          'groups:history',
+          'groups:read',
+          'im:history',
+          'im:read',
+          'im:write',
+          'mpim:history',
+          'mpim:read',
+          'reactions:read',
+          'reactions:write',
+          'users:read',
+        ],
+      },
+    },
+    settings: {
+      event_subscriptions: {
+        request_url: requestUrl,
+        bot_events: [
+          'app_mention',
+          'message.im',
+          'message.channels',
+          'message.groups',
+          'message.mpim',
+          'reaction_added',
+          'reaction_removed',
+          'member_joined_channel',
+          'file_shared',
+        ],
+      },
+      org_deploy_enabled: false,
+      socket_mode_enabled: false,
+      token_rotation_enabled: false,
+    },
+  }, null, 2);
+}
+
 function SlackWizard({
   isDark, theme, fg, muted, inputBg, borderColor,
-  sandboxUrl, sandboxId, onBack, onCreated,
+  sandboxUrl, sandboxId, onCreated,
 }: {
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
@@ -1126,7 +1147,6 @@ function SlackWizard({
   const [botToken, setBotToken] = useState('');
   const [signingSecret, setSigningSecret] = useState('');
 
-  const generateManifest = useSlackGenerateManifest();
   const connectMutation = useSlackConnect();
 
   // Load agents & models
@@ -1136,16 +1156,14 @@ function SlackWizard({
   const filteredModels = useMemo(() => filterToLatestModels(models), [models]);
 
   const handleGenerateManifest = async () => {
-    if (!sandboxUrl) return;
-    haptics.tap();
-    try {
-      const result = await generateManifest.mutateAsync({ publicUrl: '', botName: botName.trim() || undefined });
-      setManifestJson(result.manifestJson);
-      setStep(2);
-    } catch (err: any) {
+    if (!sandboxId) {
       haptics.warning();
-      Alert.alert('Error', err?.message || 'Failed to generate manifest');
+      Alert.alert('Project unavailable', 'Open a project before creating a Slack app.');
+      return;
     }
+    haptics.tap();
+    setManifestJson(buildSlackManifest(sandboxId, botName));
+    setStep(2);
   };
 
   const handleCopyManifest = async () => {
@@ -1260,17 +1278,11 @@ function SlackWizard({
           {/* Generate Manifest */}
           <Pressable
             onPress={handleGenerateManifest}
-            disabled={generateManifest.isPending}
+            disabled={!sandboxId}
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary, alignSelf: 'flex-end', paddingHorizontal: 20 }}
           >
-            {generateManifest.isPending ? (
-              <ActivityIndicator size="small" color={theme.primaryForeground} />
-            ) : (
-              <>
-                <ArrowRight size={16} color={theme.primaryForeground} />
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Generate Manifest</Text>
-              </>
-            )}
+            <ArrowRight size={16} color={theme.primaryForeground} />
+            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Generate Manifest</Text>
           </Pressable>
         </>
       )}

@@ -23,7 +23,6 @@ import {
   accountGroups,
   accountInvitations,
   accountMembers,
-  accounts,
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { getSupabase } from '../shared/supabase';
@@ -861,7 +860,3 @@ scimRouter.delete('/accounts/:accountId/Groups/:groupId', async (c) => {
   });
   return c.body(null, 204);
 });
-
-// `accounts` import kept only so future endpoints (e.g. /Me) can resolve
-// the account by URL without re-importing. Silences unused-import lints.
-void accounts;

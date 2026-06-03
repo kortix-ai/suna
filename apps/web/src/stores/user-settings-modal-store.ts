@@ -8,7 +8,7 @@ import type { SettingsTabId } from '@/lib/menu-registry';
  * `GlobalUserSettingsModal` in app-providers.
  */
 
-export type UserSettingsHighlight = 'credits' | null;
+type UserSettingsHighlight = 'credits' | null;
 
 interface UserSettingsModalState {
   isOpen: boolean;

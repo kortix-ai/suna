@@ -23,9 +23,8 @@ either run there directly or are injected into the sandbox as plain
 environment variables at create-time. The daemon does not read them, expose
 them, or know they exist.
 
-Replaces the legacy multi-script bootstrap:
-`core/scripts/kortix-daemon` + `core/kortix-master/scripts/run-opencode-serve.sh`
-plus the s6 service definitions.
+Replaces the legacy multi-script bootstrap and s6 service definitions with one
+in-process daemon.
 
 ## Boot flow
 
@@ -90,23 +89,6 @@ non-fast-forward conflict returns `409`.
   The daemon does not read them and has no `/kortix/secrets` route.
 - **User preferences** — deferred. The frontend talks directly to opencode's
   own preference surface when it needs one.
-
-### Open question: LLM provider key delivery
-
-Provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) currently arrive
-through Daytona env injection at sandbox-create time. That works for the
-session lifetime but offers no path for **mid-session rotation** if a key is
-revoked or cycled in the cloud's key store.
-
-Possible future paths (deliberately not solved here):
-
-- A cloud-API push endpoint that writes a key file into the sandbox over
-  `daytona`'s exec channel and signals opencode to reload.
-- A short-lived token issued at create-time that the daemon exchanges for a
-  fresh key on each opencode boot.
-- Doing nothing and relying on sandbox recreation for rotation.
-
-Flagged so it doesn't quietly become a P0 the first time a key rotates.
 
 ## Env vars
 

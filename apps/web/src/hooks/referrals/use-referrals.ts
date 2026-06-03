@@ -1,12 +1,11 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { referralsApi, ReferralCodeResponse, ReferralStats, ReferralListResponse, ValidateReferralCodeResponse, ReferralEmailResponse } from '@/lib/api/referrals';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { referralsApi } from '@/lib/api/referrals';
 import { toast } from '@/lib/toast';
 import { useTranslations } from 'next-intl';
 
-export const REFERRALS_QUERY_KEYS = {
+const REFERRALS_QUERY_KEYS = {
   code: ['referrals', 'code'] as const,
   stats: ['referrals', 'stats'] as const,
-  list: (limit: number, offset: number) => ['referrals', 'list', limit, offset] as const,
 };
 
 export function useReferralCode(options?: { enabled?: boolean }) {
@@ -19,23 +18,6 @@ export function useReferralCode(options?: { enabled?: boolean }) {
   });
 }
 
-export function useRefreshReferralCode() {
-  const queryClient = useQueryClient();
-  const t = useTranslations('settings.referrals');
-  
-  return useMutation({
-    mutationFn: () => referralsApi.refreshReferralCode(),
-    onSuccess: (data) => {
-      queryClient.setQueryData(REFERRALS_QUERY_KEYS.code, data);
-      queryClient.invalidateQueries({ queryKey: REFERRALS_QUERY_KEYS.stats });
-      toast.success(t('codeRefreshed'));
-    },
-    onError: () => {
-      toast.error(t('refreshFailed'));
-    },
-  });
-}
-
 export function useReferralStats(options?: { enabled?: boolean }) {
   const enabled = options?.enabled ?? true;
   return useQuery({
@@ -45,48 +27,6 @@ export function useReferralStats(options?: { enabled?: boolean }) {
     refetchInterval: enabled ? 60000 : false, // Only poll when enabled, and less aggressively (1 min)
     enabled,
   });
-}
-
-export function useUserReferrals(limit = 50, offset = 0, options?: { enabled?: boolean }) {
-  const enabled = options?.enabled ?? true;
-  return useQuery({
-    queryKey: REFERRALS_QUERY_KEYS.list(limit, offset),
-    queryFn: () => referralsApi.getUserReferrals(limit, offset),
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    refetchInterval: enabled ? 60000 : false, // Only poll when enabled
-    enabled,
-  });
-}
-
-export function useValidateReferralCode() {
-  return useMutation({
-    mutationFn: (code: string) => referralsApi.validateReferralCode(code),
-    onError: (error) => {
-      toast.error('Failed to validate referral code');
-      console.error('Referral code validation error:', error);
-    },
-  });
-}
-
-export function useCopyReferralLink() {
-  const { data: referralData } = useReferralCode();
-
-  const copyToClipboard = async () => {
-    if (!referralData?.referral_url) {
-      toast.error('Referral link not available');
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(referralData.referral_url);
-      toast.success('Referral link copied to clipboard!');
-    } catch (error) {
-      console.error('Failed to copy referral link:', error);
-      toast.error('Failed to copy referral link');
-    }
-  };
-
-  return { copyToClipboard, referralUrl: referralData?.referral_url };
 }
 
 export function useSendReferralEmails() {
@@ -112,4 +52,3 @@ export function useSendReferralEmails() {
     },
   });
 }
-

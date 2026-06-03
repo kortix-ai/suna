@@ -16,7 +16,6 @@ import {
   EyeOff,
   RefreshCw,
   ChevronRight,
-  ChevronDown,
   Home,
   Download,
 } from 'lucide-react';
@@ -32,7 +31,6 @@ import {
   DropdownMenuLabel,
 } from '@/components/ui/dropdown-menu';
 import { useFilesStore } from '../store/files-store';
-import { useCurrentProject } from '../hooks';
 import { useInvalidateFileList } from '../hooks/use-file-list';
 import { cn } from '@/lib/utils';
 import type { SortField } from '../store/files-store';
@@ -130,13 +128,6 @@ export function DriveToolbar({
     },
     [allSegments, rootSegments, rootPath, navigateToPath],
   );
-
-  const sortLabel: Record<SortField, string> = {
-    name: 'Name',
-    modified: 'Last modified',
-    size: 'File size',
-    type: 'Type',
-  };
 
   return (
     <div className="flex items-center gap-2 px-4 h-12 border-b border-border/40 bg-background shrink-0">

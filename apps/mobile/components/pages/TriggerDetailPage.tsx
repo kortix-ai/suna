@@ -2,7 +2,7 @@
  * Trigger Detail Page Component
  *
  * Clean, modern detail view for viewing/managing a single trigger
- * Matches the ThreadPage design language with consistent spacing and typography
+ * Matches the active detail-view design language with consistent spacing and typography
  */
 
 import React, { useState } from 'react';
@@ -25,7 +25,6 @@ import {
   Calendar,
   MessageSquare,
   Globe,
-  CheckCircle2,
   XCircle,
 } from 'lucide-react-native';
 import { useTrigger, useDeleteTrigger, useToggleTrigger } from '@/lib/triggers';
@@ -439,7 +438,7 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
       <TriggerCreationDrawer
         visible={showEditDrawer}
         onClose={() => setShowEditDrawer(false)}
-        onTriggerUpdated={(triggerId) => {
+        onTriggerUpdated={() => {
           refetch();
           setShowEditDrawer(false);
         }}

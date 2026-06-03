@@ -6,7 +6,6 @@ import {
   extractSandboxDefault,
   extractSandboxTemplates,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
-  sandboxSpecIsEmpty,
   SANDBOX_SPEC_LIMITS,
 } from '../snapshots/dockerfile-layer';
 
@@ -224,14 +223,5 @@ describe('buildDefaultSandboxTemplate', () => {
     const tpl = buildDefaultSandboxTemplate();
     expect(tpl.isDefault).toBe(true);
     expect(tpl.slug).toBe(DEFAULT_SANDBOX_SLUG);
-  });
-});
-
-describe('sandboxSpecIsEmpty', () => {
-  test('true only when no field is set', () => {
-    expect(sandboxSpecIsEmpty({})).toBe(true);
-    expect(sandboxSpecIsEmpty({ cpu: 1 })).toBe(false);
-    expect(sandboxSpecIsEmpty({ memory: 2 })).toBe(false);
-    expect(sandboxSpecIsEmpty({ disk: 10 })).toBe(false);
   });
 });

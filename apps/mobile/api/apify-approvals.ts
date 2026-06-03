@@ -7,7 +7,7 @@
 import { API_URL, getAuthHeaders } from './config';
 import { log } from '@/lib/logger';
 
-export interface ApifyApprovalRequest {
+interface ApifyApprovalRequest {
   actor_id: string;
   run_input: Record<string, any>;
   max_cost_usd?: number;
@@ -103,4 +103,3 @@ export const apifyApprovalsApi = {
     return response.data;
   },
 };
-

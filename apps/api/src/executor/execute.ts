@@ -4,9 +4,9 @@
  * the third party. Credentials are attached HERE (server-side); the sandbox
  * never sees them. Pure builders + an injectable `fetchImpl` keep it unit-tested.
  *
- * Covers openapi / http / mcp execution. (GraphQL execution — building a query
- * string from the field + selection — is a follow-up; normalization already
- * works.) See docs/specs/executor.md §7.
+ * Covers openapi / http / mcp / graphql execution. Pipedream actions and the
+ * Connect Proxy execute through the gateway's Pipedream adapter because
+ * Pipedream injects the user's connected account server-side.
  */
 import type { ActionBinding } from './types';
 
@@ -17,9 +17,9 @@ export interface ExecutorAuth {
   prefix: string | null;
 }
 
-export type ParamLoc = 'path' | 'query' | 'header';
+type ParamLoc = 'path' | 'query' | 'header';
 
-export interface BuiltRequest {
+interface BuiltRequest {
   url: string;
   method: string;
   headers: Record<string, string>;
@@ -35,7 +35,7 @@ export interface ExecResult {
 const NO_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
 
 /** Attach a credential to a request per the connector's auth method. */
-export function applyAuth(
+function applyAuth(
   headers: Record<string, string>,
   query: URLSearchParams,
   auth: ExecutorAuth,
@@ -89,7 +89,7 @@ function joinUrl(base: string, path: string): string {
  * hint, into the body for body-methods else the query string. `args.body`
  * is sent as the JSON body verbatim.
  */
-export function buildHttpRequest(opts: {
+function buildHttpRequest(opts: {
   baseUrl: string;
   method: string;
   pathTemplate: string;
@@ -172,7 +172,7 @@ function gqlLiteral(v: unknown): string {
  * arg (string) supplies the selection set for object-returning fields (scalar
  * fields need none). e.g. call("…","query.user",{ id:"1", __select:"id name" }).
  */
-export function buildGraphqlRequest(opts: {
+function buildGraphqlRequest(opts: {
   endpoint: string;
   operation: 'query' | 'mutation';
   field: string;
@@ -197,7 +197,7 @@ export function buildGraphqlRequest(opts: {
 }
 
 /** Build a JSON-RPC `tools/call` request for an MCP (http transport) connector. */
-export function buildMcpRequest(opts: {
+function buildMcpRequest(opts: {
   url: string;
   auth?: ExecutorAuth;
   secret?: string | null;
@@ -253,7 +253,7 @@ export function parseResponseBody(text: string): unknown {
 }
 
 /** Perform a built request and parse the response (JSON or SSE-framed JSON). */
-export async function performRequest(req: BuiltRequest, fetchImpl: FetchImpl): Promise<ExecResult> {
+async function performRequest(req: BuiltRequest, fetchImpl: FetchImpl): Promise<ExecResult> {
   const res = await fetchImpl(req.url, { method: req.method, headers: req.headers, body: req.body });
   const text = await res.text();
   return { status: res.status, ok: res.ok, data: parseResponseBody(text) };

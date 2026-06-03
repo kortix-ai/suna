@@ -351,10 +351,6 @@ function unwrap<T>(response: { data?: T; success: boolean; error?: Error }) {
   return response.data;
 }
 
-export async function listProjects() {
-  return unwrap(await backendApi.get<KortixProject[]>('/projects'));
-}
-
 export async function listProjectsForAccount(accountId?: string) {
   const query = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
   return unwrap(await backendApi.get<KortixProject[]>(`/projects${query}`));
@@ -1642,7 +1638,7 @@ export async function commitSessionChanges(
 // ---------------------------------------------------------------------------
 // Project sessions — one branch + sandbox per row. session_id == sandbox_id
 // == branch_name (same UUID), so "Open session" routes to
-// /instances/{session_id}/dashboard.
+// /projects/{project_id}/sessions/{session_id}.
 // ---------------------------------------------------------------------------
 
 export type ProjectSessionStatus =
@@ -1750,22 +1746,6 @@ export async function getProjectSession(
   return unwrap(
     await backendApi.get<ProjectSession>(
       `/projects/${projectId}/sessions/${sessionId}`,
-    ),
-  );
-}
-
-export async function updateProjectSession(
-  projectId: string,
-  sessionId: string,
-  input: {
-    name?: string;
-    metadata?: Record<string, unknown>;
-  },
-) {
-  return unwrap(
-    await backendApi.patch<ProjectSession>(
-      `/projects/${projectId}/sessions/${sessionId}`,
-      input,
     ),
   );
 }
@@ -2026,10 +2006,6 @@ export async function getProjectSessionSandbox(
   );
   if (!response.success || !response.data) return null;
   return response.data;
-}
-
-export async function createProject(input: ProjectInput) {
-  return unwrap(await backendApi.post<KortixProject>('/projects', input));
 }
 
 export async function createProjectRepo(input: CreateProjectRepoInput) {

@@ -1,7 +1,6 @@
 /**
- * Plan Page Component - Fallback
+ * Plan Page Component
  *
- * Simple fallback when RevenueCat native paywall is not available.
  * Directs users to the web to subscribe.
  */
 

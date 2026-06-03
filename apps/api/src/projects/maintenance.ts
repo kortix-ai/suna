@@ -29,11 +29,11 @@ function positiveInt(raw: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-export function sandboxIdleTtlMs(): number {
+function sandboxIdleTtlMs(): number {
   return positiveInt(process.env.KORTIX_SANDBOX_IDLE_TTL, DEFAULT_IDLE_TTL_MS);
 }
 
-export function branchRetentionDays(): number {
+function branchRetentionDays(): number {
   return positiveInt(process.env.KORTIX_BRANCH_RETENTION_DAYS, DEFAULT_BRANCH_RETENTION_DAYS);
 }
 
@@ -251,7 +251,7 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
   return { candidates: rows.length, deleted, skipped, errors };
 }
 
-export async function runProjectMaintenance(): Promise<void> {
+async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
@@ -289,7 +289,6 @@ export async function runProjectMaintenance(): Promise<void> {
 }
 
 export function startProjectMaintenance(): void {
-  if (process.env.KORTIX_PROJECT_MAINTENANCE_ENABLED === 'false') return;
   if (globalForProjectMaintenance.__kortixProjectMaintenanceTimer) {
     clearInterval(globalForProjectMaintenance.__kortixProjectMaintenanceTimer);
   }

@@ -11,14 +11,12 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   updateCreditAccount: async () => undefined,
   upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => subscriptionInfo,
-  updateBalance: async () => undefined,
   getYearlyAccountsDueForRotation: async () => [],
 }));
 
 mock.module('../billing/services/credits', () => ({
   getCreditSummary: async () => creditSummary,
   calculateTokenCost: () => 0,
-  getBalance: async () => ({ balance: 0, expiring: 0, nonExpiring: 0, daily: 0 }),
   deductCredits: async () => ({ success: true, cost: 0, newBalance: 0, transactionId: 'tx_mock' }),
   refreshDailyCredits: async () => null,
   grantCredits: async () => undefined,
@@ -76,7 +74,6 @@ describe('buildMinimalAccountState revenuecat', () => {
     expect(state.subscription.status).toBe('active');
     expect(state.subscription.subscription_id).toBe('rc_sub_123');
     expect(state.tier.name).toBe('tier_2_20');
-    expect(state.can_claim_computer).toBe(true);
   });
 
   test('reports past_due revenuecat subscription correctly', async () => {

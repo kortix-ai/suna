@@ -21,7 +21,7 @@ function formatTimestamp(isoString?: string): string {
 }
 
 export function AuthorSearchToolView({ toolCall, toolResult, isStreaming = false, assistantTimestamp, toolTimestamp }: ToolViewProps) {
-  const { query, total_results, results, success } = extractAuthorSearchData({ toolCall, toolResult });
+  const { query, results, success } = extractAuthorSearchData({ toolCall, toolResult });
 
   if (!toolCall) {
     return null;

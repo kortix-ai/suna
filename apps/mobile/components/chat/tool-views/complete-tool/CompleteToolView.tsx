@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { CheckCircle2, Trophy, Sparkles, Paperclip } from 'lucide-react-native';
+import { Trophy, Sparkles, Paperclip } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractCompleteData } from './_utils';
 import { FileAttachmentsGrid } from '@/components/chat/FileAttachmentRenderer';
@@ -22,7 +22,7 @@ function formatTimestamp(isoString?: string): string {
   }
 }
 
-export function CompleteToolView({ toolCall, toolResult, isStreaming = false, project, assistantMessage, currentIndex, totalCalls, onPromptFill, assistantTimestamp, toolTimestamp }: ToolViewProps) {
+export function CompleteToolView({ toolCall, toolResult, isStreaming = false, project, assistantMessage, onPromptFill, assistantTimestamp, toolTimestamp }: ToolViewProps) {
   const { text, attachments, follow_up_prompts, success } = extractCompleteData({ toolCall, toolResult });
   const sandboxId = project?.sandbox?.id || assistantMessage?.sandbox_id;
   const sandboxUrl = project?.sandbox?.sandbox_url;

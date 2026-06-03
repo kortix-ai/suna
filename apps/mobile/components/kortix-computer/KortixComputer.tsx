@@ -45,14 +45,10 @@ export function KortixComputer({
   toolMessages,
   currentIndex,
   onNavigate,
-  messages,
   agentStatus,
   project,
-  isLoading = false,
-  agentName,
   onFileClick,
   onPromptFill,
-  streamingText,
   sandboxId,
 }: KortixComputerProps) {
   log.log('[KortixComputer] Render - toolMessages:', toolMessages.length, 'currentIndex:', currentIndex);
@@ -268,4 +264,3 @@ export function KortixComputer({
     </Modal>
   );
 }
-

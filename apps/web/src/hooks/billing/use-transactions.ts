@@ -4,7 +4,7 @@ import { accountStateKeys } from './use-account-state';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 import { dollarsToCredits } from '@kortix/shared';
 
-export interface CreditTransaction {
+interface CreditTransaction {
   id: string;
   created_at: string;
   amount: number;
@@ -27,7 +27,7 @@ export interface CreditTransaction {
   metadata?: Record<string, any>;
 }
 
-export interface TransactionsResponse {
+interface TransactionsResponse {
   transactions: CreditTransaction[];
   pagination: {
     total: number;
@@ -35,12 +35,6 @@ export interface TransactionsResponse {
     offset: number;
     has_more: boolean;
   };
-}
-
-export interface TransactionsSummary {
-  totalCredits: number;
-  totalDebits: number;
-  count: number;
 }
 
 export function useTransactions(
@@ -92,27 +86,3 @@ export function useTransactions(
     staleTime: 30000,
   });
 }
-
-export function useTransactionsSummary(days: number = 30) {
-  const accountId = useBillingAccountId();
-  return useQuery<TransactionsSummary>({
-    queryKey: [...accountStateKeys.transactions(), 'summary', days, { accountId: accountId ?? null }],
-    queryFn: async () => {
-      const params = new URLSearchParams({ days: String(days) });
-      if (accountId) params.append('account_id', accountId);
-      const response = await backendApi.get(`/billing/transactions/summary?${params.toString()}`);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      const data = response.data as TransactionsSummary;
-      return {
-        totalCredits: dollarsToCredits(data.totalCredits),
-        totalDebits: dollarsToCredits(data.totalDebits),
-        count: data.count,
-      };
-    },
-    staleTime: 60000,
-  });
-}
-

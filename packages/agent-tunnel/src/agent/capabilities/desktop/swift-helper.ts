@@ -609,7 +609,7 @@ handleRequest(req)
 
 let compiled = false;
 
-export async function ensureHelper(): Promise<string> {
+async function ensureHelper(): Promise<string> {
   if (compiled && existsSync(HELPER_PATH)) return HELPER_PATH;
 
   if (existsSync(HELPER_PATH)) {

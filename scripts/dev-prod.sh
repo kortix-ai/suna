@@ -9,8 +9,8 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 API_ENV="$ROOT/apps/api/.env.prod"
 WEB_ENV="$ROOT/apps/web/.env.prod"
 
-[ -f "$API_ENV" ] || { echo "❌ Missing $API_ENV — see docs/development-release-guide.md"; exit 1; }
-[ -f "$WEB_ENV" ] || { echo "❌ Missing $WEB_ENV — see docs/development-release-guide.md"; exit 1; }
+[ -f "$API_ENV" ] || { echo "❌ Missing $API_ENV — create apps/api/.env.prod with production API credentials"; exit 1; }
+[ -f "$WEB_ENV" ] || { echo "❌ Missing $WEB_ENV — create apps/web/.env.prod with production web credentials"; exit 1; }
 
 echo ""
 echo "  ⚠️  Running against PRODUCTION database"

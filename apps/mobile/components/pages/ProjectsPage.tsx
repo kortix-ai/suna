@@ -13,10 +13,7 @@ import {
   ActivityIndicator,
   Text as RNText,
 } from 'react-native';
-import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import { Search, X, FolderGit2, Clock, MessageSquare, ChevronRight } from 'lucide-react-native';
 
 import { useSandboxContext } from '@/contexts/SandboxContext';
@@ -53,10 +50,9 @@ interface ProjectsPageProps {
 
 // ── Component ────────────────────────────────────────────────────────────────
 
-export function ProjectsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: ProjectsPageProps) {
+export function ProjectsPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: ProjectsPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
   const theme = useThemeColors();
   const { sandboxUrl } = useSandboxContext();
 

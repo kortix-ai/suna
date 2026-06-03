@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Clock, Timer } from 'lucide-react-native';
+import { Timer } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractWaitData, formatDuration } from './_utils';
 import { ToolViewCard, StatusBadge } from '../shared';

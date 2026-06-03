@@ -21,17 +21,13 @@ export function createConnectionsRouter(): Hono {
   const router = new Hono();
 
   router.get('/', async (c: any) => {
-    const { userId, accountId, ownerClause } = await getTunnelOwnerContext(c);
-
-    console.log(`[TUNNEL][GET /connections] userId=${userId} resolvedAccountId=${accountId} same=${userId === accountId}`);
+    const { ownerClause } = await getTunnelOwnerContext(c);
 
     const connections = await db
       .select()
       .from(tunnelConnections)
       .where(ownerClause)
       .orderBy(desc(tunnelConnections.createdAt));
-
-    console.log(`[TUNNEL][GET /connections] found ${connections.length} connections`, connections.map(c => ({ tunnelId: c.tunnelId, accountId: c.accountId })));
 
     const enriched = connections.map((conn) => ({
       ...conn,
@@ -70,10 +66,8 @@ export function createConnectionsRouter(): Hono {
   });
 
   router.get('/:tunnelId', async (c: any) => {
-    const { userId, accountId, ownerClause } = await getTunnelOwnerContext(c);
+    const { ownerClause } = await getTunnelOwnerContext(c);
     const tunnelId = c.req.param('tunnelId');
-
-    console.log(`[TUNNEL][GET /:tunnelId] userId=${userId} accountId=${accountId} tunnelId=${tunnelId}`);
 
     const [connection] = await db
       .select()
@@ -84,8 +78,6 @@ export function createConnectionsRouter(): Hono {
           ownerClause,
         ),
       );
-
-    console.log(`[TUNNEL][GET /:tunnelId] found=${!!connection}`);
 
     if (!connection) {
       return c.json({ error: 'Tunnel connection not found' }, 404);

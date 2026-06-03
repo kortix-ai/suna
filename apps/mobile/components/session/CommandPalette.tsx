@@ -88,7 +88,7 @@ export function CommandPalette({
   const [fileSearchMode, setFileSearchMode] = useState(false);
   const [fileResults, setFileResults] = useState<string[]>([]);
   const [fileSearchLoading, setFileSearchLoading] = useState(false);
-  const fileSearchTimer = useRef<ReturnType<typeof setTimeout>>();
+  const fileSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const fileSearchSeq = useRef(0);
 
   // Auto-focus and reset on open
@@ -104,7 +104,9 @@ export function CommandPalette({
 
   // File search — only runs when in file search mode
   useEffect(() => {
-    clearTimeout(fileSearchTimer.current);
+    if (fileSearchTimer.current) {
+      clearTimeout(fileSearchTimer.current);
+    }
 
     if (!fileSearchMode || !query.trim() || !sandboxUrl || !visible) {
       if (fileSearchMode && !query.trim()) {
@@ -132,7 +134,11 @@ export function CommandPalette({
       }
     }, 250);
 
-    return () => clearTimeout(fileSearchTimer.current);
+    return () => {
+      if (fileSearchTimer.current) {
+        clearTimeout(fileSearchTimer.current);
+      }
+    };
   }, [query, sandboxUrl, visible, fileSearchMode]);
 
   const enterFileSearchMode = useCallback(() => {
@@ -382,12 +388,9 @@ export function CommandPalette({
   // ── Colors ──────────────────────────────────────────────────────────────
 
   const bgColor = isDark ? '#121215' : '#FFFFFF';
-  const cardBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
   const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
   const fgColor = isDark ? '#F8F8F8' : '#121215';
   const mutedColor = isDark ? '#888' : '#999';
-  const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  const hoverBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
   const sectionColor = isDark ? '#666' : '#999';
 
   return (
@@ -548,26 +551,24 @@ export function CommandPalette({
 
                 {/* Search Files — top entry, before other commands */}
                 {sandboxUrl && (
-                  <CommandRow
-                    icon="document-text-outline"
-                    label="Search Files..."
-                    onPress={enterFileSearchMode}
-                    fgColor={fgColor}
-                    mutedColor={mutedColor}
-                    hoverBg={hoverBg}
-                  />
+	                  <CommandRow
+	                    icon="document-text-outline"
+	                    label="Search Files..."
+	                    onPress={enterFileSearchMode}
+	                    fgColor={fgColor}
+	                    mutedColor={mutedColor}
+	                  />
                 )}
 
                 {commandItems.map((item) => (
                   <CommandRow
                     key={item.id}
                     icon={item.icon}
-                    label={item.label}
-                    onPress={item.onSelect}
-                    fgColor={fgColor}
-                    mutedColor={mutedColor}
-                    hoverBg={hoverBg}
-                  />
+	                    label={item.label}
+	                    onPress={item.onSelect}
+	                    fgColor={fgColor}
+	                    mutedColor={mutedColor}
+	                  />
                 ))}
 
                 {recentSessions.length > 0 && (
@@ -578,11 +579,10 @@ export function CommandPalette({
                         key={s.id}
                         session={s}
                         timeLabel={formatTime(s)}
-                        onPress={() => handleSessionPress(s.id)}
-                        fgColor={fgColor}
-                        mutedColor={mutedColor}
-                        hoverBg={hoverBg}
-                      />
+	                        onPress={() => handleSessionPress(s.id)}
+	                        fgColor={fgColor}
+	                        mutedColor={mutedColor}
+	                      />
                     ))}
                   </>
                 )}
@@ -598,11 +598,10 @@ export function CommandPalette({
                         key={item.id}
                         icon={item.icon}
                         label={item.label}
-                        onPress={item.onSelect}
-                        fgColor={fgColor}
-                        mutedColor={mutedColor}
-                        hoverBg={hoverBg}
-                      />
+	                        onPress={item.onSelect}
+	                        fgColor={fgColor}
+	                        mutedColor={mutedColor}
+	                      />
                     ))}
                   </>
                 )}
@@ -615,11 +614,10 @@ export function CommandPalette({
                         key={s.id}
                         session={s}
                         timeLabel={formatTime(s)}
-                        onPress={() => handleSessionPress(s.id)}
-                        fgColor={fgColor}
-                        mutedColor={mutedColor}
-                        hoverBg={hoverBg}
-                      />
+	                        onPress={() => handleSessionPress(s.id)}
+	                        fgColor={fgColor}
+	                        mutedColor={mutedColor}
+	                      />
                     ))}
                   </>
                 )}
@@ -634,11 +632,10 @@ export function CommandPalette({
                       onPress={() => {
                         setFileSearchMode(true);
                         // Keep query, trigger file search
-                      }}
-                      fgColor={fgColor}
-                      mutedColor={mutedColor}
-                      hoverBg={hoverBg}
-                    />
+	                      }}
+	                      fgColor={fgColor}
+	                      mutedColor={mutedColor}
+	                    />
                   </>
                 )}
 
@@ -696,14 +693,12 @@ function CommandRow({
   onPress,
   fgColor,
   mutedColor,
-  hoverBg,
 }: {
   icon: string;
   label: string;
   onPress: () => void;
   fgColor: string;
   mutedColor: string;
-  hoverBg: string;
 }) {
   return (
     <TouchableOpacity
@@ -744,14 +739,12 @@ function SessionRow({
   onPress,
   fgColor,
   mutedColor,
-  hoverBg,
 }: {
   session: Session;
   timeLabel: string;
   onPress: () => void;
   fgColor: string;
   mutedColor: string;
-  hoverBg: string;
 }) {
   return (
     <TouchableOpacity

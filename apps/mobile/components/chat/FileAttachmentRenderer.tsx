@@ -15,10 +15,10 @@
  */
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { View, Image, Pressable, ActivityIndicator, Linking, ScrollView, LayoutChangeEvent } from 'react-native';
+import { View, Image, Pressable, ActivityIndicator, ScrollView, LayoutChangeEvent } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { FileText, File, Download, ExternalLink, Image as ImageIcon, Play, Presentation } from 'lucide-react-native';
+import { FileText, File, Download, ExternalLink, Image as ImageIcon, Play } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@agentpress/shared';
@@ -172,7 +172,6 @@ export function FileAttachmentRenderer({
         slideNumber={presentationParsed.slideNumber}
         filePath={filePath}
         sandboxUrl={sandboxUrl}
-        onPress={onPress}
       />
     );
   }
@@ -889,13 +888,11 @@ function PresentationAttachment({
   slideNumber,
   filePath,
   sandboxUrl,
-  onPress,
 }: {
   presentationName: string;
   slideNumber: number;
   filePath: string;
   sandboxUrl: string;
-  onPress?: (path: string) => void;
 }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -1098,29 +1095,6 @@ function HtmlPreviewAttachment({
       </View>
     </View>
   );
-}
-
-/**
- * Parse message content and extract file references
- * Matches: [Uploaded File: /workspace/uploads/filename.ext]
- */
-export function extractFileReferences(content: string): string[] {
-  const filePattern = /\[Uploaded File: ([^\]]+)\]/g;
-  const matches = content.matchAll(filePattern);
-  const files: string[] = [];
-
-  for (const match of matches) {
-    files.push(match[1]);
-  }
-
-  return files;
-}
-
-/**
- * Remove file references from content to get clean text
- */
-export function removeFileReferences(content: string): string {
-  return content.replace(/\[Uploaded File: [^\]]+\]/g, '').trim();
 }
 
 /**

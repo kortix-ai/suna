@@ -28,7 +28,6 @@ export const PAGE_TABS: Record<string, PageTab> = {
   'page:workspace':         { id: 'page:workspace',         label: 'Workspace',         icon: 'grid-outline' },
   'page:secrets':           { id: 'page:secrets',           label: 'Secrets Manager',   icon: 'key-outline' },
   'page:llm-providers':     { id: 'page:llm-providers',     label: 'LLM Providers',     icon: 'cube-outline' },
-  'page:ssh':               { id: 'page:ssh',               label: 'SSH',               icon: 'link-outline' },
   'page:api':               { id: 'page:api',               label: 'API',               icon: 'code-slash-outline' },
   'page:triggers':          { id: 'page:triggers',          label: 'Triggers',          icon: 'calendar-outline' },
   'page:channels':          { id: 'page:channels',          label: 'Channels',          icon: 'chatbox-outline' },

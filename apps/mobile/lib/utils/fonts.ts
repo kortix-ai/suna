@@ -14,36 +14,3 @@ export const ROOBERT_FONTS = {
   'Roobert-Heavy': require('@/assets/font/Roobert/Roobert-Heavy.ttf'),
 };
 
-/**
- * Font family names for use in styles
- */
-export const FONT_FAMILY = {
-  light: 'Roobert-Light',
-  regular: 'Roobert-Regular',
-  medium: 'Roobert-Medium',
-  semibold: 'Roobert-SemiBold',
-  bold: 'Roobert-Bold',
-  heavy: 'Roobert-Heavy',
-} as const;
-
-/**
- * Get font family based on font weight
- */
-export function getRoobertFont(weight?: 'light' | 'regular' | 'medium' | 'semibold' | 'bold' | 'heavy'): string {
-  switch (weight) {
-    case 'light':
-      return FONT_FAMILY.light;
-    case 'medium':
-      return FONT_FAMILY.medium;
-    case 'semibold':
-      return FONT_FAMILY.semibold;
-    case 'bold':
-      return FONT_FAMILY.bold;
-    case 'heavy':
-      return FONT_FAMILY.heavy;
-    case 'regular':
-    default:
-      return FONT_FAMILY.regular;
-  }
-}
-

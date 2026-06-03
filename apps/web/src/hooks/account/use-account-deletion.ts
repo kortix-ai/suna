@@ -27,7 +27,7 @@ export interface DeleteImmediatelyResponse {
     message: string;
 }
 
-export const ACCOUNT_DELETION_QUERY_KEY = ['account', 'deletion-status'];
+const ACCOUNT_DELETION_QUERY_KEY = ['account', 'deletion-status'];
 
 const UNSUPPORTED_STATUS: AccountDeletionStatus = {
     has_pending_deletion: false,
@@ -45,7 +45,7 @@ export function useAccountDeletionStatus() {
     return useQuery<AccountDeletionStatus>({
         queryKey: ACCOUNT_DELETION_QUERY_KEY,
         queryFn: async () => {
-            const response = await backendApi.get<AccountDeletionStatus>('/account/deletion-status', {
+            const response = await backendApi.get<AccountDeletionStatus>('/billing/account/deletion-status', {
                 showErrors: false
             });
 
@@ -75,7 +75,7 @@ export function useRequestAccountDeletion() {
 
     return useMutation({
         mutationFn: async (reason?: string) => {
-            const response = await backendApi.post<RequestDeletionResponse>('/account/request-deletion', {
+            const response = await backendApi.post<RequestDeletionResponse>('/billing/account/request-deletion', {
                 reason: reason || 'User requested deletion'
             }, {
                 showErrors: false,
@@ -113,7 +113,7 @@ export function useCancelAccountDeletion() {
 
     return useMutation({
         mutationFn: async () => {
-            const response = await backendApi.post<CancelDeletionResponse>('/account/cancel-deletion', undefined, {
+            const response = await backendApi.post<CancelDeletionResponse>('/billing/account/cancel-deletion', undefined, {
                 showErrors: false,
             });
 
@@ -149,7 +149,7 @@ export function useDeleteAccountImmediately() {
 
     return useMutation({
         mutationFn: async () => {
-            const response = await backendApi.delete<DeleteImmediatelyResponse>('/account/delete-immediately', {
+            const response = await backendApi.delete<DeleteImmediatelyResponse>('/billing/account/delete-immediately', {
                 showErrors: false,
             });
 

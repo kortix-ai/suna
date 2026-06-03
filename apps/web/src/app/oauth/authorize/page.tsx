@@ -13,7 +13,6 @@ import { Shield, X } from 'lucide-react';
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
   profile: 'View your account information',
-  'machines:read': 'View your project session sandboxes',
 };
 
 export default function OAuthConsentPage() {

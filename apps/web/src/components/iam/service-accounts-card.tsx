@@ -2,9 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 // Service accounts on the Settings tab. First-class machine identities
-// owned by the account itself; policies attach via the standard policy
-// editor (pick scope_type='token' principal). One bearer per SA;
-// rotation = disable + create new.
+// owned by the account itself. One bearer per SA; rotation = disable +
+// create new.
 
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -230,7 +229,7 @@ export function ServiceAccountsCard({ accountId, canManage }: ServiceAccountsCar
         title={tHardcodedUi.raw('componentsIamServiceAccountsCard.line235JsxAttrTitleDeleteServiceAccount')}
         description={
           deleteTarget
-            ? `Permanently removes "${deleteTarget.name}" and revokes its bearer. Any IAM policies attached to it are also dropped.`
+            ? `Permanently removes "${deleteTarget.name}" and revokes its bearer.`
             : ''
         }
         confirmLabel="Delete"

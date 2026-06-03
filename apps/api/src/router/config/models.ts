@@ -25,7 +25,7 @@ export interface ModelConfig {
  * Any model NOT in this registry is passed through to OpenRouter as-is
  * with live pricing from models.dev (or zero if unknown).
  */
-export const MODELS: Record<string, ModelConfig> = {
+const MODELS: Record<string, ModelConfig> = {
   'minimax/minimax-m2.7': {
     openrouterId: 'minimax/minimax-m2.7',
     inputPer1M: 0.30,
@@ -58,7 +58,7 @@ export const MODELS: Record<string, ModelConfig> = {
     tier: 'free',
     cacheReadPer1M: 0.10,
   },
-  // Opencode-side aliases (from core/kortix-master/opencode/opencode.jsonc).
+  // Opencode-side aliases from the sandbox agent config.
   // Opencode's openai-compatible client ships the alias as the model param
   // — e.g. `kortix/minimax-m27`, not the resolved upstream id — so the
   // router needs to translate them. Without these, every agent call from
@@ -97,12 +97,6 @@ export const MODELS: Record<string, ModelConfig> = {
     cacheReadPer1M: 0.10,
   },
 };
-
-/**
- * Default model for Kortix-managed contexts (cron, memory, etc.)
- * that need a sensible default without user input.
- */
-export const DEFAULT_MODEL_ID = 'minimax/minimax-m2.7';
 
 // =============================================================================
 // Model Resolution

@@ -28,7 +28,7 @@ export function ExpandMessageToolView({ toolCall, toolResult, isStreaming = fals
   const toolMetadata = getToolMetadata(name, toolCall.arguments);
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : true;
 
-  const { expanded_content, success } = extractExpandMessageData({ toolCall, toolResult });
+  const { expanded_content } = extractExpandMessageData({ toolCall, toolResult });
 
   if (isStreaming) {
     return (

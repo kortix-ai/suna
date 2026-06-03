@@ -1,87 +1,13 @@
 /**
- * Tool-call policy engine — glob match, first-match-wins, single-scope action
- * resolution, layered (project → connector → risk-default) resolution, and
- * visibility (blocked tools hidden). Mirrors executor's model.
+ * Tool-call policy engine — glob match, first-match-wins, layered
+ * (project → connector → risk-default) resolution.
+ * Mirrors executor's model.
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  globToRegex,
-  isVisible,
-  isVisibleEffective,
-  matchesPolicy,
   resolveEffectiveAction,
-  resolvePolicyAction,
-  riskDefaultAction,
   type Policy,
 } from '../executor/policy';
-
-describe('matchesPolicy', () => {
-  test('* matches everything', () => {
-    expect(matchesPolicy('*', 'charges.create')).toBe(true);
-  });
-  test('exact', () => {
-    expect(matchesPolicy('charges.create', 'charges.create')).toBe(true);
-    expect(matchesPolicy('charges.create', 'charges.list')).toBe(false);
-  });
-  test('trailing wildcard', () => {
-    expect(matchesPolicy('charges.*', 'charges.create')).toBe(true);
-    expect(matchesPolicy('charges.*', 'refunds.create')).toBe(false);
-  });
-  test('mid/leading wildcard (e.g. *.delete*)', () => {
-    expect(matchesPolicy('*.delete*', 'pets.deletePet')).toBe(true);
-    expect(matchesPolicy('*.delete*', 'pets.getPet')).toBe(false);
-  });
-  test('case-insensitive', () => {
-    expect(matchesPolicy('Charges.*', 'charges.create')).toBe(true);
-  });
-  test('globToRegex anchors', () => {
-    expect(globToRegex('a.b').test('xa.by')).toBe(false);
-  });
-});
-
-describe('resolvePolicyAction — first match wins, position order', () => {
-  const policies: Policy[] = [
-    { match: '*.delete*', action: 'block', position: 0 },
-    { match: 'charges.create', action: 'require_approval', position: 1 },
-    { match: '*', action: 'always_run', position: 2 },
-  ];
-
-  test('block wins for delete', () => {
-    expect(resolvePolicyAction('pets.deletePet', policies)).toBe('block');
-  });
-  test('require_approval for the specific create', () => {
-    expect(resolvePolicyAction('charges.create', policies)).toBe('require_approval');
-  });
-  test('catch-all always_run otherwise', () => {
-    expect(resolvePolicyAction('charges.list', policies)).toBe('always_run');
-  });
-  test('no policies → always_run (allow-all default)', () => {
-    expect(resolvePolicyAction('anything', [])).toBe('always_run');
-  });
-  test('position controls precedence regardless of array order', () => {
-    const reordered: Policy[] = [
-      { match: '*', action: 'always_run', position: 5 },
-      { match: 'secret.*', action: 'block', position: 0 },
-    ];
-    expect(resolvePolicyAction('secret.read', reordered)).toBe('block');
-  });
-});
-
-describe('isVisible', () => {
-  test('blocked tools are hidden', () => {
-    const policies: Policy[] = [{ match: 'admin.*', action: 'block' }];
-    expect(isVisible('admin.reset', policies)).toBe(false);
-    expect(isVisible('users.list', policies)).toBe(true);
-  });
-});
-
-describe('riskDefaultAction', () => {
-  test('read → always_run, write/destructive → require_approval', () => {
-    expect(riskDefaultAction('read')).toBe('always_run');
-    expect(riskDefaultAction('write')).toBe('require_approval');
-    expect(riskDefaultAction('destructive')).toBe('require_approval');
-  });
-});
 
 describe('resolveEffectiveAction — layered (project → connector → default)', () => {
   const projectPolicies: Policy[] = [
@@ -201,31 +127,72 @@ describe('resolveEffectiveAction — layered (project → connector → default)
       }),
     ).toEqual({ action: 'always_run', source: 'risk_default' });
   });
-});
 
-describe('isVisibleEffective — blocked-from-search across layers', () => {
-  test('project block hides the tool from search', () => {
+  test('policy glob matching supports catch-all, exact, wildcards, case-insensitivity, and anchoring', () => {
     expect(
-      isVisibleEffective({
+      resolveEffectiveAction({
+        fullPath: 'charges.create',
+        relPath: 'charges.create',
+        projectPolicies: [{ match: '*', action: 'block', position: 0 }],
+        connectorPolicies: [],
+        risk: 'read',
+        defaultMode: 'risk',
+      }),
+    ).toEqual({ action: 'block', source: 'project' });
+
+    expect(
+      resolveEffectiveAction({
+        fullPath: 'charges.create',
+        relPath: 'charges.create',
+        projectPolicies: [{ match: 'charges.create', action: 'block', position: 0 }],
+        connectorPolicies: [],
+        risk: 'read',
+        defaultMode: 'risk',
+      }),
+    ).toEqual({ action: 'block', source: 'project' });
+
+    expect(
+      resolveEffectiveAction({
+        fullPath: 'charges.list',
+        relPath: 'charges.list',
+        projectPolicies: [{ match: 'charges.create', action: 'block', position: 0 }],
+        connectorPolicies: [],
+        risk: 'read',
+        defaultMode: 'risk',
+      }),
+    ).toEqual({ action: 'always_run', source: 'risk_default' });
+
+    expect(
+      resolveEffectiveAction({
+        fullPath: 'charges.create',
+        relPath: 'charges.create',
+        projectPolicies: [{ match: 'Charges.*', action: 'block', position: 0 }],
+        connectorPolicies: [],
+        risk: 'read',
+        defaultMode: 'risk',
+      }),
+    ).toEqual({ action: 'block', source: 'project' });
+
+    expect(
+      resolveEffectiveAction({
         fullPath: 'pets.deletePet',
-        relPath: 'deletePet',
+        relPath: 'pets.deletePet',
         projectPolicies: [{ match: '*.delete*', action: 'block', position: 0 }],
         connectorPolicies: [],
-        risk: 'destructive',
+        risk: 'read',
         defaultMode: 'risk',
       }),
-    ).toBe(false);
-  });
-  test('connector require_approval is still visible', () => {
+    ).toEqual({ action: 'block', source: 'project' });
+
     expect(
-      isVisibleEffective({
-        fullPath: 'pets.create',
-        relPath: 'create',
-        projectPolicies: [],
-        connectorPolicies: [{ match: '*', action: 'require_approval' }],
-        risk: 'write',
+      resolveEffectiveAction({
+        fullPath: 'xa.by',
+        relPath: 'xa.by',
+        projectPolicies: [{ match: 'a.b', action: 'block', position: 0 }],
+        connectorPolicies: [],
+        risk: 'read',
         defaultMode: 'risk',
       }),
-    ).toBe(true);
+    ).toEqual({ action: 'always_run', source: 'risk_default' });
   });
 });

@@ -4,45 +4,10 @@
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { API_URL, getAuthToken } from '@/api/config';
-import { useSandboxContext } from '@/contexts/SandboxContext';
+import { getAuthToken } from '@/api/config';
 import { channelKeys } from './useChannels';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
-
-async function sandboxFetch<T>(sandboxUrl: string, path: string, options?: RequestInit): Promise<T> {
-  const token = await getAuthToken();
-  const res = await fetch(`${sandboxUrl}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options?.headers as Record<string, string>),
-    },
-  });
-  const text = await res.text();
-  let body: any;
-  try { body = JSON.parse(text); } catch { body = { message: text }; }
-  if (!res.ok) throw new Error(body?.error?.message || body?.message || `Request failed (${res.status})`);
-  return body;
-}
-
-async function backendFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const token = await getAuthToken();
-  const res = await fetch(`${API_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options?.headers as Record<string, string>),
-    },
-  });
-  const text = await res.text();
-  let body: any;
-  try { body = JSON.parse(text); } catch { throw new Error(`Server returned invalid response (${res.status})`); }
-  if (!res.ok) throw new Error(body?.error?.message || body?.message || `Request failed (${res.status})`);
-  return body;
-}
 
 function secureSecretToken(): string {
   const bytes = new Uint8Array(24);
@@ -206,67 +171,6 @@ export function useTelegramConnect() {
 
 // ─── Slack ───────────────────────────────────────────────────────────────────
 
-export interface DetectUrlResult {
-  url: string;
-  source: 'ngrok' | 'config' | 'none';
-  detected: boolean;
-}
-
-export interface GenerateManifestResult {
-  manifest: Record<string, unknown>;
-  manifestJson: string;
-}
-
-/**
- * Detect public URL (ngrok tunnel) via backend API.
- */
-export function useSlackDetectUrl() {
-  return useMutation({
-    mutationFn: async (): Promise<DetectUrlResult> => {
-      try {
-        return await backendFetch<DetectUrlResult>(
-          '/channels/slack-wizard/detect-url',
-        );
-      } catch {
-        return { detected: false, url: '', source: 'none' };
-      }
-    },
-  });
-}
-
-/**
- * Generate Slack app manifest via sandbox channels endpoint (matches web).
- */
-export function useSlackGenerateManifest() {
-  const { sandboxUrl } = useSandboxContext();
-
-  return useMutation({
-    mutationFn: async ({ publicUrl, botName }: {
-      publicUrl: string;
-      botName?: string;
-    }): Promise<GenerateManifestResult> => {
-      if (!sandboxUrl) throw new Error('No sandbox URL');
-      const token = await getAuthToken();
-      const res = await fetch(`${sandboxUrl}/kortix/channels/slack-manifest`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ publicUrl: publicUrl || '', botName }),
-      });
-      const text = await res.text();
-      let data: any;
-      try { data = JSON.parse(text); } catch { throw new Error(`Server returned invalid response (${res.status})`); }
-      if (!data.ok && !data.manifest) throw new Error(data.error || 'Failed to generate manifest');
-      return {
-        manifest: data.manifest,
-        manifestJson: JSON.stringify(data.manifest, null, 2),
-      };
-    },
-  });
-}
-
 /**
  * Push Slack credentials to sandbox env, reload channels, create DB record.
  */
@@ -276,7 +180,6 @@ export function useSlackConnect() {
   return useMutation({
     mutationFn: async ({
       sandboxUrl,
-      sandboxId,
       botToken,
       signingSecret,
       publicUrl,

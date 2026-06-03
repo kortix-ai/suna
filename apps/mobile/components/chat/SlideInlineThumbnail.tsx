@@ -3,9 +3,8 @@
  * Fetches metadata and displays a 16:9 slide preview thumbnail
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { View, Pressable, LayoutChangeEvent } from 'react-native';
-import { Text } from '@/components/ui/text';
 import { WebView } from 'react-native-webview';
 import { useColorScheme } from 'nativewind';
 import Animated, {
@@ -150,8 +149,6 @@ export function SlideInlineThumbnail({
 
   // Calculate scale: container width / original slide width (1920)
   const scale = containerWidth > 0 ? containerWidth / 1920 : 0;
-  const containerHeight = containerWidth > 0 ? containerWidth * (9 / 16) : 0;
-
   // Inject JavaScript to properly scale the slide content
   const injectedJS = `
     (function() {
@@ -232,5 +229,3 @@ export function SlideInlineThumbnail({
     </Pressable>
   );
 }
-
-export default SlideInlineThumbnail;

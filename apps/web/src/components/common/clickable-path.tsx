@@ -38,7 +38,7 @@ interface ClickablePathProps {
   variant?: 'inline' | 'terminal';
 }
 
-export function ClickablePath({
+function ClickablePath({
   filePath,
   children,
   lineNumber,

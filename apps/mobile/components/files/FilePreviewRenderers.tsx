@@ -109,7 +109,7 @@ export function getFilePreviewType(filename: string): FilePreviewType {
 }
 
 // Helper to get language for syntax highlighting
-export function getLanguageFromFilename(filename: string): string {
+function getLanguageFromFilename(filename: string): string {
   const ext = filename.split('.').pop()?.toLowerCase() || '';
 
   const languageMap: Record<string, string> = {
@@ -168,7 +168,7 @@ interface FilePreviewProps {
 /**
  * Image Preview Component
  */
-function ImagePreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string }) {
+function ImagePreview({ blobUrl }: { blobUrl?: string; fileName: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [isLoading, setIsLoading] = useState(true);
@@ -344,13 +344,6 @@ function generateHighlightedCodeHtml(
   const theme = isDark ? 'github-dark' : 'github';
   const lineNumColor = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)';
   const lineNumBorder = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
-  // Escape HTML entities in code
-  const escaped = code
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-
   return `<!DOCTYPE html>
 <html>
 <head>
@@ -1132,9 +1125,6 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
         document.getElementById('loading').style.display = 'none';
         document.getElementById('container').innerHTML = result.value;
 
-        if (result.messages && result.messages.length > 0) {
-          console.log('Mammoth messages:', result.messages);
-        }
       } catch (err) {
         console.error('DOCX render error:', err);
         document.getElementById('loading').style.display = 'none';
@@ -1167,7 +1157,7 @@ function generateDocxHtml(base64Data: string, isDark: boolean): string {
  * DOCX Preview Component using WebView and mammoth.js
  * Converts DOCX to HTML for rendering
  */
-function DocxPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string }) {
+function DocxPreview({ blobUrl }: { blobUrl?: string; fileName: string }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const [isLoading, setIsLoading] = useState(true);
@@ -1364,4 +1354,3 @@ export function FilePreview({
       return <TextPreview content={content} />;
   }
 }
-

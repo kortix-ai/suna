@@ -58,14 +58,6 @@ async function tickAndRearm(): Promise<void> {
   timer = setTimeout(tickAndRearm, TICK_MS);
 }
 
-export function stopGrantExpirySweeper(): void {
-  stopped = true;
-  if (timer) {
-    clearTimeout(timer);
-    timer = null;
-  }
-}
-
 /**
  * One pass over both grant tables.
  *

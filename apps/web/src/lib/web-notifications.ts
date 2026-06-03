@@ -26,9 +26,9 @@ import type { SoundEvent } from '@/stores/sound-store';
 // Types
 // ============================================================================
 
-export type WebNotificationType = 'completion' | 'error' | 'question' | 'permission';
+type WebNotificationType = 'completion' | 'error' | 'question' | 'permission';
 
-export interface WebNotificationPayload {
+interface WebNotificationPayload {
   /** Which category this notification belongs to */
   type: WebNotificationType;
   /** Notification title */
@@ -63,48 +63,6 @@ const TYPE_TO_SOUND: Record<WebNotificationType, SoundEvent> = {
 };
 
 // ============================================================================
-// Sound
-// ============================================================================
-
-/**
- * Play a subtle notification sound.
- *
- * Uses the Web Audio API to generate a short ping tone.
- * Falls back silently if audio is not available.
- */
-function playNotificationPing() {
-  try {
-    if (typeof AudioContext === 'undefined' && typeof (window as any).webkitAudioContext === 'undefined') {
-      return;
-    }
-    const AudioCtx = AudioContext || (window as any).webkitAudioContext;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, ctx.currentTime); // A5
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.3);
-
-    // Clean up
-    osc.onended = () => {
-      osc.disconnect();
-      gain.disconnect();
-      ctx.close().catch(() => {});
-    };
-  } catch {
-    // Silently ignore — audio not critical
-  }
-}
-
-// ============================================================================
 // Core
 // ============================================================================
 
@@ -137,7 +95,7 @@ function navigateToSession(sessionId: string, sessionTitle?: string, opts?: { fo
  * to another Chrome tab (`document.hidden`) or switched to another app
  * via Cmd+Tab / Alt+Tab (`!document.hasFocus()`).
  */
-export function isTabHidden(): boolean {
+function isTabHidden(): boolean {
   if (typeof document === 'undefined') return false;
   return document.hidden || !document.hasFocus();
 }

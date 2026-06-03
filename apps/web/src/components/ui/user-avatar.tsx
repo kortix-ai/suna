@@ -38,7 +38,7 @@ const SIZE_MAP = {
   xl: 'size-14 text-base',
 } as const;
 
-export type UserAvatarSize = keyof typeof SIZE_MAP;
+type UserAvatarSize = keyof typeof SIZE_MAP;
 
 export interface UserAvatarProps {
   email: string;

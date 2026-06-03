@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { creditAccounts } from '@kortix/db';
 import { db } from '../../shared/db';
 
-export type LegacyStripeSyncResult = {
+type LegacyStripeSyncResult = {
   status:
     | 'already_synced'
     | 'no_customer'
@@ -193,10 +193,6 @@ export async function syncLegacyStripeSubscription(
             active: true,
             provider: 'stripe',
           });
-
-          console.log(
-            `[legacy-stripe-sync] Synced Stripe sub ${subscription.id} → tier=${tierConfig.name} for ${accountId} (customer=${candidateCustomerId})`,
-          );
         }
 
         return result;

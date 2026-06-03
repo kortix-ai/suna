@@ -36,17 +36,6 @@ export interface ChannelConfig {
   sandbox?: { name: string; status: string };
 }
 
-export interface CreateChannelData {
-  name: string;
-  channel_type: ChannelType;
-  platform_config?: Record<string, unknown>;
-  instructions?: string;
-  agent_name?: string;
-  default_agent?: string;
-  default_model?: string;
-  metadata?: Record<string, unknown>;
-}
-
 export interface UpdateChannelData {
   name?: string;
   platform_config?: Record<string, unknown>;
@@ -148,13 +137,6 @@ async function listChannels(sandboxUrl: string): Promise<ChannelConfig[]> {
   return channels;
 }
 
-async function getChannel(sandboxUrl: string, id: string): Promise<ChannelConfig> {
-  const data = await sandboxChannelFetch<{ ok: boolean; channel: ChannelConfig }>(
-    sandboxUrl, `/${id}`,
-  );
-  return data.channel;
-}
-
 async function updateChannel(sandboxUrl: string, id: string, body: UpdateChannelData): Promise<ChannelConfig> {
   const data = await sandboxChannelFetch<{ ok: boolean; channel: ChannelConfig }>(
     sandboxUrl, `/${id}`,
@@ -225,7 +207,6 @@ async function disableChannel(sandboxUrl: string, id: string): Promise<ChannelCo
 export const channelKeys = {
   all: ['channels'] as const,
   list: (sandboxId?: string) => [...channelKeys.all, 'list', sandboxId] as const,
-  detail: (id: string) => [...channelKeys.all, 'detail', id] as const,
 };
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
@@ -236,16 +217,6 @@ export function useChannels() {
     queryKey: channelKeys.list(sandboxUrl),
     queryFn: () => listChannels(sandboxUrl!),
     enabled: !!sandboxUrl,
-    staleTime: 60 * 1000,
-  });
-}
-
-export function useChannel(id: string) {
-  const { sandboxUrl } = useSandboxContext();
-  return useQuery({
-    queryKey: channelKeys.detail(id),
-    queryFn: () => getChannel(sandboxUrl!, id),
-    enabled: !!sandboxUrl && !!id,
     staleTime: 60 * 1000,
   });
 }
@@ -298,12 +269,4 @@ export function getChannelTypeLabel(type: ChannelType): string {
     sms: 'SMS',
   };
   return labels[type] || type;
-}
-
-export function formatChannelDate(dateString: string): string {
-  return new Date(dateString).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  });
 }

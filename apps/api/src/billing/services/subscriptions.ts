@@ -1,6 +1,4 @@
 import { getStripe } from '../../shared/stripe';
-import { db } from '../../shared/db';
-import { eq } from 'drizzle-orm';
 import {
   getCreditAccount,
   updateCreditAccount,
@@ -187,13 +185,6 @@ export async function createCheckoutSession(params: {
           provider: 'stripe',
           active: true,
         });
-
-        // Legacy auto-provision of a per-account sandbox at checkout time
-        // has been removed — sandboxes are now per-session, provisioned on
-        // demand under /v1/projects/:id/sessions.
-        void serverType;
-        void location;
-        void tierKey;
 
         return {
           status: 'subscription_created' as const,
@@ -567,7 +558,6 @@ export async function cancelScheduledChange(accountId: string) {
       if (scheduleId) {
         try {
           await stripe.subscriptionSchedules.release(scheduleId);
-          console.log(`[Billing] Released schedule ${scheduleId} for ${accountId}`);
         } catch (releaseErr) {
           console.warn(`[Billing] Could not release schedule ${scheduleId}:`, releaseErr);
         }
@@ -643,8 +633,6 @@ async function createOrUpdateSubscriptionSchedule(params: {
     end_behavior: 'release',
     metadata: scheduleMetadata,
   });
-
-  console.log(`[Billing] Created subscription schedule ${schedule.id} for downgrade of ${accountId}`);
 }
 
 async function handleExistingSchedule(
@@ -665,7 +653,6 @@ async function handleExistingSchedule(
       const phases = existingSchedule.phases ?? [];
       const now = Math.floor(Date.now() / 1000);
       if (phases.length > 0 && phases[0].end_date && phases[0].end_date < now) {
-        console.log(`[Billing] Schedule ${existingScheduleId} phase 0 has ended, releasing`);
         try { await stripe.subscriptionSchedules.release(existingScheduleId); } catch {}
         await new Promise(r => setTimeout(r, 1000));
         return false;
@@ -687,7 +674,6 @@ async function handleExistingSchedule(
         end_behavior: 'release',
         metadata: scheduleMetadata,
       });
-      console.log(`[Billing] Updated existing schedule ${existingScheduleId}`);
       return true;
     }
 
@@ -704,23 +690,6 @@ async function handleExistingSchedule(
       return false;
     }
     throw err;
-  }
-}
-
-export async function releaseSubscriptionSchedule(subscriptionId: string): Promise<void> {
-  const stripe = getStripe();
-  try {
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    const scheduleId = typeof subscription.schedule === 'string'
-      ? subscription.schedule
-      : (subscription.schedule as any)?.id;
-
-    if (scheduleId) {
-      await stripe.subscriptionSchedules.release(scheduleId);
-      console.log(`[Billing] Released schedule ${scheduleId} before subscription update`);
-    }
-  } catch (err) {
-    console.warn(`[Billing] Could not release schedule for ${subscriptionId}:`, err);
   }
 }
 
@@ -899,7 +868,6 @@ async function handleUpgrade(
   if (scheduleId) {
     try {
       await stripe.subscriptionSchedules.release(scheduleId);
-      console.log(`[Billing] Released schedule ${scheduleId} before upgrade for ${accountId}`);
     } catch (err) {
       console.warn(`[Billing] Could not release schedule ${scheduleId}:`, err);
     }
@@ -960,14 +928,11 @@ export async function cancelFreeSubscriptionForUpgrade(
     const stripe = getStripe();
     const oldSub = await stripe.subscriptions.retrieve(oldSubscriptionId);
     if (oldSub.status === 'canceled' || oldSub.status === 'incomplete_expired') {
-      console.log(`[Billing] Old free subscription ${oldSubscriptionId} already cancelled for ${accountId}`);
       return;
     }
     await stripe.subscriptions.cancel(oldSubscriptionId);
-    console.log(`[Billing] Cancelled old free subscription ${oldSubscriptionId} for ${accountId}`);
   } catch (err: any) {
     if (err?.code === 'resource_missing' || err?.statusCode === 404) {
-      console.log(`[Billing] Old free subscription ${oldSubscriptionId} not found (already deleted) for ${accountId}`);
       return;
     }
     console.error(`[Billing] Failed to cancel old free subscription ${oldSubscriptionId} for ${accountId}:`, err);

@@ -1,15 +1,12 @@
 /**
  * Structured logger with queryable format for easy filtering and parsing
  * 
- * Format: [KTX] [USER:abc123] [LEVEL:info] [COMPONENT:RC] message
+ * Format: [KTX] [USER:abc123] [LEVEL:info] message
  * 
  * Usage:
  *   import { log, setLoggerUserId } from '@/lib/logger';
  *   log.info('Something happened');
  *   // Output: [KTX] [USER:abc12345] [LEVEL:info] Something happened
- * 
- *   log.rc('SDK initialized');
- *   // Output: [KTX] [USER:abc12345] [LEVEL:info] [COMPONENT:RC] SDK initialized
  * 
  *   log.error('Failed!', error);
  *   // Output: [KTX] [USER:abc12345] [LEVEL:error] Failed! <error>
@@ -24,9 +21,6 @@
  * 
  *   # Filter by level
  *   idevicesyslog | grep "\[LEVEL:error\]"
- * 
- *   # Filter by component
- *   idevicesyslog | grep "\[COMPONENT:RC\]"
  * 
  *   # Filter by user AND level
  *   idevicesyslog | grep "\[USER:abc12345\]" | grep "\[LEVEL:error\]"
@@ -47,13 +41,6 @@ let currentUserId: string | null = null;
  */
 export function setLoggerUserId(userId: string | null): void {
   currentUserId = userId;
-}
-
-/**
- * Get the current user ID (for testing/debugging)
- */
-export function getLoggerUserId(): string | null {
-  return currentUserId;
 }
 
 /**
@@ -126,27 +113,4 @@ export const log = {
   error: (...args: unknown[]) => {
     console.error(buildPrefix('error'), ...formatArgs(args));
   },
-  
-  /** RevenueCat-specific logs (level: info) */
-  rc: (...args: unknown[]) => {
-    console.log(buildPrefix('info', 'RC'), ...formatArgs(args));
-  },
-  
-  /** RevenueCat debug */
-  rcDebug: (...args: unknown[]) => {
-    console.debug(buildPrefix('debug', 'RC'), ...formatArgs(args));
-  },
-  
-  /** RevenueCat warning */
-  rcWarn: (...args: unknown[]) => {
-    console.warn(buildPrefix('warn', 'RC'), ...formatArgs(args));
-  },
-  
-  /** RevenueCat error */
-  rcError: (...args: unknown[]) => {
-    console.error(buildPrefix('error', 'RC'), ...formatArgs(args));
-  },
 };
-
-export default log;
-

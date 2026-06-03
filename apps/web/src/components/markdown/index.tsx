@@ -8,4 +8,3 @@
  */
 
 export { UnifiedMarkdown } from './unified-markdown';
-export type { UnifiedMarkdownProps } from './unified-markdown';

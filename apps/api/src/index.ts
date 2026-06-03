@@ -17,11 +17,10 @@ import { BillingError } from './errors';
 // ─── Sub-Service Imports ──────────────────────────────────────────────────── 
 
 import { router } from './router';
-import { billingApp, accountDeletionApp } from './billing';
+import { billingApp } from './billing';
 import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
-import { queueApp, startDrainer, stopDrainer } from './queue';
 import { serversApp } from './servers';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { ensureSchema } from './ensure-schema';
@@ -97,8 +96,8 @@ const localOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
 ];
-const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
-  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+const extraOrigins = config.CORS_ALLOWED_ORIGINS
+  ? config.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
   : [];
 const corsOrigins = [
   ...new Set([
@@ -257,24 +256,6 @@ app.get('/v1/health', (c) => {
   });
 });
 
-// Also expose system status at root for backward compat with frontend
-app.get('/v1/system/status', (c) => {
-  return c.json({
-    maintenanceNotice: { enabled: false },
-    technicalIssue: { enabled: false },
-    updatedAt: new Date().toISOString(),
-  });
-});
-
-// ─── Stub Endpoints ─────────────────────────────────────────────────────────
-// These endpoints are called by the frontend but were never implemented.
-// Adding proper stubs stops 404 noise and provides correct responses.
-
-// POST /v1/prewarm — no-op pre-warm. Frontend fires this on login.
-app.post('/v1/prewarm', (c) => {
-  return c.json({ success: true });
-});
-
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
 // /v1/auth/* — auth-side server endpoints (logout for now). Audit
@@ -367,8 +348,7 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
 }
 
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
-app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
-app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
+app.route('/v1/platform', platformApp); // api keys, sandbox version
 registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 
@@ -391,15 +371,10 @@ app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix pr
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackWebhookApp, telegramWebhookApp, slackOauthApp } = await import('./channels');
+const { slackOauthApp } = await import('./channels/slack-oauth');
+const { slackWebhookApp } = await import('./channels/slack-webhook');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
-app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
-
-if (config.KORTIX_DEPLOYMENTS_ENABLED) {
-  const { deploymentsApp } = await import('./deployments');
-  app.route('/v1/deployments', deploymentsApp); // /v1/deployments/*
-}
 
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
@@ -409,7 +384,6 @@ app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/acce
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
   app.route('/v1/setup', setupApp);        // /v1/setup/install-status (public), rest (auth inside router)
 }
-// /v1/admin/* — legacy admin dashboard surface removed. Web admin pages will 404.
 
 // OAuth2 provider — public token endpoint, auth on authorize/consent
 app.route('/v1/oauth', oauthApp);
@@ -417,9 +391,6 @@ app.route('/v1/oauth', oauthApp);
 // All remaining routes require authentication (JWT or kortix_ token).
 app.use('/v1/servers/*', combinedAuth);
 app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/:id, /v1/servers/sync
-
-app.use('/v1/queue/*', combinedAuth);
-app.route('/v1/queue', queueApp);            // /v1/queue/sessions/:id, /v1/queue/messages/:id, /v1/queue/all, /v1/queue/status
 
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
@@ -534,35 +505,6 @@ app.notFound((c) => {
   );
 });
 
-// === Start Server ===
-
-console.log(`
-╔═══════════════════════════════════════════════════════════╗
-║                  Kortix API Starting                      ║
-╠═══════════════════════════════════════════════════════════╣
-║  Port: ${config.PORT.toString().padEnd(49)}║
-║  Env:  ${config.INTERNAL_KORTIX_ENV.padEnd(49)}║
-╠═══════════════════════════════════════════════════════════╣
-║  Services:                                                ║
-║    /v1/router     (search, LLM, proxy)                    ║
-║    /v1/billing    (subscriptions, credits, webhooks)       ║
-║    /v1/platform   (api keys, sandbox version)               ║
-${config.KORTIX_DEPLOYMENTS_ENABLED ? '║    /v1/deployments (deploy lifecycle)                      ║\n' : ''}║    /v1/projects   (Git-backed projects)                    ║
-${config.KORTIX_APPS_EXPERIMENTAL ? '║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n' : ''}
-║    /v1/setup      (setup & env management)                 ║
-║    /v1/queue      (persistent message queue)               ║
-║    /v1/tunnel     (reverse-tunnel to local machines)         ║
-║    /v1/p         (sandbox proxy — local + cloud)            ║
-╠═══════════════════════════════════════════════════════════╣
-║  Database:   ${config.DATABASE_URL ? '✓ Configured'.padEnd(42) : '✗ NOT SET'.padEnd(42)}║
-║  Supabase:   ${config.SUPABASE_URL ? '✓ Configured'.padEnd(42) : '✗ NOT SET'.padEnd(42)}║
-║  Stripe:     ${config.STRIPE_SECRET_KEY ? '✓ Configured'.padEnd(42) : '✗ NOT SET'.padEnd(42)}║
-║  Billing:    ${(config.KORTIX_BILLING_INTERNAL_ENABLED ? 'ENABLED' : 'DISABLED').padEnd(42)}║
-║  Tunnel:     ${(config.TUNNEL_ENABLED ? 'ENABLED' : 'DISABLED').padEnd(42)}║
-║  Providers:  ${config.ALLOWED_SANDBOX_PROVIDERS.join(', ').padEnd(42)}║
-╚═══════════════════════════════════════════════════════════╝
-`);
-
 // Load LLM pricing from models.dev (non-blocking if it fails).
 // Awaited so pricing is available before the first billing request.
 initModelPricing().catch((err) =>
@@ -575,14 +517,24 @@ let schemaReady = false;
 // Ensure DB schema exists before starting services that depend on it.
 // This is idempotent — safe to run on every startup.
 // Start background services after the schema is ready. The access-control cache
-// and tunnel service serve request-path needs; the rest are background WORKERS
-// (queue drainer, project maintenance, trigger scheduler, startup pre-build,
-// legacy-migration worker, grant-expiry sweeper). Every API node runs them.
+// and tunnel service are always on (they serve request-path needs, not shared
+// background work). The rest are background WORKERS — gated behind
+// KORTIX_WORKERS_ENABLED so a parallel API-only node (e.g. a new ECS prod stack
+// sharing the live DB during cutover) can serve HTTP without double-firing
+// crons/maintenance. Flip the switch (and stop the old node) at cutover.
 async function startBackgroundServices() {
   startAccessControlCache();
   startTunnelService();
 
-  startDrainer();
+  if (!config.KORTIX_WORKERS_ENABLED) {
+    console.warn(
+      '[startup] KORTIX_WORKERS_ENABLED=false — running API-only: trigger scheduler, ' +
+        'project maintenance, legacy-migration worker, startup pre-build, ' +
+        'and grant-expiry sweeper are DISABLED on this node.',
+    );
+    return;
+  }
+
   startProjectMaintenance();
   startProjectTriggerScheduler();
   // Mint the global platform-default sandbox image once per boot so the first
@@ -601,10 +553,8 @@ async function startBackgroundServices() {
 ensureSchema()
   .then(async () => {
     schemaReady = true;
-    // V2 IAM hard-codes role permissions in iam/role-perms.ts, so the
-    // boot-time system-role seed + membership-policy backfill from V1
-    // are no longer needed. Permissions resolve directly from
-    // account_members.account_role and project_members.project_role.
+    // IAM role permissions resolve directly from account_members.account_role
+    // and project_members.project_role.
     await startBackgroundServices();
   })
   .catch(async (err) => {
@@ -616,7 +566,6 @@ ensureSchema()
 // Graceful shutdown
 async function shutdown(signal: string) {
   appLogger.info(`Shutting down gracefully`, { signal });
-  stopDrainer();
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
   stopLegacyMigrationWorker();

@@ -9,14 +9,9 @@ import { validateSecretKey } from '../../repositories/api-keys';
 import { isKortixToken } from '../../shared/crypto';
 import { config, getToolCost, KORTIX_MARKUP, PLATFORM_FEE_MARKUP } from '../../config';
 import { deductToolCredits, deductLLMCredits } from '../services/billing';
-import { getModel, type ModelConfig } from '../config/models';
+import { getModel } from '../config/models';
 import { calculateCost, extractUsage } from '../services/llm';
 import { grantCredits } from '../../billing/services/credits';
-import { dollarsToCents, refundActorSpend, reserveActorSpend } from '../services/member-spend';
-import {
-  resolveActorFromRequest,
-  type ActorContext,
-} from '../../shared/actor-context';
 import { getTraceHeaders } from '../../lib/request-context';
 
 const proxy = new Hono();
@@ -29,16 +24,18 @@ interface LlmCreditReservation {
   promptTokens: number;
   completionTokens: number;
   cost: number;
-  actor?: ActorContext | null;
-  actorReservedCents?: number;
 }
 
 interface ToolCreditReservation {
   accountId: string;
   billingToolName: string;
   cost: number;
-  actor?: ActorContext | null;
-  actorReservedCents?: number;
+}
+
+type DuplexRequestInit = RequestInit & { duplex: 'half' };
+
+function proxyFetch(input: string, init: RequestInit): Promise<Response> {
+  return fetch(input, { ...init, duplex: 'half' } as DuplexRequestInit);
 }
 
 for (const [prefix, serviceConfig] of Object.entries(services)) {
@@ -131,8 +128,6 @@ async function handleKortixProxy(
     });
   }
 
-  const actor = resolveActorFromRequest(c, { logPrefix: '[PROXY]' });
-
   // Use alternate target/key injection for Kortix-managed if configured (e.g. OpenRouter)
   const baseUrl = service.kortixTargetBaseUrl || service.targetBaseUrl;
   const targetUrl = `${baseUrl}${subPath}${queryString}`;
@@ -150,30 +145,25 @@ async function handleKortixProxy(
   let reservation: LlmCreditReservation | null = null;
   let toolReservation: ToolCreditReservation | null = null;
   if (service.isLlm === true) {
-    reservation = await reserveEstimatedLlmCredits(accountId, body, KORTIX_MARKUP, actor);
+    reservation = await reserveEstimatedLlmCredits(accountId, body, KORTIX_MARKUP);
   } else {
     toolReservation = await reserveToolProxyCredits(
       accountId,
       billingToolName,
-      actor,
       `Proxy ${service.name}: ${method} ${subPath}`,
     );
   }
 
-  console.log(`[PROXY] ${service.name} (kortix:${accountId}) ${method} ${subPath} → ${targetUrl} [bill:${billingToolName}]`);
-
-  const upstream = await fetch(targetUrl, {
+  const upstream = await proxyFetch(targetUrl, {
     method,
     headers,
     body,
-    // @ts-ignore
-    duplex: 'half',
   });
 
   // LLM services: bill per-token at KORTIX_MARKUP (1.2×)
   if (service.isLlm === true) {
     if (upstream.ok) {
-      return billLlmKortixProxy(upstream, service, subPath, accountId, actor, reservation);
+      return billLlmKortixProxy(upstream, service, subPath, accountId, reservation);
     }
     // Upstream error — don't bill for failed requests
     console.warn(`[PROXY] LLM kortix proxy ${service.name} upstream error ${upstream.status} — no billing`);
@@ -211,7 +201,6 @@ async function billLlmKortixProxy(
   service: ProxyServiceConfig,
   subPath: string,
   accountId: string,
-  actor: ActorContext | null,
   reservation: LlmCreditReservation | null,
 ) {
   const contentType = upstream.headers.get('Content-Type') || '';
@@ -226,7 +215,7 @@ async function billLlmKortixProxy(
     const [clientStream, billingStream] = upstreamBody.tee();
 
     // Fire-and-forget: extract usage from billing stream
-    extractUsageFromKortixProxyStream(billingStream, service, subPath, accountId, actor, reservation);
+    extractUsageFromKortixProxyStream(billingStream, service, subPath, accountId, reservation);
 
     return new Response(clientStream, {
       status: upstream.status,
@@ -279,11 +268,9 @@ async function billLlmKortixProxy(
       completionTokens,
       actualCost: cost,
       reservation,
-      actor,
       logPrefix: 'LLM kortix billing',
     }).catch((err) => console.error(`[PROXY] LLM kortix billing error: ${err}`));
 
-    console.log(`[PROXY] LLM kortix ${modelId}: ${promptTokens}/${completionTokens} tokens, cost=$${cost.toFixed(6)} (${KORTIX_MARKUP}x)`);
   } else {
     console.warn(`[PROXY] LLM kortix ${service.name}: no usage data in response — billing skipped`);
     refundLlmReservation(reservation, `LLM reservation refund after missing usage: ${service.name}`).catch(
@@ -305,9 +292,8 @@ async function billLlmKortixProxy(
 async function extractUsageFromKortixProxyStream(
   stream: ReadableStream<Uint8Array>,
   service: ProxyServiceConfig,
-  subPath: string,
+  _subPath: string,
   accountId: string,
-  actor: ActorContext | null,
   reservation: LlmCreditReservation | null,
 ) {
   try {
@@ -373,10 +359,8 @@ async function extractUsageFromKortixProxyStream(
         completionTokens: anthropicOutputTokens,
         actualCost: cost,
         reservation,
-        actor,
         logPrefix: 'LLM kortix stream billing',
       });
-      console.log(`[PROXY] LLM kortix stream ${detectedModel}: ${anthropicInputTokens}/${anthropicOutputTokens} tokens, cost=$${cost.toFixed(6)} (${KORTIX_MARKUP}x)`);
       return;
     }
 
@@ -397,10 +381,8 @@ async function extractUsageFromKortixProxyStream(
         completionTokens,
         actualCost: cost,
         reservation,
-        actor,
         logPrefix: 'LLM kortix stream billing',
       });
-      console.log(`[PROXY] LLM kortix stream ${detectedModel}: ${promptTokens}/${completionTokens} tokens, cost=$${cost.toFixed(6)} (${KORTIX_MARKUP}x)`);
     } else {
       console.warn(`[PROXY] LLM kortix stream (${service.name}): zero tokens — billing skipped`);
       await refundLlmReservation(reservation, `LLM reservation refund after zero stream usage: ${service.name}`);
@@ -436,24 +418,19 @@ async function handleKortixPassthrough(
   let reservation: LlmCreditReservation | null = null;
   let toolReservation: ToolCreditReservation | null = null;
   if (isLlm) {
-    reservation = await reserveEstimatedLlmCredits(accountId, body, PLATFORM_FEE_MARKUP, null);
+    reservation = await reserveEstimatedLlmCredits(accountId, body, PLATFORM_FEE_MARKUP);
   } else {
     toolReservation = await reserveToolProxyCredits(
       accountId,
       billingToolName,
-      null,
       `Passthrough ${service.name}: ${method} ${subPath}`,
     );
   }
 
-  console.log(`[PROXY] ${service.name} (passthrough:${accountId}) ${method} ${subPath} → ${targetUrl} [bill:${billingToolName}@${PLATFORM_FEE_MARKUP}x]`);
-
-  const upstream = await fetch(targetUrl, {
+  const upstream = await proxyFetch(targetUrl, {
     method,
     headers,
     body,
-    // @ts-ignore
-    duplex: 'half',
   });
 
   if (isLlm && upstream.ok) {
@@ -501,14 +478,10 @@ async function handlePassthrough(
   let body = await getRequestBody(c, method);
   body = maybeNormalizeOpenAIResponsesInput(service, method, subPath, body, headers);
 
-  console.log(`[PROXY] ${service.name} (passthrough) ${method} ${subPath}`);
-
-  const upstream = await fetch(targetUrl, {
+  const upstream = await proxyFetch(targetUrl, {
     method,
     headers,
     body,
-    // @ts-ignore
-    duplex: 'half',
   });
 
   return new Response(upstream.body, {
@@ -593,11 +566,9 @@ async function billLlmPassthrough(
       completionTokens,
       actualCost: cost,
       reservation,
-      actor: null,
       logPrefix: 'LLM passthrough billing',
     }).catch((err) => console.error(`[PROXY] LLM passthrough billing error: ${err}`));
 
-    console.log(`[PROXY] LLM passthrough ${modelId}: ${promptTokens}/${completionTokens} tokens, cost=$${cost.toFixed(6)} (${PLATFORM_FEE_MARKUP}x)`);
   } else {
     console.warn(`[PROXY] LLM passthrough ${service.name}: no usage data — billing skipped`);
     refundLlmReservation(reservation, `LLM reservation refund after missing usage: ${service.name}`).catch(
@@ -622,7 +593,7 @@ async function billLlmPassthrough(
 async function extractUsageFromPassthroughStream(
   stream: ReadableStream<Uint8Array>,
   service: ProxyServiceConfig,
-  subPath: string,
+  _subPath: string,
   accountId: string,
   reservation: LlmCreditReservation | null,
 ) {
@@ -703,10 +674,8 @@ async function extractUsageFromPassthroughStream(
         completionTokens,
         actualCost: cost,
         reservation,
-        actor: null,
         logPrefix: 'LLM passthrough stream billing',
       });
-      console.log(`[PROXY] LLM passthrough stream ${detectedModel}: ${promptTokens}/${completionTokens} tokens, cost=$${cost.toFixed(6)} (${PLATFORM_FEE_MARKUP}x)`);
     } else {
       console.warn(`[PROXY] LLM passthrough stream (${service.name}): zero tokens — billing skipped`);
       await refundLlmReservation(reservation, `LLM reservation refund after zero stream usage: ${service.name}`);
@@ -945,7 +914,6 @@ async function reserveEstimatedLlmCredits(
   accountId: string,
   body: ArrayBuffer | string | undefined,
   markup: number,
-  actor: ActorContext | null,
 ): Promise<LlmCreditReservation | null> {
   if (!body) return null;
   let parsed: Record<string, unknown>;
@@ -989,31 +957,18 @@ async function reserveEstimatedLlmCredits(
     throw new HTTPException(402, { message: creditReservation.error || 'Insufficient credits' });
   }
 
-  const actorReservedCents = await reserveActorCost(actor, creditReservation.cost, () =>
-    grantCredits(
-      accountId,
-      creditReservation.cost,
-      'llm_reservation_refund',
-      `LLM reservation refund after member cap: ${modelId}`,
-      false,
-    ),
-  );
-
   return {
     accountId,
     modelId,
     promptTokens: estimatedInputTokens,
     completionTokens: maxOutputTokens,
     cost: creditReservation.cost,
-    actor,
-    actorReservedCents,
   };
 }
 
 async function reserveToolProxyCredits(
   accountId: string,
   billingToolName: string,
-  actor: ActorContext | null,
   description: string,
 ): Promise<ToolCreditReservation | null> {
   const expectedCost = getToolCost(billingToolName, 0);
@@ -1027,7 +982,6 @@ async function reserveToolProxyCredits(
       0,
       description,
       undefined,
-      { skipDevCheck: true },
     );
   } catch (error) {
     throw new HTTPException(402, { message: error instanceof Error ? error.message : 'Insufficient credits' });
@@ -1036,43 +990,11 @@ async function reserveToolProxyCredits(
     throw new HTTPException(402, { message: creditReservation.error || 'Insufficient credits' });
   }
 
-  const actorReservedCents = await reserveActorCost(actor, creditReservation.cost, () =>
-    grantCredits(
-      accountId,
-      creditReservation.cost,
-      'tool_reservation_refund',
-      `Tool reservation refund after member cap: ${billingToolName}`,
-      false,
-    ),
-  );
-
   return {
     accountId,
     billingToolName,
     cost: creditReservation.cost,
-    actor,
-    actorReservedCents,
   };
-}
-
-async function reserveActorCost(
-  actor: ActorContext | null,
-  cost: number,
-  refundCredits: () => Promise<unknown>,
-): Promise<number> {
-  const cents = dollarsToCents(cost);
-  if (!actor || cents <= 0) return 0;
-
-  const reserved = await reserveActorSpend(actor.sandboxId, actor.userId, cents);
-  if (reserved.success) return reserved.reservedCents;
-
-  await refundCredits().catch((err) => {
-    console.error('[PROXY] Credit refund after member cap failure failed:', err);
-  });
-  const cap = reserved.capCents === null ? 'configured' : `$${(reserved.capCents / 100).toFixed(2)} / cycle`;
-  throw new HTTPException(402, {
-    message: `Spending cap reached (${cap}). Ask the instance owner to raise or remove the cap.`,
-  });
 }
 
 async function settleLlmReservation(input: {
@@ -1082,12 +1004,9 @@ async function settleLlmReservation(input: {
   completionTokens: number;
   actualCost: number;
   reservation: LlmCreditReservation | null;
-  actor: ActorContext | null;
   logPrefix: string;
 }): Promise<void> {
   const reservedCost = input.reservation?.cost ?? 0;
-  const reservedActorCents = input.reservation?.actorReservedCents ?? 0;
-  const actor = input.reservation?.actor ?? input.actor;
 
   if (reservedCost <= 0) {
     const result = await deductLLMCredits(
@@ -1127,20 +1046,6 @@ async function settleLlmReservation(input: {
     }
   }
 
-  if (actor) {
-    const actualCents = dollarsToCents(input.actualCost);
-    const deltaCents = actualCents - reservedActorCents;
-    if (deltaCents > 0) {
-      const reserved = await reserveActorSpend(actor.sandboxId, actor.userId, deltaCents);
-      if (!reserved.success) {
-        console.error(`[PROXY] ${input.logPrefix} actor spend delta exceeded cap`);
-      }
-    } else if (deltaCents < 0) {
-      await refundActorSpend(actor.sandboxId, actor.userId, Math.abs(deltaCents)).catch(
-        (err) => console.error('[PROXY] Actor spend refund failed:', err),
-      );
-    }
-  }
 }
 
 async function refundLlmReservation(
@@ -1157,13 +1062,6 @@ async function refundLlmReservation(
       false,
     );
   }
-  if (reservation.actor && (reservation.actorReservedCents ?? 0) > 0) {
-    await refundActorSpend(
-      reservation.actor.sandboxId,
-      reservation.actor.userId,
-      reservation.actorReservedCents ?? 0,
-    );
-  }
 }
 
 async function refundToolReservation(
@@ -1178,13 +1076,6 @@ async function refundToolReservation(
       'tool_reservation_refund',
       description,
       false,
-    );
-  }
-  if (reservation.actor && (reservation.actorReservedCents ?? 0) > 0) {
-    await refundActorSpend(
-      reservation.actor.sandboxId,
-      reservation.actor.userId,
-      reservation.actorReservedCents ?? 0,
     );
   }
 }

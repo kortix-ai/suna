@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
 import {
     Dialog,
     DialogContent,
@@ -16,16 +15,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import {
     X,
-    Trash2,
-
-    ExternalLink,
-    Info,
-    Plug,
     Bell,
-    Mail,
-    Smartphone,
-    AppWindow,
-    Key,
     Camera,
     Upload,
     type LucideIcon,
@@ -40,12 +30,10 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
 import { isBillingEnabled } from '@/lib/config';
-import { backendApi } from '@/lib/api-client';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Switch } from '@/components/ui/switch';
 
 import { useIsMobile } from '@/hooks/utils';
-import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { useQueryClient } from '@tanstack/react-query';
 import { 
     useAccountDeletionStatus, 
@@ -69,24 +57,13 @@ import {
 } from '@/hooks/billing';
 import { billingApi } from '@/lib/api/billing';
 import { useBillingAccountId } from '@/stores/billing-account-context';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { InfoBanner } from '@/components/ui/info-banner';
-import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
     Zap,
     AlertTriangle,
-    Shield,
-    CheckCircle,
-    RotateCcw,
     Clock,
-    Infinity,
-    ShoppingCart,
-    Lightbulb,
-    CalendarClock,
-    ArrowRight,
-    Plus,
 } from 'lucide-react';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '../ui/alert-dialog';
 
@@ -94,9 +71,8 @@ import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHea
 import { formatCredits } from '@kortix/shared';
 import { LanguageSwitcher } from './language-switcher';
 import { useTranslations } from 'next-intl';
-// import { ReferralsTab } from '@/components/referrals/referrals-tab';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Keyboard, CheckCircle2, HelpCircle, ShieldCheck, Volume2, EyeOff, Globe, KeyRound } from 'lucide-react';
+import { CheckCircle2, HelpCircle, ShieldCheck, Volume2, EyeOff, KeyRound } from 'lucide-react';
 import CreditTransactions from '@/components/billing/credit-transactions';
 import { useWebNotificationStore } from '@/stores/web-notification-store';
 import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
@@ -106,13 +82,8 @@ import { AppearanceTab } from './appearance-tab';
 import { CliTokensTab } from './cli-tokens-tab';
 import {
     getPreferenceTabs,
-    getInstanceTabs,
-    getAccountTabs,
     type SettingsTabId,
 } from '@/lib/menu-registry';
-import { getCurrentInstanceIdFromPathname } from '@/lib/instance-routes';
-import { listSandboxes, type SandboxInfo } from '@/lib/platform-client';
-import { InstanceMembersPanel } from '@/components/instances/instance-members-panel';
 
 type TabId = SettingsTabId;
 
@@ -127,65 +98,32 @@ interface UserSettingsModalProps {
     open: boolean;
     onOpenChange: (open: boolean) => void; 
     defaultTab?: TabId;
-    returnUrl?: string;
 }
 
 export function UserSettingsModal({
     open,
     onOpenChange,
     defaultTab = 'general',
-    returnUrl = typeof window !== 'undefined' ? window?.location?.href || '/' : '/',
 }: UserSettingsModalProps) {
     const isMobile = useIsMobile();
     const [activeTab, setActiveTab] = useState<TabId>(defaultTab);
-    const pathname = usePathname();
-
-    // Scope Instance-level tabs to `/instances/:id/...` so
-    // the section vanishes on the `/instances` list or account-only pages.
-    const currentInstanceId = getCurrentInstanceIdFromPathname(pathname);
-    const instanceSandboxQuery = useQuery({
-        queryKey: ['platform', 'sandbox-by-id', currentInstanceId],
-        queryFn: async (): Promise<SandboxInfo | null> => {
-            if (!currentInstanceId) return null;
-            const all = await listSandboxes(currentInstanceId);
-            return all.find((s) => s.sandbox_id === currentInstanceId) ?? null;
-        },
-        enabled: open && !!currentInstanceId,
-        staleTime: 30_000,
-    });
-    const instanceSandbox = instanceSandboxQuery.data ?? null;
-    const hasInstance = !!instanceSandbox;
-
     // Tab definitions from the central menu registry (single source of truth).
-    // Account-level tabs (Billing, Transactions) now live in AccountSettingsModal —
-    // this modal is for user preferences and the currently-scoped instance.
+    // Account-level tabs (Billing, Transactions) now live in AccountSettingsModal.
     const preferenceTabs: Tab[] = React.useMemo(() => getPreferenceTabs(), []);
-    const instanceTabs: Tab[] = React.useMemo(
-        () => (hasInstance ? getInstanceTabs() : []),
-        [hasInstance],
-    );
     const accountTabs: Tab[] = React.useMemo(
         () => [{ id: 'tokens', label: 'CLI tokens', icon: KeyRound }],
         [],
     );
 
-    const instanceLoading =
-        open && !!currentInstanceId && !hasInstance && instanceSandboxQuery.isLoading;
-
     type TabGroup = { label: string; tabs: Tab[]; skeleton?: boolean };
     const tabGroups: TabGroup[] = [
         { label: 'Preferences', tabs: preferenceTabs },
         { label: 'Account', tabs: accountTabs },
-        ...(instanceTabs.length > 0
-            ? [{ label: instanceSandbox?.name || 'Instance', tabs: instanceTabs }]
-            : instanceLoading
-              ? [{ label: '', tabs: [], skeleton: true }]
-              : []),
     ];
 
     const allTabs = React.useMemo(
-        () => [...preferenceTabs, ...accountTabs, ...instanceTabs],
-        [preferenceTabs, accountTabs, instanceTabs],
+        () => [...preferenceTabs, ...accountTabs],
+        [preferenceTabs, accountTabs],
     );
     const activeContentTab: TabId = allTabs.some((tab) => tab.id === activeTab)
         ? activeTab
@@ -238,12 +176,6 @@ export function UserSettingsModal({
                         
                         <div className="px-3 py-2.5 border-b border-border flex-shrink-0 bg-background">
                             <div className="flex gap-1.5 overflow-x-auto pb-1 -mx-3 px-3 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                                {instanceLoading ? (
-                                    <>
-                                        <Skeleton className="h-9 w-24 rounded-full" />
-                                        <Skeleton className="h-9 w-24 rounded-full" />
-                                    </>
-                                ) : null}
                                 {allTabs.map((tab) => {
                                     const Icon = tab.icon;
                                     const isActive = activeContentTab === tab.id;
@@ -276,9 +208,6 @@ export function UserSettingsModal({
                                 {activeContentTab === 'notifications' && <NotificationsTab />}
                                 {activeContentTab === 'shortcuts' && <KeyboardShortcutsTab />}
                                 {activeContentTab === 'tokens' && <CliTokensTab />}
-                                {activeContentTab === 'instance-members' && instanceSandbox && (
-                                    <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
-                                )}
                             </div>
                         </div>
                     </div>
@@ -353,9 +282,6 @@ export function UserSettingsModal({
                             {activeContentTab === 'notifications' && <NotificationsTab />}
                             {activeContentTab === 'shortcuts' && <KeyboardShortcutsTab />}
                             {activeContentTab === 'tokens' && <CliTokensTab />}
-                            {activeContentTab === 'instance-members' && instanceSandbox && (
-                                <InstanceMembersPanel sandboxId={instanceSandbox.sandbox_id} />
-                            )}
                         </div>
                     </div>
                 )}
@@ -385,7 +311,6 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
     const [deletionType, setDeletionType] = useState<'grace-period' | 'immediate'>('grace-period');
     const fileInputRef = useRef<HTMLInputElement>(null);
     const supabase = createClient();
-    const queryClient = useQueryClient();
 
     const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
     const requestDeletion = useRequestAccountDeletion();
@@ -935,7 +860,6 @@ function SoundsTab() {
 
     const packs: { id: SoundPack; label: string; description: string }[] = [
         { id: 'off', label: 'Off', description: 'All sounds disabled' },
-        { id: 'opencode', label: 'Default', description: 'Default sound pack' },
         { id: 'kortix', label: 'Seshion Pack', description: 'Whistlin' },
     ];
 
@@ -1209,7 +1133,6 @@ const CREDIT_PACKAGES: { credits: number; price: number }[] = [
 ];
 
 export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActive: boolean }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
     const { session, isLoading: authLoading } = useAuth();
     const highlight = useUserSettingsModalStore((s) => s.highlight);
     const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
@@ -1218,7 +1141,6 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
     const [purchaseError, setPurchaseError] = useState<string | null>(null);
     const queryClient = useQueryClient();
 
-    const billingActive = isBillingEnabled();
     // Scope all reads + the credit-purchase mutation below to the account this
     // BillingTab was rendered for. On /accounts/[id] this is wrapped in a
     // BillingAccountProvider; everywhere else (admin tab, etc.) falls back to
@@ -1232,7 +1154,6 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
         data: accountState,
         isLoading: isLoadingSubscription,
         error: subscriptionError,
-        refetch: refetchSubscription
     } = useQuery<AccountState>({
         queryKey: accountStateKeys.state(billingAccountId),
         queryFn: () => billingApi.getAccountState(false, billingAccountId),
@@ -1252,51 +1173,8 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
         refetchIntervalInBackground: false,
     });
     
-    // Get commitment info from account state
-    const commitmentInfo = accountState?.subscription.commitment;
-
     const createPortalSessionMutation = useCreatePortalSession();
 
-
-    const planName = accountStateSelectors.planName(accountState);
-    
-    // Get scheduled change from account state
-    const hasScheduledChange = accountState?.subscription.has_scheduled_change && accountState?.subscription.scheduled_change;
-    const scheduledChange = accountState?.subscription.scheduled_change;
-    
-    const getFrontendTierName = (tierKey: string) => {
-        if (tierKey === 'free') return 'Free';
-        if (tierKey === 'pro') return 'Pro';
-        return tierKey || 'Free';
-    };
-
-    // Calculate hours until daily refresh
-    const getHoursUntilDailyRefresh = () => {
-        const dailyInfo = accountState?.credits.daily_refresh;
-        if (!dailyInfo?.enabled) return null;
-        
-        if (dailyInfo.seconds_until_refresh) {
-            const hours = Math.ceil(dailyInfo.seconds_until_refresh / 3600);
-            return hours > 0 ? hours : null;
-        }
-        
-        if (dailyInfo.next_refresh_at) {
-            const nextRefresh = new Date(dailyInfo.next_refresh_at);
-            const now = new Date();
-            const diffMs = nextRefresh.getTime() - now.getTime();
-            const hours = Math.ceil(diffMs / (1000 * 60 * 60));
-            return hours > 0 ? hours : null;
-        }
-        
-        return null;
-    };
-
-    const hoursUntilDailyRefresh = getHoursUntilDailyRefresh();
-    const dailyCreditsInfo = accountStateSelectors.dailyCreditsInfo(accountState);
-    
-    const dailyCredits = accountStateSelectors.dailyCredits(accountState);
-    const monthlyCredits = accountStateSelectors.monthlyCredits(accountState);
-    const nonExpiringCredits = accountStateSelectors.extraCredits(accountState);
     const totalCredits = accountStateSelectors.totalCredits(accountState);
 
     // Refetch billing info whenever the billing tab becomes active (only once per activation)
@@ -1304,7 +1182,6 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
     useEffect(() => {
         // Only refetch if tab just became active (not on every render)
         if (isActive && !prevIsActiveRef.current && session && !authLoading) {
-            console.log('🔄 Billing tab activated, refetching billing info...');
             // Use centralized invalidation which includes deduplication
             invalidateAccountState(queryClient, true);
         }
@@ -1313,55 +1190,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isActive, session, authLoading]);
 
-    const formatDate = (dateString: string) => {
-        return new Date(dateString).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-        });
-    };
-
-    const formatDateFromTimestamp = (timestamp: number) => {
-        return new Date(timestamp * 1000).toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-        });
-    };
-
-    const formatDateFlexible = (dateValue: string | number) => {
-        if (typeof dateValue === 'number') {
-            // If it's a number, treat it as Unix timestamp (seconds)
-            return formatDateFromTimestamp(dateValue);
-        }
-        // Otherwise treat it as ISO string
-        return formatDate(dateValue);
-    };
-
-    const formatEndDate = (dateString: string) => {
-        try {
-            return new Date(dateString).toLocaleDateString('en-US', {
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-            });
-        } catch {
-            return dateString;
-        }
-    };
-
-    const getEffectiveCancellationDate = () => {
-        if (accountState?.subscription.cancellation_effective_date) {
-            return formatDate(accountState.subscription.cancellation_effective_date);
-        }
-        if (accountState?.subscription.current_period_end) {
-            return formatDateFlexible(accountState.subscription.current_period_end);
-        }
-        return 'N/A';
-    };
-
     const handleManageSubscription = () => {
-        console.log('[BillingTab] Creating portal session with return_url:', returnUrl);
         createPortalSessionMutation.mutate({ return_url: returnUrl });
     };
 
@@ -1372,7 +1201,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
         try {
             const response = await billingApi.purchaseCredits({
                 amount: selectedPackage.price,
-                success_url: `${window.location.origin}/dashboard?credit_purchase=success`,
+                success_url: `${window.location.origin}/projects?credit_purchase=success`,
                 cancel_url: window.location.href,
             }, billingAccountId);
             if (response.checkout_url) {
@@ -1569,25 +1398,6 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
 
         </div>
     );
-}
-
-function CreditsHelpAlert() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  return (
-    <Alert>
-      <AlertDescription>
-        <div className="flex items-center">
-          <Info className="h-4 w-4" />
-          <Button
-            variant="link"
-            size="sm"
-            className="h-7 text-muted-foreground"
-            onClick={() => window.open('/help/credits', '_blank', 'noopener,noreferrer')}
-          >{tHardcodedUi.raw('componentsSettingsUserSettingsModal.line1711JsxTextLearnMoreAboutCredits')}</Button>
-        </div>
-      </AlertDescription>
-    </Alert>
-  );
 }
 
 export function TransactionsTab() {

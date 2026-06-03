@@ -7,7 +7,6 @@ import {
   createDeletionRequest,
   cancelDeletionRequest,
   markDeletionCompleted,
-  getScheduledDeletions,
 } from '../repositories/account-deletion';
 
 const GRACE_PERIOD_DAYS = 14;
@@ -76,30 +75,6 @@ export async function deleteAccountImmediately(accountId: string) {
   return { success: true, message: 'Account deleted' };
 }
 
-export async function processScheduledDeletions(): Promise<{
-  processed: number;
-  errors: string[];
-}> {
-  const requests = await getScheduledDeletions();
-  let processed = 0;
-  const errors: string[] = [];
-
-  for (const request of requests) {
-    try {
-      await performDeletion(request.accountId);
-      await markDeletionCompleted(request.id);
-      processed++;
-    } catch (err) {
-      const msg = `Error deleting account ${request.accountId}: ${(err as Error).message}`;
-      console.error(`[AccountDeletion] ${msg}`);
-      errors.push(msg);
-    }
-  }
-
-  console.log(`[AccountDeletion] Processed: ${processed}, Errors: ${errors.length}`);
-  return { processed, errors };
-}
-
 async function performDeletion(accountId: string) {
   const account = await getCreditAccount(accountId);
 
@@ -136,6 +111,4 @@ async function performDeletion(accountId: string) {
     stripeSubscriptionStatus: 'canceled',
     paymentStatus: 'deleted',
   } as any);
-
-  console.log(`[AccountDeletion] Account deleted: ${accountId}`);
 }

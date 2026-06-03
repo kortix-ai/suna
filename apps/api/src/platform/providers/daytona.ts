@@ -180,7 +180,6 @@ export class DaytonaProvider implements SandboxProvider {
   async ensureRunning(externalId: string): Promise<void> {
     const status = await this.getStatus(externalId);
     if (status === 'running') return;
-    console.log(`[DAYTONA] Sandbox ${externalId} is ${status}, waking up...`);
     await this.start(externalId);
   }
 }

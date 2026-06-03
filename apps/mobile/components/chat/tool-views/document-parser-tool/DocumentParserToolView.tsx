@@ -28,7 +28,7 @@ export function DocumentParserToolView({ toolCall, toolResult, isStreaming = fal
   const toolMetadata = getToolMetadata(name, toolCall.arguments);
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : true;
 
-  const { filePath, fileName, content, pageCount, success } = extractDocumentParserData({ toolCall, toolResult });
+  const { filePath, fileName, content, pageCount } = extractDocumentParserData({ toolCall, toolResult });
 
   const lines = content ? content.split('\n') : [];
   const preview = lines.slice(0, 50);

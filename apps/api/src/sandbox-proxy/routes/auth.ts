@@ -68,7 +68,7 @@ getAuthToken.post('/', async (c) => {
 });
 
 // Also support OPTIONS for CORS preflight
-getAuthToken.options('/', (c) => {
+getAuthToken.options('/', (_c) => {
   return new Response(null, { status: 204 });
 });
 

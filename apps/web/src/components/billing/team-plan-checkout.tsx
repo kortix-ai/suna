@@ -18,14 +18,14 @@ import type { AccountState } from '@/lib/api/billing';
 import { cn } from '@/lib/utils';
 import { AlertTriangle, ArrowRight, Check, Loader2 } from 'lucide-react';
 
-export interface TeamPlanCheckoutProps {
+interface TeamPlanCheckoutProps {
   accountState?: AccountState;
   /** Drop the outer border/radius so a parent container (e.g. a Dialog) owns the chrome. */
   embedded?: boolean;
   className?: string;
 }
 
-export function TeamPlanCheckout({
+function TeamPlanCheckout({
   accountState,
   embedded = false,
   className,

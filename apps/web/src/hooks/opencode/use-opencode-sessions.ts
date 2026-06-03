@@ -14,27 +14,14 @@ import type {
   Part,
   Agent,
   Command,
-  Project,
-  SessionStatus,
-  PermissionRule,
-  Model,
-  McpStatus,
-  Path as PathInfo,
   ProviderListResponse as SdkProviderListResponse,
-  Worktree,
-  WorktreeCreateInput,
-  WorktreeRemoveInput,
-  WorktreeResetInput,
 } from '@opencode-ai/sdk/v2/client';
 
 // ============================================================================
 // Re-export SDK types for consumers
 // ============================================================================
 
-export type { Session, Message, Part, Agent, Command, Project, SessionStatus, PermissionRule, Model, McpStatus, PathInfo, Worktree, WorktreeCreateInput, WorktreeRemoveInput, WorktreeResetInput };
-
-// Re-export filtered agents hook for UI agent selectors
-export { useVisibleAgents } from './use-visible-agents';
+export type { Session, Message, Part, Agent, Command };
 
 /**
  * Shape returned by `client.session.messages()`:
@@ -60,31 +47,6 @@ export type PromptPart =
   | { type: 'text'; text: string; id?: string }
   | { type: 'file'; mime: string; url: string; filename?: string; source?: { text: { value: string; start: number; end: number }; type: 'file'; path: string } }
   | { type: 'agent'; name: string; source?: { value: string; start: number; end: number } };
-
-export interface SendMessageOptions {
-  model?: { providerID: string; modelID: string };
-  agent?: string;
-  variant?: string;
-}
-
-/**
- * Skill type from `client.app.skills()`.
- */
-export interface Skill {
-  name: string;
-  description: string;
-  location: string;
-  content: string;
-}
-
-/**
- * Tool list item from `client.tool.list()`.
- */
-export interface ToolListItem {
-  id: string;
-  description: string;
-  parameters: unknown;
-}
 
 // ============================================================================
 // Query Keys
@@ -122,14 +84,12 @@ export const opencodeKeys = {
   messages: (sessionId: string) => ['opencode', 'session', sessionId, 'messages'] as const,
   agents: () => ['opencode', 'agents', activeServerKey()] as const,
   toolIds: () => ['opencode', 'tool-ids', activeServerKey()] as const,
-  tools: (providerID: string, modelID: string) => ['opencode', 'tools', providerID, modelID, activeServerKey()] as const,
   skills: () => ['opencode', 'skills', activeServerKey()] as const,
   projects: () => ['opencode', 'projects', activeServerKey()] as const,
   currentProject: () => ['opencode', 'project', 'current', activeServerKey()] as const,
   commands: () => ['opencode', 'commands', activeServerKey()] as const,
   providers: () => ['opencode', 'providers', activeServerKey()] as const,
   pathInfo: () => ['opencode', 'path-info', activeServerKey()] as const,
-  mcpStatus: () => ['opencode', 'mcp-status', activeServerKey()] as const,
   worktrees: () => ['opencode', 'worktrees', activeServerKey()] as const,
 };
 
@@ -311,64 +271,6 @@ export function useCreateOpenCodeSession() {
   });
 }
 
-export function useDeleteOpenCodeSession() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (sessionId: string) => {
-      const client = getClient();
-      const result = await client.session.delete({ sessionID: sessionId });
-      unwrap(result);
-      return sessionId;
-    },
-    onSuccess: (sessionId) => {
-      // Surgically remove from cache — SSE session.deleted will also fire
-      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
-        if (!old) return old;
-        return old.filter((s) => s.id !== sessionId);
-      });
-      queryClient.removeQueries({ queryKey: opencodeKeys.session(sessionId) });
-      queryClient.removeQueries({ queryKey: opencodeKeys.messages(sessionId) });
-    },
-  });
-}
-
-export function useUpdateOpenCodeSession() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      sessionId,
-      title,
-      archived,
-    }: {
-      sessionId: string;
-      title?: string;
-      archived?: boolean;
-    }) => {
-      const client = getClient();
-      const body: { title?: string; time?: { archived?: number } } = {};
-      if (title !== undefined) body.title = title;
-      if (archived !== undefined) body.time = { archived: archived ? Date.now() : 0 };
-      const result = await client.session.update({ sessionID: sessionId, ...body });
-      return unwrap(result);
-    },
-    onSuccess: (updatedSession) => {
-      // Surgically update cache — SSE session.updated will also fire
-      const session = updatedSession as Session;
-      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
-        if (!old) return old;
-        const idx = old.findIndex((s) => s.id === session.id);
-        if (idx < 0) return old;
-        const next = [...old];
-        next[idx] = session;
-        return next.sort((a, b) => b.time.updated - a.time.updated);
-      });
-      queryClient.setQueryData(opencodeKeys.session(session.id), session);
-    },
-  });
-}
-
 export function useOpenCodeSessionDiff(sessionId: string) {
   const runtimeReady = useOpenCodeRuntimeReady();
   return useQuery({
@@ -522,47 +424,6 @@ export function ascendingId(prefix: 'msg' | 'prt' = 'msg'): string {
   return `${prefix}_${hex}${rand}`;
 }
 
-export function useSendOpenCodeMessage() {
-  return useMutation({
-    mutationFn: async ({
-      sessionId,
-      parts,
-      options,
-      messageID,
-    }: {
-      sessionId: string;
-      parts: PromptPart[];
-      options?: SendMessageOptions;
-      messageID?: string;
-    }) => {
-      const mappedParts = parts.map((p) => {
-        if (p.type === 'file') return { type: 'file' as const, mime: p.mime, url: p.url, filename: p.filename, source: p.source };
-        if (p.type === 'agent') return { type: 'agent' as const, name: p.name, source: p.source };
-        return { type: 'text' as const, text: p.text };
-      });
-      const payload = {
-        sessionID: sessionId,
-        parts: mappedParts,
-        ...(messageID && { messageID }),
-        ...(options?.model && { model: options.model }),
-        ...(options?.agent && { agent: options.agent }),
-        ...(options?.variant && { variant: options.variant }),
-      };
-
-      // Match OpenCode exactly: use session.prompt() (blocking endpoint).
-      // The call blocks until the AI finishes, but we fire-and-forget from
-      // the UI side (handleSend doesn't await the mutation result).
-      // SSE events drive all incremental UI updates via the sync store.
-      const client = getClient();
-      const result = await client.session.prompt(payload as any);
-      if (result.error) {
-        const err = result.error as any;
-        throw new Error(err?.data?.message || err?.message || 'Failed to send message');
-      }
-    },
-  });
-}
-
 export function useAbortOpenCodeSession() {
   return useMutation({
     mutationFn: async (sessionId: string) => {
@@ -629,127 +490,6 @@ export function useOpenCodeAgents(options?: { directory?: string }) {
   });
 }
 
-export function useOpenCodeAgent(agentName: string) {
-  const runtimeReady = useOpenCodeRuntimeReady();
-  return useQuery<Agent | undefined>({
-    queryKey: [...opencodeKeys.agents(), agentName],
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.app.agents();
-      const agents = unwrap(result);
-      return agents.find((a: Agent) => a.name === agentName);
-    },
-    enabled: runtimeReady && !!agentName,
-    staleTime: Infinity,
-  });
-}
-
-// ============================================================================
-// Tool Hooks
-// ============================================================================
-
-export function useOpenCodeToolIds() {
-  const runtimeReady = useOpenCodeRuntimeReady();
-  return useQuery<string[]>({
-    queryKey: opencodeKeys.toolIds(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.tool.ids();
-      return unwrap(result);
-    },
-    enabled: runtimeReady,
-    staleTime: Infinity,
-    gcTime: 10 * 60 * 1000,
-  });
-}
-
-export function useOpenCodeTools(providerID: string, modelID: string) {
-  const runtimeReady = useOpenCodeRuntimeReady();
-  return useQuery<ToolListItem[]>({
-    queryKey: opencodeKeys.tools(providerID, modelID),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.tool.list({ provider: providerID, model: modelID });
-      return unwrap(result) as ToolListItem[];
-    },
-    enabled: runtimeReady && !!providerID && !!modelID,
-    staleTime: Infinity,
-    gcTime: 10 * 60 * 1000,
-  });
-}
-
-// ============================================================================
-// Skill Hooks
-// ============================================================================
-
-export function useOpenCodeSkills() {
-  const runtimeReady = useOpenCodeRuntimeReady();
-  return useQuery<Skill[]>({
-    queryKey: opencodeKeys.skills(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.app.skills();
-      return unwrap(result) as Skill[];
-    },
-    enabled: runtimeReady,
-    staleTime: Infinity,
-    gcTime: 10 * 60 * 1000,
-  });
-}
-
-// ============================================================================
-// Project Hooks
-// ============================================================================
-
-export function useOpenCodeProjects() {
-  const runtimeReady = useOpenCodeRuntimeReady();
-  return useQuery<Project[]>({
-    queryKey: opencodeKeys.projects(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.project.list();
-      return unwrap(result);
-    },
-    enabled: runtimeReady,
-    staleTime: Infinity,
-    gcTime: 5 * 60 * 1000,
-  });
-}
-
-export function useOpenCodeCurrentProject() {
-  const runtimeReady = useOpenCodeRuntimeReady();
-  return useQuery<Project>({
-    queryKey: opencodeKeys.currentProject(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.project.current();
-      return unwrap(result);
-    },
-    enabled: runtimeReady,
-    staleTime: Infinity,
-    gcTime: 5 * 60 * 1000,
-  });
-}
-
-// ============================================================================
-// Path Info Hook
-// ============================================================================
-
-export function useOpenCodePathInfo() {
-  const runtimeReady = useOpenCodeRuntimeReady();
-  return useQuery<PathInfo>({
-    queryKey: opencodeKeys.pathInfo(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.path.get();
-      return unwrap(result);
-    },
-    enabled: runtimeReady,
-    staleTime: Infinity,
-    gcTime: 10 * 60 * 1000,
-  });
-}
-
 // ============================================================================
 // Command Hooks
 // ============================================================================
@@ -772,41 +512,11 @@ export function useOpenCodeCommands() {
   });
 }
 
-export function useExecuteOpenCodeCommand() {
-  return useMutation({
-    mutationFn: async ({
-      sessionId,
-      command,
-      args,
-    }: {
-      sessionId: string;
-      command: string;
-      args?: string;
-    }) => {
-      const client = getClient();
-      const result = await client.session.command({
-        sessionID: sessionId,
-        command,
-        arguments: args || '',
-      });
-      unwrap(result);
-    },
-    // CRITICAL: Disable retry for commands. The /command endpoint blocks until
-    // the agent finishes, which can take minutes (e.g. onboarding). If a proxy
-    // timeout or network error kills the connection, TanStack Query's default
-    // global retry would re-POST the command, causing it to execute twice on
-    // the server. Commands are non-idempotent — each POST creates a new
-    // execution. Never retry them.
-    retry: false,
-  });
-}
-
 // ============================================================================
 // Summarize Hook
 // ============================================================================
 
 export function useSummarizeOpenCodeSession() {
-  const queryClient = useQueryClient();
   const startCompaction = useOpenCodeCompactionStore((s) => s.startCompaction);
   const stopCompaction = useOpenCodeCompactionStore((s) => s.stopCompaction);
   return useMutation({
@@ -949,43 +659,6 @@ export function useForkSession() {
     },
   });
 }
-
-
-
-// ============================================================================
-// Init Hook — analyze project and create AGENTS.md (via /init command)
-// ============================================================================
-
-export function useInitSession() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ sessionId }: { sessionId: string }) => {
-      const client = getClient();
-      const result = await client.session.command({
-        sessionID: sessionId,
-        command: 'init',
-        arguments: '',
-      });
-      if (result.error) {
-        const err = result.error as any;
-        throw new Error(err?.data?.message || err?.message || 'Failed to initialize project');
-      }
-      return sessionId;
-    },
-    onSuccess: (sessionId) => {
-      // SSE events handle session updates. Just refetch messages for this session
-      // since /init creates new messages.
-      queryClient.refetchQueries({ queryKey: opencodeKeys.messages(sessionId) });
-    },
-    // Suppress global error handler — caller handles errors via onError callback
-    onError: () => {},
-    // Same rationale as useExecuteOpenCodeCommand — /command blocks until done,
-    // retrying on timeout would duplicate execution.
-    retry: false,
-  });
-}
-
 // ============================================================================
 // Provider Hooks
 // ============================================================================
@@ -1009,342 +682,6 @@ export function useOpenCodeProviders() {
     staleTime: Infinity,
     gcTime: 10 * 60 * 1000,
   });
-}
-
-// ============================================================================
-// MCP Status Hook
-// ============================================================================
-
-export function useOpenCodeMcpStatus() {
-  const runtimeReady = useOpenCodeRuntimeReady();
-  return useQuery<Record<string, McpStatus>>({
-    queryKey: opencodeKeys.mcpStatus(),
-    queryFn: async () => {
-      const client = getClient();
-      const result = await client.mcp.status();
-      return unwrap(result) as Record<string, McpStatus>;
-    },
-    enabled: runtimeReady,
-    staleTime: Infinity,
-    gcTime: 5 * 60 * 1000,
-  });
-}
-
-// ============================================================================
-// Share / Unshare Hooks
-// ============================================================================
-
-export function useShareSession() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (sessionId: string) => {
-      const client = getClient();
-      const result = await client.session.share({ sessionID: sessionId });
-      return unwrap(result) as Session;
-    },
-    onSuccess: (updatedSession) => {
-      // Surgically update cache with share info
-      queryClient.setQueryData(opencodeKeys.session(updatedSession.id), updatedSession);
-      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
-        if (!old) return old;
-        const idx = old.findIndex((s) => s.id === updatedSession.id);
-        if (idx < 0) return old;
-        const next = [...old];
-        next[idx] = updatedSession;
-        return next;
-      });
-    },
-  });
-}
-
-export function useUnshareSession() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (sessionId: string) => {
-      const client = getClient();
-      const result = await client.session.unshare({ sessionID: sessionId });
-      return unwrap(result) as Session;
-    },
-    onSuccess: (updatedSession) => {
-      // Surgically update cache with unshare info
-      queryClient.setQueryData(opencodeKeys.session(updatedSession.id), updatedSession);
-      queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
-        if (!old) return old;
-        const idx = old.findIndex((s) => s.id === updatedSession.id);
-        if (idx < 0) return old;
-        const next = [...old];
-        next[idx] = updatedSession;
-        return next;
-      });
-    },
-  });
-}
-
-// ============================================================================
-// Part Edit / Delete Hooks
-// ============================================================================
-
-/**
- * Update a message part (e.g. edit text content).
- * Uses `client.part.update()` — available in SDK v2.
- * SSE `message.part.updated` events handle cache updates automatically.
- */
-export function useUpdatePart() {
-  return useMutation({
-    mutationFn: async ({
-      sessionId,
-      messageId,
-      partId,
-      part,
-    }: {
-      sessionId: string;
-      messageId: string;
-      partId: string;
-      part: Partial<Part>;
-    }) => {
-      const client = getClient();
-      const result = await client.part.update({
-        sessionID: sessionId,
-        messageID: messageId,
-        partID: partId,
-        part: part as Part,
-      });
-      return unwrap(result) as Part;
-    },
-    // SSE message.part.updated handles cache updates via sync store.
-    // No onSuccess needed — eliminates unnecessary message refetch.
-  });
-}
-
-/**
- * Delete a message part.
- * Uses `client.part.delete()` — available in SDK v2.
- * SSE `message.part.removed` events handle cache updates automatically.
- */
-export function useDeletePart() {
-  return useMutation({
-    mutationFn: async ({
-      sessionId,
-      messageId,
-      partId,
-    }: {
-      sessionId: string;
-      messageId: string;
-      partId: string;
-    }) => {
-      const client = getClient();
-      const result = await client.part.delete({
-        sessionID: sessionId,
-        messageID: messageId,
-        partID: partId,
-      });
-      return unwrap(result);
-    },
-    // SSE message.part.removed handles cache updates via sync store.
-    // No onSuccess needed — eliminates unnecessary message refetch.
-  });
-}
-
-// ============================================================================
-// File Search (direct SDK call, not a hook)
-// ============================================================================
-
-let mentionFileIndexCache:
-  | {
-      files: string[];
-      fetchedAt: number;
-    }
-  | undefined;
-
-let mentionDirScanCache:
-  | {
-      files: string[];
-      fetchedAt: number;
-    }
-  | undefined;
-
-export async function findOpenCodeFiles(query: string): Promise<string[]> {
-  const client = getClient();
-  const normalizedQuery = query.trim();
-  const ql = normalizedQuery.toLowerCase();
-
-  const rankFile = (path: string): number => {
-    const lower = path.toLowerCase();
-    const base = lower.split('/').pop() ?? lower;
-    const depth = path.split('/').length - 1;
-    if (ql.length === 0) return depth;
-    if (base === ql) return 0 + depth * 0.01;
-    if (base.startsWith(ql)) return 10 + depth * 0.01;
-    if (base.includes(ql)) return 20 + depth * 0.01;
-    if (lower.startsWith(ql)) return 30 + depth * 0.01;
-    if (lower.includes(ql)) return 40 + depth * 0.01;
-    return 1000 + depth;
-  };
-
-  const fileMatchesQuery = (path: string): boolean => {
-    if (ql.length === 0) return true;
-    const lower = path.toLowerCase();
-    if (lower.includes(ql)) return true;
-    const base = lower.split('/').pop() ?? lower;
-    return base.includes(ql);
-  };
-
-  const readEntries = async (request: Promise<{ data?: unknown; error?: unknown }>): Promise<string[]> => {
-    try {
-      const result = await request;
-      const entries = unwrap(result);
-      if (!Array.isArray(entries)) return [];
-      const normalized: string[] = [];
-      for (const entry of entries) {
-        if (typeof entry === 'string' && entry.length > 0) {
-          normalized.push(entry);
-          continue;
-        }
-
-        if (entry && typeof entry === 'object') {
-          const maybePath = (entry as { path?: unknown }).path;
-          const maybeType = (entry as { type?: unknown }).type;
-          if (typeof maybePath === 'string' && maybePath.length > 0) {
-            if (maybeType === 'directory' && !maybePath.endsWith('/')) {
-              normalized.push(`${maybePath}/`);
-            } else {
-              normalized.push(maybePath);
-            }
-          }
-        }
-      }
-      return normalized;
-    } catch {
-      return [];
-    }
-  };
-
-  const [strictFiles, broadResults] = await Promise.all([
-    readEntries(client.find.files({ query: normalizedQuery, type: 'file', limit: 80 })),
-    readEntries(client.find.files({ query: normalizedQuery, limit: 80 })),
-  ]);
-
-  const fileMatches = new Set<string>();
-  const directoryMatches: string[] = [];
-
-  for (const entry of [...strictFiles, ...broadResults]) {
-    if (entry.endsWith('/')) {
-      directoryMatches.push(entry);
-      continue;
-    }
-    fileMatches.add(entry);
-  }
-
-  if (fileMatches.size < 20 && normalizedQuery.length > 0 && directoryMatches.length > 0) {
-    const expandedDirs = directoryMatches.slice(0, 6);
-    const dirChildren = await Promise.all(
-      expandedDirs.map(async (dir) => {
-        const path = dir.endsWith('/') ? dir.slice(0, -1) : dir;
-        const children = await readEntries(client.file.list({ path }));
-        return children
-          .filter((child) => !child.endsWith('/'))
-          .filter((child) => fileMatchesQuery(child));
-      }),
-    );
-
-    for (const group of dirChildren) {
-      for (const child of group) {
-        fileMatches.add(child);
-      }
-    }
-  }
-
-  // Explicit root scan fallback for @mentions.
-  // Some backends under-return root-level files via find.files(query).
-  if (normalizedQuery.length > 0 && fileMatches.size < 20) {
-    const [rootWorkspace, rootEmpty] = await Promise.all([
-      readEntries(client.file.list({ path: '/workspace' } as any)),
-      readEntries(client.file.list({ path: '' } as any)),
-    ]);
-    for (const entry of [...rootWorkspace, ...rootEmpty]) {
-      if (entry.endsWith('/')) continue;
-      if (fileMatchesQuery(entry)) fileMatches.add(entry);
-    }
-  }
-
-  // Directory scan fallback for @mentions.
-  // Builds a lightweight index from root + first-level directories (e.g.
-  // /workspace/Desktop, /workspace/test) to catch substring matches that
-  // find.files(query) may miss.
-  if (normalizedQuery.length > 0 && fileMatches.size < 20) {
-    const now = Date.now();
-    const cacheFresh = mentionDirScanCache && now - mentionDirScanCache.fetchedAt < 60_000;
-
-    if (!cacheFresh) {
-      const roots = await Promise.all([
-        readEntries(client.file.list({ path: '/workspace' } as any)),
-        readEntries(client.file.list({ path: '' } as any)),
-      ]);
-      const rootEntries = Array.from(new Set([...roots[0], ...roots[1]]));
-
-      const fileSet = new Set<string>();
-      const firstLevelDirs = rootEntries
-        .filter((entry) => entry.endsWith('/'))
-        .map((entry) => (entry.endsWith('/') ? entry.slice(0, -1) : entry))
-        .slice(0, 80);
-
-      for (const entry of rootEntries) {
-        if (!entry.endsWith('/')) fileSet.add(entry);
-      }
-
-      const childLists = await Promise.all(
-        firstLevelDirs.map((dir) => readEntries(client.file.list({ path: dir } as any))),
-      );
-
-      for (const children of childLists) {
-        for (const child of children) {
-          if (!child.endsWith('/')) fileSet.add(child);
-        }
-      }
-
-      mentionDirScanCache = {
-        files: Array.from(fileSet),
-        fetchedAt: now,
-      };
-    }
-
-    for (const path of mentionDirScanCache?.files ?? []) {
-      if (fileMatchesQuery(path)) fileMatches.add(path);
-    }
-  }
-
-  // Fallback index for @mentions: some backends return sparse results for
-  // incremental filename fragments. Build/cached a broad file index and filter
-  // client-side to keep mention search responsive and tolerant.
-  if (normalizedQuery.length > 0 && fileMatches.size < 10) {
-    const now = Date.now();
-    const cacheFresh =
-      mentionFileIndexCache && now - mentionFileIndexCache.fetchedAt < 60_000;
-    if (!cacheFresh) {
-      const [indexStrict, indexBroad] = await Promise.all([
-        readEntries(client.find.files({ query: '', type: 'file', limit: 2000 })),
-        readEntries(client.find.files({ query: '', limit: 2000 })),
-      ]);
-      const indexSet = new Set<string>();
-      for (const entry of [...indexStrict, ...indexBroad]) {
-        if (!entry.endsWith('/')) indexSet.add(entry);
-      }
-      mentionFileIndexCache = {
-        files: Array.from(indexSet),
-        fetchedAt: now,
-      };
-    }
-
-    for (const path of mentionFileIndexCache?.files ?? []) {
-      if (fileMatchesQuery(path)) fileMatches.add(path);
-    }
-  }
-
-  return Array.from(fileMatches)
-    .sort((a, b) => rankFile(a) - rankFile(b) || a.localeCompare(b))
-    .slice(0, 20);
 }
 
 // ============================================================================

@@ -34,7 +34,6 @@ export function AgentToolView({ toolCall, toolResult, isStreaming = false, assis
   const isCreate = toolName.includes('create');
   const isUpdate = toolName.includes('update');
   const isTrigger = toolName.includes('trigger');
-  const isList = toolName.includes('list');
 
   if (isStreaming) {
     return (

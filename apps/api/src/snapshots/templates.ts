@@ -11,7 +11,7 @@
  * adapter (currently just Daytona) is resolved via `getSandboxProvider`.
  */
 
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
@@ -29,7 +29,7 @@ import {
 } from './dockerfile-layer';
 import { computeSnapshotHash } from './hash';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
-import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
+import { getSandboxProvider } from './providers';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -123,7 +123,7 @@ const templateListCache = new Map<string, { at: number; value: ResolvedTemplate[
 
 /** Invalidate the in-memory template list cache for a project. Called from
  *  the CRUD endpoints after a create / update / delete. */
-export function invalidateTemplateCache(projectId: string): void {
+function invalidateTemplateCache(projectId: string): void {
   templateListCache.delete(projectId);
 }
 
@@ -208,32 +208,13 @@ export async function resolveTemplateBySlug(
  * needs no project, no manifest, and no git fetch. Used by the session-boot
  * fast path and the startup pre-build that mints the global default image.
  */
-export async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
+async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
   const [shared] = await db
     .select()
     .from(sandboxTemplates)
     .where(and(eq(sandboxTemplates.slug, DEFAULT_SANDBOX_SLUG), eq(sandboxTemplates.isShared, true)))
     .limit(1);
   return shared ? rowToResolved(shared) : synthesizedDefault();
-}
-
-/**
- * Fetch a single template row by (project, slug) — DB-only, no synthesis.
- * Used by CRUD operations that must operate on a concrete row.
- */
-export async function getTemplateRow(
-  projectId: string | null,
-  slug: string,
-): Promise<DbSandboxTemplate | null> {
-  const conds = [eq(sandboxTemplates.slug, slug)];
-  if (projectId === null) conds.push(isNull(sandboxTemplates.projectId));
-  else conds.push(eq(sandboxTemplates.projectId, projectId));
-  const [row] = await db
-    .select()
-    .from(sandboxTemplates)
-    .where(and(...conds))
-    .limit(1);
-  return row ?? null;
 }
 
 export async function getTemplateById(templateId: string): Promise<DbSandboxTemplate | null> {
@@ -245,7 +226,7 @@ export async function getTemplateById(templateId: string): Promise<DbSandboxTemp
   return row ?? null;
 }
 
-export interface CreateTemplateInput {
+interface CreateTemplateInput {
   projectId: string;
   accountId: string;
   slug: string;
@@ -285,7 +266,7 @@ export async function createTemplate(input: CreateTemplateInput): Promise<DbSand
   return row;
 }
 
-export interface UpdateTemplateInput {
+interface UpdateTemplateInput {
   name?: string;
   image?: string | null;
   dockerfilePath?: string | null;
@@ -404,7 +385,7 @@ export async function computeTemplateIdentity(
   };
 }
 
-export async function resolveUserDockerfile(
+async function resolveUserDockerfile(
   project: GitBackedProject,
   template: ResolvedTemplate,
 ): Promise<{ dockerfile: string; commit: string | null }> {

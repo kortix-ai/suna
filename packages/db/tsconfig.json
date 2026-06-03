@@ -3,8 +3,8 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
-    "types": ["bun-types"]
+    "types": ["@types/bun"]
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "drizzle", "src/schema/legacy"]
+  "exclude": ["node_modules", "dist", "drizzle"]
 }

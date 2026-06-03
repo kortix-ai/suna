@@ -11,6 +11,7 @@ import { mock } from 'bun:test';
 export const mockRegistry = {
   supabaseRpc: null as ReturnType<typeof createMockSupabaseRpc> | null,
   stripeClient: null as any,
+  processedStripeWebhookEventIds: new Set<string>(),
 
   getCreditAccount: null as ((id: string) => Promise<any>) | null,
   getCreditBalance: null as ((id: string) => Promise<any>) | null,
@@ -25,23 +26,26 @@ export const mockRegistry = {
   getCustomerByAccountId: null as ((id: string) => Promise<any>) | null,
   getCustomerByStripeId: null as ((id: string) => Promise<any>) | null,
   upsertCustomer: null as ((data: any) => Promise<void>) | null,
+  deleteCustomerByStripeId: null as ((id: string) => Promise<void>) | null,
 
   grantCredits: null as ((...args: any[]) => Promise<void>) | null,
   resetExpiringCredits: null as ((...args: any[]) => Promise<void>) | null,
 
-  provisionSandboxFromCheckout: null as ((...args: any[]) => Promise<any>) | null,
   resolveAccountId: null as ((userId: string) => Promise<string>) | null,
 
   getActiveDeletionRequest: null as ((id: string) => Promise<any>) | null,
   createDeletionRequest: null as ((...args: any[]) => Promise<any>) | null,
   cancelDeletionRequest: null as ((id: string) => Promise<void>) | null,
   markDeletionCompleted: null as ((id: string) => Promise<void>) | null,
-  getScheduledDeletions: null as (() => Promise<any[]>) | null,
 };
 
 export function resetMockRegistry() {
   for (const key of Object.keys(mockRegistry) as (keyof typeof mockRegistry)[]) {
-    (mockRegistry as any)[key] = null;
+    if (key === 'processedStripeWebhookEventIds') {
+      mockRegistry.processedStripeWebhookEventIds.clear();
+    } else {
+      (mockRegistry as any)[key] = null;
+    }
   }
 }
 
@@ -63,6 +67,30 @@ export function registerGlobalMocks() {
 
   mock.module('../../shared/stripe', () => ({
     getStripe: () => mockRegistry.stripeClient ?? createMockStripeClient(),
+  }));
+
+  mock.module('../../shared/db', () => ({
+    hasDatabase: true,
+    db: {
+      insert: () => ({
+        values: (values: { eventId?: string; eventType?: string }) => ({
+          onConflictDoNothing: () => ({
+            returning: async () => {
+              const eventId = values.eventId;
+              if (!eventId) return [];
+              if (mockRegistry.processedStripeWebhookEventIds.has(eventId)) return [];
+              mockRegistry.processedStripeWebhookEventIds.add(eventId);
+              return [{ eventId }];
+            },
+          }),
+        }),
+      }),
+    },
+  }));
+
+  mock.module('../../shared/platform-roles', () => ({
+    getPlatformRole: async () => 'user',
+    isPlatformAdmin: async () => false,
   }));
 
   mock.module('../../config', () => ({
@@ -90,7 +118,6 @@ export function registerGlobalMocks() {
       mockRegistry.updateCreditAccount ? mockRegistry.updateCreditAccount(id, data) : undefined,
     upsertCreditAccount: async (id: string, data: any) =>
       mockRegistry.upsertCreditAccount ? mockRegistry.upsertCreditAccount(id, data) : undefined,
-    updateBalance: async () => {},
     getSubscriptionInfo: async () => null,
     getYearlyAccountsDueForRotation: async () =>
       mockRegistry.getYearlyAccountsDueForRotation ? mockRegistry.getYearlyAccountsDueForRotation() : [],
@@ -118,18 +145,14 @@ export function registerGlobalMocks() {
     },
     upsertCustomer: async (data: any) =>
       mockRegistry.upsertCustomer ? mockRegistry.upsertCustomer(data) : undefined,
+    deleteCustomerByStripeId: async (id: string) =>
+      mockRegistry.deleteCustomerByStripeId ? mockRegistry.deleteCustomerByStripeId(id) : undefined,
   }));
 
   // NOTE: The credits service mock is NOT registered here.
   // credits.test.ts needs the REAL credits module (with mocked deps).
   // Other billing test files that need to stub grantCredits/resetExpiringCredits
   // should call registerCreditsMock() separately.
-
-
-  mock.module('../../platform/services/sandbox-provisioner', () => ({
-    provisionSandboxFromCheckout: async (...args: any[]) =>
-      mockRegistry.provisionSandboxFromCheckout ? mockRegistry.provisionSandboxFromCheckout(...args) : undefined,
-  }));
 
   mock.module('../../billing/repositories/account-deletion', () => ({
     getActiveDeletionRequest: async (id: string) =>
@@ -140,8 +163,6 @@ export function registerGlobalMocks() {
       mockRegistry.cancelDeletionRequest ? mockRegistry.cancelDeletionRequest(id) : undefined,
     markDeletionCompleted: async (id: string) =>
       mockRegistry.markDeletionCompleted ? mockRegistry.markDeletionCompleted(id) : undefined,
-    getScheduledDeletions: async () =>
-      mockRegistry.getScheduledDeletions ? mockRegistry.getScheduledDeletions() : [],
   }));
 }
 
@@ -156,7 +177,6 @@ export function registerCreditsMock() {
 
   mock.module('../../billing/services/credits', () => ({
     calculateTokenCost: () => 0,
-    getBalance: async () => ({ balance: 0, expiring: 0, nonExpiring: 0, daily: 0 }),
     getCreditSummary: async () => ({ total: 0, daily: 0, monthly: 0, extra: 0, canRun: true }),
     deductCredits: async () => ({ success: true, cost: 0, newBalance: 0, transactionId: 'tx_mock' }),
     refreshDailyCredits: async () => null,
@@ -294,7 +314,7 @@ export function createMockStripeEvent(type: string, object: any, overrides: Reco
 
 export function createMockSupabaseRpc(results: Record<string, { data?: any; error?: any }> = {}) {
   return {
-    rpc: (name: string, params?: any) => {
+    rpc: (name: string, _params?: any) => {
       const result = results[name];
       if (result) {
         return Promise.resolve(result);
@@ -309,18 +329,18 @@ export function createMockStripeClient(overrides: Record<string, any> = {}) {
 
   return {
     webhooks: {
-      constructEvent: overrides.constructEvent ?? ((body: string, sig: string, secret: string) => {
+      constructEvent: overrides.constructEvent ?? ((body: string, _sig: string, _secret: string) => {
         return JSON.parse(body);
       }),
     },
     subscriptions: {
-      retrieve: overrides.subscriptionsRetrieve ?? (async (id: string) => defaultSubscription),
-      update: overrides.subscriptionsUpdate ?? (async (id: string, params: any) => ({
+      retrieve: overrides.subscriptionsRetrieve ?? (async (_id: string) => defaultSubscription),
+      update: overrides.subscriptionsUpdate ?? (async (_id: string, params: any) => ({
         ...defaultSubscription,
         ...params,
       })),
-      create: overrides.subscriptionsCreate ?? (async (params: any) => defaultSubscription),
-      cancel: overrides.subscriptionsCancel ?? (async (id: string) => ({})),
+      create: overrides.subscriptionsCreate ?? (async (_params: any) => defaultSubscription),
+      cancel: overrides.subscriptionsCancel ?? (async (_id: string) => ({})),
     },
     customers: {
       create: overrides.customersCreate ?? (async (params: any) => ({
@@ -351,12 +371,12 @@ export function createMockStripeClient(overrides: Record<string, any> = {}) {
           url: 'https://checkout.stripe.com/test',
           ...params,
         })),
-        retrieve: overrides.checkoutSessionsRetrieve ?? (async (id: string) => createMockStripeCheckoutSession()),
+        retrieve: overrides.checkoutSessionsRetrieve ?? (async (_id: string) => createMockStripeCheckoutSession()),
       },
     },
     billingPortal: {
       sessions: {
-        create: overrides.portalSessionsCreate ?? (async (params: any) => ({
+        create: overrides.portalSessionsCreate ?? (async (_params: any) => ({
           url: 'https://billing.stripe.com/test',
         })),
       },

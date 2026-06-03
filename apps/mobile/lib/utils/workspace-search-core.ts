@@ -30,7 +30,7 @@ export function normalizeSearchQuery(query: string): string {
   return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
 }
 
-export function stripWorkspacePrefix(path: string): string {
+function stripWorkspacePrefix(path: string): string {
   const normalized = normalizeSearchQuery(path);
   return normalized
     .replace(/^\/workspace\/?/i, '')
@@ -38,7 +38,7 @@ export function stripWorkspacePrefix(path: string): string {
     .replace(/^\/+/, '');
 }
 
-export function normalizeWorkspacePath(path: string): string {
+function normalizeWorkspacePath(path: string): string {
   const normalized = normalizeSearchQuery(path);
   if (!normalized || normalized === '.' || normalized === './') return '/workspace';
   if (normalized === 'workspace') return '/workspace';
@@ -49,7 +49,7 @@ export function normalizeWorkspacePath(path: string): string {
   return `/workspace/${normalized.replace(/^\/+/, '')}`;
 }
 
-export function getWorkspaceEntryName(path: string): string {
+function getWorkspaceEntryName(path: string): string {
   const normalized = normalizeWorkspacePath(path);
   return normalized.split('/').filter(Boolean).pop() || normalized;
 }
@@ -151,7 +151,7 @@ function getEntryVariants(entry: WorkspaceSearchEntry) {
   return { absolute, relative, basename, depth };
 }
 
-export function workspaceEntryMatchesQuery(
+function workspaceEntryMatchesQuery(
   entry: WorkspaceSearchEntry,
   query: string,
 ): boolean {

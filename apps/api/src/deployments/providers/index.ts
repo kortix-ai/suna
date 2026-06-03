@@ -4,7 +4,7 @@
  * Public entry point is `getProvider(name)`. New providers register
  * themselves by adding a single line to the `PROVIDERS` map below.
  */
-import { ValidationError } from '../../errors';
+import { HTTPException } from 'hono/http-exception';
 import { freestyleProvider } from './freestyle';
 import type { DeploymentProvider } from './types';
 
@@ -18,15 +18,9 @@ export function getProvider(name: string | null | undefined): DeploymentProvider
   const key = (name || DEFAULT_PROVIDER_NAME).trim().toLowerCase();
   const provider = PROVIDERS[key];
   if (!provider) {
-    throw new ValidationError(
-      `Unknown deployment provider "${name}". Known: ${Object.keys(PROVIDERS).join(', ')}`,
-    );
+    throw new HTTPException(400, {
+      message: `Unknown deployment provider "${name}". Known: ${Object.keys(PROVIDERS).join(', ')}`,
+    });
   }
   return provider;
 }
-
-export function listProviderNames(): string[] {
-  return Object.keys(PROVIDERS);
-}
-
-export type { DeploymentProvider, DeploymentRequest, DeploymentResult, AppSource, AppBuild } from './types';

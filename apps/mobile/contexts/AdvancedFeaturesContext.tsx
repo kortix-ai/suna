@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from '@/lib/logger';
 
@@ -81,21 +81,4 @@ export function AdvancedFeaturesProvider({ children }: AdvancedFeaturesProviderP
       {children}
     </AdvancedFeaturesContext.Provider>
   );
-}
-
-/**
- * useAdvancedFeatures Hook
- * 
- * Custom hook to access the Advanced Features context.
- * Must be used within an AdvancedFeaturesProvider.
- * 
- * @example
- * const { isEnabled, isLoading, toggle, setEnabled } = useAdvancedFeatures();
- */
-export function useAdvancedFeatures(): AdvancedFeaturesContextType {
-  const context = useContext(AdvancedFeaturesContext);
-  if (context === undefined) {
-    throw new Error('useAdvancedFeatures must be used within an AdvancedFeaturesProvider');
-  }
-  return context;
 }

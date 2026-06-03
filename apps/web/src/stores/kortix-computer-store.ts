@@ -7,9 +7,6 @@ import { useFilePreviewStore } from '@/stores/file-preview-store';
 export type ViewType = 'tools' | 'files' | 'browser' | 'desktop' | 'terminal' | 'changes';
 
 interface KortixComputerState {
-  // === SANDBOX CONTEXT ===
-  currentSandboxId: string | null;
-  
   // Main view state
   activeView: ViewType;
   
@@ -30,7 +27,6 @@ interface KortixComputerState {
 
   // === ACTIONS ===
   
-  setSandboxContext: (sandboxId: string | null) => void;
   setActiveView: (view: ViewType) => void;
   
   // For external triggers (clicking file in chat) — delegates to useFilesStore + opens panel
@@ -65,7 +61,6 @@ interface KortixComputerState {
 }
 
 const initialState = {
-  currentSandboxId: null as string | null,
   activeView: 'tools' as ViewType,
   shouldOpenPanel: false,
   isSidePanelOpen: false,
@@ -80,21 +75,7 @@ export const useKortixComputerStore = create<KortixComputerState>()(
   devtools(
     (set, get) => ({
       ...initialState,
-      
-      setSandboxContext: (sandboxId: string | null) => {
-        const currentSandboxId = get().currentSandboxId;
-        
-        if (currentSandboxId !== sandboxId) {
-          console.log('[KortixComputerStore] Sandbox context changed:', currentSandboxId, '->', sandboxId);
-          // Reset files store when sandbox changes
-          useFilesStore.getState().reset();
-          set({
-            currentSandboxId: sandboxId,
-            activeView: 'tools',
-          });
-        }
-      },
-      
+
       setActiveView: (view: ViewType) => {
         // If browser tab is hidden and trying to set browser view, default to tools
         const effectiveView = HIDE_BROWSER_TAB && view === 'browser' ? 'tools' : view;
@@ -210,7 +191,6 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       },
       
       reset: () => {
-        console.log('[KortixComputerStore] Full reset');
         useFilesStore.getState().reset();
         set(initialState);
       },
@@ -223,40 +203,9 @@ export const useKortixComputerStore = create<KortixComputerState>()(
 
 // === SELECTOR HOOKS ===
 
-// Sandbox context
-export const useKortixComputerSandboxId = () =>
-  useKortixComputerStore((state) => state.currentSandboxId);
-
-export const useSetSandboxContext = () =>
-  useKortixComputerStore((state) => state.setSandboxContext);
-
-// Main view state
-export const useKortixComputerActiveView = () => 
-  useKortixComputerStore((state) => state.activeView);
-
-// Individual selectors for pending tool navigation (stable primitives)
-export const useKortixComputerPendingToolNavIndex = () =>
-  useKortixComputerStore((state) => state.pendingToolNavIndex);
-
-export const useKortixComputerClearPendingToolNav = () =>
-  useKortixComputerStore((state) => state.clearPendingToolNav);
-
 // Side-panel Actions focus (clicking a tool call in chat)
 export const useFocusedToolCallId = () =>
   useKortixComputerStore((state) => state.focusedToolCallId);
 
 export const useClearFocusedToolCall = () =>
   useKortixComputerStore((state) => state.clearFocusedToolCall);
-
-// Side panel state selectors
-export const useIsSidePanelOpen = () =>
-  useKortixComputerStore((state) => state.isSidePanelOpen);
-
-export const useSetIsSidePanelOpen = () =>
-  useKortixComputerStore((state) => state.setIsSidePanelOpen);
-
-export const useIsExpanded = () =>
-  useKortixComputerStore((state) => state.isExpanded);
-
-export const useToggleExpanded = () =>
-  useKortixComputerStore((state) => state.toggleExpanded);

@@ -43,7 +43,6 @@ const AGENT_BROWSER_VERSION = '0.27.0';
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 const BUILD_ATTEMPTS = 3;
 const BUILD_RETRY_BASE_MS = 2_000;
-const SNAPSHOT_LOG_TAIL_LIMIT = 20;
 const POST_FAILURE_SETTLE_TIMEOUT_MS = 5 * 60 * 1000;
 const POST_FAILURE_SETTLE_POLL_MS = 4_000;
 const ACTIVATE_DEADLINE_MS = 120_000;
@@ -78,20 +77,15 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     }
     const daytona = getDaytona();
     const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
-    const ctx = await this.prepareBuildContext(input.snapshotName, userDockerfile);
+    const ctx = await this.prepareBuildContext(userDockerfile);
     try {
       const resources = {
         cpu: input.spec.cpu ?? DEFAULT_CPU,
         memory: input.spec.memoryGb ?? DEFAULT_MEMORY_GB,
         disk: input.spec.diskGb ?? DEFAULT_DISK_GB,
       };
-      console.info(
-        `[snapshots] ${input.snapshotName}: building (slug="${input.slug}", provider=daytona, spec=${JSON.stringify(resources)})`,
-      );
-
       let lastErr: unknown;
       for (let attempt = 1; attempt <= BUILD_ATTEMPTS; attempt++) {
-        const buildLogs: string[] = [];
         try {
           await daytona.snapshot.create(
             {
@@ -105,11 +99,6 @@ class DaytonaAdapter implements SandboxProviderAdapter {
               onLogs: (chunk) => {
                 const line = chunk.trim();
                 if (!line) return;
-                buildLogs.push(line);
-                if (buildLogs.length > SNAPSHOT_LOG_TAIL_LIMIT) {
-                  buildLogs.splice(0, buildLogs.length - SNAPSHOT_LOG_TAIL_LIMIT);
-                }
-                console.info(`[snapshots] ${input.snapshotName}: ${line}`);
                 tap?.onLine?.(line);
               },
             },
@@ -181,10 +170,7 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     }
   }
 
-  private async prepareBuildContext(
-    snapshotName: string,
-    userDockerfile: string,
-  ): Promise<{ contextDir: string; composedPath: string }> {
+  private async prepareBuildContext(userDockerfile: string): Promise<{ contextDir: string; composedPath: string }> {
     await assertExists(AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH');
     await assertExists(CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH');
     await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
@@ -217,7 +203,6 @@ class DaytonaAdapter implements SandboxProviderAdapter {
       const fs = await import('node:fs/promises');
       await fs.writeFile(composedPath, composed);
     }
-    console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
     return { contextDir, composedPath };
   }
 

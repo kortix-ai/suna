@@ -302,8 +302,11 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
               <View className="flex-row flex-wrap gap-3">
                 {currentImages.slice(0, 6).map((imageEntry, idx) => {
                   // Resolve to string URL (safety for objects leaking through)
-                  const imageUrl = typeof imageEntry === 'string' ? imageEntry
-                    : (typeof imageEntry === 'object' && imageEntry !== null) ? (imageEntry.url || imageEntry.src || '') : '';
+                  const entry = imageEntry as unknown;
+                  const imageUrl = typeof entry === 'string' ? entry
+                    : (typeof entry === 'object' && entry !== null)
+                      ? ((entry as { url?: string; src?: string }).url || (entry as { url?: string; src?: string }).src || '')
+                      : '';
                   if (!imageUrl) return null;
                   return (
                     <Pressable

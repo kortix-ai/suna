@@ -10,7 +10,7 @@ type UserWithLocale = {
   } | null;
 } | null;
 
-export function isLocale(value: unknown): value is Locale {
+function isLocale(value: unknown): value is Locale {
   return typeof value === 'string' && locales.includes(value as Locale);
 }
 
@@ -30,7 +30,7 @@ export function getCookieLocale(cookieValue: string | undefined | null): Locale 
   return normalizeLocale(cookieValue);
 }
 
-export function getDocumentCookieLocale(cookieString: string): Locale | null {
+function getDocumentCookieLocale(cookieString: string): Locale | null {
   const match = cookieString
     .split(';')
     .map((part) => part.trim())
@@ -40,11 +40,11 @@ export function getDocumentCookieLocale(cookieString: string): Locale | null {
   return getCookieLocale(decodeURIComponent(match.split('=').slice(1).join('=')));
 }
 
-export function getLocalStorageLocale(storage: Pick<Storage, 'getItem'>): Locale | null {
+function getLocalStorageLocale(storage: Pick<Storage, 'getItem'>): Locale | null {
   return normalizeLocale(storage.getItem(LOCALE_COOKIE_NAME));
 }
 
-export function createLocaleCookie(locale: Locale): string {
+function createLocaleCookie(locale: Locale): string {
   return `${LOCALE_COOKIE_NAME}=${encodeURIComponent(locale)}; path=/; max-age=${LOCALE_COOKIE_MAX_AGE}; SameSite=Lax`;
 }
 

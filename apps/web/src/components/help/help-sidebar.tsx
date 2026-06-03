@@ -5,9 +5,8 @@ import { useTranslations } from 'next-intl';
 import * as React from "react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
-import { Search, Coins, MessageCircle, HelpCircle } from "lucide-react"
+import { Search } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import { SpotlightCard } from "@/components/ui/spotlight-card"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -34,7 +33,7 @@ const helpData = {
       items: [
         {
           title: "What are Credits?",
-          url: "/credits-explained",
+          url: "/help/credits",
         },
       ],
     },
@@ -149,4 +148,3 @@ export function HelpSidebar({ onSearchClick, ...props }: HelpSidebarProps) {
     </Sidebar>
   )
 }
-

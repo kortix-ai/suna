@@ -76,8 +76,8 @@ export default function MemberDetailPage() {
   });
 
   // Server-side derivation of this member's group memberships. Drives the
-  // "Member of these groups" section so admins can see at a glance which
-  // policies the user inherits via group attachments.
+  // "Member of these groups" section so admins can see which project grants
+  // the user inherits through groups.
   const memberGroupsQuery = useQuery({
     queryKey: ['member-groups', accountId, memberUserId],
     queryFn: () => listMemberGroups(accountId!, memberUserId!),
@@ -303,9 +303,7 @@ export default function MemberDetailPage() {
 
 // ─── Capabilities card ────────────────────────────────────────────────────
 // "What this member can actually do" — a curated grid of common account-level
-// capabilities, each probed via the IAM engine. Resolves the gap where an
-// admin sees explicit policies + groups but can't easily tell which broad
-// powers the union grants.
+// capabilities, each probed via the IAM engine.
 
 const CAPABILITY_GROUPS: Array<{
   heading: string;
@@ -328,7 +326,7 @@ const CAPABILITY_GROUPS: Array<{
       { label: 'Remove members', action: 'member.remove' },
       { label: 'Grant super-admin', action: 'member.super_admin.grant' },
       { label: 'Create groups', action: 'group.create' },
-      { label: 'Manage policies', action: 'policy.create' },
+      { label: 'Manage group members', action: 'group.members.manage' },
     ],
   },
   {
@@ -436,8 +434,8 @@ function CapabilityRow({
 
 // ─── Member groups card ───────────────────────────────────────────────────
 // Lists which account groups this member belongs to. Each chip is a link to
-// the group detail page so admins can jump straight to "what policies does
-// this group grant?" without rebuilding the mental model.
+// the group detail page so admins can jump straight to the group's project
+// grants without rebuilding the mental model.
 
 function MemberGroupsCard({
   accountId,

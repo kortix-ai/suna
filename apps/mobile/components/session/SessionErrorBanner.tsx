@@ -20,7 +20,7 @@ import { CircleAlert, CreditCard } from 'lucide-react-native';
  * /v1/router/chat/completions. Matches the same patterns the web uses so the
  * mobile and web banners trigger on the same error strings.
  */
-export function isInsufficientCreditsError(text: string): boolean {
+function isInsufficientCreditsError(text: string): boolean {
   if (!text) return false;
   const lower = text.toLowerCase();
   return (
@@ -31,7 +31,7 @@ export function isInsufficientCreditsError(text: string): boolean {
 }
 
 /** Extract `Balance: $-0.06` style amounts from the error text, if present. */
-export function parseBalance(text: string): string | null {
+function parseBalance(text: string): string | null {
   const match = text.match(/balance:\s*\$?(-?\d+(?:\.\d+)?)/i);
   if (!match) return null;
   const value = parseFloat(match[1]);
@@ -71,7 +71,8 @@ function InsufficientCreditsCard({
       <Icon
         as={CreditCard}
         size={14}
-        style={{ marginTop: 2, color: isDark ? '#f59e0b' : '#d97706' }}
+        color={isDark ? '#f59e0b' : '#d97706'}
+        style={{ marginTop: 2 }}
       />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text

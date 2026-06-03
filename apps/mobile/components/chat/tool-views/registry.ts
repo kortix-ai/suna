@@ -279,11 +279,3 @@ export function getToolViewComponent(toolName: string): ToolViewComponent {
   return toolViewRegistry[normalizedName] || toolViewRegistry['default'];
 }
 
-/**
- * Register a custom tool view
- */
-export function registerToolView(toolName: string, component: ToolViewComponent): void {
-  const normalizedName = toolName.toLowerCase().replace(/_/g, '-');
-  toolViewRegistry[normalizedName] = component;
-}
-

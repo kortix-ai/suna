@@ -20,6 +20,7 @@ import {
   Heading3,
   Type,
   Check,
+  type LucideIcon,
 } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
@@ -93,60 +94,12 @@ function detectActiveFormats(text: string, cursorPos: number): ActiveFormats {
     result.heading = 'h1';
   }
 
-  // For inline formats, check if cursor is within formatting markers
-  // We look for balanced pairs around the cursor
-
-  // Helper to check if cursor is inside a format
-  const isInsideFormat = (openMarker: string, closeMarker: string): boolean => {
-    // Find all occurrences of markers before cursor
-    let searchPos = lineStart;
-    let depth = 0;
-    const relativePos = cursorPos - lineStart;
-    const lineText = currentLine;
-
-    let i = 0;
-    while (i < lineText.length) {
-      // Check for the marker at current position
-      if (lineText.substring(i, i + openMarker.length) === openMarker) {
-        if (i < relativePos) {
-          // Before cursor - could be opening or closing
-          // Look ahead to see if there's a closing marker
-          const closePos = lineText.indexOf(closeMarker, i + openMarker.length);
-          if (closePos !== -1 && closePos >= relativePos) {
-            // Cursor is between open and close
-            return true;
-          }
-        }
-        i += openMarker.length;
-      } else {
-        i++;
-      }
-    }
-    return false;
-  };
-
-  // Simpler approach: check surrounding context
-  const checkInlineFormat = (marker: string, escapeRegex: boolean = false): boolean => {
-    const escapedMarker = escapeRegex ? marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : marker;
-    const pattern = new RegExp(`${escapedMarker}[^${escapedMarker[0]}]+${escapedMarker}`, 'g');
-
-    let match;
-    while ((match = pattern.exec(text)) !== null) {
-      const start = match.index;
-      const end = match.index + match[0].length;
-      if (cursorPos > start && cursorPos < end) {
-        return true;
-      }
-    }
-    return false;
-  };
-
   // Check bold: **text** (not inside code)
   // Use a more robust check
-  result.bold = isWithinMarkers(text, cursorPos, '**', '**');
-  result.italic = isWithinMarkers(text, cursorPos, '*', '*') && !result.bold;
-  result.strikethrough = isWithinMarkers(text, cursorPos, '~~', '~~');
-  result.code = isWithinMarkers(text, cursorPos, '`', '`');
+  result.bold = isWithinMarkers(text, cursorPos, '**');
+  result.italic = isWithinMarkers(text, cursorPos, '*') && !result.bold;
+  result.strikethrough = isWithinMarkers(text, cursorPos, '~~');
+  result.code = isWithinMarkers(text, cursorPos, '`');
   result.underline = isWithinTags(text, cursorPos, '<u>', '</u>');
 
   return result;
@@ -155,7 +108,7 @@ function detectActiveFormats(text: string, cursorPos: number): ActiveFormats {
 /**
  * Check if cursor is within balanced markers
  */
-function isWithinMarkers(text: string, cursorPos: number, openMarker: string, closeMarker: string): boolean {
+function isWithinMarkers(text: string, cursorPos: number, openMarker: string): boolean {
   // Get line boundaries
   const beforeCursor = text.substring(0, cursorPos);
   const lastNewlineIndex = beforeCursor.lastIndexOf('\n');
@@ -328,7 +281,7 @@ export type MarkdownFormat =
 
 // Tool button component
 interface ToolButtonProps {
-  icon: React.ComponentType<any>;
+  icon: LucideIcon;
   onPress: () => void;
   isActive?: boolean;
   label?: string;

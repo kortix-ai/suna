@@ -7,7 +7,7 @@
  */
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { View, Pressable, TextInput, Alert, Image, ScrollView, Platform } from 'react-native';
+import { View, Pressable, TextInput, Alert, Image, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
@@ -22,9 +22,7 @@ import {
   Calendar as CalendarIcon,
   Link2,
   CheckCircle2,
-  ArrowLeft,
   Info,
-  Lock,
 } from 'lucide-react-native';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
@@ -43,7 +41,6 @@ import { useComposioProfiles } from '@/hooks/useComposio';
 import type { ComposioApp, ComposioProfile } from '@/hooks/useComposio';
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Loading } from '../loading/loading';
 import { AppSelectionStep } from './AppSelectionStep';
 import { TriggerSelectionStep } from './TriggerSelectionStep';
@@ -54,8 +51,6 @@ import { SvgUri } from 'react-native-svg';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { log } from '@/lib/logger';
 import { getSheetBg } from '@/lib/theme-colors';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 interface TriggerCreationDrawerProps {
   visible: boolean;
@@ -224,8 +219,6 @@ export function TriggerCreationDrawer({
   const {
     data: triggersApps,
     isLoading: triggersAppsLoading,
-    error: triggersAppsError,
-    refetch: refetchTriggersApps,
   } = useComposioAppsWithTriggers();
   const {
     data: triggersData,
@@ -239,7 +232,6 @@ export function TriggerCreationDrawer({
   const {
     data: profiles,
     isLoading: isLoadingProfiles,
-    error: profilesError,
     refetch: refetchProfiles,
   } = useComposioProfiles();
 
@@ -809,7 +801,7 @@ export function TriggerCreationDrawer({
                 setSelectedApp(null);
               }
             }}
-            onComplete={(createdProfileId, appName, appSlug) => {
+            onComplete={(createdProfileId, _appName, _appSlug) => {
               setProfileId(createdProfileId);
               setShowComposioConnector(false);
               refetchProfiles();

@@ -5,8 +5,7 @@ import { useTranslations } from 'next-intl';
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { motion, useScroll } from 'framer-motion';
-import { backendApi } from '@/lib/api-client';
+import { useScroll } from 'framer-motion';
 import { getEnv } from '@/lib/env-config';
 import {
   Download,
@@ -14,7 +13,6 @@ import {
   Sparkles,
   Calendar,
   User,
-  Tag,
   Wrench,
   Plug,
   Code,
@@ -36,7 +34,6 @@ import { UnifiedMarkdown } from '@/components/markdown';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import Image from 'next/image';
 import { useTheme } from 'next-themes';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
@@ -77,7 +74,7 @@ const IntegrationIcon: React.FC<{
   customType?: string;
   toolkitSlug?: string;
   size?: number;
-}> = ({ qualifiedName, displayName, customType, toolkitSlug, size = 20 }) => {
+}> = ({ qualifiedName, displayName, customType, size = 20 }) => {
   const firstLetter = displayName.charAt(0).toUpperCase();
 
   const iconMap: Record<string, React.JSX.Element> = {
@@ -111,7 +108,7 @@ export default function TemplateSharePage() {
   const params = useParams();
   const templateId = params.shareId as string; // Note: keeping shareId param name for URL compatibility
   const router = useRouter();
-  const { theme, resolvedTheme, setTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const [colorPalette, setColorPalette] = useState<string[]>([]);
   const [isPromptExpanded, setIsPromptExpanded] = useState(false);
   const [activeSection, setActiveSection] = useState('');
@@ -266,31 +263,10 @@ export default function TemplateSharePage() {
   const toolRequirements = tools.filter((req: any) => req?.source === 'tool');
   const integrations = toolRequirements.filter((tool: any) => !tool?.custom_type || tool.custom_type !== 'sse');
   const customTools = toolRequirements.filter((tool: any) => tool?.custom_type === 'sse');
-  const agentpressToolsMap =
-    template.agentpress_tools && typeof template.agentpress_tools === 'object' && !Array.isArray(template.agentpress_tools)
-      ? template.agentpress_tools
-      : {};
-  const agentpressTools = Object.entries(agentpressToolsMap)
-    .filter(([_, enabled]) => enabled)
-    .map(([toolName]) => toolName);
 
   // Navigation helper variables
   const hasIntegrations = integrations.length > 0;
-  const hasTools = customTools.length > 0 || agentpressTools.length > 0;
-
-  const getDefaultAvatar = () => {
-    return (
-      <AgentAvatar
-        iconName={template.icon_name}
-        iconColor={template.icon_color ?? undefined}
-        backgroundColor={template.icon_background ?? undefined}
-        agentName={template.name}
-        size={28}
-      />
-    );
-  };
-
-  const [color1, color2, color3, color4, color5, color6] = colorPalette.length >= 6
+  const [color1, color2, color3, color4] = colorPalette.length >= 6
     ? colorPalette
     : ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316', '#facc15'];
 

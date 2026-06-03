@@ -4,13 +4,26 @@ import { Hono } from 'hono';
 let auditRows: Array<Record<string, unknown>> = [];
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     insert: () => ({
-      values: async (values: Record<string, unknown>) => {
-        auditRows.push(values);
-      },
+      values: (values: Record<string, unknown>) => ({
+        returning: async () => {
+          const row = {
+            eventId: 'audit-event-1',
+            occurredAt: new Date('2026-01-01T00:00:00Z'),
+            ...values,
+          };
+          auditRows.push(values);
+          return [row];
+        },
+      }),
     }),
   },
+}));
+
+mock.module('../shared/audit-webhooks', () => ({
+  dispatchAuditEvent: () => {},
 }));
 
 const { auditStateChangingRequest } = await import('../shared/audit');

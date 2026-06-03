@@ -39,7 +39,7 @@ const disposableKeys = new Set<string>();
  * Register a `<prefix>:<scope>` key family as disposable. Entries under it may
  * be evicted (oldest first) when the bucket is full. Idempotent.
  */
-export function registerDisposableFamily(prefix: string): void {
+function registerDisposableFamily(prefix: string): void {
   disposableFamilies.add(prefix);
 }
 
@@ -139,7 +139,7 @@ export function safeSetItem(key: string, value: string): boolean {
   }
 }
 
-export function safeGetItem(key: string): string | null {
+function safeGetItem(key: string): string | null {
   if (!hasWindow()) return null;
   try {
     return localStorage.getItem(key);
@@ -148,7 +148,7 @@ export function safeGetItem(key: string): string | null {
   }
 }
 
-export function safeRemoveItem(key: string): void {
+function safeRemoveItem(key: string): void {
   if (!hasWindow()) return;
   try {
     localStorage.removeItem(key);
@@ -239,19 +239,6 @@ export class ScopedCache<T> {
 }
 
 /**
- * Prune every registered disposable family back to its cap and drop foreign /
- * legacy un-stamped entries within those families. Call once on boot to reclaim
- * space left by older builds that never evicted; cheap and idempotent.
- *
- * Pass the live ScopedCache instances so each family's own `maxScopes` is
- * respected.
- */
-export function pruneDisposableCaches(caches: ReadonlyArray<ScopedCache<unknown>>): void {
-  if (!hasWindow()) return;
-  for (const cache of caches) cache.prune();
-}
-
-/**
  * Prune every ScopedCache constructed so far back to its cap. Safe to call on
  * boot to reclaim space left by older builds that never evicted. Only sees
  * caches whose modules have loaded — but those are the large per-sandbox
@@ -267,7 +254,7 @@ export function pruneAllRegisteredCaches(): void {
  * should route through this via `createSafeJSONStorage()` so a full bucket
  * degrades to "preferences didn't save" instead of crashing the render.
  */
-export const safeLocalStorage: StateStorage = {
+const safeLocalStorage: StateStorage = {
   getItem: (name) => safeGetItem(name),
   setItem: (name, value) => {
     safeSetItem(name, value);

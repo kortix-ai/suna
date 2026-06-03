@@ -22,7 +22,7 @@ import { logger } from './logger'
  * agent's HTML required. See injectBase / resolvePublicBaseUrl below.
  */
 
-export const DEFAULT_STATIC_PORT = 3211
+const DEFAULT_STATIC_PORT = 3211
 
 const ALLOWED_ROOTS = ['/workspace', '/tmp', '/home', '/opt']
 

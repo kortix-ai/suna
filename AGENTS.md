@@ -40,14 +40,10 @@ Mint a real JWT against local Supabase, then call the API with it:
 See `tests/e2e/helpers/auth.ts` for the exact calls.
 
 ### End-to-end harnesses (the canonical way to verify)
-- `bun tests/e2e/scripts/session-smoke.ts` — full single-session flow:
-  provision project → snapshot ready → create session → sandbox active →
-  OpenCode reachable → prompt → assert a real assistant reply. Self-cleans.
-- `bun tests/e2e/scripts/multi-session-stream-smoke.ts` — provisions **two**
-  sessions and opens **two concurrent SSE streams**, asserting both sandboxes
-  stream live at the same time (regression guard for parallel sessions).
-- `tests/e2e/specs/*.spec.ts` — Playwright UI specs. `tests/e2e/end-to-end.md`
-  is the flow source-of-truth.
+- `pnpm --filter @kortix/tests test:e2e` — Playwright UI specs.
+- `pnpm --filter @kortix/tests test:e2e:gate5:local` — local Gate 5 verifier.
+- `pnpm --filter @kortix/tests test:e2e:gate5:target` — target Gate 5 rehearsal.
+- `tests/e2e/end-to-end.md` is the flow source-of-truth.
 - Provisioning is slow (snapshot build up to ~9 min, sandbox up to ~5 min) —
   run long checks in the background and poll the log.
 

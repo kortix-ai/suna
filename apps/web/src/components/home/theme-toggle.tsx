@@ -13,8 +13,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { getThemeById } from '@/lib/themes';
 
 interface ThemeToggleProps {
   variant?: 'icon' | 'compact';
@@ -24,8 +22,6 @@ export function ThemeToggle({ variant = 'icon' }: ThemeToggleProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
-  const themeId = useUserPreferencesStore((s) => s.preferences.themeId);
-  const currentTheme = getThemeById(themeId);
 
   React.useEffect(() => {
     setMounted(true);

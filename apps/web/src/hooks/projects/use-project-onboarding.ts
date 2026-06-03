@@ -26,7 +26,7 @@ import {
   setProjectOnboardingComplete,
 } from '@/lib/projects-client';
 
-export type ProjectOnboardingStatus = 'pending' | 'completed';
+type ProjectOnboardingStatus = 'pending' | 'completed';
 
 /** Shape of the cached `project-detail` query data. */
 type ProjectDetailData = Awaited<ReturnType<typeof getProjectDetail>>;
@@ -36,7 +36,7 @@ interface ProjectMetadataMaybe {
   [key: string]: unknown;
 }
 
-export interface ProjectOnboardingState {
+interface ProjectOnboardingState {
   status: ProjectOnboardingStatus;
   /** False until the project-detail query has resolved at least once. */
   hydrated: boolean;

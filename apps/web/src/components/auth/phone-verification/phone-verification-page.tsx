@@ -11,7 +11,6 @@ import {
   useCreateChallenge,
   useVerifyChallenge,
   useListFactors,
-  useGetAAL,
   useUnenrollFactor,
 } from '@/hooks/auth';
 import { signOut } from '@/app/auth/actions';
@@ -38,9 +37,7 @@ export function PhoneVerificationPage({
   const [factorId, setFactorId] = useState('');
   const [challengeId, setChallengeId] = useState('');
   const [success, setSuccess] = useState<string | null>(null);
-  const [debugInfo, setDebugInfo] = useState<any>(null);
   const [isSubmittingPhone, setIsSubmittingPhone] = useState(false);
-  const [hasExistingFactor, setHasExistingFactor] = useState(false);
   const router = useRouter();
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -57,7 +54,6 @@ export function PhoneVerificationPage({
 
   // Add debugging hooks
   const { data: factors } = useListFactors();
-  const { data: aalData } = useGetAAL();
 
   // Check for existing verified factors on component mount
   useEffect(() => {
@@ -79,7 +75,6 @@ export function PhoneVerificationPage({
         setStep('otp');
         setFactorId(verifiedPhoneFactor.id);
         setPhoneNumber(verifiedPhoneFactor.phone || '');
-        setHasExistingFactor(true);
         // Don't set challengeId yet - let user choose to send code
       } else {
         // No verified factor found - check for unverified factors
@@ -90,12 +85,11 @@ export function PhoneVerificationPage({
           setFactorId(unverifiedPhoneFactor.id);
           setPhoneNumber(unverifiedPhoneFactor.phone || '');
           setStep('otp');
-          setHasExistingFactor(true);
           // Don't set challengeId yet - let user choose to send code
         }
       }
     }
-  }, [factors, aalData, isSubmittingPhone]);
+  }, [factors, isSubmittingPhone]);
 
   const handleCreateChallengeForExistingFactor = async () => {
     try {
@@ -119,7 +113,6 @@ export function PhoneVerificationPage({
       setFactorId('');
       setPhoneNumber('');
       setChallengeId('');
-      setHasExistingFactor(false);
       setSuccess(t('phoneNumberRemoved'));
     } catch (err) {
       console.error('❌ Failed to unenroll factor:', err);
@@ -145,7 +138,6 @@ export function PhoneVerificationPage({
       setFactorId(enrollResponse.id);
       setChallengeId(challengeResponse.id);
       setStep('otp');
-      setHasExistingFactor(false);
       setSuccess(t('verificationCodeSent'));
     } catch (err) {
       console.error('❌ Phone submission failed:', err);
@@ -163,18 +155,10 @@ export function PhoneVerificationPage({
   const handleOtpVerify = async (otp: string) => {
     try {
       // Verify the challenge with the OTP code - this will automatically invalidate caches
-      const verifyResponse = await verifyMutation.mutateAsync({
+      await verifyMutation.mutateAsync({
         factor_id: factorId,
         challenge_id: challengeId,
         code: otp,
-      });
-
-      // Store debug info to display
-      setDebugInfo({
-        verifyResponse,
-        beforeFactors: factors,
-        beforeAAL: aalData,
-        timestamp: new Date().toISOString(),
       });
 
       setSuccess(t('phoneNumberVerified'));
@@ -326,7 +310,6 @@ export function PhoneVerificationPage({
               onRemovePhone={handleUnenrollFactor}
               isLoading={isLoading}
               error={null}
-              showExistingOptions={hasExistingFactor}
               challengeId={challengeId}
             />
           )}

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { hostname } from 'node:os';
 
-import { DEFAULT_API_BASE, authFileLocation, loadAuthForHost, saveAuthForHost } from '../api/auth.ts';
+import { DEFAULT_API_BASE, authFileLocation, saveAuthForHost } from '../api/auth.ts';
 import {
   DEFAULT_HOST_NAME,
   activeHostName,
@@ -246,6 +246,3 @@ function openInBrowser(url: string): void {
     /* user can copy-paste the URL from stdout */
   }
 }
-
-// Silence unused-import detection if loadAuthForHost ever becomes useful here.
-void loadAuthForHost;

@@ -12,14 +12,12 @@
  *
  * Built against an injected `ExecutorRouterDeps` so the e2e drives the real HTTP
  * layer + real gateway logic with in-memory fakes (db + upstream) at the
- * boundary; production wires DB-backed deps (db-deps.ts). See docs/specs/executor.md.
+ * boundary; production wires DB-backed deps (db-deps.ts).
  */
 import { Hono, type Context } from 'hono';
 import { handleCall, type GatewayDeps } from './gateway';
+import type { DefaultMode, Policy } from './policy';
 import { parseSharingIntent, type SharingIntent } from './share';
-
-// Re-exported for callers that historically imported it from here.
-export { parseSharingIntent };
 
 export interface ExecutorPrincipal {
   userId: string;
@@ -30,7 +28,7 @@ export interface ExecutorPrincipal {
   subject: { userId: string; groupIds: string[] };
 }
 
-export interface CatalogAction {
+interface CatalogAction {
   path: string; // connector-relative
   name: string;
   description: string;
@@ -55,24 +53,18 @@ export interface AdminConnectorView extends CatalogConnector {
   secretSet: boolean;
 }
 
-export interface SyncResult {
+interface SyncResult {
   synced: number;
   errors: Array<{ slug: string; error: string }>;
 }
 
-export type CrudOutcome =
+type CrudOutcome =
   | { ok: true; sync?: SyncResult }
   | { ok: false; error: string; status: number };
 
-export type PolicyAction = 'always_run' | 'require_approval' | 'block';
-export type DefaultMode = 'risk' | 'allow_all';
+type ProjectPolicyView = Pick<Policy, 'match' | 'action'>;
 
-export interface ProjectPolicyView {
-  match: string;
-  action: PolicyAction;
-}
-
-export interface ProjectPoliciesViewResponse {
+interface ProjectPoliciesViewResponse {
   policies: ProjectPolicyView[];
   defaultMode: DefaultMode;
   errors: Array<{ path: string; error: string }>;

@@ -1,6 +1,6 @@
 /**
  * SandboxConfigHealthBanner — mobile port of the web SidebarConfigDegradationNotice
- * (apps/web/src/components/sidebar/sidebar-left.tsx:943).
+ * (apps/web project sidebar config-health banner).
  *
  * Shows a yellow "Config ignored" / "Runtime healthy" card when the sandbox's
  * /config/status endpoint reports a skipped config source. Exposes "Fix"

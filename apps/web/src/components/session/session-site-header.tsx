@@ -65,7 +65,6 @@ export function SessionSiteHeader({
   sessionTitle,
   onToggleSidePanel,
   isSidePanelOpen = false,
-  isMobileView,
   leadingAction,
 }: SessionSiteHeaderProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');

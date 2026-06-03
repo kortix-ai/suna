@@ -40,23 +40,6 @@ const nextConfig = (): NextConfig => ({
     ignoreBuildErrors: true,
   },
 
-  // Webpack configuration to make Konva work with Next.js
-  webpack: (config) => {
-    config.externals = [...config.externals, { canvas: 'canvas' }]; // required to make Konva & react-konva work
-    return config;
-  },
-
-  // Turbopack configuration
-  turbopack: {
-    // Handle Node.js modules that shouldn't be bundled for browser builds
-    // Canvas is a Node.js native module that needs to be externalized (required for Konva & react-konva)
-    resolveAlias: {
-      canvas: {
-        browser: './src/lib/empty-module.ts', // Exclude canvas from browser builds
-      },
-    },
-  },
-
   // Performance optimizations
   experimental: {
     // Optimize package imports for faster builds and smaller bundles
@@ -64,13 +47,11 @@ const nextConfig = (): NextConfig => ({
       'lucide-react',
       'framer-motion',
       '@radix-ui/react-icons',
-      'recharts',
       'date-fns',
       '@tanstack/react-query',
       'react-icons',
       'cmdk',
       'next-intl',
-      '@icons-pack/react-simple-icons',
     ],
   },
 

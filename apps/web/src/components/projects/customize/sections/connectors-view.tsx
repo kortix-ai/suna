@@ -9,7 +9,6 @@ import { createFrontendClient } from '@pipedream/sdk/browser';
 import {
   Boxes,
   Globe,
-  KeyRound,
   Loader2,
   Plug,
   Plus,
@@ -271,7 +270,6 @@ function ConnectorRow({
       // callback + external user id; we feed it the token our backend minted.
       const pd = createFrontendClient({
         externalUserId: `${projectId}:${conn.slug}`,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tokenCallback: async () => ({ token, connect_link_url: undefined, expires_at: '' }) as any,
       });
       await new Promise<void>((resolve, reject) => {

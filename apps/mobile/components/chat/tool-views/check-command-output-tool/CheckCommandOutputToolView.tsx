@@ -4,8 +4,6 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
   Terminal,
-  CheckCircle,
-  AlertTriangle,
   CircleDashed,
   Clock,
   TerminalIcon,
@@ -47,14 +45,11 @@ export function CheckCommandOutputToolView({
   const {
     sessionName,
     output,
-    status,
     success: actualIsSuccess,
   } = extractCheckCommandOutputData(
     toolCall,
     toolResult,
-    isSuccess,
-    toolTimestamp,
-    assistantTimestamp
+    isSuccess
   );
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
@@ -127,8 +122,6 @@ export function CheckCommandOutputToolView({
 
   // Add empty lines for natural scrolling
   const emptyLines = Array.from({ length: 30 }, () => '');
-
-  const isSessionRunning = status?.includes('still running') || status?.includes('running');
 
   // Show loading state during streaming
   if (isStreaming) {

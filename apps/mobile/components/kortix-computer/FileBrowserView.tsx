@@ -10,13 +10,11 @@ import {
   Presentation,
   Clock,
   ChevronDown,
-  RotateCcw,
   AlertTriangle,
   X,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
-import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -141,7 +139,6 @@ export function FileBrowserView({
   const {
     data: files = [],
     isLoading: isLoadingFiles,
-    error: filesError,
     refetch: refetchFiles,
   } = useSandboxFiles(sandboxId, currentPath, {
     refetchOnMount: 'always',
@@ -405,8 +402,6 @@ export function FileBrowserView({
   }, [isPresentationFolder, mutedIconColor]);
 
   const hasSandbox = !!(project?.sandbox?.id || sandboxId);
-  // Use sandbox status for accurate "started" check instead of just URL existence
-  const isComputerStarted = isSandboxReady;
   // Include sandbox status loading in isLoading
   const isLoadingStatus = isLoadingSandboxStatus || isFetchingSandboxStatus;
   const isLoading = isLoadingFiles || isLoadingVersionFiles;

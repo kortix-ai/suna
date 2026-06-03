@@ -336,7 +336,6 @@ export function UserMenu({
         open={settingsOpen}
         onOpenChange={setSettingsOpen}
         defaultTab={settingsTab}
-        returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
       />
       <SupportDialog open={supportOpen} onOpenChange={setSupportOpen} />
       <ReferralDialog open={referralOpen} onOpenChange={closeReferral} />

@@ -19,7 +19,6 @@ import {
 } from '@gorhom/bottom-sheet';
 import {
   Check,
-  Cloud,
   Globe,
   Monitor,
   Pencil,
@@ -283,7 +282,7 @@ export default function InstancesScreen() {
           className="flex-row items-center justify-center rounded-full py-3.5 active:opacity-90"
           style={{ backgroundColor: themeColors.primary }}
         >
-          <Icon as={Plus} size={16} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+          <Icon as={Plus} size={16} color={themeColors.primaryForeground} strokeWidth={2.5} />
           <Text className="ml-2 font-roobert-semibold text-[15px]" style={{ color: themeColors.primaryForeground }}>
             New Instance
           </Text>

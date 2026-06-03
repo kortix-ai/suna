@@ -347,7 +347,7 @@ function shouldLoadIndex(
 
 // ── Public API ───────────────────────────────────────────────────────────
 
-export async function searchWorkspaceFileEntries(
+async function searchWorkspaceFileEntries(
   sandboxUrl: string,
   query: string,
   options?: WorkspaceSearchRuntimeOptions,

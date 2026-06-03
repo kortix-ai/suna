@@ -4,16 +4,16 @@ import { createContext, createElement, useContext, useRef, type ReactNode } from
 import { useStore } from 'zustand';
 import { createStore, type StoreApi } from 'zustand/vanilla';
 
-export type FilesView = 'browser' | 'viewer' | 'history';
-export type ViewMode = 'grid' | 'list';
+type FilesView = 'browser' | 'viewer' | 'history';
+type ViewMode = 'grid' | 'list';
 export type SortField = 'name' | 'modified' | 'size' | 'type';
-export type SortOrder = 'asc' | 'desc';
+type SortOrder = 'asc' | 'desc';
 
 /** Clipboard operation type for copy/cut */
-export type ClipboardOperation = 'copy' | 'cut';
+type ClipboardOperation = 'copy' | 'cut';
 
 /** Clipboard item representing a file or directory */
-export interface ClipboardItem {
+interface ClipboardItem {
   /** Relative path of the item */
   path: string;
   /** Name of the item */
@@ -155,8 +155,8 @@ function isWithinRoot(path: string, root: string): boolean {
   return normPath === normRoot || normPath.startsWith(normRoot + '/');
 }
 
-export type FilesStore = FilesStoreState & FilesStoreActions;
-export type FilesStoreApi = StoreApi<FilesStore>;
+type FilesStore = FilesStoreState & FilesStoreActions;
+type FilesStoreApi = StoreApi<FilesStore>;
 
 const initialState: FilesStoreState = {
   view: 'browser',
@@ -181,7 +181,7 @@ const initialState: FilesStoreState = {
   panelMode: 'welcome',
 };
 
-export function createFilesStore(): FilesStoreApi {
+function createFilesStore(): FilesStoreApi {
   return createStore<FilesStore>()((set, get) => ({
     ...initialState,
 
@@ -446,7 +446,7 @@ export function createFilesStore(): FilesStoreApi {
   }));
 }
 
-export const globalFilesStore = createFilesStore();
+const globalFilesStore = createFilesStore();
 
 const FilesStoreContext = createContext<FilesStoreApi | null>(null);
 

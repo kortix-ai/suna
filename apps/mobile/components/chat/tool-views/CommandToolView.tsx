@@ -4,8 +4,6 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
   Terminal,
-  Copy,
-  Check,
   Clock,
   CircleDashed,
 } from 'lucide-react-native';
@@ -13,7 +11,6 @@ import type { ToolViewProps } from './types';
 import { extractCommandData } from './command-tool/_utils';
 import { ToolViewCard, StatusBadge, LoadingState } from './shared';
 import { getToolMetadata } from './tool-metadata';
-import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 
 // Utility functions
@@ -36,23 +33,18 @@ export function CommandToolView({
   isStreaming = false,
 }: ToolViewProps) {
   const [showFullOutput, setShowFullOutput] = useState(true);
-  const [copied, setCopied] = useState(false);
 
   const {
     command,
     output,
-    exitCode,
     sessionName,
-    cwd,
-    completed,
     success: actualIsSuccess,
     timestamp: actualToolTimestamp,
   } = extractCommandData(
     toolCall,
     toolResult,
     isSuccess,
-    toolTimestamp,
-    assistantTimestamp
+    toolTimestamp
   );
 
   const actualAssistantTimestamp = assistantTimestamp;
@@ -160,14 +152,6 @@ export function CommandToolView({
 
   // Add empty lines for natural scrolling
   const emptyLines = Array.from({ length: 30 }, () => '');
-
-  const handleCopy = async () => {
-    if (!output) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    await Clipboard.setStringAsync(String(output));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
 
   // Show loading state during streaming
   if (isStreaming && !command) {

@@ -1,5 +1,5 @@
 /**
- * E2E tests for health, system-status, and 404 endpoints.
+ * E2E tests for health and 404 endpoints.
  *
  * These tests do NOT require a database — they exercise the pure HTTP
  * handlers that return static / computed JSON.
@@ -32,20 +32,6 @@ describe('Health & System endpoints', () => {
     expect(body.status).toBe('ok');
     expect(body.service).toBe('kortix');
     expect(body.timestamp).toBeDefined();
-  });
-
-  // ─── GET /v1/system/status ──────────────────────────────────────────────
-
-  it('GET /v1/system/status returns maintenance & technical issue objects', async () => {
-    const res = await jsonGet(app, '/v1/system/status');
-    expect(res.status).toBe(200);
-
-    const body = await res.json();
-    expect(body.maintenanceNotice).toBeDefined();
-    expect(typeof body.maintenanceNotice.enabled).toBe('boolean');
-    expect(body.technicalIssue).toBeDefined();
-    expect(typeof body.technicalIssue.enabled).toBe('boolean');
-    expect(body.updatedAt).toBeDefined();
   });
 
   // ─── 404 ────────────────────────────────────────────────────────────────

@@ -1,7 +1,6 @@
 /**
  * useSandboxPoller — monitors provisioning progress via HTTP polling.
  *
- * Adapted from the web frontend's useSandboxPoller hook.
  * Uses HTTP polling against the current project-session sandbox API instead
  * of the removed legacy /platform/sandbox lifecycle endpoints.
  *

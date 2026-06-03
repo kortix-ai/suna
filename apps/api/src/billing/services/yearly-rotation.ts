@@ -45,18 +45,7 @@ export async function processYearlyCreditRotation(): Promise<{
     }
   }
 
-  console.log(`[YearlyRotation] Processed: ${processed}, Skipped: ${skipped}, Errors: ${errors.length}`);
   return { processed, skipped, errors };
-}
-
-export function isYearlyAccountDueForRotation(account: Record<string, any>): boolean {
-  if (account.planType !== 'yearly') return false;
-  if (!account.tier || account.tier === 'free' || account.tier === 'none') return false;
-
-  if (!account.nextCreditGrant) return true;
-
-  const nextGrant = new Date(account.nextCreditGrant);
-  return nextGrant <= new Date();
 }
 
 export function calculateNextCreditGrant(from: Date): Date {

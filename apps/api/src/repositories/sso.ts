@@ -10,7 +10,7 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 
-export type SsoProvider = {
+type SsoProvider = {
   ssoProviderId: string;
   accountId: string;
   supabaseSsoProviderId: string;
@@ -23,7 +23,7 @@ export type SsoProvider = {
   updatedAt: Date;
 };
 
-export type SsoGroupMapping = {
+type SsoGroupMapping = {
   mappingId: string;
   accountId: string;
   ssoProviderId: string;

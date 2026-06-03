@@ -4,7 +4,7 @@
  * Pure transforms over an already-fetched spec/doc/tool-list — no network, no
  * deps — so they're fully unit-testable. Fetching (URL → doc, MCP listTools)
  * lives in the sync layer; these just normalize. Risk is derived from the
- * source's own semantics, the executor.sh insight (see executor-reference.md §4).
+ * source's own semantics.
  */
 import type {
   ActionBinding,
@@ -18,7 +18,7 @@ import type {
 /* ─── shared helpers ─────────────────────────────────────────────────────── */
 
 /** HTTP method → risk. GET/HEAD/OPTIONS read; DELETE destructive; rest write. */
-export function riskForMethod(method: string): Risk {
+function riskForMethod(method: string): Risk {
   const m = method.toLowerCase();
   if (m === 'get' || m === 'head' || m === 'options') return 'read';
   if (m === 'delete') return 'destructive';
@@ -301,7 +301,7 @@ export function normalizePipedream(actions: PipedreamActionLike[], app: string):
 }
 
 /** The synthetic catch-all `request` action backing the Connect Proxy. */
-export function pipedreamProxyAction(app: string): NormalizedAction {
+function pipedreamProxyAction(app: string): NormalizedAction {
   return {
     path: 'request',
     name: `${app} API request`,
@@ -337,37 +337,3 @@ function pdType(t: string): string {
 }
 
 /* ─── dispatch ───────────────────────────────────────────────────────────── */
-
-import type { ConnectorProvider } from '../projects/connectors';
-
-/** Source material a connector needs normalized, by provider. */
-export type NormalizeInput =
-  | { provider: 'openapi'; doc: any }
-  | { provider: 'graphql'; introspection: any }
-  | { provider: 'mcp'; tools: McpToolLike[] }
-  | { provider: 'http'; routes: HttpRouteSpec[] }
-  | { provider: 'pipedream'; actions: PipedreamActionLike[]; app: string };
-
-export function normalize(input: NormalizeInput): NormalizedAction[] {
-  switch (input.provider) {
-    case 'openapi':
-      return normalizeOpenApi(input.doc);
-    case 'graphql':
-      return normalizeGraphql(input.introspection);
-    case 'mcp':
-      return normalizeMcp(input.tools);
-    case 'pipedream':
-      return normalizePipedream(input.actions, input.app);
-    case 'http':
-      return normalizeHttp(input.routes);
-    default:
-      return [];
-  }
-}
-
-/** Prefix relative action paths with the connector slug → full tool path. */
-export function namespacePath(slug: string, relPath: string): string {
-  return `${slug}.${relPath}`;
-}
-
-export type { ConnectorProvider };

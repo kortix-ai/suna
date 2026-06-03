@@ -3,27 +3,37 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { envSpecFromManifest, lintManifest, loadLocalManifest } from '../manifest';
+import { lintManifest, loadLocalManifest } from '../manifest';
 import { parse as parseToml } from 'smol-toml';
 
 function lintToml(toml: string) {
   return lintManifest(parseToml(toml) as Record<string, unknown>);
 }
 
-describe('envSpecFromManifest', () => {
+describe('loadLocalManifest env parsing', () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'kortix-manifest-env-'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   test('normalizes, uppercases, dedupes, and drops bad names', () => {
-    const spec = envSpecFromManifest({
-      env: {
-        required: ['anthropic_api_key', 'ANTHROPIC_API_KEY', ' openai_api_key ', '1bad', 42],
-        optional: ['foo'],
-      },
-    });
-    expect(spec.required).toEqual(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY']);
-    expect(spec.optional).toEqual(['FOO']);
+    writeFileSync(
+      join(dir, 'kortix.toml'),
+      'kortix_version = 1\n[env]\nrequired = ["anthropic_api_key", "ANTHROPIC_API_KEY", " openai_api_key ", "1bad", 42]\noptional = ["foo"]\n',
+    );
+    const manifest = loadLocalManifest(dir);
+    expect(manifest?.env.required).toEqual(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY']);
+    expect(manifest?.env.optional).toEqual(['FOO']);
   });
 
   test('missing [env] yields empty spec', () => {
-    expect(envSpecFromManifest({})).toEqual({ required: [], optional: [] });
+    writeFileSync(join(dir, 'kortix.toml'), 'kortix_version = 1\n[project]\nname = "x"\n');
+    expect(loadLocalManifest(dir)?.env).toEqual({ required: [], optional: [] });
   });
 });
 

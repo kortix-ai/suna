@@ -6,109 +6,10 @@
  */
 
 import { API_URL, getAuthToken } from '@/api/config';
-import * as FileSystem from 'expo-file-system/legacy';
 import { log } from '@/lib/logger';
 
-export interface TranscriptionResult {
+interface TranscriptionResult {
   text: string;
-}
-
-export interface TranscriptionError {
-  error: string;
-  detail?: string;
-}
-
-/**
- * Save audio recording to permanent file in the file system
- * 
- * Reads the audio file from expo-audio's temporary location and saves it
- * to a permanent location in the cache directory.
- * 
- * @param temporaryUri - URI of the temporary audio file from expo-audio
- * @returns URI of the saved file in cache directory
- */
-/**
- * Wait for file to exist by polling
- */
-async function waitForFileToExist(uri: string, maxRetries: number = 10, initialDelay: number = 200): Promise<boolean> {
-  for (let i = 0; i < maxRetries; i++) {
-    const delay = initialDelay + (i * 100); // Exponential backoff
-    log.log(`🔍 Retry ${i + 1}/${maxRetries}: Waiting ${delay}ms before checking file...`);
-    await new Promise(resolve => setTimeout(resolve, delay));
-    
-    try {
-      const fileInfo = await FileSystem.getInfoAsync(uri);
-      if (fileInfo.exists) {
-        log.log(`✅ File exists after retry ${i + 1}!`);
-        return true;
-      }
-      log.log(`⚠️ File still doesn't exist (attempt ${i + 1}/${maxRetries})`);
-    } catch (error) {
-      log.log(`⚠️ Error checking file (attempt ${i + 1}/${maxRetries}):`, error);
-    }
-  }
-  return false;
-}
-
-export async function saveAudioToFileSystem(temporaryUri: string): Promise<string> {
-  log.log('💾 Saving audio to file system:', temporaryUri);
-  
-  // Validate the URI
-  if (!temporaryUri || temporaryUri.trim() === '') {
-    throw new Error('Invalid audio URI: URI is empty or undefined');
-  }
-  
-  // Wait for file to exist with retries
-  log.log('⏳ Waiting for audio file to be written to disk...');
-  const fileExists = await waitForFileToExist(temporaryUri);
-  
-  if (!fileExists) {
-    log.error('❌ File never appeared on disk after all retries');
-    throw new Error(`Source audio file does not exist: ${temporaryUri}`);
-  }
-  
-  // Read the file
-  log.log('📖 Reading audio file...');
-  const base64Data = await FileSystem.readAsStringAsync(temporaryUri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  log.log('✅ Audio data read:', base64Data.length, 'chars');
-  
-  // Save to permanent location
-  const timestamp = Date.now();
-  const filename = `audio-recording-${timestamp}.m4a`;
-  const permanentPath = `${FileSystem.cacheDirectory}${filename}`;
-  
-  log.log('💾 Writing to permanent file:', permanentPath);
-  await FileSystem.writeAsStringAsync(permanentPath, base64Data, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  
-  // Verify the file was saved
-  const savedInfo = await FileSystem.getInfoAsync(permanentPath);
-  if (!savedInfo.exists) {
-    throw new Error(`Failed to save file. File does not exist: ${permanentPath}`);
-  }
-  
-  log.log('✅ Audio saved successfully to:', permanentPath);
-  
-  return permanentPath;
-}
-
-/**
- * Delete cached audio file
- * 
- * @param uri - URI of the cached audio file to delete
- */
-export async function deleteCachedAudio(uri: string): Promise<void> {
-  try {
-    log.log('🗑️ Deleting cached audio:', uri);
-    await FileSystem.deleteAsync(uri, { idempotent: true });
-    log.log('✅ Cached audio deleted');
-  } catch (error) {
-    log.warn('⚠️ Failed to delete cached audio:', error);
-    // Don't throw - cleanup failures shouldn't break the flow
-  }
 }
 
 /**
@@ -120,7 +21,7 @@ export async function deleteCachedAudio(uri: string): Promise<void> {
  */
 export async function transcribeAudio(
   audioUri: string,
-  onProgress?: (progress: number) => void
+  _onProgress?: (progress: number) => void
 ): Promise<string> {
   try {
     log.log('🎤 Transcribing audio:', audioUri);
@@ -284,4 +185,3 @@ export function validateAudioFile(audioUri: string): {
 
   return { valid: true };
 }
-

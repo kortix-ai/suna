@@ -15,7 +15,6 @@ import {
 } from '@/hooks/useComposio';
 import { useAgent, agentKeys } from '@/lib/agents/hooks';
 import { useQueryClient } from '@tanstack/react-query';
-import { ToolkitIcon } from './ToolkitIcon';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { log } from '@/lib/logger';
 
@@ -34,7 +33,6 @@ export function ComposioToolsContent({
   app,
   profile,
   agentId,
-  onBack,
   onComplete,
   onEdit,
   noPadding = false,
@@ -223,7 +221,7 @@ export function ComposioToolsContent({
         selectedTools: selectedToolSlugs,
       },
       {
-        onSuccess: (data) => {
+        onSuccess: () => {
           Alert.alert(
             t('integrations.connectionSuccess'),
             t('integrations.toolsSelector.toolsAddedSuccess', {
@@ -246,8 +244,6 @@ export function ComposioToolsContent({
       }
     );
   }, [agentId, profile.profile_id, selectedTools, updateTools, app.name, onComplete, t, allTools]);
-
-  const ListComponent = useBottomSheetFlatList ? BottomSheetFlatList : FlatList;
 
   const renderToolItem = React.useCallback(
     ({ item: tool }: { item: ComposioTool }) => {
@@ -392,7 +388,7 @@ export function ComposioToolsContent({
         ) : (
           <BottomSheetFlatList
             data={filteredTools}
-            keyExtractor={(item, index) => item.slug || item.name || `tool-${index}`}
+            keyExtractor={(item: ComposioTool, index: number) => item.slug || item.name || `tool-${index}`}
             renderItem={renderToolItem}
             style={{ flex: 1 }}
             contentContainerStyle={{ paddingTop: 8, paddingBottom: 16, flexGrow: 1 }}

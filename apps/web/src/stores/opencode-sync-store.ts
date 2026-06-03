@@ -16,7 +16,7 @@ import type { FileDiff } from "@/ui/types";
 // Binary search — ported from @opencode-ai/util/binary (20 lines)
 // ============================================================================
 
-export const Binary = {
+const Binary = {
 	search<T>(
 		array: T[],
 		id: string,
@@ -44,7 +44,7 @@ let counter = 0;
 const chars62 =
 	"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
-export function ascendingId(prefix: "msg" | "prt" = "msg"): string {
+function ascendingId(prefix: "msg" | "prt" = "msg"): string {
 	const now = Date.now();
 	if (now !== lastTs) {
 		lastTs = now;

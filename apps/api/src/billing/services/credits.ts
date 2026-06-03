@@ -2,24 +2,11 @@ import { getSupabase } from '../../shared/supabase';
 import { db } from '../../shared/db';
 import {
   getCreditAccount,
-  getCreditBalance,
   updateCreditAccount,
 } from '../repositories/credit-accounts';
 import { insertLedgerEntry } from '../repositories/transactions';
 import { InsufficientCreditsError } from '../../errors';
 import { TOKEN_PRICE_MULTIPLIER, MINIMUM_CREDIT_FOR_RUN } from './tiers';
-
-export async function getBalance(accountId: string) {
-  const row = await getCreditBalance(accountId);
-  if (!row) return { balance: 0, expiring: 0, nonExpiring: 0, daily: 0 };
-
-  return {
-    balance: Number(row.balance),
-    expiring: Number(row.expiringCredits),
-    nonExpiring: Number(row.nonExpiringCredits),
-    daily: Number(row.dailyCreditsBalance),
-  };
-}
 
 export async function getCreditSummary(accountId: string) {
   const account = await getCreditAccount(accountId);
@@ -41,7 +28,7 @@ export async function getCreditSummary(accountId: string) {
   };
 }
 
-export type LedgerDebitType = 'usage' | 'compute_debit' | 'llm_debit' | 'token_deduction' | 'token_overage';
+type LedgerDebitType = 'usage' | 'compute_debit' | 'llm_debit' | 'token_deduction' | 'token_overage';
 
 export async function deductCredits(
   accountId: string,

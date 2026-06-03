@@ -6,7 +6,6 @@
  * Single source of truth for all billing data:
  * - Credits (total, daily, monthly, extra)
  * - Subscription (tier, status, billing period)
- * - Available models
  * - Limits (projects, threads, concurrent runs)
  * 
  * Replaces: useSubscription, useCreditBalance, useBillingStatus, useScheduledChanges
@@ -16,16 +15,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
 import { useBillingAccountId } from '@/stores/billing-account-context';
 
-import { CREDITS_PER_DOLLAR, dollarsToCredits } from '@kortix/shared';
+import { dollarsToCredits } from '@kortix/shared';
 import {
   billingApi,
   AccountState,
-  CreateCheckoutSessionRequest,
   CreatePortalSessionRequest,
-  CancelSubscriptionRequest,
-  PurchaseCreditsRequest,
-  TokenUsage,
-  ScheduleDowngradeRequest,
 } from '@/lib/api/billing';
 
 // =============================================================================
@@ -40,7 +34,6 @@ export const accountStateKeys = {
   // multi-account users don't see the same wallet/limits across all pages.
   state: (accountId?: string) =>
     [...accountStateKeys.all, 'state', { accountId: accountId ?? null }] as const,
-  usageHistory: (days?: number) => [...accountStateKeys.all, 'usage-history', { days }] as const,
   transactions: (limit?: number, offset?: number) => [...accountStateKeys.all, 'transactions', { limit, offset }] as const,
 };
 
@@ -139,7 +132,6 @@ interface UseAccountStateOptions {
  * - useCreditBalance()
  * - useBillingStatus() 
  * - useScheduledChanges()
- * - useAvailableModels() (models are now in account state)
  * 
  * The data is cached for 10 minutes and only refetched when:
  * - A mutation occurs (upgrade, downgrade, purchase, etc.)
@@ -177,52 +169,8 @@ export function useAccountState(options?: UseAccountStateOptions) {
 }
 
 // =============================================================================
-// STREAMING VARIANT - For use during agent runs
-// =============================================================================
-
-/**
- * Account state with periodic refresh during streaming.
- * Use this in components that display credits during agent runs.
- */
-export function useAccountStateWithStreaming(isStreaming: boolean = false) {
-  // Inherit the BillingAccountProvider if one is wrapping us — keeps the
-  // streaming variant aligned with the static one on /accounts/[id].
-  const accountId = useBillingAccountId();
-  return useQuery<AccountState>({
-    queryKey: accountStateKeys.state(accountId),
-    queryFn: () => billingApi.getAccountState(false, accountId),
-    staleTime: 1000 * 60 * 5, // 5 minutes during streaming
-    gcTime: 1000 * 60 * 15,
-    refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    // Slower refresh during streaming - credits update via backend cache invalidation
-    refetchInterval: isStreaming ? 2 * 60 * 1000 : false, // 2 minutes if streaming
-    refetchIntervalInBackground: false,
-  });
-}
-
-// =============================================================================
 // MUTATION HOOKS - All invalidate account state after success
 // =============================================================================
-
-export function useCreateCheckoutSession() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: (request: CreateCheckoutSessionRequest) =>
-      billingApi.createCheckoutSession(request, accountId),
-    onSuccess: (data) => {
-      // Invalidate and refetch on upgrade/update - checkout redirects user anyway
-      if (data.status === 'upgraded' || data.status === 'updated') {
-        invalidateAccountState(queryClient, true, true, accountId); // Force refetch with skipCache after checkout
-      }
-      if (data.checkout_url) {
-        window.location.href = data.checkout_url;
-      }
-    },
-  });
-}
 
 // Billing v2 — start the per-seat subscription flow. If a card is on file,
 // the API creates the subscription directly and returns { status: 'subscription_created' };
@@ -323,141 +271,6 @@ export function useCreatePortalSession() {
   });
 }
 
-export function useCancelSubscription() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: (request?: CancelSubscriptionRequest) => billingApi.cancelSubscription(request, accountId),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
-      if (response.success) {
-        toast.success(response.message);
-      } else {
-        toast.error(response.message);
-      }
-    },
-    onError: (error: any) => {
-      toast.error(error.message || 'Failed to cancel subscription');
-    },
-  });
-}
-
-export function useReactivateSubscription() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: () => billingApi.reactivateSubscription(accountId),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
-      if (response.success) {
-        toast.success(response.message);
-      } else {
-        toast.error(response.message);
-      }
-    },
-    onError: (error: any) => {
-      toast.error(error.message || 'Failed to reactivate subscription');
-    },
-  });
-}
-
-export function usePurchaseCredits() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: (request: PurchaseCreditsRequest) => billingApi.purchaseCredits(request, accountId),
-    onSuccess: (data) => {
-      // Will redirect to checkout - invalidation happens on return via backend
-      if (data.checkout_url) {
-        window.location.href = data.checkout_url;
-      }
-    },
-  });
-}
-
-export function useDeductTokenUsage() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (usage: TokenUsage) => billingApi.deductTokenUsage(usage),
-    onSuccess: () => {
-      // Backend invalidates cache - we just need to refetch
-      invalidateAccountState(queryClient);
-    },
-  });
-}
-
-export function useScheduleDowngrade() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: (request: ScheduleDowngradeRequest) => billingApi.scheduleDowngrade(request, accountId),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show scheduled change
-      if (response.success) {
-        toast.success(response.message);
-      } else {
-        toast.error(response.message);
-      }
-    },
-    onError: (error: any) => {
-      toast.error(error.message || 'Failed to schedule downgrade');
-    },
-  });
-}
-
-export function useCancelScheduledChange() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: () => billingApi.cancelScheduledChange(accountId),
-    onSuccess: (response) => {
-      invalidateAccountState(queryClient, true, false, accountId); // Refetch to show updated state
-      if (response.success) {
-        toast.success(response.message);
-      } else {
-        toast.error(response.message);
-      }
-    },
-    onError: (error: any) => {
-      toast.error(error.message || 'Failed to cancel scheduled change');
-    },
-  });
-}
-
-export function useSyncSubscription() {
-  const queryClient = useQueryClient();
-  const accountId = useBillingAccountId();
-
-  return useMutation({
-    mutationFn: () => billingApi.syncSubscription(accountId),
-    onSuccess: () => {
-      invalidateAccountState(queryClient, false, false, accountId);
-      toast.success('Subscription synced successfully');
-    },
-    onError: (error: any) => {
-      toast.error(error.message || 'Failed to sync subscription');
-    },
-  });
-}
-
-// =============================================================================
-// USAGE HISTORY & TRANSACTIONS - Separate queries for analytics
-// =============================================================================
-
-export function useUsageHistory(days = 30) {
-  return useQuery({
-    queryKey: accountStateKeys.usageHistory(days),
-    queryFn: () => billingApi.getUsageHistory(days),
-    staleTime: 1000 * 60 * 10, // 10 minutes
-  });
-}
-
 // `useTransactions` (rich variant with typeFilter) lives in `./use-transactions`
 // and is the only one actually used by the BillingTab history block. The
 // previous duplicate here was a thin wrapper that the index re-exported but
@@ -532,4 +345,3 @@ export const accountStateSelectors = {
     };
   },
 };
-

@@ -23,8 +23,6 @@ import {
 import {
   useUploadMultipleFiles,
   useStageFiles,
-  convertAttachmentsToFormDataFiles,
-  generateFileReferences,
   validateFileSize,
 } from '@/lib/files';
 import { transcribeAudio, validateAudioFile } from '@/lib/chat/transcription';
@@ -40,11 +38,10 @@ import {
   extractTierLimitErrorState, 
   parseTierRestrictionError, 
   formatTierLimitErrorForUI,
-  type TierLimitErrorState,
 } from '@agentpress/shared/errors';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
 
-export interface Attachment {
+interface Attachment {
   type: 'image' | 'video' | 'document';
   uri: string;
   name?: string;
@@ -148,7 +145,7 @@ export function useChat(): UseChatReturn {
   const { t } = useLanguage();
   const queryClient = useQueryClient();
   const router = useRouter();
-  const { selectedModelId, selectedAgentId } = useAgent();
+  const { selectedModelId } = useAgent();
   const { openPricingModal } = usePricingModalStore();
   const { data: modelsData, isLoading: modelsLoading, error: modelsError } = useAvailableModels();
   const { hasActiveSubscription } = useBillingContext();
@@ -964,12 +961,10 @@ export function useChat(): UseChatReturn {
         setMessages([optimisticUserMessage]);
         setIsNewThreadOptimistic(true);
 
-        // CRITICAL: Dismiss keyboard BEFORE navigation to avoid stale keyboard metrics
-        // on ThreadPage's KeyboardStickyView (fixes chat input jumping to middle on real devices)
+        // Dismiss before navigation to avoid stale keyboard metrics on real devices.
         Keyboard.dismiss();
 
-        // CRITICAL: Set activeThreadId IMMEDIATELY so UI navigates to ThreadPage
-        // This makes hasActiveThread = true, triggering instant navigation
+        // Set activeThreadId immediately so the UI switches into the active thread.
         setActiveThreadId(optimisticThreadId);
         setModeViewState('thread');
         log.log('✨ [useChat] INSTANT navigation to thread + message display with', pendingAttachments.length, 'attachments');
@@ -1276,13 +1271,13 @@ export function useChat(): UseChatReturn {
               if (optimisticIndex !== -1) {
                 log.log('[useChat] ✅ Replacing optimistic message with real one');
                 return prev.map((m, index) =>
-                  index === optimisticIndex ? (result.message as UnifiedMessage) : m
+                  index === optimisticIndex ? (result.message as unknown as UnifiedMessage) : m
                 );
               }
               
               // If no optimistic found, just add the message
               log.log('[useChat] No optimistic message found to replace, adding new');
-              return [...prev, result.message as UnifiedMessage];
+              return [...prev, result.message as unknown as UnifiedMessage];
             });
           }
           
@@ -1422,10 +1417,10 @@ export function useChat(): UseChatReturn {
           await refetchMessages();
           
           // fetchQuery throws on error - if we get here, network is working
-          const activeRuns = await queryClient.fetchQuery({
-            queryKey: chatKeys.activeRuns(),
-            staleTime: 0, // Force fresh fetch
-          });
+	          const activeRuns = await queryClient.fetchQuery({
+	            queryKey: chatKeys.activeRuns(),
+	            staleTime: 0, // Force fresh fetch
+	          }) as Array<{ thread_id: string; status: string; id: string }>;
           
           log.log('[useChat] Retry: Got fresh activeRuns data, count:', activeRuns?.length ?? 0);
           
@@ -1476,10 +1471,10 @@ export function useChat(): UseChatReturn {
           await refetchMessages();
           
           // fetchQuery throws on error - if we get here, network is working
-          const activeRuns = await queryClient.fetchQuery({
-            queryKey: chatKeys.activeRuns(),
-            staleTime: 0, // Force fresh fetch
-          });
+	          const activeRuns = await queryClient.fetchQuery({
+	            queryKey: chatKeys.activeRuns(),
+	            staleTime: 0, // Force fresh fetch
+	          }) as Array<{ thread_id: string; status: string; id: string }>;
           
           log.log('[useChat] Retry: Got fresh activeRuns data (runId path), count:', activeRuns?.length ?? 0);
           
@@ -1962,7 +1957,7 @@ export function useChat(): UseChatReturn {
     // This prevents the loader from disappearing briefly during the transition
     isSendingMessage: sendMessageMutation.isPending || unifiedAgentStartMutation.isPending || (userInitiatedRun && !isStreaming),
     isAgentRunning: isStreaming,
-    // Expose for ThreadPage to skip pushToTop on first message
+    // Expose so the first optimistic message can skip pushToTop.
     isNewThreadOptimistic,
     
     // Error state for stream errors

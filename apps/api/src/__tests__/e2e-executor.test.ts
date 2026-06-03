@@ -10,16 +10,19 @@ import {
   createExecutorRouter,
   type AdminConnectorView,
   type CatalogConnector,
-  type DefaultMode,
   type ExecutorPrincipal,
   type ExecutorRouterDeps,
-  type ProjectPoliciesViewResponse,
-  type ProjectPolicyView,
 } from '../executor/router';
-import type { GatewayAction, GatewayConnector, GatewayDeps, ExecutionRecord } from '../executor/gateway';
-import type { SecretGrant, SharingIntent } from '../executor/share';
+import type { GatewayAction, GatewayConnector, GatewayDeps } from '../executor/gateway';
+import type { SecretGrant } from '../executor/share';
 import { isSecretUsableBy, intentToScope, scopeToIntent } from '../executor/share';
-import { resolveEffectiveAction, type Policy } from '../executor/policy';
+import { resolveEffectiveAction, type DefaultMode, type Policy } from '../executor/policy';
+
+type ExecutionRecord = Parameters<GatewayDeps['recordExecution']>[0];
+type ProjectPoliciesViewResponse = NonNullable<
+  Awaited<ReturnType<NonNullable<ExecutorRouterDeps['getProjectPolicies']>>>
+>;
+type ProjectPolicyView = Parameters<NonNullable<ExecutorRouterDeps['setProjectPolicies']>>[2][number];
 
 const ACCOUNT = 'acct-1';
 const PROJECT = 'proj-1';
@@ -92,7 +95,6 @@ function makeGatewayDeps(): GatewayDeps {
     loadPolicies: async (connectorId) => world.policiesByConnector.get(connectorId) ?? [],
     loadProjectPolicies: async () => world.projectPolicies,
     loadDefaultMode: async () => world.defaultMode,
-    enforcePolicies: true,
     recordExecution: async (r) => { world.executions.push(r); },
     fetchImpl: async (url, init) => {
       world.upstream.push({ url, ...init });

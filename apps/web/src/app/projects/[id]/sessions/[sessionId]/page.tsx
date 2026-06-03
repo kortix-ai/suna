@@ -44,8 +44,8 @@ import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
  *
  * Lifecycle gate (auth/load → provisioning → error/stopped → active) keeps
  * the placeholder branches we already had. The active branch:
- *   1. Calls `switchToInstanceAsync(sandbox_id)` to set this session's
- *      sandbox as the global active server.
+ *   1. Calls `switchToSessionSandboxAsync(...)` to set this session's sandbox
+ *      as the global active server.
  *   2. WAITS for the active server's `instanceId` to actually equal
  *      `sandbox_id` before mounting chat. This is
  *      load-bearing — every sandbox-coupled hook inside the shell

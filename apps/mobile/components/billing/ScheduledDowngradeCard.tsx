@@ -102,7 +102,6 @@ export function ScheduledDowngradeCard({
           isPending={cancelScheduledChangeMutation.isPending}
           currentTierName={currentTierName}
           targetTierName={targetTierName}
-          isDark={isDark}
         />
       </>
     );
@@ -165,7 +164,6 @@ export function ScheduledDowngradeCard({
         isPending={cancelScheduledChangeMutation.isPending}
         currentTierName={currentTierName}
         targetTierName={targetTierName}
-        isDark={isDark}
       />
     </>
   );
@@ -179,7 +177,6 @@ function ConfirmDialog({
   isPending,
   currentTierName,
   targetTierName,
-  isDark,
 }: {
   visible: boolean;
   onClose: () => void;
@@ -187,7 +184,6 @@ function ConfirmDialog({
   isPending: boolean;
   currentTierName: string;
   targetTierName: string;
-  isDark: boolean;
 }) {
   return (
     <Modal

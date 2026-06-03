@@ -5,8 +5,7 @@ import { locales, defaultLocale, type Locale } from '@/i18n/config';
 import { getCookieLocale, getUserLocale, LOCALE_COOKIE_MAX_AGE, LOCALE_COOKIE_NAME } from '@/i18n/locale';
 import { detectBestLocaleFromHeaders } from '@/lib/utils/geo-detection-server';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
-import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes';
-import { getMaintenanceConfig, type MaintenanceLevel } from '@/lib/maintenance-store';
+import { getMaintenanceConfig } from '@/lib/maintenance-store';
 
 // Marketing pages that support locale routing for SEO (/de, /it, etc.)
 const MARKETING_ROUTES = [
@@ -44,20 +43,11 @@ const PUBLIC_ROUTES = [
   '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
   '/maintenance', // Maintenance page must be accessible without auth
-  '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
 
 // Routes that require authentication but are related to billing/setup
 const BILLING_ROUTES: string[] = [];
-
-// Routes that require authentication and active subscription
-const PROTECTED_ROUTES = [
-  '/projects',
-  '/accounts',
-  '/invites',
-  '/admin',
-];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -114,7 +104,6 @@ export async function middleware(request: NextRequest) {
         callbackUrl.searchParams.set(key, value);
       });
 
-      console.log('🔄 Redirecting Supabase verification from root to /auth/callback');
       return NextResponse.redirect(callbackUrl);
     }
   }

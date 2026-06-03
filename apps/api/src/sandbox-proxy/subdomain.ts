@@ -1,21 +1,10 @@
 /**
  * Subdomain preview proxy — `p{port}-{sandboxId}.localhost:{apiPort}/...`
  *
- * Carried over from main, trimmed to what this branch actually needs:
- *   - Parse the `Host` header at the Bun.serve level (before Hono routing
- *     kicks in) to recognize preview subdomains.
- *   - First-request auth: validate a Bearer JWT / Kortix token / `?token=`
- *     query param, then mark the subdomain "authenticated" in-memory for
- *     a TTL. All subsequent requests on the subdomain are trusted — this
- *     side-steps third-party cookie restrictions inside iframes and lets
- *     sub-resources, redirects, WS upgrades flow through unchanged.
- *   - HTTP forwarding goes through `forwardToSandbox` so we reuse the same
- *     path resolution (Daytona's getPreviewLink(port)) that the path-based
- *     `/v1/p/:sandboxId/:port` route uses.
- *
- * What this DOESN'T cover (yet): WebSocket upgrade on the subdomain. The
- * agent server's `/proxy/{port}/*` handler is HTTP-only, and the API's WS
- * fan-out was removed earlier in this refactor. WS plumbing is a follow-up.
+ * Parses the `Host` header at the Bun.serve level before Hono routing, validates
+ * the first request, then forwards HTTP traffic through the shared sandbox
+ * preview forwarder. WebSocket upgrades on preview subdomains are rejected in
+ * `index.ts`; path-based preview WebSockets use `ws-proxy.ts`.
  */
 
 import { authenticatePreviewPrincipal, extractPreviewToken } from './preview-auth';

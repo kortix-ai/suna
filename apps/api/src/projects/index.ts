@@ -1722,12 +1722,9 @@ async function loadProjectForUser(c: Context, projectId: string, action: Project
   const accountRole = membership.accountRole as AccountRole;
   const projectRole = await getProjectMemberRole(projectId, userId);
 
-  // Ask the IAM engine for the real verdict. The engine consults
-  // super-admin bypass, direct + group policies, project_groups, AND
-  // the legacy account_role / project_members bridges (in non-strict
-  // mode), so it's strictly a superset of the old role-only check.
-  // Passing requestCtx is required for IP-allowlist / require-MFA
-  // policy conditions to evaluate against the current request.
+  // Ask the IAM engine for the real verdict. V2 consults super-admin,
+  // account role, direct project membership, group project grants, and
+  // account-wide MFA. It no longer evaluates V1 policies or conditions.
   const actingTokenId =
     ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
       | string
@@ -2325,7 +2322,7 @@ function webhookPayload(c: Context, rawBody: string) {
 }
 
 function triggerBackpressureLimit() {
-  const configured = Number((config as any).KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT);
+  const configured = Number(config.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT);
   return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 3;
 }
 
@@ -2436,12 +2433,12 @@ let triggerSweepRunning = false;
 let connectorSweepRunning = false;
 let lastConnectorSweepAt = 0;
 function connectorSweepIntervalMs() {
-  const raw = Number(process.env.KORTIX_CONNECTOR_SWEEP_INTERVAL_MS);
+  const raw = Number(config.KORTIX_CONNECTOR_SWEEP_INTERVAL_MS);
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 120_000;
 }
 
 function triggerSchedulerIntervalMs() {
-  const raw = Number((config as any).KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS);
+  const raw = Number(config.KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS);
   return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 60_000;
 }
 
@@ -2720,16 +2717,12 @@ async function runGitTriggerSweep(now: Date, accumulator: {
 }
 
 export function startProjectTriggerScheduler(): void {
-  if ((config as any).KORTIX_TRIGGER_SCHEDULER_ENABLED === false) return;
+  if (config.KORTIX_TRIGGER_SCHEDULER_ENABLED === false) return;
   if (globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer) {
     clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
   }
   triggerSchedulerTimer = setInterval(() => {
-    runProjectTriggerSweep().then((result) => {
-      if (result.fired || result.queued || result.failed) {
-        console.log('[project-triggers] sweep completed', result);
-      }
-    }).catch((error) => {
+    runProjectTriggerSweep().catch((error) => {
       console.error('[project-triggers] sweep failed:', error);
     });
 
@@ -2738,11 +2731,7 @@ export function startProjectTriggerScheduler(): void {
     // entirely when the experimental flag is off — no point reading
     // every project's manifest just to ignore the `apps` block.
     if (config.KORTIX_APPS_EXPERIMENTAL) {
-      runProjectAppSweep().then((result) => {
-        if (result.deployed || result.failed) {
-          console.log('[project-apps] sweep completed', result);
-        }
-      }).catch((error) => {
+      runProjectAppSweep().catch((error) => {
         console.error('[project-apps] sweep failed:', error);
       });
     }
@@ -2752,11 +2741,7 @@ export function startProjectTriggerScheduler(): void {
     // edits (raw git push / CLI) and heals any DB drift / retries error rows.
     if (Date.now() - lastConnectorSweepAt >= connectorSweepIntervalMs()) {
       lastConnectorSweepAt = Date.now();
-      runProjectConnectorSweep().then((result) => {
-        if (result.synced || result.errors) {
-          console.log('[project-connectors] sweep completed', result);
-        }
-      }).catch((error) => {
+      runProjectConnectorSweep().catch((error) => {
         console.error('[project-connectors] sweep failed:', error);
       });
     }
@@ -2858,8 +2843,7 @@ projectsApp.get('/', async (c) => {
 projectsApp.post('/', async (c) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
-  // IAM-gated. Engine consults super-admin bypass, direct + group
-  // policies, and legacy owner/admin bridges (in non-strict mode).
+  // IAM-gated. V2 checks super-admin and the caller's account role.
   await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
   let repoUrl: string | null;
@@ -6315,14 +6299,11 @@ projectsApp.get('/:projectId/access', async (c) => {
          *  list multi-source access ("Editor via Engineering + Viewer
          *  via Viewers") without further API calls. */
         group_sources: fold.group_sources,
+        expires_at: grant?.expiresAt?.toISOString() ?? null,
         joined_at: member.joinedAt.toISOString(),
         granted_by: grant?.grantedBy ?? null,
         granted_at: grant?.createdAt?.toISOString() ?? null,
         updated_at: grant?.updatedAt?.toISOString() ?? null,
-        /** Auto-revoke timestamp for the DIRECT grant. NULL = permanent.
-         *  Group-derived expiries are surfaced per-source separately
-         *  (not yet wired into group_sources — follow-up). */
-        expires_at: grant?.expiresAt?.toISOString() ?? null,
       };
     })
     .sort((a, b) => {
@@ -6770,8 +6751,7 @@ projectsApp.delete('/:projectId/access/:userId', async (c) => {
 //
 // A row in project_group_grants attaches an account_group to a project
 // with a chosen project_role. Every member of the group inherits that
-// role on that project. These routes work for both V1 and V2 accounts —
-// V1 just ignores the rows because V1's engine reads from iam_policies.
+// role on that project.
 
 const PROJECT_ROLES = ['manager', 'editor', 'viewer'] as const;
 type ProjectGroupGrantRole = typeof PROJECT_ROLES[number];

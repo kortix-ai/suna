@@ -174,7 +174,7 @@ export async function getAuthToken(): Promise<string | null> {
   return getSupabaseAccessToken();
 }
 
-export async function getAuthTokenWithRetry(options?: {
+async function getAuthTokenWithRetry(options?: {
 	attempts?: number;
 	baseDelayMs?: number;
 	invalidateBetweenAttempts?: boolean;
@@ -235,7 +235,7 @@ function buildAuthHeaders(
  * Shared authenticated fetch — injects auth tokens and handles 401 responses.
  *
  * Centralizes the pattern duplicated across opencode-sdk, use-sandbox-connection,
- * and server-selector. All three auth injection points now go through this.
+ * and sandbox lifecycle calls. Auth injection points now go through this.
  *
  * Behavior:
  *   1. Gets the current auth token (Supabase JWT)

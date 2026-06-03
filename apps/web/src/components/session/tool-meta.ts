@@ -8,18 +8,9 @@
 
 import type { ToolPart } from '@/ui';
 
-// ─── Context tool grouping ───────────────────────────────────────────────
-
-export const CONTEXT_TOOLS = new Set(['read', 'glob', 'grep', 'list']);
-
 /** Normalize `oc-foo_bar` → `foo_bar`, `foo-bar` → `foo_bar`. */
 function normalizeName(name: string): string {
   return name.replace(/^oc-/, '').replace(/-/g, '_');
-}
-
-export function isContextTool(toolName: string): boolean {
-  const n = normalizeName(toolName);
-  return CONTEXT_TOOLS.has(n);
 }
 
 /**
@@ -62,7 +53,7 @@ function truncate(s: string, max = 60): string {
  * Extract the one thing that identifies a tool call in a one-liner.
  * Used for context-group item labels and any future compact views.
  */
-export function getToolPrimaryArg(part: ToolPart): string {
+function getToolPrimaryArg(part: ToolPart): string {
   const state = (part.state ?? {}) as any;
   const input = (state.input ?? {}) as Record<string, any>;
   const key = normalizeName(part.tool);

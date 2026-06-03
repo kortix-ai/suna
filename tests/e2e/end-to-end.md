@@ -17,21 +17,18 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
   - **PAT** — `kortix_pat_…` CLI personal access token (`account_tokens`). Carries real `userId`. May be **project-scoped** (`projectId` set).
   - **APIKEY** — `kortix_` / `kortix_sb_` (`api_keys`). Account/sandbox identity; `accountId→userId` mapped. Used by sandbox→router (search/LLM/proxy).
   - **COOKIE** — `__preview_session`, scoped `/v1/p/`, 1h.
-- Auth middlewares: `supabaseAuth` (JWT or PAT) on `/v1/accounts/*`, `/v1/projects/*`, `/v1/platform/api-keys`. `combinedAuth` (JWT|token|PAT|cookie|`X-Kortix-Token`|`?token=`) on `/v1/p/*`, `/v1/queue/*`, `/v1/servers/*`, `/v1/tunnel/*`, `/v1/deployments/*`. `apiKeyAuth` (kortix_ only) on `/v1/router/*`. `requireAdmin` (platform role) on `/v1/ops/*`. Webhooks = HMAC, no auth middleware.
+- Auth middlewares: `supabaseAuth` (JWT or PAT) on `/v1/accounts/*`, `/v1/projects/*`, `/v1/platform/api-keys`. `combinedAuth` (JWT|token|PAT|cookie|`X-Kortix-Token`|`?token=`) on `/v1/p/*`, `/v1/servers/*`, `/v1/tunnel/*`. `apiKeyAuth` (kortix_ only) on `/v1/router/*`. `requireAdmin` (platform role) on `/v1/ops/*`. Webhooks = HMAC, no auth middleware.
 - Project authz gate `loadProjectForUser(c, id, level)`: `read`→`PROJECT_READ` (any project role), `write`→`PROJECT_WRITE` (editor/manager), `manage`→`PROJECT_DELETE` (manager only). Account owner/admin get implicit `manager` on every project.
 
 ### Principals (fixtures every run must provision)
 
 | Key | What | Used to assert |
 |---|---|---|
-| `OWNER` | account owner (super-admin, bypasses policy) | full access |
-| `ADMIN` | account `admin` (Administrator policy) | all but account.delete / billing.write / owner-grant |
+| `OWNER` | account owner, also marked super-admin for bypass checks | full access |
+| `ADMIN` | account `admin` | account administration except owner-only actions |
 | `MEMBER` | account `member`, **no** project grant | account-reads only; cannot see projects |
 | `M_VIEWER` `M_EDITOR` `M_MANAGER` | member + project_members row (viewer/editor/manager) | per-project read / write / manage |
-| `BILLING` | `billing_manager` policy | billing read+write only |
-| `AUDITOR` | `auditor` policy | reads + audit only |
-| `RO_ADMIN` | `administrator_read_only` | read-only everywhere |
-| `DENY_USER` | member with explicit `deny` policy on a project | deny-wins over any allow |
+| `GROUP_VIEWER` `GROUP_EDITOR` `GROUP_MANAGER` | member in an account group with a `project_group_grants` row | group-derived per-project access |
 | `NONMEMBER` | user in a different account | 403 `not_a_member` / 404 |
 | `PAT_ACCT` | account-scoped PAT minted by OWNER | inherits minter unless narrowed |
 | `PAT_PROJ` | project-scoped PAT (minted per session) | hard-fenced to one project |
@@ -41,10 +38,9 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 ### System / health (public unless noted)
 
 `SYS-1` `GET /health` · `GET /v1/health` → 200 `{status:"ok",service:"kortix-api"}`.
-`SYS-2` `GET /v1/system/status` → maintenance/banner stub. `POST /v1/prewarm` → `{success:true}`.
-`SYS-3` `GET /v1/user-roles` (`supabaseAuth`) → `{isAdmin, role}` (platform role).
-`SYS-4` `GET /v1/router/health` → router health (no auth).
-`SYS-5` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`. Every state-changing `/v1/*` passes `auditStateChangingRequest`.
+`SYS-2` `GET /v1/user-roles` (`supabaseAuth`) → `{isAdmin, role}` (platform role).
+`SYS-3` `GET /v1/router/health` → router health (no auth).
+`SYS-4` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`. Every state-changing `/v1/*` passes `auditStateChangingRequest`.
 
 ---
 
@@ -88,7 +84,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `ACC-1` `GET /access/signup-status` → 200 `{open|waitlist}`.
 `ACC-2` `POST /access/check-email {email}` → 200 allowed/blocked.
 `ACC-3` `POST /access/request-access {email,…}` → 200 waitlisted.
-`ACC-4` (self-hosted only, `isLocal()`) `GET /setup/install-status` + `GET /setup/sandbox-providers` → public; `POST /setup/bootstrap-owner` → first owner; `GET /setup/status|health|setup-status`; `GET/POST /setup/setup-wizard-step`, `POST /setup/setup-complete`. Cloud → routes 404.
+`ACC-4` (self-hosted only) `GET /setup/install-status` → public; `POST /setup/bootstrap-owner` → first owner. Cloud → routes 404.
 
 ---
 
@@ -104,8 +100,8 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 ### Members
 `MEM-1` `GET /accounts/:id/members` → member → 200.
 `MEM-2` `POST /accounts/:id/members {email,role}` → `MEMBER_INVITE` (OWNER/ADMIN) → **201** (`status:added` existing user / `status:pending` new); already a member → 409; `MEMBER` → 403.
-`MEM-3` `PATCH /accounts/:id/members/:userId {role}` → `MEMBER_UPDATE` → 200; same role → 200 `{unchanged:true}` (no-op); **promoting/demoting `owner` additionally requires `MEMBER_SUPER_ADMIN_GRANT`** (owner only) → ADMIN owner-grant → 403; **promotion to owner/admin deletes the member's `project_members` rows + project policies**.
-`MEM-4` `DELETE /accounts/:id/members/:userId` → `MEMBER_REMOVE`; ADMIN removing an OWNER → 403; removing the **last owner** → 409; also cascades the member's `project_members` rows + IAM policies.
+`MEM-3` `PATCH /accounts/:id/members/:userId {role}` → `MEMBER_UPDATE` → 200; same role → 200 `{unchanged:true}` (no-op); **promoting/demoting `owner` additionally requires `MEMBER_SUPER_ADMIN_GRANT`** (owner only) → ADMIN owner-grant → 403; promotion to owner/admin removes redundant direct `project_members` rows.
+`MEM-4` `DELETE /accounts/:id/members/:userId` → `MEMBER_REMOVE`; ADMIN removing an OWNER → 403; removing the **last owner** → 409; also cascades the member's `project_members` rows.
 `MEM-5` `POST /accounts/:id/leave` → 200; **last owner** → 409; **personal account** → 409; **non-member → 404**.
 
 ### Invites (accept side)
@@ -122,30 +118,31 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `TOK-4` project-scoped PAT (`projectId` set): allowed only on its own project + `/accounts/me`; **everything else → 403** (other project, `/accounts/*`, project-list, and all other surfaces — `enforceTokenProjectScope`).
 
 ### Account deletion
-`DEL-1` `GET /account/deletion-status` → state.
-`DEL-2` `POST /account/request-deletion` → schedules; `POST /account/cancel-deletion` → cancels; `DELETE /account/delete-immediately` → purges. (Mirror mount `/billing/account/*`.)
+`DEL-1` `GET /billing/account/deletion-status` → state.
+`DEL-2` `POST /billing/account/request-deletion` → schedules; `POST /billing/account/cancel-deletion` → cancels; `DELETE /billing/account/delete-immediately` → purges.
 
 ---
 
-## 5. IAM (groups / policies / roles / super-admin)
+## 5. IAM (groups / project grants / super-admin)
 
 All under `/accounts/:id/iam/*`, each route gated by its named action. Run every one as the gating role (2xx) and as `MEMBER` (403).
 
 `IAM-1` `GET …/iam/groups` (`GROUP_READ`) · `POST` (`GROUP_CREATE`) → 201.
 `IAM-2` `GET/PATCH/DELETE …/iam/groups/:gid` (`GROUP_READ`/`UPDATE`/`DELETE`).
 `IAM-3` `GET …/iam/groups/:gid/members` (`GROUP_READ`); `POST`/`DELETE …/members/:userId` (`GROUP_MEMBERS_MANAGE`).
-`IAM-4` `GET …/iam/policies` (`POLICY_READ`) · `POST`/`PATCH …/:pid` (`POLICY_CREATE`) · `DELETE …/:pid` (`POLICY_DELETE`). `POST` body `{principalType: member|group|token, principalId, scopeType, scopeId, roleId, effect: allow|deny}`. **`scopeType=account` requires `scopeId=null`** (else 400); non-account scope requires `scopeId` (else 400); `role.resourceType` must match `scopeType` (else 400); unique-violation → 409.
-`IAM-5` `GET …/iam/roles` · `…/roles/:rid/permissions` · `…/roles/:rid/usage` · `…/iam/actions` (all `ROLE_READ`).
-`IAM-6` `POST …/iam/roles {key,resource_type,actions[]}` (`ROLE_CREATE`); action list with a string ∉ catalog → 400; dup key → 409. `PATCH …/:rid` / `PUT …/:rid/permissions` (`ROLE_UPDATE`); `DELETE …/:rid` (`ROLE_DELETE`), in-use → 409. **System roles (`account_id=NULL`) are immutable → PATCH/PUT/DELETE → 403.**
-`IAM-7` `PATCH …/iam/members/:userId/super-admin {isSuperAdmin:bool}` (`MEMBER_SUPER_ADMIN_GRANT`, OWNER only) → grant/revoke super-admin; ADMIN → 403.
-`IAM-8` `GET …/iam/members/:userId/groups` · `…/effective` (`MEMBER_READ`) → effective permission set.
+`IAM-4` `GET …/iam/groups/:gid/project-grants` (`GROUP_READ`) → project grants attached to the group.
+`IAM-5` `PATCH …/iam/members/:userId/super-admin {isSuperAdmin:bool}` (`MEMBER_SUPER_ADMIN_GRANT`, OWNER only) → grant/revoke super-admin; ADMIN → 403.
+`IAM-6` `GET …/iam/members/:userId/groups` · `…/project-access` · `…/effective` (`MEMBER_READ`) → group membership, project access, and effective permission probes.
+`IAM-7` `GET/PATCH …/iam/mfa-required` (`ACCOUNT_READ`/`ACCOUNT_WRITE`) and `GET …/iam/mfa-required/preview` (`ACCOUNT_READ`).
+`IAM-8` `GET/PATCH …/iam/session-policy`, `GET …/iam/sessions`, `POST …/iam/sessions/:sessionId/revoke`, `GET/PATCH …/iam/pat-policy`.
+`IAM-9` SCIM, SSO, and service-account routes: list/create/revoke SCIM tokens, read/delete SSO provider, list/create/delete SSO mappings, list/create/disable/delete service accounts.
 
 ### Engine semantics (assert via behavior, not endpoints)
-`IAM-9` **super-admin bypass** — OWNER allowed everything before any policy.
-`IAM-10` **deny-wins** — `DENY_USER` with allow+deny on same action/scope → denied.
-`IAM-11` **token-only eval** — PAT with ≥1 narrowing policy evaluated on its policies alone (no super-admin, no legacy bridge); PAT with 0 policies inherits minter.
-`IAM-12` **legacy bridges** — `member` gets account-reads only (no `project.*`, so cannot list all projects); owner/admin → Administrator action set; `project_members` row → bridged project role.
-`IAM-13` **scope match** — policy with `scope_id=NULL` matches all resources of type; with `scope_id` matches only that resource.
+`IAM-10` **super-admin bypass** — super-admin can perform every V2 action.
+`IAM-11` **account roles** — owner/admin can manage the account and get implicit Manager on every project; member gets account reads only.
+`IAM-12` **project roles** — direct `project_members` rows and group `project_group_grants` combine; strongest role wins.
+`IAM-13` **project-scoped PATs** — a project-bound PAT is allowed only on its bound project and denied on account-level routes.
+`IAM-14` **MFA gate** — account-wide MFA rejects non-`aal2` browser/JWT requests; PATs are exempt.
 
 ---
 
@@ -211,12 +208,6 @@ All under `/p/:sandboxId/:port/*` (`combinedAuth` + rate-limit). `:sandboxId` = 
 `RUN-7` `GET /p/<sbx>/8000/session/<ocId>/diff` → working-tree diff; agent commits land on branch `<sessionId>`.
 `RUN-8` proxy authz — request without any valid token/cookie → 401; preview-token from a `share` → scoped 200.
 
-### Persistent message queue (survives reload)
-`Q-1` `POST /queue/sessions/:sid {text,id?}` → 201 enqueue.
-`Q-2` `GET /queue/sessions/:sid` · `GET /queue/all` · `GET /queue/status` → list/status.
-`Q-3` `DELETE /queue/sessions/:sid` (clear) · `DELETE /queue/messages/:mid` (one) · `POST /queue/messages/:mid/move-up|move-down` (reorder).
-`Q-4` drainer (server, ~2s poll) — detects idle session → forwards queued msgs to OpenCode `prompt_async`; assert queued msg eventually drained.
-
 ---
 
 ## 10. Files (read via git API; write via sandbox)
@@ -279,8 +270,8 @@ Tokens stored as encrypted project secrets; webhooks public + signature-gated.
 `CHN-5` Slack inbound (BYO mode) — `POST /webhooks/slack/:id` (per-project signing secret).
 `CHN-6` Slack dispatch — `app_mention`/IM/threaded `message` → existing thread session → deliver to sandbox `/kortix/prompt` (`delivered|transient|stale`); else `createProjectSession` (actor=owner, agent `default`) + record `chat_threads`.
 `CHN-7` Slack OAuth — `GET /webhooks/slack/oauth/callback` (signed `state`, 10-min TTL) → exchange code → `saveSlackInstall`.
-`CHN-8` Telegram inbound — `POST /webhooks/telegram/:id`: verify `x-telegram-bot-api-secret-token` (missing→404, mismatch→401) → `message`/`edited_message` → spawn session (actor=owner).
-`CHN-9` bad sig on any channel webhook → 401. Not configured → **503 (Slack OAuth mode + OAuth callback)** but **404 (Slack BYO + Telegram)**.
+`CHN-8` Telegram inbound is handled by the sandbox channel runtime, not by an API webhook route.
+`CHN-9` bad sig on any API channel webhook → 401. Not configured → **503 (Slack OAuth mode + OAuth callback)** but **404 (Slack BYO)**.
 
 ---
 
@@ -337,8 +328,8 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `BILL-5` `POST /billing/purchase-credits`; `GET /billing/transactions[/summary]`, `credit-usage`, `tier-configurations`, `credit-breakdown`, `usage-history`; `GET /billing/checkout-session/:sessionId` · `POST /billing/confirm-checkout-session`.
 `BILL-6` auto-topup: `GET …/auto-topup/settings|setup-status` · `POST …/auto-topup/configure`. Cron: `POST /billing/cron/yearly-rotation`.
 `BILL-7` `POST /billing/deduct {prompt_tokens,completion_tokens,model}` · `POST /billing/deduct-usage {amount,description}` (agent runtime).
-`BILL-8` `POST /billing/webhooks/stripe` (also `/webhook/stripe`) — Stripe sig: missing sig → 400, misconfigured secret → 500. `POST /billing/webhooks/revenuecat` — **Bearer-token auth, bad → 401** (not an in-body sig). Both public, no auth middleware.
-`BILL-9` write ops require `billing.write` — `BILLING` ok, `MEMBER`/`AUDITOR` → 403.
+`BILL-8` `POST /billing/webhooks/stripe` — Stripe sig: missing sig → 400, misconfigured secret → 500. `POST /billing/webhooks/revenuecat` — **Bearer-token auth, bad → 401** (not an in-body sig). Both public, no auth middleware.
+`BILL-9` write ops require `billing.write` — OWNER ok, ADMIN/MEMBER → 403.
 
 ---
 
@@ -346,22 +337,22 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 
 `RTR-1` `POST /router/web-search {query}` · `POST /router/image-search` → `APIKEY` → 200; `ANON`/JWT → 401.
 `RTR-2` `POST /router/chat/completions {model,messages,stream}` (OpenAI-compat) · `GET /router/models` · `GET /router/models/:model` · `POST /router/messages` (Anthropic-style).
-`RTR-3` session-LLM: `POST /router/llm/chat/completions` (session-LLM token in Authorization) · `GET /router/llm/models`.
+`RTR-3` paid sandbox LLM gateway: `POST /llm/chat/completions` (YOLO/member token in Authorization) · `GET /llm/models`.
 `RTR-4` billed proxy passthrough `ALL /router/:service[/*]` for `tavily|serper|firecrawl|replicate|context7|anthropic|openai|xai|gemini|groq` — Kortix token → managed keys; user key + `X-Kortix-Token` → passthrough; disallowed service/route → 4xx.
 
 ---
 
-## 18. Platform / OAuth2 provider / Tunnel / Servers / Deployments
+## 18. Platform / OAuth2 provider / Tunnel / Servers / Apps
 
 ### Platform API keys
-`PLT-1` `GET /platform/` → `{ok:true,message:"platform"}` (public). `GET /platform/sandbox/version[/latest|/all|/changelog]` (public).
+`PLT-1` `GET /platform/sandbox/version[/latest|/all|/changelog]` (public).
 `PLT-2` `GET/POST /platform/api-keys` · `PATCH /platform/api-keys/:keyId/revoke` · `DELETE /platform/api-keys/:keyId` · `POST …/:keyId/regenerate` (`supabaseAuth`).
 
 ### OAuth2 provider (Kortix as IdP for CLI/MCP/tunnel)
 `OAU-1` `GET /oauth/authorize` (public) → redirect to consent.
 `OAU-2` `GET /oauth/authorize/consent/:requestId` (auth) → consent data; `POST /oauth/authorize/consent` → submit.
 `OAU-3` `POST /oauth/token` (public, **form-encoded**) — requires `grant_type` ∈ {`authorization_code`,`refresh_token`} (others → `unsupported_grant_type`) + `client_id`+`client_secret` (missing → 400, bad → 401 `invalid_client`).
-`OAU-4` `GET /oauth/userinfo` · `GET /oauth/claimable-machines` (`oauthTokenAuth`; `oauthTokenAuth` is local to `oauth/index.ts`, not a shared middleware). claimable-machines queries legacy `sandboxes` (`provider:justavps`) → empty on Daytona-only deploys.
+`OAU-4` `GET /oauth/userinfo` (`oauthTokenAuth`; `oauthTokenAuth` is local to `oauth/index.ts`, not a shared middleware).
 
 ### Tunnel (reverse tunnel to local machines)
 `TUN-1` connections `GET/POST /tunnel/connections`, `GET/PATCH /:tid`, `POST /:tid/rotate-token`, `DELETE /:tid`.
@@ -372,9 +363,6 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 
 ### Servers (MCP registry)
 `SRV-1` `PUT /servers/sync` · `GET/POST /servers` · `GET/PUT/DELETE /servers/:id` (`combinedAuth`).
-
-### Deployments (gated `KORTIX_DEPLOYMENTS_ENABLED`)
-`DEP-1` `POST /deployments` · `GET /deployments[/:id]` · `POST /:id/stop|redeploy` · `DELETE /:id` · `GET /:id/logs` (`combinedAuth`).
 
 ### Apps (experimental `KORTIX_APPS_EXPERIMENTAL`, `[[apps]]` in manifest)
 `APP-1` `GET /projects/:id/apps` (`read`) · `POST` (`manage`) · `PATCH/DELETE /:slug` (`manage`) · `POST /:slug/deploy|stop` (`manage`) · `GET /:slug/logs` (`read`).
@@ -393,7 +381,7 @@ Run these against representative endpoints from each domain.
 `SEC-C` `NONMEMBER` on `GET/PATCH/DELETE /accounts/:id`, `/projects/:id` → 403/404.
 `SEC-D` project-scoped PAT: allowed only on its bound project + `/accounts/me`; **every other surface → 403** (cross-project, `/accounts/*`, project-list, router/billing/channels/etc.).
 `SEC-E` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`.
-`SEC-F` webhook sig bypass — Stripe/RevenueCat/Slack/Telegram/project-webhook with missing/wrong sig → 400/401.
+`SEC-F` webhook sig bypass — Stripe/RevenueCat/Slack/project-webhook with missing/wrong sig → 400/401.
 `SEC-G` preview proxy without token/cookie → 401; cross-sandbox token reuse → 403.
 `SEC-H` audit — every state-changing `/v1/*` writes an audit row (`auditStateChangingRequest`); assert `GET /accounts/:id/audit` reflects a prior mutation.
 `SEC-I` rate limits — session create (429), invite-accept, preview proxy, tunnel WS each return their limiter response under load.
@@ -408,15 +396,16 @@ Run these against representative endpoints from each domain.
 
 ### Role × account-action grid
 
-| Action | OWNER | ADMIN | BILLING | AUDITOR | MEMBER |
-|---|---|---|---|---|---|
-| `account.read` / member.read / audit.read | ✓ | ✓ | ✓ | ✓ | ✓ |
-| `account.write` (rename) | ✓ | ✓ | ✗ | ✗ | ✗ |
-| `member.invite/update/remove` | ✓ | ✓ | ✗ | ✗ | ✗ |
-| `member.super_admin.grant` (owner role) | ✓ | ✗ | ✗ | ✗ | ✗ |
-| `billing.write` | ✓ | ✗ | ✓ | ✗ | ✗ |
-| `account.delete` | ✓ | ✗ | ✗ | ✗ | ✗ |
-| `project.create` | ✓ | ✓ | ✗ | ✗ | ✗ |
+| Action | OWNER | ADMIN | MEMBER |
+|---|---|---|---|
+| `account.read` / `member.read` / `group.read` / `token.read` / `billing.read` | ✓ | ✓ | ✓ |
+| `audit.read` | ✓ | ✓ | ✗ |
+| `account.write` (rename) | ✓ | ✓ | ✗ |
+| `member.invite/update/remove` | ✓ | ✓ | ✗ |
+| `member.super_admin.grant` | ✓ | ✗ | ✗ |
+| `billing.write` | ✓ | ✗ | ✗ |
+| `account.delete` | ✓ | ✗ | ✗ |
+| `project.create` | ✓ | ✓ | ✗ |
 
 ---
 
@@ -434,7 +423,7 @@ Run these against representative endpoints from each domain.
 - No account-level vault — secrets are project-scoped, all-or-nothing per project (the `vault_items`/per-member-scope design was reversed).
 - Granular IAM actions `project.trigger.*`, `channel.*`, `trigger.*`, `project.session.*` exist in the catalog but project routes only enforce coarse `read|write|manage` — test the coarse gate, not the fine actions.
 - No inbound GitHub event webhook (no push/PR receiver) — see `TRG-9`.
-- CLI `providers`, `doctor`, `proxy`, `sessions-chat` source files exist but are **not wired** into the dispatcher and not in the reserved list — so `kortix providers …` is **treated as a new-project name** (`runCreate`), not an "unknown command" error. Don't test for an error here.
+- CLI `providers`, `doctor`, and `proxy` command modules do not exist; `sessions-chat` is wired as `kortix chat`. The removed command names are not in the reserved list, so `kortix providers ...` is **treated as a new-project name** (`runCreate`), not an "unknown command" error. Don't test for an error here.
 - Cron scheduler scans only first 200 active projects/tick.
 
 ---
@@ -474,7 +463,7 @@ pnpm dlx lcov-result-merger 'apps/**/coverage/lcov*.info' merged/lcov.info
 Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tractable function-level report.
 
 ### The load-bearing caveat
-**Uncovered ≠ dead.** The e2e suite legitimately won't hit error branches, the cron scheduler, the queue drainer, webhook handlers, or rarely-used ops routes — those are live in prod. Only static analysis (A) can claim "never imported." **Dead-code candidate = flagged by knip (A) AND uncovered by the suite (B).** Uncovered-but-imported = "untested," not dead.
+**Uncovered ≠ dead.** The e2e suite legitimately won't hit error branches, the cron scheduler, webhook handlers, or rarely-used ops routes — those are live in prod. Only static analysis (A) can claim "never imported." **Dead-code candidate = flagged by knip (A) AND uncovered by the suite (B).** Uncovered-but-imported = "untested," not dead.
 
 ### Smallest first step
 1. `pnpm add -Dw knip && pnpm exec knip` → the true dead-code list, today.

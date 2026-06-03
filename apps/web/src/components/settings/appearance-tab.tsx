@@ -35,8 +35,7 @@ function WallpaperCard({
       >
         {/* Render the wallpaper directly at thumbnail size. Every
             WallpaperBackground variant uses `absolute inset-0` as its
-            root, so it fills the card edge-to-edge; shader canvases also
-            render at native thumbnail resolution for crisp previews. */}
+            root, so it fills the card edge-to-edge. */}
         <div className="absolute inset-0" aria-hidden="true">
           <WallpaperBackground wallpaperId={wallpaper.id} preview />
         </div>
@@ -74,14 +73,9 @@ const BASE_MODES = [
   { value: 'system', label: 'System', icon: Monitor },
 ] as const;
 
-// Wallpapers that don't have a light-mode treatment — hidden from the
-// picker (and auto-swapped away if currently active) when the resolved
-// theme is light.
-const DARK_ONLY_WALLPAPER_IDS = new Set(['matrix', 'ascii-tunnel']);
-
 export function AppearanceTab() {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const { theme: baseMode, setTheme: setBaseMode, resolvedTheme } = useTheme();
+  const { theme: baseMode, setTheme: setBaseMode } = useTheme();
   const wallpaperId = useUserPreferencesStore(
     (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID
   );
@@ -96,20 +90,11 @@ export function AppearanceTab() {
     setMounted(true);
   }, []);
 
-  const isLight = mounted && resolvedTheme === 'light';
-
-  const visibleWallpapers = React.useMemo(
-    () => (isLight ? WALLPAPERS.filter((w) => !DARK_ONLY_WALLPAPER_IDS.has(w.id)) : WALLPAPERS),
-    [isLight],
-  );
-
-  // If a dark-only wallpaper is active and the user switches to light,
-  // fall back to the default so the page doesn't keep rendering it.
   React.useEffect(() => {
-    if (isLight && DARK_ONLY_WALLPAPER_IDS.has(wallpaperId)) {
+    if (!WALLPAPERS.some((w) => w.id === wallpaperId)) {
       setWallpaperId(DEFAULT_WALLPAPER_ID);
     }
-  }, [isLight, wallpaperId, setWallpaperId]);
+  }, [wallpaperId, setWallpaperId]);
 
   return (
     <div className="p-4 sm:p-6 pb-12 sm:pb-6 space-y-5 sm:space-y-6 min-w-0 max-w-full overflow-x-hidden">
@@ -156,7 +141,7 @@ export function AppearanceTab() {
             </label>
           </div>
           <div className="grid grid-cols-3 gap-2">
-            {visibleWallpapers.map((wp) => (
+            {WALLPAPERS.map((wp) => (
               <WallpaperCard
                 key={wp.id}
                 wallpaper={wp}

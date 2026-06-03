@@ -48,5 +48,3 @@ export function getEnv(): RuntimeEnv {
   logRuntimeEnv(runtimeEnv)
   return runtimeEnv
 }
-
-export const env = getEnv()

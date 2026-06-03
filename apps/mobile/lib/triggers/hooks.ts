@@ -9,33 +9,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuthContext } from '@/contexts/AuthContext';
 import type {
   TriggerConfiguration,
-  TriggerProvider,
-  TriggerWithAgent,
   TriggerCreateRequest,
   TriggerUpdateRequest,
   TriggerResponse,
-  ProviderResponse,
-  TriggerAppsResponse,
 } from '@/api/types';
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'http://localhost:8000/v1';
 
 // ===== QUERY FUNCTIONS =====
-
-const fetchAllTriggers = async (token: string): Promise<TriggerWithAgent[]> => {
-  const response = await fetch(`${API_BASE_URL}/triggers/all`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch triggers: ${response.statusText}`);
-  }
-
-  return response.json();
-};
 
 const fetchAgentTriggers = async (
   agentId: string,
@@ -55,21 +36,6 @@ const fetchAgentTriggers = async (
   return response.json();
 };
 
-const fetchTriggerProviders = async (token: string): Promise<TriggerProvider[]> => {
-  const response = await fetch(`${API_BASE_URL}/triggers/providers`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch trigger providers: ${response.statusText}`);
-  }
-
-  return response.json();
-};
-
 const fetchTrigger = async (triggerId: string, token: string): Promise<TriggerResponse> => {
   const response = await fetch(`${API_BASE_URL}/triggers/${triggerId}`, {
     headers: {
@@ -80,21 +46,6 @@ const fetchTrigger = async (triggerId: string, token: string): Promise<TriggerRe
 
   if (!response.ok) {
     throw new Error(`Failed to fetch trigger: ${response.statusText}`);
-  }
-
-  return response.json();
-};
-
-const fetchTriggerApps = async (token: string): Promise<TriggerAppsResponse> => {
-  const response = await fetch(`${API_BASE_URL}/composio/triggers/apps`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch trigger apps: ${response.statusText}`);
   }
 
   return response.json();
@@ -156,7 +107,6 @@ const updateTrigger = async ({
 
 const deleteTrigger = async ({
   triggerId,
-  agentId,
   token,
 }: {
   triggerId: string;
@@ -195,18 +145,6 @@ const toggleTrigger = async ({
 
 // ===== REACT QUERY HOOKS =====
 
-export const useAllTriggers = () => {
-  const { session } = useAuthContext();
-
-  return useQuery({
-    queryKey: ['triggers', 'all'],
-    queryFn: () => fetchAllTriggers(session?.access_token || ''),
-    enabled: !!session?.access_token,
-    staleTime: 30 * 1000, // 30 seconds
-    refetchOnWindowFocus: false,
-  });
-};
-
 export const useAgentTriggers = (agentId: string) => {
   const { session } = useAuthContext();
 
@@ -215,18 +153,6 @@ export const useAgentTriggers = (agentId: string) => {
     queryFn: () => fetchAgentTriggers(agentId, session?.access_token || ''),
     enabled: !!session?.access_token && !!agentId,
     staleTime: 30 * 1000,
-    refetchOnWindowFocus: false,
-  });
-};
-
-export const useTriggerProviders = () => {
-  const { session } = useAuthContext();
-
-  return useQuery({
-    queryKey: ['triggers', 'providers'],
-    queryFn: () => fetchTriggerProviders(session?.access_token || ''),
-    enabled: !!session?.access_token,
-    staleTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: false,
   });
 };
@@ -324,16 +250,6 @@ export const useToggleTrigger = () => {
         refetchType: 'active',
       });
     },
-  });
-};
-
-export const useTriggerApps = () => {
-  const { session } = useAuthContext();
-
-  return useQuery({
-    queryKey: ['triggers', 'apps'],
-    queryFn: () => fetchTriggerApps(session?.access_token || ''),
-    enabled: !!session?.access_token,
   });
 };
 

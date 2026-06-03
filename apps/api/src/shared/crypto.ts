@@ -1,4 +1,4 @@
-import { createHash, createHmac, timingSafeEqual, randomBytes } from 'crypto';
+import { createHmac, timingSafeEqual, randomBytes } from 'crypto';
 import { config } from '../config';
 
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -21,12 +21,12 @@ export function randomAlphanumeric(length: number): string {
  *
  * Both secret key variants validate through the same path — only the hash is stored.
  */
-export const KEY_PREFIX = 'kortix_';
-export const KEY_PREFIX_SANDBOX = 'kortix_sb_';
-export const KEY_PREFIX_TUNNEL = 'kortix_tnl_';
-export const KEY_PREFIX_PAT = 'kortix_pat_';
-export const KEY_PREFIX_SA = 'kortix_sa_';
-export const KEY_PREFIX_PUBLIC = 'pk_';
+const KEY_PREFIX = 'kortix_';
+const KEY_PREFIX_SANDBOX = 'kortix_sb_';
+const KEY_PREFIX_TUNNEL = 'kortix_tnl_';
+const KEY_PREFIX_PAT = 'kortix_pat_';
+const KEY_PREFIX_SA = 'kortix_sa_';
+const KEY_PREFIX_PUBLIC = 'pk_';
 
 const SECRET_RANDOM_LENGTH = 32;
 
@@ -161,43 +161,8 @@ export function isApiKeySecretConfigured(): boolean {
   return !!config.API_KEY_SECRET;
 }
 
-/**
- * Constant-time string comparison to prevent timing attacks.
- *
- * Hashes both inputs with SHA-256 first so the comparison is always
- * on fixed-length 32-byte digests — no string length leakage.
- */
-export function timingSafeStringEqual(a: string, b: string): boolean {
-  const hashA = createHash('sha256').update(a).digest();
-  const hashB = createHash('sha256').update(b).digest();
-  return timingSafeEqual(hashA, hashB);
-}
-
 export function deriveSigningKey(token: string, secret: string): string {
   return createHmac('sha256', secret)
     .update(token)
     .digest('hex');
-}
-
-export function signMessage(signingKey: string, payload: string, nonce: number): string {
-  return createHmac('sha256', signingKey)
-    .update(`${nonce}:${payload}`)
-    .digest('hex');
-}
-
-export function verifyMessageSignature(
-  signingKey: string,
-  payload: string,
-  nonce: number,
-  signature: string,
-): boolean {
-  try {
-    const expected = signMessage(signingKey, payload, nonce);
-    const sigBuffer = Buffer.from(signature, 'hex');
-    const expectedBuffer = Buffer.from(expected, 'hex');
-    if (sigBuffer.length !== expectedBuffer.length) return false;
-    return timingSafeEqual(sigBuffer, expectedBuffer);
-  } catch {
-    return false;
-  }
 }

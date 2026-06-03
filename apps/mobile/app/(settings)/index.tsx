@@ -10,19 +10,15 @@ import { Icon } from '@/components/ui/icon';
 import {
   Bell,
   ChevronRight,
-  CreditCard,
   Globe,
   LogOut,
   Palette,
-  Receipt,
   Trash2,
   User,
   Volume2,
-  Wallet,
 } from 'lucide-react-native';
 import { haptics } from '@/lib/haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
-import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -46,7 +42,6 @@ export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
   const isGuest = !user;
 
   const { data: deletionStatus } = useAccountDeletionStatus({ enabled: !isGuest });
@@ -55,15 +50,6 @@ export default function SettingsScreen() {
     haptics.tap();
     router.push(path as any);
   }, [router]);
-
-  const handlePlan = React.useCallback(async () => {
-    haptics.tap();
-    if (useNativePaywall) {
-      await presentUpgradePaywall();
-      return;
-    }
-    router.push('/plans');
-  }, [presentUpgradePaywall, router, useNativePaywall]);
 
   const handleSignOut = React.useCallback(async () => {
     if (isSigningOut) return;

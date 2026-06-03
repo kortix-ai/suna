@@ -22,7 +22,7 @@ import {
   listSsoGroupMappings,
 } from '../repositories/sso';
 
-export interface SsoSyncOutcome {
+interface SsoSyncOutcome {
   /** No SAML provider id on this JWT — sync skipped. */
   skipped: boolean;
   /** True when this run created the account_members row. */
@@ -36,7 +36,7 @@ export interface SsoSyncOutcome {
  * Extract the supabase sso_provider id from a JWT payload. Supabase puts
  * it in `app_metadata.provider_id` when the user signed in via SAML.
  */
-export function extractSsoProviderId(
+function extractSsoProviderId(
   payload: Record<string, unknown> | undefined,
 ): string | null {
   if (!payload) return null;
@@ -52,7 +52,7 @@ export function extractSsoProviderId(
  * Read a group claim out of the JWT. The claim name is configurable per
  * account; we accept string OR string[] (different IdPs ship either).
  */
-export function extractGroupClaims(
+function extractGroupClaims(
   payload: Record<string, unknown> | undefined,
   claimName: string,
 ): string[] {
@@ -89,7 +89,7 @@ export function extractGroupClaims(
  *     longer claimed. Manually-added groups (currently joined but NOT
  *     in mappedGroupIds) are preserved.
  */
-export function diffSsoGroups(args: {
+function diffSsoGroups(args: {
   currentGroupIds: ReadonlySet<string>;
   mappedGroupIds: ReadonlySet<string>;
   claimedGroupIds: ReadonlySet<string>;
@@ -145,9 +145,8 @@ export async function syncSsoMembership(args: {
       .values({
         accountId: provider.accountId,
         userId: args.userId,
-        // SAML users default to 'member' — the IAM engine grants nothing
-        // off this alone (strict mode safe) and only reads under the
-        // legacy bridge. Real privileges come from group mappings.
+        // SAML users default to 'member'. Project access comes from
+        // direct membership or group mappings.
         accountRole: 'member',
       })
       .onConflictDoNothing();

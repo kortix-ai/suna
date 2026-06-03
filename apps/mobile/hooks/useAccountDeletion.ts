@@ -3,7 +3,7 @@ import { API_URL } from '@/api/config';
 import { supabase } from '@/api/supabase';
 
 // Ported from web's use-account-deletion.ts (commit 325e62d).
-// Talks to the same backend routes mounted at /v1/account/*.
+// Talks to the same backend routes mounted at /v1/billing/account/*.
 
 export interface AccountDeletionStatus {
     has_pending_deletion: boolean;
@@ -14,24 +14,24 @@ export interface AccountDeletionStatus {
     supported: boolean;
 }
 
-export interface RequestDeletionResponse {
+interface RequestDeletionResponse {
     success: boolean;
     message: string;
     deletion_scheduled_for: string;
     can_cancel: boolean;
 }
 
-export interface CancelDeletionResponse {
+interface CancelDeletionResponse {
     success: boolean;
     message: string;
 }
 
-export interface DeleteImmediatelyResponse {
+interface DeleteImmediatelyResponse {
     success: boolean;
     message: string;
 }
 
-export const ACCOUNT_DELETION_QUERY_KEY = ['account', 'deletion-status'];
+const ACCOUNT_DELETION_QUERY_KEY = ['account', 'deletion-status'];
 
 const UNSUPPORTED_STATUS: AccountDeletionStatus = {
     has_pending_deletion: false,
@@ -66,7 +66,7 @@ export function useAccountDeletionStatus(options?: { enabled?: boolean }) {
         queryFn: async () => {
             const headers = await getAuthHeaders();
 
-            const response = await fetch(`${API_URL}/account/deletion-status`, {
+            const response = await fetch(`${API_URL}/billing/account/deletion-status`, {
                 headers,
             });
 
@@ -112,7 +112,7 @@ export function useRequestAccountDeletion() {
         mutationFn: async (reason?: string) => {
             const headers = await getAuthHeaders();
 
-            const response = await fetch(`${API_URL}/account/request-deletion`, {
+            const response = await fetch(`${API_URL}/billing/account/request-deletion`, {
                 method: 'POST',
                 headers,
                 body: JSON.stringify({ reason: reason || 'User requested deletion' }),
@@ -148,7 +148,7 @@ export function useCancelAccountDeletion() {
         mutationFn: async () => {
             const headers = await getAuthHeaders();
 
-            const response = await fetch(`${API_URL}/account/cancel-deletion`, {
+            const response = await fetch(`${API_URL}/billing/account/cancel-deletion`, {
                 method: 'POST',
                 headers,
             });
@@ -183,7 +183,7 @@ export function useDeleteAccountImmediately() {
         mutationFn: async () => {
             const headers = await getAuthHeaders();
 
-            const response = await fetch(`${API_URL}/account/delete-immediately`, {
+            const response = await fetch(`${API_URL}/billing/account/delete-immediately`, {
                 method: 'DELETE',
                 headers,
             });

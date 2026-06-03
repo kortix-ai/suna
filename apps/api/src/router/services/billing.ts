@@ -12,8 +12,7 @@ import type { BillingCheckResult, BillingDeductResult } from '../../types';
  */
 export async function checkCredits(
   accountId: string,
-  minimumRequired: number = 0.01,
-  options?: { skipDevCheck?: boolean }
+  minimumRequired: number = 0.01
 ): Promise<BillingCheckResult> {
   // When billing is disabled (self-host/dev), all checks pass — no Stripe, no
   // real subscriptions, and gating on a $0 balance just stalls everything.
@@ -40,8 +39,7 @@ export async function deductToolCredits(
   toolName: string,
   resultCount: number = 0,
   description?: string,
-  sessionId?: string,
-  options?: { skipDevCheck?: boolean }
+  sessionId?: string
 ): Promise<BillingDeductResult> {
   const cost = getToolCost(toolName, resultCount);
   if (cost <= 0) {
@@ -60,15 +58,11 @@ export async function deductToolCredits(
     `Kortix ${toolName.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}`;
   const deductDescription = sessionId ? `${baseDescription} [session:${sessionId}]` : baseDescription;
 
-  console.info(`[BILLING] Deducting $${cost.toFixed(4)} for ${toolName} (direct DB)`);
-
   const result = await deductCreditsDb(accountId, cost, deductDescription);
 
   if (!result.success) {
     return { success: false, cost: 0, newBalance: 0, error: result.error };
   }
-
-  console.info(`[BILLING] Deducted $${cost.toFixed(4)}. New balance: $${result.newBalance?.toFixed(2)}`);
 
   return {
     success: true,
@@ -103,15 +97,11 @@ export async function deductLLMCredits(
   const baseDescription = `LLM: ${model} (${inputTokens}/${outputTokens} tokens)`;
   const description = sessionId ? `${baseDescription} [session:${sessionId}]` : baseDescription;
 
-  console.info(`[BILLING] Deducting $${calculatedCost.toFixed(6)} for ${model} (direct DB)`);
-
   const result = await deductCreditsDb(accountId, calculatedCost, description);
 
   if (!result.success) {
     return { success: false, cost: 0, newBalance: 0, error: result.error };
   }
-
-  console.info(`[BILLING] Deducted $${calculatedCost.toFixed(6)}. New balance: $${result.newBalance?.toFixed(2)}`);
 
   return {
     success: true,

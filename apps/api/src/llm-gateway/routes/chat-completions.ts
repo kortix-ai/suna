@@ -79,11 +79,6 @@ export function createChatCompletionsRoute(
     if (!hasReasoning && supportsReasoning(modelId)) {
       body.reasoning = { effort: 'medium' };
     }
-    console.info(
-      `[llm-gateway] ${requestId} model=${modelId} stream=${streaming} reasoning=${
-        hasReasoning ? 'forwarded' : supportsReasoning(modelId) ? 'injected' : 'n/a'
-      } keys=${Object.keys(body).join(',')}`,
-    );
 
     const upstream = await callOpenRouter(
       streaming ? { ...body, stream: true, stream_options: { include_usage: true } } : body,
@@ -148,7 +143,6 @@ export function createChatCompletionsRoute(
     const passthrough = new TransformStream<Uint8Array, Uint8Array>();
     const writer = passthrough.writable.getWriter();
     const decoder = new TextDecoder();
-    const encoder = new TextEncoder();
     let sseBuffer = '';
 
     (async () => {
@@ -186,7 +180,6 @@ export function createChatCompletionsRoute(
       }
     })().catch(() => {});
 
-    void encoder;
     return new Response(passthrough.readable, {
       status: 200,
       headers: {

@@ -1,14 +1,10 @@
 'use client';
 
 import { memo } from 'react';
-import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 import { getWallpaperById, DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
 import { AnimatedBg } from '@/components/ui/animated-bg';
-import { ShaderWallpaper } from '@/components/ui/shader-wallpaper';
-import { AsciiTunnelShader } from '@/components/ui/ascii-tunnel-shader';
-import { MatrixShader } from '@/components/ui/matrix-shader';
 
 interface WallpaperBackgroundProps {
   /** Override the active wallpaper (e.g. for preview thumbnails). When omitted, reads from the user preferences store. */
@@ -183,68 +179,5 @@ export const WallpaperBackground = memo(function WallpaperBackground({
     );
   }
 
-  // ── Variants 4+: WebGL shader compositions ───────────────────────────
-  // Each shader wallpaper has its own preset picked by id. Common wrapper
-  // and logomark overlay keep the UX identical across shader variants.
-  if (wallpaper.type === 'shader') {
-    return (
-      <div
-        className="absolute inset-0 pointer-events-none overflow-hidden"
-        aria-hidden="true"
-      >
-        {wallpaper.id === 'ascii-tunnel' ? (
-          <AsciiTunnelShader />
-        ) : wallpaper.id === 'matrix' ? (
-          <MatrixShader />
-        ) : (
-          <ShaderWallpaper />
-        )}
-        {/* ASCII Tunnel keeps the logo dead-center so it sits at the
-             tunnel's vanishing point; other shader wallpapers lift it
-             slightly above center to balance the chat input below. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={wallpaper.svgUrl}
-          alt=""
-          className={cn(
-            'absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-[clamp(48px,13%,170px)] h-auto object-contain select-none opacity-90 drop-shadow-[0_2px_20px_rgba(0,0,0,0.35)] invert dark:invert-0',
-            wallpaper.id === 'ascii-tunnel' ? 'top-[50%]' : centerTopClass,
-          )}
-          draggable={false}
-        />
-      </div>
-    );
-  }
-
-  // ── Fallback: Image wallpaper ─────────────────────────────────────────
-  return (
-    <div
-      className="absolute inset-0 pointer-events-none overflow-hidden"
-      aria-hidden="true"
-    >
-      <div className="absolute inset-0 dark:block hidden">
-        <Image
-          src={wallpaper.darkUrl!}
-          alt=""
-          fill
-          className="object-cover select-none"
-          unoptimized
-          priority
-          draggable={false}
-        />
-      </div>
-      <div className="absolute inset-0 dark:hidden">
-        <Image
-          src={wallpaper.lightUrl!}
-          alt=""
-          fill
-          className="object-cover select-none"
-          unoptimized
-          priority
-          draggable={false}
-        />
-      </div>
-      <div className="absolute inset-0 bg-black/5 dark:bg-black/20" />
-    </div>
-  );
+  return null;
 });

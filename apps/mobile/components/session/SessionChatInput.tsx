@@ -252,7 +252,6 @@ export function SessionChatInput({
   variants = [],
   onAgentChange,
   onModelChange,
-  onVariantCycle,
   onVariantSet,
   sessions = [],
   currentSessionId,
@@ -580,8 +579,6 @@ export function SessionChatInput({
   useEffect(() => {
     onDraftChange?.(hasDraftText);
   }, [hasDraftText, onDraftChange]);
-
-  const hasToolbar = agents.length > 0 || models.length > 0;
 
   const handleSubmit = useCallback(async () => {
     // Slash command popover open — select highlighted command
@@ -1166,59 +1163,6 @@ export function SessionChatInput({
   );
 }
 
-function AutoContinueButton({
-  isDark,
-  isActive,
-  label,
-  onPress,
-}: {
-  isDark: boolean;
-  isActive: boolean;
-  label: string;
-  onPress: () => void;
-}) {
-  const activeBg = isDark ? 'rgba(109,40,217,0.18)' : 'rgba(99,102,241,0.16)';
-  const inactiveBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
-  const activeColor = isDark ? '#C4B5FD' : '#4C1D95';
-  const mutedColor = isDark ? '#a1a1aa' : '#71717a';
-
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.8}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 10,
-        paddingVertical: 5,
-        borderRadius: 20,
-        backgroundColor: isActive ? activeBg : inactiveBg,
-        borderWidth: isActive ? 1 : 0,
-        borderColor: isActive ? (isDark ? 'rgba(192,132,252,0.4)' : 'rgba(99,102,241,0.4)') : 'transparent',
-      }}
-      hitSlop={6}
-    >
-      <Text
-        style={{
-          fontSize: 12,
-          fontFamily: 'Roobert-Medium',
-          color: isActive ? (isDark ? '#F8F8F8' : '#1f2937') : mutedColor,
-          marginLeft: 0,
-        }}
-        numberOfLines={1}
-      >
-        {label}
-      </Text>
-      <Ionicons
-        name="chevron-down"
-        size={10}
-        color={isActive ? (isDark ? '#c4b5fd' : '#4c1d95') : mutedColor}
-        style={{ marginLeft: 4 }}
-      />
-    </TouchableOpacity>
-  );
-}
-
 // ─── Actions Sheet ──────────────────────────────────────────────────────────
 
 interface ActionsSheetProps {
@@ -1249,7 +1193,6 @@ function ActionsSheet({
   const insets = useSafeAreaInsets();
   const muted = isDark ? '#a1a1aa' : '#71717a';
   const fgColor = isDark ? '#F8F8F8' : '#121215';
-  const bg = isDark ? '#1a1a1d' : '#FFFFFF';
 
   // Sync `visible` prop to the imperative BottomSheetModal API so the caller
   // API stays unchanged. Dismiss originating from user gesture flows back
@@ -1469,7 +1412,6 @@ function AutoContinueSheet({
   const { height: screenHeight } = useWindowDimensions();
   const muted = isDark ? '#a1a1aa' : '#71717a';
   const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
-  const bg = isDark ? '#121215' : '#FFFFFF';
 
   // Bridge `visible` prop to the imperative BottomSheetModal API.
   const sheetRef = useRef<BottomSheetModal>(null);

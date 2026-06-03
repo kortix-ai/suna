@@ -16,10 +16,7 @@ import JSZip from 'jszip';
 import type {
   FileContent,
   FileNode,
-  FindMatch,
   GitFileStatus,
-  OpenCodeProjectInfo,
-  ServerHealth,
 } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -420,60 +417,5 @@ export async function findFiles(
     return unwrap(result);
   } catch {
     return [];
-  }
-}
-
-/**
- * Search for text patterns across project files (ripgrep).
- */
-export async function findText(pattern: string): Promise<FindMatch[]> {
-  const client = getClient();
-  const result = await client.find.text({ pattern });
-  const raw = unwrap(result) as any[];
-  return raw.map((item) => ({
-    path: typeof item.path === 'string' ? item.path : (item.path?.text ?? ''),
-    lines:
-      typeof item.lines === 'string' ? item.lines : (item.lines?.text ?? ''),
-    line_number: item.line_number,
-    absolute_offset: item.absolute_offset,
-    submatches: (item.submatches ?? []).map((s: any) => ({
-      start: s.start,
-      end: s.end,
-    })),
-  }));
-}
-
-// ---------------------------------------------------------------------------
-// Project / server info
-// ---------------------------------------------------------------------------
-
-/**
- * Get current project information.
- */
-export async function getCurrentProject(): Promise<OpenCodeProjectInfo> {
-  const client = getClient();
-  const result = await client.project.current();
-  return unwrap(result) as OpenCodeProjectInfo;
-}
-
-/**
- * Server health check.
- */
-export async function getServerHealth(): Promise<ServerHealth> {
-  const client = getClient();
-  const result = await client.global.health();
-  return unwrap(result) as ServerHealth;
-}
-
-/**
- * Check if the OpenCode server is reachable.
- * Returns true/false without throwing.
- */
-export async function isServerReachable(): Promise<boolean> {
-  try {
-    const health = await getServerHealth();
-    return health.healthy === true;
-  } catch {
-    return false;
   }
 }

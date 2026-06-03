@@ -2,8 +2,8 @@
 
 // usePermission — single source of truth for whether the CURRENT user can
 // perform an IAM action against the API. UI gates should call this instead
-// of branching on `account.role` directly, otherwise a member granted access
-// via an explicit IAM policy still sees buttons disabled.
+// of branching on `account.role` directly, otherwise group grants and
+// direct project roles drift from visible affordances.
 //
 // Implementation: react-query around probeEffectivePermission(). One query
 // per (accountId, userId, action, resourceType, resourceId) tuple, cached
@@ -29,8 +29,8 @@ export interface UsePermissionResult {
   /** True only when the probe has resolved AND the API said yes.
    * While loading or on error, this is false — UI defaults to hidden/disabled. */
   allowed: boolean;
-  /** Engine's verdict reason: super_admin, policy, legacy_account_role,
-   *  legacy_project_role, explicit_deny, no_matching_policy, not_a_member.
+  /** Engine's verdict reason: super_admin, account_role_insufficient,
+   *  project_role_insufficient, pat_scope_mismatch, mfa_required, not_a_member.
    *  Useful for "why does Alice have this?" tooltips on the capabilities panel. */
   reason: string | null;
   isLoading: boolean;
@@ -83,18 +83,6 @@ export function usePermission(
   return useProbeQuery(accountId, user?.id, action, target);
 }
 
-/** Probe "can THIS member perform this action?" — drives admin views like
- *  the "what can this user actually do" capability panel. Caller must have
- *  member.read on the account (enforced by the backend probe endpoint). */
-export function usePermissionFor(
-  accountId: string | undefined,
-  memberUserId: string | undefined,
-  action: string,
-  target?: UsePermissionTarget,
-): UsePermissionResult {
-  return useProbeQuery(accountId, memberUserId, action, target);
-}
-
 /**
  * Batch variant — one HTTP roundtrip for N probes. Use when a single
  * component needs more than 3 answers (capability grid, mass button gating
@@ -135,14 +123,4 @@ export function usePermissionsFor(
       };
     });
   }, [probes, query.data, query.isLoading, query.isError]);
-}
-
-/** Current-user variant of the batch hook — same shape, derives the user
- *  from auth context. */
-export function usePermissions(
-  accountId: string | undefined,
-  probes: PermissionProbeInput[],
-): UsePermissionResult[] {
-  const { user } = useAuth();
-  return usePermissionsFor(accountId, user?.id, probes);
 }

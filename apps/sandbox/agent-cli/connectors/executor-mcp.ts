@@ -19,7 +19,7 @@
  * Kortix Executor Gateway (/v1/executor/*), which checks this user's connector
  * sharing, resolves the secret SERVER-SIDE, runs the call, and audits it. The
  * sandbox only carries KORTIX_EXECUTOR_TOKEN + KORTIX_API_URL (injected at
- * sandbox spawn). See docs/specs/executor.md.
+ * sandbox spawn).
  */
 import {
   createExecutorClient,

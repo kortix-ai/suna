@@ -8,11 +8,8 @@ import { View, Pressable, LayoutAnimation, Platform, UIManager, TextStyle } from
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withRepeat,
   withTiming,
-  withSequence,
   Easing,
-  interpolate,
   FadeIn,
   FadeOut,
 } from 'react-native-reanimated';
@@ -51,7 +48,6 @@ export function ReasoningSection({
   isStreaming = false,
   isReasoningActive = false,
   isReasoningComplete = false,
-  isPersistedContent = false,
   isExpanded: controlledExpanded,
   onExpandedChange,
   variant = 'default',
@@ -194,5 +190,3 @@ export function ReasoningSection({
     </Animated.View>
   );
 }
-
-export default ReasoningSection;

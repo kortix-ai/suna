@@ -104,7 +104,6 @@ run_check api_project_triggers_contract_tests pnpm --filter kortix-api exec bun 
 run_check api_rate_limit_tests bun test apps/api/src/__tests__/e2e-rate-limits.test.ts
 run_check api_proxy_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-preview-proxy.test.ts
 run_check api_audit_tests bun test apps/api/src/__tests__/e2e-audit-events.test.ts
-run_check api_usage_tests bun test apps/api/src/__tests__/e2e-session-llm-router.test.ts
 run_check api_github_app_tests bun test apps/api/src/__tests__/e2e-github-app-projects.test.ts
 run_check api_create_repo_starter_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-create-repo-starter.test.ts
 
@@ -148,8 +147,7 @@ run_check gate5_scripts_syntax bash -n \
   tests/e2e/scripts/record-gate5-ops-exceptions.sh \
   tests/e2e/scripts/verify-gate5-release-evidence.sh \
   tests/e2e/scripts/test-gate5-release-verifier-fixtures.sh \
-  tests/e2e/scripts/run-gate5-local-verification.sh \
-  tests/e2e/self-hosted-e2e.sh
+  tests/e2e/scripts/run-gate5-local-verification.sh
 run_check gate5_release_verifier_fixture_tests bash tests/e2e/scripts/test-gate5-release-verifier-fixtures.sh
 run_check web_auth_return_url_tests node --experimental-strip-types --test apps/web/src/lib/auth/return-url.test.mts
 run_check v1_playwright_spec_guards bash -lc '
@@ -195,39 +193,17 @@ run_check v1_playwright_spec_guards bash -lc '
 run_check v1_legacy_script_guards bash -lc '
   set -euo pipefail
 
-  bash -n scripts/start-sandbox.sh scripts/start-local.sh
-
-  start_sandbox_output="$(mktemp)"
-  build_snapshot_output="$(mktemp)"
-  ssh_bridge_output="$(mktemp)"
-  trap "rm -f \"$start_sandbox_output\" \"$build_snapshot_output\" \"$ssh_bridge_output\"" EXIT
-
-  if scripts/start-sandbox.sh >"$start_sandbox_output" 2>&1; then
-    cat "$start_sandbox_output"
-    exit 1
-  fi
-  grep -q "legacy JustAVPS snapshot bootstrapper" "$start_sandbox_output"
-
-  if bun apps/api/scripts/build-snapshot.ts >"$build_snapshot_output" 2>&1; then
-    cat "$build_snapshot_output"
-    exit 1
-  fi
-  grep -q "disabled for repo-first Kortix v1" "$build_snapshot_output"
-
-  if bun apps/api/scripts/apply-justavps-ssh-bridge.ts >"$ssh_bridge_output" 2>&1; then
-    cat "$ssh_bridge_output"
-    exit 1
-  fi
-  grep -q "disabled for repo-first Kortix v1" "$ssh_bridge_output"
+  [ ! -e scripts/start-sandbox.sh ]
+  [ ! -e apps/api/scripts/build-snapshot.ts ]
+  [ ! -e apps/api/scripts/apply-justavps-ssh-bridge.ts ]
 
   if git grep -n -E "core/startup|core/docker|raw.githubusercontent.com/kortix-ai/suna/main/core" -- scripts apps/api; then
     exit 1
   fi
 
   if git grep -n -E "justavps-docker|justavps-workload|JustAVPSProvider" -- \
-    scripts/start-sandbox.sh \
-    apps/api/scripts \
-    apps/api/src/platform/services/local-sandbox-health.ts
+    scripts \
+    apps/api/scripts
   then
     exit 1
   fi
@@ -241,8 +217,6 @@ run_check v1_tree_cleanup_guards bash -lc '
 
   packages="$(find packages -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr "\n" " ")"
   [ "$packages" = "agent-tunnel db shared " ]
-  grep -q "Deleted from the v1 workspace path" docs/SPEC.md
-  grep -q "Only \`packages/agent-tunnel\`, \`packages/db\`, and \`packages/shared\` remain" docs/SPEC.md
 
   if git grep -n -E "core/docker|dev:core|packages/voice|packages/kortix-ocx-registry|kortix/computer" -- \
     package.json \
@@ -256,8 +230,7 @@ run_check v1_tree_cleanup_guards bash -lc '
   if git grep -n -E "justavpsOrigins|justavps\\.com|JustAVPS|kortix/computer" -- \
     apps/api/src/index.ts \
     .github/workflows \
-    README.md \
-    docs/development-release-guide.md
+    README.md
   then
     exit 1
   fi
@@ -268,52 +241,54 @@ run_check v1_legacy_web_route_guards bash -lc '
   [ ! -e apps/web/src/app/admin/instances/page.tsx ]
   [ ! -e apps/web/src/app/debug/instances/page.tsx ]
 
-	  if git grep -n -E "admin/instances|debug/instances|/instances|justavps|InstanceSettingsModal|useAdminSandboxes" -- \
-	    apps/web/src/app/admin/_components/admin-sidebar.tsx \
-	    apps/web/src/app/admin/_components/admin-shell.tsx \
-	    apps/web/src/app/admin/page.tsx
+  admin_paths=(
+    apps/web/src/app/admin/_components/admin-sidebar.tsx
+    apps/web/src/app/admin/_components/admin-shell.tsx
+    apps/web/src/app/admin/page.tsx
+  )
+
+	  if git grep -n -E "admin/instances|debug/instances|/instances|justavps|InstanceSettingsModal|useAdminSandboxes" -- "${admin_paths[@]}"
 	  then
 	    exit 1
 	  fi
 
-	  if git grep -n -E "useAdminAccountSandboxes|InstanceSettingsModal|/instances|justavps|JustAVPS|machines provisioned|restartSandbox|getSandboxById|useAdminSandboxHealth" -- \
-	    apps/web/src/app/admin/accounts/page.tsx \
-	    apps/web/src/app/oauth/authorize/page.tsx \
-	    apps/web/src/components/dashboard/connecting-screen.tsx
+  account_paths=(
+    apps/web/src/app/oauth/authorize/page.tsx
+    apps/web/src/components/dashboard/connecting-screen.tsx
+  )
+  existing_account_paths=()
+  for path in "${account_paths[@]}"; do
+    [ ! -e "$path" ] || existing_account_paths+=("$path")
+  done
+
+	  if [ "${#existing_account_paths[@]}" -gt 0 ] && git grep -n -E "useAdminAccountSandboxes|InstanceSettingsModal|/instances|justavps|JustAVPS|machines provisioned|restartSandbox|getSandboxById|useAdminSandboxHealth" -- "${existing_account_paths[@]}"
 	  then
 	    exit 1
 	  fi
 
-	  grep -q "/projects" apps/web/src/app/activate-trial/page.tsx
-	  grep -q "/projects" apps/web/src/app/setup/page.tsx
 	  grep -q "/projects" apps/web/src/components/home/navbar.tsx
 	  grep -q "/projects" apps/web/src/app/admin/_components/admin-sidebar.tsx
 	  grep -q "/projects" apps/web/src/app/admin/_components/admin-shell.tsx
 	  [ ! -e apps/web/src/components/projects/session-dashboard-shell.tsx ]
 	  single_quote="$(printf "\047")"
 	  route_pattern="/dashboard($|[?\"${single_quote}])|/subscription($|[?\"${single_quote}])|/instances($|[?\"${single_quote}])|justavps|JustAVPS"
-	  if git grep -n -E "$route_pattern" -- \
-	    apps/web/src/app/activate-trial/page.tsx \
-	    apps/web/src/app/setup/page.tsx \
-	    "apps/web/src/app/(home)/page.tsx" \
-	    "apps/web/src/app/(home)/layout.tsx" \
-	    "apps/web/src/app/(home)/pricing/page.tsx" \
-	    "apps/web/src/app/(home)/variant-2/page.tsx" \
-	    "apps/web/src/app/(home)/home-wip/page.tsx" \
-	    apps/web/src/components/home/navbar.tsx \
-	    apps/web/src/app/admin/_components/admin-sidebar.tsx \
-	    apps/web/src/app/admin/_components/admin-shell.tsx \
-	    apps/web/src/app/layout.tsx \
-	    apps/web/src/components/auth/background-aal-checker.tsx \
-	    apps/web/src/components/announcements/maintenance-banner.tsx \
-	    apps/web/src/components/announcements/alert-banner.tsx \
-	    apps/web/src/components/home/dashboard-promo-banner.tsx \
-	    apps/web/src/components/billing/pricing/new-instance-modal.tsx \
-	    apps/web/src/app/auth/actions.ts \
-	    apps/web/src/app/auth/callback/route.ts \
-	    "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx" \
-	    "apps/web/src/app/projects/[id]/layout.tsx" \
-	    "apps/web/src/app/projects/[id]/sessions/[sessionId]/page.tsx"
+  route_scan_paths=(
+    "apps/web/src/app/(home)/page.tsx"
+    "apps/web/src/app/(home)/layout.tsx"
+    "apps/web/src/app/(home)/pricing/page.tsx"
+    apps/web/src/components/home/navbar.tsx
+    apps/web/src/app/admin/_components/admin-sidebar.tsx
+    apps/web/src/app/admin/_components/admin-shell.tsx
+    apps/web/src/app/layout.tsx
+    apps/web/src/components/auth/background-aal-checker.tsx
+    apps/web/src/components/billing/pricing/new-instance-modal.tsx
+    apps/web/src/app/auth/actions.ts
+    apps/web/src/app/auth/callback/route.ts
+    "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
+    "apps/web/src/app/projects/[id]/layout.tsx"
+    "apps/web/src/app/projects/[id]/sessions/[sessionId]/page.tsx"
+  )
+	  if git grep -n -E "$route_pattern" -- "${route_scan_paths[@]}"
 	  then
 	    exit 1
 	  fi
@@ -328,10 +303,7 @@ run_check v1_legacy_web_route_guards bash -lc '
 	  grep -q "showGlobalUserSettingsModal={false}" apps/web/src/components/projects/project-shell.tsx
 	  grep -q "showGlobalNewInstanceModal = false" apps/web/src/components/layout/app-providers.tsx
 	  grep -q "showGlobalUserSettingsModal = false" apps/web/src/components/layout/app-providers.tsx
-	  grep -q "showGlobalNewInstanceModal={true}" apps/web/src/components/dashboard/layout-content.tsx
-	  grep -q "showGlobalUserSettingsModal={true}" apps/web/src/components/dashboard/layout-content.tsx
 	  grep -q "showSidebar={false}" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
-	  grep -q "showRightSidebar={false}" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
 	  grep -q "showGlobalNewInstanceModal={false}" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
 	  grep -q "showGlobalUserSettingsModal={false}" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
 	  grep -q "repoFirst" apps/web/src/components/projects/project-sidebar.tsx

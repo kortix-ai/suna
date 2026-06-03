@@ -105,7 +105,6 @@ export function ProjectShell({
   return (
     <AppProviders
       showSidebar
-      showRightSidebar={false}
       showGlobalNewInstanceModal={false}
       showGlobalUserSettingsModal={false}
       defaultSidebarOpen={initialSidebarOpen}
@@ -134,9 +133,8 @@ export function ProjectShell({
           )}
         </AnimatePresence>
 
-        {/* Project tab bar — mirrors the dashboard's entrance animation
-            (see dashboard/layout-content.tsx lines 1062–1075). When tabs
-            are disabled we still leave a small sidebar-colored strip so the
+        {/* Project tab bar. When tabs are disabled we still leave a small
+            sidebar-colored strip so the
             rounded panel "floats" instead of bleeding to the top edge. */}
         <AnimatePresence initial={false}>
           {!disableTabSelector && (

@@ -1,13 +1,13 @@
-import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
+import type { ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface Author {
+interface Author {
   author_id: string;
   name: string;
   url?: string;
   affiliations?: string[];
 }
 
-export interface PaperDetails {
+interface PaperDetails {
   paper_id: string;
   title: string;
   abstract?: string | null;
@@ -39,9 +39,7 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractPaperDetailsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): PaperDetailsData {
-  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
-  
+export function extractPaperDetailsData({ toolResult }: { toolResult?: ToolResultData }): PaperDetailsData {
   let paper: PaperDetails | null = null;
   
   if (toolResult?.output) {
@@ -59,4 +57,3 @@ export function extractPaperDetailsData({ toolCall, toolResult }: { toolCall: To
     success: toolResult?.success ?? true
   };
 }
-

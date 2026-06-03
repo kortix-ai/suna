@@ -4,8 +4,7 @@ import { useTranslations } from 'next-intl';
 // Account-wide MFA enforcement toggle on the Settings tab. Off by default.
 // When ON, every browser/JWT request whose session is not aal2 is denied
 // at the IAM engine — super-admins are exempt (so the switch can't
-// permanently lock the account), and PATs are exempt (they gate via
-// per-policy require_mfa conditions instead).
+// permanently lock the account), and PATs are exempt.
 //
 // Safety: enable path always fetches the preview so the admin sees who
 // would be locked out, and the backend refuses flips that would orphan

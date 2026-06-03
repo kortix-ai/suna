@@ -39,15 +39,7 @@ export function groupMessages(messages: UnifiedMessage[]): MessageGroup[] {
 
 export function groupMessagesWithStreaming(
   messages: UnifiedMessage[],
-  options?: GroupingOptions
+  _options?: GroupingOptions
 ): MessageGroup[] {
   return groupMessages(messages);
-}
-
-export function getFirstMessage(group: MessageGroup): UnifiedMessage | undefined {
-  return group.messages[0];
-}
-
-export function getLastMessage(group: MessageGroup): UnifiedMessage | undefined {
-  return group.messages[group.messages.length - 1];
 }

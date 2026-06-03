@@ -4,7 +4,6 @@ import type {
   PhoneVerificationEnroll,
   PhoneVerificationChallenge,
   PhoneVerificationVerify,
-  PhoneVerificationChallengeAndVerify,
   PhoneVerificationResponse,
   EnrollFactorResponse,
   ChallengeResponse,
@@ -124,32 +123,6 @@ export const supabaseMFAService = {
     } catch (error: unknown) {
       console.error('❌ Verify challenge failed:', error);
       throw new Error(`Failed to verify SMS code: ${toErrorMessage(error)}`);
-    }
-  },
-
-  /**
-   * Create challenge and verify in one step
-   */
-  async challengeAndVerify(data: PhoneVerificationChallengeAndVerify): Promise<PhoneVerificationResponse> {
-    const supabase = createClient();
-    
-    try {
-      const response = await supabase.auth.mfa.challengeAndVerify({
-        factorId: data.factor_id,
-        code: data.code,
-      });
-
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-
-      return {
-        success: true,
-        message: 'SMS challenge created and verified successfully',
-      };
-    } catch (error: unknown) {
-      console.error('❌ Challenge and verify SMS failed:', error);
-      throw new Error(`Failed to challenge and verify SMS: ${toErrorMessage(error)}`);
     }
   },
 

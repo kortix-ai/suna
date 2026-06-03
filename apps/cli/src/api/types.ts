@@ -53,43 +53,6 @@ export interface ProjectSecretsResponse {
   manifest_error?: string;
 }
 
-// ── Provider OAuth ───────────────────────────────────────────────────────
-
-export interface OauthCredentialSummary {
-  provider_id: string;
-  expires_in_ms: number | null;
-  updated_at: string;
-}
-
-export interface OauthListResponse {
-  items: OauthCredentialSummary[];
-}
-
-export interface OauthFlowStartResponse {
-  flow_id: string;
-  verification_url: string;
-  user_code: string;
-  expires_at: number;
-  interval_ms: number;
-}
-
-export type OauthPollResponse =
-  | {
-      status: 'pending';
-      next_poll_ms?: number;
-    }
-  | {
-      status: 'success';
-      credential: OauthCredentialSummary;
-    }
-  | {
-      status: 'expired';
-    }
-  | {
-      status: 'failed';
-      error: string;
-    };
-
 // ── Sessions ──────────────────────────────────────────────────────────────
 
 export interface ProjectSession {
@@ -120,7 +83,7 @@ export interface ProjectSession {
 
 // ── Triggers ──────────────────────────────────────────────────────────────
 
-export interface ProjectTrigger {
+interface ProjectTrigger {
   slug: string;
   path: string;
   name: string;
@@ -182,7 +145,7 @@ export interface ChangeRequestDetailResponse {
   change_request: ChangeRequest;
 }
 
-export interface ChangeRequestFile {
+interface ChangeRequestFile {
   path: string;
   old_path: string | null;
   status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange';

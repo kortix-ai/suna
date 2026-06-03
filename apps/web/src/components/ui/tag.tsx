@@ -36,4 +36,4 @@ function Tag({
   );
 }
 
-export { Tag, tagVariants };
+export { Tag };

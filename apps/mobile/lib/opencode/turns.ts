@@ -14,14 +14,8 @@ import type {
   ReasoningPart,
   ToolPart,
   FilePart,
-  AgentPart,
-  CompactionPart,
   StepFinishPart,
-  SnapshotPart,
-  PatchPart,
   AssistantMessage,
-  PermissionRequest,
-  QuestionRequest,
   SessionStatus,
   MessageWithParts,
   Turn,
@@ -30,7 +24,7 @@ import type {
   ToolInfo,
 } from './types';
 
-export interface Diagnostic {
+interface Diagnostic {
   range: {
     start: { line: number; character: number };
     end: { line: number; character: number };
@@ -55,31 +49,8 @@ export function isToolPart(part: Part): part is ToolPart {
   return part.type === 'tool';
 }
 
-export function isFilePart(part: Part): part is FilePart {
+function isFilePart(part: Part): part is FilePart {
   return part.type === 'file';
-}
-
-export function isAgentPart(part: Part): part is AgentPart {
-  return part.type === 'agent';
-}
-
-export function isCompactionPart(part: Part): part is CompactionPart {
-  return part.type === 'compaction';
-}
-
-export function isSnapshotPart(part: Part): part is SnapshotPart {
-  return part.type === 'snapshot';
-}
-
-export function isPatchPart(part: Part): part is PatchPart {
-  return part.type === 'patch';
-}
-
-/** Get the text content from any part that has a `text` field. */
-export function getPartText(part: Part): string | undefined {
-  if (isTextPart(part)) return part.text;
-  if (isReasoningPart(part)) return part.text;
-  return undefined;
 }
 
 // ============================================================================
@@ -90,7 +61,7 @@ export function getPartText(part: Part): string | undefined {
  * Check if a file part is an image or PDF attachment.
  * Matches SolidJS `isAttachment()` — session-turn.tsx:128
  */
-export function isAttachment(part: Part): part is FilePart {
+function isAttachment(part: Part): part is FilePart {
   if (!isFilePart(part)) return false;
   return part.mime.startsWith('image/') || part.mime === 'application/pdf';
 }
@@ -189,7 +160,7 @@ export function groupMessagesIntoTurns(messages: MessageWithParts[]): Turn[] {
 // Part collection helpers
 // ============================================================================
 
-export interface PartWithMessage {
+interface PartWithMessage {
   part: Part;
   message: MessageWithParts;
 }
@@ -214,45 +185,6 @@ export function findLastTextPart(parts: PartWithMessage[]): TextPart | undefined
     }
   }
   return undefined;
-}
-
-/** Check if a turn has tool steps. */
-export function turnHasSteps(parts: PartWithMessage[]): boolean {
-  return parts.some(({ part }) =>
-    part.type === 'tool' || part.type === 'compaction' ||
-    part.type === 'snapshot' || part.type === 'patch',
-  );
-}
-
-// ============================================================================
-// Shell mode detection
-// ============================================================================
-
-/**
- * Detect "shell mode": user message is entirely synthetic text parts AND
- * there's exactly one assistant message with exactly one part which is a bash tool.
- *
- * Stricter than our previous implementation — matches SolidJS session-turn.tsx:364-379
- * which checks `msgParts.length !== 1` (exactly one assistant part total).
- */
-export function isShellMode(turn: Turn): boolean {
-  const userParts = turn.userMessage.parts;
-  if (userParts.length === 0) return false;
-  const allSynthetic = userParts.every((p) => isTextPart(p) && (p as TextPart).synthetic);
-  if (!allSynthetic) return false;
-
-  if (turn.assistantMessages.length !== 1) return false;
-  const assistantParts = turn.assistantMessages[0].parts;
-  // Strict: exactly 1 part total (not just 1 tool part)
-  if (assistantParts.length !== 1) return false;
-  const part = assistantParts[0];
-  return isToolPart(part) && part.tool === 'bash';
-}
-
-/** Get the bash tool part when in shell mode. */
-export function getShellModePart(turn: Turn): ToolPart | undefined {
-  if (!isShellMode(turn)) return undefined;
-  return turn.assistantMessages[0].parts[0] as ToolPart;
 }
 
 // ============================================================================
@@ -283,90 +215,6 @@ export function getWorkingState(
 }
 
 // ============================================================================
-// Response part separation
-// ============================================================================
-
-/**
- * Whether the last text part (the "response") should be extracted from the
- * steps list and shown separately in the Response section.
- *
- * Matches SolidJS session-turn.tsx:440-443
- */
-export function shouldHideResponsePart(
-  working: boolean,
-  responsePartId: string | undefined,
-): boolean {
-  return !working && !!responsePartId;
-}
-
-// ============================================================================
-// Hidden parts (permission / question active)
-// ============================================================================
-
-/** Tool part references to hide from the step list when permission/question is pending. */
-export interface HiddenToolRef {
-  messageID: string;
-  callID: string;
-}
-
-/**
- * Get the list of tool parts to hide from the step list.
- * Matches SolidJS session-turn.tsx:332-339
- */
-export function getHiddenToolParts(
-  permission: PermissionRequest | undefined,
-  question: QuestionRequest | undefined,
-): HiddenToolRef[] {
-  const out: HiddenToolRef[] = [];
-  if (permission?.tool) out.push(permission.tool);
-  if (question?.tool) out.push(question.tool);
-  return out;
-}
-
-/** Check if a specific tool part should be hidden due to active permission/question. */
-export function isToolPartHidden(
-  part: ToolPart,
-  messageId: string,
-  hidden: HiddenToolRef[],
-): boolean {
-  return hidden.some(
-    (h) => h.messageID === messageId && h.callID === part.callID,
-  );
-}
-
-// ============================================================================
-// Answered question parts (shown when collapsed)
-// ============================================================================
-
-/**
- * Collect answered question parts that should be shown outside of the
- * steps list. Questions are always rendered standalone (never inside steps),
- * so answered questions are shown regardless of stepsExpanded state.
- */
-export function getAnsweredQuestionParts(
-  turn: Turn,
-  _stepsExpanded: boolean,
-  hasActiveQuestion: boolean,
-): PartWithMessage[] {
-  // Active question takes precedence — don't also show old answered ones
-  if (hasActiveQuestion) return [];
-
-  const result: PartWithMessage[] = [];
-  for (const msg of turn.assistantMessages) {
-    for (const part of msg.parts) {
-      if (
-        isToolPart(part) &&
-        part.tool === 'question' &&
-        (part.state as any)?.metadata?.answers?.length > 0
-      ) {
-        result.push({ part, message: msg });
-      }
-    }
-  }
-  return result;
-}
-
-// ============================================================================
 // Error extraction — with deep JSON unwrapping
 // ============================================================================
 
@@ -374,7 +222,7 @@ export function getAnsweredQuestionParts(
  * Extract human-readable error message from a raw error value.
  * Matches SolidJS `unwrap()` function — session-turn.tsx:34-81
  */
-export function unwrapError(raw: unknown): string {
+function unwrapError(raw: unknown): string {
   if (!raw) return 'An error occurred';
 
   if (typeof raw === 'string') {
@@ -435,7 +283,7 @@ export function getTurnError(turn: Turn): string | undefined {
  * Derive human-readable status from a part.
  * Matches SolidJS computeStatusFromPart — session-turn.tsx:83-119
  */
-export function computeStatusFromPart(part: Part | undefined): string | undefined {
+function computeStatusFromPart(part: Part | undefined): string | undefined {
   if (!part) return undefined;
 
   if (isToolPart(part)) {
@@ -562,41 +410,6 @@ export function formatDuration(ms: number): string {
 }
 
 // ============================================================================
-// Child session helpers
-// ============================================================================
-
-/**
- * Extract child session ID from a task tool part's metadata.
- */
-export function getChildSessionId(part: ToolPart): string | undefined {
-  if (part.tool !== 'task') return undefined;
-  const status = part.state.status;
-  if (status === 'completed' || status === 'running') {
-    return (part.state.metadata as any)?.sessionId;
-  }
-  return undefined;
-}
-
-/**
- * Collect all tool parts from a child session's assistant messages.
- * Matches SolidJS getSessionToolParts — message-part.tsx:160-174
- */
-export function getChildSessionToolParts(
-  childMessages: MessageWithParts[],
-): ToolPart[] {
-  const result: ToolPart[] = [];
-  for (const msg of childMessages) {
-    if (msg.info.role !== 'assistant') continue;
-    for (const part of msg.parts) {
-      if (isToolPart(part) && shouldShowToolPart(part)) {
-        result.push(part);
-      }
-    }
-  }
-  return result;
-}
-
-// ============================================================================
 // Tool part filtering
 // ============================================================================
 
@@ -620,7 +433,7 @@ function firstMeaningfulLine(value: unknown, maxLength = 120): string {
   return line.length > maxLength ? `${line.slice(0, maxLength).trim()}…` : line;
 }
 
-export function getAgentCardLabel(input: Record<string, unknown>): string {
+function getAgentCardLabel(input: Record<string, unknown>): string {
   const description = firstMeaningfulLine(input.description);
   if (description) return description;
 
@@ -897,14 +710,14 @@ export function getToolInfo(tool: string, input: Record<string, any> = {}): Tool
 // ============================================================================
 
 /** Extract filename from a path. */
-export function getFilename(path: string | undefined): string | undefined {
+function getFilename(path: string | undefined): string | undefined {
   if (!path) return undefined;
   const parts = path.split('/');
   return parts[parts.length - 1] || path;
 }
 
 /** Extract filename + parent directory, e.g. "main.go /workspace" */
-export function getFileWithDir(path: string | undefined): string | undefined {
+function getFileWithDir(path: string | undefined): string | undefined {
   if (!path) return undefined;
   const parts = path.split('/');
   const filename = parts[parts.length - 1] || path;
@@ -915,58 +728,11 @@ export function getFileWithDir(path: string | undefined): string | undefined {
 }
 
 /** Extract directory from a path and strip trailing slash. */
-export function getDirectory(path: string | undefined): string | undefined {
+function getDirectory(path: string | undefined): string | undefined {
   if (!path) return undefined;
   const idx = path.lastIndexOf('/');
   if (idx < 0) return undefined;
   return path.slice(0, idx) || '/';
-}
-
-/** Strip the project root directory from paths for display. */
-export function relativizePath(path: string, projectDir?: string): string {
-  if (!projectDir) return path;
-  if (path.startsWith(projectDir)) {
-    const rel = path.slice(projectDir.length);
-    return rel.startsWith('/') ? rel.slice(1) : rel;
-  }
-  return path;
-}
-
-// ============================================================================
-// Diagnostics
-// ============================================================================
-
-/**
- * Filter diagnostics for a file path, keeping only errors (severity=1), max 3.
- * Matches SolidJS getDiagnostics — message-part.tsx:53-90
- */
-export function getDiagnostics(
-  diagnosticsByFile: Record<string, Diagnostic[]> | undefined,
-  filePath: string | undefined,
-): Diagnostic[] {
-  if (!diagnosticsByFile || !filePath) return [];
-  const diags = diagnosticsByFile[filePath] ?? [];
-  return diags.filter((d) => d.severity === 1).slice(0, 3);
-}
-
-// ============================================================================
-// Permission / Question matching
-// ============================================================================
-
-/** Get the permission request matching a specific tool part. */
-export function getPermissionForTool(
-  permissions: PermissionRequest[],
-  callID: string,
-): PermissionRequest | undefined {
-  return permissions.find((p) => p.tool?.callID === callID);
-}
-
-/** Get the question request matching a specific tool part. */
-export function getQuestionForTool(
-  questions: QuestionRequest[],
-  callID: string,
-): QuestionRequest | undefined {
-  return questions.find((q) => q.tool?.callID === callID);
 }
 
 // ============================================================================
@@ -1061,16 +827,6 @@ export function getRetryMessage(status: SessionStatus | undefined): string | und
 }
 
 // ============================================================================
-// hasDiffs check
-// ============================================================================
-
-/** Check if a user message has associated file diffs. */
-export function hasDiffs(userMessage: MessageWithParts): boolean {
-  const summary = (userMessage.info as any)?.summary;
-  return (summary?.diffs?.length ?? 0) > 0;
-}
-
-// ============================================================================
 // ANSI strip (used by bash tool renderer)
 // ============================================================================
 
@@ -1081,71 +837,3 @@ export function stripAnsi(str: string): string {
   if (!str) return '';
   return str.replace(ANSI_RE, '');
 }
-
-// ============================================================================
-// Session list helpers (sidebar / tabs)
-// ============================================================================
-
-/**
- * Build a map from parent session ID → array of child session IDs.
- * Used to aggregate child session status (permissions, busy) in the sidebar.
- * Matches SolidJS reference `childMapByParent()` in helpers.ts.
- */
-export function childMapByParent(
-  sessions: Array<{ id: string; parentID?: string }>,
-): Map<string, string[]> {
-  const map = new Map<string, string[]>();
-  for (const session of sessions) {
-    if (!session.parentID) continue;
-    const existing = map.get(session.parentID);
-    if (existing) {
-      existing.push(session.id);
-    } else {
-      map.set(session.parentID, [session.id]);
-    }
-  }
-  return map;
-}
-
-/**
- * Sort comparator for sessions.
- * Two tiers:
- *  1. Sessions updated within `now - 60s` are pinned to top, sorted by ID (stable).
- *  2. Older sessions sorted by `updated` time descending.
- * Matches SolidJS reference `sortSessions()` in helpers.ts.
- */
-export function sortSessions(now: number) {
-  const oneMinuteAgo = now - 60 * 1000;
-  return (
-    a: { id: string; time: { updated?: number; created: number } },
-    b: { id: string; time: { updated?: number; created: number } },
-  ) => {
-    const aUpdated = a.time.updated ?? a.time.created;
-    const bUpdated = b.time.updated ?? b.time.created;
-    const aRecent = aUpdated > oneMinuteAgo;
-    const bRecent = bUpdated > oneMinuteAgo;
-    if (aRecent && bRecent) return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-    if (aRecent && !bRecent) return -1;
-    if (!aRecent && bRecent) return 1;
-    return bUpdated - aUpdated;
-  };
-}
-
-/**
- * Recursively collect ALL descendant session IDs for a given parent.
- * Walks the full tree so deeply nested sub-agents are included.
- */
-export function allDescendantIds(
-  childMap: Map<string, string[]>,
-  sessionId: string,
-): string[] {
-  const directChildren = childMap.get(sessionId);
-  if (!directChildren || directChildren.length === 0) return [];
-  const result: string[] = [];
-  for (const childId of directChildren) {
-    result.push(childId);
-    result.push(...allDescendantIds(childMap, childId));
-  }
-  return result;
-}
-

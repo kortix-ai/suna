@@ -10,24 +10,6 @@ test.describe('04 — Authentication flow', () => {
     expect(token).toMatch(/^eyJ/); // JWT
   });
 
-  test('authenticated user can access setup-wizard-step', async () => {
-    const token = await getAccessToken();
-    const res = await fetch(`${apiBase}/setup/setup-wizard-step`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(res.status).toBe(200);
-  });
-
-  test('authenticated user can read available sandbox providers', async () => {
-    const token = await getAccessToken();
-    const res = await fetch(`${apiBase}/setup/sandbox-providers`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    expect(res.status).toBe(200);
-    const data = (await res.json()) as { providers: string[] };
-    expect(data.providers.length).toBeGreaterThan(0);
-  });
-
   test('browser login flow reaches wizard', async ({ page }) => {
     // Clear any existing session
     await page.context().clearCookies();

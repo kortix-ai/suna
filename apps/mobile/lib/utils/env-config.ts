@@ -6,7 +6,7 @@ import { log } from '@/lib/logger';
  * Matches backend's EnvMode (local, staging, production)
  */
 
-export enum EnvMode {
+enum EnvMode {
   LOCAL = 'local',
   STAGING = 'staging',
   PRODUCTION = 'production',
@@ -17,7 +17,7 @@ export enum EnvMode {
  * Checks EXPO_PUBLIC_ENV_MODE environment variable
  * Falls back to 'staging' if not set (localhost doesn't work on physical devices)
  */
-export function getEnvMode(): EnvMode {
+function getEnvMode(): EnvMode {
   const envMode = process.env.EXPO_PUBLIC_ENV_MODE?.toLowerCase();
   
   if (!envMode) {
@@ -42,23 +42,21 @@ export function getEnvMode(): EnvMode {
 /**
  * Current environment mode
  */
-export const ENV_MODE = getEnvMode();
+const ENV_MODE = getEnvMode();
 
 /**
  * Environment checks
  */
 export const isLocal = ENV_MODE === EnvMode.LOCAL;
-export const isStaging = ENV_MODE === EnvMode.STAGING;
-export const isProduction = ENV_MODE === EnvMode.PRODUCTION;
+const isProduction = ENV_MODE === EnvMode.PRODUCTION;
 
 /**
  * Use staging Stripe IDs for local/staging, production IDs for production
  */
-export const useProductionStripeIds = isProduction;
+const useProductionStripeIds = isProduction;
 
 /**
  * Log current environment on import (for debugging)
  */
 log.log(`🌍 Mobile app environment: ${ENV_MODE}`);
 log.log(`💳 Using ${useProductionStripeIds ? 'PRODUCTION' : 'STAGING'} Stripe price IDs`);
-

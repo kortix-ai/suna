@@ -2,7 +2,6 @@
 
 import { cn } from '@/lib/utils';
 import { motion, useMotionValue, useTransform, useReducedMotion } from 'framer-motion';
-import type { TargetAndTransition } from 'framer-motion';
 import { useEffect, useState, useId, useMemo } from 'react';
 
 type Tone = 'light' | 'medium' | 'dark';
@@ -453,4 +452,3 @@ export function AnimatedBg({ variant = 'hero', blurMultiplier = 1, sizeMultiplie
         </div>
     );
 }
-

@@ -1,15 +1,12 @@
 /**
  * IntegrationsTabPage — full-screen Pipedream integrations page
  * rendered as a page tab (from right drawer / command palette).
- * Same header pattern as SSHPage, BrowserPage, etc.
+ * Same header pattern as BrowserPage and other page tabs.
  */
 
 import React from 'react';
-import { View, TouchableOpacity } from 'react-native';
-import { Text as RNText } from 'react-native';
+import { View } from 'react-native';
 import { useColorScheme } from 'nativewind';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
 import type { PageTab } from '@/stores/tab-store';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
@@ -26,7 +23,6 @@ interface IntegrationsTabPageProps {
 
 export function IntegrationsTabPage({
   page,
-  onBack,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -34,8 +30,6 @@ export function IntegrationsTabPage({
 }: IntegrationsTabPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
-  const fgColor = isDark ? '#F8F8F8' : '#121215';
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#f5f5f5' }}>

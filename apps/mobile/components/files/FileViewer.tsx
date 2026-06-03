@@ -3,14 +3,13 @@
  * Full-screen file viewer with preview and actions
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Modal, Pressable, Share, Platform } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Modal, Pressable, Share } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui';
 import { X, Download, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -47,7 +46,6 @@ export function FileViewer({
   visible,
   onClose,
   file,
-  sandboxId,
   sandboxUrl,
   fileList,
   currentIndex = -1,
@@ -57,11 +55,9 @@ export function FileViewer({
   const isDark = colorScheme === 'dark';
   const closeScale = useSharedValue(1);
   const [blobUrl, setBlobUrl] = useState<string | undefined>();
-  const [viewMode, setViewMode] = useState<'preview' | 'raw'>('preview');
   const [isDownloading, setIsDownloading] = useState(false);
 
   const previewType = file ? getFilePreviewType(file.name) : FilePreviewType.OTHER;
-  const isImage = previewType === FilePreviewType.IMAGE;
   // Binary file types that should be fetched as blob, not text
   const isBinaryFile = previewType === FilePreviewType.IMAGE ||
                        previewType === FilePreviewType.PDF ||
@@ -71,10 +67,6 @@ export function FileViewer({
   const shouldFetchText = file && !isBinaryFile;
   const shouldFetchBlob = file && isBinaryFile;
   
-  // Can show raw view for non-binary files
-  const canShowRaw =
-    file && previewType !== FilePreviewType.BINARY && previewType !== FilePreviewType.OTHER;
-
   // Fetch file content for text-based files (via OpenCode API)
   const {
     data: textContent,
@@ -197,8 +189,6 @@ export function FileViewer({
   const isLoading = isLoadingText || isLoadingImage;
   const hasError = textError || imageError;
   const canNavigate = fileList && fileList.length > 1 && currentIndex >= 0;
-
-  const insets = useSafeAreaInsets();
 
   if (!visible || !file) {
     return null;

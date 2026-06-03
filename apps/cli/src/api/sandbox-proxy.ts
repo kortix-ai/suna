@@ -6,7 +6,7 @@ import { ApiError } from './client.ts';
  * The Kortix API exposes it at /v1/p/{sandboxId}/4096/* with the same
  * Bearer-token auth the rest of the CLI uses.
  */
-export const OPENCODE_PORT = 4096;
+const OPENCODE_PORT = 4096;
 
 interface RequestOpts {
   apiBase: string;
@@ -41,7 +41,7 @@ function joinProxyUrl(opts: RequestOpts): string {
  * Make an HTTP call against a sandbox service through the Kortix proxy.
  * Used for talking to OpenCode (port 4096) from the CLI.
  */
-export async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
+async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
   const url = joinProxyUrl(opts);
   const headers: Record<string, string> = {
     Authorization: `Bearer ${opts.token}`,
@@ -178,9 +178,9 @@ export interface OpencodeMessageWithParts {
   parts: OpencodePart[];
 }
 
-export type OpencodeMessage = OpencodeUserMessage | OpencodeAssistantMessage;
+type OpencodeMessage = OpencodeUserMessage | OpencodeAssistantMessage;
 
-export interface OpencodeUserMessage {
+interface OpencodeUserMessage {
   id: string;
   role: 'user';
   sessionID: string;

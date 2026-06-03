@@ -13,12 +13,11 @@ import { log } from '@/lib/logger';
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
 
-export const SANDBOX_PORTS = {
+const SANDBOX_PORTS = {
   DESKTOP: '6080',
   DESKTOP_HTTPS: '6081',
   KORTIX_MASTER: '8000',
   BROWSER_STREAM: '9223',
-  SSH: '22',
 } as const;
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -231,8 +230,7 @@ export async function findProjectSessionSandbox(sandboxId?: string): Promise<{
 // ─── API Methods ─────────────────────────────────────────────────────────────
 
 /**
- * Ensure the user has a sandbox provisioned. Creates one if needed.
- * POST /platform/init
+ * Ensure the user has a project-session sandbox provisioned.
  */
 export async function ensureSandbox(opts?: {
   provider?: SandboxProviderName;
@@ -264,7 +262,6 @@ export async function ensureSandbox(opts?: {
 
 /**
  * Get user's active sandbox.
- * GET /platform/sandbox
  */
 export async function getActiveSandbox(): Promise<SandboxInfo | null> {
   try {
@@ -277,11 +274,6 @@ export async function getActiveSandbox(): Promise<SandboxInfo | null> {
 
 /**
  * List all sandboxes for the user.
- *
- * GET /platform/sandbox/list — cloud-tracked sandboxes from the DB.
- * Additionally probes /platform/local-bridge/status so a live local Docker
- * sandbox surfaces alongside cloud instances. The bridge call also ensures
- * the backend creates/updates the local sandbox's DB row on self-hosted setups.
  */
 export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> {
   try {
@@ -299,19 +291,7 @@ export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> 
 }
 
 /**
- * Discover the local Docker sandbox (if any) by hitting the backend's
- * local-bridge status endpoint. Returns null if no local sandbox is running
- * or the endpoint is unreachable.
- *
- * GET /platform/local-bridge/status
- */
-export async function discoverLocalSandbox(): Promise<SandboxInfo | null> {
-  return null;
-}
-
-/**
  * Restart the active sandbox.
- * POST /platform/sandbox/restart
  */
 export async function restartSandbox(sandboxId?: string): Promise<void> {
   const row = await findProjectSessionSandbox(sandboxId);
@@ -325,37 +305,14 @@ export async function restartSandbox(sandboxId?: string): Promise<void> {
 }
 
 /**
- * Stop the active sandbox.
- * POST /platform/sandbox/stop
- */
-export async function stopSandbox(): Promise<void> {
-  throw new Error('Stopping project-session sandboxes is not supported by the current API');
-}
-
-/**
- * Delete/archive a sandbox by ID.
- * DELETE /platform/sandbox/:sandboxId
- */
-export async function deleteSandbox(sandboxId: string): Promise<void> {
-  const row = await findProjectSessionSandbox(sandboxId);
-  if (!row) throw new Error('Project session sandbox not found');
-  await apiFetch<void>(
-    `/projects/${encodeURIComponent(row.project.project_id)}/sessions/${encodeURIComponent(row.session.session_id)}`,
-    { method: 'DELETE' },
-  );
-}
-
-/**
- * Get available sandbox providers.
- * GET /platform/providers
+ * Get sandbox providers supported by the project-session flow.
  */
 export async function getProviders(): Promise<string[]> {
   return ['daytona'];
 }
 
 /**
- * Initialize a local Docker sandbox.
- * POST /platform/init/local
+ * Start a project-session sandbox and emit legacy progress updates.
  */
 export interface LocalSandboxProgress {
   status: string;
@@ -373,17 +330,6 @@ export async function initLocalSandbox(
   return result.sandbox;
 }
 
-/**
- * Add a custom URL instance to the server store.
- * POST /platform/sandbox with custom URL.
- * For now this is a local-only operation — custom URLs are stored on-device.
- */
-export interface CustomInstance {
-  id: string;
-  label: string;
-  url: string;
-}
-
 export async function checkInstanceHealth(url: string): Promise<string | null> {
   try {
     const controller = new AbortController();
@@ -398,7 +344,7 @@ export async function checkInstanceHealth(url: string): Promise<string | null> {
   }
 }
 
-// ─── Sandbox Update API ─────────────────────────────────────────────────────
+// ─── Sandbox Version API ────────────────────────────────────────────────────
 
 export interface ChangelogChange {
   type: 'feature' | 'fix' | 'improvement' | 'breaking' | 'upstream' | 'security' | 'deprecation';
@@ -417,29 +363,6 @@ export interface SandboxVersionInfo {
   version: string;
   channel?: string;
   changelog: ChangelogEntry | null;
-}
-
-export type UpdatePhase =
-  | 'idle'
-  | 'pulling'
-  | 'stopping'
-  | 'removing'
-  | 'recreating'
-  | 'starting'
-  | 'health_check'
-  | 'complete'
-  | 'failed';
-
-export interface SandboxUpdateStatus {
-  phase: UpdatePhase;
-  progress: number;
-  message: string;
-  targetVersion: string | null;
-  previousVersion: string | null;
-  currentVersion: string | null;
-  error: string | null;
-  startedAt: string | null;
-  updatedAt: string | null;
 }
 
 export async function getLatestSandboxVersion(): Promise<SandboxVersionInfo> {
@@ -508,64 +431,11 @@ export async function getFullChangelog(): Promise<ChangelogEntry[]> {
   }
 }
 
-export async function triggerSandboxUpdate(_version: string): Promise<void> {
-  throw new Error('Sandbox image updates are managed by project-session provisioning in the current API');
-}
-
-export async function getSandboxUpdateStatus(): Promise<SandboxUpdateStatus> {
-  return {
-    phase: 'idle',
-    progress: 0,
-    message: 'Project-session sandboxes do not expose legacy update status',
-    targetVersion: null,
-    previousVersion: null,
-    currentVersion: null,
-    error: null,
-    startedAt: null,
-    updatedAt: null,
-  };
-}
-
-export async function resetSandboxUpdateStatus(): Promise<void> {
-  return;
-}
-
-// ─── SSH API ────────────────────────────────────────────────────────────────
-
-export interface SSHConnectionInfo {
-  host: string;
-  port: number;
-  username: string;
-  provider: string;
-  key_name: string;
-  host_alias: string;
-  reconnect_command: string;
-  ssh_command: string;
-  ssh_config_entry: string;
-  ssh_config_command: string;
-}
-
-export interface SSHSetupResult extends SSHConnectionInfo {
-  private_key: string;
-  public_key: string;
-  setup_command: string;
-  agent_prompt: string;
-  key_comment: string;
-}
-
-export async function setupSSH(): Promise<SSHSetupResult> {
-  throw new Error('SSH setup is not exposed for project-session sandboxes');
-}
-
-export async function getSSHConnection(): Promise<SSHConnectionInfo> {
-  throw new Error('SSH connection details are not exposed for project-session sandboxes');
-}
-
 // ─── Running Services API ───────────────────────────────────────────────────
 
-export type SandboxServiceStatus = 'running' | 'stopped' | 'starting' | 'failed' | 'backoff';
-export type SandboxServiceAdapter = 'spawn' | 's6';
-export type SandboxServiceScope = 'bootstrap' | 'core' | 'project' | 'session';
+type SandboxServiceStatus = 'running' | 'stopped' | 'starting' | 'failed' | 'backoff';
+type SandboxServiceAdapter = 'spawn' | 's6';
+type SandboxServiceScope = 'bootstrap' | 'core' | 'project' | 'session';
 
 export interface SandboxService {
   id: string;
@@ -662,52 +532,4 @@ export async function reconcileSandboxServices(
     method: 'POST',
   });
   return data !== null;
-}
-
-export async function sandboxRuntimeReload(
-  sandboxUrl: string,
-  mode: 'dispose-only' | 'full',
-): Promise<boolean> {
-  const data = await serviceRequest(sandboxUrl, `/kortix/services/system/reload`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode }),
-  });
-  return data !== null;
-}
-
-/** @deprecated Use sandboxServiceAction instead */
-export async function stopSandboxService(sandboxUrl: string, serviceId: string): Promise<boolean> {
-  return sandboxServiceAction(sandboxUrl, serviceId, 'stop');
-}
-
-export interface PtySession {
-  id: string;
-  running: boolean;
-  command?: string;
-  args?: string[];
-  createdAt?: string;
-}
-
-export async function getPtySessions(sandboxUrl: string): Promise<PtySession[]> {
-  try {
-    const token = await getAuthToken();
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 5000);
-    const res = await fetch(`${sandboxUrl}/pty`, { headers, signal: controller.signal });
-    clearTimeout(timeout);
-
-    if (!res.ok) return [];
-    const data = await res.json();
-    // Response could be array directly or wrapped
-    if (Array.isArray(data)) return data;
-    if (data?.ptys && Array.isArray(data.ptys)) return data.ptys;
-    if (data?.data && Array.isArray(data.data)) return data.data;
-    return [];
-  } catch {
-    return [];
-  }
 }

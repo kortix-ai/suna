@@ -17,7 +17,6 @@ import { DynamicConfigForm } from './DynamicConfigForm';
 import { ModelToggle } from '../models/ModelToggle';
 import { useAvailableModels } from '@/lib/models/hooks';
 import { useAccountState } from '@/lib/billing/hooks';
-import { Loading } from '../loading/loading';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import type { ComposioTriggerType, TriggerApp, Model } from '@/api/types';
@@ -168,7 +167,6 @@ export function TriggerConfigStep({
   onAgentPromptChange,
   model,
   onModelChange,
-  isConfigValid,
 }: TriggerConfigStepProps) {
   const { colorScheme } = useColorScheme();
   const { data: modelsData } = useAvailableModels();

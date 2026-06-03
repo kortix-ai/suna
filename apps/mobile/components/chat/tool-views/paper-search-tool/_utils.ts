@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface PaperSearchResult {
+interface PaperSearchResult {
   id: string;
   url: string;
   title: string;

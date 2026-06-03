@@ -6,7 +6,6 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getAuthToken } from '@/api/config';
-import { log } from '@/lib/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -24,7 +23,7 @@ export interface Agent {
   options: Record<string, unknown>;
 }
 
-export interface ModelInfo {
+interface ModelInfo {
   id: string;
   name: string;
   family?: string;
@@ -222,7 +221,7 @@ export interface McpStatus {
   error?: string;
 }
 
-export const opencodeKeys = {
+const opencodeKeys = {
   agents: (url: string) => ['opencode', 'agents', url] as const,
   providers: (url: string) => ['opencode', 'providers', url] as const,
   config: (url: string) => ['opencode', 'config', url] as const,

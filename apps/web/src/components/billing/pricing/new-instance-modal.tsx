@@ -9,7 +9,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import { isBillingEnabled } from '@/lib/config';
-import { createCheckoutSession, type ServerType } from '@/lib/api/billing';
+import { createCheckoutSession } from '@/lib/api/billing';
 import { useServerTypes } from '@/hooks/instance/use-server-types';
 import { useAuth } from '@/components/AuthProvider';
 import { INSTANCE_CONFIG } from '@/components/instance/config';

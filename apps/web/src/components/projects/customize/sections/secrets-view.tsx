@@ -17,7 +17,6 @@ import {
   Plug,
   Plus,
   Search,
-  ShieldAlert,
   Trash2,
   User,
   Users,
@@ -574,7 +573,6 @@ function SecretDialog({
   row: SecretRow | null;
   onSaved: () => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const fixedName = row?.name ?? null;
   const [name, setName] = useState('');
   const [value, setValue] = useState('');

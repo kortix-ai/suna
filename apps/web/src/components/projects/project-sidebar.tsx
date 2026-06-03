@@ -95,7 +95,7 @@ function KbdHint({ mod, letter }: { mod: string; letter: string }) {
 // Collapsed-state icon button — square hit target on the icon rail. The
 // optional `flyoutContent` opens a portal panel to the right of the button
 // on hover, used to expose the full session list while the sidebar is
-// collapsed. Mirrors the pattern from main's sidebar-left so the project
+// collapsed. Mirrors the compact rail pattern so the project
 // shell and the global shell feel identical when collapsed.
 // ============================================================================
 
@@ -519,7 +519,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] relative overflow-visible">
         {/* --- Collapsed: icon rail. Absolute layer toggled by opacity so
             no text/kbd-hint from the expanded layer bleeds through.
-            Mirrors apps/web/.../sidebar-left.tsx on main. --- */}
+            Mirrors the compact rail interaction. --- */}
         <div className={cn(
           'absolute inset-0 px-2 pt-1 pb-1 flex flex-col items-center',
           effectiveState === 'collapsed' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',

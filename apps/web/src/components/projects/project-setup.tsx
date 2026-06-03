@@ -2,9 +2,9 @@
 
 /**
  * Project setup checklist — surfaces the steps that make a project "ready",
- * driven entirely by {@link useProjectSetup}. Two surfaces share one body:
+ * driven entirely by {@link useProjectSetup}. Two sidebar surfaces share one
+ * body:
  *
- *   • <ProjectSetupChecklist>  — the card on the project index empty state.
  *   • <ProjectSetupNavItem> / <ProjectSetupRailItem> — the compact sidebar
  *     widget (expanded row + collapsed icon) that opens the same checklist
  *     in a popover.
@@ -14,9 +14,9 @@
  */
 
 import * as React from 'react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowRight, BookOpen, Check, Sparkles, X } from 'lucide-react';
+import { ArrowRight, BookOpen, Check, Sparkles } from 'lucide-react';
 
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
@@ -197,81 +197,6 @@ function useStepHandler(projectId: string, onStartSession?: () => void) {
 // ---------------------------------------------------------------------------
 // Card variant — project index empty state
 // ---------------------------------------------------------------------------
-
-/** Remembers a per-project dismissal of the index card in localStorage. */
-function useDismissed(key: string): [boolean, () => void] {
-  const [dismissed, setDismissed] = useState(false);
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(key) === '1') setDismissed(true);
-    } catch {
-      /* private mode / SSR */
-    }
-  }, [key]);
-  const dismiss = useCallback(() => {
-    setDismissed(true);
-    try {
-      localStorage.setItem(key, '1');
-    } catch {
-      /* ignore */
-    }
-  }, [key]);
-  return [dismissed, dismiss];
-}
-
-export function ProjectSetupChecklist({
-  projectId,
-  onStartSession,
-  className,
-}: {
-  projectId: string;
-  onStartSession?: () => void;
-  className?: string;
-}) {
-  const setup = useProjectSetup(projectId);
-  const onStep = useStepHandler(projectId, onStartSession);
-  const [dismissed, dismiss] = useDismissed(`kortix:setup-card-dismissed:${projectId}`);
-
-  if (setup.isLoading || setup.isComplete || dismissed) return null;
-
-  const essentials = setup.steps.filter((s) => !s.optional);
-  const optionals = setup.steps.filter((s) => s.optional);
-  const nextId = essentials.find((s) => !s.done)?.id ?? null;
-  const remaining = setup.requiredTotal - setup.requiredDone;
-
-  return (
-    <div
-      className={cn(
-        'relative w-full max-w-md overflow-hidden rounded-2xl border border-border/60 bg-card',
-        className,
-      )}
-    >
-      <button
-        type="button"
-        onClick={dismiss}
-        aria-label="Dismiss"
-        className="absolute right-3 top-3 z-10 grid size-7 place-items-center rounded-full text-muted-foreground/70 hover:bg-muted hover:text-foreground"
-      >
-        <X className="size-3.5" />
-      </button>
-
-      <SetupHeader
-        remaining={remaining}
-        total={setup.requiredTotal}
-        percent={setup.percent}
-      />
-
-      <div className="border-t border-border/60">
-        <StepSection steps={essentials} nextId={nextId} onStep={onStep} />
-        {optionals.length > 0 && (
-          <div className="border-t border-border/60">
-            <StepSection label="Optional" steps={optionals} nextId={null} onStep={onStep} />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 /** Shared header for the popover + card surfaces. */
 function SetupHeader({

@@ -51,27 +51,27 @@ function extractMessage(value: unknown): string {
   return '';
 }
 
-export function isKnownBrowserNoiseMessage(message: unknown): boolean {
+function isKnownBrowserNoiseMessage(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, KNOWN_BROWSER_NOISE_MESSAGES);
 }
 
-export function isExtensionSource(filename: unknown): boolean {
+function isExtensionSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   return EXTENSION_PROTOCOL_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
-export function isInjectedAppSource(filename: unknown): boolean {
+function isInjectedAppSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   return INJECTED_APP_SOURCE_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
-export function isKnownTestNoiseMessage(message: unknown): boolean {
+function isKnownTestNoiseMessage(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, KNOWN_TEST_NOISE_MESSAGES);
 }
 
-export function isLikelyDomMutationNoise(message: unknown): boolean {
+function isLikelyDomMutationNoise(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, KNOWN_DOM_MUTATION_NOISE_MESSAGES)
     || containsKnownPattern(normalized, KNOWN_HYDRATION_NOISE_MESSAGES);
@@ -101,7 +101,7 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   return isExtensionSource(input.filename) && normalizeString(message).includes('runtime.sendMessage');
 }
 
-export function shouldIgnoreSentryBrowserNoise(event: {
+function shouldIgnoreSentryBrowserNoise(event: {
   message?: unknown;
   request?: { url?: unknown };
   exception?: {

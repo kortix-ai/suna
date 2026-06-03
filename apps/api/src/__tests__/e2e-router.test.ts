@@ -98,33 +98,32 @@ mock.module('../middleware/auth', () => ({
     c.set('userEmail', 'test@example.com');
     await next();
   },
-  combinedAuth: async (c: any, next: any) => { await next(); },
+  combinedAuth: async (_c: any, next: any) => { await next(); },
 }));
 
 mock.module('../router/services/tavily', () => ({
-  webSearchTavily: async (query: string, maxResults: number, searchDepth: string) => {
+  webSearchTavily: async (_query: string, _maxResults: number, _searchDepth: string) => {
     if (mockTavilyError) throw mockTavilyError;
     return mockTavilyResults;
   },
 }));
 
 mock.module('../router/services/serper', () => ({
-  imageSearchSerper: async (query: string, maxResults: number, safeSearch: boolean) => {
+  imageSearchSerper: async (_query: string, _maxResults: number, _safeSearch: boolean) => {
     if (mockSerperError) throw mockSerperError;
     return mockSerperResults;
   },
 }));
 
 mock.module('../router/services/billing', () => ({
-  checkCredits: async (accountId: string, min?: number, opts?: any) => mockCheckCreditsResult,
-  deductToolCredits: async (...args: any[]) => mockDeductResult,
-  deductLLMCredits: async (...args: any[]) => mockDeductResult,
+  checkCredits: async (_accountId: string, _min?: number, _opts?: any) => mockCheckCreditsResult,
+  deductToolCredits: async (..._args: any[]) => mockDeductResult,
+  deductLLMCredits: async (..._args: any[]) => mockDeductResult,
 }));
 
 mock.module('../router/services/llm', () => ({
   proxyToOpenRouter: async (
     body: Record<string, unknown>,
-    isStreaming: boolean,
     _apiKey?: string,
     traceHeaders?: Record<string, string>,
   ) => {
@@ -134,7 +133,7 @@ mock.module('../router/services/llm', () => ({
     if (mockProxyResponse) return mockProxyResponse;
 
     // Default: return a realistic non-streaming response
-    if (isStreaming) {
+    if (body.stream === true) {
       return createMockStreamResponse();
     }
     return new Response(JSON.stringify(createMockChatResponse()), {
@@ -153,20 +152,6 @@ mock.module('../router/services/llm', () => ({
     return ((prompt / 1_000_000) * (modelConfig?.inputPer1M || 0) +
             (completion / 1_000_000) * (modelConfig?.outputPer1M || 0)) * 1.2;
   },
-  getAllModels: () => [
-    { id: 'minimax/minimax-m2.7', object: 'model', owned_by: 'kortix', context_window: 204800, pricing: { input: 0.30, output: 1.20 }, tier: 'free' },
-    { id: 'z-ai/glm-5-turbo', object: 'model', owned_by: 'kortix', context_window: 202752, pricing: { input: 1.20, output: 4.00 }, tier: 'free' },
-    { id: 'moonshotai/kimi-k2.5', object: 'model', owned_by: 'kortix', context_window: 262144, pricing: { input: 0.45, output: 2.20 }, tier: 'free' },
-    { id: 'minimax/minimax-m2.5', object: 'model', owned_by: 'kortix', context_window: 196608, pricing: { input: 0.20, output: 1.17 }, tier: 'free' },
-  ],
-  getModel: (id: string) => ({
-    openrouterId: id,
-    inputPer1M: id === 'minimax/minimax-m2.7' ? 0.30 : id === 'z-ai/glm-5-turbo' ? 1.20 : id === 'moonshotai/kimi-k2.5' ? 0.45 : 0.20,
-    outputPer1M: id === 'minimax/minimax-m2.7' ? 1.20 : id === 'z-ai/glm-5-turbo' ? 4.00 : id === 'moonshotai/kimi-k2.5' ? 2.20 : 1.17,
-    contextWindow: id === 'minimax/minimax-m2.7' ? 204800 : id === 'z-ai/glm-5-turbo' ? 202752 : id === 'moonshotai/kimi-k2.5' ? 262144 : 196608,
-    tier: 'free' as 'free' | 'paid',
-  }),
-  resolveOpenRouterId: (id: string) => id,
 }));
 
 // ─── Import router AFTER mocks ───────────────────────────────────────────────

@@ -49,7 +49,7 @@ function normalizeEnvNames(value: unknown): string[] {
   return out;
 }
 
-export function envSpecFromManifest(data: Record<string, unknown>): EnvSpec {
+function envSpecFromManifest(data: Record<string, unknown>): EnvSpec {
   const env = data.env && typeof data.env === 'object' ? (data.env as Record<string, unknown>) : {};
   return {
     required: normalizeEnvNames(env.required),
@@ -57,7 +57,7 @@ export function envSpecFromManifest(data: Record<string, unknown>): EnvSpec {
   };
 }
 
-export function manifestPath(cwd: string = process.cwd()): string {
+function manifestPath(cwd: string = process.cwd()): string {
   return resolve(cwd, 'kortix.toml');
 }
 
@@ -83,15 +83,6 @@ export function loadLocalManifest(cwd: string = process.cwd()): LocalManifest | 
  */
 export function lintManifest(data: Record<string, unknown>): ManifestIssues {
   const { issues } = validateManifest(data);
-  return classifyIssues(issues);
-}
-
-/**
- * Validate the on-disk kortix.toml from raw text. Returns a syntax-error
- * issue when the TOML doesn't parse; otherwise runs the canonical schema.
- */
-export function lintManifestText(raw: string): ManifestIssues {
-  const { issues } = validateManifest(raw);
   return classifyIssues(issues);
 }
 

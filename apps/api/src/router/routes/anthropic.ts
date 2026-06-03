@@ -8,15 +8,6 @@ import {
 } from '../services/anthropic';
 import { getModel } from '../config/models';
 import { checkCredits, deductLLMCredits } from '../services/billing';
-import {
-  applyActorSpend,
-  dollarsToCents,
-  getSandboxMemberCapStatus,
-} from '../services/member-spend';
-import {
-  resolveActorFromRequest,
-  type ActorContext,
-} from '../../shared/actor-context';
 import { getTraceHeaders } from '../../lib/request-context';
 
 const anthropic = new Hono<{ Variables: AppContext }>();
@@ -70,17 +61,6 @@ anthropic.post('/messages', async (c) => {
   const sessionId =
     typeof metadata?.session_id === 'string' ? metadata.session_id : undefined;
 
-  // Per-member cap enforcement (same pattern as /llm/chat/completions).
-  const actor = resolveActorFromRequest(c, { logPrefix: '[LLM][Anthropic]' });
-  if (actor) {
-    const status = await getSandboxMemberCapStatus(actor.sandboxId, actor.userId);
-    if (status && status.capCents !== null && status.currentCents >= status.capCents) {
-      throw new HTTPException(402, {
-        message: `Spending cap reached ($${(status.capCents / 100).toFixed(2)} / cycle). Ask the instance owner to raise or remove the cap.`,
-      });
-    }
-  }
-
   // Check credits
   const creditCheck = await checkCredits(accountId);
   if (!creditCheck.hasCredits) {
@@ -93,7 +73,7 @@ anthropic.post('/messages', async (c) => {
   const modelConfig = getModel(modelId);
 
   // Proxy to Anthropic
-  const response = await proxyToAnthropic(body, isStreaming, getTraceHeaders());
+  const response = await proxyToAnthropic(body, getTraceHeaders());
 
   // If Anthropic returned an error, pass it through
   if (!response.ok) {
@@ -128,7 +108,6 @@ anthropic.post('/messages', async (c) => {
       modelId,
       accountId,
       sessionId,
-      actor,
     );
 
     return new Response(clientStream, {
@@ -156,24 +135,12 @@ anthropic.post('/messages', async (c) => {
       cost,
       sessionId,
     )
-      .then((res) => {
-        if (res.success && actor && cost > 0) {
-          applyActorSpend(actor.sandboxId, actor.userId, dollarsToCents(cost)).catch(
-            (err) => console.error('[LLM][Anthropic] Actor spend attribution failed:', err),
-          );
-        }
-      })
       .catch((err) =>
         console.error(
           `[LLM][Anthropic] Failed to deduct credits for ${modelId}:`,
           err,
         ),
       );
-    console.log(
-      `[LLM][Anthropic] ${modelId}: ${usage.inputTokens}in/${usage.outputTokens}out ` +
-        `(cache: ${usage.cacheReadInputTokens}read/${usage.cacheCreationInputTokens}write), ` +
-        `cost=$${cost.toFixed(6)}`,
-    );
   }
 
   return c.json(responseBody);
@@ -198,7 +165,6 @@ async function extractUsageFromAnthropicStream(
   modelId: string,
   accountId: string,
   sessionId?: string,
-  actor?: ActorContext | null,
 ) {
   try {
     const reader = stream.getReader();
@@ -250,23 +216,13 @@ async function extractUsageFromAnthropicStream(
         cacheReadInputTokens,
       };
       const cost = calculateAnthropicCost(modelConfig, usage);
-      const deductRes = await deductLLMCredits(
+      await deductLLMCredits(
         accountId,
         modelId,
         inputTokens,
         outputTokens,
         cost,
         sessionId,
-      );
-      if (deductRes.success && actor && cost > 0) {
-        applyActorSpend(actor.sandboxId, actor.userId, dollarsToCents(cost)).catch(
-          (err) => console.error('[LLM][Anthropic] Actor spend attribution failed:', err),
-        );
-      }
-      console.log(
-        `[LLM][Anthropic] Stream ${modelId}: ${inputTokens}in/${outputTokens}out ` +
-          `(cache: ${cacheReadInputTokens}read/${cacheCreationInputTokens}write), ` +
-          `cost=$${cost.toFixed(6)}`,
       );
     } else {
       console.warn(

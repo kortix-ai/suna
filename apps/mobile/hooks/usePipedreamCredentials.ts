@@ -19,7 +19,7 @@ export interface PipedreamCredentialStatus {
 
 // ─── Keys ───────────────────────────────────────────────────────────────────
 
-export const pipedreamCredentialKeys = {
+const pipedreamCredentialKeys = {
   status: ['pipedream-credentials'] as const,
 };
 

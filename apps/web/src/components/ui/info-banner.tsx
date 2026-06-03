@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
  * body + optional trailing action. Use the semantic `tone` instead of
  * hand-rolling `border-amber-500/30 bg-amber-500/[0.04]` one-offs.
  *
- *   <InfoBanner tone="warning" icon={IconWarning} title="Manifest out of sync">
+ *   <InfoBanner tone="warning" icon={SomeIcon} title="Manifest out of sync">
  *     Re-run sync to apply the latest secrets.
  *   </InfoBanner>
  */

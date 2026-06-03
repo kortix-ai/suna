@@ -68,7 +68,7 @@ export interface Host {
   logged_in_at: string;
 }
 
-export interface Config {
+interface Config {
   active: string;
   hosts: Record<string, Host>;
 }
@@ -102,7 +102,7 @@ function shouldImportSingleHostAuth(currentPath: string): boolean {
 
 // ─── Load / save ──────────────────────────────────────────────────────────
 
-export function loadConfig(): Config {
+function loadConfig(): Config {
   // Try the multi-host file first.
   const path = configFilePath();
   if (existsSync(path)) {
@@ -145,7 +145,7 @@ export function loadConfig(): Config {
   return normalizeConfig({ active: DEFAULT_HOST_NAME, hosts: {} });
 }
 
-export function saveConfig(config: Config): void {
+function saveConfig(config: Config): void {
   const path = configFilePath();
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(config, null, 2) + '\n', 'utf8');
@@ -154,11 +154,6 @@ export function saveConfig(config: Config): void {
   } catch {
     /* Windows */
   }
-}
-
-export function deleteConfig(): void {
-  const path = configFilePath();
-  if (existsSync(path)) rmSync(path, { force: true });
 }
 
 // ─── Active host helpers ──────────────────────────────────────────────────

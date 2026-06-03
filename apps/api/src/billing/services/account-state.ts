@@ -1,17 +1,12 @@
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
-import {
-  getCreditAccount,
-  getSubscriptionInfo,
-} from '../repositories/credit-accounts';
+import { getSubscriptionInfo } from '../repositories/credit-accounts';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import {
   getTier,
   getDailyCreditConfig,
   isPaidTier,
-  isLegacyPaidTier,
   isPerSeatAccount,
-  MINIMUM_CREDIT_FOR_RUN,
   PER_SEAT_PRICE_USD,
   TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
   TYPICAL_LLM_BUDGET_PER_SEAT_USD,
@@ -22,7 +17,6 @@ import { getAutoTopupSettings } from './auto-topup';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
 import { db } from '../../shared/db';
-import { config } from '../../config';
 import type {
   AccountStateResponse,
   ScheduledChange,
@@ -129,10 +123,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     // DB may not be available in local mode
   }
 
-  // Legacy paid users with no active machine can claim a free default computer
-  const hasActiveMachine = instances.some((i: any) => i.status === 'active' || i.status === 'provisioning');
-  const canClaimComputer = isLegacyPaidTier(tierName) && !hasActiveMachine;
-
   const state = {
     credits: {
       total: credits.total,
@@ -164,11 +154,9 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       monthly_credits: tier.monthlyCredits,
       can_purchase_credits: isAdmin ? true : tier.canPurchaseCredits,
     },
-    models: [],
     auto_topup: autoTopup,
     instances,
     can_add_instances: isAdmin || isPaidTier(tierName),
-    can_claim_computer: canClaimComputer,
     billing_model: (isPerSeatAccount(sub?.billingModel) ? 'per_seat' : 'legacy') as 'per_seat' | 'legacy',
     seats: isPerSeatAccount(sub?.billingModel)
       ? {
@@ -232,7 +220,6 @@ export function buildLocalAccountState(): AccountStateResponse {
       monthly_credits: 0,
       can_purchase_credits: false,
     },
-    models: [],
     auto_topup: {
       enabled: false,
       threshold: AUTO_TOPUP_DEFAULT_THRESHOLD,
@@ -240,7 +227,6 @@ export function buildLocalAccountState(): AccountStateResponse {
     },
     instances: [],
     can_add_instances: false,
-    can_claim_computer: false,
     billing_model: 'legacy',
   };
 }

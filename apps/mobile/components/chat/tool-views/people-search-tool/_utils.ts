@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface PeopleSearchResult {
+interface PeopleSearchResult {
   id: string;
   url: string;
   person_name: string;
@@ -65,4 +65,3 @@ export function extractPeopleSearchData({ toolCall, toolResult }: { toolCall: To
     success: toolResult?.success ?? true
   };
 }
-

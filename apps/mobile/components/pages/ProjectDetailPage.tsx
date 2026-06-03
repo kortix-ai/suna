@@ -29,7 +29,6 @@ const monoFont = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import {
   BottomSheetModal,
@@ -151,7 +150,6 @@ export function ProjectDetailPage({
 }: ProjectDetailPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
   const { sandboxUrl } = useSandboxContext();
   const themeColors = useThemeColors();
 
@@ -428,7 +426,6 @@ export function ProjectDetailPage({
   const {
     data: files,
     isLoading: filesLoading,
-    refetch: refetchFiles,
   } = useOpenCodeFiles(hasFiles && tab === 'files' ? sandboxUrl : undefined, filePath);
   const [viewerFile, setViewerFile] = useState<SandboxFile | null>(null);
   const [viewerVisible, setViewerVisible] = useState(false);
@@ -832,7 +829,6 @@ export function ProjectDetailPage({
                 loading={statsLoading}
                 isDark={isDark}
                 fg={fg}
-                muted={muted}
                 cardBg={cardBg}
                 border={border}
               />
@@ -2420,7 +2416,6 @@ function ProjectTotalsCard({
   loading,
   isDark,
   fg,
-  muted,
   cardBg,
   border,
 }: {
@@ -2431,7 +2426,6 @@ function ProjectTotalsCard({
   loading: boolean;
   isDark: boolean;
   fg: string;
-  muted: string;
   cardBg: string;
   border: string;
 }) {

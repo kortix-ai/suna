@@ -2,7 +2,7 @@
  * Production wiring for the executor router — DB-backed ExecutorRouterDeps +
  * GatewayDeps. Access lives on the connector; credentials are split per (connector,
  * user). The pure logic (gateway/share/execute/policy/normalize) is tested; this
- * is the glue to Postgres + the credential store + Pipedream. See docs/specs/executor.md.
+ * is the glue to Postgres + the credential store + Pipedream.
  */
 import type { Context } from 'hono';
 import { and, eq } from 'drizzle-orm';
@@ -109,7 +109,7 @@ const nodeFetch: FetchImpl = async (url, init) => {
   return { status: res.status, ok: res.ok, text: () => res.text() };
 };
 
-export function makeDbGatewayDeps(): GatewayDeps {
+function makeDbGatewayDeps(): GatewayDeps {
   return {
     loadConnectorBySlug: async (projectId, slug) => {
       const [row] = await db
@@ -158,7 +158,6 @@ export function makeDbGatewayDeps(): GatewayDeps {
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>
       runPipedreamProxy(projectId, connectorSlug, args, accountId, userId),
     fetchImpl: nodeFetch,
-    enforcePolicies: true,
   };
 }
 

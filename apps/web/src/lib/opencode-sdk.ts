@@ -92,14 +92,6 @@ export function getClientForUrl(url: string): OpencodeClient {
 }
 
 /**
- * Drop a per-URL client (e.g. when a session sandbox is closed). No-op if the
- * URL was never cached.
- */
-export function dropClientForUrl(url: string): void {
-	clientsByUrl.delete(url);
-}
-
-/**
  * Force-recreate the client (e.g. after a server switch or token change).
  */
 export function resetClient(): void {

@@ -34,7 +34,7 @@ export interface TokenUsage {
   cachedTokens: number;
 }
 
-export interface CostBreakdown {
+interface CostBreakdown {
   upstreamCost: number;
   finalCost: number;
 }

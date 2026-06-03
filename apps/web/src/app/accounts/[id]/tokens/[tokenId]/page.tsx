@@ -16,7 +16,6 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { accountTokensApi } from '@/lib/api/account-tokens';
 import { getAccount } from '@/lib/projects-client';
-import { usePermission } from '@/lib/use-permission';
 
 function formatDate(iso: string | null | undefined) {
   if (!iso) return '—';
@@ -55,11 +54,6 @@ export default function TokenDetailPage() {
     () => tokensQuery.data?.find((t) => t.token_id === tokenId),
     [tokensQuery.data, tokenId],
   );
-
-  // policy.create gates the "Create / Edit / Remove" affordances inside the
-  // PoliciesTable. Anyone with member.read on the account can view a token's
-  // policies; only policy admins can mutate them.
-  const canManage = usePermission(accountId, 'policy.create').allowed;
 
   if (authLoading || !user) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;

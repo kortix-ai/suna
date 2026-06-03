@@ -2,7 +2,6 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import {
   X,
   ChevronLeft,
@@ -65,11 +64,9 @@ export function FullScreenPresentationViewer({
   const [metadata, setMetadata] = useState<PresentationMetadata | null>(null);
   const [currentSlide, setCurrentSlide] = useState(initialSlide);
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [retryAttempt, setRetryAttempt] = useState(0);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const hasLoadedRef = useRef(false);
-  const [showControls, setShowControls] = useState(true);
   const [showEditor, setShowEditor] = useState(false);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
   const [isDownloadingPPTX, setIsDownloadingPPTX] = useState(false);
@@ -79,7 +76,7 @@ export function FullScreenPresentationViewer({
   const wasOpenRef = useRef(false);
   
   // Download restriction for free tier users
-  const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
+  const { isRestricted: isDownloadRestricted, showUpgradePrompt } = useDownloadRestriction({
     featureName: 'presentations',
   });
   
@@ -111,7 +108,6 @@ export function FullScreenPresentationViewer({
     }
     
     setIsLoading(true);
-    setError(null);
     setRetryAttempt(retryCount);
     
     try {
@@ -124,7 +120,6 @@ export function FullScreenPresentationViewer({
       );
       
       const urlWithCacheBust = `${metadataUrl}?t=${Date.now()}`;
-      console.log(`Loading presentation metadata (attempt ${retryCount + 1}):`, urlWithCacheBust);
       
       const response = await fetch(urlWithCacheBust, {
         cache: 'no-cache',
@@ -135,7 +130,6 @@ export function FullScreenPresentationViewer({
         const data = await response.json();
         setMetadata(data);
         hasLoadedRef.current = true; // Mark as successfully loaded
-        console.log('Successfully loaded presentation metadata:', data);
         setIsLoading(false);
         
         // Clear any pending retry timeout on success
@@ -156,8 +150,6 @@ export function FullScreenPresentationViewer({
       const delay = retryCount < 5 
         ? Math.min(1000 * Math.pow(2, retryCount), 10000) // Exponential backoff for first 5 attempts
         : 5000; // Consistent 5 second intervals after that
-      
-      console.log(`Retrying in ${delay}ms... (attempt ${retryCount + 1})`);
       
       // Keep retrying indefinitely - don't set error state
       retryTimeoutRef.current = setTimeout(() => {
@@ -289,19 +281,10 @@ export function FullScreenPresentationViewer({
     return () => document.removeEventListener('keydown', handleKeyDown, true);
   }, [isOpen, goToNextSlide, goToPreviousSlide, totalSlides, onClose, showEditor]);
 
-
-
-  // Always show controls
-  useEffect(() => {
-    if (isOpen) {
-      setShowControls(true);
-    }
-  }, [isOpen]);
-
   // Download handlers
   const handleDownload = async (format: DownloadFormat) => {
     if (isDownloadRestricted) {
-      openUpgradeModal();
+      showUpgradePrompt();
       return;
     }
     if (!sandboxUrl || !presentationName) return;

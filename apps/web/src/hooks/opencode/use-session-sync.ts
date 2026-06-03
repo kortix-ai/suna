@@ -104,7 +104,7 @@ function buildMessages(
 
 /**
  * Single hook that provides all session data from the sync store.
- * Replaces: useOpenCodeMessages + useOpenCodeSessionStatusStore + useOpenCodePendingStore
+ * Replaces older per-query/per-store session message and status readers.
  *
  * On first access, fetches messages from the server and populates the store.
  * After that, SSE events keep the store updated in real time.

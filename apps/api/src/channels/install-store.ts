@@ -7,18 +7,11 @@ import {
   listProjectSecrets,
 } from '../projects/secrets';
 
-export const SLACK_BOT_TOKEN = 'SLACK_BOT_TOKEN';
-export const SLACK_SIGNING_SECRET = 'SLACK_SIGNING_SECRET';
-export const SLACK_TEAM_ID = 'SLACK_TEAM_ID';
-export const SLACK_BOT_USER_ID = 'SLACK_BOT_USER_ID';
-export const SLACK_TEAM_NAME = 'SLACK_TEAM_NAME';
-
-export const TELEGRAM_BOT_TOKEN = 'TELEGRAM_BOT_TOKEN';
-export const TELEGRAM_WEBHOOK_SECRET = 'TELEGRAM_WEBHOOK_SECRET';
-
-export async function loadTelegramWebhookSecretForProject(projectId: string): Promise<string | null> {
-  return readSecret(projectId, TELEGRAM_WEBHOOK_SECRET);
-}
+const SLACK_BOT_TOKEN = 'SLACK_BOT_TOKEN';
+const SLACK_SIGNING_SECRET = 'SLACK_SIGNING_SECRET';
+const SLACK_TEAM_ID = 'SLACK_TEAM_ID';
+const SLACK_BOT_USER_ID = 'SLACK_BOT_USER_ID';
+const SLACK_TEAM_NAME = 'SLACK_TEAM_NAME';
 
 const SLACK_KEYS = [
   SLACK_BOT_TOKEN,
@@ -28,14 +21,14 @@ const SLACK_KEYS = [
   SLACK_TEAM_NAME,
 ] as const;
 
-export interface SlackInstallSummary {
+interface SlackInstallSummary {
   workspaceId: string;
   workspaceName: string | null;
   botUserId: string | null;
   installedAt: string;
 }
 
-export interface SlackInstallInput {
+interface SlackInstallInput {
   projectId: string;
   botToken: string;
   signingSecret: string;
@@ -70,7 +63,7 @@ export async function deleteSlackInstall(projectId: string): Promise<void> {
     .where(and(eq(chatInstalls.platform, 'slack'), eq(chatInstalls.projectId, projectId)));
 }
 
-export interface SlackOauthInstallInput {
+interface SlackOauthInstallInput {
   projectId: string;
   workspaceId: string;
   botToken: string;
@@ -108,7 +101,7 @@ export async function saveSlackOauthInstall(
   };
 }
 
-export async function listProjectsForWorkspace(
+async function listProjectsForWorkspace(
   platform: string,
   workspaceId: string,
 ): Promise<string[]> {
@@ -148,10 +141,6 @@ export async function loadSlackSigningSecretForProject(projectId: string): Promi
 
 export async function loadSlackBotUserIdForProject(projectId: string): Promise<string | null> {
   return readSecret(projectId, SLACK_BOT_USER_ID);
-}
-
-export async function loadSlackTeamNameForProject(projectId: string): Promise<string | null> {
-  return readSecret(projectId, SLACK_TEAM_NAME);
 }
 
 async function upsertSecret(projectId: string, name: string, value: string): Promise<void> {

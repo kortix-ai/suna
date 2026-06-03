@@ -20,7 +20,7 @@
  */
 
 /** Escape a value for safe interpolation into an HTML attribute value. */
-export function escapeHtmlAttribute(value: string): string {
+function escapeHtmlAttribute(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -35,7 +35,7 @@ export function escapeHtmlAttribute(value: string): string {
  * with the HTML/JS-significant characters unicode-escaped: `<`, `>`, `&`, and
  * the U+2028/U+2029 line separators.
  */
-export function serializeForInlineScript(value: unknown): string {
+function serializeForInlineScript(value: unknown): string {
   return JSON.stringify(value).replace(
     /[<>&\u2028\u2029]/g,
     (ch) => '\\u' + ch.charCodeAt(0).toString(16).padStart(4, '0').toUpperCase(),
@@ -46,7 +46,7 @@ export function serializeForInlineScript(value: unknown): string {
  * Build the `kortix://auth/callback` deep link from the inbound query params,
  * dropping the `desktop` flag. Every value is re-encoded via URLSearchParams.
  */
-export function buildDesktopDeepLink(searchParams: URLSearchParams): string {
+function buildDesktopDeepLink(searchParams: URLSearchParams): string {
   const forwardParams = new URLSearchParams();
   for (const [k, v] of searchParams) {
     if (k !== 'desktop') forwardParams.set(k, v);

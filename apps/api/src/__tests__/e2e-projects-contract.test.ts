@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -168,7 +167,7 @@ function queryResult<T = any>(rows: T[]) {
   };
 }
 
-function selectRows(table: unknown, fields: Record<string, unknown> | undefined, condition: unknown): any[] {
+function selectRows(table: unknown, _fields: Record<string, unknown> | undefined, condition: unknown): any[] {
   const values = collectConditionValues(condition);
   const accountId = values.account_id as string | undefined;
   const userId = values.user_id as string | undefined;
@@ -275,12 +274,16 @@ function grantProjectRole(values: any, set?: Partial<ProjectMemberRow>) {
   return row;
 }
 
-// `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
-// from `../iam` via `./dispatcher` (the V1 `./engine` was retired), so the role
-// gate must be mocked on the dispatcher. Mirror the legacy role gate against
-// the test's mocked membership rows so viewer/non-member denial is still
-// exercised after the IAM-engine switch.
-mock.module('../iam/dispatcher', () => {
+const {
+  ACCOUNT_ACTIONS: IAM_ACCOUNT_ACTIONS,
+  PROJECT_ACTIONS: IAM_PROJECT_ACTIONS,
+} = await import('../iam/actions');
+
+// `projects/index` imports the public `../iam` barrel, so mock that exact
+// surface while passing through the action constants it also consumes. Mirror
+// the role gate against the test's mocked membership rows so viewer/non-member
+// denial is still exercised after the IAM-engine switch.
+mock.module('../iam', () => {
   const isManager = (userId: string): boolean => {
     const am = accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
     return am?.accountRole === 'owner' || am?.accountRole === 'admin';
@@ -296,6 +299,8 @@ mock.module('../iam/dispatcher', () => {
     return pr === 'manager';
   };
   return {
+    ACCOUNT_ACTIONS: IAM_ACCOUNT_ACTIONS,
+    PROJECT_ACTIONS: IAM_PROJECT_ACTIONS,
     authorize: async (userId: string, _a: unknown, action: string) => ({ allowed: decide(userId, action) }),
     assertAuthorized: async (userId: string, _a: unknown, action: string) => {
       if (!decide(userId, action)) throw new HTTPException(403, { message: 'Forbidden' });
@@ -316,16 +321,18 @@ mock.module('../iam/dispatcher', () => {
   };
 });
 
-mockIamMembershipSyncNoop();
-
-mock.module('../middleware/auth', () => ({
-  supabaseAuth: async (c: any, next: any) => {
+mock.module('../middleware/auth', () => {
+  const authMiddleware = async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
     c.set('userEmail', auth.userEmail);
     await next();
-  },
-}));
+  };
+  return {
+    combinedAuth: authMiddleware,
+    supabaseAuth: authMiddleware,
+  };
+});
 
 mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
@@ -370,10 +377,7 @@ mock.module('../projects/git', () => ({
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
   deleteRemoteSessionBranch: async () => undefined,
-  diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
-  getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
-  resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
@@ -384,13 +388,17 @@ mock.module("../snapshots/builder", () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickProjectTemplatePrebuilds: () => {},
+  reconcileProjectTemplates: async () => {},
+  kickStartupPreBuild: () => {},
+  reconcileStaleBuilds: async () => ({ healed: 0 }),
+  ensurePlatformDefaultImage: async () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
-  verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
     nonce: 'test-nonce',
@@ -453,6 +461,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 }));
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({

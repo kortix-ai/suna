@@ -96,8 +96,6 @@ export const accounts = kortixSchema.table(
     accountId: uuid('account_id').defaultRandom().primaryKey(),
     name: varchar('name', { length: 255 }).notNull(),
     personalAccount: boolean('personal_account').default(true).notNull(),
-    setupCompleteAt: timestamp('setup_complete_at', { withTimezone: true }),
-    setupWizardStep: integer('setup_wizard_step').default(0).notNull(),
     // When true the IAM engine rejects every browser/JWT request whose
     // session is not at AAL2 (MFA-verified). PATs are exempt — they're
     // expected to gate via per-policy require_mfa conditions instead.
@@ -404,7 +402,7 @@ export const projectSecrets = kortixSchema.table(
     // NULL = the shared project-level row (governed by share_scope + grants).
     // Non-null = that member's PRIVATE per-key override, which shadows the
     // shared row of the same name in their own sessions. Mirrors
-    // executor_credentials.userId. See docs/specs/executor.md / iam.md.
+    // executor_credentials.userId.
     ownerUserId: uuid('owner_user_id'),
     // On a personal override row: whether the member currently uses their own
     // value (true) or has flipped back to the shared one while keeping theirs
@@ -1025,8 +1023,7 @@ export const deployments = kortixSchema.table(
     accountId: uuid('account_id').notNull(),
     sandboxId: uuid('sandbox_id').references(() => sandboxes.sandboxId, { onDelete: 'set null' }),
     // Optional link back to a Git-backed project + the [[apps]] slug inside
-    // its kortix.toml. Populated by the /v1/projects/:id/apps path; nullable
-    // because the legacy /v1/deployments path doesn't carry these.
+    // its kortix.toml. Populated by the /v1/projects/:id/apps path.
     projectId: uuid('project_id'),
     appSlug: varchar('app_slug', { length: 128 }),
     // Provider that produced this deployment ("freestyle" today; future:
@@ -2381,7 +2378,7 @@ export const accountSsoGroupMappings = kortixSchema.table(
  * Connectors are DEFINED in kortix.toml ([[connectors]]) and materialized here
  * on push (manifest = config source of truth, like triggers). Credentials are
  * project_secrets (scope handled by sharing above); the Pipedream connection
- * binding is also a project secret. See docs/specs/executor.md.
+ * binding is also a project secret.
  */
 export const executorConnectorProviderEnum = kortixSchema.enum('executor_connector_provider', [
   'pipedream',
@@ -2558,7 +2555,7 @@ export const executorConnectorPolicies = kortixSchema.table(
  * Project-scoped tool-call policies — materialized from top-level [[policies]]
  * in kortix.toml. Patterns are fully-qualified (`<slug>.<path>` globs) and apply
  * across ALL connectors in the project; evaluated BEFORE any connector-scoped
- * rule. See docs/specs/executor.md §8.
+ * rule.
  */
 export const executorProjectPolicies = kortixSchema.table(
   'executor_project_policies',

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="apps/web/public/Logomark.svg" alt="Kortix" width="76" />
+<img src="apps/web/public/kortix-symbol.svg" alt="Kortix" width="80" />
 
 # Kortix
 

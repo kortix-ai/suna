@@ -212,56 +212,6 @@ async function makeRequest<T = any>(
   }
 }
 
-export const supabaseClient = {
-  async execute<T = any>(
-    queryFn: () => Promise<{ data: T | null; error: any }>,
-    errorContext?: ErrorContext
-  ): Promise<ApiResponse<T>> {
-    try {
-      const { data, error } = await queryFn();
-
-      if (error) {
-        const apiError: ApiError = Object.assign(Object.create(Error.prototype), {
-          message: error.message || 'Database error',
-          name: 'ApiError',
-          code: error.code,
-          details: error
-        });
-
-        handleApiError(apiError, errorContext);
-
-        return {
-          error: apiError,
-          success: false,
-        };
-      }
-
-      return {
-        data: data as T,
-        success: true,
-      };
-    } catch (error: any) {
-      const apiError: ApiError = error instanceof Error 
-        ? Object.assign(Object.create(Error.prototype), {
-            message: error.message,
-            name: error.name || 'ApiError',
-            stack: error.stack
-          })
-        : Object.assign(Object.create(Error.prototype), {
-            message: String(error),
-            name: 'ApiError'
-          });
-      
-      handleApiError(apiError, errorContext);
-
-      return {
-        error: apiError,
-        success: false,
-      };
-    }
-  },
-};
-
 export const backendApi = {
   get: <T = any>(endpoint: string, options?: Omit<RequestInit & ApiClientOptions, 'method' | 'body'>) =>
     makeRequest<T>(`${getApiUrl()}${endpoint}`, { ...options, method: 'GET' }),

@@ -104,7 +104,7 @@ const TIMEZONE_TO_LOCALE_MAP: Record<string, Locale> = {
  * Detects locale based on browser timezone
  * Returns null if no match found
  */
-export function detectLocaleFromTimezone(): Locale | null {
+function detectLocaleFromTimezone(): Locale | null {
   if (typeof window === 'undefined') {
     return null;
   }
@@ -116,9 +116,6 @@ export function detectLocaleFromTimezone(): Locale | null {
     if (TIMEZONE_TO_LOCALE_MAP[timezone]) {
       return TIMEZONE_TO_LOCALE_MAP[timezone];
     }
-    
-    // Try to match by timezone region (e.g., "Europe/Berlin" -> "Europe" -> check German-speaking countries)
-    const region = timezone.split('/')[0];
     
     // German-speaking countries in Europe
     if (timezone.startsWith('Europe/')) {
@@ -177,19 +174,14 @@ export function detectLocaleFromTimezone(): Locale | null {
 /**
  * Detects locale from browser language (Accept-Language header)
  */
-export function detectLocaleFromBrowser(): Locale | null {
+function detectLocaleFromBrowser(): Locale | null {
   if (typeof window === 'undefined') {
     return null;
   }
 
   try {
-    // Log browser language info for debugging
-    console.log('🌍 Browser navigator.language:', navigator.language);
-    console.log('🌍 Browser navigator.languages:', navigator.languages);
-    
     const browserLang = navigator.language.split('-')[0].toLowerCase();
     if (locales.includes(browserLang as Locale)) {
-      console.log('🌍 Matched browser language:', browserLang);
       return browserLang as Locale;
     }
     
@@ -197,12 +189,10 @@ export function detectLocaleFromBrowser(): Locale | null {
     const fullLang = navigator.language.toLowerCase();
     for (const locale of locales) {
       if (fullLang.startsWith(locale)) {
-        console.log('🌍 Matched browser language (full code):', locale);
         return locale;
       }
     }
     
-    console.log('🌍 No match found for browser language');
     return null;
   } catch (error) {
     console.warn('Failed to detect locale from browser:', error);
@@ -230,53 +220,3 @@ export function detectBestLocale(): Locale {
   // Default fallback
   return defaultLocale;
 }
-
-/**
- * EU member states (27 countries)
- */
-export const EU_COUNTRY_CODES = new Set([
-  'AT', 'BE', 'BG', 'HR', 'CY', 'CZ', 'DK', 'EE', 'FI', 'FR',
-  'DE', 'GR', 'HU', 'IE', 'IT', 'LV', 'LT', 'LU', 'MT', 'NL',
-  'PL', 'PT', 'RO', 'SK', 'SI', 'ES', 'SE'
-]);
-
-/**
- * Map of EU timezones (for detection)
- */
-export const EU_TIMEZONES = new Set([
-  'Europe/Paris', 'Europe/Berlin', 'Europe/Rome', 'Europe/Madrid',
-  'Europe/Vienna', 'Europe/Brussels', 'Europe/Amsterdam',
-  'Europe/Copenhagen', 'Europe/Stockholm', 'Europe/Helsinki',
-  'Europe/Warsaw', 'Europe/Prague', 'Europe/Budapest',
-  'Europe/Bucharest', 'Europe/Athens', 'Europe/Lisbon',
-  'Europe/Dublin', 'Europe/Luxembourg', 'Europe/Zagreb',
-  'Europe/Sofia', 'Europe/Tallinn', 'Europe/Vilnius',
-  'Europe/Riga', 'Europe/Bratislava', 'Europe/Ljubljana',
-  'Europe/Malta', 'Europe/Nicosia', 'Europe/Valletta'
-]);
-
-/**
- * Detect if user is in EU based on timezone
- * This is a heuristic for display purposes only
- */
-export function isEUTimezone(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  try {
-    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return EU_TIMEZONES.has(timezone);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Detect user's currency based on timezone
- * Returns 'EUR' for EU timezones, 'USD' otherwise
- */
-export function detectCurrencyFromTimezone(): 'USD' | 'EUR' {
-  return isEUTimezone() ? 'EUR' : 'USD';
-}
-

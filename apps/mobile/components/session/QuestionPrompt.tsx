@@ -14,7 +14,6 @@ import {
   Keyboard,
   Text as RNText,
 } from 'react-native';
-import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeColors } from '@/lib/theme-colors';

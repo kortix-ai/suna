@@ -1,202 +1,205 @@
 # IAM admin guide
 
-A practical reference for account admins working with the Kortix IAM
-system. For the underlying design see
-[`docs/specs/unified-iam-vault-access.md`](./specs/unified-iam-vault-access.md).
+A practical reference for account admins working with the current Kortix
+IAM V2 system. V2 is role-based and table-driven; the old V1 policy
+engine is not mounted.
 
 ## Mental model
 
-Kortix IAM follows the Cloudflare / AWS pattern:
+IAM V2 has two role axes:
 
-1. **Roles** bundle related actions (e.g. `project_editor` grants
-   `project.read`, `project.write`, `project.session.start`, …).
-2. **Policies** attach a role to a **principal** (member / group /
-   token / service account) at a **scope** (whole account, single
-   project, project group, etc.).
-3. The **engine** decides every request: union of all allow-policies
-   the principal qualifies for, minus any explicit deny.
+| Axis | Roles | Applies to |
+|---|---|---|
+| Account | `owner`, `admin`, `member` | Account-level actions such as billing, members, groups, tokens, audit, and project creation. |
+| Project | `manager`, `editor`, `viewer` | Project-level actions such as project reads/writes, sessions, triggers, deployments, and project member management. |
 
-System roles ship out of the box (Administrator, Project Editor, …).
-Custom roles are account-owned and built from the action catalog.
+Access comes from these tables:
+
+| Table | Purpose |
+|---|---|
+| `account_members` | Account membership, account role, super-admin flag, and account-wide MFA gate. |
+| `project_members` | Direct per-user project role. |
+| `account_groups` | Account-local groups. |
+| `account_group_members` | User membership in groups. |
+| `project_group_grants` | Group-to-project grants with a project role and optional expiry. |
+
+The engine does not read `iam_policies`, custom roles, policy scopes,
+deny rules, permission boundaries, IP conditions, per-policy MFA
+conditions, strict IAM mode, external grants, project groups, break-glass,
+drift reports, analytics, simulators, or policy templates.
+
+Those historical tables may still exist in the database for migration
+safety, but the current API does not write to them or evaluate them.
 
 ## Principals
 
-| Kind | Example | Notes |
-|---|---|---|
-| `member` | `alice@acme.com` | Regular human account member. |
-| `group` | "Mobile editors" | Inherited by every member of the group. |
-| `token` | PAT or service account | Token-as-principal: when a token has any policy, only its own policies decide (no minter inheritance). |
-
-External users (consultants) attach via **Settings → External access**.
-They behave like members but don't consume a regular seat and can carry
-an auto-revoke timestamp.
-
-## Scopes
-
-| Scope | Matches |
+| Kind | Notes |
 |---|---|
-| `account` (Everything) | All resources in the account. |
-| `project` | One project, or every project when `scope_id=null`. |
-| `project_group` | Every project currently in the group. |
-| `member` / `group` | Manage that specific principal. |
-| `sandbox` / `trigger` / `channel` | One sub-resource by id (paste the id). |
+| Member | A human user in `account_members`. |
+| Group | An `account_groups` row; every user in `account_group_members` inherits the group's project grants. |
+| PAT | A personal access token. Project-scoped PATs can only act on their bound project and are rejected on account routes. |
+| Service account | A non-human identity managed through the service-account IAM endpoints. |
 
-## Settings tab — what each card does
+## Role behavior
 
-| Card | Purpose |
+Account roles:
+
+| Role | Summary |
 |---|---|
-| **Strict IAM mode** | Disables the legacy account_role + project_members bridges. Only super-admin + explicit policies decide. Use **Backfill memberships** first to mirror current state into policies. |
-| **MFA enforcement** | Forces aal2 for every browser/JWT request. Super-admins and PATs are exempt. |
-| **SAML SSO** | Attach a Supabase auth.sso_provider; map IdP group claims to IAM groups so JIT users land in the right groups. |
-| **Session controls** | Per-account session max-lifetime, idle timeout, and force-logout list. PATs exempt. |
-| **CLI token lifecycle** | Cap PAT lifetime, require expiry on every mint, auto-revoke idle PATs. Sandbox-injected PATs exempt. |
-| **Two-person rule** | Require approval from a second super-admin for sensitive actions (super-admin grant, MFA disable, account delete). |
-| **Project groups** | Bundle projects so one policy can target many. |
-| **Service accounts** | Non-human identities with their own bearer + policies. |
-| **Break-glass** | Self-activate temporary super-admin with mandatory reason + auto-expiry. |
-| **External access** | Cross-account sharing for consultants/partners. |
-| **SCIM tokens** | Bearer tokens for IdP-driven user provisioning. |
-| **Audit webhooks** | Stream audit events to Splunk/Datadog. Use the "IAM only" preset to scope to `iam.*` events. |
+| `owner` | Full account control, including owner-only billing/account deletion and super-admin grants. |
+| `admin` | Account administration, members, groups, tokens, audit, and project creation. |
+| `member` | Baseline account reads only. Project access still requires a direct project role or group grant. |
+
+Project roles:
+
+| Role | Summary |
+|---|---|
+| `manager` | Full project control, including delete and project member management. |
+| `editor` | Read/write project content, deploy, run sessions, and manage triggers. |
+| `viewer` | Read-only project access. |
+
+Owners and admins receive implicit `manager` access to every project in
+the account. Plain members do not; they need a direct `project_members`
+row or a `project_group_grants` row through one of their groups.
+
+When multiple project roles apply, the strongest role wins:
+
+`manager > editor > viewer`
+
+Expired direct memberships and group grants are ignored by authorization
+queries as soon as `expires_at` is in the past. The expiry sweeper is for
+audit cleanup and follow-up bookkeeping, not for correctness.
 
 ## Common workflows
 
-### Onboarding an engineering team
+### Give an engineering group editor access to a project
 
-1. Create a **Group** ("Engineering").
-2. Create a **Project group** ("Production") containing the prod
-   projects.
-3. Create a **Policy** on the engineering group with the
-   `project_editor` role scoped to the production project group.
-4. SCIM/SAML-provisioned engineers land in the IAM group via claim
-   mapping; the policy follows automatically.
+1. Create or reuse an account group.
+2. Add engineers to the group.
+3. Grant that group `editor` on the target project.
+4. Confirm the result with the member effective-access endpoints.
 
-### Locking down a CI bot
+V2 project grants are group-to-project rows. There is no separate
+"project group" resource and no policy scope grammar.
 
-1. Create a **Service account** in Settings → Service accounts.
-2. From the bot's member detail view, attach a `project_editor`
-   policy scoped to the one project the CI deploys to.
-3. Optionally enable Settings → CLI token lifecycle to enforce
-   90-day rotation.
-4. Apply the **CI/CD bot — single project** policy template for a
-   one-click baseline.
+### Give a user direct access to one project
 
-### Tightening access
+1. Add the user to the account as a member.
+2. Add or update their `project_members` row for that project.
+3. Pick `viewer`, `editor`, or `manager`.
+4. Use the effective-access endpoint when debugging the final role.
 
-1. Use the **Audit tab → Permission usage analytics** to see who
-   actually uses which actions.
-2. Use **Audit tab → IAM drift** to find unused policies and empty
-   groups.
-3. Attach a **Permission boundary** (member detail) to cap the max
-   envelope for high-risk members.
-4. Enable **Strict IAM mode** in Settings to lock the engine to
-   explicit policies only.
+### Lock down a project-scoped PAT
 
-### Incident response
+1. Mint the PAT with `project_id` set.
+2. Use it only on routes whose authorization target is that same project.
+3. Account-level routes are rejected for project-scoped PATs.
 
-1. Activate **Break-glass** with a reason — temporary super-admin
-   auto-expires in 1 hour by default.
-2. Resolve the incident.
-3. Audit log captures activation + revocation + every action taken
-   under the grant.
+PATs bypass account-wide browser MFA enforcement, but they do not bypass
+project scoping or role checks.
 
-## Engine evaluation order
+### Enforce MFA for browser sessions
 
-1. **PAT path**: if the request has a PAT and that PAT has any
-   policies → evaluate ONLY the PAT's policies (no minter
-   inheritance, no super-admin bypass).
-2. **Not-a-member** → deny.
-3. **Super-admin bypass** → allow (break-glass counts as super-admin).
-4. **Account MFA gate** (if enabled) → deny when aal != aal2.
-5. **Permission boundary** (if set) → deny when action prefix not
-   covered.
-6. **Explicit policies** (direct + via groups, + project group
-   expansion): deny wins over allow per (action, scope).
-7. **Legacy bridges** (only when strict mode is off): owner/admin →
-   Administrator role, member → account reads, project_members →
-   matching project role.
+Use the account-wide MFA setting. When enabled, JWT/browser requests must
+have Supabase `aal2`. PATs are exempt. There are no per-policy MFA
+conditions in V2.
 
-## Conditions
+## Authorization order
 
-A policy can carry `conditions` that gate when it applies:
+1. Resolve the user as an account member.
+2. Reject project-scoped PATs when the request is account-level or targets
+   a different project.
+3. Allow super-admins.
+4. Enforce account-wide MFA for browser/JWT requests when enabled.
+5. For account actions, check the account role.
+6. For project actions, derive the effective project role from:
+   `owner/admin` implicit manager, direct project membership, and group
+   project grants.
+7. Check whether the resulting role grants the requested action.
 
-- `ip_cidrs`: caller IP must match one entry (IPv4 + IPv6, bare IPs
-  treated as /32 or /128).
-- `require_mfa`: session must be Supabase aal2.
+V2 has no deny precedence because it has no deny policies.
 
-Conditions compose with AND. Unknown keys are ignored (forward-compat).
-A policy whose conditions don't match is silent — it acts as if it
-didn't exist, including denies.
+## REST surface
 
-## Expiry
-
-Set an optional `expires_at` per policy. The engine filters expired
-policies out of every query at the SQL layer; no cleanup job needed.
-Use the preset chips (1d / 7d / 30d / 90d / custom) in the Create
-Policy dialog.
-
-## REST surface (highlights)
-
-### Auth audit events
-
-The audit log captures the full authentication lifecycle:
-
-| Action | When it fires |
-|---|---|
-| `auth.login.success` | A token (JWT / PAT / SA / Kortix key) verifies and the request proceeds. Metadata carries auth method + AAL. |
-| `auth.login.fail` | About to return 401. Metadata carries the rejection reason (`bad_signature`, `expired`, `pat_revoked`, etc.). Captured even for unknown principals — useful as an intrusion signal. |
-| `auth.logout` | Explicit `POST /v1/auth/logout`. Frontend `signOut` calls this before tearing down the Supabase session. |
-| `auth.session.first_sight` | First time a session_id is observed against a given account. Backed by the session-gate's UPSERT into `account_session_activity`. |
-
-Stream them to your SIEM via Audit webhooks with action_prefix `auth.`.
-
-### REST surface (highlights)
+The current mounted account IAM routes are:
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /v1/accounts/:id/iam/roles` | List roles available to this account. |
-| `POST /v1/accounts/:id/iam/policies` | Create a policy. |
-| `POST /v1/accounts/:id/iam/policies:bulk-import` | Bulk import from JSON. |
-| `POST /v1/accounts/:id/iam/policies:simulate` | Read-only impact preview. |
-| `POST /v1/accounts/:id/iam/policy-templates/:key/apply` | Apply a curated template. |
-| `GET /v1/accounts/:id/iam/drift` | Drift report (unused policies, empty groups, …). |
-| `GET /v1/accounts/:id/iam/analytics/usage` | Action usage counters. |
-| `POST /v1/accounts/:id/iam/break-glass/activate` | Time-bounded super-admin. |
-| `POST /v1/accounts/:id/iam/external-grants` | Attach an external user by email. |
-| `/scim/v2/accounts/:id/Users` | SCIM 2.0 (IdP-driven). |
+| `GET /v1/accounts/:accountId/iam/groups` | List groups. |
+| `POST /v1/accounts/:accountId/iam/groups` | Create a group. |
+| `GET /v1/accounts/:accountId/iam/groups/:groupId` | Read one group. |
+| `PATCH /v1/accounts/:accountId/iam/groups/:groupId` | Update a group. |
+| `DELETE /v1/accounts/:accountId/iam/groups/:groupId` | Delete a group. |
+| `GET /v1/accounts/:accountId/iam/groups/:groupId/members` | List group members. |
+| `POST /v1/accounts/:accountId/iam/groups/:groupId/members` | Add group members. |
+| `DELETE /v1/accounts/:accountId/iam/groups/:groupId/members/:userId` | Remove a group member. |
+| `GET /v1/accounts/:accountId/iam/groups/:groupId/project-grants` | List group project grants. |
+| `PATCH /v1/accounts/:accountId/iam/members/:userId/super-admin` | Toggle super-admin. |
+| `GET /v1/accounts/:accountId/iam/members/:userId/groups` | List a member's groups. |
+| `GET /v1/accounts/:accountId/iam/members/:userId/project-access` | List a member's project access. |
+| `GET /v1/accounts/:accountId/iam/members/:userId/effective` | Probe effective access. |
+| `POST /v1/accounts/:accountId/iam/members/:userId/effective:batch` | Batch effective-access probes. |
+| `GET /v1/accounts/:accountId/iam/mfa-required` | Read account-wide MFA enforcement. |
+| `GET /v1/accounts/:accountId/iam/mfa-required/preview` | Preview MFA enforcement impact. |
+| `PATCH /v1/accounts/:accountId/iam/mfa-required` | Update account-wide MFA enforcement. |
+| `GET /v1/accounts/:accountId/iam/scim/tokens` | List SCIM tokens. |
+| `POST /v1/accounts/:accountId/iam/scim/tokens` | Create a SCIM token. |
+| `DELETE /v1/accounts/:accountId/iam/scim/tokens/:tokenId` | Revoke a SCIM token. |
+| `GET /v1/accounts/:accountId/iam/sso/provider` | Read SSO provider config. |
+| `DELETE /v1/accounts/:accountId/iam/sso/provider` | Delete SSO provider config. |
+| `GET /v1/accounts/:accountId/iam/sso/mappings` | List SSO group mappings. |
+| `POST /v1/accounts/:accountId/iam/sso/mappings` | Create SSO group mapping. |
+| `DELETE /v1/accounts/:accountId/iam/sso/mappings/:mappingId` | Delete SSO group mapping. |
+| `GET /v1/accounts/:accountId/iam/session-policy` | Read session policy. |
+| `PATCH /v1/accounts/:accountId/iam/session-policy` | Update session policy. |
+| `GET /v1/accounts/:accountId/iam/sessions` | List sessions. |
+| `POST /v1/accounts/:accountId/iam/sessions/:sessionId/revoke` | Revoke a session. |
+| `GET /v1/accounts/:accountId/iam/pat-policy` | Read PAT policy. |
+| `PATCH /v1/accounts/:accountId/iam/pat-policy` | Update PAT policy. |
+| `GET /v1/accounts/:accountId/iam/service-accounts` | List service accounts. |
+| `POST /v1/accounts/:accountId/iam/service-accounts` | Create a service account. |
+| `POST /v1/accounts/:accountId/iam/service-accounts/:saId/disable` | Disable a service account. |
+| `DELETE /v1/accounts/:accountId/iam/service-accounts/:saId` | Delete a service account. |
+
+## Removed V1 surfaces
+
+These endpoints and concepts are intentionally not mounted in V2:
+
+| Removed surface | Current replacement |
+|---|---|
+| Policies and policy templates | Fixed account and project roles. |
+| Custom roles | Built-in roles only. |
+| Permission boundaries | Assign a lower account or project role. |
+| Strict IAM mode | V2 always uses the current role tables. |
+| Policy conditions (`ip_cidrs`, `require_mfa`) | Account-wide MFA only; no IP conditions. |
+| Deny policies | No deny layer. |
+| Project groups | Direct group-to-project grants. |
+| External grants | Account membership and group grants. |
+| Break-glass | Super-admin toggle. |
+| Drift reports, analytics, simulator | Effective-access and batch probe endpoints. |
 
 ## Troubleshooting
 
-**A user can't see a project they should have access to.**
-1. Open the member detail page → check the **Effective capabilities**
-   panel.
-2. Check **Permission boundary** — has it been set?
-3. If strict mode is on, confirm the legacy `project_members` row
-   was migrated. Settings → Strict IAM → **Backfill memberships**.
+**A user cannot see a project they should have access to.**
+
+Check the member's effective project access. For plain account members,
+confirm either a direct `project_members` row or an unexpired group grant
+through `project_group_grants`. Owners and admins should have implicit
+`manager` access to all account projects.
 
 **A PAT is unexpectedly denied.**
-- If the PAT has any policies attached, ONLY those policies decide
-  (no inheritance from the minter). Check the token detail page.
-- Account-wide MFA enforcement is bypassed for PATs, but per-policy
-  `require_mfa` conditions are not — check the policy conditions.
 
-**MFA enforcement bricked the account.**
-- Super-admins always bypass. Have a super-admin sign in and toggle
-  it off in Settings. The endpoint refuses the initial flip if it
-  would orphan the account (no super-admin AND no enrolled members).
+Check whether the PAT is project-scoped. A project-scoped PAT is denied
+on account routes and on any other project. If the target project is
+correct, debug the minter's account/project role like a normal user.
 
-**Strict mode locked someone out.**
-- Run the **Backfill memberships** action (Settings → Strict IAM
-  card) to mirror remaining legacy rows.
-- Or temporarily disable strict mode (no preview/lockout risk on
-  disable).
+**MFA enforcement blocked a browser session.**
 
-## Cheat sheet — common roles
+Confirm the request is using a Supabase JWT with `aal2`. PAT requests are
+exempt. The MFA preview endpoint shows which members are affected before
+turning enforcement on.
 
-| Role key | What it grants |
-|---|---|
-| `administrator` | Everything in the account. |
-| `administrator_read_only` | All reads, no writes. |
-| `member` | Account-level reads (baseline for regular users). |
-| `project_admin` | Full control on one project. |
-| `project_editor` | Read + write + run sandboxes on one project. |
-| `project_viewer` | Read-only on one project. |
+**A group grant is not applying.**
+
+Confirm the user is in the group, the group has a grant to the target
+project, and the grant has not expired.

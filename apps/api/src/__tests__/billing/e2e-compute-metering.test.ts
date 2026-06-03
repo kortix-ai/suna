@@ -18,6 +18,12 @@ import {
   resetMockRegistry,
   registerCreditsMock,
 } from './mocks';
+import {
+  COMPUTE_CPU_PRICE_PER_CORE_SECOND,
+  COMPUTE_DISK_PRICE_PER_GB_SECOND,
+  COMPUTE_MEMORY_PRICE_PER_GB_SECOND,
+  COMPUTE_PRICE_MARKUP,
+} from '../../billing/services/tiers';
 
 registerGlobalMocks();
 registerCreditsMock();
@@ -84,13 +90,11 @@ mock.module('../../billing/repositories/compute-sessions', () => ({
     sessions.filter(
       (s) => s.state === 'active' && new Date(s.lastBilledAt) <= cutoff,
     ),
-  getComputeUsageSince: async () => ({ totalCostUsd: 0, sessionCount: 0 }),
 }));
 
 // Override the credits mock to actually capture the type tag.
 mock.module('../../billing/services/credits', () => ({
   calculateTokenCost: () => 0,
-  getBalance: async () => ({ balance: 0, expiring: 0, nonExpiring: 0, daily: 0 }),
   getCreditSummary: async () => ({ total: 0, daily: 0, monthly: 0, extra: 0, canRun: true }),
   deductCredits: async (accountId: string, amount: number, description: string, ledgerType = 'usage') => {
     debitCalls.push({ accountId, amount, description, ledgerType });
@@ -105,13 +109,20 @@ mock.module('../../billing/services/credits', () => ({
 const {
   startComputeSession,
   pauseComputeSession,
-  resumeComputeSession,
   endComputeSession,
   tickRunningComputeCharges,
-  calculateComputeCost,
 } = await import('../../billing/services/compute-metering');
 
 const SPEC = { cpuCores: 2, memoryGb: 4, diskGb: 20, gpuCount: 0 };
+
+function expectedComputeCost(spec: typeof SPEC, durationSeconds: number): number {
+  if (durationSeconds <= 0) return 0;
+  return (
+    spec.cpuCores * COMPUTE_CPU_PRICE_PER_CORE_SECOND * durationSeconds +
+    spec.memoryGb * COMPUTE_MEMORY_PRICE_PER_GB_SECOND * durationSeconds +
+    spec.diskGb * COMPUTE_DISK_PRICE_PER_GB_SECOND * durationSeconds
+  ) * COMPUTE_PRICE_MARKUP;
+}
 
 beforeEach(() => {
   sessions = [];
@@ -156,19 +167,19 @@ describe('compute metering — per-seat happy path', () => {
     expect(debitCalls[0].ledgerType).toBe('compute_debit');
 
     // Cost should match the formula within a tiny tolerance (a few ms drift).
-    const expected = calculateComputeCost(SPEC, STARTED_BACK_SECONDS);
+    const expected = expectedComputeCost(SPEC, STARTED_BACK_SECONDS);
     expect(Math.abs(debitCalls[0].amount - expected)).toBeLessThan(expected * 0.01);
 
     expect(sessions[0].state).toBe('stopped');
     expect(sessions[0].endedAt).not.toBeNull();
   });
 
-  test('resume opens a brand new row, old row stays closed', async () => {
+  test('starting after pause opens a brand new row, old row stays closed', async () => {
     await startComputeSession({ sandboxId: 'sb_1', accountId: 'acc_test_123', spec: SPEC });
     await pauseComputeSession('sb_1');
     expect(sessions.length).toBe(1);
 
-    await resumeComputeSession({ sandboxId: 'sb_1', accountId: 'acc_test_123', spec: SPEC });
+    await startComputeSession({ sandboxId: 'sb_1', accountId: 'acc_test_123', spec: SPEC });
     expect(sessions.length).toBe(2);
     expect(sessions[0].state).toBe('stopped');
     expect(sessions[1].state).toBe('active');
@@ -251,11 +262,11 @@ describe('compute metering — legacy guard', () => {
 
 describe('compute metering — cost calculation', () => {
   test('zero duration → zero cost', () => {
-    expect(calculateComputeCost(SPEC, 0)).toBe(0);
+    expect(expectedComputeCost(SPEC, 0)).toBe(0);
   });
 
   test('hourly cost is in the expected range for a 2/4/20 sandbox', () => {
-    const c = calculateComputeCost(SPEC, 3600);
+    const c = expectedComputeCost(SPEC, 3600);
     expect(c).toBeGreaterThan(0.10);
     expect(c).toBeLessThan(0.15);
   });

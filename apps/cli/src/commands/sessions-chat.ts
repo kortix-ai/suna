@@ -39,7 +39,7 @@ interface ResolvedSession {
  *
  * Returns null on any failure (and prints a friendly message itself).
  */
-export async function loadSessionForChat(
+async function loadSessionForChat(
   sessionId: string,
   opts: CtxOpts,
 ): Promise<ResolvedSession | null> {
@@ -104,7 +104,7 @@ export async function loadSessionForChat(
  * create one — and persist the id back to Kortix so subsequent CLI calls
  * stay glued to the same conversation.
  */
-export async function ensureOpencodeSession(r: ResolvedSession): Promise<string | null> {
+async function ensureOpencodeSession(r: ResolvedSession): Promise<string | null> {
   if (r.opencodeSessionId) return r.opencodeSessionId;
 
   // First try to discover an existing session inside the sandbox.
@@ -156,7 +156,7 @@ async function persistOpencodeSessionId(
 }
 
 /** Extract a plain-text representation of a message's parts. */
-export function extractMessageText(msg: OpencodeMessageWithParts): string {
+function extractMessageText(msg: OpencodeMessageWithParts): string {
   return msg.parts
     .map((p) => partToText(p))
     .filter((s) => s.length > 0)
@@ -184,7 +184,7 @@ function partToText(part: OpencodePart): string {
   return '';
 }
 
-export function printMessage(msg: OpencodeMessageWithParts): void {
+function printMessage(msg: OpencodeMessageWithParts): void {
   const role = msg.info.role === 'assistant' ? 'assistant' : msg.info.role;
   const color = role === 'assistant' ? C.cyan : C.green;
   const ts = msg.info.time?.created
@@ -209,7 +209,7 @@ export function printMessage(msg: OpencodeMessageWithParts): void {
 }
 
 /** Promise-based readline `question` (single line). */
-export function prompt(label: string): Promise<string> {
+function prompt(label: string): Promise<string> {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   return new Promise((resolve) => {
     rl.question(label, (answer) => {

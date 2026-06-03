@@ -2,7 +2,6 @@ import { useState } from 'react';
 import * as Haptics from 'expo-haptics';
 import type { useAudioRecorder } from './useAudioRecorder';
 import type { useAgentManager } from '../ui/useAgentManager';
-import { saveAudioToFileSystem, deleteCachedAudio } from '@/lib/chat/transcription';
 import { log } from '@/lib/logger';
 
 /**
@@ -115,4 +114,3 @@ export function useAudioRecordingHandlers(
     isProcessing,
   };
 }
-

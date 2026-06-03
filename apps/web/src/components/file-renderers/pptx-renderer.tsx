@@ -221,11 +221,9 @@ function PptxDownloadFallback({
 
 export function PptxRenderer({
   blob,
-  binaryUrl,
   filePath,
   fileName,
   className,
-  project,
   onDownload,
   isDownloading,
 }: PptxRendererProps) {

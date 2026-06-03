@@ -1,12 +1,12 @@
 const SECRET_NAME_REGEX = /^[A-Z_][A-Z0-9_]{0,63}$/
 
-export type ProjectEnvSnapshot = {
+type ProjectEnvSnapshot = {
   revision: string | null
   env: Record<string, string>
   names: string[]
 }
 
-export type ProjectEnvUpdate = {
+type ProjectEnvUpdate = {
   changed: boolean
   revision: string
   names: string[]

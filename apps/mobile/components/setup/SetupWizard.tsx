@@ -77,7 +77,6 @@ import { useOpenCodeProviders, flattenModels, filterToLatestModels, type FlatMod
 import { useLocalConfigStore } from '@/lib/opencode/hooks/use-local-config';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { getAuthToken } from '@/api/config';
-import { useTabStore } from '@/stores/tab-store';
 import { log } from '@/lib/logger';
 
 // ─── Spinning loader (Loader2 doesn't animate on its own in RN) ─────────────
@@ -354,7 +353,6 @@ async function submitOAuthCallback(sandboxUrl: string, providerId: string, metho
 
 function ProviderStep({ onContinue, isDark, themeColors }: StepProps & { onContinue: () => void }) {
   const { sandboxUrl } = useSandboxContext();
-  const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const { data: providersData, isLoading, refetch } = useOpenCodeProviders(sandboxUrl);
   const sheetRef = useRef<BottomSheetModal>(null);
@@ -374,7 +372,7 @@ function ProviderStep({ onContinue, isDark, themeColors }: StepProps & { onConti
   // OAuth state
   const [oauthUrl, setOauthUrl] = useState('');
   const [oauthCode, setOauthCode] = useState('');
-  const [oauthInstructions, setOauthInstructions] = useState('');
+  const [, setOauthInstructions] = useState('');
   const [oauthLoading, setOauthLoading] = useState(false);
 
   const colors = useStepColors(isDark);

@@ -6,7 +6,6 @@
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/api/supabase';
 import { API_URL } from '@/api/config';
-import { log } from '@/lib/logger';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -36,20 +35,20 @@ export interface IntegrationConnection {
   updatedAt: string;
 }
 
-export interface ConnectTokenResult {
+interface ConnectTokenResult {
   token: string;
   expiresAt: string;
   connectUrl?: string;
 }
 
-export interface LinkedSandbox {
+interface LinkedSandbox {
   sandboxId: string;
   name: string;
   status: string;
   grantedAt: string;
 }
 
-export interface AppSandboxLink {
+interface AppSandboxLink {
   sandboxId: string;
   sandboxName: string;
   integrationId: string;
@@ -157,23 +156,6 @@ async function deleteConnection(integrationId: string): Promise<void> {
   if (!res.ok) throw new Error('Failed to disconnect integration');
 }
 
-async function saveConnection(data: {
-  app: string;
-  app_name?: string;
-  provider_account_id: string;
-  label?: string;
-  sandbox_id?: string;
-}): Promise<{ success: boolean; integration?: IntegrationConnection }> {
-  const session = await getSession();
-  const res = await fetch(`${API_URL}/pipedream/connections/save`, {
-    method: 'POST',
-    headers: authHeaders(session.access_token),
-    body: JSON.stringify(data),
-  });
-  if (!res.ok) throw new Error('Failed to save connection');
-  return res.json();
-}
-
 async function renameIntegration({ integrationId, label }: { integrationId: string; label: string }): Promise<void> {
   const session = await getSession();
   const res = await fetch(`${API_URL}/pipedream/connections/${integrationId}/label`, {
@@ -196,13 +178,11 @@ async function fetchSandboxes(integrationId: string): Promise<IntegrationSandbox
 async function linkSandbox({ integrationId, sandboxId }: { integrationId: string; sandboxId: string }): Promise<void> {
   const session = await getSession();
   const url = `${API_URL}/pipedream/connections/${integrationId}/link`;
-  console.log('[linkSandbox] POST', url, { sandbox_id: sandboxId });
   const res = await fetch(url, {
     method: 'POST',
     headers: authHeaders(session.access_token),
     body: JSON.stringify({ sandbox_id: sandboxId }),
   });
-  console.log('[linkSandbox] Response:', res.status, res.statusText);
   if (!res.ok) {
     const text = await res.text();
     console.error('[linkSandbox] Error body:', text);
@@ -246,14 +226,6 @@ export function useIntegrationConnections(options?: { enabled?: boolean }) {
 
 export function useCreateConnectToken() {
   return useMutation({ mutationFn: createConnectToken });
-}
-
-export function useSaveConnection() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: saveConnection,
-    onSuccess: () => { qc.invalidateQueries({ queryKey: integrationKeys.connections() }); },
-  });
 }
 
 export function useDisconnectIntegration() {

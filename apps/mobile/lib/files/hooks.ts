@@ -10,15 +10,8 @@ import type { SandboxFile, FileUploadResponse } from '@/api/types';
 import type { SandboxState, SandboxStatus } from '@agentpress/shared/types/sandbox';
 import { normalizeFilenameToNFC } from './utils';
 
-// Re-export sandbox types for convenience
-export type { SandboxState, SandboxStatus } from '@agentpress/shared/types/sandbox';
 export {
-  deriveSandboxStatus,
   isSandboxUsable,
-  isSandboxTransitioning,
-  isSandboxOffline,
-  isSandboxFailed,
-  getSandboxStatusLabel,
 } from '@agentpress/shared/types/sandbox';
 
 // API response types (what the backend actually returns)
@@ -58,7 +51,7 @@ export interface FileVersion {
   message: string;
 }
 
-export interface FileHistoryResponse {
+interface FileHistoryResponse {
   path: string;
   versions: FileVersion[];
 }
@@ -101,7 +94,7 @@ export const fileKeys = {
   opencodeBlob: (sandboxUrl: string, path: string) => [...fileKeys.all, 'opencode', sandboxUrl, 'blob', path] as const,
 };
 
-export const sandboxKeys = {
+const sandboxKeys = {
   all: ['sandbox'] as const,
   status: (projectId: string) => [...sandboxKeys.all, 'status', projectId] as const,
 };
@@ -111,7 +104,7 @@ export const sandboxKeys = {
 // ============================================================================
 
 /** Response item from the OpenCode /file endpoint */
-export interface OpenCodeFileNode {
+interface OpenCodeFileNode {
   name: string;
   path: string;       // relative to project root
   absolute: string;   // absolute filesystem path
@@ -822,170 +815,6 @@ export function useUploadMultipleFiles(
   });
 }
 
-/**
- * Hook to upload files to a project (creates sandbox on-demand if needed)
- * This is the preferred method for file uploads as it doesn't require sandbox_id upfront
- */
-export function useUploadFilesToProject(
-  options?: UseMutationOptions<
-    FileUploadResponse[],
-    Error,
-    {
-      projectId: string;
-      files: Array<{ uri: string; name: string; type: string }>;
-      onProgress?: (file: string, progress: number) => void;
-    }
-  >
-) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ projectId, files, onProgress }) => {
-      const token = await getAuthToken();
-      if (!token) throw new Error('Authentication required');
-
-      // Signal upload start
-      try {
-        await fetch(`${API_URL}/project/${projectId}/files/upload-started`, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ file_count: files.length }),
-        });
-      } catch (e) {
-        console.warn('Failed to signal upload start:', e);
-      }
-
-      const results: FileUploadResponse[] = [];
-
-      try {
-        for (const file of files) {
-          // Normalize filename for Unix compatibility
-          const normalizedName = normalizeFilenameToNFC(file.name);
-          const uploadPath = `/workspace/uploads/${normalizedName}`;
-
-          const formData = new FormData();
-          formData.append('file', {
-            uri: file.uri,
-            name: normalizedName,
-            type: file.type || 'application/octet-stream',
-          } as any);
-          formData.append('path', uploadPath);
-
-          const res = await fetch(`${API_URL}/project/${projectId}/files`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
-            body: formData,
-          });
-
-          if (!res.ok) {
-            if (res.status === 431) {
-              throw new Error('Request is too large');
-            }
-            throw new Error(`Upload failed: ${res.statusText}`);
-          }
-
-          const result = await res.json();
-          results.push(result);
-          onProgress?.(file.name, 100);
-        }
-      } finally {
-        // Signal upload complete
-        try {
-          await fetch(`${API_URL}/project/${projectId}/files/upload-completed`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token}` },
-          });
-        } catch (e) {
-          console.warn('Failed to signal upload complete:', e);
-        }
-      }
-
-      return results;
-    },
-    onSuccess: (_, variables) => {
-      // Invalidate sandbox status to reflect new files
-      queryClient.invalidateQueries({ 
-        queryKey: sandboxKeys.status(variables.projectId),
-      });
-    },
-    ...options,
-  });
-}
-
-export function useDeleteSandboxFile(
-  options?: UseMutationOptions<void, Error, { sandboxId: string; filePath: string }>
-) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ sandboxId, filePath }) => {
-      const token = await getAuthToken();
-      const res = await fetch(
-        `${API_URL}/sandboxes/${sandboxId}/files?path=${encodeURIComponent(filePath)}`,
-        {
-          method: 'DELETE',
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
-      if (!res.ok) throw new Error(`Failed to delete file: ${res.status}`);
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ 
-        queryKey: ['files', 'sandbox', variables.sandboxId],
-        exact: false,
-        refetchType: 'all',
-      });
-    },
-    ...options,
-  });
-}
-
-export function useCreateSandboxDirectory(
-  options?: UseMutationOptions<void, Error, { sandboxId: string; dirPath: string }>
-) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({ sandboxId, dirPath }) => {
-      const token = await getAuthToken();
-      const res = await fetch(`${API_URL}/sandboxes/${sandboxId}/directories`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ path: dirPath }),
-      });
-      if (!res.ok) throw new Error(`Failed to create directory: ${res.status}`);
-    },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ 
-        queryKey: ['files', 'sandbox', variables.sandboxId],
-        exact: false,
-        refetchType: 'all',
-      });
-    },
-    ...options,
-  });
-}
-
-export function useDownloadSandboxFile() {
-  return useMutation({
-    mutationFn: async ({ sandboxId, filePath }: { sandboxId: string; filePath: string }) => {
-      const token = await getAuthToken();
-      const res = await fetch(
-        `${API_URL}/sandboxes/${sandboxId}/files/download?path=${encodeURIComponent(filePath)}`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      if (!res.ok) throw new Error(`Failed to download file: ${res.status}`);
-      return res.blob();
-    },
-  });
-}
-
 // ============================================================================
 // Utilities
 // ============================================================================
@@ -1060,7 +889,7 @@ export async function blobToDataURL(blob: Blob, filePath?: string): Promise<stri
 /**
  * Hook to fetch unified sandbox status by PROJECT ID
  */
-export function useSandboxStatus(
+function useSandboxStatus(
   projectId: string | undefined,
   options?: Omit<UseQueryOptions<SandboxState, Error>, 'queryKey' | 'queryFn'>
 ) {
@@ -1099,7 +928,7 @@ export function useSandboxStatus(
  * Hook to fetch unified sandbox status by SANDBOX ID directly
  * Use this when you have a sandboxId but no projectId
  */
-export function useSandboxStatusById(
+function useSandboxStatusById(
   sandboxId: string | undefined,
   options?: Omit<UseQueryOptions<SandboxState, Error>, 'queryKey' | 'queryFn'>
 ) {
@@ -1156,7 +985,7 @@ export function useSandboxStatusById(
 /**
  * Mutation hook to start a sandbox
  */
-export function useStartSandbox(
+function useStartSandbox(
   options?: UseMutationOptions<
     { status: string; sandbox_id: string; message: string },
     Error,
@@ -1188,41 +1017,10 @@ export function useStartSandbox(
 }
 
 /**
- * Mutation hook to stop a sandbox (by project ID)
- */
-export function useStopSandbox(
-  options?: UseMutationOptions<
-    { status: string; sandbox_id: string; message: string },
-    Error,
-    string
-  >
-) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (projectId: string) => {
-      const token = await getAuthToken();
-      const res = await fetch(`${API_URL}/project/${projectId}/sandbox/stop`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-
-      if (!res.ok) throw new Error(`Failed to stop sandbox: ${res.status}`);
-      return res.json();
-    },
-    onSuccess: (_, projectId) => {
-      // Invalidate status query to trigger refetch
-      queryClient.invalidateQueries({ queryKey: sandboxKeys.status(projectId) });
-    },
-    ...options,
-  });
-}
-
-/**
  * Mutation hook to start a sandbox by SANDBOX ID directly
  * Use this when you have a sandboxId but no projectId
  */
-export function useStartSandboxById(
+function useStartSandboxById(
   options?: UseMutationOptions<
     { status: string; sandbox_id: string; message: string },
     Error,

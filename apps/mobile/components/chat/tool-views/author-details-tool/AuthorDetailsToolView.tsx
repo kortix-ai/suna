@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView, Linking, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { GraduationCap, ExternalLink, Building, Award, BookOpen, Hash, User } from 'lucide-react-native';
+import { GraduationCap, ExternalLink, Building, Award, BookOpen, Hash } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractAuthorDetailsData } from './_utils';
 import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
@@ -21,7 +21,7 @@ function formatTimestamp(isoString?: string): string {
 }
 
 export function AuthorDetailsToolView({ toolCall, toolResult, isStreaming = false, assistantTimestamp, toolTimestamp }: ToolViewProps) {
-  const { author, success } = extractAuthorDetailsData({ toolCall, toolResult });
+  const { author, success } = extractAuthorDetailsData({ toolResult });
 
   if (!toolCall) {
     return null;

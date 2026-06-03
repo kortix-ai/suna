@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { View, ScrollView, TextInput, Pressable, Alert, Share, Modal, FlatList, Platform } from 'react-native';
+import { View, ScrollView, TextInput, Pressable, Alert, Share, Modal, FlatList } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui';
@@ -15,17 +15,10 @@ import {
   Check,
   AlertCircle,
   Clock,
-  ChevronDown,
   X,
   Pencil,
 } from 'lucide-react-native';
-import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import { MarkdownToolbar, insertMarkdownFormat, type MarkdownFormat } from '@/components/chat/MarkdownToolbar';
-import {
-  markdownParser,
-  lightMarkdownStyle,
-  darkMarkdownStyle,
-} from '@/lib/utils/live-markdown-config';
 import { HybridMarkdownEditor } from './HybridMarkdownEditor';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
@@ -123,7 +116,6 @@ export function FileViewerView({
 
   const [blobUrl, setBlobUrl] = useState<string | undefined>();
   const [versionBlobUrl, setVersionBlobUrl] = useState<string | undefined>();
-  const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [localContent, setLocalContent] = useState<string>('');
   const [isEditing, setIsEditing] = useState(false);
@@ -252,7 +244,6 @@ export function FileViewerView({
     if (!filePath || !sandboxId || !canEdit) return;
 
     try {
-      setIsSaving(true);
       setSaveStatus('saving');
 
       const token = await getAuthToken();
@@ -290,8 +281,6 @@ export function FileViewerView({
       log.error('Save error:', error);
       setSaveStatus('error');
       Alert.alert('Error', 'Failed to save file');
-    } finally {
-      setIsSaving(false);
     }
   }, [filePath, sandboxId, localContent, canEdit, clearUnsavedContent, setUnsavedState, refetchFile]);
 

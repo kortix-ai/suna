@@ -30,7 +30,7 @@ const badgeVariants = cva(
   },
 );
 
-export interface BadgeProps
+interface BadgeProps
   extends React.ComponentProps<typeof View>,
     VariantProps<typeof badgeVariants> {
   children: React.ReactNode;
@@ -49,5 +49,4 @@ function Badge({ className, variant, children, ...props }: BadgeProps) {
   );
 }
 
-export { Badge, badgeVariants };
-
+export { Badge };

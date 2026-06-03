@@ -49,19 +49,8 @@ import {
   inheritedFromGroupSummary,
   isInheritedFromGroupOnly,
 } from '@/components/iam/iam-display-helpers';
-import { PROJECT_ROLE_DESCRIPTORS } from '@/components/iam/project-role-descriptors';
 import { ProjectRoleSelectItem } from '@/components/iam/role-select-item';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
-
-// Backwards-compat alias — keep using PROJECT_ROLE_LABEL.<role> in places
-// that only need the bare label (badges, "X gets Manager via account role"
-// strings). Sourced from the same descriptor as the dropdown subtitles so
-// renaming a role is a one-file change.
-const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
-  manager: PROJECT_ROLE_DESCRIPTORS.manager.label,
-  editor: PROJECT_ROLE_DESCRIPTORS.editor.label,
-  viewer: PROJECT_ROLE_DESCRIPTORS.viewer.label,
-};
 
 function userLabel(member: Pick<ProjectAccessMember, 'email' | 'user_id'>) {
   return member.email || member.user_id;

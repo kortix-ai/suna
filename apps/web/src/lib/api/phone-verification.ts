@@ -27,11 +27,6 @@ export interface PhoneVerificationVerify {
   code: string;
 }
 
-export interface PhoneVerificationChallengeAndVerify {
-  factor_id: string;
-  code: string;
-}
-
 export interface PhoneVerificationResponse {
   success: boolean;
   message?: string;
@@ -96,13 +91,6 @@ export const phoneVerificationService = {
    */
   async verifyChallenge(data: PhoneVerificationVerify): Promise<PhoneVerificationResponse> {
     return await supabaseMFAService.verifyChallenge(data);
-  },
-
-  /**
-   * Create challenge and verify in one step
-   */
-  async challengeAndVerify(data: PhoneVerificationChallengeAndVerify): Promise<PhoneVerificationResponse> {
-    return await supabaseMFAService.challengeAndVerify(data);
   },
 
   /**

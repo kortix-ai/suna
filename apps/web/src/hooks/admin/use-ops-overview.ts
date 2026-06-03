@@ -22,11 +22,6 @@ export interface OpsOverview {
     by_provider: Record<string, number>;
     errored: number;
   };
-  queues: {
-    trigger_events_by_status: Record<string, number>;
-    channel_events_by_status: Record<string, number>;
-    queued_total: number;
-  };
   audit: {
     events_24h: number;
     recent: Array<{

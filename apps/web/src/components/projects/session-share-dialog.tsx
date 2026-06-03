@@ -33,7 +33,7 @@ const SESSION_SHARING_COPY = {
 };
 
 /** What a session's current visibility means, in one word + icon. */
-export function sessionVisibilityMeta(session: Pick<ProjectSession, 'visibility'>) {
+function sessionVisibilityMeta(session: Pick<ProjectSession, 'visibility'>) {
   switch (session.visibility) {
     case 'project':
       return { icon: Globe, label: 'Team', tone: 'shared' as const };

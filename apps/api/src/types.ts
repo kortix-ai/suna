@@ -9,16 +9,12 @@ export const WebSearchRequestSchema = z.object({
   session_id: z.string().optional(),
 });
 
-export type WebSearchRequest = z.infer<typeof WebSearchRequestSchema>;
-
 export const ImageSearchRequestSchema = z.object({
   query: z.string().min(1, 'Query is required'),
   max_results: z.number().int().min(1).max(20).default(5),
   safe_search: z.boolean().default(true),
   session_id: z.string().optional(),
 });
-
-export type ImageSearchRequest = z.infer<typeof ImageSearchRequestSchema>;
 
 // === Response Types (Router) ===
 
@@ -79,7 +75,7 @@ export interface AppContext {
 // Context variables set by auth middleware (platform).
 // Single source of truth for everything apiKeyAuth / supabaseAuth / combinedAuth
 // write onto the Hono context — keep this in sync with middleware/auth.ts.
-export interface AuthVariables {
+interface AuthVariables {
   userId: string;
   userEmail: string;
   accountId?: string;
@@ -107,7 +103,6 @@ export interface TierConfig {
   yearlyPrice: number;
   monthlyCredits: number;
   canPurchaseCredits: boolean;
-  models: string[];
   dailyCreditConfig: DailyCreditConfig | null;
   hidden: boolean;
   /** Max concurrent project sessions allowed for accounts on this tier. */
@@ -118,49 +113,6 @@ export interface DailyCreditConfig {
   dailyAmount: number;
   refreshIntervalHours: number;
   maxAccumulation: number;
-}
-
-// ─── Credit Accounts (Billing) ──────────────────────────────────────────────
-
-export interface CreditAccount {
-  id: string;
-  accountId: string;
-  balance: number;
-  expiringCredits: number;
-  nonExpiringCredits: number;
-  dailyCreditsBalance: number;
-  tier: string;
-  provider: string;
-  stripeSubscriptionId: string | null;
-  stripeSubscriptionStatus: string | null;
-  planType: string | null;
-  billingCycleAnchor: string | null;
-  nextCreditGrant: string | null;
-  lastGrantDate: string | null;
-  lastDailyRefresh: string | null;
-  trialStatus: string | null;
-  trialEndsAt: string | null;
-  commitmentType: string | null;
-  commitmentEndDate: string | null;
-  scheduledTierChange: string | null;
-  scheduledTierChangeDate: string | null;
-  scheduledPriceId: string | null;
-  lastProcessedInvoiceId: string | null;
-  lastRenewalPeriodStart: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// ─── Billing Customers ──────────────────────────────────────────────────────
-
-export interface BillingCustomer {
-  id: string;
-  accountId: string;
-  stripeCustomerId: string;
-  email: string | null;
-  name: string | null;
-  createdAt: string;
-  updatedAt: string;
 }
 
 // ─── Account State (API response) ───────────────────────────────────────────
@@ -203,8 +155,6 @@ export interface AccountStateResponse {
     monthly_credits: number;
     can_purchase_credits: boolean;
   };
-  /** @deprecated Model gates moved into provider configuration and sandbox model discovery. */
-  models: ModelInfo[];
   auto_topup: {
     enabled: boolean;
     threshold: number;
@@ -224,8 +174,6 @@ export interface AccountStateResponse {
     created_at: string;
   }>;
   can_add_instances: boolean;
-  /** True when a legacy paid user has no active machine and can claim one. */
-  can_claim_computer?: boolean;
 
   // Billing v2 — surfaced for per-seat accounts only. Legacy accounts get
   // billing_model='legacy' here and the frontend renders the legacy UI.
@@ -278,63 +226,8 @@ export interface CommitmentInfo {
   commitment_end_date: string | null;
 }
 
-/** @deprecated Legacy model gating — models are now configured in-sandbox via LLM Providers. */
-export interface ModelInfo {
-  id: string;
-  name: string;
-  provider: string;
-  allowed: boolean;
-  context_window: number;
-  capabilities: string[];
-  priority: number;
-}
-
-// ─── API Request/Response Types (Billing) ───────────────────────────────────
-
-export interface CreateCheckoutRequest {
-  tier_key: string;
-  success_url: string;
-  cancel_url: string;
-  commitment_type?: 'monthly' | 'yearly' | 'yearly_commitment';
-  locale?: string;
-  referral_id?: string;
-}
-
-export interface CreateInlineCheckoutRequest {
-  tier_key: string;
-  billing_period: 'monthly' | 'yearly';
-  promo_code?: string;
-}
-
-export interface CreatePortalRequest {
-  return_url: string;
-}
-
-export interface PurchaseCreditsRequest {
-  amount: number;
-  success_url: string;
-  cancel_url: string;
-}
-
-export interface CancelSubscriptionRequest {
-  feedback?: string;
-}
-
-export interface ScheduleDowngradeRequest {
-  target_tier_key: string;
-  commitment_type?: 'monthly' | 'yearly' | 'yearly_commitment';
-}
-
 export interface TokenUsageRequest {
   prompt_tokens: number;
   completion_tokens: number;
   model: string;
-}
-
-export interface DeductResult {
-  success: boolean;
-  cost: number;
-  new_balance: number;
-  transaction_id?: string;
-  error?: string;
 }

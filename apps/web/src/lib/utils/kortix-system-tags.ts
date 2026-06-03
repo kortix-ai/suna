@@ -47,15 +47,6 @@ export function extractSessionReport(text: string): SessionReport | null {
 	}
 }
 
-/**
- * Check if a user message text is purely a kortix_system message
- * (no visible user content outside the tags).
- */
-export function isKortixSystemOnly(text: string): boolean {
-	if (!text) return false
-	return stripKortixSystemTags(text).length === 0
-}
-
 // ── System message parsing for inline rendering ─────────────────────────────
 
 export interface KortixSystemMessage {

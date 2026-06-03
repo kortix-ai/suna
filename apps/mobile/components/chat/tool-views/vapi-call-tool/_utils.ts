@@ -71,9 +71,7 @@ export function extractMakeCallData({ toolCall, toolResult }: { toolCall: ToolCa
   };
 }
 
-export function extractCallStatusData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): CallStatusData {
-  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
-  
+export function extractCallStatusData({ toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): CallStatusData {
   const output = typeof toolResult?.output === 'string' 
     ? parseContent(toolResult.output) 
     : toolResult?.output;
@@ -109,9 +107,7 @@ export function extractCallStatusData({ toolCall, toolResult }: { toolCall: Tool
   };
 }
 
-export function extractEndCallData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): EndCallData {
-  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
-  
+export function extractEndCallData({ toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): EndCallData {
   const output = typeof toolResult?.output === 'string' 
     ? parseContent(toolResult.output) 
     : toolResult?.output;
@@ -123,9 +119,7 @@ export function extractEndCallData({ toolCall, toolResult }: { toolCall: ToolCal
   };
 }
 
-export function extractListCallsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): ListCallsData {
-  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
-  
+export function extractListCallsData({ toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): ListCallsData {
   const output = typeof toolResult?.output === 'string' 
     ? parseContent(toolResult.output) 
     : toolResult?.output;
@@ -136,9 +130,7 @@ export function extractListCallsData({ toolCall, toolResult }: { toolCall: ToolC
   };
 }
 
-export function extractWaitForCallCompletionData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): WaitForCallCompletionData {
-  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
-  
+export function extractWaitForCallCompletionData({ toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): WaitForCallCompletionData {
   const output = typeof toolResult?.output === 'string' 
     ? parseContent(toolResult.output) 
     : toolResult?.output;
@@ -185,4 +177,3 @@ export const statusConfig = {
   ended: { label: 'Ended', color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-500/10' },
   failed: { label: 'Failed', color: 'text-red-600 dark:text-red-400', bg: 'bg-red-500/10' },
 };
-

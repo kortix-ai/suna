@@ -12,13 +12,7 @@ export {
 } from './file-content-renderer';
 export type { FileContentRendererProps, FileCategory } from './file-content-renderer';
 export { FilePreviewModal } from './file-preview-modal';
-export type { FilePreviewModalProps, FilePreviewState } from './file-preview-modal';
-export { FileSourceProvider, useFileSource } from './file-source';
+export { FileSourceProvider } from './file-source';
 export type {
   FileSource,
-  FileContent,
-  FilePatch,
-  FilePatchHunk,
-  FileContentResult,
-  BinaryBlobResult,
 } from './file-source';

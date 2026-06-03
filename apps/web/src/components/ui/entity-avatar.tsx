@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
  * UserAvatar exactly so people and entities line up on the same row.
  *
  *   <EntityAvatar label="Acme AGI" />          // initial tile
- *   <EntityAvatar icon={IconProject} />        // icon tile
+ *   <EntityAvatar icon={SomeIcon} />           // icon tile
  */
 
 const SIZE_MAP = {
@@ -24,7 +24,7 @@ const SIZE_MAP = {
   xl: { box: 'size-14 rounded-xl text-base', icon: 'h-7 w-7' },
 } as const;
 
-export type EntityAvatarSize = keyof typeof SIZE_MAP;
+type EntityAvatarSize = keyof typeof SIZE_MAP;
 
 export interface EntityAvatarProps {
   /** Text to derive the initial from when no icon is given. */

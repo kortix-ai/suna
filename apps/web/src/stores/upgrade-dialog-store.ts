@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type UpgradeReason = 'subscription_required' | 'insufficient_credits' | 'no_account';
+type UpgradeReason = 'subscription_required' | 'insufficient_credits' | 'no_account';
 
 interface UpgradeDialogState {
   isOpen: boolean;

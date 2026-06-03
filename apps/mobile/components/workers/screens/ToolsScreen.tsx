@@ -11,7 +11,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useColorScheme } from 'nativewind';
 import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
-import { useToolsMetadata, type ToolMetadata, type ToolMethod } from '@/hooks/useToolsMetadata';
+import { useToolsMetadata } from '@/hooks/useToolsMetadata';
 import { useLanguage } from '@/contexts/LanguageContext';
 import {
   Wrench,
@@ -27,7 +27,6 @@ import {
   Image as ImageIcon,
   Globe,
   Presentation,
-  Code,
   File,
   FileCode,
   Database,
@@ -410,7 +409,6 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
     // Check if it's a URL
     if (iconName.startsWith('http://') || iconName.startsWith('https://')) {
       const isSvg = iconName.toLowerCase().endsWith('.svg') || iconName.includes('.svg');
-      const isPng = iconName.toLowerCase().endsWith('.png');
 
       if (isSvg) {
         return <SvgUri uri={iconName} width={size} height={size} />;

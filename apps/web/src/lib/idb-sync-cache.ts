@@ -11,7 +11,6 @@ import { createClient } from "@/lib/supabase/client";
 const DB_NAME = "kortix-session-cache";
 const DB_VERSION = 2;
 const STORE_NAME = "sessions";
-const MAX_CACHED_SESSIONS = 50;
 const MAX_SESSION_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 interface CachedSession {
@@ -123,13 +122,6 @@ export async function saveSessionToIDB(
   }
 }
 
-export function flushIDBWrites(): Promise<void> {
-  if (flushTimer) {
-    clearTimeout(flushTimer);
-  }
-  return flushPendingWrites();
-}
-
 export async function loadSessionFromIDB(
   sessionId: string,
 ): Promise<{ messages: any[]; parts: Record<string, any[]> } | null> {
@@ -157,25 +149,6 @@ export async function loadSessionFromIDB(
   }
 }
 
-export async function loadAllSessionIdsFromIDB(): Promise<string[]> {
-  try {
-    const scope = await getCurrentCacheScope();
-    if (!scope) return [];
-
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, "readonly");
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.getAll();
-    const entries = await new Promise<CachedSession[]>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result as CachedSession[]);
-      req.onerror = () => reject(req.error);
-    });
-    return entries.filter((entry) => entry.userId === scope).map((entry) => entry.sessionId);
-  } catch {
-    return [];
-  }
-}
-
 export async function deleteSessionFromIDB(sessionId: string): Promise<void> {
   try {
     const scope = await getCurrentCacheScope();
@@ -199,34 +172,6 @@ export async function clearSessionIDBCache(): Promise<void> {
     const db = await openDB();
     const tx = db.transaction(STORE_NAME, "readwrite");
     tx.objectStore(STORE_NAME).clear();
-  } catch {
-    // ignore
-  }
-}
-
-export async function pruneIDBCache(): Promise<void> {
-  try {
-    const db = await openDB();
-    const tx = db.transaction(STORE_NAME, "readwrite");
-    const store = tx.objectStore(STORE_NAME);
-    const req = store.getAll();
-    const entries = await new Promise<CachedSession[]>((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    const now = Date.now();
-    const stale = entries.filter((e) => now - e.updatedAt > MAX_SESSION_AGE_MS);
-    for (const e of stale) {
-      store.delete(e.sessionId);
-    }
-    const fresh = entries
-      .filter((e) => now - e.updatedAt <= MAX_SESSION_AGE_MS)
-      .sort((a, b) => b.updatedAt - a.updatedAt);
-    if (fresh.length > MAX_CACHED_SESSIONS) {
-      for (const e of fresh.slice(MAX_CACHED_SESSIONS)) {
-        store.delete(e.sessionId);
-      }
-    }
   } catch {
     // ignore
   }

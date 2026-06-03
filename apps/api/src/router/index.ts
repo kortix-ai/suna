@@ -4,7 +4,6 @@ import { apiKeyAuth } from '../middleware/auth';
 import { webSearch } from './routes/search-web';
 import { imageSearch } from './routes/search-image';
 import { llm } from './routes/llm';
-import { sessionLlm } from './routes/session-llm';
 import { proxy } from './routes/proxy';
 import { anthropic } from './routes/anthropic';
 
@@ -27,7 +26,6 @@ router.route('/web-search', webSearch);
 router.route('/image-search', imageSearch);
 
 // LLM routes (apiKeyAuth)
-router.route('/llm', sessionLlm);
 router.use('/chat/*', apiKeyAuth);
 router.use('/messages', apiKeyAuth);
 router.use('/models', apiKeyAuth);

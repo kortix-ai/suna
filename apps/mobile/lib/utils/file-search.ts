@@ -5,27 +5,7 @@
  * Now delegates to workspace-search-service for robust deep-path matching.
  */
 
-import {
-  type WorkspaceSearchEntry,
-  rankWorkspaceSearchEntry,
-  normalizeSearchQuery,
-} from './workspace-search-core';
 import { searchWorkspaceFilePaths } from './workspace-search-service';
-
-// Re-export core types for consumers
-export type { WorkspaceSearchEntry };
-
-// ---------------------------------------------------------------------------
-// Legacy helpers (kept for backward compatibility with useMentions/etc.)
-// ---------------------------------------------------------------------------
-
-export function pathMatchesQuery(path: string, ql: string): boolean {
-  if (!ql) return true;
-  const lower = path.toLowerCase();
-  if (lower.includes(ql)) return true;
-  const base = lower.split('/').pop() ?? lower;
-  return base.includes(ql);
-}
 
 export function rankFile(path: string, ql: string): number {
   const lower = path.toLowerCase();

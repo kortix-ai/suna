@@ -31,7 +31,7 @@ export interface UseOpenCodeLocalOptions {
   sessionId?: string;
 }
 
-export interface OpenCodeLocalAgent {
+interface OpenCodeLocalAgent {
   /** Currently selected agent (or first available) */
   current: Agent | undefined;
   /** List of visible (non-hidden) agents, including subagents */
@@ -42,7 +42,7 @@ export interface OpenCodeLocalAgent {
   move: (direction: 1 | -1) => void;
 }
 
-export interface OpenCodeLocalModel {
+interface OpenCodeLocalModel {
   /** Current resolved model (ephemeral override -> agent.model -> fallback) */
   current: FlatModel | undefined;
   /** Current model as ModelKey (for sending to API) */
@@ -78,19 +78,6 @@ export interface OpenCodeLocal {
 // ============================================================================
 // Helpers
 // ============================================================================
-
-function uniqueBy<T>(arr: T[], key: (item: T) => string): T[] {
-  const seen = new Set<string>();
-  const result: T[] = [];
-  for (const item of arr) {
-    const k = key(item);
-    if (!seen.has(k)) {
-      seen.add(k);
-      result.push(item);
-    }
-  }
-  return result;
-}
 
 /**
  * Normalize a model value into a ModelKey.
@@ -217,7 +204,6 @@ export function useOpenCodeLocal({
   // tools that aren't registered in default mode.
   const visibleAgents = useMemo<Agent[]>(
     () => {
-      // Keep in sync with use-visible-agents.ts:PROJECT_ONLY_AGENTS.
       const projectOnlyAgents = new Set(['project-manager']);
       return (Array.isArray(rawAgents) ? rawAgents : []).filter(
         (a) => !a.hidden && (featureFlags.enableProjects || !projectOnlyAgents.has(a.name)),

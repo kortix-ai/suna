@@ -35,6 +35,19 @@ function jsonProxyError(body: Record<string, unknown>, status: number): Response
   });
 }
 
+type BunProxyRequestInit = RequestInit & {
+  decompress: false;
+  duplex: 'half';
+};
+
+function previewFetch(input: string, init: RequestInit): Promise<Response> {
+  return fetch(input, {
+    ...init,
+    decompress: false,
+    duplex: 'half',
+  } as BunProxyRequestInit);
+}
+
 // Rewrite an upstream redirect Location so the user stays on the preview.
 // `redirectPrefix` is the URL prefix that maps to this sandbox port:
 //   - subdomain previews (p{port}-{sandbox}.host):  '' (root-relative)
@@ -216,18 +229,11 @@ export async function forwardToSandbox(
         headers.set('X-Forwarded-Prefix', `${resolvedOrigin}${redirectPrefix}`);
       }
 
-      console.log(
-        `[PREVIEW] ${method} ${sandboxId}:${port}${remainingPath} -> ${targetUrl}${attempt > 0 ? ` (retry ${attempt})` : ''}`,
-      );
-
-      const upstream = await fetch(targetUrl, {
+      const upstream = await previewFetch(targetUrl, {
         method,
         headers,
         body,
         redirect: 'manual',
-        // @ts-ignore — Bun extensions: no decompression (raw byte passthrough), duplex streaming
-        decompress: false,
-        duplex: 'half',
       });
 
       if (upstream.status >= 300 && upstream.status < 400) {

@@ -111,7 +111,6 @@ let permissionCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 function startTunnelService(): void {
   if (!config.TUNNEL_ENABLED) {
-    console.log('[TUNNEL] Tunnel disabled (TUNNEL_ENABLED=false)');
     return;
   }
 
@@ -264,7 +263,6 @@ function startTunnelService(): void {
     }
   }, 5 * 60_000);
 
-  console.log('[TUNNEL] Tunnel service started');
 }
 
 function stopTunnelService(): void {
@@ -274,7 +272,6 @@ function stopTunnelService(): void {
   }
   heartbeatManager.stop();
   tunnelRelay.shutdown();
-  console.log('[TUNNEL] Tunnel service stopped');
 }
 
 function getTunnelServiceStatus(): { enabled: boolean; connectedAgents: number } {

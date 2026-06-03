@@ -35,7 +35,7 @@ export interface ToolResultData {
  * @param toolCallId - Optional tool call ID to find specific tool call
  * @returns Tool call data or null if not found
  */
-export function extractToolCall(
+function extractToolCall(
   assistantMessage: UnifiedMessage | null,
   toolCallId?: string
 ): ToolCallData | null {
@@ -102,7 +102,7 @@ export function extractToolCall(
  * @param toolMessage - The tool message containing result
  * @returns Tool result data or null if not found
  */
-export function extractToolResult(toolMessage: UnifiedMessage | null): ToolResultData | null {
+function extractToolResult(toolMessage: UnifiedMessage | null): ToolResultData | null {
   if (!toolMessage) return null;
   
   const metadata = safeJsonParse<ParsedMetadata>(toolMessage.metadata, {});
@@ -124,7 +124,7 @@ export function extractToolResult(toolMessage: UnifiedMessage | null): ToolResul
  * @param toolMessage - The tool message that might contain tool call data
  * @returns Tool call data or null if not found
  */
-export function extractToolCallFromToolMessage(toolMessage: UnifiedMessage | null): ToolCallData | null {
+function extractToolCallFromToolMessage(toolMessage: UnifiedMessage | null): ToolCallData | null {
   if (!toolMessage) return null;
   
   const metadata = safeJsonParse<ParsedMetadata>(toolMessage.metadata, {});
@@ -158,7 +158,7 @@ export function extractToolCallFromToolMessage(toolMessage: UnifiedMessage | nul
  * @param toolMessage - Tool message with result
  * @returns Object with toolCall and toolResult
  */
-export function extractToolData(
+function extractToolData(
   assistantMessage: UnifiedMessage | null,
   toolMessage: UnifiedMessage | null
 ): {
@@ -220,4 +220,3 @@ export function extractToolCallAndResult(
     toolTimestamp: toolMessage?.created_at,
   };
 }
-

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type ViewType = 'tools' | 'files' | 'browser';
-export type FilesSubView = 'browser' | 'viewer';
+type FilesSubView = 'browser' | 'viewer';
 
 /**
  * Normalize a file path to ensure it starts with /workspace
@@ -300,47 +300,3 @@ export const useKortixComputerStore = create<KortixComputerState>((set, get) => 
     set(initialState);
   },
 }));
-
-// Selector hooks for common use cases
-export const useKortixComputerActiveView = () => 
-  useKortixComputerStore((state) => state.activeView);
-
-export const useKortixComputerIsOpen = () =>
-  useKortixComputerStore((state) => state.isOpen);
-
-// Individual selectors for files state (stable, primitive values)
-export const useKortixComputerFilesSubView = () =>
-  useKortixComputerStore((state) => state.filesSubView);
-
-export const useKortixComputerCurrentPath = () =>
-  useKortixComputerStore((state) => state.currentPath);
-
-export const useKortixComputerSelectedFilePath = () =>
-  useKortixComputerStore((state) => state.selectedFilePath);
-
-export const useKortixComputerFilePathList = () =>
-  useKortixComputerStore((state) => state.filePathList);
-
-export const useKortixComputerCurrentFileIndex = () =>
-  useKortixComputerStore((state) => state.currentFileIndex);
-
-// Individual selectors for pending tool navigation (stable primitives)
-export const useKortixComputerPendingToolNavIndex = () =>
-  useKortixComputerStore((state) => state.pendingToolNavIndex);
-
-export const useKortixComputerClearPendingToolNav = () =>
-  useKortixComputerStore((state) => state.clearPendingToolNav);
-
-// Version history selectors
-export const useKortixComputerSelectedVersion = () =>
-  useKortixComputerStore((state) => state.selectedVersion);
-
-export const useKortixComputerSelectedVersionDate = () =>
-  useKortixComputerStore((state) => state.selectedVersionDate);
-
-export const useKortixComputerVersionActions = () =>
-  useKortixComputerStore((state) => ({
-    setSelectedVersion: state.setSelectedVersion,
-    clearSelectedVersion: state.clearSelectedVersion,
-  }));
-

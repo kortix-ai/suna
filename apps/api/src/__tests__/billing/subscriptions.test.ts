@@ -211,7 +211,7 @@ describe('createPerSeatCheckoutSession', () => {
 describe('cancelSubscription', () => {
   test('sets cancel_at_period_end', async () => {
     let updateParams: any = null;
-    mockRegistry.stripeClient.subscriptions.update = async (id: string, params: any) => {
+    mockRegistry.stripeClient.subscriptions.update = async (_id: string, params: any) => {
       updateParams = params;
       return createMockStripeSubscription({ ...params, cancel_at: Date.now() / 1000 + 86400 * 30 });
     };
@@ -244,7 +244,7 @@ describe('cancelSubscription', () => {
         commitmentEndDate: new Date(Date.now() - 86400000).toISOString(), // Yesterday
       });
 
-    mockRegistry.stripeClient.subscriptions.update = async (id: string, params: any) =>
+    mockRegistry.stripeClient.subscriptions.update = async (_id: string, _params: any) =>
       createMockStripeSubscription({ cancel_at: Date.now() / 1000 + 86400 * 30 });
 
     const result = await cancelSubscription('acc_test_123');
@@ -255,7 +255,7 @@ describe('cancelSubscription', () => {
 describe('reactivateSubscription', () => {
   test('clears cancel_at_period_end', async () => {
     let updateParams: any = null;
-    mockRegistry.stripeClient.subscriptions.update = async (id: string, params: any) => {
+    mockRegistry.stripeClient.subscriptions.update = async (_id: string, params: any) => {
       updateParams = params;
       return createMockStripeSubscription(params);
     };
@@ -450,9 +450,9 @@ describe('confirmInlineCheckout: cancel old free sub', () => {
         },
       });
 
-    let cancelledSubId: string | null = null;
+    const cancelledSubIds: string[] = [];
     mockRegistry.stripeClient.subscriptions.cancel = async (id: string) => {
-      cancelledSubId = id;
+      cancelledSubIds.push(id);
       return {};
     };
 
@@ -463,8 +463,7 @@ describe('confirmInlineCheckout: cancel old free sub', () => {
     });
 
     expect(result.success).toBe(true);
-    //@ts-ignore
-    expect(cancelledSubId).toBe('sub_old_free');
+    expect(cancelledSubIds).toEqual(['sub_old_free']);
   });
 
   test('does not cancel when no previous_subscription_id in metadata', async () => {
@@ -498,15 +497,14 @@ describe('confirmInlineCheckout: cancel old free sub', () => {
 
 describe('cancelFreeSubscriptionForUpgrade', () => {
   test('calls stripe.subscriptions.cancel', async () => {
-    let cancelledId: string | null = null;
+    const cancelledIds: string[] = [];
     mockRegistry.stripeClient.subscriptions.cancel = async (id: string) => {
-      cancelledId = id;
+      cancelledIds.push(id);
       return {};
     };
 
     await cancelFreeSubscriptionForUpgrade('sub_old_free', 'acc_test_123');
-    //@ts-ignore
-    expect(cancelledId).toBe('sub_old_free');
+    expect(cancelledIds).toEqual(['sub_old_free']);
   });
 
   test('does not throw when cancel fails with 404 (resource_missing)', async () => {

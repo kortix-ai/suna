@@ -3,7 +3,6 @@ import { View, ScrollView, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react-native';
-import { useColorScheme } from 'nativewind';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { log } from '@/lib/logger';
@@ -21,8 +20,6 @@ export function JsonViewer({
   defaultExpanded = false,
   className = '',
 }: JsonViewerProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
   const [copied, setCopied] = useState(false);
 
@@ -92,4 +89,3 @@ export function JsonViewer({
     </View>
   );
 }
-

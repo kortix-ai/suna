@@ -25,7 +25,7 @@ import { listProjectAccess, type ConnectorSharing } from '@/lib/projects-client'
  * pass them in; the defaults are the canonical English.
  */
 
-export type SharingMode = 'project' | 'private' | 'members';
+type SharingMode = 'project' | 'private' | 'members';
 
 export interface SharingSelection {
   mode: SharingMode;

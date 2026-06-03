@@ -1,12 +1,11 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { View, Pressable, GestureResponderEvent, PanResponder } from 'react-native';
+import { View, PanResponder } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { CheckCircle2, Star } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { API_URL, getAuthHeaders } from '@/api/config';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { useFeedbackDrawerStore } from '@/stores/feedback-drawer-store';
 import { PromptExamples } from '@/components/shared';
 import { log } from '@/lib/logger';
 
@@ -54,9 +53,7 @@ function InlineStarRating({
   const lastHapticRating = useRef<number | null>(null);
 
   // Calculate rating from touch position
-  const calculateRatingFromPosition = useCallback((x: number, containerWidth: number) => {
-    // Total width per star including gap
-    const starWithGap = starSize + starGap;
+  const calculateRatingFromPosition = useCallback((x: number) => {
     const totalWidth = (starSize * numStars) + (starGap * (numStars - 1));
 
     // Normalize x to be within bounds
@@ -82,9 +79,9 @@ function InlineStarRating({
         if (disabled) return;
 
         // Get touch position relative to the container
-        containerRef.current?.measure((x, y, width, height, pageX, pageY) => {
+        containerRef.current?.measure((_x, _y, _width, _height, pageX, _pageY) => {
           const touchX = evt.nativeEvent.pageX - pageX;
-          const rating = calculateRatingFromPosition(touchX, width);
+          const rating = calculateRatingFromPosition(touchX);
           setPreviewRating(rating);
           lastHapticRating.current = rating;
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -94,9 +91,9 @@ function InlineStarRating({
       onPanResponderMove: (evt) => {
         if (disabled) return;
 
-        containerRef.current?.measure((x, y, width, height, pageX, pageY) => {
+        containerRef.current?.measure((_x, _y, _width, _height, pageX, _pageY) => {
           const touchX = evt.nativeEvent.pageX - pageX;
-          const rating = calculateRatingFromPosition(touchX, width);
+          const rating = calculateRatingFromPosition(touchX);
           setPreviewRating(rating);
 
           // Provide haptic feedback when rating changes
@@ -110,9 +107,9 @@ function InlineStarRating({
       onPanResponderRelease: (evt) => {
         if (disabled) return;
 
-        containerRef.current?.measure((x, y, width, height, pageX, pageY) => {
+        containerRef.current?.measure((_x, _y, _width, _height, pageX, _pageY) => {
           const touchX = evt.nativeEvent.pageX - pageX;
-          const rating = calculateRatingFromPosition(touchX, width);
+          const rating = calculateRatingFromPosition(touchX);
 
           // Final haptic feedback
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -191,7 +188,6 @@ function InlineStarRating({
 }
 
 export function TaskCompletedFeedback({
-  taskSummary,
   followUpPrompts,
   onFollowUpClick,
   samplePromptsTitle,
@@ -199,22 +195,15 @@ export function TaskCompletedFeedback({
   messageId
 }: TaskCompletedFeedbackProps) {
   const { t } = useLanguage();
-  const { openFeedbackDrawer, lastSubmittedFeedback } = useFeedbackDrawerStore();
 
   // State
   const [submittedFeedback, setSubmittedFeedback] = useState<MessageFeedback | null>(null);
-  const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
-
-  // Track the last fetch trigger to avoid duplicate fetches
-  const lastFetchTriggerRef = useRef<string | null>(null);
+  const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
 
   // Fetch feedback function
   const fetchFeedback = useCallback(async () => {
     if (!threadId || !messageId) return;
 
-    const fetchKey = `${threadId}-${messageId}`;
-
-    setIsLoadingFeedback(true);
     try {
       const headers = await getAuthHeaders();
       const params = new URLSearchParams();
@@ -235,8 +224,6 @@ export function TaskCompletedFeedback({
       }
     } catch (error) {
       log.error('Error fetching feedback:', error);
-    } finally {
-      setIsLoadingFeedback(false);
     }
   }, [threadId, messageId]);
 
@@ -246,58 +233,52 @@ export function TaskCompletedFeedback({
     fetchFeedback();
   }, [threadId, messageId, fetchFeedback]);
 
-  // Refetch when feedback is submitted for this message
-  useEffect(() => {
-    if (!lastSubmittedFeedback) return;
-    if (!threadId || !messageId) return;
+  const handleStarClick = useCallback(async (value: number) => {
+    log.log('⭐ Star clicked:', value, { submittedFeedback, threadId, messageId });
+    if (submittedFeedback || isSubmittingFeedback || !threadId || !messageId) return;
 
-    // Check if this feedback submission is for this specific message
-    if (
-      lastSubmittedFeedback.threadId === threadId &&
-      lastSubmittedFeedback.messageId === messageId
-    ) {
-      log.log('🔄 [TaskCompletedFeedback] Feedback submitted, refetching...', {
-        threadId,
-        messageId,
-        rating: lastSubmittedFeedback.rating
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setIsSubmittingFeedback(true);
+
+    try {
+      const headers = await getAuthHeaders();
+      const response = await fetch(`${API_URL}/feedback`, {
+        method: 'POST',
+        headers: {
+          ...headers,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          rating: value,
+          feedback_text: null,
+          help_improve: true,
+          thread_id: threadId,
+          message_id: messageId,
+        }),
       });
 
-      // Optimistically update the rating immediately
-      setSubmittedFeedback(prev => prev ? {
-        ...prev,
-        rating: lastSubmittedFeedback.rating
-      } : {
+      if (!response.ok) {
+        throw new Error(`Feedback request failed with ${response.status}`);
+      }
+
+      setSubmittedFeedback({
         feedback_id: 'temp',
         thread_id: threadId,
         message_id: messageId,
         account_id: '',
-        rating: lastSubmittedFeedback.rating,
+        rating: value,
         help_improve: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       });
 
-      // Then refetch to get the actual data
       fetchFeedback();
+    } catch (error) {
+      log.error('Error submitting feedback:', error);
+    } finally {
+      setIsSubmittingFeedback(false);
     }
-  }, [lastSubmittedFeedback, threadId, messageId, fetchFeedback]);
-
-  const handleStarClick = useCallback((value: number) => {
-    log.log('⭐ Star clicked:', value, { submittedFeedback, threadId, messageId });
-    if (submittedFeedback) return;
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    // Small delay to let gesture system settle (important when inside another BottomSheet)
-    setTimeout(() => {
-      log.log('⭐ Opening feedback drawer with:', { rating: value, threadId, messageId });
-      openFeedbackDrawer({
-        rating: value,
-        threadId,
-        messageId: messageId || undefined,
-      });
-    }, 50);
-  }, [submittedFeedback, openFeedbackDrawer, threadId, messageId]);
+  }, [submittedFeedback, isSubmittingFeedback, threadId, messageId, fetchFeedback]);
 
   const currentRating = submittedFeedback?.rating ?? null;
 
@@ -315,7 +296,7 @@ export function TaskCompletedFeedback({
           <InlineStarRating
             currentRating={currentRating}
             onStarClick={handleStarClick}
-            disabled={submittedFeedback !== null}
+            disabled={submittedFeedback !== null || isSubmittingFeedback}
           />
         </View>
       </View>

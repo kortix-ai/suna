@@ -18,9 +18,7 @@ import { useTranslations } from 'next-intl';
  */
 
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import type { User } from '@supabase/supabase-js';
-import { ArrowLeftRight } from 'lucide-react';
 
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { UserMenu } from '@/components/layout/user-menu';
@@ -28,7 +26,7 @@ import { AccountSwitcher } from '@/components/layout/account-switcher';
 import { cn } from '@/lib/utils';
 
 // Lazy so the command palette (and its dependency graph) only loads once a
-// header page is actually on screen, mirroring project-shell/layout-content.
+// header page is actually on screen, mirroring project-shell.
 const CommandPalette = lazy(() =>
   import('@/components/command-palette').then((mod) => ({
     default: mod.CommandPalette,
@@ -131,28 +129,5 @@ function BreadcrumbDivider() {
     >
       /
     </span>
-  );
-}
-
-/**
- * Project picker link — small "Projects" button intended for the
- * AppHeader's `actions` slot on full-screen loader states. Provides a
- * one-click escape from an unreachable workspace.
- */
-export function WorkspacePickerLink({
-  href = '/projects',
-}: {
-  href?: string;
-}) {
-  const router = useRouter();
-  return (
-    <button
-      type="button"
-      onClick={() => router.push(href)}
-      className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-    >
-      <ArrowLeftRight className="h-3.5 w-3.5" />
-      Projects
-    </button>
   );
 }

@@ -1,110 +1,199 @@
-// Pure unit coverage for SAML SSO sync helpers — no DB.
+import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
-import { describe, expect, test } from 'bun:test';
-import {
-  diffSsoGroups,
-  extractGroupClaims,
-  extractSsoProviderId,
-} from '../iam/sso-sync';
+const state = {
+  providerLookups: [] as string[],
+  groupMappingLookups: [] as string[],
+  provider: null as null | {
+    accountId: string;
+    autoCreateMembers: boolean;
+    groupClaimName: string;
+  },
+  mappings: [] as Array<{ claimValue: string; groupId: string }>,
+  memberRows: [] as Array<{ userId: string }>,
+  currentGroupRows: [] as Array<{ groupId: string }>,
+  inserts: [] as Array<{ table: string; values: unknown }>,
+  deletes: [] as Array<{ table: string; condition: unknown }>,
+};
 
-describe('extractSsoProviderId', () => {
-  test('reads sso_provider_id from app_metadata', () => {
-    expect(
-      extractSsoProviderId({ app_metadata: { sso_provider_id: 'aaa' } }),
-    ).toBe('aaa');
+function rowsForSelect(shape: Record<string, unknown>) {
+  if ('groupId' in shape) return state.currentGroupRows;
+  return state.memberRows;
+}
+
+const fakeDb = {
+  select: (shape: Record<string, unknown>) => ({
+    from: () => ({
+      where: () => {
+        const rows = rowsForSelect(shape);
+        return {
+          limit: async (count: number) => rows.slice(0, count),
+          then: (resolve: (value: unknown) => unknown, reject: (reason?: unknown) => unknown) =>
+            Promise.resolve(rows).then(resolve, reject),
+        };
+      },
+    }),
+  }),
+  insert: () => ({
+    values: (values: unknown) => {
+      state.inserts.push({ table: tableNameForValues(values), values });
+      return { onConflictDoNothing: async () => undefined };
+    },
+  }),
+  delete: () => ({
+    where: async (condition: unknown) => {
+      state.deletes.push({ table: 'accountGroupMembers', condition });
+    },
+  }),
+};
+
+mock.module('../shared/db', () => ({ db: fakeDb }));
+
+mock.module('../repositories/sso', () => ({
+  getSsoProviderBySupabaseId: async (providerId: string) => {
+    state.providerLookups.push(providerId);
+    return state.provider;
+  },
+  listSsoGroupMappings: async (accountId: string) => {
+    state.groupMappingLookups.push(accountId);
+    return state.mappings;
+  },
+}));
+
+const { syncSsoMembership } = await import('../iam/sso-sync');
+
+beforeEach(() => {
+  state.providerLookups = [];
+  state.groupMappingLookups = [];
+  state.provider = null;
+  state.mappings = [];
+  state.memberRows = [];
+  state.currentGroupRows = [];
+  state.inserts = [];
+  state.deletes = [];
+});
+
+describe('syncSsoMembership', () => {
+  test('skips cheaply when the JWT has no valid Supabase SSO provider id', async () => {
+    expect(await syncSsoMembership(baseArgs({}))).toEqual({ skipped: true });
+    expect(await syncSsoMembership(baseArgs(undefined))).toEqual({ skipped: true });
+    expect(await syncSsoMembership(baseArgs({ app_metadata: { sso_provider_id: 123 } }))).toEqual({ skipped: true });
+    expect(state.providerLookups).toEqual([]);
   });
 
-  test('falls back to provider_id (older Supabase)', () => {
-    expect(
-      extractSsoProviderId({ app_metadata: { provider_id: 'bbb' } }),
-    ).toBe('bbb');
+  test('accepts both current and legacy Supabase provider-id claims', async () => {
+    state.provider = provider();
+
+    await syncSsoMembership(baseArgs({ app_metadata: { sso_provider_id: 'sso-current' } }));
+    await syncSsoMembership(baseArgs({ app_metadata: { provider_id: 'sso-legacy' } }));
+
+    expect(state.providerLookups).toEqual(['sso-current', 'sso-legacy']);
   });
 
-  test('returns null when missing', () => {
-    expect(extractSsoProviderId({})).toBeNull();
-    expect(extractSsoProviderId(undefined)).toBeNull();
-    expect(extractSsoProviderId({ app_metadata: {} })).toBeNull();
+  test('auto-creates account membership when the mapped provider allows JIT members', async () => {
+    state.provider = provider({ autoCreateMembers: true });
+
+    const result = await syncSsoMembership(baseArgs({ app_metadata: { sso_provider_id: 'sso-1' } }));
+
+    expect(result).toEqual({ skipped: false, memberCreated: true });
+    expect(state.inserts).toEqual([
+      {
+        table: 'accountMembers',
+        values: { accountId: 'acct-1', userId: 'user-1', accountRole: 'member' },
+      },
+    ]);
   });
 
-  test('rejects non-string values', () => {
-    expect(
-      extractSsoProviderId({ app_metadata: { sso_provider_id: 123 } }),
-    ).toBeNull();
+  test('does not JIT-create account membership when provider auto-create is disabled', async () => {
+    state.provider = provider({ autoCreateMembers: false });
+
+    const result = await syncSsoMembership(baseArgs({ app_metadata: { sso_provider_id: 'sso-1' } }));
+
+    expect(result).toEqual({ skipped: false, memberCreated: false });
+    expect(state.inserts).toEqual([]);
+    expect(state.groupMappingLookups).toEqual([]);
+  });
+
+  test('syncs mapped groups from app_metadata claims and removes stale SSO-owned groups', async () => {
+    state.provider = provider({ groupClaimName: 'groups' });
+    state.memberRows = [{ userId: 'user-1' }];
+    state.mappings = [
+      { claimValue: 'Engineers', groupId: 'g-engineers' },
+      { claimValue: 'Admins', groupId: 'g-admins' },
+      { claimValue: 'Sales', groupId: 'g-sales' },
+    ];
+    state.currentGroupRows = [{ groupId: 'g-admins' }, { groupId: 'g-sales' }];
+
+    const result = await syncSsoMembership(baseArgs({
+      app_metadata: {
+        sso_provider_id: 'sso-1',
+        groups: ['Engineers', 'Admins', 42, null],
+      },
+    }));
+
+    expect(result).toEqual({
+      skipped: false,
+      memberCreated: false,
+      groupsAdded: ['g-engineers'],
+      groupsRemoved: ['g-sales'],
+    });
+    expect(state.inserts).toEqual([
+      { table: 'accountGroupMembers', values: [{ groupId: 'g-engineers', userId: 'user-1', addedBy: null }] },
+    ]);
+    expect(state.deletes).toHaveLength(1);
+  });
+
+  test('reads group claims from user_metadata and top-level JWT fields', async () => {
+    state.provider = provider({ groupClaimName: 'roles' });
+    state.memberRows = [{ userId: 'user-1' }];
+    state.mappings = [{ claimValue: 'admin', groupId: 'g-admin' }];
+
+    expect(await syncSsoMembership(baseArgs({
+      app_metadata: { sso_provider_id: 'sso-1' },
+      user_metadata: { roles: ['admin'] },
+    }))).toMatchObject({ groupsAdded: ['g-admin'] });
+
+    state.inserts = [];
+    state.provider = provider({ groupClaimName: 'memberOf' });
+    state.mappings = [{ claimValue: 'everyone', groupId: 'g-everyone' }];
+
+    expect(await syncSsoMembership(baseArgs({
+      app_metadata: { sso_provider_id: 'sso-1' },
+      memberOf: 'everyone',
+    }))).toMatchObject({ groupsAdded: ['g-everyone'] });
+  });
+
+  test('preserves manually-added groups that are not SSO mapped', async () => {
+    state.provider = provider();
+    state.memberRows = [{ userId: 'user-1' }];
+    state.mappings = [{ claimValue: 'Engineers', groupId: 'g-engineers' }];
+    state.currentGroupRows = [{ groupId: 'manual-group' }, { groupId: 'g-engineers' }];
+
+    const result = await syncSsoMembership(baseArgs({ app_metadata: { sso_provider_id: 'sso-1' } }));
+
+    expect(result).toMatchObject({ groupsAdded: [], groupsRemoved: ['g-engineers'] });
+    expect(result.groupsRemoved).not.toContain('manual-group');
   });
 });
 
-describe('extractGroupClaims', () => {
-  test('reads array claim from app_metadata', () => {
-    const out = extractGroupClaims(
-      { app_metadata: { groups: ['Engineers', 'Admins'] } },
-      'groups',
-    );
-    expect(out).toEqual(['Engineers', 'Admins']);
-  });
+function baseArgs(jwtPayload: Record<string, unknown> | undefined) {
+  return {
+    userId: 'user-1',
+    email: 'user@example.com',
+    jwtPayload,
+  };
+}
 
-  test('reads string claim and wraps as array', () => {
-    expect(
-      extractGroupClaims({ app_metadata: { groups: 'Engineers' } }, 'groups'),
-    ).toEqual(['Engineers']);
-  });
+function provider(overrides: Partial<typeof state.provider> = {}) {
+  return {
+    accountId: 'acct-1',
+    autoCreateMembers: true,
+    groupClaimName: 'groups',
+    ...overrides,
+  };
+}
 
-  test('falls back to user_metadata then top level', () => {
-    expect(
-      extractGroupClaims({ user_metadata: { roles: ['admin'] } }, 'roles'),
-    ).toEqual(['admin']);
-    expect(extractGroupClaims({ memberOf: ['x'] }, 'memberOf')).toEqual(['x']);
-  });
-
-  test('returns empty when claim missing', () => {
-    expect(extractGroupClaims({}, 'groups')).toEqual([]);
-    expect(extractGroupClaims(undefined, 'groups')).toEqual([]);
-  });
-
-  test('skips non-string entries inside an array', () => {
-    expect(
-      extractGroupClaims({ app_metadata: { groups: ['a', 1, null, 'b'] } }, 'groups'),
-    ).toEqual(['a', 'b']);
-  });
-});
-
-describe('diffSsoGroups', () => {
-  test('adds claimed groups not currently joined', () => {
-    const { toAdd, toRemove } = diffSsoGroups({
-      currentGroupIds: new Set(),
-      mappedGroupIds: new Set(['g1', 'g2']),
-      claimedGroupIds: new Set(['g1']),
-    });
-    expect(toAdd).toEqual(['g1']);
-    expect(toRemove).toEqual([]);
-  });
-
-  test('removes joined-via-SSO groups whose claim disappeared', () => {
-    const { toAdd, toRemove } = diffSsoGroups({
-      currentGroupIds: new Set(['g1', 'g2']),
-      mappedGroupIds: new Set(['g1', 'g2']),
-      claimedGroupIds: new Set(['g1']),
-    });
-    expect(toAdd).toEqual([]);
-    expect(toRemove).toEqual(['g2']);
-  });
-
-  test('preserves manually-added groups (not in mapped set)', () => {
-    const { toAdd, toRemove } = diffSsoGroups({
-      currentGroupIds: new Set(['manual', 'g1']),
-      mappedGroupIds: new Set(['g1']),
-      claimedGroupIds: new Set(),
-    });
-    expect(toAdd).toEqual([]);
-    expect(toRemove).toEqual(['g1']);
-  });
-
-  test('no-op when claims match current SSO membership', () => {
-    const { toAdd, toRemove } = diffSsoGroups({
-      currentGroupIds: new Set(['g1', 'g2']),
-      mappedGroupIds: new Set(['g1', 'g2', 'g3']),
-      claimedGroupIds: new Set(['g1', 'g2']),
-    });
-    expect(toAdd).toEqual([]);
-    expect(toRemove).toEqual([]);
-  });
-});
+function tableNameForValues(values: unknown) {
+  if (Array.isArray(values)) return 'accountGroupMembers';
+  if (values && typeof values === 'object' && 'accountRole' in values) return 'accountMembers';
+  return 'unknown';
+}

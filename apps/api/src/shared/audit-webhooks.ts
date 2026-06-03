@@ -10,7 +10,7 @@ import { db } from './db';
 
 /** Payload shape sent to the customer's webhook. Stable contract — bump
  *  schema_version if ever changing the shape. */
-export interface AuditWebhookPayload {
+interface AuditWebhookPayload {
   schema_version: 1;
   event: {
     event_id: string;

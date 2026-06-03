@@ -9,7 +9,6 @@ import { useEffect, useRef } from "react";
 import { fileContentKeys } from "@/features/files/hooks/use-file-content";
 import { fileListKeys } from "@/features/files/hooks/use-file-list";
 import { gitStatusKeys } from "@/features/files/hooks/use-git-status";
-import { clearConfigOverrides } from "@/hooks/opencode/use-opencode-config";
 import { getSupabaseAccessToken, invalidateTokenCache } from "@/lib/auth-token";
 import { logger } from "@/lib/logger";
 import { getClient, resetClient } from "@/lib/opencode-sdk";
@@ -30,7 +29,6 @@ import { useServerStore, getActiveOpenCodeUrl } from "@/stores/server-store";
 import { ptyKeys } from "./use-opencode-pty";
 import { opencodeKeys, type Session, type MessageWithParts } from "./use-opencode-sessions";
 import { saveSessionToIDB, deleteSessionFromIDB } from "@/lib/idb-sync-cache";
-import { resetPrefetchState } from "./use-session-prefetch";
 import { syncOpencodeSessionData } from "@/lib/projects-client";
 
 const MESSAGE_REHYDRATE_COOLDOWN_MS = 30_000;
@@ -99,7 +97,7 @@ function scheduleProjectMetadataRefetch(queryClient: QueryClient): void {
  * we use setQueryData to surgically update messages, parts, sessions, etc.
  * This matches the SolidJS reference implementation's approach.
  */
-export function useOpenCodeEventStream() {
+function useOpenCodeEventStream() {
 	const queryClient = useQueryClient();
 	const addPermission = useOpenCodePendingStore((s) => s.addPermission);
 	const removePermission = useOpenCodePendingStore((s) => s.removePermission);
@@ -241,11 +239,10 @@ export function useOpenCodeEventStream() {
 	});
 
 	useEffect(() => {
-		// On first mount, always start clean — the provider may have remounted
-		// after navigating from a non-dashboard page (e.g. /instances) where
-		// the server was switched while this component wasn't mounted. The ref
-		// would have been initialized to the post-switch serverVersion so the
-		// isServerSwitch check below would miss the change.
+		// On first mount, always start clean. The provider may have remounted
+		// after a server switch while this component was not mounted, and the ref
+		// would then initialize to the post-switch serverVersion so the
+		// isServerSwitch check below would miss it.
 		const isFirstMount = isMountRef.current;
 		isMountRef.current = false;
 
@@ -261,7 +258,6 @@ export function useOpenCodeEventStream() {
 		// invalidation cascade that manifests as random loading flashes.
 		if (isFirstMount || isServerSwitch) {
 			resetClient();
-			clearConfigOverrides();
 			clearPending();
 			// NOTE: we intentionally do NOT wipe the sync store or the opencode
 			// query cache here anymore. Those are now scoped per-sandbox (see
@@ -271,7 +267,6 @@ export function useOpenCodeEventStream() {
 			// still cleared because they're keyed by bare file path (no sandbox
 			// scope) and would otherwise bleed across sandboxes.
 			useDiagnosticsStore.getState().clearAll();
-			resetPrefetchState();
 		} else if (didServerUrlChange) {
 			// URL changed on the same logical server (e.g. sandbox/proxy refresh).
 			// Recreate the SDK client so SSE reconnects to the new endpoint, but
@@ -980,7 +975,6 @@ export function useOpenCodeEventStream() {
 				// the UI picks up newly installed marketplace components or
 				// agent-created skills/agents immediately.
 				queryClient.invalidateQueries({ queryKey: opencodeKeys.sessions(), type: 'active' });
-				queryClient.invalidateQueries({ queryKey: opencodeKeys.mcpStatus(), type: 'active' });
 				queryClient.invalidateQueries({ queryKey: opencodeKeys.skills(), type: 'active' });
 				queryClient.invalidateQueries({ queryKey: opencodeKeys.agents(), type: 'active' });
 				queryClient.invalidateQueries({ queryKey: opencodeKeys.toolIds(), type: 'active' });
@@ -1008,9 +1002,8 @@ export function useOpenCodeEventStream() {
 
 			// ---- MCP tools changed ----
 			case "mcp.tools.changed": {
-				// MCP server tools were added/removed/changed — refresh status + tool lists.
+				// MCP server tools were added/removed/changed — refresh tool lists.
 				// Only refetch if queries are actively mounted (type: 'active').
-				queryClient.refetchQueries({ queryKey: opencodeKeys.mcpStatus(), type: 'active' });
 				queryClient.refetchQueries({ queryKey: opencodeKeys.toolIds(), type: 'active' });
 				break;
 			}

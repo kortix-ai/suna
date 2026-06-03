@@ -21,7 +21,7 @@ function formatTimestamp(isoString?: string): string {
 }
 
 export function PaperDetailsToolView({ toolCall, toolResult, isStreaming = false, assistantTimestamp, toolTimestamp }: ToolViewProps) {
-  const { paper, success } = extractPaperDetailsData({ toolCall, toolResult });
+  const { paper, success } = extractPaperDetailsData({ toolResult });
 
   if (!toolCall) {
     return null;

@@ -34,7 +34,7 @@ const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const SANDBOX_TOUCH_INTERVAL_MS = 60 * 1000;
 
 /** Everything the proxy needs to know about a sandbox, from one row fetch. */
-export interface SandboxRecord {
+interface SandboxRecord {
   /** Internal session-sandbox uuid. */
   sandboxId: string;
   /** Provider-side id used in proxy URLs (`/v1/p/<externalId>/<port>`). */
@@ -213,7 +213,6 @@ export async function wakeSandbox(sandboxId: string): Promise<void> {
     const daytona = getDaytona();
     const sandbox = await daytona.get(sandboxId);
     await (sandbox as any).start?.();
-    console.log(`[PREVIEW] Wake-up triggered for sandbox ${sandboxId}`);
   } catch (e) {
     console.error(`[PREVIEW] Failed to wake sandbox ${sandboxId}:`, e);
   }

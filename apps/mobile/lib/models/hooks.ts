@@ -5,7 +5,6 @@
  */
 
 import { useAccountState } from '@/lib/billing';
-import type { AccountState } from '@/lib/billing/api';
 import type { AvailableModelsResponse, Model } from '@/api/types';
 
 // ============================================================================
@@ -49,7 +48,6 @@ export function useAvailableModels(options?: { enabled?: boolean }) {
     ...rest,
   };
 }
-
 
 
 

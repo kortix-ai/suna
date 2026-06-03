@@ -21,7 +21,7 @@ export default function SettingUpScreen() {
   const router = useRouter();
   const { user, isAuthenticated } = useAuthContext();
   const { colorScheme } = useColorScheme();
-  const { refetchAll, hasActiveSubscription, subscriptionData, subscriptionLoading } = useBillingContext();
+  const { refetchAll, hasActiveSubscription, subscriptionLoading } = useBillingContext();
   const { hasCompletedOnboarding, isLoading: onboardingLoading } = useOnboarding();
   const queryClient = useQueryClient();
   const [status, setStatus] = React.useState<'checking' | 'initializing' | 'success' | 'error'>('checking');
@@ -241,4 +241,3 @@ export default function SettingUpScreen() {
     </>
   );
 }
-

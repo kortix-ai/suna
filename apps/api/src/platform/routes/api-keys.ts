@@ -147,17 +147,18 @@ async function requireKeyAccess(c: any, keyId: string) {
 
 async function updateSandboxServiceKey(ref: SandboxRef, secretKey: string) {
   const nextConfig = { ...(ref.config ?? {}), serviceKey: secretKey };
-  if (ref.table === 'session') {
+  if (ref.table === 'legacy') {
     await db
-      .update(sessionSandboxes)
+      .update(sandboxes)
       .set({ config: nextConfig, updatedAt: new Date() })
-      .where(eq(sessionSandboxes.sandboxId, ref.sandboxId));
+      .where(eq(sandboxes.sandboxId, ref.sandboxId));
     return;
   }
+
   await db
-    .update(sandboxes)
+    .update(sessionSandboxes)
     .set({ config: nextConfig, updatedAt: new Date() })
-    .where(eq(sandboxes.sandboxId, ref.sandboxId));
+    .where(eq(sessionSandboxes.sandboxId, ref.sandboxId));
 }
 
 export const apiKeysRouter = new Hono();

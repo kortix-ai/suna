@@ -48,7 +48,7 @@ export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
   '',
 ].join('\n') + '\n';
 
-export interface BuildLayeredDockerfileOpts {
+interface BuildLayeredDockerfileOpts {
   /** Literal contents of the user's project Dockerfile. */
   userDockerfile: string;
   /** Pinned opencode CLI version (matches platform-wide `OPENCODE_VERSION`). */
@@ -189,7 +189,7 @@ export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
  * via `[[sandbox.templates]]` in kortix.toml; sessions pick one by slug. The platform
  * default template is always available without any config.
  */
-export interface SandboxTemplate {
+interface SandboxTemplate {
   /** Stable identifier the session creator references. Unique per project. */
   slug: string;
   /** Display label shown in the dashboard picker. Optional. */
@@ -255,11 +255,6 @@ export const SANDBOX_SPEC_LIMITS = {
   memory: { min: 1, max: 128 }, // GiB
   disk: { min: 1, max: 500 }, // GiB
 } as const;
-
-/** True when no spec field is set — i.e. boot at the platform default size. */
-export function sandboxSpecIsEmpty(spec: SandboxSpec): boolean {
-  return spec.cpu === undefined && spec.memory === undefined && spec.disk === undefined;
-}
 
 function pickResource(value: unknown, bounds: { min: number; max: number }): number | undefined {
   let n: number | undefined;

@@ -15,9 +15,7 @@ import {
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
-  withTiming,
   withSpring,
-  Easing,
 } from 'react-native-reanimated';
 
 import { API_URL } from '@/api/config';
@@ -74,8 +72,8 @@ function usePlaybackController(messages: any[], enabled: boolean) {
   const [streamingText, setStreamingText] = React.useState('');
   const [isStreaming, setIsStreaming] = React.useState(false);
   
-  const playbackRef = React.useRef<NodeJS.Timeout | null>(null);
-  const streamRef = React.useRef<NodeJS.Timeout | null>(null);
+  const playbackRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const streamRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const isPlayingRef = React.useRef(false);
 
   // Keep ref in sync

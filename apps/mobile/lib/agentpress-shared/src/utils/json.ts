@@ -10,11 +10,3 @@ export function safeJsonParse<T>(
     return defaultValue;
   }
 }
-
-export function safeJsonStringify(value: any, defaultValue: string = '{}'): string {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return defaultValue;
-  }
-}

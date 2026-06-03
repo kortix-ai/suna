@@ -3,13 +3,12 @@
  *
  * Provision a sandbox row in `kortix.session_sandboxes` keyed by the caller-
  * supplied UUID (== project session id). Decoupled from the legacy
- * `kortix.sandboxes` /instances table: no billing fields, no sandbox_members
+ * `kortix.sandboxes` table: no billing fields, no sandbox_members
  * roster, no team-membership coupling — project ACL is enforced via
  * `project_members`.
  *
  * Fire-and-forget: returns once the row is inserted in `provisioning` state.
- * Real provider create() runs in a detached IIFE that mirrors the background
- * path in sandbox-cloud.ts.
+ * Real provider create() runs in a detached IIFE after the API returns.
  */
 
 import { eq } from 'drizzle-orm';
@@ -43,7 +42,6 @@ import { startComputeSession } from '../../billing/services/compute-metering';
 import { resolveYoloTokenForMember } from '../../billing/services/yolo-tokens';
 import { getCreditAccount } from '../../billing/repositories/credit-accounts';
 import { isPerSeatAccount } from '../../billing/services/tiers';
-import { readManifest } from '../../projects/triggers';
 
 // Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
 // Mirrors a sensible Daytona default (1 vCPU / 2 GB / 10 GB).
@@ -75,7 +73,7 @@ async function openComputeSessionForSandbox(
   });
 }
 
-export interface ProvisionSessionSandboxResult {
+interface ProvisionSessionSandboxResult {
   row: typeof sessionSandboxes.$inferSelect;
   created: boolean;
 }
@@ -264,8 +262,6 @@ export async function provisionSessionSandbox(opts: {
         ? {
             KORTIX_LLM_API_KEY: llmApiKey,
             KORTIX_LLM_BASE_URL: llmBaseUrl,
-            KORTIX_YOLO_API_KEY: llmApiKey,
-            KORTIX_YOLO_URL: llmBaseUrl,
           }
         : {}),
     },
@@ -431,9 +427,6 @@ export async function provisionSessionSandbox(opts: {
       if (!provider.provisioning.async) {
         finishUpdate.status = 'active';
       } else {
-        // For cloud providers we still flip to active here because the legacy
-        // provision-poller (which only handles JustAVPS) doesn't see this
-        // table; the frontend's own readiness poller validates port 8000.
         finishUpdate.status = 'active';
       }
 

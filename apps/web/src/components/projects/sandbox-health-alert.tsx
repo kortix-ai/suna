@@ -33,7 +33,7 @@ import {
   type ProjectSandboxHealth,
 } from '@/lib/projects-client';
 
-export const SANDBOX_HEALTH_QUERY_KEY = (projectId: string) => ['sandbox-health', projectId];
+const SANDBOX_HEALTH_QUERY_KEY = (projectId: string) => ['sandbox-health', projectId];
 
 type Severity = 'critical' | 'building';
 
@@ -73,7 +73,7 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 
 /** Shared health query — pollable, used by the alert and the settings panel. */
-export function useSandboxHealth(projectId: string) {
+function useSandboxHealth(projectId: string) {
   return useQuery<ProjectSandboxHealth>({
     queryKey: SANDBOX_HEALTH_QUERY_KEY(projectId),
     queryFn: () => getProjectSandboxHealth(projectId),

@@ -3,8 +3,6 @@ import { View, ScrollView, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
-  Terminal,
-  CheckCircle,
   AlertTriangle,
   CircleDashed,
   Clock,
@@ -14,7 +12,7 @@ import {
 } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractTerminateCommandData } from './_utils';
-import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
+import { ToolViewCard, StatusBadge } from '../shared';
 import { getToolMetadata } from '../tool-metadata';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
@@ -53,8 +51,10 @@ export function TerminateCommandToolView({
     success: actualIsSuccess,
   } = extractTerminateCommandData(toolCall, toolResult, isSuccess);
 
-  // Extract session_name from toolCall.arguments (from metadata)
-  const finalSessionName = sessionName || toolCall.arguments?.session_name || null;
+  const toolArgs = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
+    ? toolCall.arguments
+    : {};
+  const finalSessionName = sessionName || toolArgs.session_name || null;
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   

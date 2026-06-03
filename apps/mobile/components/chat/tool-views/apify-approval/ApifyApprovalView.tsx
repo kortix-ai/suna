@@ -17,10 +17,8 @@ import { useApproveApifyRequest, useGetApifyApprovalStatus } from '@/hooks/apify
 import { log } from '@/lib/logger';
 
 export function ApifyApprovalView({
-  toolCall,
   toolResult,
   threadId,
-  isSuccess = true,
 }: ToolViewProps) {
   const [initialApproval, setInitialApproval] = useState<ApifyApproval | null>(null);
 

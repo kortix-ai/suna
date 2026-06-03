@@ -45,7 +45,7 @@ interface GroupsTabProps {
   accountId: string;
   /** Drives visibility of the "Create a group" button and the per-row
    * delete option. Sourced from a usePermission(group.create) probe at
-   * the page level so plain admins with explicit policies see it too. */
+   * the page level. */
   canCreate: boolean;
 }
 
@@ -242,7 +242,7 @@ export function GroupsTab({ accountId, canCreate }: GroupsTabProps) {
         title={tHardcodedUi.raw('componentsIamGroupsTab.line243JsxAttrTitleDeleteGroup')}
         description={
           deleteTarget
-            ? `Delete "${deleteTarget.name}"? Any permission policies attached to this group will be removed.`
+            ? `Delete "${deleteTarget.name}"? Its project grants will be removed.`
             : ''
         }
         confirmLabel={tHardcodedUi.raw('componentsIamGroupsTab.line249JsxAttrConfirmlabelDeleteGroup')}

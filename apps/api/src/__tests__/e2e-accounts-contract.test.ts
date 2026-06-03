@@ -223,10 +223,9 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
 }
 
 // `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
-// from `../iam` via `./dispatcher` (the V1 `./engine` was retired), so the role
-// gate must be mocked on the dispatcher.
+// from `../iam` via `./dispatcher`, so the role gate must be mocked there.
 mock.module('../iam/dispatcher', () => {
-  // Mirror the legacy account-role gate against the test's mocked member rows so
+  // Mirror the account-role gate against the test's mocked member rows so
   // owner/admin pass writes, plain members get reads only, non-members are denied.
   const decide = (userId: string, action: string): boolean => {
     const m = memberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
@@ -266,6 +265,7 @@ mock.module('../shared/supabase', () => ({
 }));
 
 mock.module('../accounts/email', () => ({
+  buildInviteUrl: (inviteId: string) => `http://localhost:3000/invites/${inviteId}`,
   sendAccountInviteEmail: async (opts: Record<string, unknown>) => {
     sentInvites.push(opts);
     return { ok: false, skipped: true, reason: 'missing_mailtrap_token' };

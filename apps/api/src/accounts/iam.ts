@@ -2,21 +2,11 @@
 // probes, account-wide gates (MFA, sessions, PAT policy), and integrations
 // (SCIM, SAML SSO, service accounts).
 //
-// V1 surfaces (policies, custom roles, permission boundary, strict mode,
-// approvals, break-glass, external grants, project groups, drift,
-// analytics, simulator, policy templates) were removed in PR5c when the
-// V2 engine became the only authorization path. The V1 backend modules
-// they relied on were removed in PR5d. The underlying iam_policies /
-// iam_roles / iam_role_permissions / iam_break_glass_grants /
-// iam_approval_requests / project_groups DB tables still exist but are
-// no longer read from or written to — dropping them is a final
-// destructive step gated on operator sign-off.
-//
 // Every handler asserts the relevant IAM action via assertAuthorized()
 // from the engine entry-point in ../iam.
 
 import { Context, Hono } from 'hono';
-import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
   accountMembers,
@@ -27,7 +17,6 @@ import {
   accountSessionActivity,
 } from '@kortix/db';
 import { db } from '../shared/db';
-import { getSupabase } from '../shared/supabase';
 import type { AppEnv } from '../types';
 import {
   ACCOUNT_ACTIONS,
@@ -461,9 +450,7 @@ iamRouter.patch('/:accountId/iam/members/:userId/super-admin', async (c) => {
     return c.json({ error: 'isSuperAdmin (boolean) is required' }, 400);
   }
 
-  // The V1 two-person approval gate (requireApproval / NeedsApprovalError)
-  // was removed with the approvals workflow in PR5c. Super-admin grants
-  // now apply immediately, gated only by the caller's own
+  // Super-admin grants apply immediately, gated by the caller's own
   // member.super_admin.grant permission asserted above.
 
   // Snapshot the prior flag so an audit reader can see "Alice already had
@@ -532,14 +519,12 @@ iamRouter.get('/:accountId/iam/members/:userId/groups', async (c) => {
   });
 });
 
-// V2-only: which projects does this member reach, and at what role?
+// Which projects does this member reach, and at what role?
 // Combines three sources, max-role per project:
 //   1. account_members.account_role of 'owner' or 'admin' → implicit
 //      Manager on every active project in the account
 //   2. direct project_members.project_role rows
 //   3. project_group_grants for any group the user belongs to
-// V1 callers can use the route too — the data is real either way — but
-// the V1 UI doesn't surface it (PoliciesTable is the equivalent V1 view).
 iamRouter.get('/:accountId/iam/members/:userId/project-access', async (c) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
@@ -909,8 +894,8 @@ iamRouter.get('/:accountId/iam/mfa-required/preview', async (c) => {
 iamRouter.patch('/:accountId/iam/mfa-required', async (c) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
-  // Gate on account.write — same level as renaming the account or
-  // flipping strict mode. Avoids inventing a new role action.
+  // Gate on account.write — same level as changing account settings.
+  // Avoids inventing a new role action.
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const body = await readBody(c);
@@ -926,11 +911,8 @@ iamRouter.patch('/:accountId/iam/mfa-required', async (c) => {
     return c.json({ enabled, unchanged: true });
   }
 
-  // Two-person rule: turning MFA OFF is dangerous (instantly relaxes
-  // the account's security posture), so it's gated by approvals when
-  // V1 approval-gate on MFA disable was removed in PR5c with the rest
-  // of the approvals workflow. Disable now applies immediately, gated
-  // only by the caller's own account.write permission asserted above.
+  // Turning MFA off relaxes the account's security posture, so the action
+  // remains explicit and is gated by the caller's account.write permission.
 
   // Lockout guard on enable: there must be either at least one
   // super-admin (always exempt) OR at least one member with verified

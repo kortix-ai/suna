@@ -143,7 +143,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { PageShell } from '@/components/ui/page-shell';
 import { Section as BrandSection } from '@/components/ui/section';
 import {
   DefinitionList,
@@ -175,7 +174,7 @@ const BRAND_COLORS = [
 /**
  * Core theme palette — mirrors exactly the CSS custom properties defined in
  * `:root` (light) and `.dark` in apps/web/src/app/globals.css.
- * This is the single source of truth displayed on the /brand page.
+ * This is the single source of truth displayed on the design system page.
  * If you change a token in globals.css, change it here too.
  */
 const CORE_PALETTE = [
@@ -360,7 +359,6 @@ const TOC_SECTIONS = [
     { id: 'pat-stagger', label: 'Stagger Mount' },
   ]},
   { id: 'patterns', label: 'Primitives', children: [
-    { id: 'pat-page-shell', label: 'PageShell' },
     { id: 'pat-section', label: 'Section' },
     { id: 'pat-section-card', label: 'SectionCard' },
     { id: 'pat-avatars', label: 'Avatars' },
@@ -2041,27 +2039,10 @@ export default function BrandPage() {
               </h2>
               <p className="text-base text-muted-foreground leading-relaxed mb-8">{tHardcodedUi.raw('appHomeDesignSystemPage.line2205JsxTextSmallCompositionPiecesUsedInsideProjectPagesIssue')}</p>
 
-              {/* ── PageShell ── */}
-              <div id="pat-page-shell" className="mb-12">
-                <ComponentLabel>PageShell</ComponentLabel>
-                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2214JsxTextTheOneLayoutWrapperStandardisesMaxWidthHorizontal')}{' '}
-                  <code className="text-xs font-mono">{tHardcodedUi.raw('appHomeDesignSystemPage.line2216JsxTextReading720')}</code>,{' '}
-                  <code className="text-xs font-mono">{tHardcodedUi.raw('appHomeDesignSystemPage.line2217JsxTextDefault1000')}</code>,{' '}
-                  <code className="text-xs font-mono">{tHardcodedUi.raw('appHomeDesignSystemPage.line2218JsxTextWide1280')}</code>,{' '}
-                  <code className="text-xs font-mono">full</code>.
-                </ComponentDesc>
-                <DemoContainer>
-                  <div className="rounded-2xl border border-dashed border-border/60 py-10 text-center text-xs text-muted-foreground">
-                    <code>{tHardcodedUi.raw('appHomeDesignSystemPage.line2223JsxTextLtPageshellWidthQuotDefaultQuotGtLt')}</code>
-                    <div className="mt-1 opacity-60">{tHardcodedUi.raw('appHomeDesignSystemPage.line2224JsxTextMaxW1000pxPx6LgPx10')}</div>
-                  </div>
-                </DemoContainer>
-              </div>
-
               {/* ── Section ── */}
               <div id="pat-section" className="mb-12">
                 <ComponentLabel>Section</ComponentLabel>
-                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2233JsxTextLabelledSectionInsideAPageshellUppercaseMicroLabel')}</ComponentDesc>
+                <ComponentDesc>{tHardcodedUi.raw('appHomeDesignSystemPage.line2233JsxTextLabelledContentSectionUppercaseMicroLabel')}</ComponentDesc>
                 <DemoContainer>
                   <BrandSection label="About">
                     <p className="text-sm text-foreground leading-relaxed">{tHardcodedUi.raw('appHomeDesignSystemPage.line2241JsxTextDescriptionContentLivesHereSectionsSeparateConcernsOn')}</p>

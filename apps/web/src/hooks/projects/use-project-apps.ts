@@ -29,10 +29,6 @@ const PROJECT_APPS_KEY = (projectId: string) => ['project-apps', projectId] as c
 // Non-terminal deployment states — keep polling while any app sits in one.
 const IN_PROGRESS_STATUSES = new Set<DeploymentStatus>(['pending', 'building', 'deploying']);
 
-export function projectAppsQueryKey(projectId: string) {
-  return PROJECT_APPS_KEY(projectId);
-}
-
 export function useProjectApps(projectId: string | undefined) {
   return useQuery({
     queryKey: PROJECT_APPS_KEY(projectId ?? ''),

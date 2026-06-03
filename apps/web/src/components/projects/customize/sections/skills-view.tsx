@@ -44,11 +44,6 @@ import { Input } from '@/components/ui/input';
 import type { Icon } from '@/components/ui/kortix-icons';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
   FileContentRenderer,
   ProjectFilesProvider,
 } from '@/features/project-files';

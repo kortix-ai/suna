@@ -10,7 +10,7 @@ import {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export interface AccountTokenValidationResult {
+interface AccountTokenValidationResult {
   isValid: boolean;
   accountId?: string;
   userId?: string;
@@ -21,7 +21,7 @@ export interface AccountTokenValidationResult {
   error?: string;
 }
 
-export interface CreateAccountTokenParams {
+interface CreateAccountTokenParams {
   accountId: string;
   userId: string;
   name: string;
@@ -31,7 +31,7 @@ export interface CreateAccountTokenParams {
   expiresAt?: Date;
 }
 
-export interface CreateAccountTokenResult {
+interface CreateAccountTokenResult {
   tokenId: string;
   publicKey: string;
   secretKey: string; // plaintext — shown ONCE at creation
@@ -42,7 +42,7 @@ export interface CreateAccountTokenResult {
   createdAt: Date;
 }
 
-export interface AccountTokenListEntry {
+interface AccountTokenListEntry {
   tokenId: string;
   publicKey: string;
   name: string;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ChevronRight, FolderRoot } from 'lucide-react';
 import { useFilesStore, useFilesStoreApi } from '../store/files-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
@@ -110,124 +110,6 @@ function BreadcrumbSegments({
     </nav>
   );
 }
-
-// ---------------------------------------------------------------------------
-// FileBreadcrumbs — directory mode (reads from files store)
-// ---------------------------------------------------------------------------
-
-/**
- * Full-featured breadcrumb for the file explorer.
- * Reads the current directory from the files store.
- * Matches the visual style of `FilePathBreadcrumbs` — a single
- * `BreadcrumbSegments` strip with no extra chrome.
- * Double-click to edit the path inline, keyboard nav (Backspace / Alt+←)
- * to jump up a level.
- */
-export function FileBreadcrumbs() {
-  const currentPath = useFilesStore((s) => s.currentPath);
-  const navigateToPath = useFilesStore((s) => s.navigateToPath);
-  const rootPath = useFilesStore((s) => s.rootPath);
-
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const homePath = rootPath || '/';
-
-  const isRoot = currentPath === '/' || currentPath === '.' || currentPath === '';
-  const segments = useMemo(
-    () => (isRoot ? [] : currentPath.split('/').filter(Boolean)),
-    [isRoot, currentPath],
-  );
-
-  const handleDoubleClick = useCallback(() => {
-    setEditValue(currentPath === '/' ? '' : currentPath);
-    setIsEditing(true);
-    setTimeout(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }, 0);
-  }, [currentPath]);
-
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && isEditing) {
-        navigateToPath(editValue.trim() || '/');
-        setIsEditing(false);
-      } else if (e.key === 'Escape' && isEditing) {
-        setIsEditing(false);
-      } else if (!isEditing) {
-        if (e.key === 'Backspace' && !isRoot) {
-          const lastSlash = currentPath.lastIndexOf('/');
-          navigateToPath(lastSlash <= 0 ? '/' : currentPath.slice(0, lastSlash));
-        }
-        if (e.altKey && e.key === 'ArrowLeft' && !isRoot) {
-          const lastSlash = currentPath.lastIndexOf('/');
-          navigateToPath(lastSlash <= 0 ? '/' : currentPath.slice(0, lastSlash));
-        }
-      }
-    },
-    [isEditing, editValue, navigateToPath, isRoot, currentPath],
-  );
-
-  useEffect(() => {
-    if (!isEditing) return;
-    const handler = (e: MouseEvent) => {
-      if (!(e.target instanceof HTMLInputElement)) setIsEditing(false);
-    };
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
-  }, [isEditing]);
-
-  const handleSegmentClick = useCallback(
-    (index: number) => {
-      navigateToPath('/' + segments.slice(0, index + 1).join('/'));
-    },
-    [segments, navigateToPath],
-  );
-
-  if (isEditing) {
-    return (
-      <div
-        className="flex items-center gap-1 text-sm min-w-0 flex-1"
-        onKeyDown={handleKeyDown}
-      >
-        <input
-          ref={inputRef}
-          type="text"
-          value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') { navigateToPath(editValue.trim() || '/'); setIsEditing(false); }
-            if (e.key === 'Escape') setIsEditing(false);
-          }}
-          onBlur={() => { navigateToPath(editValue.trim() || '/'); setIsEditing(false); }}
-          className="flex-1 min-w-0 h-7 px-2 text-sm bg-card border rounded-2xl outline-none focus:ring-2 focus:ring-primary/50 font-mono"
-          placeholder="/path/to/folder"
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className="min-w-0 flex-1"
-      onKeyDown={handleKeyDown}
-    >
-      <BreadcrumbSegments
-        segments={segments}
-        onSegmentClick={handleSegmentClick}
-        onHomeClick={() => navigateToPath(homePath)}
-        rootPath={rootPath}
-        onDoubleClick={handleDoubleClick}
-      />
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// FilePathBreadcrumbs — file mode (receives filePath prop)
-// ---------------------------------------------------------------------------
 
 interface FilePathBreadcrumbsProps {
   /** Absolute path to the file being viewed */

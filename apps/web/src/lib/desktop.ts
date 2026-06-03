@@ -47,14 +47,6 @@ function tauri(): TauriGlobal | null {
 }
 
 /**
- * Custom URL scheme registered by the desktop shell. OAuth providers and
- * email magic links should redirect here (instead of `https://kortix.com/...`)
- * so the OS hands the callback back to the desktop app rather than opening
- * it in the user's browser.
- */
-export const DESKTOP_URL_SCHEME = 'kortix';
-
-/**
  * Returns the right OAuth redirect target for the current runtime:
  * - Desktop: HTTPS `/auth/callback?desktop=true&...` so the user's browser
  *   lands on a real page after Supabase's 302. That page renders a "you're

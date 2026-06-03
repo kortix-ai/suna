@@ -4,20 +4,20 @@ import { creditAccounts } from '@kortix/db';
 import { db } from '../shared/db';
 import { config } from '../config';
 
-export interface CreditBalance {
+interface CreditBalance {
   balance: number;
   expiringCredits: number;
   nonExpiringCredits: number;
   dailyCreditsBalance: number;
 }
 
-export interface CreditCheckResult {
+interface CreditCheckResult {
   hasCredits: boolean;
   balance: number;
   message: string;
 }
 
-export interface CreditDeductResult {
+interface CreditDeductResult {
   success: boolean;
   amountDeducted?: number;
   newBalance?: number;
@@ -29,7 +29,7 @@ export interface CreditDeductResult {
  * Get credit balance for an account.
  * Fast single query.
  */
-export async function getCreditBalance(accountId: string): Promise<CreditBalance | null> {
+async function getCreditBalance(accountId: string): Promise<CreditBalance | null> {
   try {
     const [row] = await db
       .select({

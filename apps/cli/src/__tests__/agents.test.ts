@@ -3,10 +3,11 @@ import { lstatSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { join, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { CANONICAL_SKILL, installAgentSkills } from '../agents';
+import { installAgentSkills } from '../agents';
 import { applyScaffold } from '../scaffold';
 
 let dir: string;
+const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-system/SKILL.md';
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'kortix-agents-'));

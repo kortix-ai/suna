@@ -4,10 +4,10 @@ import { ROOBERT_FONTS } from '@/lib/utils/fonts';
 import { NAV_THEME } from '@/lib/utils/theme';
 import { initializeI18n } from '@/lib/utils/i18n';
 import { usePresence } from '@/hooks/usePresence';
-import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, TrackingProvider, useAuthContext } from '@/contexts';
+import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, useAuthContext } from '@/contexts';
 import { PresenceProvider } from '@/contexts/PresenceContext';
 import { SandboxProvider } from '@/contexts/SandboxContext';
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
@@ -293,7 +293,6 @@ export default function RootLayout() {
       if (isUniversalLink && parsedUrl.path?.startsWith('/share/')) {
         const threadId = parsedUrl.path.replace('/share/', '');
         if (threadId) {
-          console.log('📖 Opening shared thread (universal link):', threadId);
           router.push({
             pathname: '/share/[threadId]',
             params: { threadId },
@@ -338,10 +337,6 @@ export default function RootLayout() {
 
                 // Handle expired OTP/link
                 if (errorCode === 'otp_expired' || error === 'access_denied') {
-                  const errorMessage = errorDescription
-                    ? decodeURIComponent(errorDescription.replace(/\+/g, ' '))
-                    : 'This email link has expired. Please request a new one.';
-
                   // Navigate to auth screen - user can try again there
                   log.log('⚠️ Link expired, redirecting to auth');
                   router.replace('/auth');
@@ -491,7 +486,6 @@ export default function RootLayout() {
         }
       } else if (parsedUrl.path?.startsWith('share/') || parsedUrl.hostname === 'share') {
         // Handle share links: kortix://share/xxx or https://kortix.com/share/xxx
-        console.log('🔗 Share link detected');
 
         // Extract thread ID from path
         let threadId: string | null = null;
@@ -505,7 +499,6 @@ export default function RootLayout() {
         }
 
         if (threadId) {
-          console.log('📖 Opening shared thread:', threadId);
           router.push({
             pathname: '/share/[threadId]',
             params: { threadId },
@@ -554,8 +547,7 @@ export default function RootLayout() {
     <QueryClientProvider client={queryClient}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <KeyboardProvider statusBarTranslucent navigationBarTranslucent enabled>
-          <TrackingProvider>
-            <LanguageProvider>
+          <LanguageProvider>
               <AuthProvider>
                 <SandboxProvider>
                 <BillingProvider>
@@ -643,7 +635,6 @@ export default function RootLayout() {
                 </SandboxProvider>
               </AuthProvider>
             </LanguageProvider>
-          </TrackingProvider>
         </KeyboardProvider>
       </GestureHandlerRootView>
     </QueryClientProvider>

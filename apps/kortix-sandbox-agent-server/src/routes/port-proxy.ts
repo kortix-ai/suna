@@ -10,9 +10,8 @@
  *   - Client disconnect propagation for SSE/streaming via AbortController
  *   - Proper error categorisation (transient vs refused vs timeout)
  *
- * Ported from main's `core/kortix-master/src/routes/proxy.ts` (the legacy
- * "Kortix Master" daemon). Strips the `hono-openapi` doc decorators since
- * this server doesn't expose an OpenAPI surface.
+ * Ported from the legacy sandbox daemon. Strips the `hono-openapi` doc
+ * decorators since this server doesn't expose an OpenAPI surface.
  */
 
 import { Hono } from 'hono'

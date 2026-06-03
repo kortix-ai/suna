@@ -41,12 +41,9 @@ export function ExportToolView({
 
     const {
         presentationName,
-        filePath,
         downloadUrl,
         totalSlides,
         storedLocally,
-        message,
-        note,
         success,
         format,
     } = extractExportData({ toolCall, toolResult });

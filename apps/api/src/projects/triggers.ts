@@ -50,7 +50,7 @@ export const KNOWN_SCHEMA_VERSION = 1;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
-export type GitTriggerType = 'cron' | 'webhook';
+type GitTriggerType = 'cron' | 'webhook';
 
 export interface GitTriggerSpec {
   /** URL-safe slug — unique per project. */
@@ -87,7 +87,7 @@ export interface GitTriggerSpec {
   secretEnv: string | null;
 }
 
-export interface GitTriggerParseError {
+interface GitTriggerParseError {
   slug: string;
   path: string;
   error: string;
@@ -100,7 +100,7 @@ export interface ParsedManifest {
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */
-export interface LoadedTriggers {
+interface LoadedTriggers {
   specs: GitTriggerSpec[];
   errors: GitTriggerParseError[];
 }

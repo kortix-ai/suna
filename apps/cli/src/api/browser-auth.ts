@@ -1,7 +1,7 @@
 import { createServer, type Server } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
-export interface BrowserAuthResult {
+interface BrowserAuthResult {
   /** The plaintext PAT the dashboard minted on behalf of the user. */
   token: string;
 }

@@ -3,11 +3,8 @@
 import { useTranslations } from 'next-intl';
 
 import * as React from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { 
-  Coins, 
-  MessageCircle,
-} from 'lucide-react';
+import { Card, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Coins } from 'lucide-react';
 import Link from 'next/link';
 
 export default function HelpCenterPage() {
@@ -25,7 +22,7 @@ export default function HelpCenterPage() {
           <h2 className="text-2xl font-semibold mb-4">{tHardcodedUi.raw('appHelpPage.line22JsxTextBillingUsage')}</h2>
           <p className="mb-6">{tHardcodedUi.raw('appHelpPage.line24JsxTextUnderstandHowCreditsWorkAndManageYourSubscription')}</p>
 
-          <Link href="/help/credits-explained">
+          <Link href="/help/credits">
             <Card className="hover:bg-muted/50 transition-colors cursor-pointer">
               <CardHeader>
                 <div className="flex items-center gap-3">

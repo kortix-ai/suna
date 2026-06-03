@@ -21,7 +21,7 @@ const parseContent = (content: any): any => {
 };
 
 export function extractSheetsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): SheetsData {
-  const toolName = toolCall.function?.name || '';
+  const toolName = toolCall.function_name || '';
   
   let filePath: string | null = null;
   let headers: string[] = [];
@@ -70,4 +70,3 @@ function getActionName(toolName: string): string {
   
   return 'Sheet';
 }
-

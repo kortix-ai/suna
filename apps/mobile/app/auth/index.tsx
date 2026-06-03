@@ -15,7 +15,6 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
-import type { TextInput as TextInputType } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -34,9 +33,6 @@ import { createAuthCallbackRedirect } from '@/lib/auth/callback-state';
 
 export default function AuthScreen() {
   const router = useRouter();
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const insets = useSafeAreaInsets();
   const { isAuthenticated } = useAuthContext();
 
   // Redirect if already authenticated
@@ -179,7 +175,6 @@ function CloudAuthScreen() {
   const [loading, setLoading] = React.useState(false);
   const [oauthLoading, setOauthLoading] = React.useState<'google' | 'apple' | null>(null);
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null);
-  const otpRef = React.useRef<TextInput>(null);
 
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';

@@ -3,7 +3,7 @@
 // Sandboxes declare their reserved spec (cpu / memory / disk / gpu) in
 // kortix.toml [sandbox]. We bill against that reserved spec × wall-clock time
 // while the sandbox is `active`. Stopped / hibernated sandboxes do not accrue
-// charges in v1 (archive rate placeholder lives in tiers.ts for future use).
+// charges.
 //
 // Lifecycle:
 //   provisionSessionSandbox → startComputeSession (open row)
@@ -11,7 +11,7 @@
 //       ├─ hibernate / user-stop / wake / restart hooks
 //       │     │
 //       │     ├─ pauseComputeSession (finalize cost, debit, mark stopped)
-//       │     └─ resumeComputeSession (open new row when sandbox starts again)
+//       │     └─ startComputeSession (open new row when sandbox starts again)
 //       │
 //       └─ remove → endComputeSession (finalize, no resume)
 //
@@ -41,7 +41,7 @@ import {
 
 const PARTIAL_BILL_INTERVAL_MS = 60 * 60 * 1000; // 1h
 
-export interface StartComputeOpts {
+interface StartComputeOpts {
   sandboxId: string;
   accountId: string;
   sessionId?: string | null;
@@ -55,7 +55,7 @@ export interface StartComputeOpts {
  * tiers.ts holds Daytona's LIST rates; here we apply our volume discount
  * (DAYTONA_DISCOUNT → our real cost) and then the markup (our margin).
  */
-export function calculateComputeCost(spec: SandboxSpec, durationSeconds: number): number {
+function calculateComputeCost(spec: SandboxSpec, durationSeconds: number): number {
   if (durationSeconds <= 0) return 0;
   const cpuCost    = spec.cpuCores  * COMPUTE_CPU_PRICE_PER_CORE_SECOND  * durationSeconds;
   const memCost    = spec.memoryGb  * COMPUTE_MEMORY_PRICE_PER_GB_SECOND * durationSeconds;
@@ -164,15 +164,6 @@ export async function pauseComputeSession(sandboxId: string): Promise<void> {
     state: 'stopped',
     endedAt: now.toISOString(),
   });
-}
-
-/**
- * Sandbox is being woken from a stopped state. Open a new row.
- * Caller passes the current spec — spec may have changed if the project
- * manifest was edited between the stop and the wake.
- */
-export async function resumeComputeSession(opts: StartComputeOpts): Promise<string | null> {
-  return startComputeSession(opts);
 }
 
 /**

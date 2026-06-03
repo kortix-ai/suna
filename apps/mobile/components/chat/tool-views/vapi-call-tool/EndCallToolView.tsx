@@ -1,8 +1,6 @@
 import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
-import { PhoneOff } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractEndCallData, statusConfig } from './_utils';
 import { ToolViewCard, StatusBadge, LoadingState } from '../shared';

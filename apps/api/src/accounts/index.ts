@@ -46,9 +46,9 @@ accountsRouter.use('/*', supabaseAuth);
 // on routes without an :accountId param.
 accountsRouter.use('/*', accountSessionGate());
 
-// Mount IAM routes (groups/policies/roles/super-admin/effective). Sub-router
-// declares its own paths under /:accountId/iam/*, so mounting at '/' here is
-// correct.
+// Mount IAM routes (groups, super-admin, effective access, gates, SSO/SCIM).
+// The sub-router declares its own paths under /:accountId/iam/*, so mounting
+// at '/' here is correct.
 accountsRouter.route('/', iamRouter);
 accountsRouter.route('/', auditRouter);
 
@@ -1013,6 +1013,3 @@ accountsRouter.post('/:accountId/leave', async (c) => {
 
   return c.json({ ok: true });
 });
-
-// Avoid unused-import lint warnings if sql tagged template isn't needed elsewhere.
-void sql;

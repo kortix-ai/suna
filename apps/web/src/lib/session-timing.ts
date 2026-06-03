@@ -62,7 +62,6 @@ export function sessionMark(sessionId: string, label: string): void {
   const at = performance.now();
   const prev = t.entries.length ? t.entries[t.entries.length - 1].at : t.start;
   t.entries.push({ label, at });
-  // eslint-disable-next-line no-console
   console.log(
     `%c[session-timing] ${sessionId.slice(0, 8)} ${label} +${Math.round(at - prev)}ms (@${Math.round(at - t.start)}ms)`,
     'color:#06b6d4;font-weight:600',
@@ -77,18 +76,14 @@ export function finishSessionTiming(sessionId: string, backendTimeline?: unknown
   t.finished = true;
   const last = t.entries[t.entries.length - 1]?.at ?? performance.now();
   const total = Math.round(last - t.start);
-  // eslint-disable-next-line no-console
   console.group(`%c[session-timing] ${sessionId.slice(0, 8)} READY in ${total}ms (click → usable)`, 'color:#06b6d4;font-weight:700');
   let prev = t.start;
   for (const e of t.entries) {
-    // eslint-disable-next-line no-console
     console.log(`${e.label.padEnd(20)} +${String(Math.round(e.at - prev)).padStart(6)}ms   (@${Math.round(e.at - t.start)}ms)`);
     prev = e.at;
   }
   if (backendTimeline) {
-    // eslint-disable-next-line no-console
     console.log('host (API) timeline:', backendTimeline);
   }
-  // eslint-disable-next-line no-console
   console.groupEnd();
 }

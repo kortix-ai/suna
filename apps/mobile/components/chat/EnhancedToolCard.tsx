@@ -7,9 +7,9 @@ import React, { useMemo, useCallback } from 'react';
 import { View, Pressable, Image, StyleSheet } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { CheckCircle2, AlertCircle, CircleDashed } from 'lucide-react-native';
+import { AlertCircle } from 'lucide-react-native';
 import { getToolIcon } from '@/lib/icons/tool-icons';
-import { getUserFriendlyToolName, parseToolMessage, safeJsonParse } from '@agentpress/shared';
+import { getUserFriendlyToolName, parseToolMessage } from '@agentpress/shared';
 import type { UnifiedMessage } from '@agentpress/shared';
 import { useColorScheme } from 'nativewind';
 import Animated, {
@@ -309,5 +309,3 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
-
-export default EnhancedToolCard;

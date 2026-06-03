@@ -12,7 +12,6 @@ import { LocalDockerProvider } from './local-docker';
  *   - local_docker — self-hosted/local Docker runtime
  */
 export type ProviderName = 'daytona' | 'local_docker';
-export type { SandboxProviderName } from '../../config';
 
 export interface CreateSandboxOpts {
   accountId: string;
@@ -50,7 +49,7 @@ export interface ResolvedEndpoint {
   headers: Record<string, string>;
 }
 
-export interface ProvisioningStage {
+interface ProvisioningStage {
   id: string;
   progress: number;
   message: string;
@@ -113,15 +112,4 @@ export function getProvider(name: ProviderName): SandboxProvider {
 
   providers.set(name, provider);
   return provider;
-}
-
-export function getDefaultProviderName(): ProviderName {
-  return config.getDefaultProvider();
-}
-
-export function getAvailableProviders(): ProviderName[] {
-  const available: ProviderName[] = [];
-  if (config.isDaytonaEnabled()) available.push('daytona');
-  if (config.isLocalDockerEnabled()) available.push('local_docker');
-  return available;
 }

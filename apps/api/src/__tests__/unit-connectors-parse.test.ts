@@ -1,19 +1,16 @@
 /**
  * Parser-level tests for `[[connectors]]` in kortix.toml.
  * Exercises every provider, every auth shape, connector-scoped policies,
- * the round-trip (spec → TOML entry → re-parse), and the rejection paths.
+ * and the rejection paths.
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  connectorSpecToTomlEntry,
   extractConnectors,
   manifestHashForConnector,
-  type ConnectorSpec,
 } from '../projects/connectors';
 import {
   KNOWN_SCHEMA_VERSION,
   parseManifestString,
-  serializeManifest,
 } from '../projects/triggers';
 
 const MIN_PROJECT = `
@@ -437,66 +434,6 @@ provider = "mcp"
 `);
     expect(specs.map((s) => s.slug)).toEqual(['good']);
     expect(errors.map((e) => e.slug)).toEqual(['bad']);
-  });
-});
-
-describe('[[connectors]] — round-trip', () => {
-  function roundTrip(spec: ConnectorSpec): ConnectorSpec {
-    const manifest = parseManifestString(manifestWith(''));
-    manifest.raw.connectors = [connectorSpecToTomlEntry(spec)];
-    const toml = serializeManifest(manifest);
-    const { specs, errors } = extractConnectors(parseManifestString(toml));
-    expect(errors).toEqual([]);
-    expect(specs).toHaveLength(1);
-    return specs[0]!;
-  }
-
-  test('openapi + bearer + policies survives toml→spec→toml', () => {
-    const original = parseAndExtract(`
-[[connectors]]
-slug = "stripe"
-name = "Stripe API"
-provider = "openapi"
-spec = "https://example.com/spec.json"
-
-  [connectors.auth]
-  type = "bearer"
-  secret = "STRIPE_API_KEY"
-
-  [[connectors.policies]]
-  match = "*.delete*"
-  action = "block"
-`).specs[0]!;
-    expect(roundTrip(original)).toEqual(original);
-  });
-
-  test('pipedream survives round-trip', () => {
-    const original = parseAndExtract(`
-[[connectors]]
-slug = "gmail-work"
-provider = "pipedream"
-app = "gmail"
-account = "work"
-`).specs[0]!;
-    expect(roundTrip(original)).toEqual(original);
-  });
-
-  test('mcp + custom auth survives round-trip', () => {
-    const original = parseAndExtract(`
-[[connectors]]
-slug = "notion"
-provider = "mcp"
-url = "https://mcp.notion.com/mcp"
-transport = "sse"
-
-  [connectors.auth]
-  type = "custom"
-  in = "query"
-  name = "X-Key"
-  prefix = "Bearer"
-  secret = "NOTION_MCP_TOKEN"
-`).specs[0]!;
-    expect(roundTrip(original)).toEqual(original);
   });
 });
 

@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { View, type ViewProps, type ViewStyle } from 'react-native';
-import { useColorScheme } from 'nativewind';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol.svg';
 import KortixSymbolWhite from '@/assets/brand/Symbol.svg';
 import LogomarkBlack from '@/assets/brand/Logomark-Black.svg';
@@ -22,10 +21,6 @@ export function KortixLogo({
   color = 'dark',
   ...props 
 }: KortixLogoProps) {
-  const { colorScheme } = useColorScheme();
-  
-  const isDark = colorScheme === 'dark';
-
   // Logomark is wide (708x142 = ~5:1 ratio), symbol is almost square (35x30)
   if (variant === 'logomark') {
     // For logomark, size = height, width scales proportionally (5:1 ratio)
@@ -77,4 +72,3 @@ export function KortixLogo({
     </View>
   );
 }
-

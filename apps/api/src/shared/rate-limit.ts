@@ -7,12 +7,12 @@ interface Bucket {
   lastRefill: number;
 }
 
-export interface RateLimitPolicy {
+interface RateLimitPolicy {
   limit: number;
   windowMs: number;
 }
 
-export interface RateLimitResult {
+interface RateLimitResult {
   allowed: boolean;
   limit: number;
   remaining: number;
@@ -29,7 +29,7 @@ interface AuditContext {
   metadata?: Record<string, unknown>;
 }
 
-export class TokenBucketRateLimiter {
+class TokenBucketRateLimiter {
   private buckets = new Map<string, Bucket>();
 
   constructor(private readonly namespace: string) {}
@@ -69,9 +69,6 @@ export class TokenBucketRateLimiter {
     return { allowed: true, limit, remaining: bucket.tokens, resetMs };
   }
 
-  reset() {
-    this.buckets.clear();
-  }
 }
 
 function positiveInt(value: unknown, fallback: number) {
@@ -116,7 +113,7 @@ async function auditRateLimitHit(c: Context, context: AuditContext, result: Rate
   });
 }
 
-export async function enforceRateLimit(
+async function enforceRateLimit(
   c: Context,
   limiter: TokenBucketRateLimiter,
   key: string,
@@ -138,7 +135,6 @@ export async function enforceRateLimit(
 
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
-export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
 
 export function createInviteAcceptRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
@@ -148,7 +144,7 @@ export function createInviteAcceptRateLimitMiddleware() {
       inviteAcceptLimiter,
       clientIp(c),
       {
-        limit: positiveInt((config as any).KORTIX_INVITE_ACCEPT_REQS_PER_MIN, 20),
+        limit: positiveInt(config.KORTIX_INVITE_ACCEPT_REQS_PER_MIN, 20),
         windowMs: 60_000,
       },
       {
@@ -171,7 +167,7 @@ export function createSandboxProxyRateLimitMiddleware() {
       sandboxProxyLimiter,
       sandboxId,
       {
-        limit: positiveInt((config as any).KORTIX_PROXY_REQS_PER_MIN, 600),
+        limit: positiveInt(config.KORTIX_PROXY_REQS_PER_MIN, 600),
         windowMs: 60_000,
       },
       {
@@ -185,10 +181,4 @@ export function createSandboxProxyRateLimitMiddleware() {
     if (denied) return denied;
     await next();
   };
-}
-
-export function resetRateLimiters() {
-  inviteAcceptLimiter.reset();
-  sandboxProxyLimiter.reset();
-  sessionLlmLimiter.reset();
 }

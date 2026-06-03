@@ -3,19 +3,10 @@ import { describe, expect, test } from 'bun:test';
 import {
   buildSandboxInitFailureMetadata,
   buildSandboxInitSuccessMetadata,
-  deriveSandboxHealthStatus,
-  deriveSandboxInitStatus,
   retrySandboxProvisionCreate,
 } from '../platform/services/sandbox-init-state';
 
 describe('sandbox init state helpers', () => {
-  test('derives init and health states separately', () => {
-    expect(deriveSandboxInitStatus('error', {})).toBe('failed');
-    expect(deriveSandboxHealthStatus('error', {})).toBe('unknown');
-    expect(deriveSandboxInitStatus('active', {})).toBe('ready');
-    expect(deriveSandboxHealthStatus('stopped', {})).toBe('offline');
-  });
-
   test('marks final init failure with explicit retry guidance', () => {
     const meta = buildSandboxInitFailureMetadata({}, new Error('boom'), 3, false);
     expect(meta.initStatus).toBe('failed');

@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React from 'react';
 import { useParams } from 'next/navigation';
 import { ShareViewer } from './_components/ShareViewer';
 import { SharePageWrapper } from './_components/SharePageWrapper';

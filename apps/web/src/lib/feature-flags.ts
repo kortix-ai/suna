@@ -17,11 +17,6 @@ export const featureFlags = {
     process.env.NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING,
     false,
   ),
-  /** When true, show the dino game easter egg during provisioning. Default: false. */
-  enableDinoGame: parseEnvBoolean(
-    process.env.NEXT_PUBLIC_ENABLE_DINO_GAME,
-    false,
-  ),
   /**
    * Multi-project paradigm.
    *
@@ -40,9 +35,3 @@ export const featureFlags = {
     false,
   ),
 } as const;
-
-// Debug: uncomment to inspect feature flags during development
-// if (process.env.NODE_ENV !== 'production') {
-//   console.log('[featureFlags]', featureFlags);
-// }
-

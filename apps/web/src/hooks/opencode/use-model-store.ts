@@ -116,33 +116,6 @@ function subscribe(fn: () => void) {
   return () => _listeners.delete(fn);
 }
 
-/**
- * Non-hook API to hydrate the global default model from a server response.
- * Only sets the value if no globalDefault is already present in localStorage.
- * Notifies all useSyncExternalStore subscribers so the UI updates reactively.
- */
-export function hydrateGlobalDefaultFromServer(model: ModelKey): void {
-  const s = getStore();
-  if (s.globalDefault) return; // Don't overwrite existing local default
-  setStore({ ...s, globalDefault: model });
-}
-
-/**
- * Non-hook API to explicitly set the global default model.
- * Unlike hydrateGlobalDefaultFromServer, this always overwrites.
- * Use when the user explicitly picks a model in workspace settings.
- * Clears per-agent/per-session selections so the new default takes effect everywhere.
- */
-export function setGlobalDefaultModel(model: ModelKey | undefined): void {
-  const s = getStore();
-  setStore({
-    ...s,
-    globalDefault: model,
-    selectedModel: {},
-    sessionModel: {},
-  });
-}
-
 // ============================================================================
 // Latest logic — direct port from SolidJS reference
 // ============================================================================

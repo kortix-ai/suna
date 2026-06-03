@@ -15,9 +15,9 @@ import { cn } from '@/lib/utils';
 //   • Word-level inline highlighting so character-level edits read clearly
 // ---------------------------------------------------------------------------
 
-export type DiffLayout = 'unified' | 'split';
-export type DiffIndicators = 'classic' | 'bars' | 'none';
-export type InlineHighlight = 'word-alt' | 'word' | 'char' | 'none';
+type DiffLayout = 'unified' | 'split';
+type DiffIndicators = 'classic' | 'bars' | 'none';
+type InlineHighlight = 'word-alt' | 'word' | 'char' | 'none';
 
 interface DiffViewCommonProps {
   layout?: DiffLayout;

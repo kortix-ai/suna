@@ -112,24 +112,3 @@ export const PROVIDER_LABELS: Record<string, string> = {
   xiaomi: 'Xiaomi',
   zenmux: 'Zenmux',
 };
-
-const PROVIDER_INDEX: Map<string, CatalogProvider> = new Map(
-  CATALOG.providers.map((p) => [p.id, p] as const),
-);
-
-export function getProvider(id: string): CatalogProvider | undefined {
-  return PROVIDER_INDEX.get(id);
-}
-
-export function providerLabel(id: string): string {
-  return PROVIDER_LABELS[id] ?? getProvider(id)?.name ?? id;
-}
-
-export function getFeaturedProviders(): CatalogProvider[] {
-  const out: CatalogProvider[] = [];
-  for (const id of MODEL_SELECTOR_PROVIDER_IDS) {
-    const p = PROVIDER_INDEX.get(id);
-    if (p) out.push(p);
-  }
-  return out;
-}

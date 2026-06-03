@@ -23,7 +23,7 @@ function formatTimestamp(isoString?: string): string {
 }
 
 export function WebScrapeToolView({ toolCall, toolResult, isStreaming, assistantTimestamp, toolTimestamp }: ToolViewProps) {
-  const { url, files, message, urlCount, success } = extractWebScrapeData({ toolCall, toolResult });
+  const { url, files, success } = extractWebScrapeData({ toolCall, toolResult });
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
 
   if (!toolCall) {

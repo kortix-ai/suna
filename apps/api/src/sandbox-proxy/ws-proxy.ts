@@ -30,7 +30,7 @@ import { resolvePreviewWsUpstream } from './routes/preview';
 const OPENCODE_INTERNAL_PORT = 4096;
 
 /** Per-connection state stashed on the upgraded socket's `data`. */
-export interface PreviewWsData {
+interface PreviewWsData {
   type: 'preview-ws';
   url: string;
   headers: Record<string, string>;

@@ -7,7 +7,7 @@
  * **account id** as a `scope='connector'` project secret (the binding) — so it's
  * shareable like any connector credential and never injected into the sandbox.
  * The catalog (app actions) is fetched from Pipedream and normalized. Execution
- * goes through the Connect `actions/run` API. See docs/specs/executor.md §5.
+ * goes through the Connect `actions/run` API.
  */
 import { createHmac } from 'node:crypto';
 import { config } from '../config';
@@ -26,7 +26,7 @@ export function pipedreamConfigured(): boolean {
  * user so each member's connection is isolated; for shared it's connector-wide.
  * The webhook parses this back as `projectId:slug[:userId]`.
  */
-export function externalUserId(projectId: string, slug: string, userId?: string | null): string {
+function externalUserId(projectId: string, slug: string, userId?: string | null): string {
   return userId ? `${projectId}:${slug}:${userId}` : `${projectId}:${slug}`;
 }
 
@@ -235,7 +235,7 @@ export async function pipedreamCatalog(app: string): Promise<PipedreamActionLike
   return getProvider().listActions(app);
 }
 
-export interface PipedreamApp {
+interface PipedreamApp {
   slug: string;
   name: string;
   description: string | null;

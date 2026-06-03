@@ -1,1 +1,0 @@
-# Kortix Mobile App

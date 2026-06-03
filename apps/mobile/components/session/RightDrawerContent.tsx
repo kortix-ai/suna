@@ -10,7 +10,6 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTabStore } from '@/stores/tab-store';
-import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import { haptics } from '@/lib/haptics';
 
 interface MenuItem {
@@ -42,7 +41,6 @@ const sections: MenuSection[] = [
     items: [
       { icon: 'key-outline', label: 'Secrets Manager', pageId: 'page:secrets' },
       { icon: 'cube-outline', label: 'LLM Providers', pageId: 'page:llm-providers' },
-      { icon: 'link-outline', label: 'SSH', pageId: 'page:ssh' },
       { icon: 'code-slash-outline', label: 'API', pageId: 'page:api' },
     ],
   },
@@ -64,7 +62,6 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const { updateAvailable } = useGlobalSandboxUpdate();
 
   // Colors aligned with the left drawer (home.tsx renderDrawerContent + global.css tokens).
   const fgColor = isDark ? '#F8F8F8' : '#121215';
@@ -169,21 +166,6 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
           >
             <View style={{ position: 'relative' }}>
               <Ionicons name="arrow-down-circle-outline" size={18} color={mutedColor} />
-              {updateAvailable && (
-                <View
-                  style={{
-                    position: 'absolute',
-                    top: -2,
-                    right: -2,
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
-                    backgroundColor: '#EF4444',
-                    borderWidth: 1.5,
-                    borderColor: bgColor,
-                  }}
-                />
-              )}
             </View>
             <RNText
               style={{
@@ -195,26 +177,6 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
             >
               Updates
             </RNText>
-            {updateAvailable && (
-              <View
-                style={{
-                  backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)',
-                  borderRadius: 10,
-                  paddingHorizontal: 6,
-                  paddingVertical: 2,
-                }}
-              >
-                <RNText
-                  style={{
-                    fontSize: 10,
-                    fontFamily: 'Roobert-Medium',
-                    color: '#EF4444',
-                  }}
-                >
-                  New
-                </RNText>
-              </View>
-            )}
           </TouchableOpacity>
         </View>
       </ScrollView>

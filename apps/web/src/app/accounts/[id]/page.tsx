@@ -1264,8 +1264,8 @@ function MembersCard({
               member.account_role === 'owner' &&
               sorted.filter((m) => m.account_role === 'owner').length === 1;
             const pending = pendingUserIds.has(member.user_id);
-            // Kebab is always available — "View & Edit permission policies"
-            // is open to anyone who can view the member; backend gates writes.
+            // Kebab is available to anyone who can view the member; backend
+            // gates writes.
             const showKebab = !pending;
             // Self rows can't be bulk-acted on — would let an admin
             // demote / remove themselves in a sweep.

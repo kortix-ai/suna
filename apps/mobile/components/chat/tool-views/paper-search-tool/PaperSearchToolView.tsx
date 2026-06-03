@@ -42,7 +42,7 @@ const getSourceName = (url: string): string => {
 };
 
 export function PaperSearchToolView({ toolCall, toolResult, isStreaming = false, assistantTimestamp, toolTimestamp }: ToolViewProps) {
-  const { query, total_results, results, success } = extractPaperSearchData({ toolCall, toolResult });
+  const { query, results, success } = extractPaperSearchData({ toolCall, toolResult });
 
   if (!toolCall) {
     return null;

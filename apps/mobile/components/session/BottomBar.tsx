@@ -36,10 +36,10 @@ export type BottomBarMenuItem =
       type: 'divider';
     };
 
-export interface BottomBarTab {
+interface BottomBarTab {
   id: string;
   label: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: string;
 }
 
 interface BottomBarProps {
@@ -167,19 +167,6 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
 
   const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
   const EASE_IN_OUT = Easing.bezier(0.4, 0, 0.2, 1);
-
-  // Given a viewport x, return the pill id under it in content coords.
-  const pillIdAtX = useCallback((viewportX: number): string | null => {
-    const contentX = viewportX + scrollOffsetRef.current;
-    for (const tab of tabs) {
-      const layout = pillLayoutsRef.current[tab.id];
-      if (!layout) continue;
-      if (contentX >= layout.x && contentX <= layout.x + layout.width) {
-        return tab.id;
-      }
-    }
-    return null;
-  }, [tabs]);
 
   // Find the pill whose center is closest to a given viewport x.
   const pillNearestCenter = useCallback((): string | null => {

@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView, Linking, Pressable, Image as RNImage } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Users, ExternalLink, MapPin, Briefcase, User } from 'lucide-react-native';
+import { Users, ExternalLink, MapPin } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractPeopleSearchData } from './_utils';
 import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
@@ -21,7 +21,7 @@ function formatTimestamp(isoString?: string): string {
 }
 
 export function PeopleSearchToolView({ toolCall, toolResult, isStreaming = false, assistantTimestamp, toolTimestamp }: ToolViewProps) {
-  const { query, total_results, results, success } = extractPeopleSearchData({ toolCall, toolResult });
+  const { query, results, success } = extractPeopleSearchData({ toolCall, toolResult });
 
   if (!toolCall) {
     return null;
@@ -132,14 +132,14 @@ export function PeopleSearchToolView({ toolCall, toolResult, isStreaming = false
           <View className="gap-3">
             {results.map((result, idx) => (
               <Pressable
-                key={result.person_id || idx}
+                key={result.id || idx}
                 onPress={() => result.url && handleOpenUrl(result.url)}
                 className="bg-card border border-border rounded-2xl p-4 gap-3 active:opacity-70"
               >
                 <View className="flex-row items-start gap-3">
-                  {result.profile_image_url && (
+                  {result.person_picture_url && (
                     <RNImage
-                      source={{ uri: result.profile_image_url }}
+                      source={{ uri: result.person_picture_url }}
                       style={{ width: 48, height: 48, borderRadius: 24 }}
                       resizeMode="cover"
                     />
@@ -147,33 +147,24 @@ export function PeopleSearchToolView({ toolCall, toolResult, isStreaming = false
                   <View className="flex-1 gap-2">
                     <View className="flex-row items-start justify-between gap-2">
                       <Text className="text-base font-roobert-semibold text-foreground flex-1">
-                        {result.name}
+                        {result.person_name}
                       </Text>
                       {result.url && (
                         <Icon as={ExternalLink} size={16} className="text-muted-foreground flex-shrink-0" />
                       )}
                     </View>
 
-                    {result.title && (
+                    {result.person_position && (
                       <Text className="text-sm font-roobert text-foreground/70" numberOfLines={2}>
-                        {result.title}
+                        {result.person_position}
                       </Text>
                     )}
 
-                    {result.company && (
-                      <View className="flex-row items-center gap-1.5">
-                        <Icon as={Briefcase} size={12} className="text-muted-foreground" />
-                        <Text className="text-sm font-roobert text-muted-foreground flex-1" numberOfLines={1}>
-                          {result.company}
-                        </Text>
-                      </View>
-                    )}
-
-                    {result.location && (
+                    {result.person_location && (
                       <View className="flex-row items-center gap-1.5">
                         <Icon as={MapPin} size={12} className="text-muted-foreground" />
                         <Text className="text-sm font-roobert text-muted-foreground flex-1" numberOfLines={1}>
-                          {result.location}
+                          {result.person_location}
                         </Text>
                       </View>
                     )}

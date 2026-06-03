@@ -20,7 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
 import { Icon } from '@/components/ui/icon';
 
-export type AnimatedToggleIconName = keyof typeof Ionicons.glyphMap | 'menu-lucide';
+type AnimatedToggleIconName = string | 'menu-lucide';
 
 export interface AnimatedToggleIconProps {
   /** True → rotates/fades to the close icon. */

@@ -74,19 +74,19 @@ const PptxRenderer = lazy(() =>
 
 // ── Extension regexes ──────────────────────────────────────────────────────
 
-export const SHOW_IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|tiff?|heic|heif)$/i;
-export const SHOW_VIDEO_EXT_RE = /\.(mp4|webm|mov|avi|mkv|m4v|ogv)$/i;
-export const SHOW_AUDIO_EXT_RE = /\.(mp3|wav|ogg|aac|flac|m4a|opus|wma)$/i;
-export const SHOW_PDF_EXT_RE = /\.pdf$/i;
-export const SHOW_CSV_EXT_RE = /\.(csv|tsv)$/i;
-export const SHOW_XLSX_EXT_RE = /\.xlsx?$/i;
-export const SHOW_DOCX_EXT_RE = /\.docx$/i;
-export const SHOW_PPTX_EXT_RE = /\.(pptx|ppt)$/i;
+const SHOW_IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|svg|bmp|ico|avif|tiff?|heic|heif)$/i;
+const SHOW_VIDEO_EXT_RE = /\.(mp4|webm|mov|avi|mkv|m4v|ogv)$/i;
+const SHOW_AUDIO_EXT_RE = /\.(mp3|wav|ogg|aac|flac|m4a|opus|wma)$/i;
+const SHOW_PDF_EXT_RE = /\.pdf$/i;
+const SHOW_CSV_EXT_RE = /\.(csv|tsv)$/i;
+const SHOW_XLSX_EXT_RE = /\.xlsx?$/i;
+const SHOW_DOCX_EXT_RE = /\.docx$/i;
+const SHOW_PPTX_EXT_RE = /\.(pptx|ppt)$/i;
 export const SHOW_HTML_EXT_RE = /\.(html?|htm)$/i;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-export function showFavicon(url: string): string | null {
+function showFavicon(url: string): string | null {
   try { return `https://www.google.com/s2/favicons?domain=${new URL(url).hostname}&sz=128`; }
   catch { return null; }
 }
@@ -96,7 +96,7 @@ export function showDomain(url: string): string {
   catch { return url; }
 }
 
-export function showAspectRatioToCSS(ar: string | undefined): string | undefined {
+function showAspectRatioToCSS(ar: string | undefined): string | undefined {
   if (!ar || ar === 'auto') return undefined;
   const [w, h] = ar.split(':').map(Number);
   if (w && h) return `${w}/${h}`;

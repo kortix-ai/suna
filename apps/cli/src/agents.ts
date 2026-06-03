@@ -8,7 +8,7 @@ export const SUPPORTED_AGENTS: readonly CodingAgent[] = ['opencode', 'claude', '
 export const DEFAULT_PRIMARY: CodingAgent = 'codex';
 
 /** Path of the canonical Kortix skill, relative to repo root. */
-export const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-system/SKILL.md';
+const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-system/SKILL.md';
 
 interface InstallResult {
   agent: CodingAgent;

@@ -9,8 +9,6 @@ import {
   MessageSquare,
   Github,
   Slack,
-  Clock,
-  Zap,
   Hash,
   Globe,
   Sparkles,
@@ -85,52 +83,6 @@ export const formatCronExpression = (cron?: string): string => {
 };
 
 /**
- * Get human-readable trigger type name
- */
-export const getTriggerTypeName = (triggerType: string): string => {
-  switch (triggerType.toLowerCase()) {
-    case 'schedule':
-    case 'scheduled':
-      return 'Schedule';
-    case 'telegram':
-      return 'Telegram';
-    case 'github':
-      return 'GitHub';
-    case 'slack':
-      return 'Slack';
-    case 'webhook':
-      return 'Webhook';
-    case 'discord':
-      return 'Discord';
-    case 'event':
-      return 'Event';
-    default:
-      return triggerType.charAt(0).toUpperCase() + triggerType.slice(1);
-  }
-};
-
-/**
- * Get trigger status text
- */
-export const getTriggerStatusText = (isActive: boolean): string => {
-  return isActive ? 'Active' : 'Inactive';
-};
-
-/**
- * Get trigger status color
- */
-export const getTriggerStatusColor = (isActive: boolean): string => {
-  return isActive ? 'text-green-600' : 'text-gray-500';
-};
-
-/**
- * Get trigger status background color
- */
-export const getTriggerStatusBgColor = (isActive: boolean): string => {
-  return isActive ? 'bg-green-100' : 'bg-gray-100';
-};
-
-/**
  * Format trigger creation date
  */
 export const formatTriggerDate = (dateString: string): string => {
@@ -149,53 +101,3 @@ export const formatTriggerDate = (dateString: string): string => {
     return date.toLocaleDateString();
   }
 };
-
-/**
- * Get webhook URL display text (truncated)
- */
-export const getWebhookDisplayUrl = (url?: string, maxLength: number = 50): string => {
-  if (!url) return 'No webhook URL';
-  
-  if (url.length <= maxLength) return url;
-  
-  const start = url.substring(0, maxLength - 3);
-  return `${start}...`;
-};
-
-/**
- * Validate cron expression
- */
-export const isValidCronExpression = (cron: string): boolean => {
-  const cronRegex = /^(\*|([0-5]?\d)) (\*|([01]?\d|2[0-3])) (\*|([012]?\d|3[01])) (\*|([0]?\d|1[0-2])) (\*|([0-6]))$/;
-  return cronRegex.test(cron);
-};
-
-/**
- * Get common cron presets
- */
-export const getCronPresets = () => [
-  {
-    label: 'Every hour',
-    value: '0 * * * *',
-    description: 'Runs every hour at the top of the hour',
-  },
-  {
-    label: 'Daily at midnight',
-    value: '0 0 * * *',
-    description: 'Runs once per day at midnight',
-  },
-  {
-    label: 'Weekdays at 9 AM',
-    value: '0 9 * * 1-5',
-    description: 'Runs Monday through Friday at 9 AM',
-  },
-  {
-    label: 'Custom',
-    value: '',
-    description: 'Enter a custom cron expression',
-  },
-];
-
-
-
-

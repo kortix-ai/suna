@@ -6,7 +6,7 @@
  * so the previous `part.content?.text` silently dropped string/array content.
  * Handle each shape explicitly instead.
  */
-export function partContentToText(content: unknown): string {
+function partContentToText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) return content.map(partContentToText).join('');
   if (content && typeof content === 'object' && 'text' in content) {

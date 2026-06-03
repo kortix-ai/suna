@@ -30,7 +30,6 @@ import {
   splitContentIntoLines,
   generateLineDiff,
   calculateDiffStats,
-  type LineDiff,
 } from './_utils';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { JsonRenderer } from './JsonRenderer';
@@ -63,18 +62,6 @@ function extractSlideNumber(filepath: string): number | null {
   return null;
 }
 
-function processUnicodeContent(text: string, preserveWhitespace = false): string {
-  let processed = text
-    .replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => String.fromCharCode(parseInt(code, 16)))
-    .replace(/\\r\\n/g, '\n')
-    .replace(/\\r/g, '\n')
-    .replace(/\\t/g, preserveWhitespace ? '\t' : '  ')
-    .replace(/\\"/g, '"')
-    .replace(/\\\\/g, '\\');
-
-  return processed;
-}
-
 function formatTimestamp(isoString?: string): string {
   if (!isoString) return '';
   try {
@@ -88,7 +75,6 @@ function formatTimestamp(isoString?: string): string {
 export function FileOperationToolView({
   toolCall,
   toolResult,
-  assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
@@ -887,4 +873,3 @@ export function FileOperationToolView({
     </ToolViewCard>
   );
 }
-

@@ -46,7 +46,7 @@ function isPreviewProxyUrl(candidateUrl: string, serverUrl?: string): boolean {
   }
 }
 
-export function buildPreviewAuthEndpoint(previewUrl: string, serverUrl?: string): string | null {
+function buildPreviewAuthEndpoint(previewUrl: string, serverUrl?: string): string | null {
   if (!isPreviewProxyUrl(previewUrl, serverUrl)) return null;
   return (serverUrl ? derivePreviewAuthEndpoint(serverUrl) : null)
     ?? derivePreviewAuthEndpoint(previewUrl);

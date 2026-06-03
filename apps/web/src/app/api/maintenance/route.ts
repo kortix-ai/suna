@@ -98,7 +98,7 @@ export async function PUT(request: NextRequest) {
  * Check admin role by forwarding the user's auth cookies to the backend
  * /user-roles endpoint, matching the client-side useAdminRole hook logic.
  */
-async function checkAdminRole(request: NextRequest): Promise<boolean> {
+async function checkAdminRole(_request: NextRequest): Promise<boolean> {
   try {
     // Forward the authorization header from the original request if present,
     // otherwise extract the Supabase access token from the cookie.

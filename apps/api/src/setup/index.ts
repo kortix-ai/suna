@@ -1,38 +1,29 @@
 /**
  * Setup routes — self-hosted instance management.
  *
- * Provides API endpoints for managing .env configuration and
- * system status after the initial wizard setup. Mounted at /v1/setup/*.
+ * Provides the public install probe and owner bootstrap endpoint used by the
+ * self-host flow. Mounted at /v1/setup/*.
  *
- * Auth: All routes require Supabase JWT except /install-status (public).
+ * Auth: /install-status and /bootstrap-owner are public before any owner
+ * exists. Any future setup route should require Supabase JWT.
  */
 
 import { Hono } from 'hono';
 import type { AppEnv } from '../types';
-import { existsSync } from 'fs';
-import { resolve } from 'path';
-import { execSync } from 'child_process';
-import { config } from '../config';
 import { supabaseAuth } from '../middleware/auth';
-import { eq, sql } from 'drizzle-orm';
-import { accounts } from '@kortix/db';
+import { sql } from 'drizzle-orm';
 import { db, hasDatabase } from '../shared/db';
-import { resolveAccountId } from '../shared/resolve-account';
 import { getSupabase } from '../shared/supabase';
-/** Shape mirrors the legacy LocalSandboxHealthCheck (now removed) so the
- *  frontend health UI keeps reading the same `{ok, error?}` per check. */
-type HealthCheck = { ok: boolean; error?: string };
 
 export const setupApp = new Hono<AppEnv>();
 
 // ─── Auth ───────────────────────────────────────────────────────────────────
-// All setup routes require Supabase JWT auth EXCEPT /install-status which must
-// remain public (the installer/login page calls it before any user exists).
+// The installer needs these two routes before any user exists. Keep every
+// future setup route behind Supabase auth.
 setupApp.use('/*', async (c, next) => {
   // Allow public routes without auth
   if (
     c.req.path.endsWith('/install-status') ||
-    c.req.path.endsWith('/sandbox-providers') ||
     c.req.path.endsWith('/bootstrap-owner')
   ) {
     return next();
@@ -40,93 +31,6 @@ setupApp.use('/*', async (c, next) => {
   // Everything else requires a valid Supabase JWT
   return supabaseAuth(c, next);
 });
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function findRepoRoot(): string | null {
-  // Walk up from likely working dirs looking for the actual Computer repo root.
-  // Local dev runs from several different cwd values, and the old
-  // docker-compose.local.yml sentinel no longer exists, which made the repo
-  // fallback dead code and left onboarding state dependent on sandbox secrets.
-  const candidates = [
-    process.cwd(),
-    resolve(process.cwd(), '..'),
-    resolve(process.cwd(), '../..'),
-    resolve(__dirname, '../../../..'),
-  ];
-
-  for (const dir of candidates) {
-    const hasFrontend = existsSync(resolve(dir, 'apps/web'));
-    const hasApi = existsSync(resolve(dir, 'apps/api'));
-    const hasComposeScripts = existsSync(resolve(dir, 'scripts/compose/docker-compose.yml'));
-
-    if ((hasFrontend && hasApi) || hasComposeScripts) {
-      return dir;
-    }
-  }
-
-  return null;
-}
-
-function getProjectRoot(): string {
-  return findRepoRoot() ?? process.cwd();
-}
-
-function getMasterUrlCandidates(): string[] {
-  const candidates: string[] = [];
-  const explicit = process.env.KORTIX_MASTER_URL;
-  if (explicit && explicit.trim()) candidates.push(explicit.trim());
-
-  // Inside docker-compose network, the sandbox service is reachable by name.
-  candidates.push('http://sandbox:8000');
-
-  // When running the API on the host (dev), sandbox is exposed on this port.
-  candidates.push(`http://localhost:${config.SANDBOX_PORT_BASE || 14000}`);
-
-  // De-dupe
-  return Array.from(new Set(candidates));
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 5000): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-async function fetchMasterJson<T>(path: string, init: RequestInit = {}, timeoutMs = 5000): Promise<T> {
-  const candidates = getMasterUrlCandidates();
-  let lastErr: unknown = null;
-
-  // Inject INTERNAL_SERVICE_KEY for sandbox auth (VPS mode)
-  const serviceKey = process.env.INTERNAL_SERVICE_KEY;
-  if (serviceKey) {
-    const existingHeaders = init.headers ? Object.fromEntries(new Headers(init.headers as HeadersInit).entries()) : {};
-    init = { ...init, headers: { ...existingHeaders, 'Authorization': `Bearer ${serviceKey}` } };
-  }
-
-  for (const base of candidates) {
-    const url = `${base}${path}`;
-    try {
-      const res = await fetchWithTimeout(url, init, timeoutMs);
-      // 503 from /kortix/health means "starting" — still return the JSON body
-      // so callers can inspect the status/opencode fields.
-      if (!res.ok && res.status !== 503) {
-        lastErr = new Error(`Master ${url} returned ${res.status}`);
-        continue;
-      }
-      return (await res.json()) as T;
-    } catch (e) {
-      lastErr = e;
-      continue;
-    }
-  }
-
-  throw lastErr instanceof Error ? lastErr : new Error('Failed to reach sandbox master');
-}
 
 // ─── Routes ─────────────────────────────────────────────────────────────────
 
@@ -163,32 +67,6 @@ setupApp.get('/install-status', async (c) => {
   }
 });
 
-/**
- * GET /v1/setup/sandbox-providers
- *
- * Public (no auth) — the installer wizard calls this to know which sandbox
- * providers are enabled so it can branch the setup flow accordingly.
- *
- * Response: { providers: string[], default: string, capabilities: ... }
- *   e.g. { providers: ["daytona"], default: "daytona", capabilities: {...} }
- */
-setupApp.get('/sandbox-providers', async (c) => {
-  const available = config.ALLOWED_SANDBOX_PROVIDERS.filter((name) =>
-    config.isProviderEnabled(name),
-  );
-
-  // Provider capabilities — tells the frontend how to handle provisioning UI
-  const capabilities: Record<string, { async: boolean; events: boolean; polling: boolean }> = {
-    daytona: { async: false, events: false, polling: false },
-  };
-
-  return c.json({
-    providers: available,
-    default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'daytona'),
-    capabilities: Object.fromEntries(available.map((p) => [p, capabilities[p] || { async: false, events: false, polling: false }])),
-  });
-});
-
 setupApp.post('/bootstrap-owner', async (c) => {
   if (!hasDatabase) {
     return c.json({ success: false, error: 'Database not configured' }, 503);
@@ -217,7 +95,7 @@ setupApp.post('/bootstrap-owner', async (c) => {
       return c.json({ success: false, error: 'Owner already exists' }, 409);
     }
 
-    const { data, error } = await supabase.auth.admin.createUser({
+    const { error } = await supabase.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
@@ -228,171 +106,9 @@ setupApp.post('/bootstrap-owner', async (c) => {
       return c.json({ success: false, error: error.message || 'Could not create owner' }, 500);
     }
 
-    const userId = data.user?.id;
-    if (userId) {
-      try {
-        const accountId = await resolveAccountId(userId);
-        await db
-          .update(accounts)
-          .set({ setupCompleteAt: null, setupWizardStep: 2, updatedAt: new Date() })
-          .where(eq(accounts.accountId, accountId));
-      } catch {
-        // best effort
-      }
-    }
-
     return c.json({ success: true, created: true, email });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ success: false, error: message }, 500);
-  }
-});
-
-/**
- * GET /v1/setup/status
- * System status — Docker, .env files, services
- */
-setupApp.get('/status', async (c) => {
-  const root = getProjectRoot();
-  const envExists = existsSync(resolve(root, '.env'));
-
-  let dockerRunning = false;
-  try {
-    execSync('docker info', { stdio: 'pipe', timeout: 10000 });
-    dockerRunning = true;
-  } catch {}
-
-  return c.json({
-    billingEnabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
-    dockerRunning,
-    envExists,
-    // The old sandbox-secrets file is gone.
-    sandboxEnvExists: false,
-    projectRoot: root,
-  });
-});
-
-/**
- * GET /v1/setup/health
- * Health check of all local services
- */
-setupApp.get('/health', async (c) => {
-  const checks: Record<string, HealthCheck> = {};
-  // The API itself answered — by definition this check passes.
-  checks.api = { ok: true };
-  // Daytona is the only provider — surface its config status so the
-  // setup wizard / health page can tell the operator they need to set
-  // DAYTONA_API_KEY. We don't ping Daytona here on purpose: that's a
-  // latency-sensitive UI call and Daytona's auth-check endpoint is
-  // their billing concern, not ours.
-  checks.daytona = config.DAYTONA_API_KEY
-    ? { ok: true }
-    : { ok: false, error: 'DAYTONA_API_KEY not configured' };
-  return c.json(checks);
-});
-
-
-
-// ─── Setup Wizard Completion ────────────────────────────────────────────────
-// Tracks whether the user has completed the setup wizard (provider + tool keys).
-// Stored in the DB on accounts.setup_complete_at so it persists across
-// browsers/tabs/devices and cannot be accidentally cleared by the sandbox agent.
-
-/**
- * GET /v1/setup/setup-status
- * Returns { complete: boolean, completedAt: string | null }
- */
-setupApp.get('/setup-status', async (c) => {
-  if (!hasDatabase) {
-    return c.json({ complete: false, completedAt: null });
-  }
-  try {
-    const userId = c.get('userId') as string;
-    const accountId = await resolveAccountId(userId);
-    const [account] = await db
-      .select({ setupCompleteAt: accounts.setupCompleteAt })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
-      .limit(1);
-    const complete = !!account?.setupCompleteAt;
-    return c.json({ complete, completedAt: account?.setupCompleteAt?.toISOString() ?? null });
-  } catch (e) {
-    console.error('[setup] setup-complete-status failed:', e);
-    return c.json({ complete: false, completedAt: null, error: e instanceof Error ? e.message : String(e) }, 500);
-  }
-});
-
-/**
- * POST /v1/setup/setup-complete
- * Mark the setup wizard as complete.
- */
-setupApp.post('/setup-complete', async (c) => {
-  if (!hasDatabase) {
-    return c.json({ ok: false, error: 'Database not configured' }, 500);
-  }
-  try {
-    const userId = c.get('userId') as string;
-    const accountId = await resolveAccountId(userId);
-    await db
-      .update(accounts)
-      .set({ setupCompleteAt: new Date(), setupWizardStep: 0, updatedAt: new Date() })
-      .where(eq(accounts.accountId, accountId));
-    return c.json({ ok: true });
-  } catch (e) {
-    console.error('[setup] setup-complete failed:', e);
-    return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
-  }
-});
-
-/**
- * GET /v1/setup/setup-wizard-step
- * Returns the current setup wizard step from the database.
- * { step: number } — 0 = not started / complete, 2 = provider setup, 3 = tool keys
- */
-setupApp.get('/setup-wizard-step', async (c) => {
-  if (!hasDatabase) {
-    return c.json({ step: 0 });
-  }
-  try {
-    const userId = c.get('userId') as string;
-    const accountId = await resolveAccountId(userId);
-    const [account] = await db
-      .select({ setupWizardStep: accounts.setupWizardStep, setupCompleteAt: accounts.setupCompleteAt })
-      .from(accounts)
-      .where(eq(accounts.accountId, accountId))
-      .limit(1);
-    // If setup is already complete, step is 0 regardless of stored value
-    if (account?.setupCompleteAt) {
-      return c.json({ step: 0 });
-    }
-    return c.json({ step: account?.setupWizardStep ?? 0 });
-  } catch (e) {
-    console.error('[setup] setup-wizard-step (get) failed:', e);
-    return c.json({ step: 0, error: e instanceof Error ? e.message : String(e) }, 500);
-  }
-});
-
-/**
- * POST /v1/setup/setup-wizard-step
- * Update the current setup wizard step in the database.
- * Body: { step: number }
- */
-setupApp.post('/setup-wizard-step', async (c) => {
-  if (!hasDatabase) {
-    return c.json({ ok: false, error: 'Database not configured' }, 500);
-  }
-  try {
-    const userId = c.get('userId') as string;
-    const accountId = await resolveAccountId(userId);
-    const body = await c.req.json();
-    const step = typeof body.step === 'number' ? body.step : 0;
-    await db
-      .update(accounts)
-      .set({ setupWizardStep: step, updatedAt: new Date() })
-      .where(eq(accounts.accountId, accountId));
-    return c.json({ ok: true });
-  } catch (e) {
-    console.error('[setup] setup-wizard-step (set) failed:', e);
-    return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
 });

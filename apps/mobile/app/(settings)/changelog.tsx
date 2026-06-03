@@ -1,18 +1,14 @@
 import * as React from 'react';
-import { ActivityIndicator, Pressable, ScrollView, View } from 'react-native';
+import { ActivityIndicator, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useQuery } from '@tanstack/react-query';
-import { haptics } from '@/lib/haptics';
 import {
   AlertTriangle,
-  ArrowDownToLine,
   Bug,
-  Check,
   RefreshCw,
   Shield,
   Sparkles,
-  X,
   Zap,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
@@ -46,18 +42,9 @@ export default function ChangelogScreen() {
   const isDark = colorScheme === 'dark';
 
   const {
-    updateAvailable,
     currentVersion,
     latestVersion,
     changelog: latestChangelog,
-    update,
-    isUpdating,
-    phaseLabel,
-    phaseProgress,
-    phaseMessage,
-    updateResult,
-    updateError,
-    resetStatus,
   } = useGlobalSandboxUpdate();
 
   const { data: fullChangelog, isLoading } = useQuery({
@@ -73,16 +60,6 @@ export default function ChangelogScreen() {
     return [];
   }, [fullChangelog, latestChangelog]);
 
-  const handleUpdate = React.useCallback(() => {
-    haptics.medium();
-    update();
-  }, [update]);
-
-  const handleRetry = React.useCallback(() => {
-    haptics.tap();
-    resetStatus();
-  }, [resetStatus]);
-
   return (
     <ScrollView
       className="flex-1 bg-background"
@@ -96,95 +73,13 @@ export default function ChangelogScreen() {
           <Text className="font-roobert text-sm text-muted-foreground">
             Running <Text className="font-roobert-semibold text-foreground">v{currentVersion || '...'}</Text>
           </Text>
-          {latestVersion && updateAvailable && (
+          {latestVersion && latestVersion !== currentVersion && (
             <Text className="font-roobert text-sm text-muted-foreground">
               {' · Latest: '}<Text className="font-roobert-semibold text-foreground">v{latestVersion}</Text>
             </Text>
           )}
         </View>
 
-        {/* Update button */}
-        {updateAvailable && !isUpdating && !updateResult && latestVersion && (
-          <Pressable
-            onPress={handleUpdate}
-            className="mt-4 flex-row items-center justify-center self-start rounded-xl px-5 py-2.5 active:opacity-90"
-            style={{ backgroundColor: isDark ? '#F8F8F8' : '#121215' }}
-          >
-            <Icon as={ArrowDownToLine} size={15} className={isDark ? 'text-[#121215]' : 'text-[#F8F8F8]'} strokeWidth={2.5} />
-            <Text className={`ml-2 font-roobert-semibold text-sm ${isDark ? 'text-[#121215]' : 'text-[#F8F8F8]'}`}>
-              Update to v{latestVersion}
-            </Text>
-          </Pressable>
-        )}
-
-        {/* Update success */}
-        {updateResult?.success && (
-          <View className="mt-4 flex-row items-center self-start rounded-xl bg-emerald-400/15 px-4 py-2.5">
-            <Icon as={Check} size={15} className="text-emerald-500" strokeWidth={2.5} />
-            <Text className="ml-2 font-roobert-medium text-sm text-emerald-500">
-              Updated to v{updateResult.currentVersion}. Refresh to see changes.
-            </Text>
-          </View>
-        )}
-
-        {/* Update progress */}
-        {isUpdating && (
-          <View
-            className="mt-4 rounded-2xl border px-4 py-3.5"
-            style={{
-              borderColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)',
-            }}
-          >
-            <View className="flex-row items-center mb-2">
-              <ActivityIndicator size="small" />
-              <View className="ml-3 flex-1">
-                <Text className="font-roobert-medium text-[15px] text-foreground">
-                  Updating to v{latestVersion}
-                </Text>
-                <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
-                  {phaseLabel}{phaseMessage ? ` — ${phaseMessage}` : ''}
-                </Text>
-              </View>
-              <Text className="font-roobert text-xs tabular-nums text-muted-foreground">
-                {Math.round(phaseProgress)}%
-              </Text>
-            </View>
-            <View
-              className="h-1.5 rounded-full overflow-hidden"
-              style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
-            >
-              <View
-                className="h-full rounded-full"
-                style={{
-                  width: `${Math.max(phaseProgress, 2)}%`,
-                  backgroundColor: isDark ? '#F8F8F8' : '#121215',
-                }}
-              />
-            </View>
-          </View>
-        )}
-
-        {/* Update error */}
-        {updateError && (
-          <View
-            className="mt-4 rounded-2xl border px-4 py-3.5"
-            style={{
-              borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)',
-              backgroundColor: isDark ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.03)',
-            }}
-          >
-            <View className="flex-row items-center">
-              <Icon as={X} size={16} className="text-destructive" strokeWidth={2.5} />
-              <View className="ml-3 flex-1">
-                <Text className="font-roobert-medium text-[15px] text-destructive">Update failed</Text>
-                <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">{updateError.message}</Text>
-              </View>
-              <Pressable onPress={handleRetry} className="active:opacity-70">
-                <Text className="font-roobert-medium text-xs text-primary">Try again</Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
       </View>
 
       {/* Changelog entries */}
@@ -298,7 +193,7 @@ function ChangeRow({ change }: { change: ChangelogChange }) {
   return (
     <View className="flex-row items-start py-1">
       <View className="mt-0.5 mr-2.5">
-        <Icon as={ChangeIcon} size={13} style={{ color }} strokeWidth={2.2} />
+        <Icon as={ChangeIcon} size={13} color={color} strokeWidth={2.2} />
       </View>
       <Text className="flex-1 font-roobert text-[13px] text-foreground/90 leading-[18px]">
         {change.text}

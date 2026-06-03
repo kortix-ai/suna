@@ -1,7 +1,7 @@
 import { getRequestConfig } from 'next-intl/server';
 import { cookies, headers } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
-import { locales, defaultLocale, type Locale } from './config';
+import { defaultLocale, type Locale } from './config';
 import { getCookieLocale, getUserLocale, normalizeLocale } from './locale';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { getServerPublicEnv } from '@/lib/public-env-server';
