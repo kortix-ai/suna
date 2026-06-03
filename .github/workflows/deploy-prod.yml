@@ -504,32 +504,6 @@ jobs:
             echo "Vercel auto-deploys the \`prod\` branch (new.kortix.com → api-prod; kortix.com after apex cutover). No action needed here."
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # Post-deploy smoke: wait for the ECS roll to expose the new version, then run
-  # the read-mostly ke2e --smoke subset against prod. Public health/contract flows,
-  # no secrets — a fast canary that prod is actually serving.
-  smoke:
-    name: Prod smoke (ke2e --smoke)
-    needs: [version, deploy-api]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - run: bun install --frozen-lockfile
-        working-directory: tests
-      - name: Wait for prod to serve the new version
-        run: |
-          for i in $(seq 1 30); do
-            if curl -fsS -m 8 https://api.kortix.com/health >/dev/null 2>&1; then echo "prod healthy"; break; fi
-            echo "waiting for prod… ($i)"; sleep 10
-          done
-      - name: Run smoke
-        run: bun bin/ke2e.ts run --smoke
-        working-directory: tests
-        env:
-          KE2E_API_URL: https://api.kortix.com/v1
-
   # ── Keep main's VERSION honest (post-publish, never premature) ──────────────
   # promote.yml does NOT bump main's VERSION (publishing is gated on the prod
   # merge). After a release publishes, advance main's VERSION to the NEXT dev

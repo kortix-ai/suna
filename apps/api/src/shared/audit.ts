@@ -5,7 +5,9 @@ import { dispatchAuditEvent } from './audit-webhooks';
 
 const STATE_CHANGING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
-interface AuditEventInput {
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export interface AuditEventInput {
   accountId?: string | null;
   actorUserId?: string | null;
   action: string;
@@ -41,7 +43,10 @@ function inferResource(path: string) {
 
 function inferAccountId(c: Context) {
   const parts = c.req.path.split('/').filter(Boolean);
-  const accountPathId = parts[0] === 'v1' && parts[1] === 'accounts' ? parts[2] : null;
+  // /v1/accounts/<id> — but only when <id> is a real account UUID, not a
+  // sub-route like /v1/accounts/tokens (which would fail the uuid column).
+  const accountPathCandidate = parts[0] === 'v1' && parts[1] === 'accounts' ? parts[2] : null;
+  const accountPathId = accountPathCandidate && UUID_RE.test(accountPathCandidate) ? accountPathCandidate : null;
   return ((c as any).get('accountId') as string | undefined)
     || c.req.query('account_id')
     || c.req.query('accountId')
