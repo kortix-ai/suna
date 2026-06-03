@@ -900,7 +900,7 @@ export interface ConnectorDraftInput {
   url?: string;
   transport?: 'http' | 'sse';
   endpoint?: string;
-  baseUrl?: string;
+  base_url?: string;
   spec?: string;
   /** Credential storage mode. */
   credential?: 'shared' | 'per_user';

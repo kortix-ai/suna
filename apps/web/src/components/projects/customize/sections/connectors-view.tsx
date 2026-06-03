@@ -629,7 +629,7 @@ function CustomConnectorForm({ projectId, onAdded, onCancel }: { projectId: stri
         )}
         {p === 'http' && (
           <>
-            <Field label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line629JsxAttrLabelBaseURL')}><Input value={draft.baseUrl ?? ''} onChange={(e) => set({ baseUrl: e.target.value })} placeholder="https://api.internal" required /></Field>
+            <Field label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line629JsxAttrLabelBaseURL')}><Input value={draft.base_url ?? ''} onChange={(e) => set({ base_url: e.target.value })} placeholder="https://api.internal" required /></Field>
             <Field label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line630JsxAttrLabelRoutesSpecOptional')}><Input value={draft.spec ?? ''} onChange={(e) => set({ spec: e.target.value })} placeholder=".kortix/executor/routes.toml" /></Field>
           </>
         )}

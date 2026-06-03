@@ -30,7 +30,7 @@ export interface ConnectorDraft {
   url?: string;
   transport?: 'http' | 'sse';
   endpoint?: string;
-  baseUrl?: string;
+  base_url?: string;
   spec?: string;
   /** Credential storage mode — default per app (pipedream→per_user, else shared). */
   credential?: 'shared' | 'per_user';
@@ -55,7 +55,7 @@ function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
     if (d.endpoint) entry.endpoint = d.endpoint;
     if (d.spec) entry.spec = d.spec;
   } else if (d.provider === 'http') {
-    if (d.baseUrl) entry.base_url = d.baseUrl;
+    if (d.base_url) entry.base_url = d.base_url;
     if (d.spec) entry.spec = d.spec;
   } else if (d.provider === 'openapi') {
     if (d.spec) entry.spec = d.spec;

@@ -44,6 +44,7 @@ interface World {
   upstream: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }>;
   upstreamStatus: number;
   upstreamBody: string;
+  connectorDrafts: Array<Record<string, unknown>>;
 }
 
 let world: World;
@@ -80,6 +81,7 @@ function freshWorld(): World {
     upstream: [],
     upstreamStatus: 200,
     upstreamBody: '{"id":"ch_1","paid":true}',
+    connectorDrafts: [],
   };
 }
 
@@ -171,6 +173,10 @@ const deps: ExecutorRouterDeps = {
     conn.shareScope = shareScope;
     conn.grants = grants;
     return true;
+  },
+  createConnector: async (_projectId, _accountId, draft) => {
+    world.connectorDrafts.push(draft);
+    return { ok: true, sync: { synced: world.connectors.size, errors: [] } };
   },
   getProjectPolicies: async (): Promise<ProjectPoliciesViewResponse> => ({
     policies: world.projectPolicies.map((p) => ({ match: p.match, action: p.action })),
@@ -290,6 +296,29 @@ describe('admin routes', () => {
 
   test('sync returns count', async () => {
     expect((await (await req(`/projects/${PROJECT}/connectors/sync`, { method: 'POST', headers: { 'x-test-admin': ALICE } })).json()).synced).toBe(1);
+  });
+
+  test('create http connector forwards canonical base_url', async () => {
+    const res = await req(`/projects/${PROJECT}/connectors`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ slug: 'internal', provider: 'http', base_url: 'https://api.internal' }),
+    });
+    expect(res.status).toBe(200);
+    expect(world.connectorDrafts).toEqual([
+      { slug: 'internal', provider: 'http', base_url: 'https://api.internal' },
+    ]);
+  });
+
+  test('create http connector rejects legacy baseUrl alias', async () => {
+    const res = await req(`/projects/${PROJECT}/connectors`, {
+      method: 'POST',
+      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
+      body: JSON.stringify({ slug: 'internal', provider: 'http', baseUrl: 'https://api.internal' }),
+    });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toContain('base_url');
+    expect(world.connectorDrafts).toHaveLength(0);
   });
 
   test('set sharing restricts → gateway then denies the excluded user', async () => {
