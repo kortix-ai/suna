@@ -13,6 +13,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useRouter } from 'expo-router';
+import * as Clipboard from 'expo-clipboard';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import {
@@ -216,9 +217,14 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
   const handleCopyWebhookUrl = async () => {
     if (!trigger?.webhook_url) return;
 
-    // TODO: Implement clipboard functionality with Expo Clipboard
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert('Copied!', 'Webhook URL copied to clipboard');
+    try {
+      await Clipboard.setStringAsync(trigger.webhook_url);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Alert.alert('Copied!', 'Webhook URL copied to clipboard');
+    } catch (error) {
+      log.error('Error copying webhook URL:', error);
+      Alert.alert('Error', 'Failed to copy webhook URL. Please try again.');
+    }
   };
 
   // Loading State
