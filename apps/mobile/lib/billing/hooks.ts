@@ -5,9 +5,7 @@
  */
 
 import {
-  useMutation,
   useQuery,
-  useQueryClient,
 } from '@tanstack/react-query';
 import {
   billingApi,
@@ -22,14 +20,6 @@ const accountStateKeys = {
   all: ['account-state'] as const,
   state: () => [...accountStateKeys.all, 'state'] as const,
 };
-
-// =============================================================================
-// UTILITY - Invalidation helper for mutations
-// =============================================================================
-
-function invalidateAccountState(queryClient: ReturnType<typeof useQueryClient>) {
-  queryClient.invalidateQueries({ queryKey: accountStateKeys.state() });
-}
 
 // Don't retry on auth errors (401/403)
 const shouldRetry = (failureCount: number, error: Error) => {
@@ -72,17 +62,6 @@ export function useAccountState(options?: UseAccountStateOptions) {
     refetchOnMount: options?.refetchOnMount ?? false,
     refetchOnReconnect: true,
     retry: enabled ? shouldRetry : false,
-  });
-}
-
-export function useCancelScheduledChange() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: () => billingApi.cancelScheduledChange(),
-    onSuccess: () => {
-      invalidateAccountState(queryClient);
-    },
   });
 }
 

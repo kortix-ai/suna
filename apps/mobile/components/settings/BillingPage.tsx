@@ -282,7 +282,6 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
             >
               <ScheduledDowngradeCard
                 scheduledChange={scheduledChange}
-                onCancel={handleSubscriptionUpdate}
               />
             </AnimatedView>
           )}

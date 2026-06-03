@@ -96,11 +96,6 @@ export interface AccountState {
   };
 }
 
-interface CancelScheduledChangeResponse {
-  success: boolean;
-  message: string;
-}
-
 // =============================================================================
 // API Helper
 // =============================================================================
@@ -182,12 +177,6 @@ export const billingApi = {
     }, null, 2));
     
     return data;
-  },
-
-  async cancelScheduledChange(): Promise<CancelScheduledChangeResponse> {
-    return fetchApi('/billing/cancel-scheduled-change', {
-      method: 'POST',
-    });
   },
 
   async getTransactions(limit: number, offset: number): Promise<any> {
