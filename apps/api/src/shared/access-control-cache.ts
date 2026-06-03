@@ -59,10 +59,6 @@ export function stopAccessControlCache() {
   }
 }
 
-export function areSignupsEnabled(): boolean {
-  return signupsEnabled;
-}
-
 function isEmailAllowed(email: string): boolean {
   const lower = email.toLowerCase();
   if (allowedEmails.has(lower)) return true;

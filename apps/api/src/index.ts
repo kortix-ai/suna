@@ -376,8 +376,8 @@ const { slackWebhookApp } = await import('./channels/slack-webhook');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
 
-// Access control — public endpoints for signup gating
-app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
+// Access control — public endpoint for signup gating
+app.route('/v1/access', accessControlApp); // /v1/access/check-email
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
