@@ -1,0 +1,11 @@
+#!/bin/sh
+# Final gate before pushing: no unencrypted, committable .env may leave the
+# machine. (Auto-encryption happens in pre-commit; this is the last backstop,
+# complementing GitHub's secret-scanning push protection.)
+set -e
+
+if command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
+elif [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
+else DX="npx --yes @dotenvx/dotenvx"; fi
+
+exec $DX ext precommit

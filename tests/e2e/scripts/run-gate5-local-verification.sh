@@ -90,8 +90,42 @@ run_check web_build env \
   NEXT_PUBLIC_BILLING_ENABLED="${NEXT_PUBLIC_BILLING_ENABLED:-false}" \
   NEXT_OUTPUT="${NEXT_OUTPUT:-standalone}" \
   pnpm --filter Kortix-Computer-Frontend build
-run_check api_tests pnpm --filter kortix-api test
-run_check api_billing_tests bash -lc '
+
+api_test_database_url="${TEST_DATABASE_URL:-${GATE5_LOCAL_DATABASE_URL:-${DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}}}"
+api_test_database_url="$(normalize_host_database_url "$api_test_database_url")"
+api_test_env=(
+  env
+  INTERNAL_KORTIX_ENV="${INTERNAL_KORTIX_ENV:-dev}"
+  ENV_MODE="${ENV_MODE:-local}"
+  DATABASE_URL="$api_test_database_url"
+  TEST_DATABASE_URL="$api_test_database_url"
+  SUPABASE_URL="${SUPABASE_URL:-https://placeholder.supabase.co}"
+  SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY:-local-service-role-key}"
+  SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY:-local-anon-key}"
+  API_KEY_SECRET="${API_KEY_SECRET:-gate5-local-api-key-secret-32chars}"
+  TUNNEL_SIGNING_SECRET="${TUNNEL_SIGNING_SECRET:-gate5-local-tunnel-signing-secret-32chars}"
+  FREESTYLE_API_URL="${FREESTYLE_API_URL:-https://api.freestyle.sh}"
+  FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
+  KORTIX_URL="${KORTIX_URL:-https://kortix-e2e.example.test}"
+  KORTIX_GIT_PROXY="${KORTIX_GIT_PROXY:-true}"
+  PIPEDREAM_CLIENT_ID="${PIPEDREAM_CLIENT_ID:-gate5-local-pipedream-client}"
+  PIPEDREAM_CLIENT_SECRET="${PIPEDREAM_CLIENT_SECRET:-gate5-local-pipedream-secret}"
+  PIPEDREAM_PROJECT_ID="${PIPEDREAM_PROJECT_ID:-gate5-local-pipedream-project}"
+  ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-daytona,local_docker}"
+  DAYTONA_API_KEY="${DAYTONA_API_KEY:-gate5-local-daytona-key}"
+  DAYTONA_SERVER_URL="${DAYTONA_SERVER_URL:-https://daytona.example.test}"
+  DAYTONA_TARGET="${DAYTONA_TARGET:-us}"
+  DOCKER_HOST="${DOCKER_HOST:-unix:///var/run/docker.sock}"
+  KORTIX_BILLING_INTERNAL_ENABLED="${KORTIX_BILLING_INTERNAL_ENABLED:-false}"
+)
+
+run_check api_tests "${api_test_env[@]}" bash -lc '
+  set -euo pipefail
+  for test_file in apps/api/src/__tests__/billing/*.test.ts apps/api/src/__tests__/e2e-*.test.ts apps/api/src/__tests__/unit-*.test.ts; do
+    bun test "$test_file"
+  done
+'
+run_check api_billing_tests "${api_test_env[@]}" bash -lc '
   set -euo pipefail
   for test_file in \
     apps/api/src/__tests__/billing/*.test.ts \
@@ -103,15 +137,15 @@ run_check api_billing_tests bash -lc '
     (cd apps/api && bun test "${test_file#apps/api/}")
   done
 '
-run_check api_accounts_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-accounts-contract.test.ts
-run_check api_projects_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-projects-contract.test.ts
-run_check api_project_session_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-session-contract.test.ts
-run_check api_project_triggers_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-triggers.test.ts
-run_check api_rate_limit_tests bun test apps/api/src/__tests__/e2e-rate-limits.test.ts
-run_check api_proxy_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-preview-proxy.test.ts
-run_check api_audit_tests bun test apps/api/src/__tests__/e2e-audit-events.test.ts
-run_check api_github_app_tests bun test apps/api/src/__tests__/e2e-github-app-projects.test.ts
-run_check api_create_repo_starter_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-create-repo-starter.test.ts
+run_check api_accounts_contract_tests "${api_test_env[@]}" pnpm --filter kortix-api exec bun test src/__tests__/e2e-accounts-contract.test.ts
+run_check api_projects_contract_tests "${api_test_env[@]}" pnpm --filter kortix-api exec bun test src/__tests__/e2e-projects-contract.test.ts
+run_check api_project_session_contract_tests "${api_test_env[@]}" pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-session-contract.test.ts
+run_check api_project_triggers_contract_tests "${api_test_env[@]}" pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-triggers.test.ts
+run_check api_rate_limit_tests "${api_test_env[@]}" bun test apps/api/src/__tests__/e2e-rate-limits.test.ts
+run_check api_proxy_contract_tests "${api_test_env[@]}" pnpm --filter kortix-api exec bun test src/__tests__/e2e-preview-proxy.test.ts
+run_check api_audit_tests "${api_test_env[@]}" bun test apps/api/src/__tests__/e2e-audit-events.test.ts
+run_check api_github_app_tests "${api_test_env[@]}" bun test apps/api/src/__tests__/e2e-github-app-projects.test.ts
+run_check api_create_repo_starter_tests "${api_test_env[@]}" pnpm --filter kortix-api exec bun test src/__tests__/e2e-create-repo-starter.test.ts
 
 legacy_test_database_url="${TEST_DATABASE_URL:-${GATE5_LOCAL_DATABASE_URL:-${DATABASE_URL:-$(env_file_value DATABASE_URL)}}}"
 legacy_test_database_url="$(normalize_host_database_url "$legacy_test_database_url")"
@@ -134,7 +168,26 @@ if [ -z "$legacy_test_database_url" ]; then
   printf 'Missing test database URL for legacy migration tooling\n' >"$LOG_DIR/legacy_migration_tooling.log"
 else
   run_check legacy_migration_tooling env \
+    DATABASE_URL="$legacy_test_database_url" \
     TEST_DATABASE_URL="$legacy_test_database_url" \
+    SUPABASE_URL="${SUPABASE_URL:-https://placeholder.supabase.co}" \
+    SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY:-local-service-role-key}" \
+    SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY:-local-anon-key}" \
+    API_KEY_SECRET="${API_KEY_SECRET:-gate5-local-api-key-secret-32chars}" \
+    TUNNEL_SIGNING_SECRET="${TUNNEL_SIGNING_SECRET:-gate5-local-tunnel-signing-secret-32chars}" \
+    FREESTYLE_API_URL="${FREESTYLE_API_URL:-https://api.freestyle.sh}" \
+    FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}" \
+    KORTIX_URL="${KORTIX_URL:-https://kortix-e2e.example.test}" \
+    KORTIX_GIT_PROXY="${KORTIX_GIT_PROXY:-true}" \
+    PIPEDREAM_CLIENT_ID="${PIPEDREAM_CLIENT_ID:-gate5-local-pipedream-client}" \
+    PIPEDREAM_CLIENT_SECRET="${PIPEDREAM_CLIENT_SECRET:-gate5-local-pipedream-secret}" \
+    PIPEDREAM_PROJECT_ID="${PIPEDREAM_PROJECT_ID:-gate5-local-pipedream-project}" \
+    ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-daytona,local_docker}" \
+    DAYTONA_API_KEY="${DAYTONA_API_KEY:-gate5-local-daytona-key}" \
+    DAYTONA_SERVER_URL="${DAYTONA_SERVER_URL:-https://daytona.example.test}" \
+    DAYTONA_TARGET="${DAYTONA_TARGET:-us}" \
+    DOCKER_HOST="${DOCKER_HOST:-unix:///var/run/docker.sock}" \
+    KORTIX_BILLING_INTERNAL_ENABLED="${KORTIX_BILLING_INTERNAL_ENABLED:-false}" \
     KORTIX_TEST_DB_CONFIRM=I_UNDERSTAND_THIS_DELETES_TEST_DATA \
     INTERNAL_KORTIX_ENV=dev \
     bun test apps/api/src/__tests__/e2e-legacy-sandbox-migration.test.ts
