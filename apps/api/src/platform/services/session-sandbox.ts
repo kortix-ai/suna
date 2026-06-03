@@ -115,7 +115,7 @@ export async function provisionSessionSandbox(opts: {
   /**
    * Warm-pool lifecycle state for the inserted row. Pass 'booting' to provision
    * a pre-booted pool sandbox (no project_sessions row); leave undefined for a
-   * normal session sandbox. See docs/specs/warm-pool.md.
+   * normal session sandbox.
    */
   poolState?: string;
   baseRef?: string;

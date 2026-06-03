@@ -702,7 +702,7 @@ export const sessionSandboxes = kortixSchema.table(
     metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
     // Warm-pool lifecycle. NULL for a normal session sandbox; for a pre-booted
     // pool sandbox: 'booting' → 'parked' (claimable) → 'claimed'. A parked
-    // sandbox has no project_sessions row yet. See docs/specs/warm-pool.md.
+    // sandbox has no project_sessions row yet.
     poolState: text('pool_state'),
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

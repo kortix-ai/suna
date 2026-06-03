@@ -31,7 +31,7 @@ export interface CreateSandboxOpts {
    * Provider auto-stop idle timeout in minutes. Defaults to the provider's own
    * value (15). Pass 0 to disable auto-stop — used for warm-pool sandboxes,
    * which must stay running until claimed (our own idle sweep hibernates them
-   * once claimed). See docs/specs/warm-pool.md.
+   * once claimed).
    */
   autoStopInterval?: number;
 }

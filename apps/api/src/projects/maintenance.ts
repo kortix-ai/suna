@@ -101,7 +101,7 @@ export async function hibernateIdleSessionSandboxes(now = new Date()): Promise<{
       isNotNull(sessionSandboxes.externalId),
       // Never hibernate an unclaimed warm-pool box (pool_state set) — it has no
       // session activity by design. Claimed boxes have pool_state cleared and
-      // hibernate normally. See docs/specs/warm-pool.md.
+      // hibernate normally.
       sql`${sessionSandboxes.poolState} IS NULL`,
       sql`coalesce(${sessionSandboxes.lastUsedAt}, ${sessionSandboxes.updatedAt}, ${sessionSandboxes.createdAt}) < ${cutoffParam}::timestamptz`,
     ))

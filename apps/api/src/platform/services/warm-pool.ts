@@ -1,6 +1,5 @@
 /**
  * Warm sandbox pool — per-project pre-booted sandboxes ready to claim instantly.
- * See docs/specs/warm-pool.md.
  *
  * A warm sandbox is a normal session boot for a pre-allocated id `W` (which is
  * both its sandbox_id AND its future session_id, preserving the

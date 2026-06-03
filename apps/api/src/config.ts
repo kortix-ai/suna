@@ -116,7 +116,7 @@ const envSchema = z.object({
   // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
   // OFF leaves the direct clone-credential token flow untouched).
   KORTIX_GIT_PROXY:                optBoolFalse,
-  // Warm sandbox pool (docs/specs/warm-pool.md). ON by default — no enable flag.
+  // Warm sandbox pool. ON by default — no enable flag.
   // Default warm sandboxes per active project (operator default; the per-project
   // UI value overrides it).
   KORTIX_WARM_POOL_SIZE:           optInt(1),
