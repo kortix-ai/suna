@@ -444,7 +444,7 @@ pnpm exec madge --circular --extensions ts,tsx apps/api/src
 `knip` needs entry points configured (`apps/api/src/index.ts` + `scripts/*.ts`; `apps/cli/src/index.ts`; web next config + `app/`; each package `exports`). Output = the real dead-code list.
 
 ### (B) Runtime reachability from this suite — per app (different runtimes)
-- **API (Bun):** the working path is **in-process** — implement curl flows as a `bun test` driver that imports the *real* app and calls `app.fetch(new Request(...))`, not the stub `createTestApp()` in `apps/api/src/__tests__/helpers.ts` (it mounts only a handful of routes and bypasses the monolith). The real app is exported at `apps/api/src/index.ts` (`export default { fetch }`). Then:
+- **API (Bun):** the working path is **in-process** — implement curl flows as a `bun test` driver that imports the *real* app and calls `app.fetch(new Request(...))`. The real app is exported at `apps/api/src/index.ts` (`export default { fetch }`). Then:
   ```bash
   cd apps/api && bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage src/__tests__/e2e-*.test.ts
   ```
