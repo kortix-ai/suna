@@ -9,7 +9,7 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type ChannelType = 'telegram' | 'slack' | 'discord' | 'whatsapp' | 'teams' | 'voice' | 'email' | 'sms';
+export type ChannelType = 'slack' | 'discord' | 'whatsapp' | 'teams' | 'voice' | 'email' | 'sms';
 
 export interface ChannelConfig {
   id: string;
@@ -89,29 +89,6 @@ async function listChannels(sandboxUrl: string): Promise<ChannelConfig[]> {
   };
 
   try {
-    const telegramRes = await fetch(`${sandboxUrl}/env/TELEGRAM_BOT_TOKEN`, { headers });
-    if (telegramRes.ok) {
-      const telegramData = await telegramRes.json() as Record<string, string>;
-      if (telegramData?.TELEGRAM_BOT_TOKEN) {
-        channels.push({
-          id: 'env-telegram',
-          platform: 'telegram',
-          name: 'Telegram Bot',
-          enabled: true,
-          bot_username: null,
-          default_agent: null,
-          default_model: null,
-          instructions: null,
-          webhook_path: null,
-          webhook_url: null,
-          created_by: null,
-          created_at: new Date().toISOString(),
-        });
-      }
-    }
-  } catch { /* ignore */ }
-
-  try {
     const slackRes = await fetch(`${sandboxUrl}/env/SLACK_BOT_TOKEN`, { headers });
     if (slackRes.ok) {
       const slackData = await slackRes.json() as Record<string, string>;
@@ -147,28 +124,6 @@ async function updateChannel(sandboxUrl: string, id: string, body: UpdateChannel
 
 async function deleteChannel(sandboxUrl: string, id: string): Promise<void> {
   // Env-based channels: remove the env vars instead
-  if (id === 'env-telegram') {
-    const token = await getAuthToken();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    };
-    // Delete webhook from Telegram
-    try {
-      const envRes = await fetch(`${sandboxUrl}/env/TELEGRAM_BOT_TOKEN`, { headers });
-      if (envRes.ok) {
-        const data = await envRes.json() as Record<string, string>;
-        if (data?.TELEGRAM_BOT_TOKEN) {
-          await fetch(`https://api.telegram.org/bot${data.TELEGRAM_BOT_TOKEN}/deleteWebhook`, { method: 'POST' });
-        }
-      }
-    } catch { /* ignore */ }
-    // Remove env vars
-    for (const key of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET_TOKEN']) {
-      try { await fetch(`${sandboxUrl}/env/${key}`, { method: 'DELETE', headers }); } catch { /* ignore */ }
-    }
-    return;
-  }
   if (id === 'env-slack') {
     const token = await getAuthToken();
     const headers: Record<string, string> = {
@@ -259,7 +214,6 @@ export function useToggleChannel() {
 
 export function getChannelTypeLabel(type: ChannelType): string {
   const labels: Record<ChannelType, string> = {
-    telegram: 'Telegram',
     slack: 'Slack',
     discord: 'Discord',
     whatsapp: 'WhatsApp',
