@@ -36,28 +36,6 @@ export const STARTER_TEMPLATE_IDS = ['minimal', 'general-knowledge-worker'] as c
 export type StarterTemplateId = (typeof STARTER_TEMPLATE_IDS)[number];
 export const DEFAULT_STARTER_TEMPLATE_ID: StarterTemplateId = 'general-knowledge-worker';
 
-export interface StarterTemplate {
-  id: StarterTemplateId;
-  name: string;
-  description: string;
-  includesGeneralKnowledgeWorkerSkills: boolean;
-}
-
-export const STARTER_TEMPLATES: StarterTemplate[] = [
-  {
-    id: 'general-knowledge-worker',
-    name: 'General knowledge worker',
-    description: 'Kortix system runtime plus the preconfigured general knowledge worker skill pack.',
-    includesGeneralKnowledgeWorkerSkills: true,
-  },
-  {
-    id: 'minimal',
-    name: 'Minimal',
-    description: 'Only the shared Kortix system runtime and default agent.',
-    includesGeneralKnowledgeWorkerSkills: false,
-  },
-];
-
 export interface StarterVars {
   /** Human display name for the project (e.g. "Company OS"). */
   projectName: string;
@@ -68,8 +46,8 @@ export interface StarterVars {
 }
 
 /** Absolute path to the bundled base template directory. */
-export const BASE_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'base');
-export const GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR = join(
+const BASE_TEMPLATE_DIR = join(import.meta.dir, '..', 'templates', 'base');
+const GENERAL_KNOWLEDGE_WORKER_TEMPLATE_DIR = join(
   import.meta.dir,
   '..',
   'templates',
