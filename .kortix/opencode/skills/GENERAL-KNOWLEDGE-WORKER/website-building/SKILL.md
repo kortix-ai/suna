@@ -7,7 +7,7 @@ description: "Use for distinctive production-grade websites, landing pages, and 
 
 Build distinctive, production-grade websites where every site looks DIFFERENT. Every choice — type, color, motion, layout — must be derived from the subject matter. Run the palette generator (`bun run shared/generate-palette.ts "keywords"`) to create a unique color scheme for each project. NEVER reuse the same palette across sites.
 
-**This skill covers everything for web projects.** Read the sub-files in this directory as needed based on your project type. For web applications, also read `skills/GENERAL-KNOWLEDGE-WORKER/website-building/webapp/SKILL.md`.
+**This skill covers everything for web projects.** Read the sub-files in this directory as needed based on your project type. For web applications, also read `skills/GENERAL-KNOWLEDGE-WORKER/webapp/SKILL.md`.
 
 **Universal design principles** (color philosophy, default palette, font selection) are shared with other skills via `design-foundations`. This skill's shared files extend those foundations with web-specific implementation (CSS variables, responsive tokens, base stylesheets). You don't need to load `design-foundations` separately — the web-specific versions in `shared/` are comprehensive.
 
@@ -22,7 +22,7 @@ Use `read` with the full path, e.g. `skills/GENERAL-KNOWLEDGE-WORKER/website-bui
 | Project Type | Action | Examples |
 |---|---|---|
 | Informational sites | `read` `skills/GENERAL-KNOWLEDGE-WORKER/website-building/informational/informational.md` | Personal sites, portfolios, editorial/blogs, small business, landing pages |
-| Web applications | `read skills/GENERAL-KNOWLEDGE-WORKER/website-building/webapp/SKILL.md` | SaaS products, dashboards, admin panels, e-commerce, brand experiences |
+| Web applications | `read skills/GENERAL-KNOWLEDGE-WORKER/webapp/SKILL.md` | SaaS products, dashboards, admin panels, e-commerce, brand experiences |
 | Browser games | `read` `skills/GENERAL-KNOWLEDGE-WORKER/website-building/game/game.md` + `skills/GENERAL-KNOWLEDGE-WORKER/website-building/game/game-testing.md` | 2D Canvas games, Three.js/WebGL, HTML5 games, interactive 3D experiences |
 
 **Step 2: Read shared files** — read `skills/GENERAL-KNOWLEDGE-WORKER/website-building/shared/01-design-tokens.md` and `skills/GENERAL-KNOWLEDGE-WORKER/website-building/shared/02-typography.md` first (mandatory for ALL project types, including webapp). These establish the Kortix design system defaults and typography rules that apply universally. For web applications and dashboards, skip files marked with `†` below — those contain implementation details pre-configured in the fullstack template.
@@ -61,8 +61,8 @@ All paths are relative to `skills/GENERAL-KNOWLEDGE-WORKER/website-building/`.
 
 | File | When to load |
 |---|---|
-| `read skills/GENERAL-KNOWLEDGE-WORKER/website-building/webapp/SKILL.md` | SaaS, dashboard, admin, e-commerce, brand experience (child skill with fullstack template) |
-| `webapp/dashboards.md` | Dashboard or data-dense interface (companion to webapp) |
+| `read skills/GENERAL-KNOWLEDGE-WORKER/webapp/SKILL.md` | SaaS, dashboard, admin, e-commerce, brand experience (fullstack template skill) |
+| `skills/GENERAL-KNOWLEDGE-WORKER/webapp/dashboards.md` | Dashboard or data-dense interface (companion to webapp) |
 | `informational/informational.md` | Personal site, portfolio, editorial, small business, landing |
 | `game/game.md` | Browser game, Three.js, WebGL, interactive 3D |
 | `game/2d-canvas.md` | 2D Canvas game (companion to game.md) |
