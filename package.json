@@ -3,6 +3,9 @@
   "private": true,
   "scripts": {
     "dev": "bash scripts/dev-local.sh",
+    "dev:dev-env": "pnpm --filter kortix-api dev:dev-env",
+    "dev:prod-env": "pnpm --filter kortix-api dev:prod-env",
+    "test:envs": "bash scripts/e2e-secrets-envs.sh",
     "dev:web": "pnpm --filter Kortix-Computer-Frontend dev",
     "dev:frontend": "pnpm --filter Kortix-Computer-Frontend dev",
     "dev:mobile": "pnpm --filter ./apps/mobile dev",

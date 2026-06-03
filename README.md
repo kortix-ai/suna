@@ -140,15 +140,17 @@ dotenvx-armor login                        # grants this machine decryption
 pnpm dev                                   # dev-local.sh decrypts apps/api/.env on boot
 ```
 
-There are three encrypted profiles, one file each (each with its own keypair in `apps/api/.env.keys`):
+Three encrypted environments for local dev, one file each (each with its own keypair in `apps/api/.env.keys`):
 
-| Profile | File | Used by |
-| --- | --- | --- |
-| local | `apps/api/.env` | `pnpm dev` / `pnpm dev:api` (default) |
-| dev | `apps/api/.env.dev` | `dotenvx run -f apps/api/.env.dev -- …` |
-| prod | `apps/api/.env.prod` | `dotenvx run -f apps/api/.env.prod -- …` (local-against-prod) |
+| Run | Env | File | API backend |
+| --- | --- | --- | --- |
+| `pnpm dev` | local | `apps/api/.env` | 100% local stack (local Supabase, test Stripe) + web + tunnel |
+| `pnpm dev:dev-env` | dev | `apps/api/.env.dev` | dev stack — dev DB, test Stripe, dev keys |
+| `pnpm dev:prod-env` | prod | `apps/api/.env.prod` | prod stack — prod DB, **LIVE** Stripe |
 
-The deployed prod runtime still gets its own env injected — `.env.prod` here is only for running locally against prod. To add or rotate a secret in a profile: `pnpm dlx @dotenvx/dotenvx set KEY value -f apps/api/.env[.dev|.prod]` (re-encrypts in place), then commit. `apps/web` and `supabase` env stay as plain local files — `apps/web/.env` is client-facing (`NEXT_PUBLIC_*`) and `supabase/.env` is read by the Supabase CLI directly.
+Verify all three decrypt + are separated: `pnpm test:envs`. Add/rotate a secret: `pnpm dlx @dotenvx/dotenvx set KEY value -f apps/api/.env[.dev|.prod]`, then commit.
+
+These files are for **local development only**. The deployed **production** infra loads its real env from **AWS Secrets Manager** at runtime — `apps/api/.env.prod` is just for running locally against the prod backend and does not affect what prod runs. `apps/web/.env` (client-facing `NEXT_PUBLIC_*`) and `supabase/.env` (local Supabase CLI) stay as plain gitignored files.
 
 CI doesn't need any of these today (builds use placeholders, and the `secret-scan` workflow allowlists the encrypted file via `.gitleaks.toml`). If a future job needs real values, add the dotenvx private key as a single `DOTENV_PRIVATE_KEY` GitHub Actions secret and prefix the step with `dotenvx run -- …` — it decrypts `apps/api/.env` in memory, no other secrets required.
 
