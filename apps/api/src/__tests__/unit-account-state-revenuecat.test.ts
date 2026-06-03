@@ -16,7 +16,6 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 
 mock.module('../billing/services/credits', () => ({
   getCreditSummary: async () => creditSummary,
-  calculateTokenCost: () => 0,
   deductCredits: async () => ({ success: true, cost: 0, newBalance: 0, transactionId: 'tx_mock' }),
   refreshDailyCredits: async () => null,
   grantCredits: async () => undefined,

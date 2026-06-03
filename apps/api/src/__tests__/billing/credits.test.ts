@@ -46,37 +46,10 @@ beforeEach(() => {
 });
 
 // Import the REAL credits service (runs in isolated process via separate bun test invocation)
-const { calculateTokenCost, getCreditSummary, deductCredits, grantCredits, resetExpiringCredits } =
+const { getCreditSummary, deductCredits, grantCredits, resetExpiringCredits } =
   await import('../../billing/services/credits');
 
-const { TOKEN_PRICE_MULTIPLIER } = await import('../../billing/services/tiers');
-
 // ─── Tests ────────────────────────────────────────────────────────────────────
-
-describe('calculateTokenCost', () => {
-  test('known model (claude-sonnet-4.6): correct cost with 1.2x multiplier', () => {
-    const cost = calculateTokenCost(1_000_000, 1_000_000, 'claude-sonnet-4.6');
-    const expected = (3 + 15) * TOKEN_PRICE_MULTIPLIER;
-    expect(cost).toBeCloseTo(expected, 6);
-  });
-
-  test('partial model match (claude-sonnet-4.6-20250101)', () => {
-    const cost = calculateTokenCost(1_000_000, 1_000_000, 'claude-sonnet-4.6-20250101');
-    const expected = (3 + 15) * TOKEN_PRICE_MULTIPLIER;
-    expect(cost).toBeCloseTo(expected, 6);
-  });
-
-  test('unknown model falls back to default pricing', () => {
-    const cost = calculateTokenCost(1_000_000, 1_000_000, 'some-unknown-model');
-    const expected = (2 + 10) * TOKEN_PRICE_MULTIPLIER;
-    expect(cost).toBeCloseTo(expected, 6);
-  });
-
-  test('0 tokens returns 0 cost', () => {
-    const cost = calculateTokenCost(0, 0, 'claude-sonnet-4.6');
-    expect(cost).toBe(0);
-  });
-});
 
 describe('getCreditSummary', () => {
   test('canRun=true when balance >= 0.01', async () => {

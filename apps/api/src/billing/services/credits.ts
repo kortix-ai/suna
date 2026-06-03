@@ -6,7 +6,7 @@ import {
 } from '../repositories/credit-accounts';
 import { insertLedgerEntry } from '../repositories/transactions';
 import { InsufficientCreditsError } from '../../errors';
-import { TOKEN_PRICE_MULTIPLIER, MINIMUM_CREDIT_FOR_RUN } from './tiers';
+import { MINIMUM_CREDIT_FOR_RUN } from './tiers';
 export { grantCredits } from './credit-grants';
 
 export async function getCreditSummary(accountId: string) {
@@ -111,47 +111,6 @@ export async function deductForLlmUsage(opts: {
       });
   }
   return result;
-}
-
-interface ModelPricing {
-  inputPricePerMillion: number;
-  outputPricePerMillion: number;
-  cachedInputPricePerMillion?: number;
-}
-
-const MODEL_PRICING: Record<string, ModelPricing> = {
-  'claude-opus-4.8': { inputPricePerMillion: 5, outputPricePerMillion: 25 },
-  'claude-sonnet-4.6': { inputPricePerMillion: 3, outputPricePerMillion: 15 },
-  'gpt-5.5': { inputPricePerMillion: 5, outputPricePerMillion: 30 },
-  'gemini-3.5-flash': { inputPricePerMillion: 1.5, outputPricePerMillion: 9 },
-  'gemini-3.1-pro': { inputPricePerMillion: 2, outputPricePerMillion: 12 },
-  'deepseek-v4-flash': { inputPricePerMillion: 0.0983, outputPricePerMillion: 0.1966 },
-  'deepseek-v4-pro': { inputPricePerMillion: 0.435, outputPricePerMillion: 0.87 },
-  'minimax-m3': { inputPricePerMillion: 0.3, outputPricePerMillion: 1.2 },
-  'kimi-k2.6': { inputPricePerMillion: 0.684, outputPricePerMillion: 3.42 },
-  'glm-5.1': { inputPricePerMillion: 0.98, outputPricePerMillion: 3.08 },
-  'grok-4.3': { inputPricePerMillion: 1.25, outputPricePerMillion: 2.5 },
-};
-
-function getModelPricing(model: string): ModelPricing {
-  if (MODEL_PRICING[model]) return MODEL_PRICING[model];
-
-  for (const [key, pricing] of Object.entries(MODEL_PRICING)) {
-    if (model.startsWith(key) || model.includes(key)) return pricing;
-  }
-
-  return { inputPricePerMillion: 2, outputPricePerMillion: 10 };
-}
-
-export function calculateTokenCost(
-  promptTokens: number,
-  completionTokens: number,
-  model: string,
-): number {
-  const pricing = getModelPricing(model);
-  const inputCost = (promptTokens / 1_000_000) * pricing.inputPricePerMillion;
-  const outputCost = (completionTokens / 1_000_000) * pricing.outputPricePerMillion;
-  return (inputCost + outputCost) * TOKEN_PRICE_MULTIPLIER;
 }
 
 export async function resetExpiringCredits(

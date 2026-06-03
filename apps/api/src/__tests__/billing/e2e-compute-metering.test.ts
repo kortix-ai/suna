@@ -23,6 +23,7 @@ import {
   COMPUTE_DISK_PRICE_PER_GB_SECOND,
   COMPUTE_MEMORY_PRICE_PER_GB_SECOND,
   COMPUTE_PRICE_MARKUP,
+  DAYTONA_DISCOUNT,
 } from '../../billing/services/tiers';
 
 registerGlobalMocks();
@@ -94,7 +95,6 @@ mock.module('../../billing/repositories/compute-sessions', () => ({
 
 // Override the credits mock to actually capture the type tag.
 mock.module('../../billing/services/credits', () => ({
-  calculateTokenCost: () => 0,
   getCreditSummary: async () => ({ total: 0, daily: 0, monthly: 0, extra: 0, canRun: true }),
   deductCredits: async (accountId: string, amount: number, description: string, ledgerType = 'usage') => {
     debitCalls.push({ accountId, amount, description, ledgerType });
@@ -121,7 +121,7 @@ function expectedComputeCost(spec: typeof SPEC, durationSeconds: number): number
     spec.cpuCores * COMPUTE_CPU_PRICE_PER_CORE_SECOND * durationSeconds +
     spec.memoryGb * COMPUTE_MEMORY_PRICE_PER_GB_SECOND * durationSeconds +
     spec.diskGb * COMPUTE_DISK_PRICE_PER_GB_SECOND * durationSeconds
-  ) * COMPUTE_PRICE_MARKUP;
+  ) * DAYTONA_DISCOUNT * COMPUTE_PRICE_MARKUP;
 }
 
 beforeEach(() => {

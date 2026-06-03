@@ -176,7 +176,6 @@ export function registerCreditsMock() {
   _creditsMockRegistered = true;
 
   mock.module('../../billing/services/credits', () => ({
-    calculateTokenCost: () => 0,
     getCreditSummary: async () => ({ total: 0, daily: 0, monthly: 0, extra: 0, canRun: true }),
     deductCredits: async () => ({ success: true, cost: 0, newBalance: 0, transactionId: 'tx_mock' }),
     refreshDailyCredits: async () => null,
