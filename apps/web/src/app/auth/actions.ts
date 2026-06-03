@@ -109,7 +109,7 @@ export async function signUp(_prevState: any, formData: FormData) {
   }
 
   if (!shouldCreateUser) {
-    return { signupClosed: true, message: 'Signups are currently closed. Request access below.' };
+    return { message: 'Signups are currently closed.' };
   }
 
   const supabase = await createClient();
