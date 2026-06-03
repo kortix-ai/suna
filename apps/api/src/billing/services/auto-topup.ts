@@ -9,7 +9,6 @@ import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { getCustomerByAccountId } from '../repositories/customers';
-import { grantCredits } from './credits';
 import { isPaidTier } from './tiers';
 import { BillingError } from '../../errors';
 import {
@@ -244,6 +243,7 @@ async function tryAutoTopup(accountId: string): Promise<void> {
     });
 
     if (paymentIntent.status === 'succeeded') {
+      const { grantCredits } = await import('./credits');
       await grantCredits(
         accountId,
         amount,
