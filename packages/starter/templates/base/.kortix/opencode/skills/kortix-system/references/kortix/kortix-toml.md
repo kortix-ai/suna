@@ -208,16 +208,12 @@ output — UI ordering is stable, not authoring-order.
 | ------------ | -------- | ------- | ----------- | -------------------------------------------------------------- |
 | `slug`       | yes      | string  | —           | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers.            |
 | `type`       | yes      | string  | —           | `"cron"` or `"webhook"`.                                       |
-| `prompt`     | yes      | string  | —           | Mustache-style template. Alias: `prompt_template`.             |
+| `prompt`     | yes      | string  | —           | Mustache-style template.                                      |
 | `name`       | no       | string  | `slug`      | Human label.                                                   |
-| `agent`      | no       | string  | `"default"` | OpenCode agent name. Alias: `agent_name`.                      |
+| `agent`      | no       | string  | `"default"` | OpenCode agent name.                                           |
 | `enabled`    | no       | bool    | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
 
-**Alias note:** the parser accepts both forms (`prompt` /
-`prompt_template`, `agent` / `agent_name`, `cron` / `schedule`,
-`secret_env` / `secretEnv`). The platform serializes back with the
-canonical names, so editing-then-saving from the UI will normalize
-aliases away.
+The parser accepts only the canonical trigger field names shown here.
 
 **Slug uniqueness is per-section.** A trigger and an app may share
 a slug; two triggers may not.
@@ -226,7 +222,7 @@ a slug; two triggers may not.
 
 | Field      | Required | Type    | Default | Notes                                                       |
 | ---------- | -------- | ------- | ------- | ----------------------------------------------------------- |
-| `cron`     | yes      | string  | —       | 6-field croner expression: `second minute hour day month weekday`. Alias: `schedule`. |
+| `cron`     | yes      | string  | —       | 6-field croner expression: `second minute hour day month weekday`. |
 | `timezone` | no       | string  | `"UTC"` | IANA name, e.g. `"America/Los_Angeles"`.                    |
 
 The platform polls every 60 s by default
@@ -237,7 +233,7 @@ best-effort.
 
 | Field        | Required | Type    | Notes                                                                                  |
 | ------------ | -------- | ------- | -------------------------------------------------------------------------------------- |
-| `secret_env` | yes      | string  | Name of a `project_secrets` entry holding the HMAC secret. Alias: `secretEnv`. Manifest-side regex is `^[A-Z_][A-Z0-9_]*$` (unbounded). |
+| `secret_env` | yes      | string  | Name of a `project_secrets` entry holding the HMAC secret. Manifest-side regex is `^[A-Z_][A-Z0-9_]*$` (unbounded). |
 
 Webhooks fire on signed POSTs to:
 

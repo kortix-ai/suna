@@ -294,36 +294,20 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
   }
   const type = typeRaw as GitTriggerType;
 
-  const prompt = typeof row.prompt === 'string'
-    ? row.prompt
-    : typeof row.prompt_template === 'string'
-      ? row.prompt_template
-      : '';
+  const prompt = typeof row.prompt === 'string' ? row.prompt : '';
   if (!prompt.trim()) {
     return err(slug, 'prompt is required and may not be empty');
   }
 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
-  const agent = typeof row.agent === 'string' && row.agent.trim()
-    ? row.agent.trim()
-    : typeof row.agent_name === 'string' && row.agent_name.trim()
-      ? row.agent_name.trim()
-      : 'default';
+  const agent = typeof row.agent === 'string' && row.agent.trim() ? row.agent.trim() : 'default';
   const enabled = coerceBool(row.enabled, true);
 
   const path = `${MANIFEST_FILENAME}#triggers.${slug}`;
 
   if (type === 'cron') {
-    const cron = typeof row.cron === 'string'
-      ? row.cron.trim()
-      : typeof row.schedule === 'string'
-        ? row.schedule.trim()
-        : '';
-    const runAtRaw = typeof row.run_at === 'string'
-      ? row.run_at.trim()
-      : typeof row.runAt === 'string'
-        ? row.runAt.trim()
-        : '';
+    const cron = typeof row.cron === 'string' ? row.cron.trim() : '';
+    const runAtRaw = typeof row.run_at === 'string' ? row.run_at.trim() : '';
     const timezone = typeof row.timezone === 'string' && row.timezone.trim()
       ? row.timezone.trim()
       : 'UTC';
@@ -372,11 +356,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
   }
 
   // webhook
-  const secretEnv = typeof row.secret_env === 'string'
-    ? row.secret_env.trim()
-    : typeof row.secretEnv === 'string'
-      ? row.secretEnv.trim()
-      : '';
+  const secretEnv = typeof row.secret_env === 'string' ? row.secret_env.trim() : '';
   if (!secretEnv) {
     return err(slug, 'webhook triggers must declare `secret_env` pointing at a project_secrets entry');
   }

@@ -201,14 +201,14 @@ prompt  = "Summarize yesterday's commits."
 | --------- | -------- | ------ | ----------- | -------------------------------------------------------------- |
 | `slug`    | yes      | string | —           | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers.            |
 | `type`    | yes      | string | —           | `"cron"` or `"webhook"`.                                       |
-| `prompt`  | yes      | string | —           | Mustache-style template. Alias: `prompt_template`.            |
+| `prompt`  | yes      | string | —           | Mustache-style template.                                      |
 | `name`    | no       | string | `slug`      | Human label.                                                  |
-| `agent`   | no       | string | `"default"` | OpenCode agent name. Alias: `agent_name`.                     |
+| `agent`   | no       | string | `"default"` | OpenCode agent name.                                          |
 | `enabled` | no       | bool   | `true`      | Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
 
-Cron-only: `cron` (6-field croner `second minute hour day month weekday`, alias `schedule`) and `timezone` (IANA name, default `"UTC"`). Webhook-only: `secret_env` (name of a `project_secrets` entry holding the HMAC secret, alias `secretEnv`).
+Cron-only: `cron` (6-field croner `second minute hour day month weekday`) and `timezone` (IANA name, default `"UTC"`). Webhook-only: `secret_env` (name of a `project_secrets` entry holding the HMAC secret).
 
-The parser accepts both alias forms (`prompt` / `prompt_template`, `agent` / `agent_name`, `cron` / `schedule`, `secret_env` / `secretEnv`). The platform serializes back with the canonical names, so editing-then-saving from the UI normalizes aliases away. Slug uniqueness is per-section — a trigger and an app may share a slug; two triggers may not.
+The parser accepts only canonical trigger field names. Slug uniqueness is per-section — a trigger and an app may share a slug; two triggers may not.
 
 ## `[[connectors]]`
 

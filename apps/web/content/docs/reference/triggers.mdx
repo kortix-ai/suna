@@ -76,25 +76,25 @@ The secret value lives in `project_secrets`; the manifest references it by name.
 | --- | --- | --- | --- | --- |
 | `slug` | yes | string | — | `[a-z0-9][a-z0-9_-]{0,127}`, unique among triggers. |
 | `type` | yes | string | — | `"cron"` or `"webhook"`. |
-| `prompt` | yes | string | — | Mustache-templated body. May be multi-line via `"""…"""`. Alias: `prompt_template`. |
+| `prompt` | yes | string | — | Mustache-templated body. May be multi-line via `"""…"""`. |
 | `name` | no | string | `slug` | Human label. |
-| `agent` | no | string | `"default"` | OpenCode agent name from `<config_dir>/agents/<name>.md`. Alias: `agent_name`. |
+| `agent` | no | string | `"default"` | OpenCode agent name from `<config_dir>/agents/<name>.md`. |
 | `enabled` | no | bool | `true` | When `false`, the scheduler / receiver skip the entry. Accepts strings: `"true"/"false"/"yes"/"no"/"on"/"off"/"1"/"0"`. |
 
 ### Cron-only fields
 
 | Field | Required | Type | Default | Notes |
 | --- | --- | --- | --- | --- |
-| `cron` | yes | string | — | 6-field croner expression. Alias: `schedule`. |
+| `cron` | yes | string | — | 6-field croner expression. |
 | `timezone` | no | string | `"UTC"` | IANA name, e.g. `"America/Los_Angeles"`. |
 
 ### Webhook-only fields
 
 | Field | Required | Type | Notes |
 | --- | --- | --- | --- |
-| `secret_env` | yes | string | Name of a `project_secrets` entry holding the HMAC secret. Alias: `secretEnv`. Manifest-side regex is `^[A-Z_][A-Z0-9_]*$` (unbounded). |
+| `secret_env` | yes | string | Name of a `project_secrets` entry holding the HMAC secret. Manifest-side regex is `^[A-Z_][A-Z0-9_]*$` (unbounded). |
 
-The parser accepts both alias forms; the platform serializes back with canonical names, so editing-then-saving from the UI normalizes aliases away.
+The parser accepts only the canonical field names shown above.
 
 ## Template variables
 

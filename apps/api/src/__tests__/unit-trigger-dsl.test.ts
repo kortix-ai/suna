@@ -181,7 +181,7 @@ prompt = "do the thing"
     expect(specs[0]!.enabled).toBe(true);
   });
 
-  test('schedule is accepted as an alias for cron', () => {
+  test('schedule is not accepted as an alias for cron', () => {
     const parsed = parseManifestString(manifestWith(`
 [[triggers]]
 slug = "aliased"
@@ -189,11 +189,12 @@ type = "cron"
 schedule = "0 */5 * * * *"
 prompt = "body"
 `));
-    const { specs } = extractTriggers(parsed);
-    expect(specs[0]!.cron).toBe('0 */5 * * * *');
+    const { specs, errors } = extractTriggers(parsed);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toMatch(/cron triggers must declare/);
   });
 
-  test('prompt_template is accepted as an alias for prompt', () => {
+  test('prompt_template is not accepted as an alias for prompt', () => {
     const parsed = parseManifestString(manifestWith(`
 [[triggers]]
 slug = "old-shape"
@@ -201,8 +202,9 @@ type = "cron"
 cron = "* * * * * *"
 prompt_template = "legacy field name"
 `));
-    const { specs } = extractTriggers(parsed);
-    expect(specs[0]!.promptTemplate).toBe('legacy field name');
+    const { specs, errors } = extractTriggers(parsed);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toMatch(/prompt is required/);
   });
 });
 
@@ -266,6 +268,33 @@ prompt = "x"
     expect(errors[0]!.error).toMatch(/cron triggers must declare/);
   });
 
+  test('rejects camelCase runAt in favor of run_at', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "camel-once"
+type = "cron"
+runAt = "2099-01-01T09:00:00Z"
+prompt = "x"
+`));
+    const { specs, errors } = extractTriggers(parsed);
+    expect(specs).toEqual([]);
+    expect(errors[0]!.error).toMatch(/cron triggers must declare/);
+  });
+
+  test('rejects agent_name in favor of agent', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "agent-alias"
+type = "cron"
+cron = "* * * * * *"
+agent_name = "reviewer"
+prompt = "x"
+`));
+    const { specs, errors } = extractTriggers(parsed);
+    expect(errors).toEqual([]);
+    expect(specs[0]!.agent).toBe('default');
+  });
+
   test('rejects a webhook trigger missing secret_env', () => {
     const parsed = parseManifestString(manifestWith(`
 [[triggers]]
@@ -274,6 +303,19 @@ type = "webhook"
 prompt = "x"
 `));
     const { errors } = extractTriggers(parsed);
+    expect(errors[0]!.error).toMatch(/secret_env/);
+  });
+
+  test('rejects camelCase secretEnv in favor of secret_env', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "camel-secret"
+type = "webhook"
+secretEnv = "WEBHOOK_SECRET"
+prompt = "x"
+`));
+    const { specs, errors } = extractTriggers(parsed);
+    expect(specs).toEqual([]);
     expect(errors[0]!.error).toMatch(/secret_env/);
   });
 

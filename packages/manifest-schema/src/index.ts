@@ -454,12 +454,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
         severity: 'error',
       });
     }
-    const prompt =
-      typeof entry.prompt === 'string'
-        ? entry.prompt
-        : typeof entry.prompt_template === 'string'
-          ? entry.prompt_template
-          : '';
+    const prompt = typeof entry.prompt === 'string' ? entry.prompt : '';
     if (!prompt.trim()) {
       issues.push({
         path: `${where}.prompt`,
@@ -468,20 +463,10 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
       });
     }
     if (type === 'cron') {
-      const cron =
-        typeof entry.cron === 'string'
-          ? entry.cron.trim()
-          : typeof entry.schedule === 'string'
-            ? entry.schedule.trim()
-            : '';
+      const cron = typeof entry.cron === 'string' ? entry.cron.trim() : '';
       // A one-off ("run once") schedule carries `run_at` (ISO-8601 instant)
       // instead of a recurring `cron` expression — exactly one must be set.
-      const runAt =
-        typeof entry.run_at === 'string'
-          ? entry.run_at.trim()
-          : typeof entry.runAt === 'string'
-            ? entry.runAt.trim()
-            : '';
+      const runAt = typeof entry.run_at === 'string' ? entry.run_at.trim() : '';
       if (runAt) {
         if (Number.isNaN(Date.parse(runAt))) {
           issues.push({
@@ -505,12 +490,7 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
         });
       }
     } else if (type === 'webhook') {
-      const secret =
-        typeof entry.secret_env === 'string'
-          ? entry.secret_env.trim()
-          : typeof entry.secretEnv === 'string'
-            ? entry.secretEnv.trim()
-            : '';
+      const secret = typeof entry.secret_env === 'string' ? entry.secret_env.trim() : '';
       if (!secret) {
         issues.push({
           path: `${where}.secret_env`,
