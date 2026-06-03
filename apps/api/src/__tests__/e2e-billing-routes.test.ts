@@ -1,7 +1,7 @@
 /**
  * E2E tests for Billing HTTP routes.
  *
- * Tests: tier-configurations, credit-breakdown, deduct, deduct-usage,
+ * Tests: tier-configurations, credit-breakdown, usage-history,
  *        account deletion (status, request, cancel, delete-immediately).
  *
  * Strategy:
@@ -11,7 +11,7 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
-import { BillingError, InsufficientCreditsError } from '../errors';
+import { BillingError } from '../errors';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
 
@@ -24,8 +24,6 @@ let mockCreditBalance: any = {
   dailyCreditsBalance: '3.00',
   tier: 'tier_6_50',
 };
-let mockDeductResult: any = { success: true, cost: 0.5, newBalance: 99.5, transactionId: 'tx_test_001' };
-let mockDeductError: Error | null = null;
 let mockTransactionsSummary: any = { totalCredits: 150, totalDebits: 50, count: 200 };
 
 let mockDeletionStatus: any = {
@@ -59,17 +57,6 @@ mock.module('../shared/resolve-account', () => ({
 
 // Credits service mock
 mock.module('../billing/services/credits', () => ({
-  calculateTokenCost: (prompt: number, completion: number, _model: string) => {
-    // Realistic: mirrors real calculateTokenCost with TOKEN_PRICE_MULTIPLIER=1.2
-    // Uses anthropic-level pricing as default (inputPer1M=3, outputPer1M=15)
-    const inputCost = (prompt / 1_000_000) * 3;
-    const outputCost = (completion / 1_000_000) * 15;
-    return (inputCost + outputCost) * 1.2;
-  },
-  deductCredits: async (_accountId: string, _cost: number, _desc: string) => {
-    if (mockDeductError) throw mockDeductError;
-    return mockDeductResult;
-  },
   getCreditSummary: async () => ({ total: 100, daily: 3, monthly: 80, extra: 20, canRun: true }),
   grantCredits: async () => {},
   resetExpiringCredits: async () => {},
@@ -211,8 +198,6 @@ beforeEach(() => {
     dailyCreditsBalance: '3.00',
     tier: 'tier_6_50',
   };
-  mockDeductResult = { success: true, cost: 0.5, newBalance: 99.5, transactionId: 'tx_test_001' };
-  mockDeductError = null;
   mockTransactionsSummary = { totalCredits: 150, totalDebits: 50, count: 200 };
   mockDeletionStatus = {
     has_pending_deletion: false,
@@ -290,114 +275,6 @@ describe('Billing: credit-breakdown', () => {
   });
 });
 
-describe('Billing: deduct', () => {
-  test('POST /v1/billing/deduct deducts credits for token usage', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({
-        prompt_tokens: 1000,
-        completion_tokens: 500,
-        model: 'claude-sonnet-4.6',
-      }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.cost).toBeDefined();
-    expect(body.new_balance).toBeDefined();
-    expect(body.transaction_id).toBe('tx_test_001');
-  });
-
-  test('returns success with zero cost when calculated cost is zero', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        model: 'free-model',
-      }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.cost).toBe(0);
-  });
-
-  test('returns error when deduction fails (insufficient credits)', async () => {
-    mockDeductError = new InsufficientCreditsError(0.5, 100);
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({
-        prompt_tokens: 10000000,
-        completion_tokens: 10000000,
-        model: 'claude-sonnet-4.6',
-      }),
-    });
-    expect(res.status).toBe(402);
-  });
-
-  test('deducts without thread_id or message_id', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({
-        prompt_tokens: 1000,
-        completion_tokens: 500,
-        model: 'claude-sonnet-4.6',
-      }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-  });
-});
-
-describe('Billing: deduct-usage', () => {
-  test('POST /v1/billing/deduct-usage deducts a fixed amount', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct-usage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ amount: 0.05, description: 'Custom usage' }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-  });
-
-  test('returns success with zero cost for zero/negative amount', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct-usage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ amount: 0 }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.success).toBe(true);
-    expect(body.cost).toBe(0);
-  });
-
-  test('returns success with zero cost for negative amount', async () => {
-    const app = createBillingTestApp();
-    const res = await app.request('/v1/billing/deduct-usage', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
-      body: JSON.stringify({ amount: -5 }),
-    });
-    expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body.cost).toBe(0);
-  });
-});
-
 describe('Billing: usage-history', () => {
   test('GET /v1/billing/usage-history returns summary', async () => {
     const app = createBillingTestApp();
@@ -419,6 +296,25 @@ describe('Billing: usage-history', () => {
       headers: { Authorization: 'Bearer test_token' },
     });
     expect(res.status).toBe(200);
+  });
+});
+
+describe('Billing: removed deduction routes', () => {
+  test('legacy direct deduction endpoints are not mounted', async () => {
+    const app = createBillingTestApp();
+    const deduct = await app.request('/v1/billing/deduct', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+      body: JSON.stringify({ prompt_tokens: 1, completion_tokens: 1, model: 'claude-sonnet-4.6' }),
+    });
+    const deductUsage = await app.request('/v1/billing/deduct-usage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test_token' },
+      body: JSON.stringify({ amount: 0.01 }),
+    });
+
+    expect(deduct.status).toBe(404);
+    expect(deductUsage.status).toBe(404);
   });
 });
 

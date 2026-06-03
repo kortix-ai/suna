@@ -1,57 +1,10 @@
 import { Hono } from 'hono';
 import type { AppEnv } from '../../types';
-import { deductCredits, calculateTokenCost } from '../services/credits';
 import { getVisibleTiers } from '../services/tiers';
 import { getCreditBalance } from '../repositories/credit-accounts';
 import { getTransactionsSummary } from '../repositories/transactions';
-import type { TokenUsageRequest } from '../../types';
 
 export const creditsRouter = new Hono<AppEnv>();
-
-creditsRouter.post('/deduct', async (c) => {
-  const accountId = c.get('userId');
-  const body = await c.req.json<TokenUsageRequest>();
-
-  const cost = calculateTokenCost(body.prompt_tokens, body.completion_tokens, body.model);
-  if (cost <= 0) {
-    return c.json({ success: true, cost: 0, new_balance: 0 });
-  }
-
-  const result = await deductCredits(
-    accountId,
-    cost,
-    `LLM: ${body.model} (${body.prompt_tokens}/${body.completion_tokens} tokens)`,
-  );
-
-  return c.json({
-    success: result.success,
-    cost: result.cost,
-    new_balance: result.newBalance,
-    transaction_id: result.transactionId,
-  });
-});
-
-creditsRouter.post('/deduct-usage', async (c) => {
-  const accountId = c.get('userId');
-  const body = await c.req.json<{ amount: number; description?: string }>();
-
-  if (!body.amount || body.amount <= 0) {
-    return c.json({ success: true, cost: 0, new_balance: 0 });
-  }
-
-  const result = await deductCredits(
-    accountId,
-    body.amount,
-    body.description || `Agent run usage: $${body.amount.toFixed(4)}`,
-  );
-
-  return c.json({
-    success: result.success,
-    cost: result.cost,
-    new_balance: result.newBalance,
-    transaction_id: result.transactionId,
-  });
-});
 
 creditsRouter.get('/tier-configurations', async (c) => {
   const tiers = getVisibleTiers().map((t) => ({

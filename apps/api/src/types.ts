@@ -225,9 +225,3 @@ export interface CommitmentInfo {
   months_remaining: number | null;
   commitment_end_date: string | null;
 }
-
-export interface TokenUsageRequest {
-  prompt_tokens: number;
-  completion_tokens: number;
-  model: string;
-}
