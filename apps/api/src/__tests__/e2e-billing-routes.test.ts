@@ -228,6 +228,18 @@ describe('Billing: removed duplicate account-state routes', () => {
   });
 });
 
+describe('Billing: removed cron routes', () => {
+  test('legacy yearly rotation HTTP cron endpoint is not mounted', async () => {
+    const app = createBillingTestApp();
+    const rotation = await app.request('/v1/billing/cron/yearly-rotation', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer test_token' },
+    });
+
+    expect(rotation.status).toBe(404);
+  });
+});
+
 describe('Billing: removed deduction routes', () => {
   test('legacy direct deduction endpoints are not mounted', async () => {
     const app = createBillingTestApp();
