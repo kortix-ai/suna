@@ -263,14 +263,6 @@ export async function pushStep(ctx: MigrationContext): Promise<void> {
     'cd "$WS"',
     'export HOME="$(mktemp -d)"',
     `git config --global --add safe.directory ${sq('*')}`,
-    // Preserve the user's OWN agents/skills/tools/commands before swapping the
-    // opencode runtime — otherwise migrated users lose everything they built.
-    // Back them up, replace .kortix/opencode wholesale with the current starter
-    // (fresh runtime + default agents/skills), then restore the user's set on top
-    // WITHOUT clobbering the refreshed defaults (cp -n): every net-new custom
-    // agent/skill the user had survives; platform defaults stay current.
-    // (.kortix/memory is left in place — it's outside .kortix/opencode and the
-    // starter overlay's cp -n never clobbers it.)
     '__keep="$(mktemp -d)"',
     'for __d in agents skills tools command; do [ -d ".kortix/opencode/$__d" ] && cp -a ".kortix/opencode/$__d" "$__keep/" 2>/dev/null || true; done',
     'rm -rf .kortix/opencode kortix.toml',
@@ -278,10 +270,6 @@ export async function pushStep(ctx: MigrationContext): Promise<void> {
     `base64 -d ${sq(STARTER_REMOTE_B64)} | tar xzf - -C "$__ST"`,
     'cp -a -n "$__ST"/. .',
     'for __d in agents skills tools command; do [ -d "$__keep/$__d" ] && { mkdir -p ".kortix/opencode/$__d"; cp -a -n "$__keep/$__d/." ".kortix/opencode/$__d/" 2>/dev/null || true; }; done',
-    // Many users kept their custom skills/agents in the opencode-NATIVE dir
-    // (.opencode/), not .kortix/opencode/. The new platform only loads from
-    // .kortix/opencode/, so those were invisible after migrating. Fold them in
-    // (cp -n keeps platform defaults). Note opencode uses singular `agent`.
     '[ -d .opencode/skills ]  && { mkdir -p .kortix/opencode/skills;  cp -a -n .opencode/skills/.  .kortix/opencode/skills/  2>/dev/null || true; }',
     '[ -d .opencode/agent ]   && { mkdir -p .kortix/opencode/agents;  cp -a -n .opencode/agent/.   .kortix/opencode/agents/  2>/dev/null || true; }',
     '[ -d .opencode/command ] && { mkdir -p .kortix/opencode/command; cp -a -n .opencode/command/. .kortix/opencode/command/ 2>/dev/null || true; }',
