@@ -1,31 +1,36 @@
 /**
  * Platinum implementation of `SandboxProviderAdapter`.
  *
- * Platinum templates ARE the "snapshots" (GET/DELETE /v1/templates). State and
- * deletion map cleanly. Building is the open piece: the Kortix snapshot builder
- * layers the runtime (agent binary + entrypoint) onto the image via a Docker
- * BUILD CONTEXT that the provider builds server-side (see snapshots/providers/
- * daytona.ts → Image.fromDockerfile(ctx)). Platinum's template build
- * (POST /v1/templates/from-image | from-spec) pulls a registry image / runs
- * inline Dockerfile steps — it has no way to receive that local build context,
- * so it cannot bake the Kortix runtime today.
- *
- * buildSnapshot() therefore fail-closes with an actionable error instead of
- * producing a template silently missing the agent (which would boot but never
- * connect back to the Kortix router). The path to enable it is one of:
- *   (a) publish the Kortix runtime layer as a registry image and build Platinum
- *       templates `FROM` it via from-spec (the clean, recommended path), or
- *   (b) add build-context upload to Platinum's template build.
- * State/delete are implemented so reconciliation + cleanup already work.
+ * Platinum templates ARE the "snapshots" (GET/DELETE /v1/templates). Building
+ * does exactly what Daytona does — ship the staged build context (user
+ * Dockerfile + Kortix runtime layer) to the provider and let it build
+ * server-side. Daytona uses Image.fromDockerfile(); Platinum uses
+ * `POST /v1/templates/from-build` (tar.gz of the same context staged by
+ * snapshots/build-context.ts, so the produced image is identical). Platinum's
+ * host then runs `podman build` + bakes its microVM init/agent, same as its
+ * from-spec path.
  */
 
-import { platinumJson, isPlatinumConfigured } from '../../shared/platinum';
+import { readFile, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { platinumJson, platinumUpload, isPlatinumConfigured } from '../../shared/platinum';
+import { config } from '../../config';
+import {
+  stageBuildContext,
+  DEFAULT_CPU,
+  DEFAULT_MEMORY_GB,
+  DEFAULT_DISK_GB,
+  KORTIX_ENTRYPOINT,
+} from '../build-context';
 import type {
   BuildableTemplate,
   BuildLogTap,
   ProviderState,
   SandboxProviderAdapter,
 } from './index';
+
+const ACTIVATE_DEADLINE_MS = 12 * 60 * 1000; // build + activate ceiling
+const POLL_MS = 3_000;
 
 interface PlatinumTemplate {
   id: string;
@@ -39,9 +44,7 @@ function mapState(state: string | undefined): ProviderState {
     case 'ready': return 'active';
     case 'building': return 'building';
     case 'failed': return 'build_failed';
-    case 'deprecated':
-    case '': return 'missing';
-    default: return 'missing';
+    default: return 'missing'; // deprecated / absent / unknown
   }
 }
 
@@ -57,22 +60,46 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     return isPlatinumConfigured();
   }
 
-  async buildSnapshot(input: BuildableTemplate, _tap?: BuildLogTap): Promise<void> {
-    throw new Error(
-      `[snapshots] Platinum build for "${input.snapshotName}" is not wired yet. ` +
-      'Platinum cannot receive the local Docker build context that bakes the Kortix ' +
-      'runtime layer (agent + entrypoint) into the image. Enable it by publishing the ' +
-      'Kortix runtime as a registry image and building Platinum templates FROM it via ' +
-      'from-spec, or by adding build-context upload to Platinum template builds. ' +
-      'See apps/api/src/snapshots/providers/platinum.ts.',
-    );
+  async buildSnapshot(input: BuildableTemplate, tap?: BuildLogTap): Promise<void> {
+    if (!input.image && !input.userDockerfile) {
+      throw new Error('PlatinumAdapter.buildSnapshot: neither image nor userDockerfile set');
+    }
+    const userDockerfile = input.userDockerfile ?? `FROM ${input.image}\n`;
+    // Stage the SAME context Daytona builds (Dockerfile + agent/cli/entrypoint/…).
+    const ctx = await stageBuildContext(input.snapshotName, userDockerfile);
+    const tarPath = join(ctx.contextDir, '..', `${input.snapshotName.replace(/[^a-zA-Z0-9_.-]/g, '_')}.tar.gz`);
+    try {
+      // Tar the context (gzip). The agent binary is multi-MB, so this goes up as
+      // a multipart upload, not inline JSON.
+      const tar = Bun.spawn(['tar', '-czf', tarPath, '-C', ctx.contextDir, '.']);
+      const code = await tar.exited;
+      if (code !== 0) throw new Error(`tar build context failed (exit ${code})`);
+
+      const sizeMb = (input.spec.diskGb ?? DEFAULT_DISK_GB) * 1024;
+      const form = new FormData();
+      form.append('context', new Blob([new Uint8Array(await readFile(tarPath))]), 'context.tar.gz');
+      form.append('name', input.snapshotName);
+      form.append('dockerfile', ctx.dockerfileName);
+      form.append('size_mb', String(sizeMb));
+      form.append('default_cpu', String(input.spec.cpu ?? DEFAULT_CPU));
+      form.append('default_ram_mb', String((input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024));
+      form.append('default_disk_gb', String(input.spec.diskGb ?? DEFAULT_DISK_GB));
+      form.append('entrypoint', (input.entrypoint ?? [KORTIX_ENTRYPOINT]).join(' '));
+      if (config.PLATINUM_TARGET) form.append('region', config.PLATINUM_TARGET);
+
+      console.info(`[snapshots] ${input.snapshotName}: uploading build context to Platinum (slug="${input.slug}")`);
+      await platinumUpload<PlatinumTemplate>('/v1/templates/from-build', form);
+      await this.waitForActive(input.snapshotName, tap);
+    } finally {
+      await rm(ctx.contextDir, { recursive: true, force: true }).catch(() => {});
+      await rm(tarPath, { force: true }).catch(() => {});
+    }
   }
 
   async getSnapshotState(snapshotName: string): Promise<ProviderState> {
     if (!isPlatinumConfigured()) return 'missing';
     try {
-      const tpl = await findTemplateByName(snapshotName);
-      return mapState(tpl?.state);
+      return mapState((await findTemplateByName(snapshotName))?.state);
     } catch {
       return 'missing';
     }
@@ -87,6 +114,20 @@ class PlatinumAdapter implements SandboxProviderAdapter {
     } catch {
       // not found / transient — treat as already gone
     }
+  }
+
+  private async waitForActive(name: string, tap?: BuildLogTap): Promise<void> {
+    const deadline = Date.now() + ACTIVATE_DEADLINE_MS;
+    let last = 'unknown';
+    while (Date.now() < deadline) {
+      const tpl = await findTemplateByName(name).catch(() => null);
+      const state = (tpl?.state ?? 'missing').toLowerCase();
+      if (state !== last) { last = state; tap?.onLine?.(`template ${name}: ${state}`); }
+      if (state === 'ready') return;
+      if (state === 'failed') throw new Error(`Platinum template ${name} build failed`);
+      await new Promise((r) => setTimeout(r, POLL_MS));
+    }
+    throw new Error(`Platinum template ${name} did not become ready (last state: ${last})`);
   }
 }
 
