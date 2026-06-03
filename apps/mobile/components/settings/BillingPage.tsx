@@ -11,13 +11,9 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { SettingsHeader } from './SettingsHeader';
 import { PricingTierBadge } from '@/components/billing/PricingTierBadge';
-import {
-  useAccountState,
-  billingKeys,
-} from '@/lib/billing';
+import { useAccountState } from '@/lib/billing';
 import { useAuthContext } from '@/contexts';
 import { useLanguage } from '@/contexts';
-import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import Animated, {
@@ -52,14 +48,12 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   const { t } = useLanguage();
   const { user } = useAuthContext();
   const isAuthenticated = !!user;
-  const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
 
   const {
     data: accountState,
     isLoading: isLoadingSubscription,
     error: subscriptionError,
-    refetch: refetchSubscription,
   } = useAccountState({
     enabled: visible && isAuthenticated,
   });
@@ -68,12 +62,6 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
-
-  const handleSubscriptionUpdate = useCallback(() => {
-    refetchSubscription();
-    queryClient.invalidateQueries({ queryKey: billingKeys.all });
-  }, [refetchSubscription, queryClient]);
-
 
   const handleCreditsExplained = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
