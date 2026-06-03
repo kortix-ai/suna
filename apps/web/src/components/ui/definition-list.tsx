@@ -21,7 +21,7 @@
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 
-export interface DefinitionListProps {
+interface DefinitionListProps {
   dividers?: boolean;
   className?: string;
   children: ReactNode;
@@ -44,7 +44,7 @@ export function DefinitionList({
   );
 }
 
-export interface DefinitionRowProps {
+interface DefinitionRowProps {
   label: string;
   /** Width reserved for the label column (default 110px) */
   labelWidth?: number;

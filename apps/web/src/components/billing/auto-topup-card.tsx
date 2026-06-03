@@ -19,7 +19,7 @@ import {
   AUTO_TOPUP_MIN_THRESHOLD,
 } from '@kortix/shared';
 
-export interface AutoTopupCardProps {
+interface AutoTopupCardProps {
   /** If true, fetches current settings from API on mount (for settings modal) */
   fetchSettings?: boolean;
   /** Default values when not fetching (for onboarding) */

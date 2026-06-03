@@ -15,7 +15,7 @@
 import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 
-export interface SectionProps {
+interface SectionProps {
   label?: string;
   action?: ReactNode;
   /** Extra top spacing (defaults to mt-10 between sections) */

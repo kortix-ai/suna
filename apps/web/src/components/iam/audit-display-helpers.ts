@@ -13,7 +13,7 @@
 // in components/iam so it can be unit-tested alongside the other V2
 // display helpers.
 
-export interface HumanizedAuditAction {
+interface HumanizedAuditAction {
   /** Short imperative verb, e.g. "Created group". */
   title: string;
   /** Optional secondary descriptor, e.g. the resource name parsed

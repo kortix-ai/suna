@@ -42,7 +42,7 @@ const ICON_TONE: Record<NonNullable<VariantProps<typeof bannerVariants>['tone']>
   destructive: 'text-destructive',
 };
 
-export interface InfoBannerProps
+interface InfoBannerProps
   extends Omit<React.ComponentProps<'div'>, 'title'>,
     VariantProps<typeof bannerVariants> {
   icon?: Icon;

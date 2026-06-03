@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
  * and dots all read as the same green/amber/red/blue.
  */
 
-export type StatusTone =
+type StatusTone =
   | 'success'
   | 'warning'
   | 'destructive'

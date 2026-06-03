@@ -4,7 +4,7 @@ import React, { useMemo, type JSX } from 'react';
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
-export type TextShimmerProps = {
+type TextShimmerProps = {
   children: string;
   as?: React.ElementType;
   className?: string;

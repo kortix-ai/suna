@@ -138,7 +138,7 @@ function TeamPlanCheckout({
 // — never hand-roll another Dialog. It always shows the Team plan checkout
 // (subscribing is the core action); the CTA goes straight to Stripe. Top-ups
 // for already-subscribed accounts live on the Billing tab, not in a modal.
-export interface TeamPlanDialogProps {
+interface TeamPlanDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   accountState?: AccountState;

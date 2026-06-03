@@ -24,7 +24,7 @@ import { cn } from '@/lib/utils';
  *   </SectionCard>
  */
 
-export interface SectionCardProps {
+interface SectionCardProps {
   title?: React.ReactNode;
   /** Muted "(n)" rendered next to the title. */
   count?: number;

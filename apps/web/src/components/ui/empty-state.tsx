@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 import type { ReactNode } from 'react';
 import type { Icon } from '@/components/ui/kortix-icons';
 
-export interface EmptyStateProps {
+interface EmptyStateProps {
   icon?: Icon;
   title: string;
   description?: ReactNode;

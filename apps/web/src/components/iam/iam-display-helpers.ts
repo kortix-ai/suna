@@ -105,7 +105,7 @@ const PROJECT_ROLE_LABEL: Record<ProjectRoleValue, string> = {
   viewer: 'Viewer',
 };
 
-export interface ProjectAccessRowInput {
+interface ProjectAccessRowInput {
   has_implicit_access: boolean;
   project_role: ProjectRoleValue | null;
   effective_project_role: ProjectRoleValue | null;

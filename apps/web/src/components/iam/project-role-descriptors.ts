@@ -15,7 +15,7 @@
 
 import type { ProjectRole, AccountRole } from '@/lib/projects-client';
 
-export interface ProjectRoleDescriptor {
+interface ProjectRoleDescriptor {
   /** "Manager" — what the role is called everywhere. */
   label: string;
   /** One-liner used directly under the role label in dropdowns. */
@@ -48,7 +48,7 @@ export const PROJECT_ROLE_DESCRIPTORS: Record<ProjectRole, ProjectRoleDescriptor
 /** Ordered low → high. Useful for rendering dropdowns consistently. */
 export const PROJECT_ROLES_ASCENDING: ProjectRole[] = ['viewer', 'editor', 'manager'];
 
-export interface AccountRoleDescriptor {
+interface AccountRoleDescriptor {
   label: string;
   blurb: string;
 }

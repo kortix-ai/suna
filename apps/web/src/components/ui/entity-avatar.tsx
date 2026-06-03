@@ -26,7 +26,7 @@ const SIZE_MAP = {
 
 type EntityAvatarSize = keyof typeof SIZE_MAP;
 
-export interface EntityAvatarProps {
+interface EntityAvatarProps {
   /** Text to derive the initial from when no icon is given. */
   label?: string;
   /** Lucide icon to render instead of an initial. */
