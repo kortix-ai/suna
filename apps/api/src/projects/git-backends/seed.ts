@@ -4,7 +4,7 @@
  *
  * Used by the web "Create project" flow — there's no local working tree to push
  * (unlike `kortix ship`), so the server seeds the starter or sessions can't boot
- * from an empty repo. Works for any HTTPS git remote (GitHub, Freestyle, …) via
+ * from an empty repo. Works for any HTTPS git remote (GitHub, GitLab, …) via
  * the same `x-access-token` basic scheme, injected per-invocation through
  * http.extraHeader so the token never lands in a config file.
  */

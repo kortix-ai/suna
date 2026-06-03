@@ -197,9 +197,11 @@ export default tool({
     "Bad: show(type='markdown', content='# Full spec written from scratch here...') — write to file first!\n\n" +
     "Types: file, image, url, text, error, video, audio, code, markdown, pdf, html, csv, xlsx, docx, pptx.\n" +
     "IMPORTANT HTML NOTE: type='html' renders INLINE HTML from the 'content' field only. " +
-    "If you have a standalone .html file on disk, it is NOT auto-hosted or auto-opened by a viewer. " +
-    "Use type='url' and point to a running web server URL that serves that file. " +
-    "A default static server runs at http://localhost:3211 (for example: http://localhost:3211/open?path=/workspace/site/index.html).\n" +
+    "A standalone .html file or website on disk is NOT auto-hosted — serve it with a local web server, " +
+    "then pass its plain URL with type='url'. For a static site, start one with pty_spawn " +
+    "(e.g. `python3 -m http.server 3000 --directory /workspace/site`); for an app, run its dev server " +
+    "(e.g. `npm run dev`). Then show(type='url', url='http://localhost:3000/'). The platform auto-detects " +
+    "and proxies any localhost port — just use a plain http://localhost:PORT/ URL, no special path format needed.\n" +
     "Variants (display hints): compact, full, gallery, detail — controls layout. " +
     "Defaults are smart per type but can be overridden.\n" +
     "aspect_ratio: auto, 1:1, 16:9, 9:16, 4:3, 3:2, 21:9 — for visual content.\n" +
@@ -244,7 +246,8 @@ export default tool({
       .describe(
         "Absolute file path. Required when type is 'file', 'image', 'video', 'audio', 'pdf', 'csv', 'xlsx', 'docx', or 'pptx'. " +
           "E.g. '/workspace/output/logo.png'. Note: passing a .html path as type='file' does not host/execute it; " +
-          "serve it via a web server and use type='url' for live HTML pages (default: http://localhost:3211/open?path=/absolute/file.html).",
+          "serve it with a local web server (e.g. `python3 -m http.server 3000` via pty_spawn) and pass its " +
+          "plain http://localhost:PORT/ URL as type='url' for live HTML pages.",
       ),
 
     url: tool.schema

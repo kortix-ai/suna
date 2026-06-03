@@ -98,22 +98,22 @@ const envSchema = z.object({
 
   // ── Managed git (provider-agnostic via the git proxy) ────────────────────
   // MANAGED_GIT_PROVIDER selects the backend NEW managed repos provision on
-  // ('github' default | 'freestyle'). The GitHub backend creates repos under
-  // MANAGED_GIT_GITHUB_OWNER (a Kortix-owned org) via the Kortix App installed
-  // there (MANAGED_GIT_GITHUB_INSTALL_ID). Reuses KORTIX_GITHUB_APP_* for the
-  // App JWT. Each backend's isConfigured() checks its own vars, so leaving
-  // these blank keeps the GitHub backend inert (Freestyle stays the default).
+  // ('github' default; only active managed backend). The GitHub backend creates
+  // repos under MANAGED_GIT_GITHUB_OWNER (a Kortix-owned org) via the Kortix App
+  // installed there (MANAGED_GIT_GITHUB_INSTALL_ID). Reuses KORTIX_GITHUB_APP_*
+  // for the App JWT. Each backend's isConfigured() checks its own vars, so
+  // leaving these blank keeps the managed-git path inert.
   MANAGED_GIT_PROVIDER:            optStr,
   MANAGED_GIT_GITHUB_OWNER:        optStr,
   MANAGED_GIT_GITHUB_INSTALL_ID:   optStr,
   // Optional straight org PAT for the managed org (the "one server-side key"
-  // model, 1:1 with the old FREESTYLE_API_KEY). When set it takes precedence
+  // model). When set it takes precedence
   // over the GitHub App for managed-org admin ops (create/delete repo, invite
   // collaborator). Leave blank to use the App installation instead.
   MANAGED_GIT_GITHUB_TOKEN:        optStr,
   // When true, runtime clients (sandbox + `kortix` CLI) use the Kortix git
   // proxy as their git origin (auth = KORTIX_TOKEN) instead of the real host —
-  // so a real GitHub/Freestyle credential never reaches a sandbox. Requires a
+  // so a real GitHub credential never reaches a sandbox. Requires a
   // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
   // OFF leaves the direct clone-credential token flow untouched).
   KORTIX_GIT_PROXY:                optBoolFalse,
@@ -159,7 +159,13 @@ const envSchema = z.object({
 
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
+  // Single OpenRouter key for BOTH the router (/v1/router) and the managed LLM
+  // gateway (/v1/llm). The gateway used to read a separate KORTIX_OPENROUTER_API_KEY
+  // — consolidated onto this one var.
   OPENROUTER_API_KEY:          optStr,
+  // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
+  // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
+  LLM_GATEWAY_ENABLED:         optBoolFalse,
   ANTHROPIC_API_URL:           optUrl('https://api.anthropic.com/v1'),
   ANTHROPIC_API_KEY:           optStr,
   OPENAI_API_URL:              optUrl('https://api.openai.com/v1'),
@@ -341,6 +347,9 @@ function validateEnv(): z.infer<typeof envSchema> {
   // ── Warnings (non-fatal but worth knowing) ─────────────────────────────
   if (!raw.OPENROUTER_API_KEY) {
     issues.push({ var: 'OPENROUTER_API_KEY', message: 'Not set — primary LLM route will fail with silent 401 errors', level: 'warn' });
+    if (raw.LLM_GATEWAY_ENABLED === 'true') {
+      issues.push({ var: 'LLM_GATEWAY_ENABLED', message: 'Gateway is on but OPENROUTER_API_KEY is unset — /v1/llm will 500 "openrouterApiKey missing"', level: 'warn' });
+    }
   }
 
   // ── Print results ─────────────────────────────────────────────────────
@@ -469,6 +478,7 @@ export const config = {
   // ─── LLM Providers ────────────────────────────────────────────────────────
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
+  LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
   ANTHROPIC_API_URL: env.ANTHROPIC_API_URL,
   ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
   OPENAI_API_URL: env.OPENAI_API_URL,

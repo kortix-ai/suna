@@ -8,10 +8,11 @@
  *   • <ProjectAppsNavItem>  — the expanded sidebar row.
  *   • <ProjectAppsRailItem> — the collapsed icon-rail button.
  *
- * Both hide themselves unless the platform exposes the experimental [[apps]]
- * surface. That signal rides on the project payload (`apps_enabled`, driven by
- * the API's KORTIX_APPS_EXPERIMENTAL flag) so this UI and the /apps routes are
- * gated by the SAME single flag — flip it on the API and both light up.
+ * Both hide themselves unless the experimental [[apps]] surface is enabled for
+ * THIS project. That signal rides on the project payload (`apps_enabled`, a
+ * per-project toggle in Customize → Settings over the operator default) so this
+ * UI and the /apps routes are gated by the SAME value — enable it and both
+ * light up.
  */
 
 import { useQuery } from '@tanstack/react-query';

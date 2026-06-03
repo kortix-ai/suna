@@ -27,8 +27,8 @@ export function managedGithubInstallId(): string | null {
 }
 
 /**
- * A straight org PAT for the managed org — the "one server-side key" model
- * (1:1 with the old FREESTYLE_API_KEY). When set it takes precedence over the
+ * A straight org PAT for the managed org — the "one server-side key" model.
+ * When set it takes precedence over the
  * GitHub App: simpler to operate, no install/permission dance. Trade-off: a
  * long-lived, org-wide token (vs the App's short-lived, repo-scoped, auto-
  * rotating installation tokens). Either way the token stays server-side — the

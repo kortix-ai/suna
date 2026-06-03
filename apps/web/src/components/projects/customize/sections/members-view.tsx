@@ -26,6 +26,12 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import {
   getProject,
   inviteProjectMember,
   isInviteSent,
@@ -44,7 +50,7 @@ import {
   type ProjectRole,
 } from '@/lib/projects-client';
 import { sortByRoleThenLabel } from './member-sort';
-import { listGroups, type AccountGroup } from '@/lib/iam-client';
+import { listGroups, removeGroupMember, type AccountGroup } from '@/lib/iam-client';
 import {
   inheritedFromGroupSummary,
   isInheritedFromGroupOnly,
@@ -128,6 +134,7 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
 
         <ProjectAccessCard
           projectId={projectId}
+          accountId={project?.account_id ?? null}
           canManage={!!canManage}
           members={accessQuery.data?.members ?? []}
           isLoading={accessQuery.isLoading}
@@ -281,6 +288,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
 
 function ProjectAccessCard({
   projectId,
+  accountId,
   canManage,
   members,
   isLoading,
@@ -289,6 +297,7 @@ function ProjectAccessCard({
   onRetry,
 }: {
   projectId: string;
+  accountId: string | null;
   canManage: boolean;
   members: ProjectAccessMember[];
   isLoading: boolean;
@@ -317,7 +326,34 @@ function ProjectAccessCard({
   // made it easy to lock someone out by misclicking.
   const [revokeTarget, setRevokeTarget] = useState<ProjectAccessMember | null>(null);
 
-  const sortedMembers = useMemo(() => sortByRoleThenLabel(members, userLabel), [members]);
+  // Group-derived access can't be revoked per-person from a project row (the
+  // grant lives on a group). This holds the scoped action chosen from the
+  // "Manage access" menu until the user confirms — each action spells out its
+  // blast radius (detach = project-scoped; remove-from-group = account-wide).
+  type GroupSource = NonNullable<ProjectAccessMember['group_sources']>[number];
+  type GroupAction = {
+    type: 'detach' | 'removeFromGroup';
+    member: ProjectAccessMember;
+    group: GroupSource;
+  };
+  const [groupAction, setGroupAction] = useState<GroupAction | null>(null);
+
+  // Only list people who actually have access — implicit owners/admins, a
+  // direct grant, or a group-inherited role. Account members with no access at
+  // all aren't shown here (granting them happens via the invite box, which
+  // grants existing members instantly). This is what makes Revoke feel right:
+  // removing a grant drops the row instead of leaving a lingering "No access".
+  const accessMembers = useMemo(
+    () =>
+      members.filter(
+        (m) => m.has_implicit_access || m.effective_project_role != null,
+      ),
+    [members],
+  );
+  const sortedMembers = useMemo(
+    () => sortByRoleThenLabel(accessMembers, userLabel),
+    [accessMembers],
+  );
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
@@ -348,6 +384,29 @@ function ProjectAccessCard({
     onError: (error: Error) => toast.error(error.message || 'Failed to revoke access'),
   });
 
+  // Project-scoped: removes the group's grant here. Everyone who had access via
+  // this group on this project loses it; their other access paths are untouched.
+  const detachMutation = useMutation({
+    mutationFn: (groupId: string) => detachGroupFromProject(projectId, groupId),
+    onSuccess: () => {
+      toast.success('Group detached from project');
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to detach group'),
+  });
+
+  // Account-scoped: removes the user from the group entirely, so it affects
+  // every project that group can access — not just this one.
+  const removeFromGroupMutation = useMutation({
+    mutationFn: ({ groupId, userId }: { groupId: string; userId: string }) =>
+      removeGroupMember(accountId ?? '', groupId, userId),
+    onSuccess: () => {
+      toast.success('Removed from group');
+      invalidate();
+    },
+    onError: (err: Error) => toast.error(err.message || 'Failed to remove from group'),
+  });
+
   function setRole(member: ProjectAccessMember, value: string) {
     if (member.has_implicit_access || !canManage) return;
     if (value === 'none') {
@@ -367,7 +426,7 @@ function ProjectAccessCard({
       flush
       title={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line260JsxAttrTitleProjectAccess')}
       description={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line261JsxAttrDescriptionAccountOwnersAndAdminsAlwaysHaveManagerAccess')}
-      count={members.length}
+      count={accessMembers.length}
     >
       {isLoading && (
         <div className="divide-y divide-border/60">
@@ -413,7 +472,27 @@ function ProjectAccessCard({
                 key={member.user_id}
                 leading={<UserAvatar email={member.email ?? ''} size="md" />}
                 title={userLabel(member)}
-                badges={<AccountRoleBadge role={member.account_role} />}
+                badges={
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <AccountRoleBadge role={member.account_role} />
+                    {/* Group indicator: which of THIS project's attached groups
+                        the member belongs to. Makes group-derived access (and
+                        why it isn't directly revocable here) obvious — the
+                        access is managed in the Group access section below. */}
+                    {(member.group_sources ?? []).map((g) => (
+                      <Badge
+                        key={g.group_id}
+                        variant="outline"
+                        size="sm"
+                        className="gap-1 font-normal"
+                        title={`In the "${g.group_name}" group — manage in Group access`}
+                      >
+                        <Users className="h-3 w-3" />
+                        {g.group_name}
+                      </Badge>
+                    ))}
+                  </div>
+                }
                 subtitle={
                   <InlineMeta>
                     <span>
@@ -436,57 +515,94 @@ function ProjectAccessCard({
                       Manager
                     </Badge>
                   ) : inheritedFromGroup ? (
-                    // Read-only effective-role chip + a smaller secondary
-                    // select for admins who want to LAYER a direct grant
-                    // on top (which only matters if it would be higher
-                    // than the inherited role). Most of the time the
-                    // chip is the whole story.
+                    // Access comes from a group, so there's no per-person grant
+                    // to revoke on this row. The chip shows the effective role;
+                    // the "Manage access" menu exposes the real levers, each
+                    // labelled with its blast radius.
                     <div className="flex items-center gap-2">
                       <Badge variant="outline" size="sm" className="capitalize">
                         <Shield className="mr-1 h-3.5 w-3.5" />
                         {member.effective_project_role}
                       </Badge>
-                      {canManage && (
-                        <Select
-                          value={value}
-                          onValueChange={(next) => setRole(member, next)}
-                          disabled={!canManage}
-                        >
-                          {/* w-40 fits "No direct grant" without
-                              truncation — the previous w-32 was clipping
-                              to "No direct gran". */}
-                          <SelectTrigger className="h-8 w-40 text-xs">
-                            <SelectValue placeholder="Grant…" />
-                          </SelectTrigger>
-                          {/* Same two-line layout as the invite form
-                              picker so admins layering a direct grant
-                              see what each role does without leaving
-                              the row. */}
-                          <SelectContent>
-                            <SelectItem value="none">No direct grant</SelectItem>
-                            <ProjectRoleSelectItem role="viewer" />
-                            <ProjectRoleSelectItem role="editor" />
-                            <ProjectRoleSelectItem role="manager" />
-                          </SelectContent>
-                        </Select>
+                      {canManage && (member.group_sources ?? []).length > 0 && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm" className="gap-1.5">
+                              Manage access
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-80">
+                            {(member.group_sources ?? []).flatMap((g) => {
+                              const items = [
+                                <DropdownMenuItem
+                                  key={`${g.group_id}-detach`}
+                                  onSelect={() =>
+                                    setGroupAction({ type: 'detach', member, group: g })
+                                  }
+                                  className="flex-col items-start gap-0.5"
+                                >
+                                  <span>Detach "{g.group_name}" from this project</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    Removes access for everyone in this group, here only
+                                  </span>
+                                </DropdownMenuItem>,
+                              ];
+                              if (accountId) {
+                                items.push(
+                                  <DropdownMenuItem
+                                    key={`${g.group_id}-remove`}
+                                    onSelect={() =>
+                                      setGroupAction({
+                                        type: 'removeFromGroup',
+                                        member,
+                                        group: g,
+                                      })
+                                    }
+                                    className="flex-col items-start gap-0.5"
+                                  >
+                                    <span>Remove from "{g.group_name}" group</span>
+                                    <span className="text-xs text-muted-foreground">
+                                      Affects every project this group can access
+                                    </span>
+                                  </DropdownMenuItem>,
+                                );
+                              }
+                              return items;
+                            })}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       )}
                     </div>
                   ) : (
-                    <Select
-                      value={value}
-                      onValueChange={(next) => setRole(member, next)}
-                      disabled={!canManage}
-                    >
-                      <SelectTrigger className="h-8 w-36">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">{tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line328JsxTextNoAccess')}</SelectItem>
-                        <ProjectRoleSelectItem role="viewer" />
-                        <ProjectRoleSelectItem role="editor" />
-                        <ProjectRoleSelectItem role="manager" />
-                      </SelectContent>
-                    </Select>
+                    <div className="flex items-center gap-1">
+                      <Select
+                        value={value}
+                        onValueChange={(next) => setRole(member, next)}
+                        disabled={!canManage}
+                      >
+                        <SelectTrigger className="h-8 w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <ProjectRoleSelectItem role="viewer" />
+                          <ProjectRoleSelectItem role="editor" />
+                          <ProjectRoleSelectItem role="manager" />
+                        </SelectContent>
+                      </Select>
+                      {canManage && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setRevokeTarget(member)}
+                          title="Remove this person's access to the project"
+                          className="gap-1.5"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Revoke
+                        </Button>
+                      )}
+                    </div>
                   )
                 }
               />
@@ -523,6 +639,57 @@ function ProjectAccessCard({
         // it fires looks janky.
         setRevokeTarget(null);
         revokeMutation.mutate(target.user_id);
+      }}
+    />
+
+    <ConfirmDialog
+      open={groupAction !== null}
+      onOpenChange={(open) => {
+        if (!open) setGroupAction(null);
+      }}
+      title={
+        groupAction?.type === 'detach'
+          ? 'Detach group from project?'
+          : 'Remove from group?'
+      }
+      description={
+        groupAction ? (
+          groupAction.type === 'detach' ? (
+            <span>
+              <strong>{groupAction.group.group_name}</strong> will be detached
+              from this project. Everyone whose access here comes from this
+              group — including <strong>{userLabel(groupAction.member)}</strong>{' '}
+              — loses it. Anyone with a direct grant or another attached group
+              keeps their access.
+            </span>
+          ) : (
+            <span>
+              <strong>{userLabel(groupAction.member)}</strong> will be removed
+              from the <strong>{groupAction.group.group_name}</strong> group
+              across the whole account — this affects{' '}
+              <strong>every project</strong> that group can access, not just
+              this one.
+            </span>
+          )
+        ) : null
+      }
+      confirmLabel={
+        groupAction?.type === 'detach' ? 'Detach group' : 'Remove from group'
+      }
+      confirmVariant="destructive"
+      isPending={detachMutation.isPending || removeFromGroupMutation.isPending}
+      onConfirm={() => {
+        if (!groupAction) return;
+        const action = groupAction;
+        setGroupAction(null);
+        if (action.type === 'detach') {
+          detachMutation.mutate(action.group.group_id);
+        } else {
+          removeFromGroupMutation.mutate({
+            groupId: action.group.group_id,
+            userId: action.member.user_id,
+          });
+        }
       }}
     />
     </>

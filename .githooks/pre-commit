@@ -1,0 +1,26 @@
+#!/bin/sh
+# Kortix secrets guard (auto-encrypt + block).
+#
+# 1. Auto-encrypts the committed dotenvx profiles, so a hand-typed plaintext
+#    value is sealed before it can land in a commit. `dotenvx encrypt` is
+#    idempotent on already-encrypted files, so this is a no-op otherwise.
+# 2. Backstop: fails the commit if ANY unencrypted, non-gitignored .env remains.
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+set -e
+
+# Resolve dotenvx: global, then workspace, then npx.
+if command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
+elif [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
+else DX="npx --yes @dotenvx/dotenvx"; fi
+
+for f in apps/api/.env apps/api/.env.dev apps/api/.env.prod \
+         apps/web/.env apps/web/.env.dev apps/web/.env.prod; do
+  if [ -f "$f" ]; then
+    $DX encrypt -f "$f" >/dev/null 2>&1 || true
+    git add "$f"
+  fi
+done
+
+# Block any remaining unencrypted, committable .env (exits non-zero on failure).
+exec $DX ext precommit

@@ -38,12 +38,26 @@ import { dirname, resolve } from 'node:path';
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const DEFAULT_API_BASE = process.env.KORTIX_DEFAULT_API_BASE ?? 'https://api.kortix.com';
-export const DEFAULT_LOCAL_API_BASE = 'http://localhost:13738';
-export const DEFAULT_DEV_API_BASE = 'http://localhost:8008';
+// Local `pnpm dev` API server.
+export const DEFAULT_LOCAL_DEV_API_BASE = 'http://localhost:8008';
+// Kortix-internal hosted dev API.
+export const DEFAULT_INTERNAL_DEV_API_BASE = 'http://dev-api.kortix.com';
+// The self-host Docker stack publishes its API on this port by default
+// (see `kortix self-host` DEFAULT_API_URL). The built-in `selfhost` host is
+// pre-pointed here so `kortix hosts use selfhost` works before login;
+// `kortix self-host start` rewrites it to the actual published port.
+export const DEFAULT_SELFHOST_API_BASE = 'http://localhost:13738';
+
 export const CLOUD_HOST_NAME = 'cloud';
-export const LOCAL_HOST_NAME = 'local';
-export const DEV_HOST_NAME = 'dev';
+export const LOCAL_DEV_HOST_NAME = 'local-dev';
+export const INTERNAL_DEV_HOST_NAME = 'kortix-internal-dev';
+export const SELFHOST_HOST_NAME = 'selfhost';
 export const DEFAULT_HOST_NAME = CLOUD_HOST_NAME;
+
+// Legacy built-in names migrated to the new scheme on load.
+const LEGACY_DEV_HOST_NAME = 'dev'; // → local-dev (localhost:8008)
+const LEGACY_LOCAL_HOST_NAME = 'local'; // → selfhost (localhost:13738)
+const LEGACY_LOCAL_API_BASE = 'http://localhost:13738';
 
 export interface Host {
   url: string;
@@ -216,10 +230,12 @@ export function removeHost(name: string): { removed: boolean; switchedTo?: strin
   if (!config.hosts[name]) return { removed: false };
   if (name === CLOUD_HOST_NAME) {
     config.hosts[name] = defaultHost(DEFAULT_API_BASE);
-  } else if (name === LOCAL_HOST_NAME) {
-    config.hosts[name] = defaultHost(DEFAULT_LOCAL_API_BASE);
-  } else if (name === DEV_HOST_NAME) {
-    config.hosts[name] = defaultHost(DEFAULT_DEV_API_BASE);
+  } else if (name === LOCAL_DEV_HOST_NAME) {
+    config.hosts[name] = defaultHost(DEFAULT_LOCAL_DEV_API_BASE);
+  } else if (name === INTERNAL_DEV_HOST_NAME) {
+    config.hosts[name] = defaultHost(DEFAULT_INTERNAL_DEV_API_BASE);
+  } else if (name === SELFHOST_HOST_NAME) {
+    config.hosts[name] = defaultHost(DEFAULT_SELFHOST_API_BASE);
   } else {
     delete config.hosts[name];
   }
@@ -271,27 +287,62 @@ function normalizeConfig(parsed: Partial<Config>): Config {
       logged_in_at: h.logged_in_at ?? new Date().toISOString(),
     };
   }
+  // Tracks which old names were folded into new ones so we can retarget the
+  // active host below (e.g. active "dev" → "local-dev").
+  const renamed: Record<string, string> = {};
+
+  // Legacy `default`: the original single-host name. If it still points at
+  // Kortix Cloud, fold it into `cloud`. If it is a never-logged-in placeholder
+  // (no token), it is a stale artifact — drop it and fall back to cloud. A
+  // `default` host that actually carries credentials is left untouched.
   const legacyDefault = cleaned.default;
-  if (legacyDefault && !cleaned[CLOUD_HOST_NAME] && legacyDefault.url === DEFAULT_API_BASE) {
-    cleaned[CLOUD_HOST_NAME] = legacyDefault;
-    delete cleaned.default;
+  if (legacyDefault) {
+    if (!cleaned[CLOUD_HOST_NAME] && legacyDefault.url === DEFAULT_API_BASE) {
+      cleaned[CLOUD_HOST_NAME] = legacyDefault;
+      delete cleaned.default;
+      renamed.default = CLOUD_HOST_NAME;
+    } else if (!legacyDefault.token) {
+      delete cleaned.default;
+      renamed.default = CLOUD_HOST_NAME;
+    }
   }
+
+  // Legacy `dev` (localhost:8008) → `local-dev`. `dev` was always the local
+  // dev server, so carry its credentials over wholesale.
+  if (cleaned[LEGACY_DEV_HOST_NAME] && !cleaned[LOCAL_DEV_HOST_NAME]) {
+    cleaned[LOCAL_DEV_HOST_NAME] = cleaned[LEGACY_DEV_HOST_NAME];
+    delete cleaned[LEGACY_DEV_HOST_NAME];
+    renamed[LEGACY_DEV_HOST_NAME] = LOCAL_DEV_HOST_NAME;
+  }
+
+  // Legacy `local` (the old self-host default, localhost:13738) → `selfhost`.
+  // Only migrate when it still carries the old default URL; a user who pointed
+  // `local` somewhere else keeps it as a regular custom host.
+  const legacyLocal = cleaned[LEGACY_LOCAL_HOST_NAME];
+  if (legacyLocal && legacyLocal.url === LEGACY_LOCAL_API_BASE && !cleaned[SELFHOST_HOST_NAME]) {
+    cleaned[SELFHOST_HOST_NAME] = legacyLocal;
+    delete cleaned[LEGACY_LOCAL_HOST_NAME];
+    renamed[LEGACY_LOCAL_HOST_NAME] = SELFHOST_HOST_NAME;
+  }
+
+  // Seed any missing built-ins.
   if (!cleaned[CLOUD_HOST_NAME]) {
     cleaned[CLOUD_HOST_NAME] = defaultHost(DEFAULT_API_BASE);
   }
-  if (!cleaned[LOCAL_HOST_NAME]) {
-    cleaned[LOCAL_HOST_NAME] = defaultHost(DEFAULT_LOCAL_API_BASE);
+  if (!cleaned[LOCAL_DEV_HOST_NAME]) {
+    cleaned[LOCAL_DEV_HOST_NAME] = defaultHost(DEFAULT_LOCAL_DEV_API_BASE);
   }
-  if (!cleaned[DEV_HOST_NAME]) {
-    cleaned[DEV_HOST_NAME] = defaultHost(DEFAULT_DEV_API_BASE);
+  if (!cleaned[INTERNAL_DEV_HOST_NAME]) {
+    cleaned[INTERNAL_DEV_HOST_NAME] = defaultHost(DEFAULT_INTERNAL_DEV_API_BASE);
   }
-  let active = parsed.active && cleaned[parsed.active] ? parsed.active : DEFAULT_HOST_NAME;
-  if (parsed.active === 'default' && !cleaned.default && cleaned[CLOUD_HOST_NAME]) {
-    active = CLOUD_HOST_NAME;
+  if (!cleaned[SELFHOST_HOST_NAME]) {
+    cleaned[SELFHOST_HOST_NAME] = defaultHost(DEFAULT_SELFHOST_API_BASE);
   }
+
+  let active = parsed.active ?? DEFAULT_HOST_NAME;
+  if (renamed[active]) active = renamed[active];
   if (!cleaned[active]) {
-    const names = Object.keys(cleaned);
-    active = names.includes(DEFAULT_HOST_NAME) ? DEFAULT_HOST_NAME : names[0]!;
+    active = cleaned[DEFAULT_HOST_NAME] ? DEFAULT_HOST_NAME : Object.keys(cleaned)[0]!;
   }
   return { active, hosts: cleaned };
 }
@@ -327,8 +378,9 @@ function importSingleHostAuth(parsed: Record<string, unknown> | Partial<Config> 
     active: CLOUD_HOST_NAME,
     hosts: {
       [CLOUD_HOST_NAME]: host,
-      [LOCAL_HOST_NAME]: defaultHost(DEFAULT_LOCAL_API_BASE),
-      [DEV_HOST_NAME]: defaultHost(DEFAULT_DEV_API_BASE),
+      [LOCAL_DEV_HOST_NAME]: defaultHost(DEFAULT_LOCAL_DEV_API_BASE),
+      [INTERNAL_DEV_HOST_NAME]: defaultHost(DEFAULT_INTERNAL_DEV_API_BASE),
+      [SELFHOST_HOST_NAME]: defaultHost(DEFAULT_SELFHOST_API_BASE),
     },
   };
 }

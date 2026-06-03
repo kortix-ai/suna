@@ -7,7 +7,7 @@
  * authenticating with a Kortix token (sandbox token / account API key / CLI
  * PAT) — never a real host credential. The API authenticates the token,
  * resolves the project's backend, and streams the git protocol to the real
- * upstream (GitHub managed org / a user's own GitHub repo / Freestyle / …)
+ * upstream (GitHub managed org / a user's own GitHub repo / …)
  * using a short-lived host credential minted server-side.
  *
  * Only the three git smart-HTTP endpoints are proxied:

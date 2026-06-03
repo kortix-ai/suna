@@ -3,7 +3,7 @@
  * inside a REAL Daytona sandbox — the exact flow that failed in the ref.json
  * transcript (commit → open a change request).
  *
- * Runs against a running dev API (+ real Daytona + Freestyle). It:
+ * Runs against a running dev API (+ real Daytona + managed git). It:
  *   1. mints an account PAT for an owner, picks an active project
  *   2. creates a session → real sandbox built from the layered Dockerfile
  *   3. waits for active + runtimeReady

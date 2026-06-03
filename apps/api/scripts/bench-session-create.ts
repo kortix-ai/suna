@@ -4,8 +4,8 @@
  *
  *   cd apps/api && PROJECT_ID=<uuid> bun run scripts/bench-session-create.ts
  *
- * Times, against the project's REAL git remote (Freestyle/GitHub):
- *   - POST /git-token            (≈ resolveProjectGitAuth → mintRepoPushToken)
+ * Times, against the project's REAL git remote (GitHub):
+ *   - POST /git-token            (≈ resolveProjectGitAuth → managed push token)
  *   - git ls-remote              (network RTT baseline to the remote)
  *   - git fetch --depth=1 tip    (what createRemoteSessionBranch fetches)
  *   - git push (create branch)   (what createRemoteSessionBranch pushes)

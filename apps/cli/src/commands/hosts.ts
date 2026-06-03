@@ -20,13 +20,19 @@ Manage Kortix API hosts — one set of stored credentials per Kortix
 instance. The "active" host is what every other command operates on
 unless you pass \`--host <name>\` per invocation.
 
+Built-in hosts (always exist):
+  cloud                Kortix Cloud (https://api.kortix.com)
+  selfhost             Your self-hosted stack (kortix self-host)
+  local-dev            Local dev server (http://localhost:8008)
+  kortix-internal-dev  Kortix-internal hosted dev (http://dev-api.kortix.com)
+
 Subcommands:
-  ls                                  List hosts (cloud/local/dev always exist)
+  ls                                  List hosts (built-ins always exist)
   use <name>                          Switch the active host
   add <name> --url <url> [--login]    Register a new host; with --login
                                       run the browser flow immediately
-  rm <name>                           Remove a custom host; built-in
-                                      cloud/local/dev are reset instead
+  rm <name>                           Remove a custom host; built-ins
+                                      are reset instead
   info [<name>]                       Show one host (or the active)
   current                             Print the active host name
 
@@ -35,11 +41,11 @@ Global options:
   -h, --help     Show this help.
 
 Examples:
-  kortix hosts use local
-  kortix hosts use dev
+  kortix hosts use selfhost
   kortix hosts use cloud
-  kortix projects ls --host dev
-  kortix projects ls --host local
+  kortix hosts use local-dev
+  kortix projects ls --host selfhost
+  kortix projects ls --host kortix-internal-dev
   kortix hosts ls
 `;
 

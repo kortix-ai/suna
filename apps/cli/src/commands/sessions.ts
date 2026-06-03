@@ -350,8 +350,9 @@ function shortId(id: string): string {
 
 function serverCanCreateBranch(project: ProjectSummary): boolean {
   const meta = (project.metadata ?? {}) as Record<string, any>;
-  const git = meta.git as { provider?: string; auth?: { method?: string } } | undefined;
-  if (git?.provider === 'freestyle' && (git.auth?.method ?? 'managed') === 'managed') return true;
+  const git = meta.git as { provider?: string; managed?: boolean; auth?: { method?: string } } | undefined;
+  // Managed repos: the server holds the credential and can create the branch.
+  if (git?.managed === true) return true;
   const github = meta.github as { auth_source?: string } | undefined;
   return github?.auth_source === 'app_installation' || github?.auth_source === 'pat';
 }

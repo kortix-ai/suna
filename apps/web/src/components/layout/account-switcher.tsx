@@ -21,7 +21,7 @@ import { useTranslations } from 'next-intl';
 
 import * as React from 'react';
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUpRight,
@@ -65,6 +65,7 @@ export function AccountSwitcher({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const router = useRouter();
+  const pathname = usePathname();
   const queryClient = useQueryClient();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
   const billingActive = isBillingEnabled();
@@ -114,6 +115,14 @@ export function AccountSwitcher({
   const switchAccount = (account: KortixAccount) => {
     setSelectedAccountId(account.account_id);
     close();
+    // On an account-scoped page (/accounts/:id…), the URL — not the store —
+    // decides which account is shown, so the store update alone leaves you on
+    // the old account. Jump to the new account's settings. Sub-routes
+    // (groups/members) are intentionally dropped: their ids don't exist under a
+    // different account. Other pages (e.g. /projects) just react to the store.
+    if (pathname?.startsWith('/accounts/')) {
+      router.push(`/accounts/${account.account_id}`);
+    }
   };
 
   const label = activeAccount?.name || 'Account';

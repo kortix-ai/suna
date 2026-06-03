@@ -96,24 +96,22 @@ function wrap(text: string, width: number): string[] {
 }
 
 export interface GetStartedInput {
-  primaryAgent: string;
   prompt: string;
 }
 
-export function printGetStarted({ primaryAgent, prompt }: GetStartedInput): void {
+export function printGetStarted({ prompt }: GetStartedInput): void {
   const lines: string[] = [''];
   lines.push(boxTop('get started'));
   lines.push(boxLine(''));
   lines.push(
-    boxLine(
-      `${DIM}Paste this prompt into ${RESET}${BOLD}${primaryAgent}${RESET}${DIM} to configure your Kortix project:${RESET}`,
-    ),
+    boxLine(`${DIM}Paste this prompt into your ${RESET}${BOLD}coding agent of choice${RESET}`),
   );
+  lines.push(boxLine(`${DIM}to configure your Kortix project:${RESET}`));
   lines.push(boxLine(''));
 
   const innerInsetWidth = BOX_WIDTH - 4;
   const wrapped = wrap(prompt, innerInsetWidth);
-  for (const line of insetCard(`prompt for ${primaryAgent}`, wrapped)) lines.push(line);
+  for (const line of insetCard('prompt', wrapped)) lines.push(line);
 
   lines.push(boxLine(''));
   lines.push(

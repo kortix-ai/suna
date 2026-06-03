@@ -591,7 +591,7 @@ export async function deleteRemoteSessionBranch(
 
 /**
  * Commit a single file's contents onto `branch` and push — provider-agnostic.
- * Works for GitHub, Freestyle managed git, GitLab, or any HTTPS git remote,
+ * Works for GitHub, GitLab, or any HTTPS git remote,
  * unlike the GitHub Contents-API path which only understands github.com URLs.
  *
  * Implemented with git plumbing in the bare mirror: hash the new blob, splice

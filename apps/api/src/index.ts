@@ -78,6 +78,9 @@ process.on('uncaughtException', (err: Error) => {
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
 const app = new Hono();
+// Exported so tooling/tests can introspect the route table (app.routes) without
+// booting the server. See the import.meta.main guard around startup below.
+export { app };
 
 // === Global Middleware === 
 
@@ -266,6 +269,53 @@ app.get('/v1/system/status', (c) => {
   });
 });
 
+// ─── Maintenance config (DB-backed; replaces Vercel Edge Config) ─────────────
+// One row in kortix.platform_settings under 'maintenance_config'. GET is public
+// (banner + maintenance page read it); PUT is admin-only. Set via /admin/utils.
+const MAINTENANCE_KEY = 'maintenance_config';
+const DEFAULT_MAINTENANCE = {
+  level: 'none' as const,
+  title: '',
+  message: '',
+  startTime: null,
+  endTime: null,
+  statusUrl: null,
+  affectedServices: [] as string[],
+  updatedAt: new Date(0).toISOString(),
+};
+
+app.get('/v1/system/maintenance', async (c) => {
+  const { hasDatabase, db } = await import('./shared/db');
+  if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
+  const { platformSettings } = await import('@kortix/db');
+  const { eq } = await import('drizzle-orm');
+  const [row] = await db
+    .select({ value: platformSettings.value })
+    .from(platformSettings)
+    .where(eq(platformSettings.key, MAINTENANCE_KEY))
+    .limit(1);
+  return c.json(row?.value ?? DEFAULT_MAINTENANCE);
+});
+
+app.put('/v1/system/maintenance', supabaseAuth, async (c: any) => {
+  const accountId = c.get('userId') as string;
+  const { getPlatformRole } = await import('./shared/platform-roles');
+  const role = await getPlatformRole(accountId);
+  if (role !== 'admin' && role !== 'super_admin') {
+    return c.json({ error: 'Admin access required' }, 403);
+  }
+  const { hasDatabase, db } = await import('./shared/db');
+  if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
+  const body = await c.req.json().catch(() => ({}));
+  const config = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
+  const { platformSettings } = await import('@kortix/db');
+  await db
+    .insert(platformSettings)
+    .values({ key: MAINTENANCE_KEY, value: config, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: platformSettings.key, set: { value: config, updatedAt: new Date() } });
+  return c.json(config);
+});
+
 // ─── Stub Endpoints ─────────────────────────────────────────────────────────
 // These endpoints are called by the frontend but were never implemented.
 // Adding proper stubs stops 404 noise and provides correct responses.
@@ -318,11 +368,11 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
     '/v1/llm',
     createLlmGateway(
       {
-        enabled: process.env.LLM_GATEWAY_ENABLED === 'true',
-        openrouterApiKey: process.env.KORTIX_OPENROUTER_API_KEY ?? '',
+        enabled: config.LLM_GATEWAY_ENABLED,
+        openrouterApiKey: config.OPENROUTER_API_KEY,
         markup: llmPriceMarkup(),
         appName: 'Kortix',
-        appReferer: process.env.KORTIX_URL,
+        appReferer: config.KORTIX_URL,
       },
       {
         authenticateToken: (token) => attributeYoloToken(token),
@@ -598,21 +648,6 @@ async function startBackgroundServices() {
   startGrantExpirySweeper();
 }
 
-ensureSchema()
-  .then(async () => {
-    schemaReady = true;
-    // V2 IAM hard-codes role permissions in iam/role-perms.ts, so the
-    // boot-time system-role seed + membership-policy backfill from V1
-    // are no longer needed. Permissions resolve directly from
-    // account_members.account_role and project_members.project_role.
-    await startBackgroundServices();
-  })
-  .catch(async (err) => {
-    console.error('[startup] ensureSchema failed, starting services anyway:', err);
-    schemaReady = true;
-    await startBackgroundServices();
-  });
-
 // Graceful shutdown
 async function shutdown(signal: string) {
   appLogger.info(`Shutting down gracefully`, { signal });
@@ -628,8 +663,30 @@ async function shutdown(signal: string) {
   process.exit(0);
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+// Boot only when this module is the entry point (`bun run src/index.ts`, which
+// is how both `pnpm dev` and the Docker CMD launch it). Guarding behind
+// import.meta.main lets tooling and tests `import { app }` to introspect the
+// route table without starting the DB schema check, background workers, or
+// signal handlers. Does NOT change production boot — there, import.meta.main is true.
+if (import.meta.main) {
+  ensureSchema()
+    .then(async () => {
+      schemaReady = true;
+      // V2 IAM hard-codes role permissions in iam/role-perms.ts, so the
+      // boot-time system-role seed + membership-policy backfill from V1
+      // are no longer needed. Permissions resolve directly from
+      // account_members.account_role and project_members.project_role.
+      await startBackgroundServices();
+    })
+    .catch(async (err) => {
+      console.error('[startup] ensureSchema failed, starting services anyway:', err);
+      schemaReady = true;
+      await startBackgroundServices();
+    });
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}
 
 // Subdomain preview routing — `p{port}-{sandboxId}.localhost:{apiPort}/...`
 // Handled at the Bun.serve level so the proxied app sees itself at root `/`

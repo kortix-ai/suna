@@ -2,7 +2,7 @@ import { describe, test, expect } from 'bun:test';
 import { createLlmGateway } from '..';
 import type { LlmGatewayConfig, LlmGatewayHooks, UsageEvent } from '../types';
 
-const LIVE_KEY = process.env.KORTIX_OPENROUTER_API_KEY ?? '';
+const LIVE_KEY = process.env.OPENROUTER_API_KEY ?? '';
 const RUN_LIVE = !!LIVE_KEY && process.env.RUN_LIVE_LLM_TESTS === '1';
 const CHEAP_MODEL = process.env.LIVE_TEST_MODEL ?? 'deepseek/deepseek-v4-flash';
 
@@ -141,7 +141,7 @@ describeLive('llm-gateway — LIVE OpenRouter (RUN_LIVE_LLM_TESTS=1)', () => {
 
 if (!RUN_LIVE) {
   describe('llm-gateway — LIVE OpenRouter (skipped)', () => {
-    test('set KORTIX_OPENROUTER_API_KEY + RUN_LIVE_LLM_TESTS=1 to run', () => {
+    test('set OPENROUTER_API_KEY + RUN_LIVE_LLM_TESTS=1 to run', () => {
       expect(true).toBe(true);
     });
   });

@@ -59,8 +59,8 @@ app.route(
   '/v1/llm',
   createLlmGateway(
     {
-      enabled: process.env.LLM_GATEWAY_ENABLED === 'true',
-      openrouterApiKey: process.env.KORTIX_OPENROUTER_API_KEY!,
+      enabled: config.LLM_GATEWAY_ENABLED,
+      openrouterApiKey: config.OPENROUTER_API_KEY,
       markup: 1.2,
     },
     {

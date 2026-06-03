@@ -3,7 +3,7 @@ import { getTraceHeaders } from '../lib/request-context';
 
 const GITHUB_API = 'https://api.github.com';
 
-// 'managed' = a Kortix-managed Freestyle git token (not GitHub).
+// 'managed' = a Kortix-managed git token minted server-side by the managed backend.
 // 'project_credential' = provider-neutral git credential stored outside
 // user-readable runtime secrets.
 // Both ride this auth context because callers only consume `.token` for git

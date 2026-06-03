@@ -1,8 +1,9 @@
 /**
  * E2E for `POST /v1/projects/provision` — the managed-git path behind
- * `kortix ship` when a repo has no `origin` remote. Mirrors the mock surface
- * of e2e-create-repo-starter.test.ts but swaps GitHub repo creation for a
- * stubbed Freestyle git API (repo + identity + permission + token).
+ * `kortix ship` when a repo has no `origin` remote. The managed backend is
+ * provider-agnostic (GitHub is the default + only active one), so this test
+ * drives the endpoint against a stub `GitHostBackend` and asserts the
+ * provider-neutral behaviour: create repo → mint push token → register project.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
@@ -13,8 +14,9 @@ import { accountMembers, projectMembers, projects } from '@kortix/db';
 const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
-const REPO_ID = 'repo-uuid-123';
-const IDENTITY_ID = 'identity-uuid-456';
+const REPO_OWNER = 'kortix-managed';
+const EXTERNAL_REPO_ID = 'gh-repo-1';
+const INSTALL_ID = 'install-1';
 const PUSH_TOKEN = 'scoped-push-token-789';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
@@ -28,34 +30,11 @@ function getTestAuth() {
   return (globalThis as any)[TEST_AUTH_KEY] ?? { userId: USER_ID, userEmail: 'ship@example.test' };
 }
 
-// ─── Stub Freestyle git fetch ────────────────────────────────────────────────
-
-const freestyleCalls: Array<{ path: string; method: string; body: unknown }> = [];
+// ─── Stub fetch: sandbox secret lookups 404 so keys resolve from env. ─────────
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = (async (input: any, init?: any) => {
   const url = typeof input === 'string' ? input : input?.url ?? '';
-  if (typeof url === 'string' && url.includes('freestyle.sh')) {
-    const path = new URL(url).pathname;
-    let body: unknown = null;
-    try { body = init?.body ? JSON.parse(init.body) : null; } catch { /* ignore */ }
-    freestyleCalls.push({ path, method: init?.method ?? 'GET', body });
-
-    let payload: unknown = {};
-    if (path === '/git/v1/repo') payload = { repoId: REPO_ID, name: 'kortix-project', defaultBranch: 'main' };
-    else if (path === '/git/v1/identity') payload = { identityId: IDENTITY_ID };
-    else if (/\/permissions\//.test(path)) payload = {};
-    else if (/\/tokens$/.test(path)) payload = { token: PUSH_TOKEN };
-
-    return {
-      ok: true,
-      status: 200,
-      statusText: 'OK',
-      json: async () => payload,
-      text: async () => JSON.stringify(payload),
-    } as unknown as Response;
-  }
-  // sandbox secret lookups → 404 so the key resolves from env.
   if (typeof url === 'string' && /\/env\//.test(url)) {
     return { ok: false, status: 404, json: async () => ({}), text: async () => '' } as unknown as Response;
   }
@@ -64,20 +43,52 @@ globalThis.fetch = (async (input: any, init?: any) => {
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
-// Test-controlled Freestyle key so the "not configured" path is deterministic
-// regardless of the host's real env/config. `callFreestyle` stays real enough
-// to still hit the stubbed fetch above.
-let freestyleKey = 'test-key';
+// Stub managed git backend. The provision endpoint resolves the backend through
+// `../projects/git-backends`; we register a single `github` backend whose
+// `isConfigured()` we toggle to exercise the configured / not-configured paths.
+let backendConfigured = true;
+let createdSlug = '';
+const backendCalls: string[] = [];
+
+const stubBackend = {
+  id: 'github',
+  isConfigured: async () => backendConfigured,
+  createRepo: async (input: any) => {
+    backendCalls.push('createRepo');
+    createdSlug = input.slug;
+    return {
+      provider: 'github',
+      upstreamUrl: `https://github.com/${REPO_OWNER}/${input.slug}.git`,
+      externalRepoId: EXTERNAL_REPO_ID,
+      repoOwner: REPO_OWNER,
+      repoName: input.slug,
+      installationId: INSTALL_ID,
+      credentialRef: null,
+      defaultBranch: input.defaultBranch,
+      initialToken: PUSH_TOKEN,
+    };
+  },
+  deleteRepo: async () => { backendCalls.push('deleteRepo'); },
+  buildUpstream: (ref: any) => ({ url: ref.upstreamUrl, headers: {} }),
+  seedFiles: async () => { backendCalls.push('seedFiles'); },
+};
+
+mock.module('../projects/git-backends', () => ({
+  hasBackend: (provider: string) => provider === 'github',
+  getBackend: (provider: string) => (provider === 'github' ? stubBackend : stubBackend),
+  getDefaultManagedBackend: () => stubBackend,
+  githubBackend: stubBackend,
+  managedGithubInstallId: () => INSTALL_ID,
+  managedGithubToken: () => null,
+}));
+
+// Stub the Freestyle *deployments* provider (kept feature, unrelated to managed
+// git) so loading the projects module graph doesn't drag real deployment code —
+// and its transitive DB imports — into this lightweight test.
 mock.module('../deployments/providers/freestyle', () => ({
-  getFreestyleApiKey: async () => freestyleKey,
+  getFreestyleApiKey: async () => 'test-key',
   getFreestyleApiUrl: () => 'https://api.freestyle.sh',
-  callFreestyle: async (path: string, options: { method: string; body?: unknown }) =>
-    fetch(`https://api.freestyle.sh${path}`, {
-      method: options.method,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${freestyleKey}` },
-      body: options.body ? JSON.stringify(options.body) : undefined,
-    }),
-  // Registry (deployments/providers/index) reads `.name` at module load.
+  callFreestyle: async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' }),
   freestyleProvider: { name: 'freestyle', deploy: async () => ({}), stop: async () => {}, logs: async () => ({}) },
 }));
 
@@ -136,6 +147,8 @@ mock.module("../snapshots/builder", () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickProjectTemplatePrebuilds: () => {},
+  reconcileStaleBuilds: async () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
@@ -178,6 +191,7 @@ function projectRowFrom(values: any) {
 }
 
 mock.module('../shared/db', () => ({
+  hasDatabase: true,
   db: {
     select: () => ({
       from: (table: unknown) => ({
@@ -230,16 +244,16 @@ function createApp() {
   return app;
 }
 
-describe('POST /v1/projects/provision (managed Freestyle git)', () => {
+describe('POST /v1/projects/provision (managed git)', () => {
   beforeEach(() => {
     setTestAuth();
     insertedProject = null;
     grantedProjectRole = null;
-    freestyleCalls.length = 0;
-    freestyleKey = 'test-key';
+    backendCalls.length = 0;
+    backendConfigured = true;
   });
 
-  test('creates a Freestyle repo + scoped token and registers the project', async () => {
+  test('provisions a managed repo + scoped token and registers the project', async () => {
     const app = createApp();
     const res = await app.request('/v1/projects/provision', {
       method: 'POST',
@@ -250,26 +264,31 @@ describe('POST /v1/projects/provision (managed Freestyle git)', () => {
     expect(res.status).toBe(201);
     const body = await res.json();
 
-    // Response carries the project + the scoped push token for the CLI.
+    // Repo slug = readable name + the (server-generated) project id; the managed
+    // repo lives under the managed org. Response carries the project + scoped
+    // push token for the CLI.
+    expect(createdSlug).toMatch(/^my-agent-[0-9a-f-]{36}$/);
+    const expectedRepoUrl = `https://github.com/${REPO_OWNER}/${createdSlug}.git`;
     expect(body.project_id).toBe(PROJECT_ID);
-    expect(body.repo_url).toBe(`https://git.freestyle.sh/${REPO_ID}`);
-    expect(body.repo_id).toBe(REPO_ID);
+    expect(body.repo_url).toBe(expectedRepoUrl);
+    expect(body.repo_id).toBe(EXTERNAL_REPO_ID);
     expect(body.push_token).toBe(PUSH_TOKEN);
 
     // Persisted row records the canonical typed git-remote reference.
     expect(insertedProject).toMatchObject({
       accountId: ACCOUNT_ID,
       name: 'My Agent',
-      repoUrl: `https://git.freestyle.sh/${REPO_ID}`,
+      repoUrl: expectedRepoUrl,
       defaultBranch: 'main',
       manifestPath: 'kortix.toml',
       status: 'active',
       metadata: {
         git: {
-          url: `https://git.freestyle.sh/${REPO_ID}`,
-          provider: 'freestyle',
-          auth: { method: 'managed', ref: IDENTITY_ID },
-          repo_id: REPO_ID,
+          url: expectedRepoUrl,
+          provider: 'github',
+          managed: true,
+          auth: { method: 'github_app', installation_id: INSTALL_ID },
+          owner: REPO_OWNER,
         },
       },
     });
@@ -280,22 +299,12 @@ describe('POST /v1/projects/provision (managed Freestyle git)', () => {
       projectRole: 'manager',
     });
 
-    // Exercised the full Freestyle git handshake, in order.
-    const calls = freestyleCalls.map((c) => `${c.method} ${c.path}`);
-    expect(calls).toEqual([
-      'POST /git/v1/repo',
-      'POST /git/v1/identity',
-      `POST /git/v1/identity/${IDENTITY_ID}/permissions/${REPO_ID}`,
-      `POST /git/v1/identity/${IDENTITY_ID}/tokens`,
-    ]);
-    // Repo created private with the requested default branch.
-    expect(freestyleCalls[0]!.body).toMatchObject({ public: false, defaultBranch: 'main' });
-    // Grant is write-scoped.
-    expect(freestyleCalls[2]!.body).toMatchObject({ permission: 'write' });
+    // Provisioned the repo through the backend seam (no seeding without flag).
+    expect(backendCalls).toEqual(['createRepo']);
   });
 
   test('returns 503 when managed git is not configured', async () => {
-    freestyleKey = '';
+    backendConfigured = false;
     const app = createApp();
     const res = await app.request('/v1/projects/provision', {
       method: 'POST',
@@ -303,7 +312,7 @@ describe('POST /v1/projects/provision (managed Freestyle git)', () => {
       body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'My Agent' }),
     });
     expect(res.status).toBe(503);
-    expect(freestyleCalls).toHaveLength(0);
+    expect(backendCalls).toHaveLength(0);
   });
 
   test('rejects an unsupported provider', async () => {
@@ -314,12 +323,5 @@ describe('POST /v1/projects/provision (managed Freestyle git)', () => {
       body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'My Agent', provider: 'gitlab' }),
     });
     expect(res.status).toBe(400);
-  });
-
-  test('deleteManagedRepo issues DELETE to the repo endpoint (rm --purge path)', async () => {
-    const { deleteManagedRepo } = await import('../projects/freestyle-git');
-    await deleteManagedRepo(REPO_ID);
-    const del = freestyleCalls.find((c) => c.method === 'DELETE');
-    expect(del?.path).toBe(`/git/v1/repo/${REPO_ID}`);
   });
 });

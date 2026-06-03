@@ -5,7 +5,7 @@
 # DB is reconciled against. There is no path where an entity lands in the DB
 # first (no DB-first race).
 #
-# Runs against a REAL backend + REAL managed git (Freestyle): it provisions a
+# Runs against a REAL backend + REAL managed git: it provisions a
 # throwaway project, drives the real HTTP API with curl, and purges everything
 # on exit. NOT a unit test.
 #
@@ -170,7 +170,7 @@ assert_status "$(code_of "$PROV")" "201" "POST /projects/provision"
 PROV_BODY="$(body_of "$PROV")"
 PROJECT_ID="$(jq -r '.project_id' <<<"$PROV_BODY")"
 REPO_URL="$(jq -r '.repo_url' <<<"$PROV_BODY")"
-assert_eq "$(jq -r '.metadata.git.provider' <<<"$PROV_BODY")" "freestyle" "git provider"
+assert_eq "$(jq -r '.metadata.git.provider' <<<"$PROV_BODY")" "github" "git provider"
 [[ -n "$PROJECT_ID" && "$PROJECT_ID" != "null" ]] || fail "no project_id returned"
 dim "project" "$PROJECT_ID"
 

@@ -13,7 +13,6 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { deployments, projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { config } from '../config';
 import { DEFAULT_PROVIDER_NAME, getProvider } from '../deployments/providers';
 import type { DeploymentRequest } from '../deployments/providers';
 import {
@@ -22,6 +21,7 @@ import {
   resolveAppDomains,
   type AppSpec,
 } from './apps';
+import { resolveAppsEnabled } from './apps-config';
 
 type ProjectRow = typeof projects.$inferSelect;
 type DeploymentRow = typeof deployments.$inferSelect;
@@ -45,11 +45,10 @@ export interface AppSweepResult {
  * sweep for everyone else.
  */
 export async function runProjectAppSweep(): Promise<AppSweepResult> {
-  // No-op when the feature flag is off, even if a caller invokes the
-  // sweep directly. Keeps the schedule code path honest.
-  if (!config.KORTIX_APPS_EXPERIMENTAL) {
-    return { scannedProjects: 0, scannedApps: 0, unchanged: 0, deployed: 0, failed: 0 };
-  }
+  // Apps is gated PER PROJECT now (metadata.apps_enabled, default
+  // KORTIX_APPS_EXPERIMENTAL). We can't early-out on the global flag — a single
+  // project may have opted in while the operator default is off. Each project
+  // is skipped individually inside the loop below.
   if (appSweepRunning) {
     return { scannedProjects: 0, scannedApps: 0, unchanged: 0, deployed: 0, failed: 0 };
   }
@@ -69,6 +68,8 @@ export async function runProjectAppSweep(): Promise<AppSweepResult> {
       .limit(200);
 
     for (const project of rows) {
+      // Skip projects that haven't opted into the experimental apps surface.
+      if (!resolveAppsEnabled(project.metadata)) continue;
       result.scannedProjects += 1;
       try {
         await sweepProject(project, result);

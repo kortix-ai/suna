@@ -45,7 +45,7 @@ The local CLI uses a user-scoped token at `~/.config/kortix/config.json` (mode 0
 
 ### Hosts
 
-A host is one Kortix API endpoint. `cloud` and `local` are always available, and you can add more self-hosted endpoints. One host is active at a time; the CLI prints the active host before operational commands so Cloud/local actions are harder to mix up.
+A host is one Kortix API endpoint. The built-ins `cloud` (Kortix Cloud), `selfhost` (your `kortix self-host` stack), `local-dev` (a local `pnpm dev` server), and `kortix-internal-dev` are always available, and you can add more endpoints. One host is active at a time; the CLI prints the active host before operational commands so Cloud/local actions are harder to mix up.
 
 | Command | Effect |
 | --- | --- |
@@ -62,13 +62,13 @@ A host is one Kortix API endpoint. `cloud` and `local` are always available, and
 
 `kortix self-host start` creates and starts a production-style local Kortix stack
 using Docker Compose. On first interactive setup it only asks for the product
-integrations you may need: Freestyle for managed git/deployments, a GitHub App
+integrations you may need: Freestyle for app deployments, a GitHub App
 or PAT for repo access, and Pipedream for app connectors. Local ports, Supabase,
 generated secrets, and Docker defaults are handled automatically.
 
 | Command | Effect |
 | --- | --- |
-| `kortix self-host start` | Create config if needed, start the local stack, and register the `local` host. |
+| `kortix self-host start` | Create config if needed, start the local stack, and register the `selfhost` host. |
 | `kortix self-host configure` | Re-run the Freestyle, GitHub, and Pipedream credential wizard. |
 | `kortix self-host env ls` | Show persistent self-host env values, masking populated secrets. |
 | `kortix self-host env set KEY=VALUE …` | Update advanced persistent env values before the next start. |

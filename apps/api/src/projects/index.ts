@@ -34,7 +34,7 @@ import {
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
 import { ensureOpencodeSessionPin } from './opencode-mapping';
-import { sendAccountInviteEmail, buildInviteUrl } from '../accounts/email';
+import { sendAccountInviteEmail, buildInviteUrl, isInviteEmailConfigured } from '../accounts/email';
 import { resolveAccountId } from '../shared/resolve-account';
 import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
@@ -132,6 +132,7 @@ import { getSandboxProvider } from '../snapshots/providers';
 import { classifySnapshotError, describeSnapshotError } from '../snapshots/error-classify';
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
 import { claimWarmSandbox, getWarmPoolCounts, notePoolPresence, refillProjectPool, resolveWarmConfig, syncClaimedBoxToBase, warmPoolEnabled } from '../platform/services/warm-pool';
+import { resolveAppsEnabled } from './apps-config';
 import { rehydrateSessionChat } from './legacy-migration-rehydrate';
 import { ProvisionTimeline } from '../platform/services/provision-timeline';
 import { getProvider } from '../platform/providers';
@@ -348,10 +349,11 @@ function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole |
     effective_project_role: access?.effectiveRole ?? null,
     dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
     // Single source of truth for the experimental [[apps]] surface. Threading
-    // it onto the project payload lets the web client gate the Apps section +
-    // sidebar shortcut off the SAME platform flag that gates the API routes —
-    // flip KORTIX_APPS_EXPERIMENTAL on the API and both light up together.
-    apps_enabled: config.KORTIX_APPS_EXPERIMENTAL,
+    // the EFFECTIVE per-project value onto the project payload lets the web
+    // client gate the Apps section + sidebar shortcut off the SAME gate that
+    // gates the API routes. Per-project override (metadata.apps_enabled) wins;
+    // KORTIX_APPS_EXPERIMENTAL is the default for projects that haven't chosen.
+    apps_enabled: resolveAppsEnabled(row.metadata),
     // Warm sandbox pool (Customize → Sandbox). `warm_pool` is the effective
     // per-project config (UI value over the operator default); `warm_pool_available`
     // gates the UI control off the platform feature flag.
@@ -842,13 +844,13 @@ async function resolveGitHubRepoAuth(accountId: string, installationId?: string 
 }
 
 interface ProjectGitRemote {
-  /** freestyle | github | gitlab | bitbucket | generic */
+  /** github | gitlab | bitbucket | generic */
   provider: string;
-  /** managed | freestyle_identity | github_app | pat | project_credential | none */
+  /** managed | github_app | pat | project_credential | none */
   authMethod: string;
-  /** Freestyle repo id (managed repos). */
+  /** Deprecated managed-repo id slot — always null. */
   repoId: string | null;
-  /** Auth credential reference — Freestyle identity id for `managed`. */
+  /** Auth credential reference. */
   ref: string | null;
   installationId: string | null;
   repoOwner: string | null;
@@ -993,7 +995,7 @@ function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnect
     return {
       provider: connection.provider,
       authMethod: connection.authMethod,
-      repoId: connection.provider === 'freestyle' ? connection.externalRepoId : null,
+      repoId: null,
       ref: connection.credentialRef,
       installationId: connection.installationId,
       repoOwner: connection.repoOwner,
@@ -1019,21 +1021,6 @@ function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnect
       externalRepoId: git.external_repo_id ?? git.repo_id ?? null,
       upstreamUrl: typeof git.upstream_url === 'string' ? git.upstream_url : null,
       managed: git.managed === true || method === 'managed',
-    };
-  }
-  if (meta.git_provider === 'freestyle' || meta.freestyle) {
-    const fs = meta.freestyle ?? {};
-    return {
-      provider: 'freestyle',
-      authMethod: 'managed',
-      repoId: fs.repo_id ?? null,
-      ref: fs.identity_id ?? null,
-      installationId: null,
-      repoOwner: null,
-      repoName: null,
-      externalRepoId: fs.repo_id ?? null,
-      upstreamUrl: null,
-      managed: true,
     };
   }
   if (meta.github) {
@@ -1063,9 +1050,6 @@ function getProjectGitRemote(project: ProjectRow, connection?: ProjectGitConnect
  */
 function resolveUpstreamUrl(project: ProjectRow, remote: ProjectGitRemote): string {
   if (remote.upstreamUrl) return remote.upstreamUrl;
-  if (remote.provider === 'freestyle' && remote.externalRepoId) {
-    return `https://git.freestyle.sh/${remote.externalRepoId}`;
-  }
   if (remote.provider === 'github' && remote.repoOwner && remote.repoName) {
     return `https://github.com/${remote.repoOwner}/${remote.repoName}.git`;
   }
@@ -1090,9 +1074,6 @@ function buildConnectionRef(project: ProjectRow, remote: ProjectGitRemote): GitC
 
 async function hasServerManagedGitAuth(project: ProjectRow): Promise<boolean> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
-  if (remote.provider === 'freestyle' && remote.authMethod === 'managed' && !!remote.repoId) {
-    return true;
-  }
   if (remote.provider === 'github' && remote.authMethod === 'github_app') {
     return true;
   }
@@ -1199,8 +1180,8 @@ export async function withProjectGitAuth(project: ProjectRow): Promise<ProjectRo
 /**
  * Resolve a project to a real upstream git endpoint + short-lived host auth
  * headers — the single seam consumed by the Kortix git proxy (and, post-M2,
- * server-side git). Token resolution reuses `resolveProjectGitAuth` (managed
- * Freestyle / managed + BYO GitHub / project credential); the backend formats
+ * server-side git). Token resolution reuses `resolveProjectGitAuth` (managed +
+ * BYO GitHub / project credential); the backend formats
  * the URL + headers for the provider. Returns null when no upstream is
  * resolvable (no git connection / unauthenticated).
  */
@@ -2938,8 +2919,9 @@ projectsApp.post('/', async (c) => {
 });
 
 // POST /v1/projects/provision
-// Managed-git "Create project": provisions a Freestyle repo + scoped per-project
-// push token, optionally seeds the starter (web flow), and registers the project.
+// Managed-git "Create project": provisions a repo on the managed backend +
+// scoped per-project push token, optionally seeds the starter (web flow), and
+// registers the project.
 // Used by the web "Create project" button and `kortix ship` when a working tree
 // has no `origin` remote. BYO-repo projects go through POST / and /create-repo.
 projectsApp.post('/provision', async (c) => {
@@ -2950,8 +2932,8 @@ projectsApp.post('/provision', async (c) => {
   }
 
   // Managed-git provider, provider-agnostic via the backend registry. GitHub is
-  // the default + only active managed backend (Freestyle was never in prod and
-  // has been ripped out). Forgejo / Artifacts slot in here as drop-ins.
+  // the default + only active managed backend. Forgejo / Artifacts slot in here
+  // as drop-ins.
   const provider =
     normalizeString(body.provider) ??
     (process.env.MANAGED_GIT_PROVIDER?.trim() || 'github');
@@ -3062,8 +3044,8 @@ projectsApp.post('/provision', async (c) => {
     metadata: { seeded: false },
   });
 
-  // Resolve a push credential for seeding / the CLI's first push. Freestyle
-  // mints one at create time; GitHub mints an installation token now.
+  // Resolve a push credential for seeding / the CLI's first push. The managed
+  // GitHub backend mints an installation token.
   let pushToken = provisioned.initialToken;
   if (!pushToken) {
     pushToken = (await resolveProjectGitAuth(row)).auth?.token ?? null;
@@ -3128,7 +3110,7 @@ projectsApp.post('/provision', async (c) => {
 });
 
 // POST /v1/projects/:projectId/git-token
-// Mint a fresh scoped push token for a *managed* (Freestyle) project so the CLI
+// Mint a fresh scoped push token for a *managed* project so the CLI
 // can push on a later `kortix ship` without persisting credentials in git config.
 // Returns 409 for BYO projects (they push with the user's own git remote auth).
 projectsApp.post('/:projectId/git-token', async (c) => {
@@ -3143,8 +3125,8 @@ projectsApp.post('/:projectId/git-token', async (c) => {
   }
 
   // Provider-agnostic: resolve a fresh push credential through the backend seam
-  // (Freestyle mints a scoped identity token; GitHub mints an installation
-  // token). Never persisted in the sandbox/CLI git config.
+  // (the managed GitHub backend mints an installation token). Never persisted
+  // in the sandbox/CLI git config.
   const gitAuth = await resolveProjectGitAuth(loaded.row);
   if (!gitAuth.auth?.token) {
     return c.json({ error: 'Managed git is not configured / unavailable for this project' }, 503);
@@ -4196,9 +4178,9 @@ projectsApp.get('/:projectId/git/clone-credential', async (c) => {
 
 // PUT /v1/projects/:projectId/git-credential
 // Stores provider-neutral BYO git credentials as platform credentials, not as
-// user-readable/injectable runtime secrets. Managed providers (Freestyle and
-// GitHub App) mint credentials server-side; this exists for generic future
-// providers such as GitLab/Bitbucket until they have first-class adapters.
+// user-readable/injectable runtime secrets. The managed GitHub backend mints
+// credentials server-side; this exists for generic future providers such as
+// GitLab/Bitbucket until they have first-class adapters.
 projectsApp.put('/:projectId/git-credential', async (c) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
@@ -4922,8 +4904,8 @@ export async function commitManifest(
     return { ok: true };
   }
 
-  // Any other host (Freestyle managed git, GitLab, generic HTTPS remote):
-  // commit via the git CLI. The old code bailed here with "Project repo URL is
+  // Any other host (GitLab, generic HTTPS remote): commit via the git CLI.
+  // The old code bailed here with "Project repo URL is
   // not a GitHub URL", which broke every manifest edit (connectors, triggers,
   // apps) on managed/self-hosted projects. Mirrors createRemoteSessionBranch's
   // GitHub-fast-path / git-CLI-fallback split.
@@ -5372,24 +5354,34 @@ projectsApp.post('/:projectId/triggers/:slug/fire', async (c) => {
 // deploys on manifest drift; the routes below give the UI and CLI a
 // manual path.
 //
-// EXPERIMENTAL. The entire surface is gated behind
-// `KORTIX_APPS_EXPERIMENTAL`. When off (the default), every /apps route
-// returns 404 and the sweep skips every project. This middleware short-
-// circuits before any of the handlers below run.
+// EXPERIMENTAL. The entire surface is gated PER PROJECT
+// (projects.metadata.apps_enabled, defaulting to KORTIX_APPS_EXPERIMENTAL).
+// When off for a project, every /apps route returns 404 and the sweep skips
+// it. This middleware loads the project's gate and short-circuits before any
+// of the handlers below run.
+
+const APPS_DISABLED_BODY = {
+  error: 'kortix [[apps]] is experimental and disabled for this project. Enable it in Customize → Settings (or set KORTIX_APPS_EXPERIMENTAL=true to default it on).',
+} as const;
+
+async function projectAppsEnabled(projectId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ metadata: projects.metadata })
+    .from(projects)
+    .where(eq(projects.projectId, projectId))
+    .limit(1);
+  return resolveAppsEnabled(row?.metadata);
+}
 
 projectsApp.use('/:projectId/apps/*', async (c, next) => {
-  if (!config.KORTIX_APPS_EXPERIMENTAL) {
-    return c.json({
-      error: 'kortix [[apps]] is experimental and disabled. Start the API with KORTIX_APPS_EXPERIMENTAL=true to enable.',
-    }, 404);
+  if (!(await projectAppsEnabled(c.req.param('projectId')))) {
+    return c.json(APPS_DISABLED_BODY, 404);
   }
   await next();
 });
 projectsApp.use('/:projectId/apps', async (c, next) => {
-  if (!config.KORTIX_APPS_EXPERIMENTAL) {
-    return c.json({
-      error: 'kortix [[apps]] is experimental and disabled. Start the API with KORTIX_APPS_EXPERIMENTAL=true to enable.',
-    }, 404);
+  if (!(await projectAppsEnabled(c.req.param('projectId')))) {
+    return c.json(APPS_DISABLED_BODY, 404);
   }
   await next();
 });
@@ -6134,6 +6126,36 @@ projectsApp.patch('/:projectId/warm-pool', async (c) => {
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 });
 
+// PATCH /v1/projects/:projectId/apps-config
+// Per-project toggle for the experimental [[apps]] deployment surface
+// (Customize → Settings). DB-only — stored in projects.metadata.apps_enabled,
+// never in kortix.toml. Overrides the operator default KORTIX_APPS_EXPERIMENTAL.
+// `enabled: null` clears the override and falls back to the operator default.
+projectsApp.patch('/:projectId/apps-config', async (c) => {
+  const projectId = c.req.param('projectId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'manage');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
+  const nextMeta: Record<string, unknown> = { ...meta };
+  if (body.enabled === null) {
+    delete nextMeta.apps_enabled;
+  } else if (typeof body.enabled === 'boolean') {
+    nextMeta.apps_enabled = body.enabled;
+  } else {
+    return c.json({ error: 'enabled must be a boolean or null' }, 400);
+  }
+
+  const [row] = await db
+    .update(projects)
+    .set({ metadata: nextMeta, updatedAt: new Date() })
+    .where(eq(projects.projectId, projectId))
+    .returning();
+  if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+  return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
+});
+
 // PATCH /v1/projects/:projectId/onboarding
 // Persist whether the project's guided onboarding wizard has been completed
 // (or explicitly skipped). Stored in `metadata.onboarding_completed_at` so we
@@ -6399,24 +6421,30 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
     });
 
     // Fire the invite email — same transport + template as account-level
-    // invites, framed around this project. Best-effort: the invitation row
-    // already exists, so on skip/failure we still return the invite_url for
-    // the inviter to share the link manually (mirrors the account route).
+    // invites, framed around this project. Fire-and-forget: the invitation row
+    // already exists and we return the invite_url regardless, so we don't block
+    // the response on Mailtrap (its 10s timeout was stacking onto the request).
+    // send() never throws (it returns a result object), but guard the promise
+    // anyway so a transport-layer rejection can't surface as unhandled.
     const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
     const [accountRow] = await db
       .select({ name: accounts.name })
       .from(accounts)
       .where(eq(accounts.accountId, loaded.row.accountId))
       .limit(1);
-    const delivery = await sendAccountInviteEmail({
-      email,
-      accountName: accountRow?.name ?? 'Kortix',
-      inviterEmail: callerEmail,
-      inviteId,
-      role,
-      projectName: loaded.row.name,
-    });
-    const emailSent = delivery.ok === true;
+    const emailConfigured = isInviteEmailConfigured();
+    if (emailConfigured) {
+      void sendAccountInviteEmail({
+        email,
+        accountName: accountRow?.name ?? 'Kortix',
+        inviterEmail: callerEmail,
+        inviteId,
+        role,
+        projectName: loaded.row.name,
+      }).catch((err) => {
+        console.warn('[projects/invite] invite email send failed:', (err as Error).message);
+      });
+    }
 
     return c.json(
       {
@@ -6425,10 +6453,11 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
         invite_id: inviteId,
         project_role: role,
         invite_url: buildInviteUrl(inviteId),
-        email_sent: emailSent,
-        email_skip_reason:
-          delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
-        message: emailSent
+        // Optimistic: send is queued, not awaited. When delivery isn't wired up
+        // we know synchronously it'll be skipped, so report that honestly.
+        email_sent: emailConfigured,
+        email_skip_reason: emailConfigured ? null : 'missing_mailtrap_token',
+        message: emailConfigured
           ? `No Kortix account for that email yet — an invitation email has been sent. They'll land on this project as ${role} when they sign up.`
           : `No Kortix account for that email yet — invitation created. Share the invite link with them; they'll land on this project as ${role} when they sign up.`,
       },
@@ -7783,7 +7812,7 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
 // ─── Change Requests ────────────────────────────────────────────────────────
 // Kortix-native PR layer. The CR is metadata stored alongside the project;
 // the underlying merge runs through ./git.ts which works against any git
-// backend (GitHub, GitLab, Freestyle, plain git) — so the merge UI lives in
+// backend (GitHub, GitLab, plain git) — so the merge UI lives in
 // Kortix even when the repo is hosted elsewhere.
 //
 // v1 is intentionally minimal: open / merged / closed, head_ref + base_ref,

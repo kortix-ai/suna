@@ -157,7 +157,7 @@ the same state.
 Kortix-native PR layer for session work landing on `main`. A change
 request proposes merging one branch (`head_ref`) into another
 (`base_ref`) inside a project. The CR layer is **Kortix-native** —
-it works on top of any git host (GitHub, GitLab, Freestyle, plain
+it works on top of any git host (GitHub, GitLab, plain
 git) without per-host integration. A CR is the **only sanctioned
 way** for an agent to land session-branch work on `main`; see
 `change-requests.md` (alongside this file) for the full mandate and

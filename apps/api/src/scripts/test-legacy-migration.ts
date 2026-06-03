@@ -13,7 +13,7 @@
  *   bun run src/scripts/test-legacy-migration.ts --seed
  *
  *   # 3. MIGRATE for real and poll to completion (mutates VM workspace, Supabase
- *   #    Storage, Freestyle, and the local db):
+ *   #    Storage, the managed git host, and the local db):
  *   bun run src/scripts/test-legacy-migration.ts --migrate
  *
  * Inputs (env):
@@ -23,7 +23,7 @@
  *   TEST_VM_SLUG            justavps slug (builds https://{slug}.{JUSTAVPS_PROXY_DOMAIN})
  *   TEST_VM_PROXY_TOKEN     X-Proxy-Token for the CF proxy (if required)
  *   TEST_VM_SERVICE_KEY     Authorization bearer for the toolbox (falls back to INTERNAL_SERVICE_KEY)
- * Plus the usual config: DATABASE_URL, SUPABASE_URL/SERVICE_ROLE_KEY, FREESTYLE_API_KEY,
+ * Plus the usual config: DATABASE_URL, SUPABASE_URL/SERVICE_ROLE_KEY, MANAGED_GIT_*,
  *   JUSTAVPS_PROXY_DOMAIN, LEGACY_MIGRATION_DEFAULT_IMAGE.
  */
 import { desc, eq, sql } from 'drizzle-orm';

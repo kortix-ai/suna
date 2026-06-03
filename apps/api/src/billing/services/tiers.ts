@@ -42,7 +42,7 @@ export function llmPriceMarkup(): number {
 // pricing page as "roughly N hours of compute or M tokens" rough guidance,
 // not enforced anywhere.
 
-export const PER_SEAT_PRICE_USD = 20;
+export const PER_SEAT_PRICE_USD = 40;
 /** Display-only: rough indication for pricing-page copy. */
 export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 12;
 /** Display-only: rough indication for pricing-page copy. */
@@ -238,7 +238,7 @@ const STRIPE_PRICES_PROD: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
     pro:  { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO' }, // TODO: create prod Pro price and replace
-    per_seat: { monthly: 'price_1TcrQJG6l1KZGqIry1K1cqZY' }, // live "Kortix seat" $20/mo
+    per_seat: { monthly: 'price_1TdyruG6l1KZGqIrMzPVmQSO' }, // live "Kortix seat" $40/mo
     // Legacy price → tier mappings (for webhook resolution of existing subs)
     tier_2_20:     { monthly: 'price_1RILb4G6l1KZGqIrhomjgDnO', yearly: 'price_1ReHB5G6l1KZGqIrD70I1xqM', yearlyCommitment: 'price_1RqtqiG6l1KZGqIrhjVPtE1s' },
     tier_6_50:     { monthly: 'price_1RILb4G6l1KZGqIr5q0sybWn', yearly: 'price_1ReHAsG6l1KZGqIrlAog487C', yearlyCommitment: 'price_1Rqtr8G6l1KZGqIrQ0ql0qHi' },
@@ -264,11 +264,11 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
     pro:  { monthly: 'price_1T7yiuG6CaZppiKc7VsgnlKI' },
-    // Billing v2 — $20/month per-seat in the staging Stripe account (acct_…G6CaZppiKc),
+    // Billing v2 — $40/month per-seat in the staging Stripe account (acct_…G6CaZppiKc),
     // the same account the staging customers + their legacy subs live in (so the
     // migration can actually find/cancel them). The old …G6l1KZGqIr price was in a
     // different account and is being deprecated.
-    per_seat: { monthly: 'price_1TdSdvG6CaZppiKctAZXPPY0' },
+    per_seat: { monthly: 'price_1TdyscG6CaZppiKcilrApKgB' },
   },
   credits: {
     10:  'price_1RxXOvG6l1KZGqIrMqsiYQvk',
