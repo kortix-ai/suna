@@ -3,11 +3,23 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { lintManifest, loadLocalManifest } from '../manifest';
+import { loadLocalManifest } from '../manifest';
+import { validateManifest, type ManifestIssue } from '@kortix/manifest-schema';
 import { parse as parseToml } from 'smol-toml';
 
 function lintToml(toml: string) {
-  return lintManifest(parseToml(toml) as Record<string, unknown>);
+  return classifyIssues(validateManifest(parseToml(toml) as Record<string, unknown>).issues);
+}
+
+function classifyIssues(issues: ManifestIssue[]) {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  for (const issue of issues) {
+    const formatted = `${issue.path}: ${issue.message}`;
+    if (issue.severity === 'error') errors.push(formatted);
+    else warnings.push(formatted);
+  }
+  return { errors, warnings };
 }
 
 describe('loadLocalManifest env parsing', () => {
@@ -37,7 +49,7 @@ describe('loadLocalManifest env parsing', () => {
   });
 });
 
-describe('lintManifest', () => {
+describe('manifest validation', () => {
   test('a clean starter-shaped manifest has no errors', () => {
     const issues = lintToml(`
       kortix_version = 1

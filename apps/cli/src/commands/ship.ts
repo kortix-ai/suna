@@ -8,8 +8,9 @@ import { isKortixProject, loadLink, saveLink, resolveProjectId } from '../projec
 import { takeFlagValue, takeFlagBool } from '../command-helpers.ts';
 import { selectFromList } from '../tui-select.ts';
 import { confirm, promptSecret } from '../prompts.ts';
-import { loadLocalManifest, lintManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
+import { loadLocalManifest, type EnvSpec, type LocalManifest } from '../manifest.ts';
 import { C, status } from '../style.ts';
+import { validateManifest, type ManifestIssue } from '@kortix/manifest-schema';
 import type {
   ProjectSummary,
   MeResponse,
@@ -198,7 +199,7 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
   if (!manifest) return { ok: true, env: empty };
 
   if (!flags.noVerify) {
-    const { errors, warnings } = lintManifest(manifest.data);
+    const { errors, warnings } = classifyManifestIssues(validateManifest(manifest.data).issues);
     for (const w of warnings) process.stdout.write(`  ${status.warn(w)}\n`);
     if (errors.length > 0) {
       process.stderr.write(
@@ -216,6 +217,17 @@ function prepareManifest(flags: ShipFlags): { ok: boolean; env: EnvSpec } {
   }
 
   return { ok: true, env: manifest.env };
+}
+
+function classifyManifestIssues(issues: ManifestIssue[]): { errors: string[]; warnings: string[] } {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  for (const issue of issues) {
+    const formatted = `${issue.path}: ${issue.message}`;
+    if (issue.severity === 'error') errors.push(formatted);
+    else warnings.push(formatted);
+  }
+  return { errors, warnings };
 }
 
 /**
