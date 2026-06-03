@@ -2,7 +2,6 @@
  * Daytona sandbox provider.
  *
  * Creates sandboxes in Daytona Cloud from a pre-built snapshot.
- * Extracted from the original account.ts provisioning logic.
  */
 
 import { eq } from 'drizzle-orm';
@@ -10,9 +9,6 @@ import { sandboxes } from '@kortix/db';
 import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
 import { config, SANDBOX_VERSION } from '../../config';
-// (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
-// own per-project snapshot, resolved by the snapshot builder. Callers
-// must pass `opts.snapshot`; there is no shared platform-wide image.)
 import type {
   SandboxProvider,
   ProviderName,

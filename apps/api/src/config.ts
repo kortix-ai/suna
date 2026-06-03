@@ -157,8 +157,7 @@ const envSchema = z.object({
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
   // Single OpenRouter key for BOTH the router (/v1/router) and the managed LLM
-  // gateway (/v1/llm). The gateway used to read a separate KORTIX_OPENROUTER_API_KEY
-  // — consolidated onto this one var.
+  // gateway (/v1/llm).
   OPENROUTER_API_KEY:          optStr,
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
@@ -181,8 +180,7 @@ const envSchema = z.object({
   REVENUECAT_WEBHOOK_SECRET:   optStr,
 
   // ── Daytona — Sandbox provisioning (conditional: required if daytona provider enabled) ──
-  // Note: there is intentionally no DAYTONA_SNAPSHOT here. Every sandbox
-  // boots from a per-project snapshot built by the snapshot builder
+  // Every sandbox boots from a per-project snapshot built by the snapshot builder
   // (apps/api/src/snapshots/builder.ts). A shared/global fallback image
   // would silently bypass per-project Dockerfiles and is explicitly
   // disallowed.
@@ -491,8 +489,7 @@ export const config = {
   REVENUECAT_WEBHOOK_SECRET: env.REVENUECAT_WEBHOOK_SECRET,
 
   // ─── Daytona (Sandbox provisioning + preview proxy) ───────────────────────
-  // No DAYTONA_SNAPSHOT here — see comment in the env schema above. Every
-  // sandbox boots from its project-specific snapshot resolved at session
+  // Every sandbox boots from its project-specific snapshot resolved at session
   // start time by apps/api/src/snapshots/builder.ts.
   DAYTONA_API_KEY: env.DAYTONA_API_KEY,
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
