@@ -1,8 +1,12 @@
 {
   "name": "@kortix/tests",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Unified Kortix test suite — Playwright and Gate 5 verification",
+  "type": "module",
+  "description": "Unified Kortix test suite: Playwright, Gate 5, and ke2e live API verification",
+  "bin": {
+    "ke2e": "bin/ke2e.ts"
+  },
   "scripts": {
     "test": "playwright test -c playwright.config.ts",
     "test:e2e": "playwright test -c playwright.config.ts",
@@ -20,9 +24,21 @@
     "test:e2e:gate5:verify-evidence": "bash e2e/scripts/verify-gate5-release-evidence.sh",
     "test:e2e:browser:headed": "playwright test -c playwright.config.ts --headed",
     "test:shell:vps": "bash shell/vps/test-vps-e2e.sh",
-    "playwright:install": "playwright install chromium"
+    "playwright:install": "playwright install chromium",
+    "ke2e": "bun bin/ke2e.ts",
+    "e2e": "bun bin/ke2e.ts run",
+    "coverage": "bun bin/ke2e.ts coverage",
+    "gc": "bun bin/ke2e.ts gc",
+    "report": "bun bin/ke2e.ts report",
+    "list": "bun bin/ke2e.ts list",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
   },
   "devDependencies": {
-    "@playwright/test": "^1.52.0"
+    "@playwright/test": "^1.52.0",
+    "@types/bun": "latest",
+    "typescript": "^5.5.0"
   }
 }

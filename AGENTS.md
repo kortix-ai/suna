@@ -48,13 +48,31 @@ Mint a real JWT against local Supabase, then call the API with it:
 
 See `tests/e2e/helpers/auth.ts` for the exact calls.
 
-### End-to-end harnesses (the canonical way to verify)
+### End-to-end harnesses
 - `pnpm --filter @kortix/tests test:e2e` — Playwright UI specs.
 - `pnpm --filter @kortix/tests test:e2e:gate5:local` — local Gate 5 verifier.
 - `pnpm --filter @kortix/tests test:e2e:gate5:target` — target Gate 5 rehearsal.
 - `tests/README.md` indexes the current E2E and Gate 5 harnesses.
+
+### End-to-end tests — `ke2e` (the canonical API suite + source of truth)
+- `suna/tests/` is the **one** black-box REST e2e suite (`ke2e` runner). It hits
+  a **live deployed API** over HTTP (`dev-api.kortix.com` / local / prod) with
+  **real services** — no mocking. Every test maps 1:1 to a flow ID in
+  `tests/spec/end-to-end.md`; a coverage gate enforces that mapping against the
+  authoritative route manifest (`tests/spec/routes.generated.json`, 328 routes).
+- **WIP — NOT yet enforced.** ke2e is still being built out (most flows aren't
+  written yet) and does **not** gate PRs, promotes, or deploys right now. The
+  intended end-state is test-as-source-of-truth (touch an API contract → update
+  `tests/spec/end-to-end.md` + add/adjust the flow + keep `ke2e coverage` green),
+  but treat that as aspirational guidance until the suite is complete and turned on.
+  See the `ke2e-tests` skill for how it works.
+- Run: `cd tests && bun bin/ke2e.ts run --domain system,access` (public, no creds);
+  auth'd domains need `KE2E_OWNER_EMAIL/PASSWORD` + `KE2E_LIVE_CONFIRM=1`. Open
+  `test-results/<runId>/report.html` for every request/response.
+- Regenerate the route manifest after adding/removing routes:
+  `bun run apps/api/scripts/dump-routes.ts`.
 - Provisioning is slow (snapshot build up to ~9 min, sandbox up to ~5 min) —
-  run long checks in the background and poll the log.
+  flows that boot sandboxes have generous timeouts; run long checks in the background.
 
 ### Driving the real UI (chrome-devtools MCP)
 - Routes are auth-gated (`/dashboard`, `/projects/*` → redirect to `/auth`
