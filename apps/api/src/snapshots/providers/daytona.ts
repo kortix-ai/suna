@@ -23,7 +23,7 @@ import type {
   BuildLogTap,
   ProviderState,
   SandboxProviderAdapter,
-} from './index';
+} from './types';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '../../../../..');

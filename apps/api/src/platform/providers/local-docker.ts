@@ -15,7 +15,7 @@ import type {
   ResolvedEndpoint,
   ProvisioningTraits,
   ProvisioningStatus,
-} from './index';
+} from './types';
 
 /** Container name — configurable so self-hosted and dev can coexist. */
 const CONTAINER_NAME = config.SANDBOX_CONTAINER_NAME;

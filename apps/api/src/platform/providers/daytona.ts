@@ -18,7 +18,7 @@ import type {
   ResolvedEndpoint,
   ProvisioningTraits,
   ProvisioningStatus,
-} from './index';
+} from './types';
 
 export class DaytonaProvider implements SandboxProvider {
   readonly name: ProviderName = 'daytona';
