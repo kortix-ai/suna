@@ -3,6 +3,17 @@
 // re-declaring the same block in every file.
 import { mock } from 'bun:test';
 
+/** No-op the IAM policy-sync writes (project/member grant + revoke). */
+export function mockIamMembershipSyncNoop(): void {
+  mock.module('../../iam/membership-sync', () => ({
+    syncMemberAccountPolicy: async () => {},
+    removeMemberPolicies: async () => {},
+    removeProjectPoliciesForMember: async () => {},
+    syncProjectMemberPolicy: async () => {},
+    removeProjectMemberPolicy: async () => {},
+  }));
+}
+
 /** Bypass the IAM engine, allowing every action. Use only in suites that are
  *  NOT testing authz denial — those keep a role-aware engine mock.
  *

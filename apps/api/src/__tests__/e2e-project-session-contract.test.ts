@@ -620,6 +620,7 @@ describe('project session API contract', () => {
       externalId: null,
       baseUrl: null,
       status: 'provisioning',
+      poolState: null,
       config: {},
       metadata: {},
       lastUsedAt: null,
