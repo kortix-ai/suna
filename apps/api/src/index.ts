@@ -364,8 +364,12 @@ app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix pr
 // KORTIX_EXECUTOR_TOKEN (validated inside the router); admin routes
 // (/projects/:id/connectors*) need user auth, so combinedAuth runs first.
 {
-  const { executorApp } = await import('./executor');
+  const [{ createExecutorRouter }, { dbExecutorRouterDeps }] = await Promise.all([
+    import('./executor/router'),
+    import('./executor/db-deps'),
+  ]);
   app.use('/v1/executor/projects/*', combinedAuth);
+  const executorApp = createExecutorRouter(dbExecutorRouterDeps);
   app.route('/v1/executor', executorApp); // /v1/executor/connectors, /call, /projects/:id/connectors[/sync|/:slug/sharing]
 }
 
