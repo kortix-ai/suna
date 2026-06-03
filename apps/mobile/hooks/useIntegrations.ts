@@ -55,7 +55,7 @@ interface AppSandboxLink {
   label: string | null;
 }
 
-export interface IntegrationSandboxesResult {
+interface IntegrationSandboxesResult {
   sandboxes: LinkedSandbox[];
   appSandboxLinks: AppSandboxLink[];
 }

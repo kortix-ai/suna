@@ -22,7 +22,7 @@ interface DisabledSubscriptionInfo {
   };
 }
 
-export interface BillingContextType {
+interface BillingContextType {
   subscriptionData: DisabledSubscriptionInfo | null;
   creditBalance: null;
   billingStatus: null;

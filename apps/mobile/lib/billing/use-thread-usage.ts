@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { usageApi } from './usage-api';
 import type { ThreadUsageResponse, UseThreadUsageParams } from './usage-api';
 
-export interface UseThreadUsageOptions extends UseThreadUsageParams {
+interface UseThreadUsageOptions extends UseThreadUsageParams {
   enabled?: boolean;
 }
 

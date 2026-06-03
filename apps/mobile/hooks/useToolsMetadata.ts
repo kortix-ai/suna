@@ -31,7 +31,7 @@ interface ToolMetadata {
   methods: ToolMethod[];
 }
 
-export interface ToolsMetadataResponse {
+interface ToolsMetadataResponse {
   success: boolean;
   tools: Record<string, ToolMetadata>;
 }
@@ -79,7 +79,6 @@ export function useToolsMetadata() {
     gcTime: 1000 * 60 * 60 * 24, // Keep in cache for 24 hours
   });
 }
-
 
 
 

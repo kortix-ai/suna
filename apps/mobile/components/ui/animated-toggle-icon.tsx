@@ -22,7 +22,7 @@ import { Icon } from '@/components/ui/icon';
 
 type AnimatedToggleIconName = string | 'menu-lucide';
 
-export interface AnimatedToggleIconProps {
+interface AnimatedToggleIconProps {
   /** True → rotates/fades to the close icon. */
   open: boolean;
   /** Base icon color. */

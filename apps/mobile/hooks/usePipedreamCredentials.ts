@@ -11,7 +11,7 @@ import { API_URL } from '@/api/config';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export interface PipedreamCredentialStatus {
+interface PipedreamCredentialStatus {
   configured: boolean;
   source: 'account' | 'default';
   provider: string;

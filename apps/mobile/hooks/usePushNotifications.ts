@@ -22,7 +22,7 @@ try {
   log.warn('expo-notifications module not available:', error);
 }
 
-export interface PushNotificationState {
+interface PushNotificationState {
   expoPushToken?: string;
   notification?: Notification | undefined;
 }

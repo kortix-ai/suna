@@ -373,7 +373,7 @@ export function useUpdateOpenCodeConfig(sandboxUrl: string | undefined) {
 
 // ─── MCP Mutations ──────────────────────────────────────────────────────────
 
-export interface AddMcpServerParams {
+interface AddMcpServerParams {
   name: string;
   type: 'local' | 'remote';
   command?: string[];

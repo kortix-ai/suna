@@ -65,7 +65,7 @@ export interface Execution {
   trigger_name?: string;
 }
 
-export interface CreateTriggerData {
+interface CreateTriggerData {
   name: string;
   description?: string;
   source: {
@@ -94,7 +94,7 @@ export interface CreateTriggerData {
   metadata?: Record<string, unknown>;
 }
 
-export interface UpdateTriggerData {
+interface UpdateTriggerData {
   name?: string;
   description?: string | null;
   cron_expr?: string;

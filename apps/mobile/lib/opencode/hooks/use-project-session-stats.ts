@@ -13,7 +13,7 @@ import { getAuthToken } from '@/api/config';
 import { COST_MARKUP } from '@/lib/opencode/turns';
 import type { MessageWithParts } from '@/lib/opencode/types';
 
-export type SessionStats = {
+type SessionStats = {
   messageCount: number;
   cost: number;
   tokens: { input: number; output: number; reasoning: number; cacheRead: number; cacheWrite: number };

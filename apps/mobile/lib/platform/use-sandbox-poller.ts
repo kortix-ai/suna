@@ -20,7 +20,7 @@ import { findProjectSessionSandbox } from './client';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export interface SandboxPollerState {
+interface SandboxPollerState {
   status: 'idle' | 'polling' | 'ready' | 'error';
   progress: number;
   stages: ProvisioningStageInfo[] | null;

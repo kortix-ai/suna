@@ -125,7 +125,7 @@ function initialsFor(providerID: string, name?: string): string {
   return (parts.slice(0, 2).map((p) => p[0]).join('') || providerID.slice(0, 2)).toUpperCase();
 }
 
-export interface ProviderLogoProps {
+interface ProviderLogoProps {
   providerID: string;
   name?: string;
   size?: number;

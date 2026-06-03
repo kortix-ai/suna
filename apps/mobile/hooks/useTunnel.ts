@@ -22,7 +22,7 @@ export interface TunnelConnection {
   updatedAt: string;
 }
 
-export interface TunnelPermission {
+interface TunnelPermission {
   permissionId: string;
   tunnelId: string;
   accountId: string;
@@ -48,7 +48,7 @@ interface TunnelAuditLog {
   createdAt: string;
 }
 
-export interface AuditLogPage {
+interface AuditLogPage {
   data: TunnelAuditLog[];
   pagination: {
     page: number;

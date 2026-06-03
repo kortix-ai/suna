@@ -65,7 +65,7 @@ interface ModeState {
   selectedOption: string | null;
 }
 
-export interface UseChatReturn {
+interface UseChatReturn {
   activeThread: {
     id: string;
     title?: string;

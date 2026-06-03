@@ -36,7 +36,7 @@ export interface ChannelConfig {
   sandbox?: { name: string; status: string };
 }
 
-export interface UpdateChannelData {
+interface UpdateChannelData {
   name?: string;
   platform_config?: Record<string, unknown>;
   bridge_instructions?: string;

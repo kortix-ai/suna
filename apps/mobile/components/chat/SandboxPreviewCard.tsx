@@ -78,7 +78,7 @@ export function SandboxPreviewCard({ port, title, description, path }: SandboxPr
 
 const LOCALHOST_REGEX = /https?:\/\/localhost:(\d+)(\/[^\s)]*)?/g;
 
-export interface DetectedUrl {
+interface DetectedUrl {
   port: number;
   path: string;
   fullUrl: string;

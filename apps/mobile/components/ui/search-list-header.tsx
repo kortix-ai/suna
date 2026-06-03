@@ -11,7 +11,7 @@ import { useColorScheme } from 'nativewind';
 import { Plus, Search, X } from 'lucide-react-native';
 import { useThemeColors } from '@/lib/theme-colors';
 
-export interface SearchListHeaderProps {
+interface SearchListHeaderProps {
   value: string;
   onChangeText: (next: string) => void;
   placeholder?: string;

@@ -98,7 +98,7 @@ function CircularProgress({ progress, size = 144, strokeWidth = 6 }: CircularPro
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-export interface ProvisioningProgressProps {
+interface ProvisioningProgressProps {
   progress: number;
   stages: ProvisioningStageInfo[] | null;
   currentStage: string | null;

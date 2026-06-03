@@ -22,14 +22,14 @@ interface SandboxConfigProblem {
   issues?: Array<{ message?: string }>;
 }
 
-export interface SandboxConfigStatus {
+interface SandboxConfigStatus {
   valid: boolean;
   loadedSources: string[];
   skippedSources: string[];
   problems: SandboxConfigProblem[];
 }
 
-export interface SandboxProjectSummary {
+interface SandboxProjectSummary {
   id: string;
   name: string;
   path: string;

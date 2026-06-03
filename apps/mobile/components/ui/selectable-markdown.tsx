@@ -57,7 +57,7 @@ const MARKDOWN_FONT_SIZE = 14;
 // When true, everything renders as plain markdown without splitting.
 let DISABLE_BLOCK_SPLITTING = true;
 
-export interface SelectableMarkdownTextProps {
+interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
   children: string;
   /** Additional style for the text input */

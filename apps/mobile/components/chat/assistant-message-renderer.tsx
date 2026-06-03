@@ -21,7 +21,7 @@ import { PromptExamples } from '@/components/shared';
 import { parseXmlToolCalls, preprocessTextOnlyTools } from '@agentpress/shared/tools';
 import { normalizeArrayValue, normalizeAttachments } from '@agentpress/shared/utils';
 
-export interface AssistantMessageRendererProps {
+interface AssistantMessageRendererProps {
   message: UnifiedMessage;
   onToolClick: (assistantMessageId: string | null, toolName: string, toolCallId?: string) => void;
   onFileClick?: (filePath: string) => void;
