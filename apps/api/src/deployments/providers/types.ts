@@ -31,7 +31,6 @@ export type AppSource = AppSourceGit | AppSourceTar;
 export interface AppBuild {
   command?: string;
   outDir?: string;
-  envVars?: Record<string, string>;
 }
 
 export interface DeploymentRequest {
@@ -42,7 +41,6 @@ export interface DeploymentRequest {
   domains: string[];
   build?: AppBuild;
   env?: Record<string, string>;
-  framework?: string;
 }
 
 export interface DeploymentResult {

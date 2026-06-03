@@ -198,7 +198,7 @@ import {
   getLatestDeployment,
   runProjectAppSweep,
 } from './app-sweep';
-import { getProvider as getDeploymentProvider } from '../deployments/providers';
+import { freestyleProvider } from '../deployments/providers/freestyle';
 import { deployments } from '@kortix/db';
 import {
   createAccountToken,
@@ -213,6 +213,16 @@ export const projectsApp = new Hono<AppEnv>();
 export const projectWebhooksApp = new Hono<AppEnv>();
 
 projectsApp.use('/*', supabaseAuth);
+
+function deploymentProviderFor(provider: string | null | undefined) {
+  const name = (provider ?? freestyleProvider.name).trim().toLowerCase();
+  if (name !== freestyleProvider.name) {
+    throw new HTTPException(400, {
+      message: `Unknown deployment provider "${provider}". Known: ${freestyleProvider.name}`,
+    });
+  }
+  return freestyleProvider;
+}
 
 type ProjectRow = typeof projects.$inferSelect;
 type ProjectGitConnectionRow = typeof projectGitConnections.$inferSelect;
@@ -5628,7 +5638,7 @@ projectsApp.post('/:projectId/apps/:slug/stop', async (c) => {
   const latest = await getLatestDeployment(projectId, slug);
   if (!latest) return c.json({ error: 'No deployment found for this app' }, 404);
 
-  const provider = getDeploymentProvider(latest.provider ?? undefined);
+  const provider = deploymentProviderFor(latest.provider ?? undefined);
   if (latest.freestyleId) {
     try {
       await provider.stop(latest.freestyleId);
@@ -5657,7 +5667,7 @@ projectsApp.get('/:projectId/apps/:slug/logs', async (c) => {
   const latest = await getLatestDeployment(projectId, slug);
   if (!latest) return c.json({ error: 'No deployment found for this app' }, 404);
 
-  const provider = getDeploymentProvider(latest.provider ?? undefined);
+  const provider = deploymentProviderFor(latest.provider ?? undefined);
   try {
     const data = await provider.logs(latest.freestyleId ?? '');
     return c.json({ ok: true, data });

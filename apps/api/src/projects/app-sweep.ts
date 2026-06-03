@@ -13,7 +13,7 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { deployments, projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { DEFAULT_PROVIDER_NAME, getProvider } from '../deployments/providers';
+import { freestyleProvider } from '../deployments/providers/freestyle';
 import type { DeploymentRequest } from '../deployments/providers/types';
 import {
   loadProjectApps,
@@ -171,7 +171,6 @@ function buildDeploymentRequest(input: {
         }
       : undefined,
     env: Object.keys(spec.env).length > 0 ? spec.env : undefined,
-    framework: spec.framework ?? undefined,
   };
 }
 
@@ -189,10 +188,8 @@ export async function deployAppSpec(input: {
   source: 'sweep' | 'manual';
 }): Promise<'active' | 'failed'> {
   const { project, spec, previousVersion, manifestHash, source } = input;
-  // The manifest doesn't expose a provider knob (one way to deploy);
-  // the registry is internal infra so future providers can swap in
-  // without touching the schema.
-  const provider = getProvider(DEFAULT_PROVIDER_NAME);
+  // The manifest doesn't expose a provider knob; Apps deploys through Freestyle.
+  const provider = freestyleProvider;
   const request = buildDeploymentRequest({ project, spec });
   const result = await provider.deploy(request);
 

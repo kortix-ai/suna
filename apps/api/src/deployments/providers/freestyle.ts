@@ -126,13 +126,13 @@ function buildSourceFromAppSource(source: AppSource) {
 
 function buildConfigFromAppRequest(req: DeploymentRequest) {
   // Build defaulting:
-  //   - explicit [apps.build] with fields → forward as-is so command/outDir/envVars hit Freestyle
+  //   - explicit [apps.build] with fields → forward command/outDir to Freestyle
   //   - explicit [apps.build] but empty   → `true` (let Freestyle auto-detect framework)
   //   - no [apps.build] at all, git src   → `true` (most templates need a build to expose an entrypoint —
   //     the fly.toml-style ergonomic the user asked for)
   //   - no [apps.build] at all, tar src   → omit (tarball already contains the built artifact)
   let build: AppBuild | boolean | undefined;
-  if (req.build && (req.build.command || req.build.outDir || req.build.envVars)) {
+  if (req.build && (req.build.command || req.build.outDir)) {
     build = req.build;
   } else if (req.build !== undefined) {
     build = true;
