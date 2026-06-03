@@ -515,6 +515,13 @@ export class LocalDockerProvider implements SandboxProvider {
     };
   }
 
+  async resolvePreviewLink(externalId: string, port: number): Promise<{ url: string; token: string | null }> {
+    // Network mode addresses the container by name on the requested port; the
+    // host-mapped dev fallback (BASE_URL) only fronts the agent port.
+    const url = config.SANDBOX_NETWORK ? `http://${externalId}:${port}` : BASE_URL;
+    return { url, token: null };
+  }
+
   async resolveEndpoint(externalId: string): Promise<ResolvedEndpoint> {
     const url = config.SANDBOX_NETWORK
       ? `http://${externalId}:8000`

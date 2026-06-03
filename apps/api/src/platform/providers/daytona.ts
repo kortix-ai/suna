@@ -143,6 +143,13 @@ export class DaytonaProvider implements SandboxProvider {
     }
   }
 
+  async resolvePreviewLink(externalId: string, port: number): Promise<{ url: string; token: string | null }> {
+    const daytona = getDaytona();
+    const sandbox = await daytona.get(externalId);
+    const link = await (sandbox as any).getPreviewLink(port);
+    return { url: (link.url || String(link)).replace(/\/$/, ''), token: link.token || null };
+  }
+
   async resolveEndpoint(externalId: string): Promise<ResolvedEndpoint> {
     const daytona = getDaytona();
     const sandbox = await daytona.get(externalId);

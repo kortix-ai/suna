@@ -133,6 +133,19 @@ export class PlatinumProvider implements SandboxProvider {
     }
   }
 
+  async resolvePreviewLink(externalId: string, port: number): Promise<{ url: string; token: string | null }> {
+    // Expose the requested port through Platinum's edge → https://<port>-<id>.sbx…
+    // No preview token: the sandbox is gated by the serviceKey bearer the proxy
+    // already adds. Idempotent — re-exposing returns the same URL.
+    const exposed = await platinumJson<PlatinumExposedPort>(
+      `/v1/sandboxes/${externalId}/expose`,
+      { method: 'POST', body: JSON.stringify({ port, public: true }) },
+    );
+    const url = (exposed.url ?? '').replace(/\/$/, '');
+    if (!url) throw new Error(`[platinum] expose returned no URL for ${externalId}:${port}`);
+    return { url, token: null };
+  }
+
   async resolveEndpoint(externalId: string): Promise<ResolvedEndpoint> {
     // Expose the agent port through Platinum's edge. PUBLIC (no HMAC ?t= token)
     // because Platinum's edge reads the token from the query string only, which
@@ -140,11 +153,14 @@ export class PlatinumProvider implements SandboxProvider {
     // is already gated by the KORTIX serviceKey bearer below (same effective
     // auth as Daytona's preview link + serviceKey). Idempotent: re-exposing an
     // already-exposed port returns the same URL.
-    const exposed = await platinumJson<PlatinumExposedPort[]>(
+    // POST /:id/expose takes a SINGLE {port,public} and returns a single
+    // {url,port,...} — the array {expose:[...]} shape is only valid on the
+    // create route's inline expose. Sending the array here 400s.
+    const exposed = await platinumJson<PlatinumExposedPort>(
       `/v1/sandboxes/${externalId}/expose`,
-      { method: 'POST', body: JSON.stringify({ expose: [{ port: AGENT_PORT, public: true }] }) },
+      { method: 'POST', body: JSON.stringify({ port: AGENT_PORT, public: true }) },
     );
-    const url = (exposed.find((e) => e.port === AGENT_PORT)?.url ?? '').replace(/\/$/, '');
+    const url = (exposed.url ?? '').replace(/\/$/, '');
     if (!url) throw new Error(`[platinum] expose returned no URL for ${externalId}:${AGENT_PORT}`);
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };

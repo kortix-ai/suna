@@ -81,6 +81,15 @@ export interface SandboxProvider {
   remove(externalId: string): Promise<void>;
   getStatus(externalId: string): Promise<SandboxStatus>;
   resolveEndpoint(externalId: string): Promise<ResolvedEndpoint>;
+  /**
+   * Resolve a reachable upstream URL for an arbitrary port — the data path the
+   * `/v1/p/<externalId>/<port>` reverse proxy forwards to. Unlike resolveEndpoint
+   * (fixed at the agent port), this takes any port so user preview apps work too.
+   * EVERY provider must implement it: the proxy used to hardcode Daytona, which
+   * silently broke every other provider's runtime connection (502/503). Keeping
+   * it on the interface makes that regression a compile error.
+   */
+  resolvePreviewLink(externalId: string, port: number): Promise<{ url: string; token: string | null }>;
   ensureRunning(externalId: string): Promise<void>;
   getProvisioningStatus(sandboxId: string): Promise<ProvisioningStatus | null>;
 }

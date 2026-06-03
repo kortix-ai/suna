@@ -88,7 +88,11 @@ class PlatinumAdapter implements SandboxProviderAdapter {
           name: input.snapshotName,
           context_s3_key,
           dockerfile: ctx.dockerfileName,
-          size_mb: (input.spec.diskGb ?? DEFAULT_DISK_GB) * 1024,
+          // Template ext4 size = just enough to hold the BUILT image (not the
+          // sandbox disk — that's default_disk_gb below, grown at boot). Capped
+          // at 8 GiB to stay within the per-org template cap; the runtime image
+          // fits comfortably.
+          size_mb: Math.min((input.spec.diskGb ?? DEFAULT_DISK_GB) * 1024, 8192),
           default_cpu: input.spec.cpu ?? DEFAULT_CPU,
           default_ram_mb: (input.spec.memoryGb ?? DEFAULT_MEMORY_GB) * 1024,
           default_disk_gb: input.spec.diskGb ?? DEFAULT_DISK_GB,

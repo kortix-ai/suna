@@ -166,6 +166,7 @@ export async function provisionSessionSandbox(opts: {
       slug,
       accountId,
       source: 'session-start',
+      provider: providerName,
     });
     return { ...image, gitProject };
   })();
@@ -303,6 +304,7 @@ export async function provisionSessionSandbox(opts: {
           slug,
           accountId,
           source: 'session-start',
+          provider: providerName,
         });
       }
       imageInfo = {
