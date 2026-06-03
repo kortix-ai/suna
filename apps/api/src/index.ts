@@ -253,15 +253,6 @@ app.get('/health', (c) => c.json(healthPayload()));
 // Health check under /v1 prefix (frontend uses NEXT_PUBLIC_BACKEND_URL which includes /v1)
 app.get('/v1/health', (c) => c.json(healthPayload()));
 
-// Also expose system status at root for backward compat with frontend
-app.get('/v1/system/status', (c) => {
-  return c.json({
-    maintenanceNotice: { enabled: false },
-    technicalIssue: { enabled: false },
-    updatedAt: new Date().toISOString(),
-  });
-});
-
 // ─── Maintenance config (DB-backed; replaces Vercel Edge Config) ─────────────
 // One row in kortix.platform_settings under 'maintenance_config'. GET is public
 // (banner + maintenance page read it); PUT is admin-only. Set via /admin/utils.
