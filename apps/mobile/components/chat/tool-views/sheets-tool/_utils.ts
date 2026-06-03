@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface SheetsData {
+interface SheetsData {
   filePath: string | null;
   fileName: string | null;
   action: string;

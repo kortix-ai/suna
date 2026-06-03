@@ -9,7 +9,7 @@ interface McpServer {
   tags?: string[];
 }
 
-export interface McpServerData {
+interface McpServerData {
   query: string | null;
   servers: McpServer[];
   server?: McpServer;

@@ -10,7 +10,7 @@ interface CompanySearchResult {
   description: string;
 }
 
-export interface CompanySearchData {
+interface CompanySearchData {
   query: string | null;
   total_results: number;
   results: CompanySearchResult[];

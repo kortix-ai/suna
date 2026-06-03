@@ -2,14 +2,14 @@ import { LucideIcon, FilePen, Replace, Trash2, FileCode } from 'lucide-react-nat
 
 type DiffType = 'unchanged' | 'added' | 'removed';
 
-export interface LineDiff {
+interface LineDiff {
   type: DiffType;
   oldLine: string | null;
   newLine: string | null;
   lineNumber: number;
 }
 
-export interface DiffStats {
+interface DiffStats {
   additions: number;
   deletions: number;
 }
@@ -54,9 +54,9 @@ export const calculateDiffStats = (lineDiff: LineDiff[]): DiffStats => {
   };
 };
 
-export type FileOperation = 'create' | 'rewrite' | 'delete' | 'edit' | 'str-replace' | 'read';
+type FileOperation = 'create' | 'rewrite' | 'delete' | 'edit' | 'str-replace' | 'read';
 
-export interface OperationConfig {
+interface OperationConfig {
   icon: LucideIcon;
   color: string;
   successMessage: string;

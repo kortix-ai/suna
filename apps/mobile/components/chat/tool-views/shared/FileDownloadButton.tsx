@@ -23,7 +23,7 @@ interface FileDownloadButtonProps {
   sandboxUrl?: string;
 }
 
-export type ExportFormat = 'pdf' | 'docx' | 'html' | 'markdown' | 'text';
+type ExportFormat = 'pdf' | 'docx' | 'html' | 'markdown' | 'text';
 
 interface ExportOption {
   format: ExportFormat;

@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface WebCrawlData {
+interface WebCrawlData {
   url: string | null;
   content: string | null;
   success: boolean;

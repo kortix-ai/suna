@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface CheckCommandOutputData {
+interface CheckCommandOutputData {
   sessionName: string | null;
   output: string | null;
   status: string | null;

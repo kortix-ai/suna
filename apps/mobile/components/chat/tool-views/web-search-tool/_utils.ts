@@ -16,7 +16,7 @@ interface BatchWebSearchResult {
   images: string[];
 }
 
-export interface WebSearchData {
+interface WebSearchData {
   query: string | null;
   results: WebSearchResult[];
   images: string[];

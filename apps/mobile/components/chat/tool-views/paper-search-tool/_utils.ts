@@ -14,7 +14,7 @@ interface PaperSearchResult {
   fields_of_study?: string[];
 }
 
-export interface PaperSearchData {
+interface PaperSearchData {
   query: string | null;
   total_results: number;
   results: PaperSearchResult[];

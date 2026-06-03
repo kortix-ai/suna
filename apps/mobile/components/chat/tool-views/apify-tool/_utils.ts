@@ -24,7 +24,7 @@ interface ApifyActor {
   is_premium: boolean;
 }
 
-export interface ApifyActorDetails {
+interface ApifyActorDetails {
   actor_id?: string;
   id?: string;
   name?: string;
@@ -84,7 +84,7 @@ export interface ApifyActorDetails {
   [key: string]: any;
 }
 
-export interface ApifyRunResult {
+interface ApifyRunResult {
   run_id: string;
   actor_id: string;
   status: string;
@@ -101,7 +101,7 @@ export interface ApifyRunResult {
   message?: string;
 }
 
-export interface ApifySearchData {
+interface ApifySearchData {
   actors: ApifyActor[];
   total: number;
   query: string;
@@ -110,7 +110,7 @@ export interface ApifySearchData {
   actualAssistantTimestamp?: string;
 }
 
-export interface ApifyRunResultsData {
+interface ApifyRunResultsData {
   run_id: string;
   actor_id?: string;
   dataset_id: string;
@@ -383,7 +383,7 @@ export function extractApifyRunData(
   }
 }
 
-export interface ApifyApprovalData {
+interface ApifyApprovalData {
   approval_id: string;
   status: 'pending' | 'approved' | 'rejected' | 'expired' | 'executed';
   actor_id: string;

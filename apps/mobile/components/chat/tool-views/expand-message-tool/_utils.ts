@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface ExpandMessageData {
+interface ExpandMessageData {
   expanded_content: string | null;
   original_content?: string;
   success: boolean;

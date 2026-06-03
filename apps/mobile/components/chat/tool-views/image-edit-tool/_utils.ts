@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface ImageEditData {
+interface ImageEditData {
   prompt?: string;
   mode?: string;
   imagePath?: string;

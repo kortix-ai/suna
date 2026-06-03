@@ -9,7 +9,7 @@ interface Reference {
   url?: string;
 }
 
-export interface PaperReferencesData {
+interface PaperReferencesData {
   paper_title: string | null;
   total_references: number;
   references: Reference[];

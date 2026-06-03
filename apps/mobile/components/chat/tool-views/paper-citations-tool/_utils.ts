@@ -9,7 +9,7 @@ interface Citation {
   url?: string;
 }
 
-export interface PaperCitationsData {
+interface PaperCitationsData {
   paper_title: string | null;
   total_citations: number;
   citations: Citation[];

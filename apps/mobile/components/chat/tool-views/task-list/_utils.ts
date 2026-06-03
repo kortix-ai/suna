@@ -11,7 +11,7 @@ export interface Section {
   tasks: Task[]
 }
 
-export interface TaskListData {
+interface TaskListData {
   sections: Section[]
   total_tasks?: number
   total_sections?: number
@@ -63,4 +63,3 @@ export function extractTaskListData(
   
     return extractFromNewFormat(toolContent) || extractFromNewFormat(assistantContent);
   }
-

@@ -1,20 +1,20 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface StrReplaceData {
+interface StrReplaceData {
   filePath: string | null;
   oldStr: string | null;
   newStr: string | null;
   success: boolean;
 }
 
-export interface LineDiff {
+interface LineDiff {
   type: 'added' | 'removed' | 'unchanged';
   lineNumber: number;
   oldLine: string | null;
   newLine: string | null;
 }
 
-export interface DiffStats {
+interface DiffStats {
   additions: number;
   deletions: number;
   unchanged: number;

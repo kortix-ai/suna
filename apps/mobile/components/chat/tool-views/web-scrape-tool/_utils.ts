@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface WebScrapeData {
+interface WebScrapeData {
   url: string | null;
   files: string[];
   message: string | null;

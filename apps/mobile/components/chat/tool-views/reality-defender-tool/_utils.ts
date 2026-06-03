@@ -6,7 +6,7 @@ interface RealityDefenderIndicator {
   description: string;
 }
 
-export interface RealityDefenderData {
+interface RealityDefenderData {
   filePath: string | null;
   mediaType: string | null;
   isDeepfake: boolean;

@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface KbData {
+interface KbData {
   files?: any[];
   folders?: any[];
   items?: any[];

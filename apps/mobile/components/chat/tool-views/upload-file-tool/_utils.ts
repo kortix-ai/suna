@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface UploadFileData {
+interface UploadFileData {
   filePath: string | null;
   fileName: string | null;
   fileSize?: number;

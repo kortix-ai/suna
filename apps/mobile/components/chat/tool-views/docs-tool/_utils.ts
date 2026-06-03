@@ -18,7 +18,7 @@ interface DocumentInfo {
   content?: string;
 }
 
-export interface DocsToolData {
+interface DocsToolData {
   success: boolean;
   error?: string;
   message?: string;

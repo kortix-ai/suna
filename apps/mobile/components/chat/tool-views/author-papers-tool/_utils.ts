@@ -9,7 +9,7 @@ interface Paper {
   venue?: string;
 }
 
-export interface AuthorPapersData {
+interface AuthorPapersData {
   author_name: string | null;
   total_papers: number;
   papers: Paper[];

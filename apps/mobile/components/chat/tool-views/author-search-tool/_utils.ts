@@ -11,7 +11,7 @@ interface AuthorSearchResult {
   h_index: number;
 }
 
-export interface AuthorSearchData {
+interface AuthorSearchData {
   query: string | null;
   total_results: number;
   results: AuthorSearchResult[];

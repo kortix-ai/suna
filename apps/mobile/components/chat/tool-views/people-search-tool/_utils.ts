@@ -10,7 +10,7 @@ interface PeopleSearchResult {
   description: string;
 }
 
-export interface PeopleSearchData {
+interface PeopleSearchData {
   query: string | null;
   total_results: number;
   results: PeopleSearchResult[];

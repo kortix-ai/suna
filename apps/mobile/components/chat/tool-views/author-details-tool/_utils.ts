@@ -12,7 +12,7 @@ interface AuthorDetails {
   aliases?: string[];
 }
 
-export interface AuthorDetailsData {
+interface AuthorDetailsData {
   author: AuthorDetails | null;
   success: boolean;
 }

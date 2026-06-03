@@ -23,7 +23,7 @@ interface PaperDetails {
   fields_of_study?: string[];
 }
 
-export interface PaperDetailsData {
+interface PaperDetailsData {
   paper: PaperDetails | null;
   success: boolean;
 }

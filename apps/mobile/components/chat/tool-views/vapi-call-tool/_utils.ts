@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export interface MakeCallData {
+interface MakeCallData {
   phone_number: string;
   first_message: string;
   call_id: string;
@@ -8,7 +8,7 @@ export interface MakeCallData {
   message?: string;
 }
 
-export interface CallStatusData {
+interface CallStatusData {
   call_id: string;
   status: string;
   phone_number: string;
@@ -19,13 +19,13 @@ export interface CallStatusData {
   cost?: number;
 }
 
-export interface EndCallData {
+interface EndCallData {
   call_id: string;
   status: string;
   message?: string;
 }
 
-export interface ListCallsData {
+interface ListCallsData {
   calls: Array<{
     call_id: string;
     phone_number: string;
@@ -36,7 +36,7 @@ export interface ListCallsData {
   count: number;
 }
 
-export interface WaitForCallCompletionData {
+interface WaitForCallCompletionData {
   call_id: string;
   final_status: string;
   duration_seconds?: number;

@@ -1,7 +1,7 @@
 import type { ToolViewProps } from '../types';
 import { log } from '@/lib/logger';
 
-export interface ExportData {
+interface ExportData {
   presentationName?: string;
   filePath?: string;
   downloadUrl?: string;
