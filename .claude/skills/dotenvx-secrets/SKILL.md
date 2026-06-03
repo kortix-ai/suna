@@ -74,9 +74,9 @@ If a guard fires, the fix is to **encrypt the value**, never to bypass it.
 
 ## The web app (apps/web) — same setup
 
-`apps/web` has the **same three encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.prod`), own keypairs in `apps/web/.env.keys`, armed in Armor. Most values are public (`NEXT_PUBLIC_*`); the only real secrets are a few Vercel/Edge-Config keys. It's decrypted the same way: `pnpm dev` (via `load_local_env`) and `pnpm dev:web` (wrapped in `dotenvx run -f .env`). Pull on a new machine: `cd apps/web && for f in .env .env.dev .env.prod; do dotenvx-armor pull -f "$f"; done`.
+`apps/web` has the **same three encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.prod`), own keypairs in `apps/web/.env.keys`, armed in Armor. All values are now public (`NEXT_PUBLIC_*`) — they're encrypted purely for a standardized flow. Decrypted the same way: `pnpm dev` (via `load_local_env`) and `pnpm dev:web` (wrapped in `dotenvx run -f .env`). Pull on a new machine: `cd apps/web && for f in .env .env.dev .env.prod; do dotenvx-armor pull -f "$f"; done`.
 
-> Planned: move the Vercel Edge-Config maintenance flags (`EDGE_CONFIG`, `VERCEL_API_TOKEN` in `apps/web/src/lib/maintenance-store.ts`) into the DB + the existing admin panel (`apps/web/src/app/admin/`), then drop those secrets. Until then they stay encrypted.
+Maintenance flags are **DB-backed** now (was Vercel Edge Config): stored in `kortix.platform_settings['maintenance_config']`, read via public `GET /v1/system/maintenance`, written via admin-only `PUT /v1/system/maintenance`, set from `/admin/utils`. The `EDGE_CONFIG`/`EDGE_CONFIG_ID`/`VERCEL_API_TOKEN` secrets + the `@vercel/edge-config` dep are gone.
 
 ## Out of scope (not dotenvx-managed)
 

@@ -933,9 +933,6 @@ importers:
       '@vercel/analytics':
         specifier: ^1.5.0
         version: 1.6.1(next@15.5.18)(react@18.3.1)
-      '@vercel/edge-config':
-        specifier: ^1.4.0
-        version: 1.4.3(@opentelemetry/api@1.9.0)(next@15.5.18)
       '@vercel/speed-insights':
         specifier: ^1.2.0
         version: 1.3.1(next@15.5.18)(react@18.3.1)
@@ -17258,27 +17255,6 @@ packages:
     dependencies:
       next: 15.5.18(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.58.2)(react-dom@18.3.1)(react@18.3.1)
       react: 18.3.1
-    dev: false
-
-  /@vercel/edge-config-fs@0.1.0:
-    resolution: {integrity: sha512-NRIBwfcS0bUoUbRWlNGetqjvLSwgYH/BqKqDN7vK1g32p7dN96k0712COgaz6VFizAm9b0g6IG6hR6+hc0KCPg==}
-    dev: false
-
-  /@vercel/edge-config@1.4.3(@opentelemetry/api@1.9.0)(next@15.5.18):
-    resolution: {integrity: sha512-8vTDATodRrH49wMzKEjZ8/5H2qs1aPkD0uRK585f/Fx4YN2wfHfY/3td9OFrh+gdnCq07z8A5f0hoY6xhBcPkg==}
-    engines: {node: '>=14.6'}
-    peerDependencies:
-      '@opentelemetry/api': ^1.7.0
-      next: 15.5.18
-    peerDependenciesMeta:
-      '@opentelemetry/api':
-        optional: true
-      next:
-        optional: true
-    dependencies:
-      '@opentelemetry/api': 1.9.0
-      '@vercel/edge-config-fs': 0.1.0
-      next: 15.5.18(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.58.2)(react-dom@18.3.1)(react@18.3.1)
     dev: false
 
   /@vercel/speed-insights@1.3.1(next@15.5.18)(react@18.3.1):
