@@ -1,0 +1,67 @@
+---
+title: Local development
+description: Run the Kortix stack on your machine and work with the encrypted API secrets.
+---
+
+import { Steps, Step } from 'fumadocs-ui/components/steps';
+import { Callout } from 'fumadocs-ui/components/callout';
+
+For contributors running this repository locally. Requires Docker, Node 22, and pnpm 8.
+
+```sh
+pnpm install
+pnpm dev          # web + API + Supabase + tunnel
+```
+
+## How secrets work
+
+The API's secrets live **encrypted in the repo** with [dotenvx](https://dotenvx.com). Every value in `apps/api/.env` is AES-encrypted (`KEY=encrypted:…`). The **public key** that encrypts them sits in the file and is safe to commit; the **private key** that decrypts them never touches git. So the secrets are safe in version control — only the key is sensitive.
+
+There are three profiles, one file each, every one with its own keypair:
+
+| Profile | File | Used by |
+| --- | --- | --- |
+| local | `apps/api/.env` | `pnpm dev` |
+| dev | `apps/api/.env.dev` | `dotenvx run -f apps/api/.env.dev -- …` |
+| prod | `apps/api/.env.prod` | `pnpm dev:prod` |
+
+The private keys are held off your machine in [Dotenv Armor](https://dotenvx.com/armor). `pnpm dev` decrypts them **in memory** at boot via `dotenvx run` — nothing plaintext is ever written to disk.
+
+## First time on a new machine
+
+<Steps>
+<Step>
+### Install the key manager and log in
+```sh
+curl -sfS https://dotenvx.sh/armor | sh
+dotenvx-armor login
+```
+</Step>
+<Step>
+### Pull the keys from the cloud
+```sh
+cd apps/api
+for f in .env .env.dev .env.prod; do dotenvx-armor pull -f "$f"; done
+```
+</Step>
+<Step>
+### Run
+```sh
+pnpm dev
+```
+</Step>
+</Steps>
+
+## Everyday
+
+| Task | Command |
+| --- | --- |
+| Run locally | `pnpm dev` |
+| Run against prod data | `pnpm dev:prod` |
+| Read a secret | `dotenvx get KEY -f apps/api/.env` |
+| Add / change a secret | `dotenvx set KEY value -f apps/api/.env` (or `.env.dev` / `.env.prod`), then commit |
+| Share a new/rotated key with the team | `dotenvx-armor push -f <file>` (one file at a time) |
+
+<Callout type="warn">
+Never write plaintext into `apps/api/.env` — it's encrypted and committed. Machine-local overrides go in the gitignored `apps/api/.env.local`, which Bun loads at higher precedence.
+</Callout>
