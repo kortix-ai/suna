@@ -1,5 +1,6 @@
 {
   "buildCommand": "next build",
+  "installCommand": "pnpm install --frozen-lockfile",
   "rewrites": [
     {
       "source": "/api/:path*",
