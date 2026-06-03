@@ -30,9 +30,9 @@ mock.module('../shared/platform-roles', () => ({
   isPlatformAdmin: async () => isAdmin,
 }));
 
-const { buildMinimalAccountState } = await import('../billing/services/account-state');
+const { buildAccountState } = await import('../billing/services/account-state');
 
-describe('buildMinimalAccountState revenuecat', () => {
+describe('buildAccountState revenuecat', () => {
   beforeEach(() => {
     subscriptionInfo = {
       tier: 'tier_2_20',
@@ -67,7 +67,7 @@ describe('buildMinimalAccountState revenuecat', () => {
   });
 
   test('reports active revenuecat subscription from kortix row', async () => {
-    const state = await buildMinimalAccountState('acc_test_123');
+    const state = await buildAccountState('acc_test_123');
 
     expect(state.subscription.provider).toBe('revenuecat');
     expect(state.subscription.status).toBe('active');
@@ -78,7 +78,7 @@ describe('buildMinimalAccountState revenuecat', () => {
   test('reports past_due revenuecat subscription correctly', async () => {
     subscriptionInfo.paymentStatus = 'past_due';
 
-    const state = await buildMinimalAccountState('acc_test_123');
+    const state = await buildAccountState('acc_test_123');
 
     expect(state.subscription.status).toBe('past_due');
   });
@@ -86,7 +86,7 @@ describe('buildMinimalAccountState revenuecat', () => {
   test('reports canceled revenuecat subscription correctly', async () => {
     subscriptionInfo.revenuecatCancelledAt = new Date().toISOString();
 
-    const state = await buildMinimalAccountState('acc_test_123');
+    const state = await buildAccountState('acc_test_123');
 
     expect(state.subscription.status).toBe('canceled');
     expect(state.subscription.is_cancelled).toBe(true);

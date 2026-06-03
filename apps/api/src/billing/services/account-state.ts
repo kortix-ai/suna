@@ -39,7 +39,7 @@ async function countActiveSessions(accountId: string): Promise<number> {
   return Number(row?.activeCount ?? 0);
 }
 
-export async function buildMinimalAccountState(accountId: string): Promise<AccountStateResponse> {
+export async function buildAccountState(accountId: string): Promise<AccountStateResponse> {
   const credits = await getCreditSummary(accountId);
   const sub = await getSubscriptionInfo(accountId);
   const isAdmin = await isPlatformAdmin(accountId);
@@ -178,10 +178,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   };
 
   return state;
-}
-
-export async function buildAccountState(accountId: string): Promise<AccountStateResponse> {
-  return buildMinimalAccountState(accountId);
 }
 
 /**
