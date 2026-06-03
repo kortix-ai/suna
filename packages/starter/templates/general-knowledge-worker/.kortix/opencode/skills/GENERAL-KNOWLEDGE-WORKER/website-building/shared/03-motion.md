@@ -213,7 +213,7 @@ transition={{ duration: 0.4, bounce: 0.2 }}
 - `active-elevate-2` — stronger brightness shift on press
 - `toggle-elevate` + `toggle-elevated` — persistent toggle state
 
-`<Button>` and `<Badge>` already have elevation baked in — **never add manual hover/active styles to these components**. For custom interactive elements, add `hover-elevate active-elevate-2` classes. See `references/shadcn_component_rules.md` for full details.
+`<Button>` and `<Badge>` already have elevation baked in — **never add manual hover/active styles to these components**. For custom interactive elements, add `hover-elevate active-elevate-2` classes. See `../../webapp/references/shadcn_component_rules.md` for full details.
 
 The CSS transition patterns below apply to **informational sites, games, and non-template React projects** where you're building hover states from scratch.
 
