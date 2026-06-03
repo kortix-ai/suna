@@ -5346,7 +5346,7 @@ function parseAppDraft(
       type: 'git',
       repo: normalizeString(sourceBody.repo),
       branch: normalizeString(sourceBody.branch),
-      rootPath: normalizeString(sourceBody.root_path ?? sourceBody.rootPath),
+      rootPath: normalizeString(sourceBody.root_path),
     };
   } else if (sourceType === 'tar') {
     const url = normalizeString(sourceBody.url);
@@ -5360,7 +5360,7 @@ function parseAppDraft(
   const buildBody = (body as any).build;
   if (buildBody && typeof buildBody === 'object' && !Array.isArray(buildBody)) {
     const command = normalizeString(buildBody.command);
-    const outDir = normalizeString(buildBody.out_dir ?? buildBody.outDir);
+    const outDir = normalizeString(buildBody.out_dir);
     if (command || outDir) build = { command, outDir };
   }
 

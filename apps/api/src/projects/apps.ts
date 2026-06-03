@@ -307,9 +307,7 @@ function parseAppSource(
     const branch = typeof row.branch === 'string' && row.branch.trim() ? row.branch.trim() : null;
     const rootPath = typeof row.root_path === 'string' && row.root_path.trim()
       ? row.root_path.trim()
-      : typeof row.rootPath === 'string' && row.rootPath.trim()
-        ? row.rootPath.trim()
-        : null;
+      : null;
     // repo is allowed to be null — the deploy path will substitute the
     // project's own repoUrl when missing.
     return { ok: true, value: { type: 'git', repo, branch, rootPath } };
@@ -334,9 +332,7 @@ function parseAppBuild(
   const command = typeof row.command === 'string' && row.command.trim() ? row.command.trim() : null;
   const outDir = typeof row.out_dir === 'string' && row.out_dir.trim()
     ? row.out_dir.trim()
-    : typeof row.outDir === 'string' && row.outDir.trim()
-      ? row.outDir.trim()
-      : null;
+    : null;
   if (!command && !outDir) return { ok: true, value: null };
   return { ok: true, value: { command, outDir } };
 }

@@ -152,7 +152,7 @@ domains = ["b2.style.dev"]
     expect(specs[0]!.build).toBeNull();
   });
 
-  test('rootPath camelCase alias is accepted', () => {
+  test('rootPath camelCase alias is ignored in favor of root_path', () => {
     const { specs, errors } = parseAndExtract(`
 [[apps]]
 slug = "camel"
@@ -164,10 +164,10 @@ domains = ["c.style.dev"]
   rootPath = "apps/x"
 `);
     expect(errors).toEqual([]);
-    expect(specs[0]!.source).toMatchObject({ rootPath: 'apps/x' });
+    expect(specs[0]!.source).toMatchObject({ rootPath: null });
   });
 
-  test('outDir camelCase alias is accepted', () => {
+  test('outDir camelCase alias is ignored in favor of out_dir', () => {
     const { specs, errors } = parseAndExtract(`
 [[apps]]
 slug = "camel-build"
@@ -182,7 +182,7 @@ domains = ["cb.style.dev"]
   outDir = "out"
 `);
     expect(errors).toEqual([]);
-    expect(specs[0]!.build).toEqual({ command: 'bun run build', outDir: 'out' });
+    expect(specs[0]!.build).toEqual({ command: 'bun run build', outDir: null });
   });
 
   test('enabled = false is preserved', () => {
