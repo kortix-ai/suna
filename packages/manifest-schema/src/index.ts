@@ -144,12 +144,7 @@ function validateRoot(raw: Record<string, unknown>, issues: ManifestIssue[]): vo
     });
     return;
   }
-  const version =
-    typeof versionRaw === 'number'
-      ? versionRaw
-      : typeof versionRaw === 'string'
-        ? Number(versionRaw)
-        : NaN;
+  const version = typeof versionRaw === 'number' ? versionRaw : NaN;
   if (!Number.isFinite(version) || version < 1 || Math.floor(version) !== version) {
     issues.push({
       path: 'kortix_version',

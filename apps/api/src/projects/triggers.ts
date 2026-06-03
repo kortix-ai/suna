@@ -134,13 +134,9 @@ export function parseManifestString(raw: string): ParsedManifest {
   if (parsed.kortix_version == null) {
     throw new Error('kortix_version is required');
   }
-  const version = typeof parsed.kortix_version === 'number'
-    ? parsed.kortix_version
-    : typeof parsed.kortix_version === 'string'
-      ? Number(parsed.kortix_version)
-      : NaN;
+  const version = typeof parsed.kortix_version === 'number' ? parsed.kortix_version : NaN;
 
-  if (!Number.isFinite(version) || version < 1) {
+  if (!Number.isFinite(version) || version < 1 || Math.floor(version) !== version) {
     throw new Error('kortix_version must be a positive integer');
   }
   if (Math.floor(version) > KNOWN_SCHEMA_VERSION) {

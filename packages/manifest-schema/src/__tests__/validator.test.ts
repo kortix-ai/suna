@@ -37,6 +37,16 @@ describe('validateManifest — kortix_version', () => {
     expect(errorPaths).toContain('kortix_version');
   });
 
+  test('rejects string kortix_version', () => {
+    const { errorPaths } = summarize(`kortix_version = "1"`);
+    expect(errorPaths).toContain('kortix_version');
+  });
+
+  test('rejects decimal kortix_version', () => {
+    const { errorPaths } = summarize('kortix_version = 1.5');
+    expect(errorPaths).toContain('kortix_version');
+  });
+
   test('rejects a version higher than known', () => {
     const { errorPaths } = summarize('kortix_version = 2');
     expect(errorPaths).toContain('kortix_version');

@@ -29,6 +29,14 @@ describe('kortix.toml — schema versioning', () => {
     expect(parsed.schemaVersion).toBe(1);
   });
 
+  test('string kortix_version is rejected', () => {
+    expect(() => parseManifestString(`kortix_version = "1"\n${MIN_PROJECT}`)).toThrow(/positive integer/);
+  });
+
+  test('decimal kortix_version is rejected', () => {
+    expect(() => parseManifestString(`kortix_version = 1.5\n${MIN_PROJECT}`)).toThrow(/positive integer/);
+  });
+
   test('a future major version is rejected with a clear error', () => {
     expect(() => parseManifestString(`kortix_version = 99\n${MIN_PROJECT}`)).toThrow(/Unsupported kortix\.toml schema version 99/);
   });
