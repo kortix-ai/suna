@@ -278,6 +278,13 @@ export async function pushStep(ctx: MigrationContext): Promise<void> {
     `base64 -d ${sq(STARTER_REMOTE_B64)} | tar xzf - -C "$__ST"`,
     'cp -a -n "$__ST"/. .',
     'for __d in agents skills tools command; do [ -d "$__keep/$__d" ] && { mkdir -p ".kortix/opencode/$__d"; cp -a -n "$__keep/$__d/." ".kortix/opencode/$__d/" 2>/dev/null || true; }; done',
+    // Many users kept their custom skills/agents in the opencode-NATIVE dir
+    // (.opencode/), not .kortix/opencode/. The new platform only loads from
+    // .kortix/opencode/, so those were invisible after migrating. Fold them in
+    // (cp -n keeps platform defaults). Note opencode uses singular `agent`.
+    '[ -d .opencode/skills ]  && { mkdir -p .kortix/opencode/skills;  cp -a -n .opencode/skills/.  .kortix/opencode/skills/  2>/dev/null || true; }',
+    '[ -d .opencode/agent ]   && { mkdir -p .kortix/opencode/agents;  cp -a -n .opencode/agent/.   .kortix/opencode/agents/  2>/dev/null || true; }',
+    '[ -d .opencode/command ] && { mkdir -p .kortix/opencode/command; cp -a -n .opencode/command/. .kortix/opencode/command/ 2>/dev/null || true; }',
     `rm -rf "$__ST" "$__keep" ${sq(STARTER_REMOTE_B64)}`,
     `printf '%s\\n' ${excludeLine} > .gitignore`,
     'rm -rf .git',
