@@ -18,14 +18,10 @@ on:
   push:
     branches: [prod]
   workflow_dispatch:
-  # Auto-run after a successful Promote. The promote workflow advances `prod`
-  # with the Actions GITHUB_TOKEN, which (by design) can't trigger the `push`
-  # event above — so a promote alone would deploy the frontend (Vercel) but not
-  # the API. This makes a promote deploy everything: when Promote completes
-  # successfully, run the full prod pipeline (see the `if` on the version job).
-  workflow_run:
-    workflows: ["Promote to Production"]
-    types: [completed]
+  # Promotion is review-gated: promote.yml opens a PR into `prod`, and a human
+  # MERGES it after approval. That merge is a real `push` to `prod` (above) and
+  # triggers this pipeline normally — so no workflow_run hook is needed (and we
+  # must NOT deploy merely because Promote *opened* the PR).
 
 concurrency:
   group: deploy-prod
@@ -39,10 +35,8 @@ jobs:
   version:
     name: Resolve version
     runs-on: ubuntu-latest
-    # On push/manual dispatch, always run. When triggered by a Promote
-    # completing, only proceed if that promote actually succeeded. Every other
-    # job needs this one, so this single guard gates the whole pipeline.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    # Runs on every push to `prod` (i.e. a merged, reviewed release PR) and on
+    # manual dispatch.
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}

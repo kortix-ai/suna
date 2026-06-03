@@ -1,9 +1,12 @@
 name: Promote to Production
 
 # Manual promotion: bumps the unified root VERSION, commits it to `main`, tags
-# `vX.Y.Z`, and fast-forwards the `prod` branch to that commit. The push to
-# `prod` is what triggers deploy-prod.yml (image retag + GitHub Release + the
-# prod ECS roll + the prod frontend deploy).
+# `vX.Y.Z`, and opens a REVIEW-GATED PR (release/vX.Y.Z → `prod`). `prod` is a
+# protected branch (required approving review, no direct/force push), so a
+# second person must approve before merge. MERGING that PR advances `prod`,
+# whose push event triggers deploy-prod.yml (image retag + GitHub Release +
+# prod ECS roll + prod frontend deploy). This is the SOC2 production change-
+# review gate; `main` (dev) stays push-friendly.
 #
 # `prod` is the production branch: it deploys api-prod.kortix.com (ECS Fargate)
 # and new.kortix.com (Vercel) today, and api.kortix.com + kortix.com after the
@@ -46,10 +49,11 @@ concurrency:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   promote:
-    name: Bump VERSION, tag, fast-forward prod
+    name: Bump VERSION, tag, open review-gated prod PR
     runs-on: ubuntu-latest
     steps:
       - name: Checkout ${{ inputs.ref }} (full history)
@@ -125,24 +129,40 @@ jobs:
           printf '%s\n\n%s\n' "$IN_TITLE" "$IN_NOTES" | git tag -fa "$TAG" -F -
           git push -f origin "$TAG"
 
-      - name: Fast-forward prod to this commit
+      - name: Open review-gated release PR to prod
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IN_TITLE: ${{ inputs.title }}
+          IN_NOTES: ${{ inputs.notes }}
         run: |
           set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
           SHA="$(git rev-parse HEAD)"
-          echo "Pushing $SHA → refs/heads/prod"
-          # Force-push the exact commit onto prod. Since prod only ever receives
-          # promotions, this is a clean fast-forward in practice.
-          git push -f origin "$SHA:refs/heads/prod"
+          RELBR="release/$TAG"
+          # `prod` is a protected branch (required review, no direct/force push),
+          # so promotion is gated on a human approval. Freeze exactly what we
+          # promote on an ephemeral release branch, then open a PR into prod.
+          # A second person approves; merging the PR is what advances prod and
+          # triggers deploy-prod.yml (via the push event on prod).
+          git push -f origin "$SHA:refs/heads/$RELBR"
+          existing="$(gh pr list --base prod --head "$RELBR" --state open --json number --jq '.[0].number' || true)"
+          if [ -n "$existing" ]; then
+            echo "Release PR #$existing already open for $RELBR."
+          else
+            printf '%s\n\n%s\n\n---\n_Promotion of `%s` to production. Requires one approving review; merging triggers the prod deploy (deploy-prod.yml)._\n' \
+              "$IN_TITLE" "$IN_NOTES" "$TAG" \
+              | gh pr create --base prod --head "$RELBR" --title "Release $TAG — $IN_TITLE" --body-file -
+          fi
 
       - name: Summary
         run: |
           {
-            echo "### Promoted to prod"
+            echo "### Release PR opened for prod"
             echo ""
             echo "- Previous VERSION: \`${{ steps.ver.outputs.current }}\`"
             echo "- New VERSION: \`${{ steps.ver.outputs.new }}\`"
             echo "- Tag: \`${{ steps.ver.outputs.tag }}\`"
-            echo "- Source ref: \`${{ inputs.ref }}\`"
+            echo "- Source ref: \`${{ inputs.ref }}\` → \`release/${{ steps.ver.outputs.tag }}\` → PR into \`prod\`"
             echo ""
-            echo "_The push to \`prod\` triggers **deploy-prod.yml**: retag image → \`v${{ steps.ver.outputs.new }}\` + \`:latest\`, cut the GitHub Release, roll the \`kortix-prod\` ECS service, and deploy the prod frontend (new.kortix.com)._"
+            echo "_Review-gated promotion: a second person must approve the PR into \`prod\`. **Merging** it advances \`prod\` and triggers **deploy-prod.yml** — retag image → \`v${{ steps.ver.outputs.new }}\` + \`:latest\`, cut the GitHub Release, roll the \`kortix-prod\` ECS service, and deploy the prod frontend._"
           } >> "$GITHUB_STEP_SUMMARY"
