@@ -152,6 +152,15 @@ RUN rm -f ${SERVICE}/node_modules/agent-tunnel 2>/dev/null; \
 COPY --from=deps /app/packages/agent-tunnel/src ./${SERVICE}/node_modules/agent-tunnel/src
 COPY --from=deps /app/packages/agent-tunnel/package.json ./${SERVICE}/node_modules/agent-tunnel/package.json
 
+# Drop test-only source copied in with workspace packages. The runtime image
+# executes the API directly from TypeScript source, but does not need tests.
+RUN rm -rf \
+    ${SERVICE}/src/__tests__ \
+    apps/kortix-sandbox-agent-server/src/__tests__ \
+    apps/cli/src/__tests__ \
+    packages/starter/src/__tests__ \
+    packages/manifest-schema/src/__tests__
+
 WORKDIR /app/${SERVICE}
 
 # Pre-create the data dir and give the bun user write access before dropping privileges.
