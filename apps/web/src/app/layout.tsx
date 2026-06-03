@@ -23,7 +23,6 @@ import { DESKTOP_INIT_SCRIPT } from '@/lib/desktop';
 const Analytics = lazy(() => import('@vercel/analytics/react').then(mod => ({ default: mod.Analytics })));
 const SpeedInsights = lazy(() => import('@vercel/speed-insights/next').then(mod => ({ default: mod.SpeedInsights })));
 const GoogleTagManager = lazy(() => import('@next/third-parties/google').then(mod => ({ default: mod.GoogleTagManager })));
-const PostHogIdentify = lazy(() => import('@/components/posthog-identify').then(mod => ({ default: mod.PostHogIdentify })));
 const RouteChangeTracker = lazy(() => import('@/components/analytics/route-change-tracker').then(mod => ({ default: mod.RouteChangeTracker })));
 const AuthEventTracker = lazy(() => import('@/components/analytics/auth-event-tracker').then(mod => ({ default: mod.AuthEventTracker })));
 const LocalhostLinkInterceptor = lazy(() => import('@/components/localhost-link-interceptor').then(mod => ({ default: mod.LocalhostLinkInterceptor })));
@@ -134,7 +133,6 @@ export default async function RootLayout({
 
         {/* DNS prefetch for analytics (loaded later but resolve DNS early) */}
         <link rel="dns-prefetch" href="https://www.googletagmanager.com" />
-        <link rel="dns-prefetch" href="https://eu.i.posthog.com" />
 
         {/* Container Load - Initialize dataLayer with page context BEFORE GTM loads */}
         <script
@@ -305,9 +303,6 @@ export default async function RootLayout({
           )}
           <Suspense fallback={null}>
             <SpeedInsights />
-          </Suspense>
-          <Suspense fallback={null}>
-            <PostHogIdentify />
           </Suspense>
           <Suspense fallback={null}>
             <RouteChangeTracker />

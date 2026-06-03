@@ -122,11 +122,6 @@ write_env "apps/web/.env" \
   "$(kv NEXT_PUBLIC_APP_URL "$(e NEXT_PUBLIC_URL http://localhost:3000)")" \
   "$(kv NEXT_PUBLIC_URL http://localhost:3000)" \
   "$(kv NEXT_PUBLIC_BACKEND_URL http://localhost:8008/v1)" \
-  "$(kv NEXT_PUBLIC_SANDBOX_ID "$(e SANDBOX_CONTAINER_NAME kortix-sandbox)")" \
-  "" \
-  "$(kv NEXT_PUBLIC_GOOGLE_CLIENT_ID)" \
-  "$(kv NEXT_PUBLIC_POSTHOG_KEY)" \
-  "$(kv KORTIX_ADMIN_API_KEY)" \
   "" \
 
 echo ""

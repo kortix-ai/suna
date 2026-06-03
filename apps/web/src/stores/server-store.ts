@@ -140,8 +140,7 @@ function getBackendUrl(): string {
 }
 
 function getDefaultSandboxUrl(): string {
-  const sandboxId = getEnv().SANDBOX_ID || 'kortix-sandbox';
-  return `${getBackendUrl()}/p/${sandboxId}/8000`;
+  return `${getBackendUrl()}/p/kortix-sandbox/8000`;
 }
 
 function getServersApi(): string {
@@ -746,11 +745,11 @@ export function deriveSubdomainOpts(
     return fromUrl;
   }
 
-  // Fall back to the configured sandbox ID (from runtime env) or 'kortix-sandbox'.
+  // Fall back to the local sandbox name.
   // This ensures proxy rewriting NEVER silently degrades to raw localhost URLs
   // just because the store hasn't hydrated the sandboxId yet, or because the
   // provider is marked as cloud (Daytona/JustAVPS use the same /p/ proxy).
-  const sandboxId = server?.sandboxId || getEnv().SANDBOX_ID || 'kortix-sandbox';
+  const sandboxId = server?.sandboxId || 'kortix-sandbox';
   return {
     sandboxId,
     backendPort: getBackendPort(),

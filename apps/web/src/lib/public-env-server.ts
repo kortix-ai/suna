@@ -15,7 +15,6 @@ export function getServerPublicEnv(): PublicRuntimeEnv {
     BACKEND_URL: read('BACKEND_URL') || process.env.BACKEND_URL,
     BILLING_ENABLED: read('BILLING_ENABLED') === 'true',
     APP_URL: read('APP_URL') || process.env.NEXT_PUBLIC_URL || process.env.PUBLIC_URL,
-    SANDBOX_ID: read('SANDBOX_ID') || undefined,
     AUTH_PROVIDERS: read('AUTH_PROVIDERS') || undefined,
     AUTH_METHODS: read('AUTH_METHODS') || undefined,
     VERSION: process.env.NEXT_PUBLIC_KORTIX_VERSION || read('VERSION') || undefined,

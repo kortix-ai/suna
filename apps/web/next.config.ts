@@ -71,18 +71,6 @@ const nextConfig = (): NextConfig => ({
         source: '/v1/:path*',
         destination: 'http://localhost:8008/v1/:path*',
       },
-      {
-        source: '/ingest/static/:path*',
-        destination: 'https://eu-assets.i.posthog.com/static/:path*',
-      },
-      {
-        source: '/ingest/:path*',
-        destination: 'https://eu.i.posthog.com/:path*',
-      },
-      {
-        source: '/ingest/flags',
-        destination: 'https://eu.i.posthog.com/flags',
-      },
     ];
   },
 
