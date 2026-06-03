@@ -23,7 +23,7 @@ import { startStaticWebServer } from './static-web'
 // Webhook follow-ups (e.g. Slack thread replies) read this to deliver new
 // prompts into the same opencode conversation instead of opening a fresh
 // session with no context.
-export const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
+const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
 
 async function main() {
   const bootTime = Date.now()

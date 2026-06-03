@@ -16,13 +16,13 @@ interface InstallResult {
   skipped: string[];
 }
 
-export interface InstallAgentsInput {
+interface InstallAgentsInput {
   repoRoot: string;
   agents: readonly CodingAgent[];
   overwrite: boolean;
 }
 
-export interface InstallAgentsResult {
+interface InstallAgentsResult {
   written: string[];
   skipped: string[];
 }

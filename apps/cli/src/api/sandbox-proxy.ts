@@ -91,7 +91,7 @@ async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
   return payload as T;
 }
 
-export interface SandboxOpencodeOpts {
+interface SandboxOpencodeOpts {
   auth: Auth;
   sandboxId: string;
 }
@@ -161,7 +161,7 @@ export function opencodeClient(opts: SandboxOpencodeOpts) {
 
 // ── OpenCode response shapes (subset we use) ──────────────────────────────
 
-export interface OpencodeSession {
+interface OpencodeSession {
   id: string;
   parentID?: string | null;
   title?: string;
@@ -169,7 +169,7 @@ export interface OpencodeSession {
   time?: { created?: number; updated?: number };
 }
 
-export type OpencodePromptPart =
+type OpencodePromptPart =
   | { type: 'text'; text: string }
   | { type: 'file'; mime: string; url: string; filename?: string };
 
@@ -187,7 +187,7 @@ interface OpencodeUserMessage {
   time?: { created?: number };
 }
 
-export interface OpencodeAssistantMessage {
+interface OpencodeAssistantMessage {
   id: string;
   role: 'assistant';
   sessionID: string;

@@ -21,7 +21,7 @@ interface SelectItem<T> {
   sublabel?: string;
 }
 
-export interface SelectOpts<T> {
+interface SelectOpts<T> {
   /** Heading shown above the list. */
   title?: string;
   /** Items to choose from. Empty → returns null without prompting. */
@@ -224,7 +224,7 @@ function countPhysicalRows(s: string, cols: number | undefined): number {
 // `result[0]` if they need a singular pick alongside the set).
 // ─────────────────────────────────────────────────────────────────────────────
 
-export interface MultiSelectOpts<T> extends Omit<SelectOpts<T>, 'initialIndex'> {
+interface MultiSelectOpts<T> extends Omit<SelectOpts<T>, 'initialIndex'> {
   /** Indices to start with toggled on. */
   initiallySelected?: number[];
   /** Require at least one to be toggled before allowing Enter. */

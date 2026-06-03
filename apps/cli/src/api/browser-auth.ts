@@ -6,7 +6,7 @@ interface BrowserAuthResult {
   token: string;
 }
 
-export interface BrowserAuthSession {
+interface BrowserAuthSession {
   /** Localhost port the CLI is listening on. */
   port: number;
   /** Opaque nonce — must match in the callback. */

@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 
 import { getStarterFiles, type StarterFile, type StarterTemplateId } from '@kortix/starter';
 
-export interface ScaffoldInput {
+interface ScaffoldInput {
   /** Absolute path of the destination directory. Must already exist. */
   repoRoot: string;
   /** Display name written into kortix.toml + README. */
@@ -21,7 +21,7 @@ export interface ScaffoldInput {
   preserveExisting?: boolean;
 }
 
-export interface ScaffoldResult {
+interface ScaffoldResult {
   written: string[];
   skipped: string[];
 }

@@ -18,7 +18,7 @@ interface KortixUserContext {
   exp: number
 }
 
-export type VerifyResult =
+type VerifyResult =
   | { ok: true; context: KortixUserContext }
   | { ok: false; reason: 'malformed' | 'bad_signature' | 'expired' | 'invalid_json' }
 

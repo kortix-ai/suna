@@ -19,7 +19,7 @@ export interface ApiClient {
   delete<T = unknown>(path: string): Promise<T>;
 }
 
-export interface ClientOptions {
+interface ClientOptions {
   apiBase?: string;
   token?: string;
 }

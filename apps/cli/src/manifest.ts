@@ -22,7 +22,7 @@ export interface LocalManifest {
 }
 
 /** Result of `verifyManifest` — hard errors block a ship, warnings don't. */
-export interface ManifestIssues {
+interface ManifestIssues {
   errors: string[];
   warnings: string[];
   /** Structured issues from the canonical validator. */

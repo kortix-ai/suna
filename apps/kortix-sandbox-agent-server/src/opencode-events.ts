@@ -18,7 +18,7 @@ export interface QuestionRequest {
   questions: QuestionInfo[]
 }
 
-export type OpencodeEventHandlers = {
+type OpencodeEventHandlers = {
   onQuestionAsked?: (req: QuestionRequest) => void
 }
 

@@ -39,19 +39,19 @@ import { dirname, resolve } from 'node:path';
 
 export const DEFAULT_API_BASE = process.env.KORTIX_DEFAULT_API_BASE ?? 'https://api.kortix.com';
 // Local `pnpm dev` API server.
-export const DEFAULT_LOCAL_DEV_API_BASE = 'http://localhost:8008';
+const DEFAULT_LOCAL_DEV_API_BASE = 'http://localhost:8008';
 // Kortix-internal hosted dev API.
-export const DEFAULT_INTERNAL_DEV_API_BASE = 'http://dev-api.kortix.com';
+const DEFAULT_INTERNAL_DEV_API_BASE = 'http://dev-api.kortix.com';
 // The self-host Docker stack publishes its API on this port by default
 // (see `kortix self-host` DEFAULT_API_URL). The built-in `selfhost` host is
 // pre-pointed here so `kortix hosts use selfhost` works before login;
 // `kortix self-host start` rewrites it to the actual published port.
-export const DEFAULT_SELFHOST_API_BASE = 'http://localhost:13738';
+const DEFAULT_SELFHOST_API_BASE = 'http://localhost:13738';
 
-export const CLOUD_HOST_NAME = 'cloud';
-export const LOCAL_DEV_HOST_NAME = 'local-dev';
-export const INTERNAL_DEV_HOST_NAME = 'kortix-internal-dev';
-export const SELFHOST_HOST_NAME = 'selfhost';
+const CLOUD_HOST_NAME = 'cloud';
+const LOCAL_DEV_HOST_NAME = 'local-dev';
+const INTERNAL_DEV_HOST_NAME = 'kortix-internal-dev';
+const SELFHOST_HOST_NAME = 'selfhost';
 export const DEFAULT_HOST_NAME = CLOUD_HOST_NAME;
 
 // Legacy built-in names migrated to the new scheme on load.

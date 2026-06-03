@@ -467,7 +467,7 @@ export function createOpencodeSupervisor(
  * is too weak because OpenCode can bind while the project directory is still
  * unusable for real session APIs.
  */
-export async function probeOpencodeSessionApi(
+async function probeOpencodeSessionApi(
   baseUrl: string,
   directory: string,
   timeoutMs = 1_000,

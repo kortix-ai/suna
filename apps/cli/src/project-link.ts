@@ -11,7 +11,7 @@ import { dirname, resolve } from 'node:path';
  * belongs to so commands always hit the right Kortix instance even if
  * the user's globally-active host is a different one.
  */
-export interface ProjectLink {
+interface ProjectLink {
   project_id: string;
   account_id: string;
   /** Named host (from ~/.config/kortix/config.json) this project lives on. */
