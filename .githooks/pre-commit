@@ -14,7 +14,8 @@ if command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
 elif [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
 else DX="npx --yes @dotenvx/dotenvx"; fi
 
-for f in apps/api/.env apps/api/.env.dev apps/api/.env.prod; do
+for f in apps/api/.env apps/api/.env.dev apps/api/.env.prod \
+         apps/web/.env apps/web/.env.dev apps/web/.env.prod; do
   if [ -f "$f" ]; then
     $DX encrypt -f "$f" >/dev/null 2>&1 || true
     git add "$f"

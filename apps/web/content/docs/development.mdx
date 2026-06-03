@@ -51,6 +51,8 @@ Every value is AES-encrypted (`KEY=encrypted:…`). The **public key** that encr
 These encrypted files are **only for local development**. The actual deployed **production** environment does **not** read them — the prod infra loads its env from **AWS Secrets Manager** at runtime. So `apps/api/.env.prod` is just for running locally against the prod backend; changing it does not change what production runs.
 </Callout>
 
+**`apps/web` uses the same three encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.prod`, own keys in `apps/web/.env.keys`). Most of it is public (`NEXT_PUBLIC_*`); only a few Vercel keys are secret. It's decrypted the same way — `pnpm dev` or `pnpm dev:web`.
+
 ## First time on a new machine
 
 <Steps>
@@ -64,8 +66,9 @@ dotenvx-armor login
 <Step>
 ### Pull the keys from the cloud
 ```sh
-cd apps/api
-for f in .env .env.dev .env.prod; do dotenvx-armor pull -f "$f"; done
+for app in api web; do
+  (cd "apps/$app" && for f in .env .env.dev .env.prod; do dotenvx-armor pull -f "$f"; done)
+done
 ```
 </Step>
 <Step>

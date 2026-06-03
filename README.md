@@ -150,7 +150,7 @@ Three encrypted environments for local dev, one file each (each with its own key
 
 Verify all three decrypt + are separated: `pnpm test:envs`. Add/rotate a secret: `pnpm dlx @dotenvx/dotenvx set KEY value -f apps/api/.env[.dev|.prod]`, then commit.
 
-These files are for **local development only**. The deployed **production** infra loads its real env from **AWS Secrets Manager** at runtime — `apps/api/.env.prod` is just for running locally against the prod backend and does not affect what prod runs. `apps/web/.env` (client-facing `NEXT_PUBLIC_*`) and `supabase/.env` (local Supabase CLI) stay as plain gitignored files.
+These files are for **local development only**. The deployed **production** infra loads its real env from **AWS Secrets Manager** at runtime — `apps/api/.env.prod` is just for running locally against the prod backend and does not affect what prod runs. `apps/web` has the **same three encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.prod`, mostly public `NEXT_PUBLIC_*`). Only `supabase/.env` (local Supabase CLI) stays a plain gitignored file.
 
 CI doesn't need any of these today (builds use placeholders, and the `secret-scan` workflow allowlists the encrypted file via `.gitleaks.toml`). If a future job needs real values, add the dotenvx private key as a single `DOTENV_PRIVATE_KEY` GitHub Actions secret and prefix the step with `dotenvx run -- …` — it decrypts `apps/api/.env` in memory, no other secrets required.
 

@@ -72,6 +72,12 @@ Need a different value just on your machine? Put it in the gitignored `apps/api/
 
 If a guard fires, the fix is to **encrypt the value**, never to bypass it.
 
+## The web app (apps/web) — same setup
+
+`apps/web` has the **same three encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.prod`), own keypairs in `apps/web/.env.keys`, armed in Armor. Most values are public (`NEXT_PUBLIC_*`); the only real secrets are a few Vercel/Edge-Config keys. It's decrypted the same way: `pnpm dev` (via `load_local_env`) and `pnpm dev:web` (wrapped in `dotenvx run -f .env`). Pull on a new machine: `cd apps/web && for f in .env .env.dev .env.prod; do dotenvx-armor pull -f "$f"; done`.
+
+> Planned: move the Vercel Edge-Config maintenance flags (`EDGE_CONFIG`, `VERCEL_API_TOKEN` in `apps/web/src/lib/maintenance-store.ts`) into the DB + the existing admin panel (`apps/web/src/app/admin/`), then drop those secrets. Until then they stay encrypted.
+
 ## Out of scope (not dotenvx-managed)
 
-`apps/web/.env` (client-facing `NEXT_PUBLIC_*` + a couple of Vercel keys) and `supabase/.env` (local Supabase CLI / GitHub OAuth) are intentionally **plaintext + gitignored** — not encrypted, not in Armor. Don't try to `dotenvx`-manage them.
+`supabase/.env` (local Supabase CLI / GitHub OAuth) is intentionally **plaintext + gitignored** — it's auto-loaded by the Supabase CLI, which can't read dotenvx encryption. Don't try to `dotenvx`-manage it.

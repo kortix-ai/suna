@@ -31,14 +31,32 @@ row() {
   printf "  ✓ %-5s env=%-5s stripe=%-4s db=%-45s front=%s\n" "$label" "${env:-—}" "$mode" "$host" "${front:-—}"
 }
 
-echo "dotenvx secret environments (decrypt + separation check):"
+webrow() {
+  local label="$1" file="$2"
+  if [ ! -f "$ROOT/$file" ]; then
+    printf "  ✗ %-5s missing %s\n" "$label" "$file"; fail=1; return
+  fi
+  local url; url="$(get NEXT_PUBLIC_SUPABASE_URL "$file")"
+  if [ -z "$url" ] || [[ "$url" == encrypted:* ]]; then
+    printf "  ✗ %-5s did NOT decrypt (run dotenvx-armor login / pull)\n" "$label"; fail=1; return
+  fi
+  printf "  ✓ %-5s supabase=%s\n" "$label" "$url"
+}
+
+echo "API — dotenvx secret environments (decrypt + separation check):"
 echo
 row "local" "apps/api/.env"
 row "dev"   "apps/api/.env.dev"
 row "prod"  "apps/api/.env.prod"
 echo
+echo "WEB — dotenvx secret environments:"
+echo
+webrow "local" "apps/web/.env"
+webrow "dev"   "apps/web/.env.dev"
+webrow "prod"  "apps/web/.env.prod"
+echo
 if [ "$fail" = 0 ]; then
-  echo "✓ all 3 environments decrypt cleanly and are distinctly configured"
+  echo "✓ all environments (api + web) decrypt cleanly and are distinctly configured"
 else
   echo "✗ one or more environments failed — see above"
 fi

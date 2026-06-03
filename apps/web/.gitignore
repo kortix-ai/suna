@@ -2,6 +2,11 @@
 .env
 .env.local
 frontend/.env
+# dotenvx-ENCRYPTED env profiles are safe to commit (ciphertext + public key);
+# the private keys (.env.keys) and the plaintext .env.local override stay ignored.
+!.env
+!.env.dev
+!.env.prod
 # dependencies
 /node_modules
 /.pnp

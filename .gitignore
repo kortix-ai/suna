@@ -33,6 +33,9 @@ build/
 !apps/api/.env
 !apps/api/.env.dev
 !apps/api/.env.prod
+!apps/web/.env
+!apps/web/.env.dev
+!apps/web/.env.prod
 
 # Secrets & keys (defense-in-depth with secret-scanning push protection + gitleaks)
 # The committed root .npmrc is config-only (no secrets); ignore token-bearing variants
