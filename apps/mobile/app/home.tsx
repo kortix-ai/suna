@@ -56,7 +56,6 @@ import { ProjectsPage } from '@/components/pages/ProjectsPage';
 import { ProjectDetailPage } from '@/components/pages/ProjectDetailPage';
 import { useKortixProjects, type KortixProject } from '@/lib/kortix';
 import { haptics } from '@/lib/haptics';
-import { PlaceholderPage } from '@/components/session/PlaceholderPage';
 import { UpdatesPage } from '@/components/pages/UpdatesPage';
 import { RunningServicesPage } from '@/components/pages/RunningServicesPage';
 import { BrowserPage } from '@/components/pages/BrowserPage';
@@ -1755,17 +1754,6 @@ export default function HomeScreen() {
               isDrawerOpen={drawerOpen}
               isRightDrawerOpen={rightDrawerOpen}
             />
-
-          /* Active page tab — other pages (placeholder) */
-          ) : activePageId && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <PlaceholderPage
-              page={PAGE_TABS[activePageId]}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
           /* Active session */
           ) : activeSessionId && !showTabsOverview ? (
             <SessionPage sessionId={activeSessionId} onBack={handleBack} onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen} onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen} isDrawerOpen={drawerOpen} isRightDrawerOpen={rightDrawerOpen} />
