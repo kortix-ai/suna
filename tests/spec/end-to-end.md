@@ -4,10 +4,6 @@ Single source of truth for the e2e suite. Every flow the platform supports, star
 
 Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema), Next.js (`apps/web`), `kortix` CLI (`apps/cli`). **No RLS** — all authz is app-layer via the IAM engine, so every assertion must go through the HTTP API. Sessions run **OpenCode** inside an ephemeral per-session sandbox reached through the preview proxy.
 
-> **Audited** against source on branch `newer-kortix` (every route/gate/status below confirmed at `file:line`). Coverage/dead-code tooling for running this suite is §22.
-
----
-
 ## 0. Conventions
 
 - `$API` = `<host>/v1` (local `http://localhost:13738/v1`, cloud `https://api.kortix.com/v1`). **Every route is `/v1`-prefixed.** Two unprefixed health routes exist (`/health`, `/v1/health`).
@@ -423,49 +419,6 @@ Run these against representative endpoints from each domain.
 
 ---
 
-## 22. Coverage & dead-code (how to know what every test actually hits)
-
-Goal: run the flows above and learn, per function across the whole stack, what got executed — so we can flag dead code. Two complementary signals; neither alone proves "dead".
-
-### The hard constraint
-The API and CLI run on **Bun (JavaScriptCore, not V8)**. So `NODE_V8_COVERAGE`, `c8`, `nyc`, `v8-to-istanbul` **do not work** for them. The only Bun-native coverage is `bun test --coverage` (function + line `%`, lcov reporter), and it **only instruments code loaded inside the `bun test` process** — a separately-spawned `bun src/index.ts` server hit by curl yields **zero** coverage. The browser is Chromium/V8, so frontend coverage is unaffected by this.
-
-### (A) Static dead-code — do first, highest ROI, no Bun limits
-Truly-never-imported symbols, found without running anything:
-```bash
-pnpm add -Dw knip madge
-pnpm exec knip                                   # unused files, exports, deps (pnpm-workspace aware)
-pnpm exec madge --circular --extensions ts,tsx apps/api/src
-# lighter alt: pnpm dlx ts-prune -p apps/api/tsconfig.json
-```
-`knip` needs entry points configured (`apps/api/src/index.ts` + `scripts/*.ts`; `apps/cli/src/index.ts`; web next config + `app/`; each package `exports`). Output = the real dead-code list.
-
-### (B) Runtime reachability from this suite — per app (different runtimes)
-- **API (Bun):** the working path is **in-process** — implement curl flows as a `bun test` driver that imports the *real* app and calls `app.fetch(new Request(...))`. The real app is exported at `apps/api/src/index.ts` (`export default { fetch }`). Then:
-  ```bash
-  cd apps/api && bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage src/__tests__/e2e-*.test.ts
-  ```
-  `bunfig.toml` sets `isolation=true` (process-per-file) → one lcov per file; merge them. **Curl-against-a-live-server gives no coverage** — convert those flows to in-process `fetch` to capture them. (Status codes etc. are identical; only the transport changes.)
-- **CLI (Bun):** same — drive `main(argv)` / command modules in-process under `bun test --coverage`. Never spawn the built binary (uninstrumented).
-- **Web (Next 15 / SWC, no babel):** browser runs V8, so use **Playwright + `page.coverage.startJSCoverage()`**, pipe through **`monocart-coverage-reports`** (V8→Istanbul, source-map remap to TSX, lcov). No babel/SWC change needed. Higher-fidelity alt: `swc-plugin-coverage-instrument` via `next.config.ts` `experimental.swcPlugins` behind an env flag (more brittle on Next 15). Note Playwright hits the **API over HTTP**, so it does **not** cover server functions — API coverage must come from the `bun test` harness.
-
-### Merge into one report
-All three emit lcov:
-```bash
-pnpm dlx lcov-result-merger 'apps/**/coverage/lcov*.info' merged/lcov.info
-# or: pnpm dlx monocart-coverage-reports merge --inputDir apps/api/coverage apps/cli/coverage apps/web/coverage --reporter html,lcov
-```
-Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tractable function-level report.
-
-### The load-bearing caveat
-**Uncovered ≠ dead.** The e2e suite legitimately won't hit error branches, the cron scheduler, webhook handlers, or rarely-used ops routes — those are live in prod. Only static analysis (A) can claim "never imported." **Dead-code candidate = flagged by knip (A) AND uncovered by the suite (B).** Uncovered-but-imported = "untested," not dead.
-
-### Smallest first step
-1. `pnpm add -Dw knip && pnpm exec knip` → the true dead-code list, today.
-2. Refactor a couple `apps/api/src/__tests__/e2e-*.test.ts` to drive the real `index.ts` export in-process, run `bun test --coverage` → prove the function-level lcov pipeline on the real app.
-3. Add Playwright+monocart for web; merge all lcov into one HTML report; diff against knip.
-
----
 
 ## 24. Connectors (executor)
 
