@@ -15,7 +15,9 @@
 // Every handler asserts the relevant IAM action via assertAuthorized()
 // from the engine entry-point in ../iam.
 
-import { Context, Hono } from 'hono';
+import { Context } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
+import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   accountGroupMembers,
@@ -69,7 +71,128 @@ import {
   listServiceAccounts,
 } from '../repositories/service-accounts';
 
-export const iamRouter = new Hono<AppEnv>();
+export const iamRouter = makeOpenApiApp<AppEnv>();
+
+// ─── Reusable OpenAPI schemas ────────────────────────────────────────────────
+// Permissive shapes: these power the docs, not runtime validation of responses.
+
+const AccountIdParam = z.object({ accountId: z.string() });
+const GroupParams = z.object({ accountId: z.string(), groupId: z.string() });
+const MemberParams = z.object({ accountId: z.string(), userId: z.string() });
+
+const GroupSchema = z
+  .object({
+    group_id: z.string(),
+    name: z.string(),
+    description: z.string().nullable().optional(),
+    source: z.string().optional(),
+    external_id: z.string().nullable().optional(),
+    member_count: z.number().optional(),
+    project_count: z.number().optional(),
+    created_at: z.string().optional(),
+    updated_at: z.string().optional(),
+  })
+  .openapi('IamGroup');
+
+const GroupMemberSchema = z
+  .object({
+    user_id: z.string(),
+    added_at: z.string(),
+    added_by: z.string().nullable(),
+  })
+  .openapi('IamGroupMember');
+
+const ProjectGrantSchema = z
+  .object({
+    project_id: z.string(),
+    project_name: z.string(),
+    role: z.string(),
+    granted_by: z.string().nullable(),
+    created_at: z.string(),
+    expires_at: z.string().nullable(),
+  })
+  .openapi('IamProjectGrant');
+
+const ProjectAccessSchema = z
+  .object({
+    project_id: z.string(),
+    project_name: z.string(),
+    role: z.string(),
+    sources: z.array(z.string()),
+  })
+  .openapi('IamProjectAccess');
+
+const EffectiveResultSchema = z
+  .object({
+    allowed: z.boolean(),
+    reason: z.string().nullable(),
+    action: z.string(),
+    resource_type: z.string().nullable().optional(),
+  })
+  .openapi('IamEffectiveResult');
+
+const EffectiveBatchResultSchema = z
+  .object({
+    action: z.string(),
+    resource_type: z.string().nullable().optional(),
+    resource_id: z.string().nullable(),
+    allowed: z.boolean(),
+    reason: z.string().nullable(),
+  })
+  .openapi('IamEffectiveBatchResult');
+
+const ScimTokenSchema = z
+  .object({
+    token_id: z.string(),
+    name: z.string(),
+    public_prefix: z.string(),
+    status: z.string().optional(),
+    secret: z.string().optional(),
+    created_at: z.string(),
+    last_used_at: z.string().nullable().optional(),
+    expires_at: z.string().nullable().optional(),
+    revoked_at: z.string().nullable().optional(),
+    scim_base_url: z.string().optional(),
+  })
+  .openapi('IamScimToken');
+
+const SsoProviderSchema = z
+  .object({
+    sso_provider_id: z.string(),
+    supabase_sso_provider_id: z.string(),
+    name: z.string(),
+    primary_domain: z.string(),
+    group_claim_name: z.string().nullable().optional(),
+    auto_create_members: z.boolean().optional(),
+    created_at: z.string(),
+    updated_at: z.string(),
+  })
+  .openapi('IamSsoProvider');
+
+const SsoMappingSchema = z
+  .object({
+    mapping_id: z.string(),
+    claim_value: z.string(),
+    group_id: z.string(),
+    group_name: z.string().nullable().optional(),
+    created_at: z.string(),
+  })
+  .openapi('IamSsoMapping');
+
+const ServiceAccountSchema = z
+  .object({
+    service_account_id: z.string(),
+    name: z.string(),
+    description: z.string().nullable().optional(),
+    public_prefix: z.string(),
+    status: z.string().optional(),
+    secret: z.string().optional(),
+    last_used_at: z.string().nullable().optional(),
+    expires_at: z.string().nullable().optional(),
+    created_at: z.string(),
+    disabled_at: z.string().nullable().optional(),
+  })
+  .openapi('IamServiceAccount');
 
 const VALID_RESOURCE_TYPES: readonly ResourceType[] = [
   'account',
@@ -150,7 +273,20 @@ function isUniqueViolation(err: unknown): boolean {
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 
-iamRouter.get('/:accountId/iam/groups', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/groups',
+    tags: ['iam'],
+    summary: 'List account groups',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.object({ groups: z.array(GroupSchema) }), 'Groups in the account'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_READ);
@@ -169,9 +305,23 @@ iamRouter.get('/:accountId/iam/groups', async (c) => {
       updated_at: g.updatedAt.toISOString(),
     })),
   });
-});
+  },
+);
 
-iamRouter.post('/:accountId/iam/groups', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/iam/groups',
+    tags: ['iam'],
+    summary: 'Create an account group',
+    ...auth,
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ name: z.string(), description: z.string().nullable().optional() }) } } } },
+    responses: {
+      201: json(GroupSchema, 'The created group'),
+      ...errors(400, 401, 403, 409),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.GROUP_CREATE);
@@ -211,9 +361,23 @@ iamRouter.post('/:accountId/iam/groups', async (c) => {
     }
     throw err;
   }
-});
+  },
+);
 
-iamRouter.get('/:accountId/iam/groups/:groupId', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/groups/{groupId}',
+    tags: ['iam'],
+    summary: 'Get a group',
+    ...auth,
+    request: { params: GroupParams },
+    responses: {
+      200: json(GroupSchema, 'The group'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -231,9 +395,23 @@ iamRouter.get('/:accountId/iam/groups/:groupId', async (c) => {
     created_at: group.createdAt.toISOString(),
     updated_at: group.updatedAt.toISOString(),
   });
-});
+  },
+);
 
-iamRouter.patch('/:accountId/iam/groups/:groupId', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{accountId}/iam/groups/{groupId}',
+    tags: ['iam'],
+    summary: 'Update a group',
+    ...auth,
+    request: { params: GroupParams, body: { content: { 'application/json': { schema: z.object({ name: z.string(), description: z.string().nullable() }).partial() } } } },
+    responses: {
+      200: json(GroupSchema, 'The updated group'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -275,9 +453,23 @@ iamRouter.patch('/:accountId/iam/groups/:groupId', async (c) => {
     description: updated.description,
     updated_at: updated.updatedAt.toISOString(),
   });
-});
+  },
+);
 
-iamRouter.delete('/:accountId/iam/groups/:groupId', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{accountId}/iam/groups/{groupId}',
+    tags: ['iam'],
+    summary: 'Delete a group',
+    ...auth,
+    request: { params: GroupParams },
+    responses: {
+      200: json(z.object({ deleted: z.boolean() }), 'Deletion result'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -302,11 +494,25 @@ iamRouter.delete('/:accountId/iam/groups/:groupId', async (c) => {
   });
 
   return c.json({ deleted: true });
-});
+  },
+);
 
 // ─── Group members ─────────────────────────────────────────────────────────
 
-iamRouter.get('/:accountId/iam/groups/:groupId/members', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/groups/{groupId}/members',
+    tags: ['iam'],
+    summary: 'List group members',
+    ...auth,
+    request: { params: GroupParams },
+    responses: {
+      200: json(z.object({ members: z.array(GroupMemberSchema) }), 'Group members'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -320,9 +526,23 @@ iamRouter.get('/:accountId/iam/groups/:groupId/members', async (c) => {
       added_by: m.addedBy,
     })),
   });
-});
+  },
+);
 
-iamRouter.post('/:accountId/iam/groups/:groupId/members', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/iam/groups/{groupId}/members',
+    tags: ['iam'],
+    summary: 'Add members to a group',
+    ...auth,
+    request: { params: GroupParams, body: { content: { 'application/json': { schema: z.object({ userIds: z.array(z.string()).optional(), userId: z.string().optional() }) } } } },
+    responses: {
+      200: json(z.object({ added: z.number() }), 'Number of members added'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -355,9 +575,23 @@ iamRouter.post('/:accountId/iam/groups/:groupId/members', async (c) => {
   }
 
   return c.json({ added: result.added });
-});
+  },
+);
 
-iamRouter.delete('/:accountId/iam/groups/:groupId/members/:userId', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{accountId}/iam/groups/{groupId}/members/{userId}',
+    tags: ['iam'],
+    summary: 'Remove a member from a group',
+    ...auth,
+    request: { params: z.object({ accountId: z.string(), groupId: z.string(), userId: z.string() }) },
+    responses: {
+      200: json(z.object({ removed: z.boolean() }), 'Removal result'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -382,7 +616,8 @@ iamRouter.delete('/:accountId/iam/groups/:groupId/members/:userId', async (c) =>
   });
 
   return c.json({ removed: true });
-});
+  },
+);
 
 // ─── Group → project attachments (IAM V2) ──────────────────────────────────
 //
@@ -393,7 +628,20 @@ iamRouter.delete('/:accountId/iam/groups/:groupId/members/:userId', async (c) =>
 // single grant. This endpoint just answers "which projects?" for the
 // group view, gated by GROUP_READ.
 
-iamRouter.get('/:accountId/iam/groups/:groupId/project-grants', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/groups/{groupId}/project-grants',
+    tags: ['iam'],
+    summary: 'List project grants for a group',
+    ...auth,
+    request: { params: GroupParams },
+    responses: {
+      200: json(z.object({ grants: z.array(ProjectGrantSchema) }), 'Project grants for the group'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
@@ -435,11 +683,25 @@ iamRouter.get('/:accountId/iam/groups/:groupId/project-grants', async (c) => {
       expires_at: r.expiresAt?.toISOString() ?? null,
     })),
   });
-});
+  },
+);
 
 // ─── Super-admin promotion ─────────────────────────────────────────────────
 
-iamRouter.patch('/:accountId/iam/members/:userId/super-admin', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{accountId}/iam/members/{userId}/super-admin',
+    tags: ['iam'],
+    summary: 'Grant or revoke super-admin',
+    ...auth,
+    request: { params: MemberParams, body: { content: { 'application/json': { schema: z.object({ isSuperAdmin: z.boolean(), is_super_admin: z.boolean() }).partial() } } } },
+    responses: {
+      200: json(z.object({ user_id: z.string(), is_super_admin: z.boolean() }), 'Updated super-admin flag'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
@@ -505,13 +767,27 @@ iamRouter.patch('/:accountId/iam/members/:userId/super-admin', async (c) => {
     user_id: updated.userId,
     is_super_admin: updated.isSuperAdmin,
   });
-});
+  },
+);
 
 // ─── Member's group memberships ────────────────────────────────────────────
 // Used by the member detail page so admins can see "this person inherits
 // these policies via these groups".
 
-iamRouter.get('/:accountId/iam/members/:userId/groups', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/members/{userId}/groups',
+    tags: ['iam'],
+    summary: 'List group memberships for a member',
+    ...auth,
+    request: { params: MemberParams },
+    responses: {
+      200: json(z.object({ groups: z.array(GroupSchema) }), 'Groups the member belongs to'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
@@ -530,7 +806,8 @@ iamRouter.get('/:accountId/iam/members/:userId/groups', async (c) => {
       added_at: r.addedAt.toISOString(),
     })),
   });
-});
+  },
+);
 
 // V2-only: which projects does this member reach, and at what role?
 // Combines three sources, max-role per project:
@@ -540,7 +817,20 @@ iamRouter.get('/:accountId/iam/members/:userId/groups', async (c) => {
 //   3. project_group_grants for any group the user belongs to
 // V1 callers can use the route too — the data is real either way — but
 // the V1 UI doesn't surface it (PoliciesTable is the equivalent V1 view).
-iamRouter.get('/:accountId/iam/members/:userId/project-access', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/members/{userId}/project-access',
+    tags: ['iam'],
+    summary: 'List effective project access for a member',
+    ...auth,
+    request: { params: MemberParams },
+    responses: {
+      200: json(z.object({ projects: z.array(ProjectAccessSchema) }), 'Projects the member can reach'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
@@ -663,12 +953,26 @@ iamRouter.get('/:accountId/iam/members/:userId/project-access', async (c) => {
   }
   out.sort((a, b) => a.project_name.localeCompare(b.project_name));
   return c.json({ projects: out });
-});
+  },
+);
 
 // ─── Effective permissions probe ───────────────────────────────────────────
 // The UI uses this to render "what can this user actually do".
 
-iamRouter.get('/:accountId/iam/members/:userId/effective', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/members/{userId}/effective',
+    tags: ['iam'],
+    summary: 'Probe effective permission for a member',
+    ...auth,
+    request: { params: MemberParams, query: z.object({ action: z.string(), resourceType: z.string(), resourceId: z.string() }).partial() },
+    responses: {
+      200: json(EffectiveResultSchema, 'Effective-permission result'),
+      ...errors(400, 401, 403),
+    },
+  }),
+  async (c: any) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
@@ -701,7 +1005,8 @@ iamRouter.get('/:accountId/iam/members/:userId/effective', async (c) => {
     action,
     resource_type: resourceTypeForAction(action),
   });
-});
+  },
+);
 
 // Batch variant. UIs that render N capability rows (the "what this member
 // can do" panel, multi-button gating on a single screen) should call this
@@ -710,7 +1015,20 @@ iamRouter.get('/:accountId/iam/members/:userId/effective', async (c) => {
 // the caller can rely on indices matching.
 const BATCH_MAX = 64;
 
-iamRouter.post('/:accountId/iam/members/:userId/effective:batch', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/iam/members/{userId}/effective:batch',
+    tags: ['iam'],
+    summary: 'Batch-probe effective permissions for a member',
+    ...auth,
+    request: { params: MemberParams, body: { content: { 'application/json': { schema: z.object({ probes: z.array(z.record(z.string(), z.any())).optional(), queries: z.array(z.record(z.string(), z.any())).optional() }) } } } },
+    responses: {
+      200: json(z.object({ results: z.array(EffectiveBatchResultSchema) }), 'Batch effective-permission results'),
+      ...errors(400, 401, 403),
+    },
+  }),
+  async (c: any) => {
   const callerId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
@@ -808,7 +1126,8 @@ iamRouter.post('/:accountId/iam/members/:userId/effective:batch', async (c) => {
   );
 
   return c.json({ results });
-});
+  },
+);
 
 // ─── Account-wide MFA enforcement ─────────────────────────────────────────
 // When enabled, the IAM engine denies every JWT request whose session is
@@ -817,7 +1136,20 @@ iamRouter.post('/:accountId/iam/members/:userId/effective:batch', async (c) => {
 // flip — with a lockout guard refusing flips that would orphan the
 // account.
 
-iamRouter.get('/:accountId/iam/mfa-required', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/mfa-required',
+    tags: ['iam'],
+    summary: 'Get account MFA-required status',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.object({ enabled: z.boolean() }), 'MFA-required status'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
@@ -829,14 +1161,28 @@ iamRouter.get('/:accountId/iam/mfa-required', async (c) => {
     .limit(1);
   if (!row) return c.json({ error: 'account not found' }, 404);
   return c.json({ enabled: row.mfaRequired });
-});
+  },
+);
 
 // Preview: members who have no VERIFIED MFA factor enrolled. These users
 // would lose access the moment the flag flips — admins should see the
 // list before clicking. Super-admins are still flagged (so admins can
 // nudge them too) but called out separately so the UI can soften the
 // warning (super-admins won't be locked out).
-iamRouter.get('/:accountId/iam/mfa-required/preview', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/mfa-required/preview',
+    tags: ['iam'],
+    summary: 'Preview who would be locked out by MFA enforcement',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.object({ total_members: z.number(), members_with_mfa: z.number(), losers: z.array(z.object({ user_id: z.string(), account_role: z.string(), is_super_admin: z.boolean() })), will_lock_out_account: z.boolean() }), 'MFA enforcement preview'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
@@ -904,9 +1250,23 @@ iamRouter.get('/:accountId/iam/mfa-required/preview', async (c) => {
     losers,
     will_lock_out_account: willLockOutAccount,
   });
-});
+  },
+);
 
-iamRouter.patch('/:accountId/iam/mfa-required', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{accountId}/iam/mfa-required',
+    tags: ['iam'],
+    summary: 'Enable or disable account MFA requirement',
+    ...auth,
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean() }) } } } },
+    responses: {
+      200: json(z.object({ enabled: z.boolean(), unchanged: z.boolean().optional() }), 'Updated MFA-required status'),
+      ...errors(401, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   // Gate on account.write — same level as renaming the account or
@@ -986,7 +1346,8 @@ iamRouter.patch('/:accountId/iam/mfa-required', async (c) => {
   });
 
   return c.json({ enabled });
-});
+  },
+);
 
 // ─── SCIM provisioning tokens ─────────────────────────────────────────────
 // Bearer credentials configured in the customer's IdP (Okta, Azure AD, …)
@@ -994,7 +1355,20 @@ iamRouter.patch('/:accountId/iam/mfa-required', async (c) => {
 // secrets: only `account.write` can mint or revoke. Plaintext is returned
 // exactly once at mint; everything else shows the public prefix only.
 
-iamRouter.get('/:accountId/iam/scim/tokens', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/scim/tokens',
+    tags: ['iam'],
+    summary: 'List SCIM provisioning tokens',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.object({ tokens: z.array(ScimTokenSchema) }), 'SCIM tokens'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -1012,9 +1386,23 @@ iamRouter.get('/:accountId/iam/scim/tokens', async (c) => {
       revoked_at: t.revokedAt?.toISOString() ?? null,
     })),
   });
-});
+  },
+);
 
-iamRouter.post('/:accountId/iam/scim/tokens', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/iam/scim/tokens',
+    tags: ['iam'],
+    summary: 'Mint a SCIM provisioning token',
+    ...auth,
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ name: z.string(), expires_at: z.string().optional(), expiresAt: z.string().optional() }) } } } },
+    responses: {
+      201: json(ScimTokenSchema, 'The minted SCIM token (secret shown once)'),
+      ...errors(400, 401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -1075,9 +1463,23 @@ iamRouter.post('/:accountId/iam/scim/tokens', async (c) => {
     },
     201,
   );
-});
+  },
+);
 
-iamRouter.delete('/:accountId/iam/scim/tokens/:tokenId', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{accountId}/iam/scim/tokens/{tokenId}',
+    tags: ['iam'],
+    summary: 'Revoke a SCIM provisioning token',
+    ...auth,
+    request: { params: z.object({ accountId: z.string(), tokenId: z.string() }) },
+    responses: {
+      200: json(z.object({ revoked: z.boolean() }), 'Revocation result'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const tokenId = c.req.param('tokenId');
@@ -1094,7 +1496,8 @@ iamRouter.delete('/:accountId/iam/scim/tokens/:tokenId', async (c) => {
   });
 
   return c.json({ revoked: true });
-});
+  },
+);
 
 // ─── SAML SSO config ──────────────────────────────────────────────────────
 // The Supabase auth.sso_providers row is created out-of-band (via Studio
@@ -1115,16 +1518,43 @@ function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProv
   };
 }
 
-iamRouter.get('/:accountId/iam/sso/provider', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/sso/provider',
+    tags: ['iam'],
+    summary: 'Get the account SSO provider',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.object({ provider: SsoProviderSchema.nullable() }), 'The SSO provider, or null'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
   const p = await getSsoProvider(accountId);
   if (!p) return c.json({ provider: null });
   return c.json({ provider: ssoProviderResponse(p) });
-});
+  },
+);
 
-iamRouter.put('/:accountId/iam/sso/provider', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{accountId}/iam/sso/provider',
+    tags: ['iam'],
+    summary: 'Create or update the SSO provider',
+    ...auth,
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ supabase_sso_provider_id: z.string().optional(), supabaseSsoProviderId: z.string().optional(), name: z.string().optional(), primary_domain: z.string().optional(), primaryDomain: z.string().optional(), group_claim_name: z.string().optional(), groupClaimName: z.string().optional(), auto_create_members: z.boolean().optional(), autoCreateMembers: z.boolean().optional() }) } } } },
+    responses: {
+      200: json(z.object({ provider: SsoProviderSchema }), 'The upserted SSO provider'),
+      ...errors(400, 401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -1188,9 +1618,23 @@ iamRouter.put('/:accountId/iam/sso/provider', async (c) => {
   });
 
   return c.json({ provider: ssoProviderResponse(provider) });
-});
+  },
+);
 
-iamRouter.delete('/:accountId/iam/sso/provider', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{accountId}/iam/sso/provider',
+    tags: ['iam'],
+    summary: 'Delete the SSO provider',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.object({ deleted: z.boolean() }), 'Deletion result'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -1214,11 +1658,25 @@ iamRouter.delete('/:accountId/iam/sso/provider', async (c) => {
   });
 
   return c.json({ deleted: true });
-});
+  },
+);
 
 // ─── SAML group mappings ──────────────────────────────────────────────────
 
-iamRouter.get('/:accountId/iam/sso/mappings', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/sso/mappings',
+    tags: ['iam'],
+    summary: 'List SSO group mappings',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.object({ mappings: z.array(SsoMappingSchema) }), 'SSO group mappings'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
@@ -1232,9 +1690,23 @@ iamRouter.get('/:accountId/iam/sso/mappings', async (c) => {
       created_at: m.createdAt.toISOString(),
     })),
   });
-});
+  },
+);
 
-iamRouter.post('/:accountId/iam/sso/mappings', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/iam/sso/mappings',
+    tags: ['iam'],
+    summary: 'Create an SSO group mapping',
+    ...auth,
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ claim_value: z.string().optional(), claimValue: z.string().optional(), group_id: z.string().optional(), groupId: z.string().optional() }) } } } },
+    responses: {
+      201: json(SsoMappingSchema, 'The created mapping'),
+      ...errors(400, 401, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -1291,9 +1763,23 @@ iamRouter.post('/:accountId/iam/sso/mappings', async (c) => {
     }
     throw err;
   }
-});
+  },
+);
 
-iamRouter.delete('/:accountId/iam/sso/mappings/:mappingId', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{accountId}/iam/sso/mappings/{mappingId}',
+    tags: ['iam'],
+    summary: 'Delete an SSO group mapping',
+    ...auth,
+    request: { params: z.object({ accountId: z.string(), mappingId: z.string() }) },
+    responses: {
+      200: json(z.object({ deleted: z.boolean() }), 'Deletion result'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const mappingId = c.req.param('mappingId');
@@ -1310,7 +1796,8 @@ iamRouter.delete('/:accountId/iam/sso/mappings/:mappingId', async (c) => {
   });
 
   return c.json({ deleted: true });
-});
+  },
+);
 
 // ─── Session policy ───────────────────────────────────────────────────────
 // Per-account ceilings on session age + idle gap. Null on either field
@@ -1318,7 +1805,20 @@ iamRouter.delete('/:accountId/iam/sso/mappings/:mappingId', async (c) => {
 
 const SESSION_LIMIT_MINUTES = 10080; // 7 days
 
-iamRouter.get('/:accountId/iam/session-policy', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/session-policy',
+    tags: ['iam'],
+    summary: 'Get the account session policy',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.object({ max_lifetime_minutes: z.number().nullable(), idle_timeout_minutes: z.number().nullable() }), 'Session policy'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
@@ -1337,9 +1837,23 @@ iamRouter.get('/:accountId/iam/session-policy', async (c) => {
     max_lifetime_minutes: row.maxLifetimeMinutes,
     idle_timeout_minutes: row.idleTimeoutMinutes,
   });
-});
+  },
+);
 
-iamRouter.patch('/:accountId/iam/session-policy', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{accountId}/iam/session-policy',
+    tags: ['iam'],
+    summary: 'Update the account session policy',
+    ...auth,
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ max_lifetime_minutes: z.number().nullable(), maxLifetimeMinutes: z.number().nullable(), idle_timeout_minutes: z.number().nullable(), idleTimeoutMinutes: z.number().nullable() }).partial() } } } },
+    responses: {
+      200: json(z.object({ max_lifetime_minutes: z.number().nullable(), idle_timeout_minutes: z.number().nullable() }), 'Updated session policy'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -1419,11 +1933,25 @@ iamRouter.patch('/:accountId/iam/session-policy', async (c) => {
     idle_timeout_minutes:
       idleTimeoutMinutes !== undefined ? idleTimeoutMinutes : before.idleTimeoutMinutes,
   });
-});
+  },
+);
 
 // ─── Active sessions + force-logout ───────────────────────────────────────
 
-iamRouter.get('/:accountId/iam/sessions', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/sessions',
+    tags: ['iam'],
+    summary: 'List recent account sessions',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.object({ sessions: z.array(z.object({ user_id: z.string(), session_id: z.string(), first_seen_at: z.string(), last_seen_at: z.string(), revoked_at: z.string().nullable(), revoked_reason: z.string().nullable(), ip: z.string().nullable(), user_agent: z.string().nullable() })) }), 'Recent sessions'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.MEMBER_READ);
@@ -1456,9 +1984,23 @@ iamRouter.get('/:accountId/iam/sessions', async (c) => {
       user_agent: r.userAgent,
     })),
   });
-});
+  },
+);
 
-iamRouter.post('/:accountId/iam/sessions/:sessionId/revoke', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/iam/sessions/{sessionId}/revoke',
+    tags: ['iam'],
+    summary: 'Revoke (force-logout) a session',
+    ...auth,
+    request: { params: z.object({ accountId: z.string(), sessionId: z.string() }), body: { content: { 'application/json': { schema: z.object({}).partial() } } } },
+    responses: {
+      200: json(z.object({ revoked: z.boolean() }), 'Revocation result'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const actorUserId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const sessionId = c.req.param('sessionId');
@@ -1496,7 +2038,8 @@ iamRouter.post('/:accountId/iam/sessions/:sessionId/revoke', async (c) => {
   });
 
   return c.json({ revoked: true });
-});
+  },
+);
 
 // Compact local error so the parser helper above can short-circuit.
 class HttpError extends Error {
@@ -1514,7 +2057,20 @@ class HttpError extends Error {
 const PAT_MAX_LIFETIME_DAYS = 365 * 2; // 2 years
 const PAT_MAX_IDLE_DAYS = 365;
 
-iamRouter.get('/:accountId/iam/pat-policy', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/pat-policy',
+    tags: ['iam'],
+    summary: 'Get the account PAT policy',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.object({ max_lifetime_days: z.number().nullable(), require_expiry: z.boolean(), idle_revoke_days: z.number().nullable() }), 'PAT policy'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_READ);
@@ -1535,9 +2091,23 @@ iamRouter.get('/:accountId/iam/pat-policy', async (c) => {
     require_expiry: row.requireExpiry,
     idle_revoke_days: row.idleRevokeDays,
   });
-});
+  },
+);
 
-iamRouter.patch('/:accountId/iam/pat-policy', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{accountId}/iam/pat-policy',
+    tags: ['iam'],
+    summary: 'Update the account PAT policy',
+    ...auth,
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ max_lifetime_days: z.number().nullable(), maxLifetimeDays: z.number().nullable(), idle_revoke_days: z.number().nullable(), idleRevokeDays: z.number().nullable(), require_expiry: z.boolean(), requireExpiry: z.boolean() }).partial() } } } },
+    responses: {
+      200: json(z.object({ max_lifetime_days: z.number().nullable(), require_expiry: z.boolean(), idle_revoke_days: z.number().nullable() }), 'Updated PAT policy'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -1631,7 +2201,8 @@ iamRouter.patch('/:accountId/iam/pat-policy', async (c) => {
     idle_revoke_days:
       idleRevokeDays !== undefined ? idleRevokeDays : before.idleRevokeDays,
   });
-});
+  },
+);
 
 // ─── Service accounts (non-human IAM principals) ─────────────────────────
 // First-class machine identities owned by the account itself. Policies
@@ -1639,7 +2210,20 @@ iamRouter.patch('/:accountId/iam/pat-policy', async (c) => {
 // — the engine's token-as-principal short-circuit means SA requests are
 // evaluated PURELY against the SA's own policies (no minter inheritance).
 
-iamRouter.get('/:accountId/iam/service-accounts', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/iam/service-accounts',
+    tags: ['iam'],
+    summary: 'List service accounts',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.object({ service_accounts: z.array(ServiceAccountSchema) }), 'Service accounts'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_READ);
@@ -1657,9 +2241,23 @@ iamRouter.get('/:accountId/iam/service-accounts', async (c) => {
       disabled_at: sa.disabledAt?.toISOString() ?? null,
     })),
   });
-});
+  },
+);
 
-iamRouter.post('/:accountId/iam/service-accounts', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/iam/service-accounts',
+    tags: ['iam'],
+    summary: 'Create a service account',
+    ...auth,
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ name: z.string(), description: z.string().optional(), expires_at: z.string().optional() }) } } } },
+    responses: {
+      201: json(ServiceAccountSchema, 'The created service account (secret shown once)'),
+      ...errors(400, 401, 403, 409),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.TOKEN_CREATE);
@@ -1711,9 +2309,23 @@ iamRouter.post('/:accountId/iam/service-accounts', async (c) => {
     }
     throw err;
   }
-});
+  },
+);
 
-iamRouter.post('/:accountId/iam/service-accounts/:saId/disable', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/iam/service-accounts/{saId}/disable',
+    tags: ['iam'],
+    summary: 'Disable a service account',
+    ...auth,
+    request: { params: z.object({ accountId: z.string(), saId: z.string() }) },
+    responses: {
+      200: json(z.object({ disabled: z.boolean() }), 'Disable result'),
+      ...errors(401, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const saId = c.req.param('saId');
@@ -1737,9 +2349,23 @@ iamRouter.post('/:accountId/iam/service-accounts/:saId/disable', async (c) => {
     after: { name: before.name, status: 'disabled' },
   });
   return c.json({ disabled: true });
-});
+  },
+);
 
-iamRouter.delete('/:accountId/iam/service-accounts/:saId', async (c) => {
+iamRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{accountId}/iam/service-accounts/{saId}',
+    tags: ['iam'],
+    summary: 'Delete a service account',
+    ...auth,
+    request: { params: z.object({ accountId: z.string(), saId: z.string() }) },
+    responses: {
+      200: json(z.object({ deleted: z.boolean() }), 'Deletion result'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const saId = c.req.param('saId');
@@ -1757,4 +2383,5 @@ iamRouter.delete('/:accountId/iam/service-accounts/:saId', async (c) => {
     before: { name: before.name },
   });
   return c.json({ deleted: true });
-});
+  },
+);

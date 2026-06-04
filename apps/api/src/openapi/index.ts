@@ -41,9 +41,16 @@ export const json = <T extends z.ZodTypeAny>(schema: T, description: string) => 
   content: { "application/json": { schema } },
 });
 
-/** Standard error responses for the given status codes, keyed for `responses`. */
-export const errors = (...codes: number[]): Record<number, ReturnType<typeof json>> =>
-  Object.fromEntries(codes.map((c) => [c, json(ErrorSchema, STATUS_TEXT[c] ?? "Error")]));
+/**
+ * Standard error responses for the given status codes, keyed for `responses`.
+ * Generic over the literal codes so the keys stay literal (e.g. `401`, not
+ * `number`) — zod-openapi's typed handler needs the literal status union, so a
+ * widened `Record<number,…>` would break `c.json(body, 401)` handler typing.
+ */
+export const errors = <C extends number>(...codes: C[]): { [K in C]: ReturnType<typeof json> } =>
+  Object.fromEntries(codes.map((c) => [c, json(ErrorSchema, STATUS_TEXT[c] ?? "Error")])) as unknown as {
+    [K in C]: ReturnType<typeof json>;
+  };
 
 /** Mark an operation as requiring a bearer token. */
 export const auth: Pick<RouteConfig, "security"> = { security: [{ bearerAuth: [] }] };

@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
@@ -7,6 +7,7 @@ import { db } from '../shared/db';
 import { config } from '../config';
 import { slackOauthMode } from './slack-oauth-mode';
 import { saveSlackOauthInstall } from './install-store';
+import { makeOpenApiApp, json, errors, ErrorSchema } from '../openapi';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -60,9 +61,27 @@ export function buildSlackInstallUrl(projectId: string, userId: string): string 
   return `https://slack.com/oauth/v2/authorize?${params.toString()}`;
 }
 
-export const slackOauthApp = new Hono();
+export const slackOauthApp = makeOpenApiApp();
 
-slackOauthApp.get('/callback', async (c) => {
+slackOauthApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/callback',
+    tags: ['channels'],
+    summary: 'Slack OAuth install callback (redirects to dashboard)',
+    request: {
+      query: z.object({
+        code: z.string().optional(),
+        state: z.string().optional(),
+        error: z.string().optional(),
+      }),
+    },
+    responses: {
+      302: { description: 'Redirect to the Kortix dashboard' },
+      ...errors(400, 503),
+    },
+  }),
+  async (c: any) => {
   const mode = slackOauthMode();
   if (!mode.available || !mode.clientId || !mode.clientSecret) {
     return c.json({ error: 'Slack OAuth is not configured on this server.' }, 503);
@@ -110,7 +129,8 @@ slackOauthApp.get('/callback', async (c) => {
   });
 
   return redirectToDashboard(c, { projectId: payload.projectId, success: '1' });
-});
+},
+);
 
 function redirectToDashboard(
   c: Context,

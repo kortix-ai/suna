@@ -200,7 +200,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         ...errors(401),
       },
     }),
-    async (c) => {
+    async (c: any) => {
       const p = await deps.resolvePrincipal(c);
       if (!p) return c.json({ error: 'unauthorized' }, 401);
       const connectors = await deps.listCatalog(p);
@@ -243,7 +243,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     // args to {} and trimming strings) and returns custom `invalid_json` /
     // field-required 400 envelopes — typed validation would reject inputs the
     // existing contract accepts.
-    async (c) => {
+    async (c: any) => {
       const p = await deps.resolvePrincipal(c);
       if (!p) return c.json({ error: 'unauthorized' }, 401);
 
@@ -300,7 +300,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         ...errors(403),
       },
     }),
-    async (c) => {
+    async (c: any) => {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
@@ -327,7 +327,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }),
     // Manual parse kept: the connector draft is an opaque record validated
     // downstream; original returns `invalid_json` / `not supported` envelopes.
-    async (c) => {
+    async (c: any) => {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
@@ -353,7 +353,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         ...errors(400, 403, 501),
       },
     }),
-    async (c) => {
+    async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
@@ -383,7 +383,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }),
     // Manual parse kept: original returns `invalid_json` and a `value is
     // required` 400 (empty string rejected) before delegating.
-    async (c) => {
+    async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
@@ -415,7 +415,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         ...errors(403, 501),
       },
     }),
-    async (c) => {
+    async (c: any) => {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
@@ -439,7 +439,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         ...errors(403),
       },
     }),
-    async (c) => {
+    async (c: any) => {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
@@ -467,7 +467,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }),
     // Manual parse kept: original validates the sharing intent via
     // parseSharingIntent (custom message) and returns `invalid_json`.
-    async (c) => {
+    async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
@@ -502,7 +502,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         ...errors(403, 404, 501),
       },
     }),
-    async (c) => {
+    async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
@@ -527,7 +527,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         ...errors(403, 404, 501),
       },
     }),
-    async (c) => {
+    async (c: any) => {
       const projectId = c.req.param('projectId');
       const slug = c.req.param('slug');
       const admin = await deps.resolveAdmin(c, projectId);
@@ -553,7 +553,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         ...errors(403, 404, 501),
       },
     }),
-    async (c) => {
+    async (c: any) => {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
@@ -583,7 +583,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }),
     // Manual parse kept: original does per-policy validation with indexed error
     // messages (`policy #N: ...`) and tolerates a partial/missing body.
-    async (c) => {
+    async (c: any) => {
       const projectId = c.req.param('projectId');
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
@@ -631,7 +631,7 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     }),
     // Manual parse kept: webhook tolerates an unparseable body (defaults to {})
     // and authenticates via HMAC signature, not a user token.
-    async (c) => {
+    async (c: any) => {
       if (!deps.pipedreamWebhook) return c.json({ error: 'pipedream not configured' }, 501);
       const sig = c.req.query('sig') ?? null;
       let body: any;

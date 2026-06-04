@@ -11,18 +11,44 @@
  * as null for now; the legacy env/exec/schema endpoints are intentionally NOT
  * restored.
  */
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import type { AppEnv } from '../types';
 import { supabaseAuth } from '../middleware/auth';
 import { requireAdmin } from '../middleware/require-admin';
+import { makeOpenApiApp, json, errors, auth } from '../openapi';
 
-export const adminApp = new Hono<AppEnv>();
+export const adminApp = makeOpenApiApp<AppEnv>();
 
 // Every admin route requires a logged-in platform admin.
 adminApp.use('*', supabaseAuth, requireAdmin);
 
 // ── List accounts ────────────────────────────────────────────────────────────
-adminApp.get('/api/accounts', async (c) => {
+adminApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/api/accounts',
+    tags: ['admin'],
+    summary: 'List accounts (admin console)',
+    ...auth,
+    request: {
+      query: z.object({
+        search: z.string().optional(),
+        tier: z.string().optional(),
+        minBalance: z.string().optional(),
+        maxBalance: z.string().optional(),
+        sortBy: z.string().optional(),
+        sortDir: z.string().optional(),
+        page: z.string().optional(),
+        limit: z.string().optional(),
+      }),
+    },
+    responses: {
+      200: json(z.record(z.string(), z.any()), 'Accounts page'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   try {
     const { db } = await import('../shared/db');
     const { accounts, creditAccounts } = await import('@kortix/db');
@@ -31,7 +57,7 @@ adminApp.get('/api/accounts', async (c) => {
     const mt = await membersTableSql();
 
     const search = (c.req.query('search') || '').trim();
-    const tierValues = (c.req.query('tier') || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const tierValues = (c.req.query('tier') || '').split(',').map((s: string) => s.trim()).filter(Boolean);
     const minBalance = c.req.query('minBalance');
     const maxBalance = c.req.query('maxBalance');
     const sortBy = c.req.query('sortBy') || 'created';
@@ -114,10 +140,25 @@ adminApp.get('/api/accounts', async (c) => {
   } catch (e: any) {
     return c.json({ accounts: [], total: 0, page: 1, limit: 50, summary: null, error: e?.message || String(e) }, 500);
   }
-});
+  },
+);
 
 // ── Account members ──────────────────────────────────────────────────────────
-adminApp.get('/api/accounts/:id/users', async (c) => {
+adminApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/api/accounts/{id}/users',
+    tags: ['admin'],
+    summary: 'List members of an account',
+    ...auth,
+    request: { params: z.object({ id: z.string() }) },
+    responses: {
+      200: json(z.object({ users: z.array(z.any()) }), 'Account members'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   try {
     const accountId = c.req.param('id');
     const { db } = await import('../shared/db');
@@ -143,10 +184,28 @@ adminApp.get('/api/accounts/:id/users', async (c) => {
   } catch (e: any) {
     return c.json({ users: [], error: e?.message || String(e) }, 500);
   }
-});
+  },
+);
 
 // ── Credit ledger ────────────────────────────────────────────────────────────
-adminApp.get('/api/accounts/:id/ledger', async (c) => {
+adminApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/api/accounts/{id}/ledger',
+    tags: ['admin'],
+    summary: 'List credit ledger entries for an account',
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({ limit: z.string().optional() }),
+    },
+    responses: {
+      200: json(z.object({ entries: z.array(z.any()) }), 'Credit ledger entries'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   try {
     const accountId = c.req.param('id');
     const limit = Math.min(200, Math.max(1, parseInt(c.req.query('limit') || '50', 10)));
@@ -163,10 +222,39 @@ adminApp.get('/api/accounts/:id/ledger', async (c) => {
   } catch (e: any) {
     return c.json({ entries: [], error: e?.message || String(e) }, 500);
   }
-});
+  },
+);
 
 // ── Grant credits ────────────────────────────────────────────────────────────
-adminApp.post('/api/accounts/:id/credits', async (c) => {
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/accounts/{id}/credits',
+    tags: ['admin'],
+    summary: 'Grant credits to an account',
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              amount: z.number(),
+              description: z.string().optional(),
+              isExpiring: z.boolean().optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), balance: z.any() }), 'Grant result'),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
@@ -183,10 +271,38 @@ adminApp.post('/api/accounts/:id/credits', async (c) => {
   } catch (e: any) {
     return c.json({ error: e?.message || String(e) }, 500);
   }
-});
+  },
+);
 
 // ── Debit credits ────────────────────────────────────────────────────────────
-adminApp.post('/api/accounts/:id/credits/debit', async (c) => {
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/accounts/{id}/credits/debit',
+    tags: ['admin'],
+    summary: 'Debit credits from an account',
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              amount: z.number(),
+              description: z.string().optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), balance: z.any() }), 'Debit result'),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   try {
     const accountId = c.req.param('id');
     const actorUserId = c.get('userId') as string | undefined;
@@ -202,4 +318,5 @@ adminApp.post('/api/accounts/:id/credits/debit', async (c) => {
   } catch (e: any) {
     return c.json({ error: e?.message || String(e) }, 500);
   }
-});
+  },
+);

@@ -1,5 +1,7 @@
-import { Context, Hono } from 'hono';
+import { Context } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
+import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { accountGroupMembers, accountGroups, accountInvitations, accountMembers, accounts, accountUser, projectMembers, projects } from '@kortix/db';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
@@ -38,7 +40,95 @@ import { iamRouter } from './iam';
 import { auditRouter } from './audit';
 import { accountSessionGate } from '../iam/session-gate';
 
-export const accountsRouter = new Hono<AppEnv>();
+export const accountsRouter = makeOpenApiApp<AppEnv>();
+
+// ─── Shared response/request schemas (power the Scalar docs) ────────────────
+
+const AccountSummarySchema = z
+  .object({
+    account_id: z.string(),
+    name: z.string(),
+    slug: z.string(),
+    personal_account: z.boolean(),
+    created_at: z.string(),
+    updated_at: z.string(),
+    account_role: z.string().optional(),
+    is_primary_owner: z.boolean().optional(),
+  })
+  .openapi('AccountSummary');
+
+const AccountDetailSchema = z
+  .object({
+    account_id: z.string(),
+    name: z.string(),
+    personal_account: z.boolean(),
+    member_count: z.number(),
+    project_count: z.number(),
+    role: z.string(),
+    created_at: z.string(),
+    updated_at: z.string(),
+  })
+  .openapi('AccountDetail');
+
+const AccountMemberSchema = z
+  .object({
+    user_id: z.string(),
+    email: z.string().nullable(),
+    account_role: z.string(),
+    is_super_admin: z.boolean(),
+    explicit_project_count: z.number(),
+    groups: z.array(z.object({ group_id: z.string(), name: z.string() })),
+    active_pat_count: z.number(),
+    has_verified_mfa: z.boolean(),
+    joined_at: z.string(),
+  })
+  .openapi('AccountMember');
+
+const AccountTokenSchema = z
+  .object({
+    token_id: z.string(),
+    name: z.string(),
+    public_key: z.string(),
+    status: z.string(),
+    expires_at: z.string().nullable(),
+    last_used_at: z.string().nullable().optional(),
+    created_at: z.string(),
+    revoked_at: z.string().nullable().optional(),
+    secret_key: z.string().optional(),
+  })
+  .openapi('AccountToken');
+
+const AccountInviteSchema = z
+  .object({
+    invite_id: z.string(),
+    email: z.string(),
+    initial_role: z.string(),
+    invited_by: z.string().nullable(),
+    created_at: z.string(),
+    expires_at: z.string(),
+    invite_url: z.string(),
+  })
+  .openapi('AccountInvite');
+
+const OkSchema = z.object({ ok: z.boolean() }).openapi('OkResponse');
+
+const MeSchema = z
+  .object({
+    user_id: z.string(),
+    email: z.string(),
+    accounts: z.array(
+      z.object({
+        account_id: z.string(),
+        slug: z.string(),
+        name: z.string(),
+        personal_account: z.boolean(),
+        role: z.string(),
+      }),
+    ),
+  })
+  .openapi('AccountMe');
+
+const AccountIdParam = z.object({ accountId: z.string() });
 
 accountsRouter.use('/*', supabaseAuth);
 // Enforce per-account session policies (max lifetime / idle timeout /
@@ -83,7 +173,19 @@ async function resolveAccountForUser(
 }
 
 // GET /v1/accounts/me — identity probe for CLI + dashboard nav
-accountsRouter.get('/me', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/me',
+    tags: ['accounts'],
+    summary: 'Identity probe for CLI + dashboard nav',
+    ...auth,
+    responses: {
+      200: json(MeSchema, 'The authenticated user and their account memberships'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   let userEmail = (c.get('userEmail') as string) || '';
   // CLI PAT requests carry no email in context (the auth middleware sets it
@@ -126,10 +228,24 @@ accountsRouter.get('/me', async (c) => {
       role: m.accountRole,
     })),
   });
-});
+  },
+);
 
 // GET /v1/accounts/tokens — list CLI PATs for the active account
-accountsRouter.get('/tokens', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/tokens',
+    tags: ['accounts'],
+    summary: 'List CLI PATs for the active account',
+    ...auth,
+    request: { query: z.object({ account_id: z.string() }).partial() },
+    responses: {
+      200: json(z.array(AccountTokenSchema), 'Personal access tokens'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const queryAccount = c.req.query('account_id') ?? undefined;
 
@@ -153,10 +269,36 @@ accountsRouter.get('/tokens', async (c) => {
       revoked_at: t.revokedAt?.toISOString() ?? null,
     })),
   );
-});
+  },
+);
 
 // POST /v1/accounts/tokens — mint a new PAT (plaintext returned ONCE)
-accountsRouter.post('/tokens', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/tokens',
+    tags: ['accounts'],
+    summary: 'Mint a new PAT (plaintext returned once)',
+    ...auth,
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              name: z.string(),
+              account_id: z.string().optional(),
+              expires_at: z.string().optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      201: json(AccountTokenSchema, 'The newly minted token (secret_key returned once)'),
+      ...errors(400, 401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const body = await readBodyTokens(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -205,10 +347,27 @@ accountsRouter.post('/tokens', async (c) => {
     },
     201,
   );
-});
+  },
+);
 
 // DELETE /v1/accounts/tokens/:tokenId — revoke a PAT
-accountsRouter.delete('/tokens/:tokenId', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/tokens/{tokenId}',
+    tags: ['accounts'],
+    summary: 'Revoke a PAT',
+    ...auth,
+    request: {
+      params: z.object({ tokenId: z.string() }),
+      query: z.object({ account_id: z.string() }).partial(),
+    },
+    responses: {
+      200: json(OkSchema, 'Revocation result'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const tokenId = c.req.param('tokenId');
   const queryAccount = c.req.query('account_id') ?? undefined;
@@ -227,7 +386,8 @@ accountsRouter.delete('/tokens/:tokenId', async (c) => {
     return c.json({ error: 'token not found or already revoked' }, 404);
   }
   return c.json({ ok: true });
-});
+  },
+);
 
 type AccountRole = 'owner' | 'admin' | 'member';
 
@@ -350,7 +510,19 @@ async function autoClaimPendingInvites(userId: string, email: string): Promise<v
 }
 
 // GET /v1/accounts — list user's accounts.
-accountsRouter.get('/', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['accounts'],
+    summary: "List the user's accounts",
+    ...auth,
+    responses: {
+      200: json(z.array(AccountSummarySchema), 'Accounts the user belongs to'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const userEmail = c.get('userEmail') as string;
 
@@ -453,10 +625,26 @@ accountsRouter.get('/', async (c) => {
       },
     ]);
   }
-});
+  },
+);
 
 // POST /v1/accounts — create a new team account.
-accountsRouter.post('/', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/',
+    tags: ['accounts'],
+    summary: 'Create a new team account',
+    ...auth,
+    request: {
+      body: { content: { 'application/json': { schema: z.object({ name: z.string() }) } } },
+    },
+    responses: {
+      201: json(AccountSummarySchema, 'The newly created account'),
+      ...errors(400, 401),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const body = await readBody(c);
   const name = normalizeString(body.name);
@@ -488,10 +676,24 @@ accountsRouter.post('/', async (c) => {
     },
     201,
   );
-});
+  },
+);
 
 // GET /v1/accounts/:accountId — details.
-accountsRouter.get('/:accountId', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}',
+    tags: ['accounts'],
+    summary: 'Get account details',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(AccountDetailSchema, 'Account details'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
 
@@ -524,10 +726,27 @@ accountsRouter.get('/:accountId', async (c) => {
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   });
-});
+  },
+);
 
 // PATCH /v1/accounts/:accountId — rename. Gated on account.write via IAM.
-accountsRouter.patch('/:accountId', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{accountId}',
+    tags: ['accounts'],
+    summary: 'Rename an account',
+    ...auth,
+    request: {
+      params: AccountIdParam,
+      body: { content: { 'application/json': { schema: z.object({ name: z.string() }) } } },
+    },
+    responses: {
+      200: json(AccountSummarySchema, 'The updated account'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
 
@@ -548,10 +767,24 @@ accountsRouter.patch('/:accountId', async (c) => {
   if (!row) return c.json({ error: 'Not found' }, 404);
 
   return c.json(serializeAccount(row));
-});
+  },
+);
 
 // GET /v1/accounts/:accountId/members — list members.
-accountsRouter.get('/:accountId/members', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/members',
+    tags: ['accounts'],
+    summary: 'List account members',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.array(AccountMemberSchema), 'Account members'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
 
@@ -656,12 +889,38 @@ accountsRouter.get('/:accountId/members', async (c) => {
       joined_at: r.joinedAt.toISOString(),
     })),
   );
-});
+  },
+);
 
 // POST /v1/accounts/:accountId/members — invite a user by email. If the user
 // exists, they're added immediately. Otherwise we create a pending invitation
 // that auto-claims on first /v1/accounts call after signup.
-accountsRouter.post('/:accountId/members', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/members',
+    tags: ['accounts'],
+    summary: 'Invite a user by email (added immediately or pending invite)',
+    ...auth,
+    request: {
+      params: AccountIdParam,
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ email: z.string(), role: z.string().optional() }),
+          },
+        },
+      },
+    },
+    responses: {
+      201: json(
+        z.record(z.string(), z.any()),
+        'Member added or pending invitation created',
+      ),
+      ...errors(400, 401, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
   const accountId = c.req.param('accountId');
@@ -760,10 +1019,24 @@ accountsRouter.post('/:accountId/members', async (c) => {
     },
     201,
   );
-});
+  },
+);
 
 // GET /v1/accounts/:accountId/invites — list pending invitations.
-accountsRouter.get('/:accountId/invites', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/invites',
+    tags: ['accounts'],
+    summary: 'List pending invitations',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(z.array(AccountInviteSchema), 'Pending invitations'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
 
@@ -792,10 +1065,24 @@ accountsRouter.get('/:accountId/invites', async (c) => {
       invite_url: buildInviteUrl(r.inviteId),
     })),
   );
-});
+  },
+);
 
 // DELETE /v1/accounts/:accountId/invites/:inviteId — cancel a pending invite.
-accountsRouter.delete('/:accountId/invites/:inviteId', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{accountId}/invites/{inviteId}',
+    tags: ['accounts'],
+    summary: 'Cancel a pending invite',
+    ...auth,
+    request: { params: z.object({ accountId: z.string(), inviteId: z.string() }) },
+    responses: {
+      200: json(OkSchema, 'Cancellation result'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const inviteId = c.req.param('inviteId');
@@ -815,11 +1102,34 @@ accountsRouter.delete('/:accountId/invites/:inviteId', async (c) => {
     );
 
   return c.json({ ok: true });
-});
+  },
+);
 
 // POST /v1/accounts/:accountId/invites/:inviteId/resend — re-send the invite
 // email and bump expires_at to a fresh 14-day window.
-accountsRouter.post('/:accountId/invites/:inviteId/resend', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/invites/{inviteId}/resend',
+    tags: ['accounts'],
+    summary: 'Resend an invite email and refresh its expiry',
+    ...auth,
+    request: { params: z.object({ accountId: z.string(), inviteId: z.string() }) },
+    responses: {
+      200: json(
+        z.object({
+          ok: z.boolean(),
+          expires_at: z.string(),
+          invite_url: z.string(),
+          email_sent: z.boolean(),
+          email_skip_reason: z.string().nullable(),
+        }),
+        'Resend result',
+      ),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const callerEmail = (c.get('userEmail') as string | undefined) ?? null;
   const accountId = c.req.param('accountId');
@@ -869,10 +1179,24 @@ accountsRouter.post('/:accountId/invites/:inviteId/resend', async (c) => {
     email_skip_reason:
       delivery && delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
   });
-});
+  },
+);
 
 // DELETE /v1/accounts/:accountId/members/:userId — remove a member.
-accountsRouter.delete('/:accountId/members/:userId', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{accountId}/members/{userId}',
+    tags: ['accounts'],
+    summary: 'Remove a member',
+    ...auth,
+    request: { params: z.object({ accountId: z.string(), userId: z.string() }) },
+    responses: {
+      200: json(OkSchema, 'Removal result'),
+      ...errors(401, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const callerUserId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
@@ -908,10 +1232,34 @@ accountsRouter.delete('/:accountId/members/:userId', async (c) => {
   void onMemberRemoved(accountId, targetUserId).catch(() => {});
 
   return c.json({ ok: true });
-});
+  },
+);
 
 // PATCH /v1/accounts/:accountId/members/:userId — change role.
-accountsRouter.patch('/:accountId/members/:userId', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{accountId}/members/{userId}',
+    tags: ['accounts'],
+    summary: "Change a member's role",
+    ...auth,
+    request: {
+      params: z.object({ accountId: z.string(), userId: z.string() }),
+      body: { content: { 'application/json': { schema: z.object({ role: z.string() }) } } },
+    },
+    responses: {
+      200: json(
+        z.object({
+          user_id: z.string(),
+          account_role: z.string(),
+          unchanged: z.boolean().optional(),
+        }),
+        'The updated member role',
+      ),
+      ...errors(400, 401, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const callerUserId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const targetUserId = c.req.param('userId');
@@ -972,10 +1320,24 @@ accountsRouter.patch('/:accountId/members/:userId', async (c) => {
     user_id: targetUserId,
     account_role: newRole,
   });
-});
+  },
+);
 
 // POST /v1/accounts/:accountId/leave — leave an account.
-accountsRouter.post('/:accountId/leave', async (c) => {
+accountsRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/leave',
+    tags: ['accounts'],
+    summary: 'Leave an account',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(OkSchema, 'Leave result'),
+      ...errors(401, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
 
@@ -1012,7 +1374,8 @@ accountsRouter.post('/:accountId/leave', async (c) => {
   void onMemberRemoved(accountId, userId).catch(() => {});
 
   return c.json({ ok: true });
-});
+  },
+);
 
 // Avoid unused-import lint warnings if sql tagged template isn't needed elsewhere.
 void sql;

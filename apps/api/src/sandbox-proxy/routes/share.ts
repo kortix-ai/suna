@@ -110,7 +110,7 @@ shareApp.openapi(
   // Manual body parsing retained: the original contract returns a custom
   // { error: 'Invalid JSON body' } / field-specific 400s before any access
   // check, and proxies the sandbox's opaque status code through unchanged.
-  async (c) => {
+  async (c: any) => {
     let body: { sandbox_id: string; port: number; ttl?: string; label?: string }
     try {
       body = await c.req.json()
@@ -173,7 +173,7 @@ shareApp.openapi(
   }),
   // Manual query read kept — original returns a custom 400 envelope and proxies
   // the sandbox's status code through.
-  async (c) => {
+  async (c: any) => {
     const sandbox_id = c.req.query('sandbox_id')
     if (!sandbox_id || typeof sandbox_id !== 'string') {
       return c.json({ error: 'sandbox_id is required (string)' }, 400)
@@ -220,7 +220,7 @@ shareApp.openapi(
   }),
   // Manual param/query read kept — original returns field-specific 400 envelopes
   // and proxies the sandbox's status code through.
-  async (c) => {
+  async (c: any) => {
     const sandbox_id = c.req.query('sandbox_id')
     if (!sandbox_id || typeof sandbox_id !== 'string') {
       return c.json({ error: 'sandbox_id is required (string)' }, 400)

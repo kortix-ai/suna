@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { and, desc, eq, inArray, lt, sql } from 'drizzle-orm';
 import {
@@ -38,8 +38,9 @@ import {
   type StreamTaskChunk,
 } from './slack-api';
 import { config } from '../config';
+import { makeOpenApiApp, json, errors, ErrorSchema } from '../openapi';
 
-export const slackWebhookApp = new Hono();
+export const slackWebhookApp = makeOpenApiApp();
 
 const FIVE_MINUTES = 5 * 60;
 
@@ -592,7 +593,21 @@ function buildFinalPlanBlocks(
 const PICKER_TTL_MS = 60 * 60 * 1000;
 const pendingPickers = new Map<string, { envelope: SlackEnvelope; expiry: number }>();
 
-slackWebhookApp.post('/', async (c) => {
+slackWebhookApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/',
+    tags: ['channels'],
+    summary: 'Slack Events API webhook (signature verified)',
+    request: {
+      body: { content: { 'application/json': { schema: z.any() } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean().optional(), challenge: z.string().optional() }).passthrough(), 'Accepted'),
+      ...errors(400, 401, 503),
+    },
+  }),
+  async (c: any) => {
   const mode = slackOauthMode();
   if (!mode.available || !mode.signingSecret) {
     return c.json({ error: 'OAuth mode not configured' }, 503);
@@ -643,9 +658,24 @@ slackWebhookApp.post('/', async (c) => {
   })().catch((err) => console.error('[slack-webhook] oauth handler failed', err));
 
   return c.json({ ok: true });
-});
+},
+);
 
-slackWebhookApp.post('/interactivity', async (c) => {
+slackWebhookApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/interactivity',
+    tags: ['channels'],
+    summary: 'Slack interactivity webhook (signature verified)',
+    request: {
+      body: { content: { 'application/x-www-form-urlencoded': { schema: z.any() } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean() }).passthrough(), 'Accepted'),
+      ...errors(401, 503),
+    },
+  }),
+  async (c: any) => {
   const mode = slackOauthMode();
   if (!mode.available || !mode.signingSecret) {
     return c.json({ error: 'OAuth mode not configured' }, 503);
@@ -670,11 +700,26 @@ slackWebhookApp.post('/interactivity', async (c) => {
     );
   }
   return c.json({ ok: true });
-});
+},
+);
 
 // Slash commands — Slack POSTs application/x-www-form-urlencoded here when
 // a user runs `/kortix …` in any channel/DM. Must respond within 3s.
-slackWebhookApp.post('/commands', async (c) => {
+slackWebhookApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/commands',
+    tags: ['channels'],
+    summary: 'Slack slash command webhook (signature verified)',
+    request: {
+      body: { content: { 'application/x-www-form-urlencoded': { schema: z.any() } } },
+    },
+    responses: {
+      200: json(z.object({ response_type: z.string().optional(), text: z.string().optional() }).passthrough(), 'Slash command response'),
+      ...errors(401, 503),
+    },
+  }),
+  async (c: any) => {
   const mode = slackOauthMode();
   if (!mode.available || !mode.signingSecret) {
     return c.json({ response_type: 'ephemeral', text: 'OAuth mode not configured on this server.' }, 503);
@@ -705,7 +750,8 @@ slackWebhookApp.post('/commands', async (c) => {
       text: 'Something went wrong handling that command. Try again in a moment.',
     });
   }
-});
+},
+);
 
 type ProjectResolution =
   | { kind: 'project'; projectId: string }
@@ -1542,7 +1588,22 @@ async function handleBlockAction(payload: SlackInteractionPayload): Promise<void
   }
 }
 
-slackWebhookApp.post('/:projectId', async (c) => {
+slackWebhookApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}',
+    tags: ['channels'],
+    summary: 'Per-project (BYO app) Slack Events webhook (signature verified)',
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: z.any() } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean().optional(), challenge: z.string().optional() }).passthrough(), 'Accepted'),
+      ...errors(400, 401, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const rawBody = await c.req.text();
 
@@ -1565,7 +1626,8 @@ slackWebhookApp.post('/:projectId', async (c) => {
     console.error('[slack-webhook] byo handler failed', err),
   );
   return c.json({ ok: true });
-});
+},
+);
 
 type EventClass = 'mention' | 'dm' | 'follow_up' | 'ignore';
 

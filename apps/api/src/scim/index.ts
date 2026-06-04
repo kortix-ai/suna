@@ -16,7 +16,8 @@
 //   - Full filter grammar — only `userName eq` / `id eq` / `displayName eq` are
 //     supported, which covers the request patterns Okta and Azure AD actually use.
 
-import { Context, Hono } from 'hono';
+import { Context } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, inArray } from 'drizzle-orm';
 import {
   accountGroupMembers,
@@ -29,13 +30,29 @@ import { db } from '../shared/db';
 import { getSupabase } from '../shared/supabase';
 import { recordAuditEvent } from '../shared/audit';
 import { scimAuth, scimError } from '../middleware/scim-auth';
+import { makeOpenApiApp, json, errors, ErrorSchema } from '../openapi';
 
-export const scimRouter = new Hono();
+// SCIM payloads are large/dynamic — model permissively.
+const ScimResource = z.record(z.string(), z.any());
+
+export const scimRouter = makeOpenApiApp<any>();
 scimRouter.use('/accounts/:accountId/*', scimAuth);
 
 // ─── Discovery ────────────────────────────────────────────────────────────
 
-scimRouter.get('/accounts/:accountId/ServiceProviderConfig', (c) => {
+scimRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/accounts/{accountId}/ServiceProviderConfig',
+    tags: ['scim'],
+    summary: 'SCIM ServiceProviderConfig (capabilities discovery)',
+    request: { params: z.object({ accountId: z.string() }) },
+    responses: {
+      200: json(ScimResource, 'ServiceProviderConfig'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   return c.json({
     schemas: ['urn:ietf:params:scim:schemas:core:2.0:ServiceProviderConfig'],
     documentationUri: 'https://docs.kortix.com/scim',
@@ -54,7 +71,8 @@ scimRouter.get('/accounts/:accountId/ServiceProviderConfig', (c) => {
     ],
     meta: { resourceType: 'ServiceProviderConfig' },
   });
-});
+  },
+);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -188,7 +206,22 @@ async function scimAudit(
 
 // ─── Users ────────────────────────────────────────────────────────────────
 
-scimRouter.get('/accounts/:accountId/Users', async (c) => {
+scimRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/accounts/{accountId}/Users',
+    tags: ['scim'],
+    summary: 'List SCIM Users (filter by userName/id/externalId eq)',
+    request: {
+      params: z.object({ accountId: z.string() }),
+      query: z.object({ filter: z.string().optional() }),
+    },
+    responses: {
+      200: json(ScimResource, 'SCIM ListResponse'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const accountId = c.req.param('accountId');
   const filter = parseFilter(c.req.query('filter'));
 
@@ -226,9 +259,22 @@ scimRouter.get('/accounts/:accountId/Users', async (c) => {
           : [];
 
   return c.json(listResponse(filtered));
-});
+  },
+);
 
-scimRouter.get('/accounts/:accountId/Users/:userId', async (c) => {
+scimRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/accounts/{accountId}/Users/{userId}',
+    tags: ['scim'],
+    summary: 'Get a SCIM User',
+    request: { params: z.object({ accountId: z.string(), userId: z.string() }) },
+    responses: {
+      200: json(ScimResource, 'SCIM User'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const accountId = c.req.param('accountId');
   const userId = c.req.param('userId');
 
@@ -248,9 +294,26 @@ scimRouter.get('/accounts/:accountId/Users/:userId', async (c) => {
   if (!email) return scimError(c, 404, 'User has no email on record');
 
   return c.json(buildUser(accountId, member, email));
-});
+  },
+);
 
-scimRouter.post('/accounts/:accountId/Users', async (c) => {
+scimRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/accounts/{accountId}/Users',
+    tags: ['scim'],
+    summary: 'Create / provision a SCIM User',
+    request: {
+      params: z.object({ accountId: z.string() }),
+      body: { content: { 'application/json': { schema: ScimResource } } },
+    },
+    responses: {
+      200: json(ScimResource, 'SCIM User (already a member)'),
+      201: json(ScimResource, 'SCIM User created / invited'),
+      ...errors(400, 401, 403),
+    },
+  }),
+  async (c: any) => {
   const accountId = c.req.param('accountId');
   let body: Record<string, unknown>;
   try {
@@ -373,7 +436,8 @@ scimRouter.post('/accounts/:accountId/Users', async (c) => {
   });
 
   return c.json(buildUser(accountId, member!, userName), existingMember ? 200 : 201);
-});
+  },
+);
 
 /**
  * PATCH is the workhorse for IdP sync. Okta uses it to set active=false
@@ -384,7 +448,23 @@ scimRouter.post('/accounts/:accountId/Users', async (c) => {
  *
  * Anything more exotic returns 400 — clearer than silently ignoring.
  */
-scimRouter.patch('/accounts/:accountId/Users/:userId', async (c) => {
+scimRouter.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/accounts/{accountId}/Users/{userId}',
+    tags: ['scim'],
+    summary: 'Patch a SCIM User (deactivate / update externalId)',
+    request: {
+      params: z.object({ accountId: z.string(), userId: z.string() }),
+      body: { content: { 'application/json': { schema: ScimResource } } },
+    },
+    responses: {
+      200: json(ScimResource, 'SCIM User'),
+      204: { description: 'No content (deactivated / idempotent)' },
+      ...errors(400, 401, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const accountId = c.req.param('accountId');
   const userId = c.req.param('userId');
 
@@ -465,9 +545,22 @@ scimRouter.patch('/accounts/:accountId/Users/:userId', async (c) => {
   const emails = await emailsByUserId([userId]);
   const email = emails.get(userId);
   return c.json(buildUser(accountId, member, email ?? ''));
-});
+  },
+);
 
-scimRouter.delete('/accounts/:accountId/Users/:userId', async (c) => {
+scimRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/accounts/{accountId}/Users/{userId}',
+    tags: ['scim'],
+    summary: 'Delete / deprovision a SCIM User',
+    request: { params: z.object({ accountId: z.string(), userId: z.string() }) },
+    responses: {
+      204: { description: 'No content (deleted / idempotent)' },
+      ...errors(401, 403, 409),
+    },
+  }),
+  async (c: any) => {
   const accountId = c.req.param('accountId');
   const userId = c.req.param('userId');
 
@@ -501,7 +594,8 @@ scimRouter.delete('/accounts/:accountId/Users/:userId', async (c) => {
     before: { user_id: userId, account_role: member.accountRole },
   });
   return c.body(null, 204);
-});
+  },
+);
 
 // ─── Groups ───────────────────────────────────────────────────────────────
 
@@ -543,7 +637,22 @@ async function buildGroup(
   };
 }
 
-scimRouter.get('/accounts/:accountId/Groups', async (c) => {
+scimRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/accounts/{accountId}/Groups',
+    tags: ['scim'],
+    summary: 'List SCIM Groups (filter by displayName/id/externalId eq)',
+    request: {
+      params: z.object({ accountId: z.string() }),
+      query: z.object({ filter: z.string().optional() }),
+    },
+    responses: {
+      200: json(ScimResource, 'SCIM ListResponse'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const accountId = c.req.param('accountId');
   const filter = parseFilter(c.req.query('filter'));
 
@@ -575,9 +684,22 @@ scimRouter.get('/accounts/:accountId/Groups', async (c) => {
     filteredRows.map((r) => buildGroup(accountId, r)),
   );
   return c.json(listResponse(resources));
-});
+  },
+);
 
-scimRouter.get('/accounts/:accountId/Groups/:groupId', async (c) => {
+scimRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/accounts/{accountId}/Groups/{groupId}',
+    tags: ['scim'],
+    summary: 'Get a SCIM Group',
+    request: { params: z.object({ accountId: z.string(), groupId: z.string() }) },
+    responses: {
+      200: json(ScimResource, 'SCIM Group'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
 
@@ -595,9 +717,25 @@ scimRouter.get('/accounts/:accountId/Groups/:groupId', async (c) => {
   if (!row) return scimError(c, 404, 'Group not found');
 
   return c.json(await buildGroup(accountId, row));
-});
+  },
+);
 
-scimRouter.post('/accounts/:accountId/Groups', async (c) => {
+scimRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/accounts/{accountId}/Groups',
+    tags: ['scim'],
+    summary: 'Create a SCIM Group',
+    request: {
+      params: z.object({ accountId: z.string() }),
+      body: { content: { 'application/json': { schema: ScimResource } } },
+    },
+    responses: {
+      201: json(ScimResource, 'SCIM Group created'),
+      ...errors(400, 401, 403, 409),
+    },
+  }),
+  async (c: any) => {
   const accountId = c.req.param('accountId');
   let body: Record<string, unknown>;
   try {
@@ -684,7 +822,8 @@ scimRouter.post('/accounts/:accountId/Groups', async (c) => {
     .limit(1);
 
   return c.json(await buildGroup(accountId, row!), 201);
-});
+  },
+);
 
 /**
  * Group PATCH handles member adds/removes — the high-traffic operation for
@@ -694,7 +833,22 @@ scimRouter.post('/accounts/:accountId/Groups', async (c) => {
  *   - { Operations: [{ op:"replace", path:"displayName", value:"X" }] }
  *   - { Operations: [{ op:"replace", value: { members: [{value:userId}, ...] } }] } (Azure AD style)
  */
-scimRouter.patch('/accounts/:accountId/Groups/:groupId', async (c) => {
+scimRouter.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/accounts/{accountId}/Groups/{groupId}',
+    tags: ['scim'],
+    summary: 'Patch a SCIM Group (member add/remove, rename)',
+    request: {
+      params: z.object({ accountId: z.string(), groupId: z.string() }),
+      body: { content: { 'application/json': { schema: ScimResource } } },
+    },
+    responses: {
+      200: json(ScimResource, 'SCIM Group'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
 
@@ -840,9 +994,22 @@ scimRouter.patch('/accounts/:accountId/Groups/:groupId', async (c) => {
     .where(eq(accountGroups.groupId, groupId))
     .limit(1);
   return c.json(await buildGroup(accountId, row!));
-});
+  },
+);
 
-scimRouter.delete('/accounts/:accountId/Groups/:groupId', async (c) => {
+scimRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/accounts/{accountId}/Groups/{groupId}',
+    tags: ['scim'],
+    summary: 'Delete a SCIM Group',
+    request: { params: z.object({ accountId: z.string(), groupId: z.string() }) },
+    responses: {
+      204: { description: 'No content (deleted / idempotent)' },
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const accountId = c.req.param('accountId');
   const groupId = c.req.param('groupId');
 
@@ -860,7 +1027,8 @@ scimRouter.delete('/accounts/:accountId/Groups/:groupId', async (c) => {
     before: { name: rows[0]!.name },
   });
   return c.body(null, 204);
-});
+  },
+);
 
 // `accounts` import kept only so future endpoints (e.g. /Me) can resolve
 // the account by URL without re-importing. Silences unused-import lints.

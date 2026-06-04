@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
@@ -15,6 +15,7 @@ import {
   accountMembers,
   sandboxes,
 } from '@kortix/db';
+import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 
 // ─── Token Hashing ──────────────────────────────────────────────────────────
 
@@ -247,11 +248,39 @@ async function issueTokenPair(params: {
 
 // ─── Hono App ───────────────────────────────────────────────────────────────
 
-export const oauthApp = new Hono();
+export const oauthApp = makeOpenApiApp();
+
+// Route-scoped auth middleware (preserves the original per-route middleware).
+oauthApp.use('/authorize/consent/:requestId', supabaseAuth);
+oauthApp.use('/authorize/consent', supabaseAuth);
+oauthApp.use('/userinfo', oauthTokenAuth);
+oauthApp.use('/claimable-machines', oauthTokenAuth);
 
 // ─── GET /authorize ─────────────────────────────────────────────────────────
 
-oauthApp.get('/authorize', async (c) => {
+oauthApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/authorize',
+    tags: ['oauth'],
+    summary: 'OAuth 2.0 authorization endpoint (PKCE) — redirects to consent',
+    request: {
+      query: z.object({
+        client_id: z.string().optional(),
+        redirect_uri: z.string().optional(),
+        response_type: z.string().optional(),
+        scope: z.string().optional(),
+        state: z.string().optional(),
+        code_challenge: z.string().optional(),
+        code_challenge_method: z.string().optional(),
+      }),
+    },
+    responses: {
+      302: { description: 'Redirect to the consent screen' },
+      ...errors(400),
+    },
+  }),
+  async (c: any) => {
   const clientId = c.req.query('client_id');
   const redirectUri = c.req.query('redirect_uri');
   const responseType = c.req.query('response_type');
@@ -302,11 +331,33 @@ oauthApp.get('/authorize', async (c) => {
   consentUrl.searchParams.set('request_id', requestId);
 
   return c.redirect(consentUrl.toString());
-});
+},
+);
 
 // ─── GET /authorize/consent/:requestId ──────────────────────────────────────
 
-oauthApp.get('/authorize/consent/:requestId', supabaseAuth, async (c) => {
+oauthApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/authorize/consent/{requestId}',
+    tags: ['oauth'],
+    summary: 'Fetch a pending authorization request for the consent screen',
+    ...auth,
+    request: { params: z.object({ requestId: z.string() }) },
+    responses: {
+      200: json(
+        z.object({
+          client_id: z.string(),
+          client_name: z.string(),
+          scope: z.string(),
+          scopes: z.array(z.string()),
+        }),
+        'The pending authorization request',
+      ),
+      ...errors(400, 401),
+    },
+  }),
+  async (c: any) => {
   const requestId = c.req.param('requestId');
   if (!requestId) {
     return c.json({ error: 'invalid_request', error_description: 'Missing request id' }, 400);
@@ -322,11 +373,33 @@ oauthApp.get('/authorize/consent/:requestId', supabaseAuth, async (c) => {
     scope: request.scopes.join(' '),
     scopes: request.scopes,
   });
-});
+},
+);
 
 // ─── POST /authorize/consent ────────────────────────────────────────────────
 
-oauthApp.post('/authorize/consent', supabaseAuth, async (c) => {
+oauthApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/authorize/consent',
+    tags: ['oauth'],
+    summary: 'Approve or deny a pending authorization request',
+    ...auth,
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ request_id: z.string(), approved: z.boolean().optional() }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ redirect_uri: z.string() }), 'Redirect URI to send the user back to'),
+      ...errors(400, 401),
+    },
+  }),
+  async (c: any) => {
   const body = await c.req.json();
   const requestId = typeof body.request_id === 'string' ? body.request_id : '';
   const approved = body.approved === true;
@@ -396,11 +469,35 @@ oauthApp.post('/authorize/consent', supabaseAuth, async (c) => {
   if (request.state) redirect.searchParams.set('state', request.state);
 
   return c.json({ redirect_uri: redirect.toString() });
-});
+},
+);
 
 // ─── POST /token ────────────────────────────────────────────────────────────
 
-oauthApp.post('/token', async (c) => {
+oauthApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/token',
+    tags: ['oauth'],
+    summary: 'OAuth 2.0 token endpoint (authorization_code / refresh_token grants)',
+    request: {
+      body: { content: { 'application/x-www-form-urlencoded': { schema: z.any() } } },
+    },
+    responses: {
+      200: json(
+        z.object({
+          access_token: z.string(),
+          refresh_token: z.string(),
+          token_type: z.string(),
+          expires_in: z.number(),
+          scope: z.string(),
+        }).passthrough(),
+        'Token pair',
+      ),
+      ...errors(400, 401, 429),
+    },
+  }),
+  async (c: any) => {
   const body = await c.req.parseBody();
   const grantType = body['grant_type'] as string;
   const clientId = body['client_id'] as string;
@@ -437,7 +534,8 @@ oauthApp.post('/token', async (c) => {
   }
 
   return c.json({ error: 'unsupported_grant_type' }, 400);
-});
+},
+);
 
 async function handleAuthorizationCodeGrant(c: Context, body: Record<string, any>, client: any) {
   const code = body['code'] as string;
@@ -567,7 +665,22 @@ async function handleRefreshTokenGrant(c: Context, body: Record<string, any>, cl
 
 // ─── GET /userinfo ──────────────────────────────────────────────────────────
 
-oauthApp.get('/userinfo', oauthTokenAuth, async (c) => {
+oauthApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/userinfo',
+    tags: ['oauth'],
+    summary: 'OAuth userinfo (requires the `profile` scope)',
+    ...auth,
+    responses: {
+      200: json(
+        z.object({ user_id: z.string(), account_id: z.string(), email: z.string() }),
+        'User info',
+      ),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const scopeError = requireOAuthScope(c, 'profile');
   if (scopeError) return scopeError;
 
@@ -583,11 +696,37 @@ oauthApp.get('/userinfo', oauthTokenAuth, async (c) => {
     account_id: accountId,
     email: user?.email ?? '',
   });
-});
+},
+);
 
 // ─── GET /claimable-machines ────────────────────────────────────────────────
 
-oauthApp.get('/claimable-machines', oauthTokenAuth, async (c) => {
+oauthApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/claimable-machines',
+    tags: ['oauth'],
+    summary: 'List claimable machines (requires the `machines:read` scope)',
+    ...auth,
+    responses: {
+      200: json(
+        z.object({
+          machines: z.array(
+            z.object({
+              sandbox_id: z.string(),
+              external_id: z.string().nullable(),
+              name: z.string().nullable(),
+              status: z.string(),
+              created_at: z.string().optional(),
+            }),
+          ),
+        }),
+        'Claimable machines',
+      ),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const scopeError = requireOAuthScope(c, 'machines:read');
   if (scopeError) return scopeError;
 
@@ -619,4 +758,5 @@ oauthApp.get('/claimable-machines', oauthTokenAuth, async (c) => {
       created_at: r.created_at?.toISOString(),
     })),
   });
-});
+},
+);

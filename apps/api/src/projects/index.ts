@@ -9,6 +9,8 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { Cron } from 'croner';
 import { Context, Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
+import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 import { HTTPException } from 'hono/http-exception';
 import { and, asc, desc, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
@@ -209,8 +211,24 @@ import {
 import { validateSecretKey } from '../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../shared/crypto';
 
-export const projectsApp = new Hono<AppEnv>();
+export const projectsApp = makeOpenApiApp<AppEnv>();
 export const projectWebhooksApp = new Hono<AppEnv>();
+
+// ─── Reusable OpenAPI schemas (permissive — these power the docs, not runtime
+// response validation). Many handlers return large/dynamic shapes, so common
+// surfaces are modeled loosely and a permissive fallback is used elsewhere. ───
+const ProjectSchema = z.object({}).passthrough().openapi('Project');
+const SessionSchema = z.object({}).passthrough().openapi('Session');
+const ChangeRequestSchema = z.object({}).passthrough().openapi('ChangeRequest');
+const SecretSchema = z.object({}).passthrough().openapi('Secret');
+const TriggerSchema = z.object({}).passthrough().openapi('Trigger');
+const AppSchema = z.object({}).passthrough().openapi('App');
+const SnapshotSchema = z.object({}).passthrough().openapi('Snapshot');
+const SandboxTemplateSchema = z.object({}).passthrough().openapi('SandboxTemplate');
+const AccessMemberSchema = z.object({}).passthrough().openapi('AccessMember');
+const GroupGrantSchema = z.object({}).passthrough().openapi('GroupGrant');
+const CommitSchema = z.object({}).passthrough().openapi('Commit');
+const AnyObject = z.record(z.string(), z.any());
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -2777,7 +2795,18 @@ export function stopProjectTriggerScheduler(): void {
 }
 
 // GET /v1/projects
-projectsApp.get('/', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['projects'],
+    summary: 'GET /',
+    ...auth,
+    responses: {
+        200: json(z.array(ProjectSchema), 'Projects the caller can read'),
+    },
+  }),
+  async (c: any) => {
   const scope = await resolveProjectAccount(c);
   // Reach through `any` for non-typed context keys set by the auth
   // middleware (the AppEnv only types userId/userEmail).
@@ -2852,10 +2881,26 @@ projectsApp.get('/', async (c) => {
       return serializeProject(row, { projectRole, effectiveRole });
     }),
   );
-});
+},
+);
 
 // POST /v1/projects
-projectsApp.post('/', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/',
+    tags: ['projects'],
+    summary: 'POST /',
+    ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(ProjectSchema, 'The created project'),
+        ...errors(400, 409),
+    },
+  }),
+  async (c: any) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
   // IAM-gated. Engine consults super-admin bypass, direct + group
@@ -2916,7 +2961,8 @@ projectsApp.post('/', async (c) => {
   );
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
-});
+},
+);
 
 // POST /v1/projects/provision
 // Managed-git "Create project": provisions a repo on the managed backend +
@@ -2924,7 +2970,22 @@ projectsApp.post('/', async (c) => {
 // registers the project.
 // Used by the web "Create project" button and `kortix ship` when a working tree
 // has no `origin` remote. BYO-repo projects go through POST / and /create-repo.
-projectsApp.post('/provision', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/provision',
+    tags: ['projects'],
+    summary: 'POST /provision',
+    ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(z.any(), 'OK'),
+        ...errors(400, 403, 502, 503),
+    },
+  }),
+  async (c: any) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
   if (!(await authorize(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
@@ -3107,13 +3168,29 @@ projectsApp.post('/provision', async (c) => {
     },
     201,
   );
-});
+},
+);
 
 // POST /v1/projects/:projectId/git-token
 // Mint a fresh scoped push token for a *managed* project so the CLI
 // can push on a later `kortix ship` without persisting credentials in git config.
 // Returns 409 for BYO projects (they push with the user's own git remote auth).
-projectsApp.post('/:projectId/git-token', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/git-token',
+    tags: ['github'],
+    summary: 'POST /:projectId/git-token',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 409, 503),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -3138,14 +3215,31 @@ projectsApp.post('/:projectId/git-token', async (c) => {
     repo_id: remote.externalRepoId,
     repo_url: upstream?.url ?? loaded.row.repoUrl,
   });
-});
+},
+);
 
 // POST /v1/projects/:projectId/git/collaborators
 // Invite a GitHub user as a collaborator on a MANAGED repo — lets the project
 // creator pull "their" Kortix-managed repo into their own GitHub account and
 // work on it on github.com directly. Managed repos only (the user already owns
 // BYO repos). GitHub sends a pending invite the user accepts.
-projectsApp.post('/:projectId/git/collaborators', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/git/collaborators',
+    tags: ['github'],
+    summary: 'POST /:projectId/git/collaborators',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404, 409, 502),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -3172,12 +3266,24 @@ projectsApp.post('/:projectId/git/collaborators', async (c) => {
   } catch (error) {
     return c.json({ error: (error as Error).message || 'Failed to invite collaborator' }, 502);
   }
-});
+},
+);
 
 // GET /v1/projects/github/installation?account_id=...
 // Account-scoped GitHub App install state. The client only receives metadata;
 // installation tokens are minted server-side at repo creation time.
-projectsApp.get('/github/installation', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/github/installation',
+    tags: ['github'],
+    summary: 'GET /github/installation',
+    ...auth,
+    responses: {
+        200: json(z.any(), 'OK'),
+    },
+  }),
+  async (c: any) => {
   const scope = await resolveProjectAccount(c);
   await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
@@ -3187,12 +3293,24 @@ projectsApp.get('/github/installation', async (c) => {
     ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
     : null;
   return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
-});
+},
+);
 
 // GET /v1/projects/github/installations?account_id=...
 // Vercel-style account Git connections surface. A Kortix account can connect
 // multiple GitHub users/orgs and pick the exact installation during import.
-projectsApp.get('/github/installations', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/github/installations',
+    tags: ['github'],
+    summary: 'GET /github/installations',
+    ...auth,
+    responses: {
+        200: json(z.any(), 'OK'),
+    },
+  }),
+  async (c: any) => {
   const scope = await resolveProjectAccount(c);
   await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
@@ -3202,13 +3320,29 @@ projectsApp.get('/github/installations', async (c) => {
     ? await createGitHubInstallationInstallUrl(scope.accountId, scope.userId)
     : null;
   return c.json(serializeGitHubInstallations(rows, scope.accountId, installUrl));
-});
+},
+);
 
 // POST /v1/projects/github/installation
 // Called after GitHub redirects back with installation_id + signed state.
 // We fetch installation metadata with the app JWT instead of trusting client
 // supplied owner information.
-projectsApp.post('/github/installation', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/github/installation',
+    tags: ['github'],
+    summary: 'POST /github/installation',
+    ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 502),
+    },
+  }),
+  async (c: any) => {
   const body = await readBody(c);
   const state = normalizeString(body.state);
   if (!state) return c.json({ error: 'state is required' }, 400);
@@ -3284,10 +3418,25 @@ projectsApp.post('/github/installation', async (c) => {
     .returning();
 
   return c.json(serializeGitHubInstallation(row, scope.accountId, null), 200);
-});
+},
+);
 
 // DELETE /v1/projects/github/installation?account_id=...
-projectsApp.delete('/github/installation', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/github/installation',
+    tags: ['github'],
+    summary: 'DELETE /github/installation',
+    ...auth,
+      request: {
+        query: z.object({}).passthrough(),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+    },
+  }),
+  async (c: any) => {
   const scope = await resolveProjectAccount(c);
   await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
   const installationId = normalizeString(c.req.query('installation_id') ?? c.req.query('installationId'));
@@ -3302,10 +3451,25 @@ projectsApp.delete('/github/installation', async (c) => {
       : eq(accountGithubInstallations.accountId, scope.accountId));
 
   return c.json({ ok: true });
-});
+},
+);
 
 // DELETE /v1/projects/github/installations/:installationId?account_id=...
-projectsApp.delete('/github/installations/:installationId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/github/installations/{installationId}',
+    tags: ['github'],
+    summary: 'DELETE /github/installations/:installationId',
+    ...auth,
+      request: {
+        params: z.object({ installationId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+    },
+  }),
+  async (c: any) => {
   const scope = await resolveProjectAccount(c);
   await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
   const installationId = c.req.param('installationId');
@@ -3318,12 +3482,28 @@ projectsApp.delete('/github/installations/:installationId', async (c) => {
     ));
 
   return c.json({ ok: true });
-});
+},
+);
 
 // GET /v1/projects/github/repositories?account_id=...
 // Vercel-style import surface: list repos available to the account's GitHub App
 // installation without exposing an installation token to the browser.
-projectsApp.get('/github/repositories', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/github/repositories',
+    tags: ['github'],
+    summary: 'GET /github/repositories',
+    ...auth,
+      request: {
+        query: z.object({}).passthrough(),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(409, 502),
+    },
+  }),
+  async (c: any) => {
   const scope = await resolveProjectAccount(c);
   await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
 
@@ -3350,12 +3530,28 @@ projectsApp.get('/github/repositories', async (c) => {
     const message = (error as Error).message || 'Failed to list GitHub repositories';
     return c.json({ error: message }, 502);
   }
-});
+},
+);
 
 // POST /v1/projects/link-repository
 // Import an existing GitHub repo through the account GitHub App installation.
 // This validates repo access up front and stores a typed project_git_connection.
-projectsApp.post('/link-repository', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/link-repository',
+    tags: ['github'],
+    summary: 'POST /link-repository',
+    ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(z.any(), 'OK'),
+        ...errors(400, 409),
+    },
+  }),
+  async (c: any) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
   await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
@@ -3448,12 +3644,28 @@ projectsApp.post('/link-repository', async (c) => {
     project: serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
     git_connection: serializeProjectGitConnection(await getProjectGitConnection(row.projectId)),
   }, 201);
-});
+},
+);
 
 // POST /v1/projects/create-repo
 // Creates a new GitHub repository using the account's GitHub App installation,
 // then registers it as a Kortix project.
-projectsApp.post('/create-repo', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/create-repo',
+    tags: ['github'],
+    summary: 'POST /create-repo',
+    ...auth,
+      request: {
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(z.any(), 'OK'),
+        ...errors(400, 409, 502, 503),
+    },
+  }),
+  async (c: any) => {
   const body = await readBody(c);
   const scope = await resolveProjectAccount(c, body);
   await assertAuthorized(scope.userId, scope.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE);
@@ -3578,7 +3790,8 @@ projectsApp.post('/create-repo', async (c) => {
 
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
-});
+},
+);
 
 // ─── Manifest validation ──────────────────────────────────────────────────
 // One schema, exercised in three places: the CLI (`kortix ship` pre-flight +
@@ -3591,7 +3804,23 @@ projectsApp.post('/create-repo', async (c) => {
 // don't have the file on disk.
 
 // POST /v1/projects/:projectId/manifest/validate
-projectsApp.post('/:projectId/manifest/validate', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/manifest/validate',
+    tags: ['projects'],
+    summary: 'POST /:projectId/manifest/validate',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -3609,7 +3838,8 @@ projectsApp.post('/:projectId/manifest/validate', async (c) => {
     valid: verdict.valid,
     issues: verdict.issues,
   });
-});
+},
+);
 
 // ─── Sandbox templates ─────────────────────────────────────────────────────
 // One platform-default image, optionally extended by `[[sandbox.templates]]` entries
@@ -3673,7 +3903,22 @@ async function loadGitProject(loaded: { row: ProjectRow }) {
 // Available templates for this project: platform default + any `[[sandbox.templates]]`
 // entries from kortix.toml. Each row includes its live Daytona state so the
 // picker can show "ready" / "building" / "missing" at a glance.
-projectsApp.get('/:projectId/sandboxes', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sandboxes',
+    tags: ['sandboxes'],
+    summary: 'GET /:projectId/sandboxes',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 500),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -3689,11 +3934,27 @@ projectsApp.get('/:projectId/sandboxes', async (c) => {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: `Failed to list sandbox templates: ${message}` }, 500);
   }
-});
+},
+);
 
 // GET /v1/projects/:projectId/snapshots
 // Templates + recent build log. Used by the Sandbox panel.
-projectsApp.get('/:projectId/snapshots', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/snapshots',
+    tags: ['sandboxes'],
+    summary: 'GET /:projectId/snapshots',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.array(SnapshotSchema), 'Snapshots'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -3715,12 +3976,28 @@ projectsApp.get('/:projectId/snapshots', async (c) => {
     templates_error: templatesError,
     builds: builds.map(serializeBuildSummary),
   });
-});
+},
+);
 
 // GET /v1/projects/:projectId/sandbox-health
 // Cheap polling endpoint for the sidebar alert. Surfaces the platform default
 // template's live state + the most recent failed build (across any template).
-projectsApp.get('/:projectId/sandbox-health', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sandbox-health',
+    tags: ['sandboxes'],
+    summary: 'GET /:projectId/sandbox-health',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -3748,13 +4025,30 @@ projectsApp.get('/:projectId/sandbox-health', async (c) => {
     latest_build: latest ? serializeBuildSummary(latest) : null,
     latest_failure: latestFailure ? serializeBuildSummary(latestFailure) : null,
   });
-});
+},
+);
 
 // POST /v1/projects/:projectId/snapshots/rebuild
 // Force-rebuild the image for a given template slug (defaults to the platform
 // default). Deletes the existing Daytona snapshot (if any) so the next
 // ensureSandboxImage rebuilds from scratch. Returns 202.
-projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/snapshots/rebuild',
+    tags: ['sandboxes'],
+    summary: 'POST /:projectId/snapshots/rebuild',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        202: json(z.any(), 'OK'),
+        ...errors(404, 502),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -3791,13 +4085,29 @@ projectsApp.post('/:projectId/snapshots/rebuild', async (c) => {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: message }, 502);
   }
-});
+},
+);
 
 // POST /v1/projects/:projectId/snapshots/fix-with-agent
 // Spin up a session pre-seeded with the most recent build failure so an agent
 // can diagnose + fix the Dockerfile and open a change request. Requires a
 // previous successful build to host the fix session.
-projectsApp.post('/:projectId/snapshots/fix-with-agent', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/snapshots/fix-with-agent',
+    tags: ['sandboxes'],
+    summary: 'POST /:projectId/snapshots/fix-with-agent',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        201: json(z.any(), 'OK'),
+        ...errors(404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -3859,7 +4169,8 @@ projectsApp.post('/:projectId/snapshots/fix-with-agent', async (c) => {
   if (result.error) return sendSessionCreateError(c, result.error);
 
   return c.json({ session_id: result.row!.sessionId }, 201);
-});
+},
+);
 
 // ─── Template CRUD ─────────────────────────────────────────────────────────
 // Full CRUD over `kortix.sandbox_templates`. Shared/platform rows are read-
@@ -3867,7 +4178,22 @@ projectsApp.post('/:projectId/snapshots/fix-with-agent', async (c) => {
 
 // GET /v1/projects/:projectId/sandbox-templates — same as /sandboxes; thinner
 // path for the "templates only" UI surface. We re-use the same serializer.
-projectsApp.get('/:projectId/sandbox-templates', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sandbox-templates',
+    tags: ['sandboxes'],
+    summary: 'GET /:projectId/sandbox-templates',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.array(SandboxTemplateSchema), 'Sandbox templates'),
+        ...errors(404, 500),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -3882,10 +4208,27 @@ projectsApp.get('/:projectId/sandbox-templates', async (c) => {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: `Failed to list templates: ${message}` }, 500);
   }
-});
+},
+);
 
 // POST /v1/projects/:projectId/sandbox-templates — create a custom template.
-projectsApp.post('/:projectId/sandbox-templates', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sandbox-templates',
+    tags: ['sandboxes'],
+    summary: 'POST /:projectId/sandbox-templates',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(SandboxTemplateSchema, 'The created sandbox template'),
+        ...errors(400, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -3941,10 +4284,27 @@ projectsApp.post('/:projectId/sandbox-templates', async (c) => {
     }
     return c.json({ error: message }, 400);
   }
-});
+},
+);
 
 // PATCH /v1/projects/:projectId/sandbox-templates/:templateId — update fields.
-projectsApp.patch('/:projectId/sandbox-templates/:templateId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/sandbox-templates/{templateId}',
+    tags: ['sandboxes'],
+    summary: 'PATCH /:projectId/sandbox-templates/:templateId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), templateId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const templateId = c.req.param('templateId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -3976,10 +4336,26 @@ projectsApp.patch('/:projectId/sandbox-templates/:templateId', async (c) => {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: message }, 400);
   }
-});
+},
+);
 
 // DELETE /v1/projects/:projectId/sandbox-templates/:templateId
-projectsApp.delete('/:projectId/sandbox-templates/:templateId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/sandbox-templates/{templateId}',
+    tags: ['sandboxes'],
+    summary: 'DELETE /:projectId/sandbox-templates/:templateId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), templateId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const templateId = c.req.param('templateId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -4003,11 +4379,27 @@ projectsApp.delete('/:projectId/sandbox-templates/:templateId', async (c) => {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ error: message }, 400);
   }
-});
+},
+);
 
 // POST /v1/projects/:projectId/sandbox-templates/:templateId/build — trigger
 // a build (fire-and-forget). Returns 202.
-projectsApp.post('/:projectId/sandbox-templates/:templateId/build', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sandbox-templates/{templateId}/build',
+    tags: ['sandboxes'],
+    summary: 'POST /:projectId/sandbox-templates/:templateId/build',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), templateId: z.string() }),
+      },
+    responses: {
+        202: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const templateId = c.req.param('templateId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -4022,7 +4414,8 @@ projectsApp.post('/:projectId/sandbox-templates/:templateId/build', async (c) =>
   const project = await loadGitProject(loaded);
   kickPreBuild(project, { slug: row.slug, accountId: loaded.row.accountId, source: 'manual' });
   return c.json({ status: 'started', template_id: row.templateId, slug: row.slug }, 202);
-});
+},
+);
 
 // ─── Project-scoped CLI tokens ─────────────────────────────────────────────
 // These are PATs (`kortix_pat_...`) bound to a single project. The auth
@@ -4031,7 +4424,22 @@ projectsApp.post('/:projectId/sandbox-templates/:templateId/build', async (c) =>
 // auto-minted at session-create time and injected into the sandbox as
 // `KORTIX_TOKEN` so the in-container CLI works with zero config.
 
-projectsApp.get('/:projectId/cli-token', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/cli-token',
+    tags: ['projects'],
+    summary: 'GET /:projectId/cli-token',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -4048,9 +4456,26 @@ projectsApp.get('/:projectId/cli-token', async (c) => {
       revoked_at: t.revokedAt?.toISOString() ?? null,
     })),
   });
-});
+},
+);
 
-projectsApp.post('/:projectId/cli-token', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/cli-token',
+    tags: ['projects'],
+    summary: 'POST /:projectId/cli-token',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -4090,9 +4515,25 @@ projectsApp.post('/:projectId/cli-token', async (c) => {
     },
     201,
   );
-});
+},
+);
 
-projectsApp.delete('/:projectId/cli-token/:tokenId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/cli-token/{tokenId}',
+    tags: ['projects'],
+    summary: 'DELETE /:projectId/cli-token/:tokenId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), tokenId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const tokenId = c.req.param('tokenId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -4101,13 +4542,29 @@ projectsApp.delete('/:projectId/cli-token/:tokenId', async (c) => {
   const ok = await revokeAccountToken(tokenId, loaded.row.accountId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);
   return c.json({ ok: true });
-});
+},
+);
 
 // GET /v1/projects/:projectId/git/clone-credential
 // Runtime-only clone credential fetch. A session sandbox calls this endpoint
 // with its sandbox-scoped KORTIX_TOKEN and gets a fresh provider credential
 // just-in-time. Browser sessions must not receive raw Git tokens.
-projectsApp.get('/:projectId/git/clone-credential', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/git/clone-credential',
+    tags: ['github'],
+    summary: 'GET /:projectId/git/clone-credential',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(403, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const authType = (c as any).get('authType') as string | undefined;
   const tokenProjectId = (c as any).get('tokenProjectId') as string | undefined;
@@ -4174,14 +4631,31 @@ projectsApp.get('/:projectId/git/clone-credential', async (c) => {
     source: gitAuth.authSource,
     expires_at: null,
   });
-});
+},
+);
 
 // PUT /v1/projects/:projectId/git-credential
 // Stores provider-neutral BYO git credentials as platform credentials, not as
 // user-readable/injectable runtime secrets. The managed GitHub backend mints
 // credentials server-side; this exists for generic future providers such as
 // GitLab/Bitbucket until they have first-class adapters.
-projectsApp.put('/:projectId/git-credential', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/git-credential',
+    tags: ['github'],
+    summary: 'PUT /:projectId/git-credential',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -4230,14 +4704,30 @@ projectsApp.put('/:projectId/git-credential', async (c) => {
     provider,
     git_connection: serializeProjectGitConnection(connection),
   }, 200);
-});
+},
+);
 
 // GET /v1/projects/:projectId/secrets
 // Readable by any project member: returns each secret KEY as the per-user view
 // (the shared row + that member's own override, names only, no plaintext) plus
 // the manifest-declared required/optional env keys. Members manage only their
 // own override; managers additionally manage the shared row (`can_manage_shared`).
-projectsApp.get('/:projectId/secrets', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/secrets',
+    tags: ['secrets'],
+    summary: 'GET /:projectId/secrets',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.array(SecretSchema), 'Secrets'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -4281,11 +4771,28 @@ projectsApp.get('/:projectId/secrets', async (c) => {
     manifest_path: loaded.row.manifestPath,
     ...(manifestError ? { manifest_error: manifestError } : {}),
   });
-});
+},
+);
 
 // POST /v1/projects/:projectId/secrets
 // Upsert a project secret. The response intentionally omits value/value_enc.
-projectsApp.post('/:projectId/secrets', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/secrets',
+    tags: ['secrets'],
+    summary: 'POST /:projectId/secrets',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(SecretSchema, 'The created secret'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -4368,14 +4875,30 @@ projectsApp.post('/:projectId/secrets', async (c) => {
   const views = await loadSecretViewsForUser(projectId, subject, true);
   const view = views.find((v) => v.name === name);
   return c.json(view ?? { name }, 200);
-});
+},
+);
 
 // POST /v1/projects/:projectId/providers/openai/chatgpt/headless/start
 // Starts the OpenCode ChatGPT Pro/Plus headless device-code flow on the API
 // server. This deliberately does not require a running sandbox: provider
 // credentials are project configuration, and sandboxes only consume the saved
 // CODEX_AUTH_JSON secret later.
-projectsApp.post('/:projectId/providers/openai/chatgpt/headless/start', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/providers/openai/chatgpt/headless/start',
+    tags: ['secrets'],
+    summary: 'POST /:projectId/providers/openai/chatgpt/headless/start',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 500),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -4390,14 +4913,31 @@ projectsApp.post('/:projectId/providers/openai/chatgpt/headless/start', async (c
       error: err instanceof Error ? err.message : 'Failed to start ChatGPT authorization',
     }, 500);
   }
-});
+},
+);
 
 // POST /v1/projects/:projectId/providers/openai/chatgpt/headless/complete
 // Waits for the server-side OpenCode device flow to complete, then writes the
 // resulting auth.json into project_secrets as CODEX_AUTH_JSON. This is
 // intentionally Codex-specific; generic OpenCode auth can keep using its own
 // OPENCODE_AUTH_JSON row without being overwritten by subscription onboarding.
-projectsApp.post('/:projectId/providers/openai/chatgpt/headless/complete', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/providers/openai/chatgpt/headless/complete',
+    tags: ['secrets'],
+    summary: 'POST /:projectId/providers/openai/chatgpt/headless/complete',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 403, 404, 500),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -4491,10 +5031,26 @@ projectsApp.post('/:projectId/providers/openai/chatgpt/headless/complete', async
       error: err instanceof Error ? err.message : 'Failed to complete ChatGPT authorization',
     }, 500);
   }
-});
+},
+);
 
 // DELETE /v1/projects/:projectId/secrets/:name
-projectsApp.delete('/:projectId/secrets/:name', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/secrets/{name}',
+    tags: ['secrets'],
+    summary: 'DELETE /:projectId/secrets/:name',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), name: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const name = c.req.param('name')?.trim().toUpperCase();
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -4517,13 +5073,30 @@ projectsApp.delete('/:projectId/secrets/:name', async (c) => {
     ));
 
   return c.json({ ok: true });
-});
+},
+);
 
 // PUT /v1/projects/:projectId/secrets/:name/personal
 // Any project member sets/updates THEIR OWN per-key override (the "use mine"
 // value) and/or flips whether it's active. Operates only on the caller's row;
 // never touches the shared value or anyone else's override.
-projectsApp.put('/:projectId/secrets/:name/personal', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/secrets/{name}/personal',
+    tags: ['secrets'],
+    summary: 'PUT /:projectId/secrets/:name/personal',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), name: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -4584,11 +5157,27 @@ projectsApp.put('/:projectId/secrets/:name/personal', async (c) => {
   const subject = await resolveShareSubject(loaded.userId);
   const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'));
   return c.json(views.find((v) => v.name === name) ?? { name }, 200);
-});
+},
+);
 
 // DELETE /v1/projects/:projectId/secrets/:name/personal
 // Remove the caller's own override for this key (falls back to the shared value).
-projectsApp.delete('/:projectId/secrets/:name/personal', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/secrets/{name}/personal',
+    tags: ['secrets'],
+    summary: 'DELETE /:projectId/secrets/:name/personal',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), name: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const name = c.req.param('name')?.trim().toUpperCase();
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -4606,7 +5195,8 @@ projectsApp.delete('/:projectId/secrets/:name/personal', async (c) => {
     ));
 
   return c.json({ ok: true });
-});
+},
+);
 
 // GET /v1/projects/:projectId/triggers
 //
@@ -4614,13 +5204,29 @@ projectsApp.delete('/:projectId/secrets/:name/personal', async (c) => {
 // project's default branch, plus any parse errors and runtime state
 // (last_fired_at). The repo is the source of truth — POST/PATCH/DELETE
 // below commit/update/delete the underlying file.
-projectsApp.get('/:projectId/triggers', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/triggers',
+    tags: ['triggers'],
+    summary: 'GET /:projectId/triggers',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.array(TriggerSchema), 'Triggers'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   return c.json(await loadTriggersForResponse(projectId, loaded.row));
-});
+},
+);
 
 function buildPublicWebhookUrl(projectId: string, slug: string): string {
   const root = deriveKortixApiRoot(config.KORTIX_URL);
@@ -4943,7 +5549,23 @@ export async function commitManifest(
 // (or `name`) and validated for URL safety. Body shape:
 //   { slug?, name, type: 'cron'|'webhook', agent?, enabled?,
 //     prompt_template, cron?, timezone?, secret_env? }
-projectsApp.post('/:projectId/triggers', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/triggers',
+    tags: ['triggers'],
+    summary: 'POST /:projectId/triggers',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(TriggerSchema, 'The created trigger'),
+        ...errors(400, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -4974,10 +5596,27 @@ projectsApp.post('/:projectId/triggers', async (c) => {
   }
 
   return c.json(await loadTriggersForResponse(projectId, loaded.row), 201);
-});
+},
+);
 
 // PATCH /v1/projects/:projectId/triggers/:slug
-projectsApp.patch('/:projectId/triggers/:slug', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/triggers/{slug}',
+    tags: ['triggers'],
+    summary: 'PATCH /:projectId/triggers/:slug',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), slug: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
   const body = await readBody(c);
@@ -5009,10 +5648,26 @@ projectsApp.patch('/:projectId/triggers/:slug', async (c) => {
   }
 
   return c.json(await loadTriggersForResponse(projectId, loaded.row));
-});
+},
+);
 
 // DELETE /v1/projects/:projectId/triggers/:slug
-projectsApp.delete('/:projectId/triggers/:slug', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/triggers/{slug}',
+    tags: ['triggers'],
+    summary: 'DELETE /:projectId/triggers/:slug',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), slug: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -5049,7 +5704,8 @@ projectsApp.delete('/:projectId/triggers/:slug', async (c) => {
     ));
 
   return c.json({ ok: true });
-});
+},
+);
 
 // ─── Slack install — per project, secrets live in project_secrets ────────
 
@@ -5062,19 +5718,50 @@ interface SlackAuthTest {
 }
 
 // GET /v1/projects/:projectId/channels/slack/installation
-projectsApp.get('/:projectId/channels/slack/installation', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/slack/installation',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/slack/installation',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   const install = await loadSlackInstall(projectId);
   return c.json(install ?? null);
-});
+},
+);
 
 // GET /v1/projects/:projectId/channels/slack/mode
 // Tells the dashboard whether one-click "Add to Slack" is available (server
 // has SLACK_CLIENT_ID + SECRET + SIGNING_SECRET set) and the pre-signed
 // install URL to redirect the user to.
-projectsApp.get('/:projectId/channels/slack/mode', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/channels/slack/mode',
+    tags: ['channels'],
+    summary: 'GET /:projectId/channels/slack/mode',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -5088,10 +5775,27 @@ projectsApp.get('/:projectId/channels/slack/mode', async (c) => {
   } catch {
     return c.json({ oauth_available: false, install_url: null });
   }
-});
+},
+);
 
 // POST /v1/projects/:projectId/channels/slack/connect
-projectsApp.post('/:projectId/channels/slack/connect', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/channels/slack/connect',
+    tags: ['channels'],
+    summary: 'POST /:projectId/channels/slack/connect',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404, 502),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -5137,21 +5841,54 @@ projectsApp.post('/:projectId/channels/slack/connect', async (c) => {
     botUserId: authTest.user_id,
   });
   return c.json(summary);
-});
+},
+);
 
 // DELETE /v1/projects/:projectId/channels/slack/installation
-projectsApp.delete('/:projectId/channels/slack/installation', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/channels/slack/installation',
+    tags: ['channels'],
+    summary: 'DELETE /:projectId/channels/slack/installation',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   await deleteSlackInstall(projectId);
   return c.json({ status: 'disconnected' });
-});
+},
+);
 
 // POST /v1/projects/:projectId/turn-stream
 // Agent-cli relay for the live Slack plan: kind=step appends a checkpoint,
 // kind=answer finalizes the turn's streamed message with the agent's reply.
-projectsApp.post('/:projectId/turn-stream', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/turn-stream',
+    tags: ['projects'],
+    summary: 'POST /:projectId/turn-stream',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: { description: 'Event stream', content: { 'text/event-stream': { schema: z.any() } } },
+        ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
 
   // Two valid callers: a project-scoped PAT (dashboard or operator) and the
@@ -5216,7 +5953,8 @@ projectsApp.post('/:projectId/turn-stream', async (c) => {
       ? await relayTurnAnswer(sessionId, text, blocks)
       : await relayTurnStep(sessionId, text, { detail, outputForPrev, sourcesForPrev });
   return c.json({ ok });
-});
+},
+);
 
 // POST /v1/projects/:projectId/turn-question
 // Sandbox-to-apps/api relay for opencode's `question.asked` event. The
@@ -5225,7 +5963,23 @@ projectsApp.post('/:projectId/turn-stream', async (c) => {
 // We post a Block Kit form, block on Submit, return `answers: string[][]`,
 // and the sandbox POSTs the same payload to opencode's
 // /question/{requestID}/reply so the tool resumes.
-projectsApp.post('/:projectId/turn-question', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/turn-question',
+    tags: ['projects'],
+    summary: 'POST /:projectId/turn-question',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
 
   const authType = (c as any).get('authType') as string | undefined;
@@ -5301,13 +6055,29 @@ projectsApp.post('/:projectId/turn-question', async (c) => {
   const result = await postQuestionAndWait(sessionId, questions);
   if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
   return c.json({ ok: true, ask_id: result.ask_id, answers: result.answers });
-});
+},
+);
 
 // POST /v1/projects/:projectId/triggers/:slug/fire
 //
 // Manual fire for git-backed triggers. Reads the file, renders the prompt
 // against a synthetic payload, spawns a session. Manage role required.
-projectsApp.post('/:projectId/triggers/:slug/fire', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/triggers/{slug}/fire',
+    tags: ['triggers'],
+    summary: 'POST /:projectId/triggers/:slug/fire',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), slug: z.string() }),
+      },
+    responses: {
+        202: json(z.any(), 'OK'),
+        ...errors(404, 500),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -5344,7 +6114,8 @@ projectsApp.post('/:projectId/triggers/:slug/fire', async (c) => {
   }
   await markGitTriggerFired(projectId, slug, now);
   return c.json({ status: 'fired', session_id: result.sessionId ?? null }, 202);
-});
+},
+);
 
 // ── [[apps]] CRUD + deploy ──────────────────────────────────────────────────
 //
@@ -5577,16 +6348,48 @@ async function loadAppsForResponse(projectId: string, project: ProjectRow) {
 }
 
 // GET /v1/projects/:projectId/apps — list specs + latest deployment status
-projectsApp.get('/:projectId/apps', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/apps',
+    tags: ['apps'],
+    summary: 'GET /:projectId/apps',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.array(AppSchema), 'Apps'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   return c.json(await loadAppsForResponse(projectId, loaded.row));
-});
+},
+);
 
 // POST /v1/projects/:projectId/apps — add a new app to kortix.toml
-projectsApp.post('/:projectId/apps', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/apps',
+    tags: ['apps'],
+    summary: 'POST /:projectId/apps',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(AppSchema, 'The created app'),
+        ...errors(400, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -5615,10 +6418,27 @@ projectsApp.post('/:projectId/apps', async (c) => {
   }
 
   return c.json(await loadAppsForResponse(projectId, loaded.row), 201);
-});
+},
+);
 
 // PATCH /v1/projects/:projectId/apps/:slug — partial update merged onto current
-projectsApp.patch('/:projectId/apps/:slug', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/apps/{slug}',
+    tags: ['apps'],
+    summary: 'PATCH /:projectId/apps/:slug',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), slug: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
   const body = await readBody(c);
@@ -5647,11 +6467,27 @@ projectsApp.patch('/:projectId/apps/:slug', async (c) => {
   }
 
   return c.json(await loadAppsForResponse(projectId, loaded.row));
-});
+},
+);
 
 // DELETE /v1/projects/:projectId/apps/:slug — remove from manifest. Does
 // NOT auto-stop existing deployments; call /apps/:slug/stop first if needed.
-projectsApp.delete('/:projectId/apps/:slug', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/apps/{slug}',
+    tags: ['apps'],
+    summary: 'DELETE /:projectId/apps/:slug',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), slug: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -5677,11 +6513,27 @@ projectsApp.delete('/:projectId/apps/:slug', async (c) => {
     return c.json({ error: result.error }, result.status as 400 | 502);
   }
   return c.json({ ok: true });
-});
+},
+);
 
 // POST /v1/projects/:projectId/apps/:slug/deploy — manual deploy. Mirrors
 // what the sweep does on drift but bypasses the hash-equality skip.
-projectsApp.post('/:projectId/apps/:slug/deploy', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/apps/{slug}/deploy',
+    tags: ['apps'],
+    summary: 'POST /:projectId/apps/:slug/deploy',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), slug: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -5709,12 +6561,28 @@ projectsApp.post('/:projectId/apps/:slug/deploy', async (c) => {
     },
     status === 'active' ? 201 : 502,
   );
-});
+},
+);
 
 // POST /v1/projects/:projectId/apps/:slug/stop — tear down the latest
 // deployment on the provider. Marks the row 'stopped' locally even if
 // the provider call fails (best-effort).
-projectsApp.post('/:projectId/apps/:slug/stop', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/apps/{slug}/stop',
+    tags: ['apps'],
+    summary: 'POST /:projectId/apps/:slug/stop',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), slug: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -5739,11 +6607,27 @@ projectsApp.post('/:projectId/apps/:slug/stop', async (c) => {
     .returning();
 
   return c.json({ ok: true, deployment: updated ? serializeDeploymentRow(updated) : null });
-});
+},
+);
 
 // GET /v1/projects/:projectId/apps/:slug/logs — provider logs for the
 // latest deployment.
-projectsApp.get('/:projectId/apps/:slug/logs', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/apps/{slug}/logs',
+    tags: ['apps'],
+    summary: 'GET /:projectId/apps/:slug/logs',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), slug: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 502),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const slug = c.req.param('slug');
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -5759,10 +6643,26 @@ projectsApp.get('/:projectId/apps/:slug/logs', async (c) => {
   } catch (err) {
     return c.json({ ok: false, error: err instanceof Error ? err.message : 'logs unavailable' }, 502);
   }
-});
+},
+);
 
 // GET /v1/projects/:projectId
-projectsApp.get('/:projectId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}',
+    tags: ['projects'],
+    summary: 'GET /:projectId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(ProjectSchema, 'The project'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -5777,10 +6677,26 @@ projectsApp.get('/:projectId', async (c) => {
     projectRole: loaded.projectRole,
     effectiveRole: loaded.effectiveRole,
   }));
-});
+},
+);
 
 // GET /v1/projects/:projectId/detail
-projectsApp.get('/:projectId/detail', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/detail',
+    tags: ['projects'],
+    summary: 'GET /:projectId/detail',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(ProjectSchema, 'Project detail'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -5807,10 +6723,27 @@ projectsApp.get('/:projectId/detail', async (c) => {
     file_count: files.length,
     files: files.slice(0, 300),
   });
-});
+},
+);
 
 // GET /v1/projects/:projectId/files
-projectsApp.get('/:projectId/files', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/files',
+    tags: ['files'],
+    summary: 'GET /:projectId/files',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({}).passthrough(),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -5827,11 +6760,28 @@ projectsApp.get('/:projectId/files', async (c) => {
     c.header('X-Kortix-Repo-Status', 'unavailable');
   }
   return c.json(files.slice(0, 1000));
-});
+},
+);
 
 // GET /v1/projects/:projectId/files/archive?path=...&ref=...
 // Streams a zip archive of the repo (or a subtree) at the given ref.
-projectsApp.get('/:projectId/files/archive', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/files/archive',
+    tags: ['files'],
+    summary: 'GET /:projectId/files/archive',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({}).passthrough(),
+      },
+    responses: {
+        200: { description: 'Binary archive', content: { 'application/octet-stream': { schema: z.any() } } },
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -5854,10 +6804,27 @@ projectsApp.get('/:projectId/files/archive', async (c) => {
     const message = error instanceof Error ? error.message : 'Failed to archive directory';
     return c.json({ error: message }, 400);
   }
-});
+},
+);
 
 // GET /v1/projects/:projectId/files/content?path=...
-projectsApp.get('/:projectId/files/search', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/files/search',
+    tags: ['files'],
+    summary: 'GET /:projectId/files/search',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({}).passthrough(),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const query = normalizeString(c.req.query('q'));
   if (!query) return c.json({ error: 'q query param is required' }, 400);
@@ -5889,9 +6856,26 @@ projectsApp.get('/:projectId/files/search', async (c) => {
     });
     return c.json({ query, ref, content_search: contentSearch, results: [] });
   }
-});
+},
+);
 
-projectsApp.get('/:projectId/files/content', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/files/content',
+    tags: ['files'],
+    summary: 'GET /:projectId/files/content',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({}).passthrough(),
+      },
+    responses: {
+        200: { description: 'OK', content: { 'application/octet-stream': { schema: z.any() } } },
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const path = normalizeString(c.req.query('path'));
   if (!path) return c.json({ error: 'path query param is required' }, 400);
@@ -5901,10 +6885,27 @@ projectsApp.get('/:projectId/files/content', async (c) => {
   const ref = c.req.query('ref') || loaded.row.defaultBranch;
   const content = await readRepoFile(await withProjectGitAuth(loaded.row), path, ref);
   return c.json({ path, ref, content });
-});
+},
+);
 
 // GET /v1/projects/:projectId/files/history?path=...&ref=...&limit=...&skip=...
-projectsApp.get('/:projectId/files/history', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/files/history',
+    tags: ['files'],
+    summary: 'GET /:projectId/files/history',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({}).passthrough(),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const path = normalizeString(c.req.query('path'));
   if (!path) return c.json({ error: 'path query param is required' }, 400);
@@ -5921,10 +6922,26 @@ projectsApp.get('/:projectId/files/history', async (c) => {
     const message = error instanceof Error ? error.message : 'Failed to load history';
     return c.json({ error: message }, 400);
   }
-});
+},
+);
 
 // GET /v1/projects/:projectId/branches
-projectsApp.get('/:projectId/branches', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/branches',
+    tags: ['files'],
+    summary: 'GET /:projectId/branches',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -5943,10 +6960,27 @@ projectsApp.get('/:projectId/branches', async (c) => {
     c.header('X-Kortix-Repo-Status', 'unavailable');
     return c.json({ default_branch: loaded.row.defaultBranch, branches: [] });
   }
-});
+},
+);
 
 // GET /v1/projects/:projectId/commits?ref=...&path=...&limit=...&skip=...
-projectsApp.get('/:projectId/commits', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/commits',
+    tags: ['files'],
+    summary: 'GET /:projectId/commits',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({}).passthrough(),
+      },
+    responses: {
+        200: json(z.array(CommitSchema), 'Commits'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -5962,10 +6996,26 @@ projectsApp.get('/:projectId/commits', async (c) => {
     const message = error instanceof Error ? error.message : 'Failed to load commits';
     return c.json({ error: message }, 400);
   }
-});
+},
+);
 
 // GET /v1/projects/:projectId/commits/:sha
-projectsApp.get('/:projectId/commits/:sha', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/commits/{sha}',
+    tags: ['files'],
+    summary: 'GET /:projectId/commits/:sha',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sha: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const sha = c.req.param('sha');
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -5979,10 +7029,27 @@ projectsApp.get('/:projectId/commits/:sha', async (c) => {
     const message = error instanceof Error ? error.message : 'Failed to load commit';
     return c.json({ error: message }, 400);
   }
-});
+},
+);
 
 // GET /v1/projects/:projectId/commits/:sha/diff?path=...
-projectsApp.get('/:projectId/commits/:sha/diff', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/commits/{sha}/diff',
+    tags: ['files'],
+    summary: 'GET /:projectId/commits/:sha/diff',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sha: z.string() }),
+        query: z.object({}).passthrough(),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const sha = c.req.param('sha');
   const path = normalizeString(c.req.query('path'));
@@ -5996,14 +7063,31 @@ projectsApp.get('/:projectId/commits/:sha/diff', async (c) => {
     const message = error instanceof Error ? error.message : 'Failed to load diff';
     return c.json({ error: message }, 400);
   }
-});
+},
+);
 
 // GET /v1/projects/:projectId/version-diff?from=<ref>&into=<ref>
 // Lightweight preview used by the "Open change request" dialog so the user
 // can see whether there's anything to merge BEFORE creating the CR. Returns
 // a summary (no patch body) so the dialog can show "X files changed, +Y -Z"
 // live and gate the submit button.
-projectsApp.get('/:projectId/version-diff', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/version-diff',
+    tags: ['files'],
+    summary: 'GET /:projectId/version-diff',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({}).passthrough(),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const fromRef = normalizeString(c.req.query('from') ?? c.req.query('head'));
   const intoRef = normalizeString(c.req.query('into') ?? c.req.query('base'));
@@ -6047,10 +7131,27 @@ projectsApp.get('/:projectId/version-diff', async (c) => {
       error: error instanceof Error ? error.message : 'Failed to compute diff preview',
     }, 400);
   }
-});
+},
+);
 
 // PATCH /v1/projects/:projectId
-projectsApp.patch('/:projectId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}',
+    tags: ['projects'],
+    summary: 'PATCH /:projectId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(ProjectSchema, 'The updated project'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -6076,25 +7177,58 @@ projectsApp.patch('/:projectId', async (c) => {
     projectRole: loaded.projectRole,
     effectiveRole: loaded.effectiveRole,
   }));
-});
+},
+);
 
 // GET /v1/projects/:projectId/warm-pool
 // Live warm pool config + status for the Customize → Sandbox card: how many
 // sandboxes are ready (parked) vs warming (booting) right now.
-projectsApp.get('/:projectId/warm-pool', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/warm-pool',
+    tags: ['projects'],
+    summary: 'GET /:projectId/warm-pool',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
   const cfg = resolveWarmConfig(loaded.row.metadata);
   const counts = warmPoolEnabled() ? await getWarmPoolCounts(projectId) : { ready: 0, warming: 0 };
   return c.json({ available: warmPoolEnabled(), enabled: cfg.enabled, size: cfg.size, ...counts });
-});
+},
+);
 
 // PATCH /v1/projects/:projectId/warm-pool
 // Per-project warm pool config (Customize → Sandbox). DB-only — stored in
 // projects.metadata.warm_pool, never in kortix.toml. Applies immediately by
 // kicking a refill toward the new desired size.
-projectsApp.patch('/:projectId/warm-pool', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/warm-pool',
+    tags: ['projects'],
+    summary: 'PATCH /:projectId/warm-pool',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -6124,14 +7258,31 @@ projectsApp.patch('/:projectId/warm-pool', async (c) => {
   if (!row) return c.json({ error: 'Not found' }, 404);
   void refillProjectPool(projectId).catch(() => {});
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
-});
+},
+);
 
 // PATCH /v1/projects/:projectId/apps-config
 // Per-project toggle for the experimental [[apps]] deployment surface
 // (Customize → Settings). DB-only — stored in projects.metadata.apps_enabled,
 // never in kortix.toml. Overrides the operator default KORTIX_APPS_EXPERIMENTAL.
 // `enabled: null` clears the override and falls back to the operator default.
-projectsApp.patch('/:projectId/apps-config', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/apps-config',
+    tags: ['apps'],
+    summary: 'PATCH /:projectId/apps-config',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -6154,14 +7305,31 @@ projectsApp.patch('/:projectId/apps-config', async (c) => {
     .returning();
   if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
-});
+},
+);
 
 // PATCH /v1/projects/:projectId/onboarding
 // Persist whether the project's guided onboarding wizard has been completed
 // (or explicitly skipped). Stored in `metadata.onboarding_completed_at` so we
 // avoid a schema migration — the projects.metadata jsonb already exists and
 // is already exposed by serializeProject. Project-wide state (not per-user).
-projectsApp.patch('/:projectId/onboarding', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/onboarding',
+    tags: ['projects'],
+    summary: 'PATCH /:projectId/onboarding',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -6187,10 +7355,26 @@ projectsApp.patch('/:projectId/onboarding', async (c) => {
     projectRole: loaded.projectRole,
     effectiveRole: loaded.effectiveRole,
   }));
-});
+},
+);
 
 // DELETE /v1/projects/:projectId
-projectsApp.delete('/:projectId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}',
+    tags: ['projects'],
+    summary: 'DELETE /:projectId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -6207,11 +7391,27 @@ projectsApp.delete('/:projectId', async (c) => {
 
   if (!row) return c.json({ error: 'Not found' }, 404);
   return c.json({ ok: true });
-});
+},
+);
 
 // GET /v1/projects/:projectId/access
 // Lists every account member and their explicit/effective project access.
-projectsApp.get('/:projectId/access', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/access',
+    tags: ['access'],
+    summary: 'GET /:projectId/access',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.array(AccessMemberSchema), 'Access members'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -6338,14 +7538,31 @@ projectsApp.get('/:projectId/access', async (c) => {
     viewer_user_id: loaded.userId,
     members,
   });
-});
+},
+);
 
 // PUT /v1/projects/:projectId/access/:userId
 // POST /v1/projects/:projectId/access/invite
 // Invite a person to a project by email: looks up their Kortix account, ensures
 // they're an org member (creating a 'member' org row if needed), then grants the
 // project role. Account managers get implicit project access (no explicit grant).
-projectsApp.post('/:projectId/access/invite', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/access/invite',
+    tags: ['access'],
+    summary: 'POST /:projectId/access/invite',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -6494,7 +7711,8 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
     effective_project_role: role,
     has_implicit_access: false,
   });
-});
+},
+);
 
 // GET /v1/projects/:projectId/access/pending-invites
 // Lists pending account_invitations whose bootstrap_grants target this
@@ -6505,7 +7723,22 @@ projectsApp.post('/:projectId/access/invite', async (c) => {
 //
 // Restricted to project managers — viewers don't need to see who's
 // queued up for membership.
-projectsApp.get('/:projectId/access/pending-invites', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/access/pending-invites',
+    tags: ['access'],
+    summary: 'GET /:projectId/access/pending-invites',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -6563,7 +7796,8 @@ projectsApp.get('/:projectId/access/pending-invites', async (c) => {
     .filter((x): x is NonNullable<typeof x> => x !== null);
 
   return c.json({ pending: items });
-});
+},
+);
 
 // DELETE /v1/projects/:projectId/access/pending-invites/:inviteId
 // Removes this project's bootstrap_grant from a pending invitation. If
@@ -6573,7 +7807,22 @@ projectsApp.get('/:projectId/access/pending-invites', async (c) => {
 // anywhere anymore. If the inviter had set a higher initial_role
 // (admin/owner) or other project grants remain, we keep the invitation
 // and just strip this project from it.
-projectsApp.delete('/:projectId/access/pending-invites/:inviteId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/access/pending-invites/{inviteId}',
+    tags: ['access'],
+    summary: 'DELETE /:projectId/access/pending-invites/:inviteId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), inviteId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const inviteId = c.req.param('inviteId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -6621,13 +7870,29 @@ projectsApp.delete('/:projectId/access/pending-invites/:inviteId', async (c) => 
     .where(eq(accountInvitations.inviteId, inviteId));
 
   return c.json({ ok: true, invitation_cancelled: false });
-});
+},
+);
 
 // POST /v1/projects/:projectId/access/pending-invites/:inviteId/resend
 // Re-sends the project invite email and refreshes the invitation's 14-day
 // expiry. Mirrors the account-level resend, but re-frames the email around
 // this project and reads the role from the bootstrap grant for this project.
-projectsApp.post('/:projectId/access/pending-invites/:inviteId/resend', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/access/pending-invites/{inviteId}/resend',
+    tags: ['access'],
+    summary: 'POST /:projectId/access/pending-invites/:inviteId/resend',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), inviteId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const inviteId = c.req.param('inviteId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -6686,9 +7951,26 @@ projectsApp.post('/:projectId/access/pending-invites/:inviteId/resend', async (c
     email_skip_reason:
       delivery.ok === false && 'reason' in delivery ? delivery.reason : null,
   });
-});
+},
+);
 
-projectsApp.put('/:projectId/access/:userId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/access/{userId}',
+    tags: ['access'],
+    summary: 'PUT /:projectId/access/:userId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), userId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const targetUserId = c.req.param('userId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -6743,10 +8025,26 @@ projectsApp.put('/:projectId/access/:userId', async (c) => {
     effective_project_role: role,
     has_implicit_access: false,
   });
-});
+},
+);
 
 // DELETE /v1/projects/:projectId/access/:userId
-projectsApp.delete('/:projectId/access/:userId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/access/{userId}',
+    tags: ['access'],
+    summary: 'DELETE /:projectId/access/:userId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), userId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const targetUserId = c.req.param('userId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -6771,7 +8069,8 @@ projectsApp.delete('/:projectId/access/:userId', async (c) => {
     ));
 
   return c.json({ ok: true });
-});
+},
+);
 
 // ─── Project group grants (IAM V2 bulk-access channel) ────────────────────
 //
@@ -6789,7 +8088,22 @@ function isProjectRole(v: unknown): v is ProjectGroupGrantRole {
 
 // GET /v1/projects/:projectId/group-grants
 // List every group attached to this project, with the role + group name.
-projectsApp.get('/:projectId/group-grants', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/group-grants',
+    tags: ['access'],
+    summary: 'GET /:projectId/group-grants',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.array(GroupGrantSchema), 'Group grants'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -6870,12 +8184,29 @@ projectsApp.get('/:projectId/group-grants', async (c) => {
       };
     }),
   });
-});
+},
+);
 
 // POST /v1/projects/:projectId/group-grants
 // Attach a group to this project at the given role. Idempotent — if the
 // group already has a grant, the role is updated.
-projectsApp.post('/:projectId/group-grants', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/group-grants',
+    tags: ['access'],
+    summary: 'POST /:projectId/group-grants',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(GroupGrantSchema, 'The created group grant'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -6930,12 +8261,29 @@ projectsApp.post('/:projectId/group-grants', async (c) => {
     });
 
   return c.json({ project_id: projectId, group_id: groupId, role }, 201);
-});
+},
+);
 
 // PATCH /v1/projects/:projectId/group-grants/:groupId
 // Change the role on an existing attachment. Returns 404 when there's
 // nothing to change.
-projectsApp.patch('/:projectId/group-grants/:groupId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/group-grants/{groupId}',
+    tags: ['access'],
+    summary: 'PATCH /:projectId/group-grants/:groupId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), groupId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const groupId = c.req.param('groupId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -6971,12 +8319,28 @@ projectsApp.patch('/:projectId/group-grants/:groupId', async (c) => {
 
   if (result.length === 0) return c.json({ error: 'grant not found' }, 404);
   return c.json({ project_id: projectId, group_id: groupId, role: body.role });
-});
+},
+);
 
 // DELETE /v1/projects/:projectId/group-grants/:groupId
 // Detach a group. Members of the group lose access via this grant
 // immediately; any direct project_members row they have is unaffected.
-projectsApp.delete('/:projectId/group-grants/:groupId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/group-grants/{groupId}',
+    tags: ['access'],
+    summary: 'DELETE /:projectId/group-grants/:groupId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), groupId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const groupId = c.req.param('groupId');
   const loaded = await loadProjectForUser(c, projectId, 'manage');
@@ -6998,12 +8362,29 @@ projectsApp.delete('/:projectId/group-grants/:groupId', async (c) => {
     );
 
   return c.json({ ok: true });
-});
+},
+);
 
 // Session routes. Invariant: session_id == sandbox_id == git branch name.
 
 // POST /v1/projects/:projectId/sessions
-projectsApp.post('/:projectId/sessions', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions',
+    tags: ['sessions'],
+    summary: 'POST /:projectId/sessions',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(SessionSchema, 'The created session'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -7025,10 +8406,26 @@ projectsApp.post('/:projectId/sessions', async (c) => {
     }),
     201,
   );
-});
+},
+);
 
 // GET /v1/projects/:projectId/sessions
-projectsApp.get('/:projectId/sessions', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions',
+    tags: ['sessions'],
+    summary: 'GET /:projectId/sessions',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+      },
+    responses: {
+        200: json(z.array(SessionSchema), 'Sessions'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
 
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -7070,10 +8467,26 @@ projectsApp.get('/:projectId/sessions', async (c) => {
       }),
     ),
   );
-});
+},
+);
 
 // GET /v1/projects/:projectId/sessions/:sessionId
-projectsApp.get('/:projectId/sessions/:sessionId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}',
+    tags: ['sessions'],
+    summary: 'GET /:projectId/sessions/:sessionId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      },
+    responses: {
+        200: json(SessionSchema, 'The session'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -7093,7 +8506,8 @@ projectsApp.get('/:projectId/sessions/:sessionId', async (c) => {
     canManageProject: visible.canManageProject,
     ownerEmail,
   }));
-});
+},
+);
 
 // POST /v1/projects/:projectId/sessions/:sessionId/ensure-opencode
 // Backend-owned mapping: resolve the sandbox's canonical OpenCode root id and
@@ -7101,7 +8515,22 @@ projectsApp.get('/:projectId/sessions/:sessionId', async (c) => {
 // authoritative writer of the pin. Idempotent — repeated calls are no-ops once
 // the pin matches the live root; heals a stale/missing pin; creates a root if
 // the sandbox has none.
-projectsApp.post('/:projectId/sessions/:sessionId/ensure-opencode', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/ensure-opencode',
+    tags: ['sessions'],
+    summary: 'POST /:projectId/sessions/:sessionId/ensure-opencode',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -7146,12 +8575,29 @@ projectsApp.post('/:projectId/sessions/:sessionId/ensure-opencode', async (c) =>
     }),
     ensure: { reason: result.reason, changed: result.changed, pin: result.pin },
   });
-});
+},
+);
 
 // PUT /v1/projects/:projectId/sessions/:sessionId/sharing
 // Owner or project manager sets who can see/open this session
 // (private | project | members). Mirrors connector/secret sharing.
-projectsApp.put('/:projectId/sessions/:sessionId/sharing', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'put',
+    path: '/{projectId}/sessions/{sessionId}/sharing',
+    tags: ['sessions'],
+    summary: 'PUT /:projectId/sessions/:sessionId/sharing',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -7177,10 +8623,27 @@ projectsApp.put('/:projectId/sessions/:sessionId/sharing', async (c) => {
     viewerId: loaded.userId,
     canManageProject: fresh.canManageProject,
   }) : { ok: true });
-});
+},
+);
 
 // PATCH /v1/projects/:projectId/sessions/:sessionId
-projectsApp.patch('/:projectId/sessions/:sessionId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/sessions/{sessionId}',
+    tags: ['sessions'],
+    summary: 'PATCH /:projectId/sessions/:sessionId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -7244,14 +8707,15 @@ projectsApp.patch('/:projectId/sessions/:sessionId', async (c) => {
     viewerId: loaded.userId,
     canManageProject: visible.canManageProject,
   }));
-});
+},
+);
 
 // POST /v1/projects/sync-opencode-sessions
 // Mirrors session data from the sandbox-local opencode DB into our cloud DB.
 // The project_sessions row remains the branch+sandbox root;
 // metadata.opencode_sessions stores the local OpenCode root/sub-session graph
 // for sidebar/list rendering when the sandbox is not the active runtime.
-const syncOpencodeSessionsHandler = async (c: Context<AppEnv>) => {
+const syncOpencodeSessionsHandler = async (c: any) => {
   const userId = c.get('userId') as string;
   const body = await readBody(c);
   const rawEntries = body.entries;
@@ -7381,7 +8845,19 @@ const syncOpencodeSessionsHandler = async (c: Context<AppEnv>) => {
   return c.json({ updated });
 };
 
-projectsApp.post('/sync-opencode-sessions', syncOpencodeSessionsHandler);
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sync-opencode-sessions',
+    tags: ['sessions'],
+    summary: 'POST /sync-opencode-sessions',
+    ...auth,
+    responses: {
+        200: json(z.any(), 'OK'),
+    },
+  }),
+  syncOpencodeSessionsHandler as any,
+);
 
 // GET /v1/projects/:projectId/sessions/:sessionId/sandbox
 // Returns the session's sandbox runtime row from `kortix.session_sandboxes`.
@@ -7450,7 +8926,22 @@ async function kickProvisionOnOpen(
   })();
 }
 
-projectsApp.get('/:projectId/sessions/:sessionId/sandbox', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/sessions/{sessionId}/sandbox',
+    tags: ['sessions'],
+    summary: 'GET /:projectId/sessions/:sessionId/sandbox',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -7503,12 +8994,28 @@ projectsApp.get('/:projectId/sessions/:sessionId/sandbox', async (c) => {
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   });
-});
+},
+);
 
 // DELETE /v1/projects/:projectId/sessions/:sessionId
 // Soft delete only. We deliberately keep the remote branch so the user can
 // still merge or recover work.
-projectsApp.delete('/:projectId/sessions/:sessionId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/sessions/{sessionId}',
+    tags: ['sessions'],
+    summary: 'DELETE /:projectId/sessions/:sessionId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -7578,7 +9085,8 @@ projectsApp.delete('/:projectId/sessions/:sessionId', async (c) => {
   );
 
   return c.json({ ok: true });
-});
+},
+);
 
 // POST /v1/projects/:projectId/sessions/:sessionId/wake
 // Wake a sandbox that the provider auto-stopped while idle. The DB row still
@@ -7587,7 +9095,22 @@ projectsApp.delete('/:projectId/sessions/:sessionId', async (c) => {
 // health poll. The frontend fires this on open: a running sandbox is a cheap
 // status no-op; a stopped one gets started in the background while the health
 // poll picks up readiness — so the request returns instantly either way.
-projectsApp.post('/:projectId/sessions/:sessionId/wake', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/wake',
+    tags: ['sessions'],
+    summary: 'POST /:projectId/sessions/:sessionId/wake',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 402, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -7657,13 +9180,29 @@ projectsApp.post('/:projectId/sessions/:sessionId/wake', async (c) => {
     console.warn(`[wake] failed to start sandbox ${row.externalId} (session ${sessionId}):`, err),
   );
   return c.json({ status: 'waking' });
-});
+},
+);
 
 // POST /v1/projects/:projectId/sessions/:sessionId/restart
 // Tear down the current sandbox container, revoke its sandbox-scoped api keys,
 // and re-provision a fresh one with the latest project secrets + rotated
 // LLM/GitHub tokens. The git branch is preserved.
-projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/restart',
+    tags: ['sessions'],
+    summary: 'POST /:projectId/sessions/:sessionId/restart',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      },
+    responses: {
+        202: json(z.any(), 'OK'),
+        ...errors(400, 403, 404, 503),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
@@ -7807,7 +9346,8 @@ projectsApp.post('/:projectId/sessions/:sessionId/restart', async (c) => {
   })();
 
   return c.json({ ok: true, session_id: sessionId, status: 'provisioning' }, 202);
-});
+},
+);
 
 // ─── Change Requests ────────────────────────────────────────────────────────
 // Kortix-native PR layer. The CR is metadata stored alongside the project;
@@ -7857,7 +9397,23 @@ async function refreshCrTips(input: {
 }
 
 // GET /v1/projects/:projectId/change-requests?status=open|merged|closed|all
-projectsApp.get('/:projectId/change-requests', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/change-requests',
+    tags: ['change-requests'],
+    summary: 'GET /:projectId/change-requests',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        query: z.object({}).passthrough(),
+      },
+    responses: {
+        200: json(z.array(ChangeRequestSchema), 'Change requests'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -7880,11 +9436,28 @@ projectsApp.get('/:projectId/change-requests', async (c) => {
   return c.json({
     change_requests: rows.map(serializeChangeRequest),
   });
-});
+},
+);
 
 // POST /v1/projects/:projectId/change-requests
 // Body: { title, description?, head_ref, base_ref?, session_id? }
-projectsApp.post('/:projectId/change-requests', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/change-requests',
+    tags: ['change-requests'],
+    summary: 'POST /:projectId/change-requests',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(ChangeRequestSchema, 'The created change request'),
+        ...errors(400, 404, 500),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -7957,7 +9530,8 @@ projectsApp.post('/:projectId/change-requests', async (c) => {
   if (!inserted) return c.json({ error: 'Failed to allocate CR number' }, 500);
 
   return c.json(serializeChangeRequest(inserted), 201);
-});
+},
+);
 
 // POST /v1/projects/:projectId/sessions/:sessionId/commit-push
 // Commits the session sandbox's working-tree changes and pushes them to the
@@ -7970,7 +9544,23 @@ projectsApp.post('/:projectId/change-requests', async (c) => {
 // Kept (wired through to the daemon /kortix/git/commit-push route) as the
 // host-driven primitive for a possible fully-UI flow. Remove together with the
 // daemon route + web client/hook if that direction is dropped.
-projectsApp.post('/:projectId/sessions/:sessionId/commit-push', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/sessions/{sessionId}/commit-push',
+    tags: ['sessions'],
+    summary: 'POST /:projectId/sessions/:sessionId/commit-push',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), sessionId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 409, 502),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const sessionId = c.req.param('sessionId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -8059,12 +9649,28 @@ projectsApp.post('/:projectId/sessions/:sessionId/commit-push', async (c) => {
     branch: result.branch ?? null,
     head_sha: result.headSha ?? null,
   });
-});
+},
+);
 
 // GET /v1/projects/:projectId/change-requests/:crId
 // Auto-refreshes the cached head/base SHAs against the live git tips so the
 // UI never shows stale "X commits behind" state.
-projectsApp.get('/:projectId/change-requests/:crId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/change-requests/{crId}',
+    tags: ['change-requests'],
+    summary: 'GET /:projectId/change-requests/:crId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), crId: z.string() }),
+      },
+    responses: {
+        200: json(ChangeRequestSchema, 'The change request'),
+        ...errors(404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const crId = c.req.param('crId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -8080,11 +9686,28 @@ projectsApp.get('/:projectId/change-requests/:crId', async (c) => {
   cr = (await getCrById(crId, projectId))!;
 
   return c.json({ change_request: serializeChangeRequest(cr) });
-});
+},
+);
 
 // PATCH /v1/projects/:projectId/change-requests/:crId
 // Body: { title?, description? }
-projectsApp.patch('/:projectId/change-requests/:crId', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/change-requests/{crId}',
+    tags: ['change-requests'],
+    summary: 'PATCH /:projectId/change-requests/:crId',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), crId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const crId = c.req.param('crId');
   const body = await readBody(c);
@@ -8108,13 +9731,29 @@ projectsApp.patch('/:projectId/change-requests/:crId', async (c) => {
     .where(eq(changeRequests.crId, crId))
     .returning();
   return c.json(serializeChangeRequest(row));
-});
+},
+);
 
 // GET /v1/projects/:projectId/change-requests/:crId/diff
 // For open / closed CRs: lives off the live branch tips (three-dot diff).
 // For merged CRs: uses the SHAs captured at merge time, so the diff still
 // renders even though the head branch is now fully reachable from base.
-projectsApp.get('/:projectId/change-requests/:crId/diff', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/change-requests/{crId}/diff',
+    tags: ['change-requests'],
+    summary: 'GET /:projectId/change-requests/:crId/diff',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), crId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const crId = c.req.param('crId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -8148,10 +9787,26 @@ projectsApp.get('/:projectId/change-requests/:crId/diff', async (c) => {
       error: error instanceof Error ? error.message : 'Failed to compute diff',
     }, 400);
   }
-});
+},
+);
 
 // GET /v1/projects/:projectId/change-requests/:crId/merge-preview
-projectsApp.get('/:projectId/change-requests/:crId/merge-preview', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/change-requests/{crId}/merge-preview',
+    tags: ['change-requests'],
+    summary: 'GET /:projectId/change-requests/:crId/merge-preview',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), crId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const crId = c.req.param('crId');
   const loaded = await loadProjectForUser(c, projectId, 'read');
@@ -8168,11 +9823,28 @@ projectsApp.get('/:projectId/change-requests/:crId/merge-preview', async (c) => 
       error: error instanceof Error ? error.message : 'Failed to preview merge',
     }, 400);
   }
-});
+},
+);
 
 // POST /v1/projects/:projectId/change-requests/:crId/merge
 // Body: { message?: string }
-projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/change-requests/{crId}/merge',
+    tags: ['change-requests'],
+    summary: 'POST /:projectId/change-requests/:crId/merge',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), crId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 409, 422, 502),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const crId = c.req.param('crId');
   const body = await readBody(c);
@@ -8284,10 +9956,26 @@ projectsApp.post('/:projectId/change-requests/:crId/merge', async (c) => {
     change_request: serializeChangeRequest(row),
     merge: result,
   });
-});
+},
+);
 
 // POST /v1/projects/:projectId/change-requests/:crId/close
-projectsApp.post('/:projectId/change-requests/:crId/close', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/change-requests/{crId}/close',
+    tags: ['change-requests'],
+    summary: 'POST /:projectId/change-requests/:crId/close',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), crId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const crId = c.req.param('crId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -8310,10 +9998,26 @@ projectsApp.post('/:projectId/change-requests/:crId/close', async (c) => {
     .where(eq(changeRequests.crId, crId))
     .returning();
   return c.json(serializeChangeRequest(row));
-});
+},
+);
 
 // POST /v1/projects/:projectId/change-requests/:crId/reopen
-projectsApp.post('/:projectId/change-requests/:crId/reopen', async (c) => {
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/change-requests/{crId}/reopen',
+    tags: ['change-requests'],
+    summary: 'POST /:projectId/change-requests/:crId/reopen',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string(), crId: z.string() }),
+      },
+    responses: {
+        200: json(z.any(), 'OK'),
+        ...errors(404, 409),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const crId = c.req.param('crId');
   const loaded = await loadProjectForUser(c, projectId, 'write');
@@ -8336,4 +10040,5 @@ projectsApp.post('/:projectId/change-requests/:crId/reopen', async (c) => {
     .where(eq(changeRequests.crId, crId))
     .returning();
   return c.json(serializeChangeRequest(row));
-});
+},
+);
