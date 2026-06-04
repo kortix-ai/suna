@@ -63,9 +63,20 @@ export const KortixSimpleMemory: Plugin = async (ctx, opts: Options = {}) => {
     let block =
       `<kortix-memory source="${memDir}/${indexRel}">\n` +
       `[Project brain — durable, team-shared knowledge about this project.\n` +
-      ` The index below names sub-files in ${memDir}/. Open them with \`read\`\n` +
-      ` only when the index points at one that's relevant to the current task.\n` +
-      ` Load the \`kortix-memory\` skill when adding or updating memory.]\n\n` +
+      ` The index below names sub-files in ${memDir}/. Open them with the\n` +
+      ` \`memory\` tool (command "view") when the index points at one that's\n` +
+      ` relevant to the current task.\n\n` +
+      ` MEMORY PROTOCOL:\n` +
+      ` - ALWAYS \`view\` ${memDir} (memory tool) before starting a task, to\n` +
+      `   recover earlier context and progress.\n` +
+      ` - As you make progress or learn something durable, record it in memory\n` +
+      `   with the \`memory\` tool. ASSUME INTERRUPTION: your context window may\n` +
+      `   reset at any moment, so anything not written to ${memDir} is lost.\n` +
+      ` - Use the \`memory\` tool (not the generic read/edit/write tools) for\n` +
+      `   everything under ${memDir}. Keep it coherent and organized: edit\n` +
+      `   existing files, rename or delete stale ones, and don't create new\n` +
+      `   files unless a topic deserves its own page. Keep ${indexRel} in sync.\n` +
+      ` - Load the \`kortix-memory\` skill for the rubric on what to remember.]\n\n` +
       body.trim() +
       (filesLine ? `\n\n${filesLine}` : "") +
       `\n</kortix-memory>`;

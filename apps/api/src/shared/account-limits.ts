@@ -1,8 +1,34 @@
 import { config } from '../config';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
-import { getTier } from '../billing/services/tiers';
+import { getTier, isPaidTier } from '../billing/services/tiers';
+import type { RateLimitPolicy } from './rate-limit';
+
+// Free accounts may own a single project. Any paid plan (pro or the per-seat
+// team plan) lifts the cap to MAX_PROJECTS_PER_ACCOUNT — effectively uncapped
+// for normal use. Tightening the free limit here is the one knob to turn.
+export const FREE_TIER_PROJECT_LIMIT = 1;
+export const MAX_PROJECTS_PER_ACCOUNT = 100;
 
 const tierCache = new Map<string, { tier: string | null; expiresAt: number }>();
+
+function positiveInt(value: unknown, fallback: number) {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : fallback;
+}
+
+function tierMultiplier(tier: string | null | undefined) {
+  const name = tier ?? 'free';
+  const legacyMultipliers: Record<string, number> = {
+    tier_6_50: 2,
+    tier_12_100: 3,
+    tier_25_200: 4,
+    tier_50_400: 6,
+    tier_125_800: 8,
+    tier_200_1000: 10,
+    tier_150_1200: 12,
+  };
+  return legacyMultipliers[name] ?? (name !== 'free' && name !== 'none' ? 1 : 0);
+}
 
 export async function resolveAccountTier(accountId: string): Promise<string | null> {
   const cached = tierCache.get(accountId);
@@ -18,6 +44,16 @@ export async function resolveAccountTier(accountId: string): Promise<string | nu
   }
 }
 
+export function sessionLlmPolicyForTier(tier: string | null | undefined): RateLimitPolicy {
+  const freeLimit = positiveInt((config as any).KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE, 60);
+  const paidLimit = positiveInt((config as any).KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID, 600);
+  const multiplier = tierMultiplier(tier);
+  return {
+    limit: multiplier > 0 ? paidLimit * multiplier : freeLimit,
+    windowMs: 60_000,
+  };
+}
+
 export function maxConcurrentSessionsForTier(tier: string | null | undefined) {
   // When billing isn't active (local / self-hosted), the tier system is
   // a no-op — return an effectively-unlimited cap so a missing
@@ -28,4 +64,23 @@ export function maxConcurrentSessionsForTier(tier: string | null | undefined) {
   // Tier definition is the source of truth for concurrent session caps.
   // Fall back to free-tier cap for unknown tiers.
   return getTier(tier ?? 'free').concurrentSessionLimit;
+}
+
+/**
+ * Maximum number of projects an account may own, by plan. Free → 1; any paid
+ * tier → MAX_PROJECTS_PER_ACCOUNT. When billing isn't active (local /
+ * self-hosted) the cap is lifted entirely, mirroring
+ * maxConcurrentSessionsForTier so a missing subscription can't kneecap
+ * project creation.
+ */
+export async function maxProjectsForAccount(accountId: string): Promise<number> {
+  if (!(config as any).KORTIX_BILLING_INTERNAL_ENABLED) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  const tier = await resolveAccountTier(accountId);
+  return isPaidTier(tier ?? 'free') ? MAX_PROJECTS_PER_ACCOUNT : FREE_TIER_PROJECT_LIMIT;
+}
+
+export function clearAccountLimitCache() {
+  tierCache.clear();
 }

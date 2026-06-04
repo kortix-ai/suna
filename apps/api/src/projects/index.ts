@@ -145,7 +145,7 @@ import { rehydrateSessionChat } from './legacy-migration-rehydrate';
 import { ProvisionTimeline } from '../platform/services/provision-timeline';
 import { getProvider } from '../platform/providers';
 import { config, type SandboxProviderName } from '../config';
-import { maxConcurrentSessionsForTier, resolveAccountTier } from '../shared/account-limits';
+import { maxConcurrentSessionsForTier, maxProjectsForAccount, resolveAccountTier } from '../shared/account-limits';
 import { recordAuditEvent } from '../shared/audit';
 import { pauseComputeSession, endComputeSession } from '../billing/services/compute-metering';
 import { checkBillingActive } from '../billing/services/billing-gate';
@@ -2795,6 +2795,52 @@ projectsApp.get('/', async (c) => {
   );
 });
 
+// Enforce the per-account project cap (free → 1, paid → effectively uncapped).
+// Returns a 403 Response to send, or null when the account may create another
+// project. `repoUrl`, when supplied, makes re-linking a repo the account
+// already owns idempotent — that's an update, not a new project, so it never
+// trips the limit even when the account is at its cap.
+async function enforceProjectQuota(
+  c: Context,
+  accountId: string,
+  opts?: { repoUrl?: string | null },
+): Promise<Response | null> {
+  const limit = await maxProjectsForAccount(accountId);
+  if (limit >= Number.MAX_SAFE_INTEGER) return null;
+
+  if (opts?.repoUrl) {
+    const [existing] = await db
+      .select({ projectId: projects.projectId })
+      .from(projects)
+      .where(and(eq(projects.accountId, accountId), eq(projects.repoUrl, opts.repoUrl)))
+      .limit(1);
+    if (existing) return null;
+  }
+
+  // Count only ACTIVE projects — an archived (soft-deleted) project must not
+  // permanently consume a free account's single slot.
+  const [counted] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(projects)
+    .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active')));
+  const count = counted?.count ?? 0;
+  if (count >= limit) {
+    return c.json(
+      {
+        error:
+          limit === 1
+            ? 'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.'
+            : `This account has reached its limit of ${limit} projects.`,
+        code: 'project_limit_reached',
+        limit,
+        count,
+      },
+      403,
+    );
+  }
+  return null;
+}
+
 // POST /v1/projects
 projectsApp.post('/', async (c) => {
   const body = await readBody(c);
@@ -2833,6 +2879,9 @@ projectsApp.post('/', async (c) => {
     }
     return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
   }
+
+  const quota = await enforceProjectQuota(c, scope.accountId, { repoUrl: imported.repo.clone_url });
+  if (quota) return quota;
 
   const row = await registerGitHubLinkedProject({
     accountId: scope.accountId,
@@ -2907,6 +2956,12 @@ projectsApp.post('/provision', async (c) => {
   ).slice(0, 40);
   const repoSlug = `${baseSlug}-${projectId}`;
   const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
+
+  // Provision always mints a brand-new managed repo, so the quota check is a
+  // straight count — no repoUrl to treat as an idempotent re-link. Runs after
+  // request validation but before we create anything upstream.
+  const provisionQuota = await enforceProjectQuota(c, scope.accountId);
+  if (provisionQuota) return provisionQuota;
 
   let provisioned: Awaited<ReturnType<typeof backend.createRepo>>;
   try {
@@ -3326,6 +3381,8 @@ projectsApp.post('/link-repository', async (c) => {
     } catch (error) {
       return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
     }
+    const patQuota = await enforceProjectQuota(c, scope.accountId, { repoUrl: patImport.repo.clone_url });
+    if (patQuota) return patQuota;
     const row = await registerPatLinkedProject({
       accountId: scope.accountId,
       userId: scope.userId,
@@ -3362,6 +3419,9 @@ projectsApp.post('/link-repository', async (c) => {
     }
     return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
   }
+
+  const linkQuota = await enforceProjectQuota(c, scope.accountId, { repoUrl: imported.repo.clone_url });
+  if (linkQuota) return linkQuota;
 
   const row = await registerGitHubLinkedProject({
     accountId: scope.accountId,
@@ -3403,6 +3463,11 @@ projectsApp.post('/create-repo', async (c) => {
   if (!/^[a-zA-Z0-9._-]+$/.test(name)) {
     return c.json({ error: 'name must contain only letters, numbers, hyphens, underscores or dots' }, 400);
   }
+
+  // create-repo always provisions a fresh GitHub repo, so block before we
+  // create anything upstream — a straight count, no idempotent re-link.
+  const createRepoQuota = await enforceProjectQuota(c, scope.accountId);
+  if (createRepoQuota) return createRepoQuota;
 
   const isPrivate = typeof body.private === 'boolean' ? body.private : true;
   const description = normalizeString(body.description);

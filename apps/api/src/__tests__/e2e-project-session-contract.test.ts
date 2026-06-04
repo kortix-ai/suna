@@ -256,6 +256,11 @@ mock.module('../repositories/account-tokens', () => ({
 mock.module('../shared/account-limits', () => ({
   resolveAccountTier: async () => 'free',
   maxConcurrentSessionsForTier: () => 1,
+  maxProjectsForAccount: async () => Number.MAX_SAFE_INTEGER,
+  sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
+  clearAccountLimitCache: () => {},
+  FREE_TIER_PROJECT_LIMIT: 1,
+  MAX_PROJECTS_PER_ACCOUNT: 100,
 }));
 
 mock.module('../shared/supabase', () => ({
