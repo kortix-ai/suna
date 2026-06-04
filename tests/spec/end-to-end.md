@@ -357,6 +357,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `DEP-1` `POST /deployments` · `GET /deployments[/:id]` · `POST /:id/stop|redeploy` · `DELETE /:id` · `GET /:id/logs` (`combinedAuth`).
 
 ### Apps (experimental `KORTIX_APPS_EXPERIMENTAL`, `[[apps]]` in manifest)
+`EXP-1` `PATCH /projects/:id/experimental {feature,enabled}` toggles per-project experimental features; unknown feature/non-bool enabled → 400; nonmember → 403/404; anon → 401.
 `APP-1` `GET /projects/:id/apps` (`read`) · `POST` (`manage`) · `PATCH/DELETE /:slug` (`manage`) · `POST /:slug/deploy|stop` (`manage`) · `GET /:slug/logs` (`read`).
 
 ### Ops (platform admin)

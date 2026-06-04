@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 273,
+  "count": 276,
   "routes": [
     {
       "method": "GET",
@@ -683,6 +683,10 @@
       "path": "/v1/projects/:projectId/detail"
     },
     {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/experimental"
+    },
+    {
       "method": "GET",
       "path": "/v1/projects/:projectId/files"
     },
@@ -977,6 +981,14 @@
     {
       "method": "PUT",
       "path": "/v1/servers/sync"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/bootstrap-owner"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/install-status"
     },
     {
       "method": "GET",

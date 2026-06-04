@@ -1,6 +1,7 @@
 'use client';
 
-import { FileExplorerPage, FilesStoreProvider } from '@/features/files';
+import { useEffect, useRef } from 'react';
+import { FileExplorerPage, FilesStoreProvider, useFilesStore } from '@/features/files';
 import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import {
   SessionVersionHeader,
@@ -42,6 +43,20 @@ function SessionFilesExplorerInner({ chatSessionId }: { chatSessionId?: string }
     chatSessionId ? s.viewBySession[chatSessionId] : undefined,
   );
   const setView = useSessionBrowserStore((s) => s.setView);
+
+  // Honor "reveal this file" requests from chat (clicking a file path). The
+  // request lives in the shared panel store; we apply it to THIS provider's
+  // scoped FilesStore. The nonce guard makes repeated clicks re-open the file.
+  const fileOpenReq = useSessionBrowserStore((s) =>
+    chatSessionId ? s.fileOpenBySession[chatSessionId] : undefined,
+  );
+  const openFile = useFilesStore((s) => s.openFile);
+  const lastNonce = useRef(0);
+  useEffect(() => {
+    if (!fileOpenReq || fileOpenReq.nonce === lastNonce.current) return;
+    lastNonce.current = fileOpenReq.nonce;
+    openFile(fileOpenReq.path, fileOpenReq.line);
+  }, [fileOpenReq, openFile]);
 
   // The `files` panel-view value == Changes; anything else on this surface ==
   // All files. Default (the `explorer` value) is All files.

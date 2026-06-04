@@ -5,7 +5,9 @@ import { useTranslations } from 'next-intl';
 import { FormEvent, useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ChevronDown,
   ExternalLink,
+  FlaskConical,
   GitBranch,
   Loader2,
   Settings,
@@ -13,7 +15,9 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Input } from '@/components/ui/input';
@@ -34,8 +38,9 @@ import {
   getProject,
   inviteRepoCollaborator,
   isManagedGithubProject,
-  updateAppsConfig,
+  updateExperimentalFeature,
   updateProject,
+  type ExperimentalFeatureView,
   type KortixProject,
 } from '@/lib/projects-client';
 
@@ -268,14 +273,18 @@ function RepositoryCard({
 }
 
 /**
- * Customize → Settings → Experimental. Per-project switches for features still
- * in development. Each row is independent; add more toggles here as features
- * graduate from operator-wide flags to per-project opt-in.
+ * Customize → Settings → Experimental / WIP Features. Per-project switches for
+ * soft-released features. The list is driven entirely by the API catalog
+ * (project.experimental_features) — add a feature to the registry in
+ * apps/api/src/experimental/features.ts and it shows up here automatically.
  *
- * Apps: the experimental `[[apps]]` deployment surface. When on, the Apps
- * sidebar shortcut + overlay appear and the auto-deploy sweep picks this
- * project up. DB-only (projects.metadata.apps_enabled) — overrides the
- * operator-wide default.
+ * These are real, usable surfaces that are still moving: turning one on opts
+ * THIS project in. They may change shape or break between versions, so they
+ * stay off until explicitly enabled. DB-only — never in kortix.toml.
+ *
+ * Deliberately tucked away: the card collapses to a single muted row and you
+ * have to expand it to reveal the toggles, so WIP surfaces don't read as
+ * first-class settings.
  */
 function ExperimentalCard({
   project,
@@ -284,43 +293,109 @@ function ExperimentalCard({
   project: KortixProject;
   canManage: boolean;
 }) {
-  const queryClient = useQueryClient();
-  const appsEnabled = project.apps_enabled ?? false;
+  // Only features the platform actually supports are shown.
+  const features = (project.experimental_features ?? []).filter((f) => f.available);
+  // Collapsed by default — extra expand to reveal.
+  const [expanded, setExpanded] = useState(false);
 
-  const appsMutation = useMutation({
+  if (features.length === 0) return null;
+
+  const enabledCount = features.filter((f) => f.enabled).length;
+
+  return (
+    <SectionCard className="border-dashed">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        className="flex w-full items-center gap-2 text-left"
+      >
+        <FlaskConical className="size-4 shrink-0 text-muted-foreground" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-foreground">
+            Experimental / WIP Features
+            {enabledCount > 0 && (
+              <span className="font-normal text-muted-foreground"> · {enabledCount} on</span>
+            )}
+          </p>
+          {!expanded && (
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Soft-released, still-moving features. Expand to opt this project in — they may change or break.
+            </p>
+          )}
+        </div>
+        <ChevronDown
+          className={cn(
+            'size-4 shrink-0 text-muted-foreground transition-transform',
+            expanded && 'rotate-180',
+          )}
+        />
+      </button>
+
+      {expanded && (
+        <>
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            These are real but unfinished. Turning one on enables it for this project only —
+            it may change shape or break between versions, and stays off until you turn it on.
+          </p>
+          <div className="mt-2 divide-y divide-border border-t border-border">
+            {features.map((feature) => (
+              <ExperimentalFeatureRow
+                key={feature.key}
+                projectId={project.project_id}
+                feature={feature}
+                canManage={canManage}
+              />
+            ))}
+          </div>
+        </>
+      )}
+    </SectionCard>
+  );
+}
+
+function ExperimentalFeatureRow({
+  projectId,
+  feature,
+  canManage,
+}: {
+  projectId: string;
+  feature: ExperimentalFeatureView;
+  canManage: boolean;
+}) {
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
     mutationFn: (next: boolean) =>
-      updateAppsConfig(project.project_id, { enabled: next }),
+      updateExperimentalFeature(projectId, feature.key, next),
     onSuccess: (updated) => {
-      queryClient.setQueryData(['project', project.project_id], updated);
-      // The sidebar Apps shortcut gates off this same value via a separate
-      // 'project-detail' query — refresh it so the button appears/disappears.
-      queryClient.invalidateQueries({ queryKey: ['project-detail', project.project_id] });
+      queryClient.setQueryData(['project', projectId], updated);
+      // Sidebar shortcuts gate off these same values via a separate
+      // 'project-detail' query — refresh so surfaces appear/disappear.
+      queryClient.invalidateQueries({ queryKey: ['project-detail', projectId] });
       queryClient.invalidateQueries({ queryKey: ['projects'] });
     },
     onError: (error: Error) =>
-      toast.error(error.message || 'Failed to update apps setting'),
+      toast.error(error.message || `Failed to update ${feature.name}`),
   });
 
   return (
-    <SectionCard
-      title="Experimental"
-      description="Try features still in development for this project. They may change or break."
-    >
-      <div className="flex items-center justify-between gap-4">
-        <div className="min-w-0">
-          <p className="text-sm font-medium text-foreground">Apps</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Deploy this project&apos;s repo as live apps. Adds the Apps shortcut and
-            auto-deploys apps declared in kortix.toml.
-          </p>
+    <div className="flex items-center justify-between gap-4 py-4 last:pb-0">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium text-foreground">{feature.name}</p>
+          <Badge variant={feature.stability === 'beta' ? 'beta' : 'highlight'} size="sm">
+            {feature.stability === 'beta' ? 'Beta' : 'Experimental'}
+          </Badge>
         </div>
-        <Switch
-          checked={appsEnabled}
-          disabled={!canManage || appsMutation.isPending}
-          onCheckedChange={(v) => appsMutation.mutate(v)}
-        />
+        <p className="mt-0.5 text-xs text-muted-foreground">{feature.description}</p>
       </div>
-    </SectionCard>
+      <Switch
+        checked={feature.enabled}
+        disabled={!canManage || mutation.isPending}
+        onCheckedChange={(v) => mutation.mutate(v)}
+      />
+    </div>
   );
 }
 

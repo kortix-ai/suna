@@ -22,6 +22,7 @@
  *   └──────────┴────────────────────────────────────┘
  */
 
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Bot,
@@ -30,6 +31,7 @@ import {
   GitPullRequest,
   KeyRound,
   MessageSquare,
+  Monitor,
   Plug,
   Settings,
   SlidersHorizontal,
@@ -45,6 +47,7 @@ import {
 import { AgentsView } from '@/components/projects/customize/sections/agents-view';
 import { ChannelsView } from '@/components/projects/customize/sections/channels-view';
 import { CommandsView } from '@/components/projects/customize/sections/commands-view';
+import { ComputersView } from '@/components/projects/customize/sections/computers-view';
 import { ConnectorsView } from '@/components/projects/customize/sections/connectors-view';
 import { MembersView } from '@/components/projects/customize/sections/members-view';
 import { SandboxView } from '@/components/projects/customize/sections/sandbox-view';
@@ -113,10 +116,17 @@ const FOOTER_ITEMS: readonly RailItem[] = [
   { section: 'settings', label: 'Settings', icon: Settings },
 ];
 
-const ALL_ITEMS: readonly RailItem[] = [
-  ...GROUPS.flatMap((g) => g.items),
-  ...FOOTER_ITEMS,
-];
+// Experimental Agent Computer Tunnel — only shown in the rail when the project
+// has opted in (Customize → Settings → Experimental). Slots into "Connect".
+const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
+
+/** Build the rail groups for this project, injecting flag-gated entries. */
+function railGroups(tunnelEnabled: boolean): readonly RailGroup[] {
+  if (!tunnelEnabled) return GROUPS;
+  return GROUPS.map((g) =>
+    g.label === 'Connect' ? { ...g, items: [...g.items, COMPUTERS_ITEM] } : g,
+  );
+}
 
 export function CustomizeOverlay({ projectId }: { projectId: string }) {
   const open = useCustomizeStore((s) => s.open);
@@ -133,6 +143,15 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
     refetchOnWindowFocus: false,
   });
   const projectName = detail.data?.project?.name ?? '';
+
+  // Flag-gated rail. Computers (Agent Computer Tunnel) appears only when this
+  // project has opted into the experimental feature.
+  const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
+  const groups = useMemo(() => railGroups(tunnelEnabled), [tunnelEnabled]);
+  const allItems = useMemo(
+    () => [...groups.flatMap((g) => g.items), ...FOOTER_ITEMS],
+    [groups],
+  );
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : close())}>
@@ -188,7 +207,7 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
               className="w-full shrink-0 border-b border-border/60 bg-background"
             >
               <ul className="flex items-center gap-1 overflow-x-auto px-2 py-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                {ALL_ITEMS.map((item) => (
+                {allItems.map((item) => (
                   <li key={item.section} className="shrink-0">
                     <RailButton
                       item={item}
@@ -206,7 +225,7 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
               className="flex w-[196px] shrink-0 flex-col border-r border-border/60 bg-muted/20"
             >
               <div className="flex-1 overflow-y-auto px-2.5 py-3 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                {GROUPS.map((group, idx) => (
+                {groups.map((group, idx) => (
                   <div key={group.label ?? idx} className={idx > 0 ? 'mt-4' : undefined}>
                     {group.label && (
                       <div className="px-2 pb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/50">
@@ -328,6 +347,8 @@ function SectionContent({
       return <SecretsView projectId={projectId} />;
     case 'connectors':
       return <ConnectorsView projectId={projectId} />;
+    case 'computers':
+      return <ComputersView projectId={projectId} />;
     case 'members':
       return <MembersView projectId={projectId} />;
     case 'schedules':

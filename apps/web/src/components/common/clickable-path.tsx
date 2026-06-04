@@ -4,6 +4,10 @@ import React, { useCallback, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { splitTextByPaths } from '@/lib/utils/path-detection';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
+import {
+  getActivePanelSessionId,
+  openFileInSessionPanel,
+} from '@/stores/session-browser-store';
 import { toast } from '@/lib/toast';
 
 // ---------------------------------------------------------------------------
@@ -59,7 +63,14 @@ function ClickablePath({
         return;
       }
 
-      // Open the in-place preview (stays on the current page).
+      // Inside a session → reveal the file in the side-panel Files tab, mirroring
+      // how a localhost link opens the Browser tab. Elsewhere (no side panel host)
+      // fall back to the in-place preview modal.
+      const sessionId = getActivePanelSessionId();
+      if (sessionId) {
+        openFileInSessionPanel(sessionId, filePath, lineNumber);
+        return;
+      }
       openPreview(filePath, lineNumber);
     },
     [filePath, lineNumber, openPreview],
