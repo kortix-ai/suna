@@ -16,7 +16,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-type FreeTierBlockVariant = 'integrations' | 'triggers' | 'automation' | 'custom';
+export type FreeTierBlockVariant = 'integrations' | 'triggers' | 'automation' | 'custom';
 
 interface FreeTierBlockProps {
   variant?: FreeTierBlockVariant;

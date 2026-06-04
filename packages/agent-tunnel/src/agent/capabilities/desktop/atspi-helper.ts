@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -267,7 +267,7 @@ if __name__ == "__main__":
 
 let written = false;
 
-async function ensureHelper(): Promise<string> {
+export async function ensureHelper(): Promise<string> {
   if (written && existsSync(HELPER_PATH)) return HELPER_PATH;
 
   if (existsSync(HELPER_PATH)) {
@@ -276,21 +276,13 @@ async function ensureHelper(): Promise<string> {
   }
 
   mkdirSync(BIN_DIR, { recursive: true });
-  let fd: number | null = null;
-  try {
-    fd = openSync(HELPER_PATH, 'wx', 0o755);
-    writeFileSync(fd, PYTHON_SOURCE);
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-  } finally {
-    if (fd !== null) closeSync(fd);
-  }
+  writeFileSync(HELPER_PATH, PYTHON_SOURCE, { mode: 0o755 });
   written = true;
 
   return HELPER_PATH;
 }
 
-interface AtspiHelperRequest {
+export interface AtspiHelperRequest {
   action: string;
   pid?: number;
   maxDepth?: number;
@@ -303,7 +295,7 @@ interface AtspiHelperRequest {
   value?: string;
 }
 
-interface AtspiHelperResponse {
+export interface AtspiHelperResponse {
   ok: boolean;
   error?: string;
   root?: any;

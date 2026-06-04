@@ -9,9 +9,9 @@ import { getAuthToken } from '@/api/config';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-type SessionMode = 'new' | 'reuse';
-type TriggerType = 'cron' | 'webhook';
-type TriggerSourceType = 'manual' | 'agent';
+export type SessionMode = 'new' | 'reuse';
+export type TriggerType = 'cron' | 'webhook';
+export type TriggerSourceType = 'manual' | 'agent';
 export type ExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'timeout' | 'skipped';
 
 export interface Trigger {
@@ -65,7 +65,7 @@ export interface Execution {
   trigger_name?: string;
 }
 
-interface CreateTriggerData {
+export interface CreateTriggerData {
   name: string;
   description?: string;
   source: {
@@ -94,7 +94,7 @@ interface CreateTriggerData {
   metadata?: Record<string, unknown>;
 }
 
-interface UpdateTriggerData {
+export interface UpdateTriggerData {
   name?: string;
   description?: string | null;
   cron_expr?: string;
@@ -115,6 +115,11 @@ interface ApiListResponse {
   success: boolean;
   data: Trigger[];
   total: number;
+}
+
+interface ApiSingleResponse {
+  success: boolean;
+  data: Trigger;
 }
 
 interface ApiExecutionsResponse {
@@ -165,8 +170,13 @@ async function fetchTriggers(sandboxUrl: string): Promise<Trigger[]> {
   }));
 }
 
+async function fetchTrigger(sandboxUrl: string, triggerId: string): Promise<Trigger> {
+  const res = await sandboxFetch<ApiSingleResponse>(sandboxUrl, `/kortix/cron/triggers/${triggerId}`);
+  return res.data;
+}
+
 async function createTrigger(sandboxUrl: string, data: CreateTriggerData): Promise<Trigger> {
-  const res = await sandboxFetch<{ success: boolean; data: Trigger }>(sandboxUrl, '/kortix/triggers', {
+  const res = await sandboxFetch<ApiSingleResponse>(sandboxUrl, '/kortix/triggers', {
     method: 'POST',
     body: JSON.stringify(data),
   });
@@ -174,7 +184,7 @@ async function createTrigger(sandboxUrl: string, data: CreateTriggerData): Promi
 }
 
 async function updateTrigger(sandboxUrl: string, id: string, data: UpdateTriggerData): Promise<Trigger> {
-  const res = await sandboxFetch<{ success: boolean; data: Trigger }>(sandboxUrl, `/kortix/cron/triggers/${id}`, {
+  const res = await sandboxFetch<ApiSingleResponse>(sandboxUrl, `/kortix/cron/triggers/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
   });
@@ -186,12 +196,12 @@ async function deleteTrigger(sandboxUrl: string, id: string): Promise<void> {
 }
 
 async function pauseTrigger(sandboxUrl: string, id: string): Promise<Trigger> {
-  const res = await sandboxFetch<{ success: boolean; data: Trigger }>(sandboxUrl, `/kortix/cron/triggers/${id}/pause`, { method: 'POST' });
+  const res = await sandboxFetch<ApiSingleResponse>(sandboxUrl, `/kortix/cron/triggers/${id}/pause`, { method: 'POST' });
   return res.data;
 }
 
 async function resumeTrigger(sandboxUrl: string, id: string): Promise<Trigger> {
-  const res = await sandboxFetch<{ success: boolean; data: Trigger }>(sandboxUrl, `/kortix/cron/triggers/${id}/resume`, { method: 'POST' });
+  const res = await sandboxFetch<ApiSingleResponse>(sandboxUrl, `/kortix/cron/triggers/${id}/resume`, { method: 'POST' });
   return res.data;
 }
 
@@ -210,9 +220,10 @@ async function fetchExecutions(sandboxUrl: string, triggerId: string, limit = 50
 
 // ─── Query Keys ──────────────────────────────────────────────────────────────
 
-const scheduledTaskKeys = {
+export const scheduledTaskKeys = {
   all: ['scheduled-tasks'] as const,
   triggers: () => [...scheduledTaskKeys.all, 'triggers'] as const,
+  trigger: (id: string) => [...scheduledTaskKeys.all, 'trigger', id] as const,
   executions: (id: string) => [...scheduledTaskKeys.all, 'executions', id] as const,
 };
 
@@ -226,6 +237,16 @@ export function useScheduledTasks() {
     enabled: !!sandboxUrl,
     staleTime: 60 * 1000,
     refetchInterval: 30 * 1000,
+  });
+}
+
+export function useScheduledTask(triggerId: string) {
+  const { sandboxUrl } = useSandboxContext();
+  return useQuery({
+    queryKey: scheduledTaskKeys.trigger(triggerId),
+    queryFn: () => fetchTrigger(sandboxUrl!, triggerId),
+    enabled: !!sandboxUrl && !!triggerId,
+    staleTime: 60 * 1000,
   });
 }
 
@@ -245,8 +266,11 @@ export function useUpdateScheduledTask() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: UpdateTriggerData }) => updateTrigger(sandboxUrl!, id, data),
-    onSuccess: () => {
+    onSuccess: (updated) => {
       qc.invalidateQueries({ queryKey: scheduledTaskKeys.triggers() });
+      if (updated.triggerId) {
+        qc.invalidateQueries({ queryKey: scheduledTaskKeys.trigger(updated.triggerId) });
+      }
     },
   });
 }
@@ -305,7 +329,7 @@ export function describeCron(expr: string | null | undefined): string {
   if (parts.length < 5) return expr;
 
   // Handle 6-field (with seconds) or 5-field cron
-  const [, min, hour, dom, mon, dow] = parts.length === 6
+  const [sec, min, hour, dom, mon, dow] = parts.length === 6
     ? parts
     : ['0', ...parts];
 

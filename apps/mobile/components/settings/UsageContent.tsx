@@ -18,6 +18,8 @@ import { useThreadUsage } from '@/lib/billing';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { formatCredits } from '@agentpress/shared';
 import { DateRangePicker, type DateRange } from '@/components/billing/DateRangePicker';
+import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
+import { log } from '@/lib/logger';
 
 interface UsageContentProps {
   onThreadPress?: (threadId: string, projectId: string | null) => void;
@@ -93,6 +95,7 @@ function formatSingleDate(date: Date, formatStr: string): string {
 export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProps) {
   const { t } = useLanguage();
   const { subscriptionData, hasFreeTier } = useBillingContext();
+  const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
 
   // Thread Usage State
   const [threadOffset, setThreadOffset] = React.useState(0);
@@ -126,16 +129,18 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
     [onThreadPress]
   );
 
-  const handlePrevUsageThreadBatch = React.useCallback(() => {
+  const handlePrevThreadPage = React.useCallback(() => {
     if (threadOffset > 0 && !isLoadingThreads) {
       const newOffset = Math.max(0, threadOffset - threadLimit);
+      log.log('📄 Previous page:', { from: threadOffset, to: newOffset });
       setThreadOffset(newOffset);
     }
   }, [threadOffset, threadLimit, isLoadingThreads]);
 
-  const handleNextUsageThreadBatch = React.useCallback(() => {
+  const handleNextThreadPage = React.useCallback(() => {
     if (threadData?.pagination.has_more && !isLoadingThreads) {
       const newOffset = threadOffset + threadLimit;
+      log.log('📄 Next page:', { from: threadOffset, to: newOffset });
       setThreadOffset(newOffset);
     }
   }, [threadData?.pagination.has_more, threadOffset, threadLimit, isLoadingThreads]);
@@ -199,7 +204,14 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
             <Pressable
               onPress={async () => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                onUpgradePress?.();
+                // Use RevenueCat paywall for top-ups
+                if (useNativePaywall) {
+                  log.log('📱 Using RevenueCat paywall for top-ups');
+                  await presentUpgradePaywall();
+                } else {
+                  // Fallback to upgrade press if RevenueCat not available
+                  onUpgradePress?.();
+                }
               }}
               className="mt-4 rounded-full bg-primary px-6 py-2.5 active:opacity-80">
               <Text className="font-roobert-semibold text-sm text-primary-foreground">
@@ -335,6 +347,7 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
                   <Pressable
                     key={record.thread_id}
                     onPress={() => {
+                      log.log('🎯 Thread row pressed:', record.thread_id);
                       handleThreadPress(record.thread_id, record.project_id);
                     }}
                     className={`flex-row items-center border-b border-border/30 px-4 py-3 ${
@@ -372,7 +385,7 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
                 </Text>
                 <View className="flex-row gap-2">
                   <Pressable
-                    onPress={handlePrevUsageThreadBatch}
+                    onPress={handlePrevThreadPage}
                     disabled={threadOffset === 0 || isLoadingThreads}
                     className={`rounded-xl border px-4 py-2 ${
                       threadOffset === 0 || isLoadingThreads
@@ -389,7 +402,7 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
                     </Text>
                   </Pressable>
                   <Pressable
-                    onPress={handleNextUsageThreadBatch}
+                    onPress={handleNextThreadPage}
                     disabled={!threadData.pagination.has_more || isLoadingThreads}
                     className={`rounded-xl border px-4 py-2 ${
                       !threadData.pagination.has_more || isLoadingThreads

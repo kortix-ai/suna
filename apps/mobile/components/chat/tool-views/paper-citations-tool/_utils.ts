@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface Citation {
+export interface Citation {
   paper_id: string;
   title: string;
   year?: number;
@@ -9,7 +9,7 @@ interface Citation {
   url?: string;
 }
 
-interface PaperCitationsData {
+export interface PaperCitationsData {
   paper_title: string | null;
   total_citations: number;
   citations: Citation[];
@@ -63,3 +63,4 @@ export function extractPaperCitationsData({ toolCall, toolResult }: { toolCall: 
     success: toolResult?.success ?? true
   };
 }
+

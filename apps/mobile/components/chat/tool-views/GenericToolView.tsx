@@ -4,8 +4,8 @@
  * Default fallback view for tools without specialized renderers
  */
 
-import React, { useMemo } from 'react';
-import { View, ScrollView } from 'react-native';
+import React, { useState, useMemo, useCallback } from 'react';
+import { View, ScrollView, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Clock, Wrench, AlertCircle, XCircle, CheckCircle } from 'lucide-react-native';

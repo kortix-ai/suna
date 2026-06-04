@@ -1,5 +1,5 @@
 import React from 'react';
-import { View } from 'react-native';
+import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 
 interface MarkdownRendererProps {
@@ -22,6 +22,7 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
     let inCodeBlock = false;
     let codeBlockContent: string[] = [];
     let codeBlockLang = '';
+    let inList = false;
     let listItems: string[] = [];
     let keyCounter = 0;
 
@@ -40,10 +41,11 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
           </View>
         );
         listItems = [];
+        inList = false;
       }
     };
 
-    lines.forEach((line) => {
+    lines.forEach((line, index) => {
       if (line.startsWith('```')) {
         if (inCodeBlock) {
           elements.push(
@@ -84,9 +86,11 @@ export function MarkdownRenderer({ content }: MarkdownRendererProps) {
       } else if (line.match(/^[-*+]\s+/)) {
         const item = line.replace(/^[-*+]\s+/, '');
         listItems.push(item);
+        inList = true;
       } else if (line.match(/^\d+\.\s+/)) {
         const item = line.replace(/^\d+\.\s+/, '');
         listItems.push(item);
+        inList = true;
       } else if (line.startsWith('>')) {
         flushList();
         const text = line.replace(/^>\s*/, '');

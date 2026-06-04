@@ -9,7 +9,7 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type ChannelType = 'slack';
+export type ChannelType = 'telegram' | 'slack' | 'discord' | 'whatsapp' | 'teams' | 'voice' | 'email' | 'sms';
 
 export interface ChannelConfig {
   id: string;
@@ -36,7 +36,18 @@ export interface ChannelConfig {
   sandbox?: { name: string; status: string };
 }
 
-interface UpdateChannelData {
+export interface CreateChannelData {
+  name: string;
+  channel_type: ChannelType;
+  platform_config?: Record<string, unknown>;
+  instructions?: string;
+  agent_name?: string;
+  default_agent?: string;
+  default_model?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface UpdateChannelData {
   name?: string;
   platform_config?: Record<string, unknown>;
   bridge_instructions?: string;
@@ -89,6 +100,29 @@ async function listChannels(sandboxUrl: string): Promise<ChannelConfig[]> {
   };
 
   try {
+    const telegramRes = await fetch(`${sandboxUrl}/env/TELEGRAM_BOT_TOKEN`, { headers });
+    if (telegramRes.ok) {
+      const telegramData = await telegramRes.json() as Record<string, string>;
+      if (telegramData?.TELEGRAM_BOT_TOKEN) {
+        channels.push({
+          id: 'env-telegram',
+          platform: 'telegram',
+          name: 'Telegram Bot',
+          enabled: true,
+          bot_username: null,
+          default_agent: null,
+          default_model: null,
+          instructions: null,
+          webhook_path: null,
+          webhook_url: null,
+          created_by: null,
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
+  } catch { /* ignore */ }
+
+  try {
     const slackRes = await fetch(`${sandboxUrl}/env/SLACK_BOT_TOKEN`, { headers });
     if (slackRes.ok) {
       const slackData = await slackRes.json() as Record<string, string>;
@@ -114,6 +148,13 @@ async function listChannels(sandboxUrl: string): Promise<ChannelConfig[]> {
   return channels;
 }
 
+async function getChannel(sandboxUrl: string, id: string): Promise<ChannelConfig> {
+  const data = await sandboxChannelFetch<{ ok: boolean; channel: ChannelConfig }>(
+    sandboxUrl, `/${id}`,
+  );
+  return data.channel;
+}
+
 async function updateChannel(sandboxUrl: string, id: string, body: UpdateChannelData): Promise<ChannelConfig> {
   const data = await sandboxChannelFetch<{ ok: boolean; channel: ChannelConfig }>(
     sandboxUrl, `/${id}`,
@@ -124,6 +165,28 @@ async function updateChannel(sandboxUrl: string, id: string, body: UpdateChannel
 
 async function deleteChannel(sandboxUrl: string, id: string): Promise<void> {
   // Env-based channels: remove the env vars instead
+  if (id === 'env-telegram') {
+    const token = await getAuthToken();
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    };
+    // Delete webhook from Telegram
+    try {
+      const envRes = await fetch(`${sandboxUrl}/env/TELEGRAM_BOT_TOKEN`, { headers });
+      if (envRes.ok) {
+        const data = await envRes.json() as Record<string, string>;
+        if (data?.TELEGRAM_BOT_TOKEN) {
+          await fetch(`https://api.telegram.org/bot${data.TELEGRAM_BOT_TOKEN}/deleteWebhook`, { method: 'POST' });
+        }
+      }
+    } catch { /* ignore */ }
+    // Remove env vars
+    for (const key of ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_WEBHOOK_SECRET_TOKEN']) {
+      try { await fetch(`${sandboxUrl}/env/${key}`, { method: 'DELETE', headers }); } catch { /* ignore */ }
+    }
+    return;
+  }
   if (id === 'env-slack') {
     const token = await getAuthToken();
     const headers: Record<string, string> = {
@@ -162,6 +225,7 @@ async function disableChannel(sandboxUrl: string, id: string): Promise<ChannelCo
 export const channelKeys = {
   all: ['channels'] as const,
   list: (sandboxId?: string) => [...channelKeys.all, 'list', sandboxId] as const,
+  detail: (id: string) => [...channelKeys.all, 'detail', id] as const,
 };
 
 // ─── Hooks ───────────────────────────────────────────────────────────────────
@@ -172,6 +236,16 @@ export function useChannels() {
     queryKey: channelKeys.list(sandboxUrl),
     queryFn: () => listChannels(sandboxUrl!),
     enabled: !!sandboxUrl,
+    staleTime: 60 * 1000,
+  });
+}
+
+export function useChannel(id: string) {
+  const { sandboxUrl } = useSandboxContext();
+  return useQuery({
+    queryKey: channelKeys.detail(id),
+    queryFn: () => getChannel(sandboxUrl!, id),
+    enabled: !!sandboxUrl && !!id,
     staleTime: 60 * 1000,
   });
 }
@@ -214,7 +288,22 @@ export function useToggleChannel() {
 
 export function getChannelTypeLabel(type: ChannelType): string {
   const labels: Record<ChannelType, string> = {
+    telegram: 'Telegram',
     slack: 'Slack',
+    discord: 'Discord',
+    whatsapp: 'WhatsApp',
+    teams: 'Teams',
+    voice: 'Voice',
+    email: 'Email',
+    sms: 'SMS',
   };
   return labels[type] || type;
+}
+
+export function formatChannelDate(dateString: string): string {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
 }

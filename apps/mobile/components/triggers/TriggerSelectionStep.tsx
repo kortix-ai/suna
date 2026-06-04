@@ -11,6 +11,7 @@ import { View, Image } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Zap, ChevronRight } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Loading } from '../loading/loading';
 import { Pressable } from 'react-native';
@@ -35,6 +36,7 @@ interface TriggerCardProps {
 }
 
 function TriggerCard({ trigger, app, onPress }: TriggerCardProps) {
+  const { colorScheme } = useColorScheme();
   const scale = useSharedValue(1);
 
   const animatedStyle = useAnimatedStyle(() => ({

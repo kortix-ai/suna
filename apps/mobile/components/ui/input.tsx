@@ -3,7 +3,7 @@ import { TextInput, View, type TextInputProps } from 'react-native';
 import { Text } from './text';
 import { cn } from '@/lib/utils/utils';
 
-interface InputProps extends Omit<TextInputProps, 'className'> {
+export interface InputProps extends Omit<TextInputProps, 'className'> {
     /**
      * Current input value
      */

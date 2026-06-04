@@ -1,12 +1,12 @@
 import type { ToolCallData, ToolResultData } from '../types';
 
-interface RealityDefenderIndicator {
+export interface RealityDefenderIndicator {
   name: string;
   score: number;
   description: string;
 }
 
-interface RealityDefenderData {
+export interface RealityDefenderData {
   filePath: string | null;
   mediaType: string | null;
   isDeepfake: boolean;

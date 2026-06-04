@@ -22,7 +22,12 @@ export interface TunnelConnection {
   updatedAt: string;
 }
 
-interface TunnelPermission {
+export interface TunnelConnectionCreateResponse extends TunnelConnection {
+  /** One-time setup token — only returned on creation, never retrievable again. */
+  setupToken: string;
+}
+
+export interface TunnelPermission {
   permissionId: string;
   tunnelId: string;
   accountId: string;
@@ -34,7 +39,19 @@ interface TunnelPermission {
   updatedAt: string;
 }
 
-interface TunnelAuditLog {
+export interface TunnelPermissionRequest {
+  requestId: string;
+  tunnelId: string;
+  accountId: string;
+  capability: string;
+  requestedScope: Record<string, unknown>;
+  reason: string | null;
+  status: 'pending' | 'approved' | 'denied' | 'expired';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TunnelAuditLog {
   logId: string;
   tunnelId: string;
   accountId: string;
@@ -48,7 +65,7 @@ interface TunnelAuditLog {
   createdAt: string;
 }
 
-interface AuditLogPage {
+export interface AuditLogPage {
   data: TunnelAuditLog[];
   pagination: {
     page: number;
@@ -105,6 +122,20 @@ async function getConnection(tunnelId: string): Promise<TunnelConnection> {
   return authFetch<TunnelConnection>(`/tunnel/connections/${tunnelId}`);
 }
 
+async function createConnection(data: { name: string; sandboxId?: string; capabilities?: string[] }): Promise<TunnelConnectionCreateResponse> {
+  return authFetch<TunnelConnectionCreateResponse>(
+    '/tunnel/connections',
+    { method: 'POST', body: JSON.stringify(data) },
+  );
+}
+
+async function updateConnection(tunnelId: string, data: { name?: string; capabilities?: string[] }): Promise<TunnelConnection> {
+  return authFetch<TunnelConnection>(
+    `/tunnel/connections/${tunnelId}`,
+    { method: 'PATCH', body: JSON.stringify(data) },
+  );
+}
+
 async function deleteConnection(tunnelId: string): Promise<void> {
   await authFetch(`/tunnel/connections/${tunnelId}`, { method: 'DELETE' });
 }
@@ -132,7 +163,7 @@ async function fetchAuditLogs(tunnelId: string, page: number, limit: number): Pr
 
 // ─── Query Keys ─────────────────────────────────────────────────────────────
 
-const tunnelKeys = {
+export const tunnelKeys = {
   all: ['tunnel'] as const,
   connections: () => [...tunnelKeys.all, 'connections'] as const,
   connection: (id: string) => [...tunnelKeys.all, 'connection', id] as const,
@@ -158,6 +189,28 @@ export function useTunnelConnection(tunnelId: string) {
     enabled: !!tunnelId,
     staleTime: 2_000,
     refetchInterval: 5_000,
+  });
+}
+
+export function useCreateTunnelConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: createConnection,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: tunnelKeys.connections() });
+    },
+  });
+}
+
+export function useUpdateTunnelConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ tunnelId, ...data }: { tunnelId: string; name?: string; capabilities?: string[] }) =>
+      updateConnection(tunnelId, data),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: tunnelKeys.connections() });
+      qc.invalidateQueries({ queryKey: tunnelKeys.connection(vars.tunnelId) });
+    },
   });
 }
 
@@ -216,6 +269,14 @@ export function useTunnelAuditLogs(tunnelId: string, page = 1, limit = 50) {
 }
 
 // ─── Utilities ──────────────────────────────────────────────────────────────
+
+export function formatTunnelDate(dateString: string): string {
+  return new Date(dateString).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
 
 export function formatRelativeTime(dateString: string): string {
   const diff = Date.now() - new Date(dateString).getTime();

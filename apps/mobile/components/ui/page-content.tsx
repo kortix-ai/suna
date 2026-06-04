@@ -11,10 +11,10 @@
  */
 
 import * as React from 'react';
-import { View, type ViewProps, type StyleProp, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type ViewProps, type StyleProp, type ViewStyle } from 'react-native';
 import { useColorScheme } from 'nativewind';
 
-interface PageContentProps extends ViewProps {
+export interface PageContentProps extends ViewProps {
   /** Override the default `bg-background` surface (e.g. for dark terminal pages). */
   backgroundColor?: string;
   /** Inner style — passed through to the inner content View. The outer

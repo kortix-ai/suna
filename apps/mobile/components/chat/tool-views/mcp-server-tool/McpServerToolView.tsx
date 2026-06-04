@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, ScrollView, Image as RNImage } from 'react-native';
+import { View, ScrollView, Linking, Pressable, Image as RNImage } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Server, Shield, Sparkles } from 'lucide-react-native';
@@ -7,6 +7,7 @@ import type { ToolViewProps } from '../types';
 import { extractMcpServerData, getPrimaryAuthScheme } from './_utils';
 import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
 import { getToolMetadata } from '../tool-metadata';
+import * as Haptics from 'expo-haptics';
 
 // Utility functions
 function formatTimestamp(isoString?: string): string {
@@ -29,6 +30,11 @@ export function McpServerToolView({ toolCall, toolResult, isStreaming = false, a
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolMetadata = getToolMetadata(name, toolCall.arguments);
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : (success !== false);
+
+  const handleOpenUrl = (url: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Linking.openURL(url);
+  };
 
   if (isStreaming) {
     return (

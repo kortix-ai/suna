@@ -6,7 +6,7 @@ import { log } from '@/lib/logger';
  * Uses keyword matching and scoring to determine the most relevant mode.
  */
 
-type ModeId = 'image' | 'slides' | 'data' | 'docs' | 'people' | 'research';
+export type ModeId = 'image' | 'slides' | 'data' | 'docs' | 'people' | 'research';
 
 /**
  * Keyword patterns for each mode
@@ -192,4 +192,27 @@ export function detectModeFromContent(prompt: string): ModeId | null {
   
   log.log(`[ModeDetection] No confident detection (best: ${bestMode} with score ${bestScore})`, scores);
   return null;
+}
+
+/**
+ * Get all modes sorted by their score for a given prompt
+ * Useful for debugging or showing suggestions
+ */
+export function getModeScores(prompt: string): Array<{ mode: ModeId; score: number }> {
+  if (!prompt || prompt.trim().length === 0) {
+    return [];
+  }
+  
+  const normalizedPrompt = prompt.toLowerCase().trim();
+  
+  const scores: Array<{ mode: ModeId; score: number }> = [
+    { mode: 'image', score: calculateModeScore(normalizedPrompt, 'image') },
+    { mode: 'slides', score: calculateModeScore(normalizedPrompt, 'slides') },
+    { mode: 'data', score: calculateModeScore(normalizedPrompt, 'data') },
+    { mode: 'docs', score: calculateModeScore(normalizedPrompt, 'docs') },
+    { mode: 'people', score: calculateModeScore(normalizedPrompt, 'people') },
+    { mode: 'research', score: calculateModeScore(normalizedPrompt, 'research') },
+  ];
+  
+  return scores.sort((a, b) => b.score - a.score);
 }

@@ -4,17 +4,30 @@
  * Matches web's "Billing Status – Manage your credits and subscription" design
  */
 
-import React, { useCallback } from 'react';
-import { View, ScrollView, Pressable } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, ScrollView, Pressable, Platform, Alert } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { SettingsHeader } from './SettingsHeader';
 import { PricingTierBadge } from '@/components/billing/PricingTierBadge';
-import { useAccountState } from '@/lib/billing';
+import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
+import {
+  useAccountState,
+  accountStateSelectors,
+  useSubscriptionCommitment,
+  useScheduledChanges,
+  billingKeys,
+  presentCustomerInfo,
+  shouldUseRevenueCat,
+  isRevenueCatInitialized,
+  initializeRevenueCat,
+} from '@/lib/billing';
 import { useAuthContext } from '@/contexts';
 import { useLanguage } from '@/contexts';
+import { useQueryClient } from '@tanstack/react-query';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useAnimatedStyle,
@@ -23,6 +36,7 @@ import Animated, {
   FadeIn,
 } from 'react-native-reanimated';
 import {
+  ShoppingCart,
   Lightbulb,
   Clock,
   Infinity,
@@ -30,6 +44,8 @@ import {
   CreditCard,
   AlertCircle,
   ArrowRight,
+  Settings,
+  RotateCcw,
 } from 'lucide-react-native';
 import { formatCredits } from '@agentpress/shared';
 import { ScheduledDowngradeCard } from '@/components/billing/ScheduledDowngradeCard';
@@ -48,20 +64,48 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   const { t } = useLanguage();
   const { user } = useAuthContext();
   const isAuthenticated = !!user;
+  const queryClient = useQueryClient();
   const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
 
   const {
     data: accountState,
     isLoading: isLoadingSubscription,
     error: subscriptionError,
+    refetch: refetchSubscription,
   } = useAccountState({
     enabled: visible && isAuthenticated,
   });
+
+  const {
+    data: commitmentData,
+    refetch: refetchCommitment,
+  } = useSubscriptionCommitment(accountState?.subscription?.subscription_id || undefined, {
+    enabled: visible && !!accountState?.subscription?.subscription_id,
+  });
+
+  const {
+    data: scheduledChangesData,
+    refetch: refetchScheduledChanges,
+  } = useScheduledChanges({
+    enabled: visible && isAuthenticated,
+  });
+
+  const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
 
   const handleClose = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
+
+  const handleSubscriptionUpdate = useCallback(() => {
+    refetchSubscription();
+    refetchCommitment();
+    refetchScheduledChanges();
+    queryClient.invalidateQueries({ queryKey: billingKeys.all });
+  }, [refetchSubscription, refetchCommitment, refetchScheduledChanges, queryClient]);
+
 
   const handleCreditsExplained = useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -70,7 +114,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
       const baseUrl = process.env.EXPO_PUBLIC_ENV === 'staging'
         ? 'https://staging.kortix.com'
         : 'https://www.kortix.com';
-      await WebBrowser.openBrowserAsync(`${baseUrl}/help/credits`, {
+      await WebBrowser.openBrowserAsync(`${baseUrl}/credits-explained`, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
       });
     } catch (error) {
@@ -78,8 +122,15 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     }
   }, []);
 
+  const creditsButtonScale = useSharedValue(1);
   const creditsLinkScale = useSharedValue(1);
   const changePlanButtonScale = useSharedValue(1);
+  const customerInfoButtonScale = useSharedValue(1);
+  const restorePurchaseButtonScale = useSharedValue(1);
+
+  const creditsButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: creditsButtonScale.value }],
+  }));
 
   const creditsLinkStyle = useAnimatedStyle(() => ({
     transform: [{ scale: creditsLinkScale.value }],
@@ -89,10 +140,57 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     transform: [{ scale: changePlanButtonScale.value }],
   }));
 
+  const customerInfoButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: customerInfoButtonScale.value }],
+  }));
+
+  const restorePurchaseButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: restorePurchaseButtonScale.value }],
+  }));
+
   const handleChangePlan = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onChangePlan?.();
   }, [onChangePlan]);
+
+  const handleCustomerInfo = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      // Ensure RevenueCat is initialized before presenting customer info
+      if (user && shouldUseRevenueCat()) {
+        const initialized = await isRevenueCatInitialized();
+        if (!initialized) {
+          log.log('🔄 RevenueCat not initialized, initializing now...');
+          try {
+            await initializeRevenueCat(user.id, user.email || undefined, true);
+          } catch (initError) {
+            log.warn('⚠️ RevenueCat initialization warning:', initError);
+          }
+        }
+      }
+
+      await presentCustomerInfo();
+      // Refresh billing data after user returns from customer info portal
+      handleSubscriptionUpdate();
+    } catch (error) {
+      log.error('Error presenting customer info portal:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    }
+  }, [user, handleSubscriptionUpdate]);
+
+  const handleRestorePurchase = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert(
+      t('billing.restorePurchase', 'Restore Purchase'),
+      t('billing.noPurchaseToRestore', 'No purchase to be restored'),
+      [{ text: t('common.ok', 'OK') }]
+    );
+  }, [t]);
+
+  // Show button if RevenueCat should be used (iOS/Android only)
+  const useRevenueCat = shouldUseRevenueCat();
+
+  // Debug logging to help diagnose button visibility
 
   if (!visible) return null;
 
@@ -220,17 +318,16 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
 
   const dailyRefreshTime = getDailyRefreshTime();
   const monthlyRefreshTime = getMonthlyRefreshTime();
-  const commitmentData = accountState?.subscription?.commitment;
   const hasCommitment = commitmentData?.has_commitment;
   const commitmentEndDate = commitmentData?.commitment_end_date
     ? new Date(commitmentData.commitment_end_date).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
-    })
+      })
     : null;
 
-  const scheduledChange = accountState?.subscription?.scheduled_change;
+  const scheduledChange = scheduledChangesData?.scheduled_change || accountState?.subscription?.scheduled_change;
   const subscription = accountState?.subscription;
 
   return (
@@ -270,6 +367,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
             >
               <ScheduledDowngradeCard
                 scheduledChange={scheduledChange}
+                onCancel={handleSubscriptionUpdate}
               />
             </AnimatedView>
           )}
@@ -465,6 +563,75 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                     {t('billing.changePlan', 'Change Plan')}
                   </Text>
                   <Icon as={ArrowRight} size={18} className="text-background" strokeWidth={2} />
+                </AnimatedPressable>
+              )}
+
+              {/* Get Additional Credits */}
+              {accountState?.subscription?.can_purchase_credits && (
+                <AnimatedPressable
+                  onPress={async () => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    // Use RevenueCat paywall for credit purchases
+                    if (useNativePaywall) {
+                      log.log('📱 Using RevenueCat paywall for additional credits');
+                      await presentUpgradePaywall();
+                    } else {
+                      log.warn('⚠️ RevenueCat not available, cannot purchase credits');
+                    }
+                  }}
+                  onPressIn={() => {
+                    creditsButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+                  }}
+                  onPressOut={() => {
+                    creditsButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+                  }}
+                  style={creditsButtonStyle}
+                  className="w-full h-12 bg-primary rounded-full items-center justify-center flex-row gap-2"
+                >
+                  <Icon as={ShoppingCart} size={18} className="text-primary-foreground" strokeWidth={2} />
+                  <Text className="text-sm font-roobert-semibold text-primary-foreground">
+                    {t('billing.getAdditionalCredits', 'Get Additional Credits')}
+                  </Text>
+                </AnimatedPressable>
+              )}
+
+              {/* RevenueCat Customer Info Portal */}
+              {useRevenueCat && (
+                <AnimatedPressable
+                  onPress={handleCustomerInfo}
+                  onPressIn={() => {
+                    customerInfoButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+                  }}
+                  onPressOut={() => {
+                    customerInfoButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+                  }}
+                  style={customerInfoButtonStyle}
+                  className="w-full h-12 bg-card border border-border rounded-2xl items-center justify-center flex-row gap-2"
+                >
+                  <Icon as={Settings} size={18} className="text-foreground" strokeWidth={2} />
+                  <Text className="text-sm font-roobert-semibold text-foreground">
+                    {t('billing.customerInfo', 'Customer Info')}
+                  </Text>
+                </AnimatedPressable>
+              )}
+
+              {/* Restore Purchase Button */}
+              {useRevenueCat && (
+                <AnimatedPressable
+                  onPress={handleRestorePurchase}
+                  onPressIn={() => {
+                    restorePurchaseButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+                  }}
+                  onPressOut={() => {
+                    restorePurchaseButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+                  }}
+                  style={restorePurchaseButtonStyle}
+                  className="w-full h-12 bg-card border border-border rounded-2xl items-center justify-center flex-row gap-2"
+                >
+                  <Icon as={RotateCcw} size={18} className="text-foreground" strokeWidth={2} />
+                  <Text className="text-sm font-roobert-semibold text-foreground">
+                    {t('billing.restorePurchase', 'Restore Purchase')}
+                  </Text>
                 </AnimatedPressable>
               )}
 

@@ -4,6 +4,7 @@ import { useSoundStore, type SoundEvent } from '@/stores/sound-store';
 // ---------------------------------------------------------------------------
 // Bundled assets — only files that actually exist on disk.
 // Missing events (error, notification) fall back to completion.mp3.
+// The opencode pack has no files yet, so it falls back to kortix.
 // ---------------------------------------------------------------------------
 
 const KORTIX_ASSETS: Partial<Record<SoundEvent, AVPlaybackSource>> = {
@@ -15,6 +16,7 @@ function resolveAsset(pack: string, event: SoundEvent): AVPlaybackSource | null 
   if (pack === 'kortix') {
     return KORTIX_ASSETS[event] ?? KORTIX_ASSETS.completion ?? null;
   }
+  // opencode pack has no files yet — returns null (no sound)
   return null;
 }
 
@@ -62,6 +64,22 @@ async function play(asset: AVPlaybackSource, volume: number) {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
+
+export async function playSound(event: SoundEvent) {
+  const { preferences } = useSoundStore.getState();
+  if (preferences.pack === 'off') return;
+  if (preferences.events[event] === false) return;
+  if (preferences.volume <= 0) return;
+
+  const asset = resolveAsset(preferences.pack, event);
+  if (!asset) return;
+
+  try {
+    await play(asset, preferences.volume);
+  } catch {
+    // Silently ignore playback errors
+  }
+}
 
 export async function previewSound(event: SoundEvent) {
   const { preferences } = useSoundStore.getState();

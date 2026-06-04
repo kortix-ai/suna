@@ -198,3 +198,5 @@ export const getAvailableLanguages = () => {
   ];
 };
 
+export default i18n;
+

@@ -7,21 +7,23 @@
  */
 
 import React from 'react';
-import { View } from 'react-native';
+import { View, Pressable, Text as RNText } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Clock } from 'lucide-react-native';
 import type { UnifiedMessage, ParsedMetadata, ParsedContent } from '@agentpress/shared';
-import { safeJsonParse } from '@agentpress/shared';
+import { safeJsonParse, getUserFriendlyToolName, isAskOrCompleteTool, extractTextFromArguments } from '@agentpress/shared';
+import { getToolIcon } from '@/lib/icons/tool-icons';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@agentpress/shared';
+import { Linking } from 'react-native';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { PromptExamples } from '@/components/shared';
-import { parseXmlToolCalls, preprocessTextOnlyTools } from '@agentpress/shared/tools';
+import { parseXmlToolCalls, preprocessTextOnlyTools, isHiddenTool } from '@agentpress/shared/tools';
 import { normalizeArrayValue, normalizeAttachments } from '@agentpress/shared/utils';
 
-interface AssistantMessageRendererProps {
+export interface AssistantMessageRendererProps {
   message: UnifiedMessage;
   onToolClick: (assistantMessageId: string | null, toolName: string, toolCallId?: string) => void;
   onFileClick?: (filePath: string) => void;
@@ -35,6 +37,27 @@ interface AssistantMessageRendererProps {
 }
 
 // normalizeArrayValue and normalizeAttachments are now imported from @agentpress/shared/utils
+
+/**
+ * Extracts a display parameter from tool call arguments
+ */
+function getToolCallDisplayParam(toolCall: { arguments?: Record<string, any> | string }): string {
+  let args: Record<string, any> = {};
+
+  if (toolCall.arguments) {
+    if (typeof toolCall.arguments === 'string') {
+      try {
+        args = JSON.parse(toolCall.arguments);
+      } catch {
+        args = {};
+      }
+    } else {
+      args = toolCall.arguments;
+    }
+  }
+
+  return args.file_path || args.path || args.command || args.query || args.url || '';
+}
 
 /**
  * Renders an "ask" tool call
@@ -159,6 +182,39 @@ function renderCompleteToolCall(
 }
 
 /**
+ * Renders a regular tool call as a clickable button
+ */
+function renderRegularToolCall(
+  toolCall: { function_name: string; arguments?: Record<string, any> | string; tool_call_id?: string },
+  index: number,
+  toolName: string,
+  props: AssistantMessageRendererProps
+): React.ReactNode {
+  const { message, onToolClick } = props;
+  const IconComponent = getToolIcon(toolName);
+  const paramDisplay = getToolCallDisplayParam(toolCall);
+
+  return (
+    <View key={`tool-${index}`} className="my-1">
+      <Pressable
+        onPress={() => onToolClick(message.message_id, toolName, toolCall.tool_call_id)}
+        className="flex-row items-center gap-1.5 py-1 px-1 pr-1.5 bg-muted rounded-lg border border-neutral-200 dark:border-neutral-700/50 active:bg-muted/80"
+      >
+        <View className="flex items-center justify-center">
+          <Icon as={IconComponent} size={14} className="text-muted-foreground" />
+        </View>
+        <Text className="font-mono text-xs text-foreground">{getUserFriendlyToolName(toolName)}</Text>
+        {paramDisplay && (
+          <Text className="ml-1 text-xs text-muted-foreground" numberOfLines={1} style={{ maxWidth: 200 }}>
+            {paramDisplay}
+          </Text>
+        )}
+      </Pressable>
+    </View>
+  );
+}
+
+/**
  * Converts XML tool call to unified format
  */
 function convertXmlToolCallToUnified(xmlToolCall: { functionName: string; parameters: Record<string, any> }, index: number, messageId: string | null): {
@@ -234,6 +290,11 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
   // Only render ask/complete tools inline - regular tool calls are rendered via ToolCard components
   toolCalls.forEach((toolCall, index) => {
     const toolName = toolCall.function_name?.replace(/_/g, '-') || '';
+
+    // Skip hidden tools (internal/initialization tools that don't provide meaningful user feedback)
+    if (isHiddenTool(toolName)) {
+      return;
+    }
 
     if (toolName === 'ask') {
       contentParts.push(renderAskToolCall(toolCall, index, props));

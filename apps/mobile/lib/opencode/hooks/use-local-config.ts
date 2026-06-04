@@ -80,7 +80,7 @@ export const useLocalConfigStore = create<LocalConfigState>()(
 
 // ─── Resolved config hook ────────────────────────────────────────────────────
 
-interface ResolvedConfig {
+export interface ResolvedConfig {
   agent: Agent | null;
   agents: Agent[];
   model: FlatModel | null;

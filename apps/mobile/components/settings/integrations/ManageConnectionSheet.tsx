@@ -77,8 +77,6 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
     [],
   );
 
-  const displayName = localLabel || connection?.label || connection?.appName || connection?.app || '';
-
   // ── Rename ──
   const handleOpenRename = useCallback(() => {
     if (!connection) return;
@@ -158,6 +156,8 @@ export function ManageConnectionSheet({ connection, appImgSrc, onDismiss }: Mana
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
   const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
   const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+
+  const displayName = localLabel || connection?.label || connection?.appName || connection?.app || '';
 
   const formatDate = (iso: string | null) => {
     if (!iso) return null;

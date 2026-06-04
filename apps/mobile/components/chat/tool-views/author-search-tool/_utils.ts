@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface AuthorSearchResult {
+export interface AuthorSearchResult {
   author_id: string;
   name: string;
   url: string;
@@ -11,7 +11,7 @@ interface AuthorSearchResult {
   h_index: number;
 }
 
-interface AuthorSearchData {
+export interface AuthorSearchData {
   query: string | null;
   total_results: number;
   results: AuthorSearchResult[];
@@ -71,3 +71,4 @@ export function extractAuthorSearchData({ toolCall, toolResult }: { toolCall: To
     success: toolResult?.success ?? true
   };
 }
+

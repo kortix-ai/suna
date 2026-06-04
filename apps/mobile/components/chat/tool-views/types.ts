@@ -9,8 +9,6 @@ import React from 'react';
 import type { UnifiedMessage } from '@/api/types';
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-export type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
-
 export interface ToolViewProps {
   /** Structured tool call data from metadata */
   toolCall: ToolCallData;
@@ -80,3 +78,4 @@ export interface ToolViewProps {
 export interface ToolViewComponent {
   (props: ToolViewProps): React.ReactElement | null;
 }
+

@@ -30,7 +30,7 @@ interface BrowserPageProps {
   isRightDrawerOpen?: boolean;
 }
 
-export function BrowserPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: BrowserPageProps) {
+export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: BrowserPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { sandboxId } = useSandboxContext();
@@ -159,6 +159,7 @@ export function BrowserPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpe
 
   const fgColor = isDark ? '#F8F8F8' : '#121215';
   const mutedColor = isDark ? '#888' : '#999';
+  const barBg = isDark ? '#1E1E22' : '#F4F4F5';
   const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
 
   // URL bar + inline nav buttons, passed into PageHeader's title slot so
@@ -167,10 +168,10 @@ export function BrowserPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpe
   const titleNode = (
     <View className="flex-1 flex-row items-center" style={{ gap: 2 }}>
       <Pressable onPress={handleGoBack} disabled={!canGoBack} hitSlop={6} className="p-1">
-        <Icon as={ArrowLeft} size={16} color={canGoBack ? fgColor : mutedColor} strokeWidth={2.2} />
+        <Icon as={ArrowLeft} size={16} style={{ color: canGoBack ? fgColor : mutedColor }} strokeWidth={2.2} />
       </Pressable>
       <Pressable onPress={handleGoForward} disabled={!canGoForward} hitSlop={6} className="p-1 mr-1">
-        <Icon as={ArrowRight} size={16} color={canGoForward ? fgColor : mutedColor} strokeWidth={2.2} />
+        <Icon as={ArrowRight} size={16} style={{ color: canGoForward ? fgColor : mutedColor }} strokeWidth={2.2} />
       </Pressable>
 
       <View
@@ -187,7 +188,7 @@ export function BrowserPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpe
           overflow: 'hidden',
         }}
       >
-        {!isLoading && <Icon as={Globe} size={12} color={mutedColor} strokeWidth={2} />}
+        {!isLoading && <Icon as={Globe} size={12} style={{ color: mutedColor }} strokeWidth={2} />}
         {isLoading && <ActivityIndicator size={10} color={mutedColor} />}
         <TextInput
           value={urlInput}
@@ -222,10 +223,10 @@ export function BrowserPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpe
   const rightActions = (
     <View className="flex-row items-center">
       <Pressable onPress={isLoading ? handleStop : handleRefresh} hitSlop={6} className="p-1">
-        <Icon as={isLoading ? X : RefreshCw} size={15} color={fgColor} strokeWidth={2.2} />
+        <Icon as={isLoading ? X : RefreshCw} size={15} style={{ color: fgColor }} strokeWidth={2.2} />
       </Pressable>
       <Pressable onPress={handleOpenExternal} hitSlop={6} className="p-1 ml-1">
-        <Icon as={ExternalLink} size={15} color={mutedColor} strokeWidth={2.2} />
+        <Icon as={ExternalLink} size={15} style={{ color: mutedColor }} strokeWidth={2.2} />
       </Pressable>
     </View>
   );

@@ -1,8 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { usageApi } from './usage-api';
-import type { ThreadUsageResponse, UseThreadUsageParams } from './usage-api';
+import type { ThreadUsageResponse, ThreadUsageRecord, UseThreadUsageParams } from './usage-api';
 
-interface UseThreadUsageOptions extends UseThreadUsageParams {
+export interface UseThreadUsageOptions extends UseThreadUsageParams {
   enabled?: boolean;
 }
 
@@ -21,3 +21,6 @@ export function useThreadUsage({
     staleTime: 30000, // 30 seconds
   });
 }
+
+export type { ThreadUsageResponse, ThreadUsageRecord };
+

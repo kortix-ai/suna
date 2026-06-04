@@ -22,11 +22,14 @@ import {
   type NativeScrollEvent,
 } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
+import Reanimated, { useAnimatedStyle, useSharedValue, withTiming, interpolate } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Text } from '@/components/ui/text';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { Menu as MenuIcon, X as CloseIcon } from 'lucide-react-native';
+import { Icon } from '@/components/ui/icon';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Text as RNText } from 'react-native';
 
@@ -85,7 +88,7 @@ interface SessionPageProps {
   onSkipOnboarding?: () => void;
 }
 
-export function SessionPage({ sessionId, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
+export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onboardingMode, onSkipOnboarding }: SessionPageProps) {
   const router = useRouter();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -272,6 +275,8 @@ export function SessionPage({ sessionId, onOpenDrawer, onOpenRightDrawer, isDraw
   // ── Audio recording ──
 
   const audioRecorder = useAudioRecorder();
+  // Dummy agent manager shape for useAudioRecordingHandlers compatibility
+  const dummyAgentManager = useMemo(() => ({ selectedAgent: null } as any), []);
 
   // Track transcribed text to inject into SessionChatInput
   const [pendingTranscription, setPendingTranscription] = useState<string | null>(null);
@@ -282,7 +287,7 @@ export function SessionPage({ sessionId, onOpenDrawer, onOpenRightDrawer, isDraw
     }
   }, []);
 
-  const audioHandlers = useAudioRecordingHandlers(audioRecorder, transcribeAndAddToInput);
+  const audioHandlers = useAudioRecordingHandlers(audioRecorder, dummyAgentManager, transcribeAndAddToInput);
 
   // ── Send / Stop handlers (defined early so queue drain logic can reference them) ──
 
@@ -760,6 +765,11 @@ export function SessionPage({ sessionId, onOpenDrawer, onOpenRightDrawer, isDraw
     if (!trimmed || trimmed === previous) return;
     renameSession.mutate({ sessionId, title: trimmed });
   }, [isEditingTitle, titleDraft, session?.title, renameSession, sessionId]);
+
+  const cancelTitleEdit = useCallback(() => {
+    setIsEditingTitle(false);
+    setTitleDraft(session?.title || '');
+  }, [session?.title]);
 
   return (
     <KeyboardAvoidingView
@@ -1371,6 +1381,7 @@ function ForkBanner({
   onPress: () => void;
   isDark: boolean;
 }) {
+  const mutedColor = isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.15)';
   const textMuted = isDark ? '#888' : '#999';
   const textColor = isDark ? '#aaa' : '#666';
   const borderColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';

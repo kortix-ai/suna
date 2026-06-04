@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface AgentData {
+export interface AgentData {
   agent_id?: string;
   agent_name?: string;
   message?: string;
@@ -69,3 +69,4 @@ export function extractAgentData(
     success: toolResult?.success ?? true
   };
 }
+

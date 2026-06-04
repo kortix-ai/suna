@@ -21,7 +21,7 @@ function formatTimestamp(isoString?: string): string {
 }
 
 export function CompanySearchToolView({ toolCall, toolResult, isStreaming = false, assistantTimestamp, toolTimestamp }: ToolViewProps) {
-  const { query, results, success } = extractCompanySearchData({ toolCall, toolResult });
+  const { query, total_results, results, success } = extractCompanySearchData({ toolCall, toolResult });
 
   if (!toolCall) {
     return null;
@@ -139,14 +139,14 @@ export function CompanySearchToolView({ toolCall, toolResult, isStreaming = fals
           <View className="gap-3">
             {results.map((result, idx) => (
               <Pressable
-                key={result.id || idx}
+                key={result.company_id || idx}
                 onPress={() => result.url && handleOpenUrl(result.url)}
                 className="bg-card border border-border rounded-2xl p-4 gap-3 active:opacity-70"
               >
                 <View className="flex-row items-start gap-3">
-                  {result.company_logo_url && (
+                  {result.logo_url && (
                     <RNImage
-                      source={{ uri: result.company_logo_url }}
+                      source={{ uri: result.logo_url }}
                       style={{ width: 48, height: 48, borderRadius: 12 }}
                       resizeMode="contain"
                     />
@@ -154,7 +154,7 @@ export function CompanySearchToolView({ toolCall, toolResult, isStreaming = fals
                   <View className="flex-1 gap-2">
                     <View className="flex-row items-start justify-between gap-2">
                       <Text className="text-base font-roobert-semibold text-foreground flex-1">
-                        {result.company_name}
+                        {result.name}
                       </Text>
                       {result.url && (
                         <Icon as={ExternalLink} size={16} className="text-muted-foreground flex-shrink-0" />
@@ -167,20 +167,20 @@ export function CompanySearchToolView({ toolCall, toolResult, isStreaming = fals
                       </Text>
                     )}
 
-                    {result.company_industry && (
+                    {result.industry && (
                       <View className="flex-row items-center gap-1.5">
                         <Icon as={Briefcase} size={12} className="text-muted-foreground" />
                         <Text className="text-sm font-roobert text-muted-foreground flex-1" numberOfLines={1}>
-                          {result.company_industry}
+                          {result.industry}
                         </Text>
                       </View>
                     )}
 
-                    {result.company_location && (
+                    {result.location && (
                       <View className="flex-row items-center gap-1.5">
                         <Icon as={MapPin} size={12} className="text-muted-foreground" />
                         <Text className="text-sm font-roobert text-muted-foreground flex-1" numberOfLines={1}>
-                          {result.company_location}
+                          {result.location}
                         </Text>
                       </View>
                     )}

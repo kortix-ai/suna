@@ -29,3 +29,6 @@ export const usePricingModalStore = create<PricingModalState>((set) => ({
       creditsExhausted: false,
     }),
 }));
+
+export const useBillingModalStore = usePricingModalStore;
+

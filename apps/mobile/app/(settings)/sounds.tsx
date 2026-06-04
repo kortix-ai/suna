@@ -26,6 +26,7 @@ import { previewSound } from '@/lib/sounds';
 
 const PACKS: { id: SoundPack; label: string; description: string; icon: typeof Volume2 }[] = [
   { id: 'off', label: 'Off', description: 'All sounds disabled', icon: CircleOff },
+  { id: 'opencode', label: 'Default', description: 'Default sound pack', icon: Volume2 },
   { id: 'kortix', label: 'Seshion Pack', description: 'Whistlin\'', icon: Music },
 ];
 

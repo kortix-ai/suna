@@ -1,7 +1,7 @@
 /**
  * ChannelsPage — full-screen channels management with setup wizards.
  * Create, list, enable/disable, edit, and delete channels.
- * Includes the Slack setup wizard matching frontend.
+ * Includes Telegram (2-step) and Slack (3-step) setup wizards matching frontend.
  */
 
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
@@ -14,12 +14,17 @@ import {
   ActivityIndicator,
   Switch,
   StyleSheet,
+  Keyboard,
   TouchableOpacity,
   ScrollView,
   Linking,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { Text as RNText } from 'react-native';
 import {
+  Plus,
+  Search,
+  X,
   ChevronRight,
   Trash2,
   Radio,
@@ -34,14 +39,14 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
-import {
+import BottomSheet, {
   BottomSheetBackdrop,
   BottomSheetModal,
+  BottomSheetView,
   BottomSheetTextInput,
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
 
-import { API_URL } from '@/api/config';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { SearchListHeader } from '@/components/ui/search-list-header';
 import { useSheetBottomPadding } from '@/hooks/useSheetKeyboard';
@@ -58,21 +63,42 @@ import {
   type ChannelConfig,
   type ChannelType,
 } from '@/hooks/useChannels';
-import { useSlackConnect } from '@/hooks/useChannelWizards';
+import {
+  useTelegramVerifyToken,
+  useTelegramConnect,
+  useSlackGenerateManifest,
+  useSlackConnect,
+} from '@/hooks/useChannelWizards';
 import { useOpenCodeAgents, useOpenCodeProviders, flattenModels, filterToLatestModels } from '@/lib/opencode/hooks/use-opencode-data';
 
 // ─── Channel Type Icons ─────────────────────────────────────────────────────
 
 const CHANNEL_TYPE_ICONS: Record<ChannelType, string> = {
+  telegram: 'paper-plane-outline',
   slack: 'logo-slack',
+  discord: 'logo-discord',
+  whatsapp: 'chatbubble-outline',
+  teams: 'people-outline',
+  voice: 'mic-outline',
+  email: 'mail-outline',
+  sms: 'chatbox-outline',
 };
 
 function getChannelIcon(type: ChannelType): string {
   return CHANNEL_TYPE_ICONS[type] || 'radio-outline';
 }
 
+const SUPPORTED_CHANNEL_TYPES: ChannelType[] = ['telegram', 'slack'];
+
 const ALL_CHANNEL_TYPES: { type: ChannelType; label: string }[] = [
+  { type: 'telegram', label: 'Telegram' },
   { type: 'slack', label: 'Slack' },
+  { type: 'discord', label: 'Discord' },
+  { type: 'whatsapp', label: 'WhatsApp' },
+  { type: 'teams', label: 'Teams' },
+  { type: 'voice', label: 'Voice' },
+  { type: 'email', label: 'Email' },
+  { type: 'sms', label: 'SMS' },
 ];
 
 // ─── Tab Page Wrapper ────────────────────────────────────────────────────────
@@ -88,6 +114,7 @@ interface ChannelsTabPageProps {
 
 export function ChannelsTabPage({
   page,
+  onBack,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -95,6 +122,8 @@ export function ChannelsTabPage({
 }: ChannelsTabPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
+  const fgColor = isDark ? '#F8F8F8' : '#121215';
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
@@ -125,6 +154,7 @@ function ChannelsContent() {
   const { data: channels, isLoading, error, refetch } = useChannels();
   const deleteChannelMut = useDeleteChannel();
   const toggleChannel = useToggleChannel();
+  const updateChannel = useUpdateChannel();
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedChannel, setSelectedChannel] = useState<ChannelConfig | null>(null);
@@ -135,6 +165,7 @@ function ChannelsContent() {
   // Colors
   const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
 
   // Filter + sort channels
   const filteredChannels = useMemo(() => {
@@ -274,6 +305,16 @@ function ChannelsContent() {
             Alert.alert('Error', 'Failed to toggle channel');
           }
         }}
+        onSave={async (channel, name) => {
+          try {
+            await updateChannel.mutateAsync({ id: (channel.id || channel.channelConfigId!), data: { name } });
+            setSelectedChannel((prev) => prev ? { ...prev, name } : null);
+            haptics.success();
+          } catch {
+            haptics.warning();
+            Alert.alert('Error', 'Failed to update channel');
+          }
+        }}
         onDelete={handleDelete}
         onClose={() => { detailSheetRef.current?.dismiss(); setSelectedChannel(null); }}
       />
@@ -286,11 +327,17 @@ function ChannelsContent() {
         renderBackdrop={renderBackdrop}
         sandboxUrl={sandboxUrl}
         sandboxUuid={sandboxUuid}
+        onCreate={async () => {
+          haptics.success();
+          addSheetRef.current?.dismiss();
+          refetch();
+        }}
         onCreated={() => {
           haptics.success();
           addSheetRef.current?.dismiss();
           refetch();
         }}
+        isCreating={false}
       />
     </View>
   );
@@ -304,6 +351,7 @@ function ChannelRow({ channel, isDark, onPress }: { channel: ChannelConfig; isDa
   const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
   const platform = channel.platform || channel.channelType!;
   const modelShort = channel.default_model ? channel.default_model.split('/').pop() : null;
+  const isTelegram = platform === 'telegram';
 
   return (
     <View style={{ borderBottomWidth: 1, borderBottomColor: borderColor }}>
@@ -317,7 +365,7 @@ function ChannelRow({ channel, isDark, onPress }: { channel: ChannelConfig; isDa
       >
         {/* Brand icon — transparent, matches ProviderLogo treatment */}
         <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name={getChannelIcon(platform) as any} size={24} color={platform === 'slack' ? '#E91E63' : muted} />
+          <Ionicons name={getChannelIcon(platform) as any} size={24} color={isTelegram ? '#29B6F6' : '#E91E63'} />
         </View>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -353,16 +401,18 @@ function ChannelRow({ channel, isDark, onPress }: { channel: ChannelConfig; isDa
 
 function ChannelDetailSheet({
   sheetRef, channel, isDark, theme,
-  onToggle, onDelete, onClose,
+  onToggle, onSave, onDelete, onClose,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal | null>;
+  sheetRef: React.RefObject<BottomSheetModal>;
   channel: ChannelConfig | null;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   onToggle: (channel: ChannelConfig, enabled: boolean) => void;
+  onSave: (channel: ChannelConfig, name: string) => void;
   onDelete: (channel: ChannelConfig) => void;
   onClose: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const { sandboxUrl } = useSandboxContext();
   const updateChannel = useUpdateChannel();
@@ -449,7 +499,7 @@ function ChannelDetailSheet({
     [],
   );
 
-  const platform = channel ? (channel.platform || channel.channelType!) : 'slack';
+  const platform = channel ? (channel.platform || channel.channelType!) : 'telegram';
   const webhookUrl = channel?.webhook_url || (channel?.platformConfig?.webhook_url as string) || '';
 
   return (
@@ -575,7 +625,9 @@ function ChannelDetailSheet({
             <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: '#d97706' }}>Public URL not resolved. Set PUBLIC_BASE_URL.</Text>
           )}
           <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted, marginTop: 6 }}>
-            Set this as the Request URL in your Slack app → Event Subscriptions.
+            {platform === 'telegram'
+              ? 'Telegram sends webhook events to this URL. It was set during bot setup.'
+              : 'Set this as the Request URL in your Slack app → Event Subscriptions.'}
           </Text>
         </View>
 
@@ -613,46 +665,82 @@ function ChannelDetailSheet({
   );
 }
 
+// ─── Detail Row (reusable) ───────────────────────────────────────────────────
+
+function DetailRow({ label, value, isDark, fg, muted, last, mono }: {
+  label: string; value: string; isDark: boolean; fg: string; muted: string; last?: boolean; mono?: boolean;
+}) {
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+      paddingHorizontal: 14, paddingVertical: 11,
+      borderBottomWidth: last ? 0 : StyleSheet.hairlineWidth,
+      borderBottomColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+    }}>
+      <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>{label}</Text>
+      <Text style={{ fontSize: 13, fontFamily: mono ? 'monospace' : 'Roobert-Medium', color: fg, maxWidth: '60%' }} numberOfLines={1}>{value}</Text>
+    </View>
+  );
+}
+
 // ─── Add Channel Sheet (with wizard routing) ─────────────────────────────────
 
-type WizardView = 'type-select' | 'slack-wizard';
+type WizardView = 'type-select' | 'telegram-wizard' | 'slack-wizard' | 'generic-config';
 
 function AddChannelSheet({
   sheetRef, isDark, theme, renderBackdrop, sandboxUrl, sandboxUuid,
-  onCreated,
+  onCreate, onCreated, isCreating,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal | null>;
+  sheetRef: React.RefObject<BottomSheetModal>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   renderBackdrop: (props: any) => React.ReactElement;
   sandboxUrl?: string;
   sandboxUuid?: string;
+  onCreate: (data: { name: string; channel_type: ChannelType }) => void;
   onCreated: () => void;
+  isCreating: boolean;
 }) {
+  const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const [view, setView] = useState<WizardView>('type-select');
   const [selectedType, setSelectedType] = useState<ChannelType | null>(null);
+  const [channelName, setChannelName] = useState('');
 
   const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
   const inputBg = isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)';
   const borderColor = isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)';
 
-  const reset = () => { setView('type-select'); setSelectedType(null); };
+  const reset = () => { setView('type-select'); setSelectedType(null); setChannelName(''); };
 
   const handleTypeSelect = (type: ChannelType) => {
     haptics.tap();
     setSelectedType(type);
-    setView('slack-wizard');
+    if (type === 'telegram') setView('telegram-wizard');
+    else if (type === 'slack') setView('slack-wizard');
+    else setView('generic-config');
   };
 
-  const title = view === 'slack-wizard' ? 'Connect Slack'
+  const handleCreate = () => {
+    if (!selectedType || !channelName.trim()) return;
+    haptics.tap();
+    Keyboard.dismiss();
+    onCreate({ name: channelName.trim(), channel_type: selectedType });
+    reset();
+  };
+
+  const title = view === 'telegram-wizard' ? 'Connect Telegram'
+    : view === 'slack-wizard' ? 'Connect Slack'
+    : view === 'generic-config' && selectedType ? `New ${getChannelTypeLabel(selectedType)} Channel`
     : 'Add Channel';
 
-  const subtitle = view === 'slack-wizard' ? 'Set up a Slack bot for your instance'
+  const subtitle = view === 'telegram-wizard' ? 'Set up a Telegram bot for your instance'
+    : view === 'slack-wizard' ? 'Set up a Slack bot for your instance'
+    : view === 'generic-config' ? 'Configure your new channel'
     : 'Choose a messaging platform';
 
-  const isWizard = view === 'slack-wizard';
+  const isWizard = view === 'telegram-wizard' || view === 'slack-wizard';
 
   return (
     <BottomSheetModal
@@ -689,24 +777,46 @@ function AddChannelSheet({
         {view === 'type-select' && (
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
             {ALL_CHANNEL_TYPES.map((ct) => {
+              const isSupported = SUPPORTED_CHANNEL_TYPES.includes(ct.type);
               return (
                 <Pressable
                   key={ct.type}
-                  onPress={() => handleTypeSelect(ct.type)}
+                  onPress={() => isSupported && handleTypeSelect(ct.type)}
+                  disabled={!isSupported}
                   style={{
                     width: '48%' as any, flexGrow: 1, padding: 14, borderRadius: 14,
                     backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)',
                     borderWidth: StyleSheet.hairlineWidth,
                     borderColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-                    alignItems: 'center', gap: 8,
+                    alignItems: 'center', gap: 8, opacity: isSupported ? 1 : 0.5,
                   }}
                 >
-                  <Ionicons name={getChannelIcon(ct.type) as any} size={24} color={fg} />
-                  <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>{ct.label}</Text>
+                  <Ionicons name={getChannelIcon(ct.type) as any} size={24} color={isSupported ? fg : muted} />
+                  <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isSupported ? fg : muted }}>{ct.label}</Text>
+                  {!isSupported && (
+                    <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>
+                      <Text style={{ fontSize: 10, fontFamily: 'Roobert', color: muted }}>Coming Soon</Text>
+                    </View>
+                  )}
                 </Pressable>
               );
             })}
           </View>
+        )}
+
+        {view === 'telegram-wizard' && (
+          <TelegramWizard
+            isDark={isDark}
+            theme={theme}
+            fg={fg}
+            muted={muted}
+            inputBg={inputBg}
+            borderColor={borderColor}
+            sandboxUrl={sandboxUrl}
+            sandboxId={sandboxUuid || null}
+            onBack={() => { setView('type-select'); setSelectedType(null); }}
+            onCreated={onCreated}
+          />
         )}
 
         {view === 'slack-wizard' && (
@@ -723,8 +833,257 @@ function AddChannelSheet({
             onCreated={onCreated}
           />
         )}
+
+        {view === 'generic-config' && (
+          <>
+            <Pressable onPress={() => { haptics.tap(); setView('type-select'); setSelectedType(null); setChannelName(''); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 16 }}>
+              <Ionicons name="chevron-back" size={16} color={muted} />
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>Back</Text>
+            </Pressable>
+            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Channel Name</Text>
+            <BottomSheetTextInput
+              value={channelName}
+              onChangeText={setChannelName}
+              placeholder={`e.g. My ${selectedType ? getChannelTypeLabel(selectedType) : ''} Bot`}
+              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+              autoFocus
+              style={{ backgroundColor: inputBg, borderWidth: 1, borderColor, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 16, fontFamily: 'Roobert', color: fg, marginBottom: 20 }}
+            />
+            <Pressable
+              onPress={handleCreate}
+              disabled={!channelName.trim() || isCreating}
+              style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 9999, backgroundColor: !channelName.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
+            >
+              {isCreating ? (
+                <ActivityIndicator size="small" color={theme.primaryForeground} />
+              ) : (
+                <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: !channelName.trim() ? muted : theme.primaryForeground }}>Create Channel</Text>
+              )}
+            </Pressable>
+          </>
+        )}
       </BottomSheetScrollView>
     </BottomSheetModal>
+  );
+}
+
+// ─── Telegram Setup Wizard (2 steps) ─────────────────────────────────────────
+
+function TelegramWizard({
+  isDark, theme, fg, muted, inputBg, borderColor,
+  sandboxUrl, sandboxId, onBack, onCreated,
+}: {
+  isDark: boolean;
+  theme: ReturnType<typeof useThemeColors>;
+  fg: string; muted: string; inputBg: string; borderColor: string;
+  sandboxUrl?: string;
+  sandboxId: string | null;
+  onBack: () => void;
+  onCreated: () => void;
+}) {
+  const [botToken, setBotToken] = useState('');
+  const [botInfo, setBotInfo] = useState<{ username: string; firstName: string } | null>(null);
+  const [agentName, setAgentName] = useState('kortix');
+  const [selectedModelIdx, setSelectedModelIdx] = useState(0);
+
+  const verifyMutation = useTelegramVerifyToken();
+  const connectMutation = useTelegramConnect();
+
+  // Load agents & models
+  const { data: agents = [] } = useOpenCodeAgents(sandboxUrl);
+  const { data: providers } = useOpenCodeProviders(sandboxUrl);
+  const models = useMemo(() => (providers ? flattenModels(providers) : []), [providers]);
+  const filteredModels = useMemo(() => filterToLatestModels(models), [models]);
+
+  const handleVerify = async () => {
+    if (!botToken.trim()) return;
+    haptics.tap();
+    try {
+      const result = await verifyMutation.mutateAsync({ botToken: botToken.trim() });
+      if (!result.valid) {
+        haptics.warning();
+        Alert.alert('Invalid Token', result.error || 'Could not verify token');
+        return;
+      }
+      setBotInfo({ username: result.bot?.username || '', firstName: result.bot?.firstName || '' });
+      haptics.success();
+    } catch (err: any) {
+      haptics.warning();
+      Alert.alert('Error', err?.message || 'Failed to verify token');
+    }
+  };
+
+  const handleConnect = async () => {
+    if (!botToken.trim() || !sandboxUrl) return;
+    haptics.tap();
+    // Auto-verify if not yet verified
+    if (!botInfo) {
+      try {
+        const result = await verifyMutation.mutateAsync({ botToken: botToken.trim() });
+        if (!result.valid) {
+          haptics.warning();
+          Alert.alert('Invalid Token', result.error || 'Could not verify token');
+          return;
+        }
+        setBotInfo({ username: result.bot?.username || '', firstName: result.bot?.firstName || '' });
+      } catch (err: any) {
+        haptics.warning();
+        Alert.alert('Error', err?.message || 'Failed to verify token');
+        return;
+      }
+    }
+    const selModel = filteredModels[selectedModelIdx];
+    const modelStr = selModel ? `${selModel.providerID}/${selModel.modelID}` : undefined;
+    try {
+      await connectMutation.mutateAsync({
+        sandboxUrl,
+        botToken: botToken.trim(),
+        defaultAgent: agentName || undefined,
+        defaultModel: modelStr,
+      });
+      haptics.success();
+      onCreated();
+    } catch (err: any) {
+      haptics.warning();
+      Alert.alert('Error', err?.message || 'Failed to connect bot');
+    }
+  };
+
+  const isWorking = verifyMutation.isPending || connectMutation.isPending;
+  const inputStyle = { backgroundColor: inputBg, borderWidth: 1, borderColor, borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14, fontSize: 14, fontFamily: 'Roobert', color: fg };
+
+  return (
+    <>
+      {/* Instructions */}
+      <View style={{ borderRadius: 14, backgroundColor: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)', padding: 14, marginBottom: 16 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}>1.</Text>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>Open</Text>
+          <Pressable onPress={() => { haptics.tap(); Linking.openURL('https://t.me/BotFather'); }} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+            <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: theme.primary }}>@BotFather</Text>
+            <ExternalLink size={10} color={theme.primary} />
+          </Pressable>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>in Telegram</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginBottom: 6 }}>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}>2.</Text>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>Send</Text>
+          <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'monospace', color: fg }}>/newbot</Text>
+          </View>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>and follow the prompts</Text>
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: fg }}>3.</Text>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>Copy the bot token and paste it below</Text>
+        </View>
+      </View>
+
+      {/* Bot Token */}
+      <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Bot Token</Text>
+      <BottomSheetTextInput
+        value={botToken}
+        onChangeText={(t) => { setBotToken(t); setBotInfo(null); }}
+        placeholder="123456789:ABCdefGhIJKlmnOPQRstUVWxyz..."
+        placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+        secureTextEntry
+        textContentType="none"
+        autoComplete="off"
+        autoCapitalize="none"
+        autoCorrect={false}
+        style={{ ...inputStyle, marginBottom: 12 }}
+      />
+
+      {/* Verified badge */}
+      {botInfo && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, borderWidth: 1, borderColor: isDark ? 'rgba(190,24,93,0.15)' : 'rgba(190,24,93,0.1)', backgroundColor: isDark ? 'rgba(190,24,93,0.05)' : 'rgba(190,24,93,0.03)', marginBottom: 16 }}>
+          <View style={{ width: 22, height: 22, borderRadius: 11, backgroundColor: isDark ? 'rgba(190,24,93,0.15)' : 'rgba(190,24,93,0.1)', alignItems: 'center', justifyContent: 'center' }}>
+            <Check size={12} color={theme.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>@{botInfo.username}</Text>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>{botInfo.firstName}</Text>
+          </View>
+          <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: isDark ? 'rgba(190,24,93,0.1)' : 'rgba(190,24,93,0.06)' }}>
+            <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: theme.primary }}>Verified</Text>
+          </View>
+        </View>
+      )}
+
+      {/* Agent & Model — shown after verification */}
+      {botInfo && (
+        <>
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Agent</Text>
+          <View style={{ borderRadius: 14, borderWidth: 1, borderColor, backgroundColor: inputBg, marginBottom: 16, overflow: 'hidden' }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 8, gap: 6 }}>
+              {agents.map((agent) => {
+                const active = agentName === agent.name;
+                return (
+                  <Pressable
+                    key={agent.name}
+                    onPress={() => { haptics.selection(); setAgentName(agent.name); }}
+                    style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}
+                  >
+                    <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }}>{agent.name}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>Model</Text>
+          <View style={{ borderRadius: 14, borderWidth: 1, borderColor, backgroundColor: inputBg, marginBottom: 20, overflow: 'hidden' }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ padding: 8, gap: 6 }}>
+              {filteredModels.map((m, i) => {
+                const active = selectedModelIdx === i;
+                return (
+                  <Pressable
+                    key={`${m.providerID}:${m.modelID}`}
+                    onPress={() => { haptics.selection(); setSelectedModelIdx(i); }}
+                    style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8, backgroundColor: active ? theme.primary : (isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)') }}
+                  >
+                    <Text style={{ fontSize: 13, fontFamily: active ? 'Roobert-Medium' : 'Roobert', color: active ? theme.primaryForeground : muted }} numberOfLines={1}>{m.modelName}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </>
+      )}
+
+      {/* Action buttons */}
+      <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+        <Pressable onPress={() => { haptics.tap(); onBack(); }} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, borderWidth: 1, borderColor }}>
+          <ArrowLeft size={16} color={fg} />
+          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Back</Text>
+        </Pressable>
+        {!botInfo ? (
+          <Pressable
+            onPress={handleVerify}
+            disabled={!botToken.trim() || isWorking}
+            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: !botToken.trim() ? (isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)') : theme.primary }}
+          >
+            {verifyMutation.isPending ? (
+              <ActivityIndicator size="small" color={theme.primaryForeground} />
+            ) : (
+              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: !botToken.trim() ? muted : theme.primaryForeground }}>Verify Token</Text>
+            )}
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={handleConnect}
+            disabled={isWorking}
+            style={{ flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary }}
+          >
+            {connectMutation.isPending ? (
+              <ActivityIndicator size="small" color={theme.primaryForeground} />
+            ) : (
+              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Connect Bot</Text>
+            )}
+          </Pressable>
+        )}
+      </View>
+    </>
   );
 }
 
@@ -740,71 +1099,9 @@ function randomBotName(): string {
   return `Kortix ${BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]}`;
 }
 
-function buildSlackManifest(projectId: string, botName: string): string {
-  const backendUrl = API_URL.replace(/\/$/, '');
-  const requestUrl = backendUrl
-    ? `${backendUrl}/webhooks/slack/${projectId}`
-    : `<set EXPO_PUBLIC_BACKEND_URL>/webhooks/slack/${projectId}`;
-  const displayName = botName.trim() || 'Kortix';
-
-  return JSON.stringify({
-    display_information: {
-      name: displayName,
-      description: 'Run a Kortix project from Slack',
-      background_color: '#0a0a0a',
-    },
-    features: {
-      bot_user: { display_name: displayName, always_online: true },
-    },
-    oauth_config: {
-      scopes: {
-        bot: [
-          'app_mentions:read',
-          'channels:history',
-          'channels:read',
-          'channels:join',
-          'chat:write',
-          'chat:write.public',
-          'files:read',
-          'files:write',
-          'groups:history',
-          'groups:read',
-          'im:history',
-          'im:read',
-          'im:write',
-          'mpim:history',
-          'mpim:read',
-          'reactions:read',
-          'reactions:write',
-          'users:read',
-        ],
-      },
-    },
-    settings: {
-      event_subscriptions: {
-        request_url: requestUrl,
-        bot_events: [
-          'app_mention',
-          'message.im',
-          'message.channels',
-          'message.groups',
-          'message.mpim',
-          'reaction_added',
-          'reaction_removed',
-          'member_joined_channel',
-          'file_shared',
-        ],
-      },
-      org_deploy_enabled: false,
-      socket_mode_enabled: false,
-      token_rotation_enabled: false,
-    },
-  }, null, 2);
-}
-
 function SlackWizard({
   isDark, theme, fg, muted, inputBg, borderColor,
-  sandboxUrl, sandboxId, onCreated,
+  sandboxUrl, sandboxId, onBack, onCreated,
 }: {
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
@@ -829,6 +1126,7 @@ function SlackWizard({
   const [botToken, setBotToken] = useState('');
   const [signingSecret, setSigningSecret] = useState('');
 
+  const generateManifest = useSlackGenerateManifest();
   const connectMutation = useSlackConnect();
 
   // Load agents & models
@@ -838,14 +1136,16 @@ function SlackWizard({
   const filteredModels = useMemo(() => filterToLatestModels(models), [models]);
 
   const handleGenerateManifest = async () => {
-    if (!sandboxId) {
-      haptics.warning();
-      Alert.alert('Project unavailable', 'Open a project before creating a Slack app.');
-      return;
-    }
+    if (!sandboxUrl) return;
     haptics.tap();
-    setManifestJson(buildSlackManifest(sandboxId, botName));
-    setStep(2);
+    try {
+      const result = await generateManifest.mutateAsync({ publicUrl: '', botName: botName.trim() || undefined });
+      setManifestJson(result.manifestJson);
+      setStep(2);
+    } catch (err: any) {
+      haptics.warning();
+      Alert.alert('Error', err?.message || 'Failed to generate manifest');
+    }
   };
 
   const handleCopyManifest = async () => {
@@ -960,11 +1260,17 @@ function SlackWizard({
           {/* Generate Manifest */}
           <Pressable
             onPress={handleGenerateManifest}
-            disabled={!sandboxId}
+            disabled={generateManifest.isPending}
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 14, borderRadius: 9999, backgroundColor: theme.primary, alignSelf: 'flex-end', paddingHorizontal: 20 }}
           >
-            <ArrowRight size={16} color={theme.primaryForeground} />
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Generate Manifest</Text>
+            {generateManifest.isPending ? (
+              <ActivityIndicator size="small" color={theme.primaryForeground} />
+            ) : (
+              <>
+                <ArrowRight size={16} color={theme.primaryForeground} />
+                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Generate Manifest</Text>
+              </>
+            )}
           </Pressable>
         </>
       )}

@@ -50,6 +50,8 @@ import {
   Trash2,
   Plus,
   Minus,
+  X,
+  Check,
   ChevronDown,
   ChevronUp,
   ChevronLeft,
@@ -170,4 +172,25 @@ export function getIconFromName(iconName: string | null | undefined): LucideIcon
   const normalizedName = iconName.toLowerCase().replace(/\s+/g, '-');
   
   return ICON_MAP[normalizedName] || DEFAULT_ICON;
+}
+
+/**
+ * Check if an icon name is mapped
+ * 
+ * @param iconName - Backend icon name
+ * @returns true if icon is mapped, false otherwise
+ */
+export function isIconMapped(iconName: string | null | undefined): boolean {
+  if (!iconName) return false;
+  const normalizedName = iconName.toLowerCase().replace(/\s+/g, '-');
+  return normalizedName in ICON_MAP;
+}
+
+/**
+ * Get all available icon names
+ * 
+ * @returns Array of all mapped icon names
+ */
+export function getAvailableIconNames(): string[] {
+  return Object.keys(ICON_MAP);
 }

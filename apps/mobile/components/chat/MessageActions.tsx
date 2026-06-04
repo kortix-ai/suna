@@ -8,10 +8,11 @@ import Animated, {
   interpolate,
 } from 'react-native-reanimated';
 import { Icon } from '@/components/ui/icon';
-import { Copy, Check, ThumbsUp, ThumbsDown } from 'lucide-react-native';
+import { Copy, Check, Volume2, ThumbsUp, ThumbsDown } from 'lucide-react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
+import { useVoicePlayerStore } from '@/stores/voice-player-store';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.View;
@@ -78,6 +79,9 @@ export function MessageActions({ text }: MessageActionsProps) {
   const [liked, setLiked] = useState(false);
   const [disliked, setDisliked] = useState(false);
 
+  const { playText, state: voiceState } = useVoicePlayerStore();
+  const isVoiceLoading = voiceState === 'loading';
+
   const iconColor = isDark ? '#8E8E93' : '#9CA3AF';
   // Primary color for active state
   const primaryColor = isDark ? '#FFFFFF' : '#000000';
@@ -129,6 +133,12 @@ export function MessageActions({ text }: MessageActionsProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const handleSpeak = async () => {
+    if (!text || isVoiceLoading) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await playText(text);
+  };
+
   const handleLike = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (liked) {
@@ -165,6 +175,14 @@ export function MessageActions({ text }: MessageActionsProps) {
         activeColor={primaryColor}
         iconColor={iconColor}
       />
+
+      {/* Speaker button - COMMENTED OUT */}
+      {/* <ActionButton
+        onPress={handleSpeak}
+        icon={Volume2}
+        disabled={isVoiceLoading}
+        iconColor={iconColor}
+      /> */}
 
       {/* Thumbs up - animated visibility */}
       <AnimatedView style={[styles.thumbContainer, thumbsUpAnimatedStyle]}>

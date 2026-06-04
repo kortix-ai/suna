@@ -2,27 +2,25 @@ import type { ToolCallData, ToolResultData } from '../types';
 import type { LucideIcon } from 'lucide-react-native';
 import { Globe, FileText, BookOpen, Calendar } from 'lucide-react-native';
 
-interface WebSearchResult {
+export interface WebSearchResult {
   title: string;
   url: string;
   snippet?: string;
 }
 
-interface BatchWebSearchResult {
-  query: string;
-  success: boolean;
-  results: WebSearchResult[];
-  answer: string;
-  images: string[];
-}
-
-interface WebSearchData {
+export interface WebSearchData {
   query: string | null;
   results: WebSearchResult[];
   images: string[];
   success: boolean;
   isBatch?: boolean;
-  batchResults?: BatchWebSearchResult[];
+  batchResults?: Array<{
+    query: string;
+    success: boolean;
+    results: WebSearchResult[];
+    answer: string;
+    images: string[];
+  }>;
 }
 
 const parseContent = (content: any): any => {
@@ -81,7 +79,7 @@ export function extractWebSearchData(
     // Check if this is a batch search response
     if (output.batch_mode === true && Array.isArray(output.results)) {
       // Batch search response
-      const batchResults: BatchWebSearchResult[] = output.results.map((batchItem: any) => ({
+      const batchResults = output.results.map((batchItem: any) => ({
         query: batchItem.query || '',
         success: batchItem.success !== false,
         results: (batchItem.results || []).map((r: any) => ({
@@ -233,3 +231,4 @@ export function getResultType(result: { url?: string; title?: string }): { icon:
     return { icon: Globe, label: 'Website' };
   }
 }
+

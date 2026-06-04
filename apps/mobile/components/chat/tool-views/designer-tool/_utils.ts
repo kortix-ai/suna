@@ -1,7 +1,7 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 import { log } from '@/lib/logger';
 
-interface DesignerData {
+export interface DesignerData {
   mode?: string;
   prompt?: string;
   imagePath?: string;

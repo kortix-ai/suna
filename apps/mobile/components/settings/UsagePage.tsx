@@ -7,6 +7,7 @@ import { PlanPage } from './PlanPage';
 import { useLanguage } from '@/contexts';
 import { useChat } from '@/hooks';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
+import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import { log } from '@/lib/logger';
 
 interface UsagePageProps {
@@ -18,6 +19,7 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
   const { t } = useLanguage();
   const chat = useChat();
   const [isPlanPageVisible, setIsPlanPageVisible] = React.useState(false);
+  const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
 
   const handleClose = React.useCallback(() => {
     log.log('🎯 Usage page closing');
@@ -28,8 +30,18 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
   const handleUpgradePress = React.useCallback(async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
-    setTimeout(() => setIsPlanPageVisible(true), 100);
-  }, [onClose]);
+
+    // If RevenueCat is available, present native paywall directly
+    if (useNativePaywall) {
+      log.log('📱 Using native RevenueCat paywall from UsagePage');
+      setTimeout(async () => {
+        await presentUpgradePaywall();
+      }, 100);
+    } else {
+      // Otherwise, show the custom PlanPage
+      setTimeout(() => setIsPlanPageVisible(true), 100);
+    }
+  }, [onClose, useNativePaywall, presentUpgradePaywall]);
 
   const handleThreadPress = React.useCallback(
     (threadId: string, _projectId: string | null) => {

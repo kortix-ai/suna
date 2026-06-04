@@ -110,7 +110,7 @@ const TIMEZONE_TO_LOCALE_MAP: Record<string, SupportedLocale> = {
  * Detects locale based on device timezone
  * Returns null if no match found
  */
-function detectLocaleFromTimezone(): SupportedLocale | null {
+export function detectLocaleFromTimezone(): SupportedLocale | null {
   try {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     log.log('🌍 Device timezone:', timezone);
@@ -191,7 +191,7 @@ function detectLocaleFromTimezone(): SupportedLocale | null {
  * Detects locale from device language settings
  * Uses React Native's locale detection and Intl API
  */
-function detectLocaleFromDevice(): SupportedLocale | null {
+export function detectLocaleFromDevice(): SupportedLocale | null {
   try {
     // Get device locale - try multiple methods for reliability
     let deviceLocale: string | null = null;
@@ -307,3 +307,4 @@ export function detectBestLocale(): SupportedLocale {
   log.log('🌍 Using default locale:', DEFAULT_LOCALE);
   return DEFAULT_LOCALE;
 }
+

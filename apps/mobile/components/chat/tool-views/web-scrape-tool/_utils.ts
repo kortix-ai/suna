@@ -1,12 +1,23 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface WebScrapeData {
+export interface WebScrapeData {
   url: string | null;
   files: string[];
   message: string | null;
   urlCount: number;
   success: boolean;
 }
+
+const parseContent = (content: any): any => {
+  if (typeof content === 'string') {
+    try {
+      return JSON.parse(content);
+    } catch (e) {
+      return content;
+    }
+  }
+  return content;
+};
 
 export function extractWebScrapeData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): WebScrapeData {
   const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
@@ -76,3 +87,4 @@ export function getFavicon(url: string): string | null {
     return null;
   }
 }
+

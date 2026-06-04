@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Loader2, LucideIcon } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
-import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, withTiming, useSharedValue } from 'react-native-reanimated';
 
 interface LoadingStateProps {
   icon?: LucideIcon;
@@ -21,6 +22,7 @@ interface LoadingStateProps {
 
 export function LoadingState({
   icon: Icon = Loader2,
+  iconColor = 'text-purple-500 dark:text-purple-400',
   bgColor = 'bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60',
   title,
   subtitle,
@@ -107,3 +109,4 @@ export function LoadingState({
     </View>
   );
 }
+

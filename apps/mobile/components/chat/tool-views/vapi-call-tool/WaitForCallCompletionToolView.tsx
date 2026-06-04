@@ -2,7 +2,7 @@ import React from 'react';
 import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Clock, DollarSign } from 'lucide-react-native';
+import { Clock, DollarSign, Hash } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import { extractWaitForCallCompletionData, formatDuration, statusConfig } from './_utils';
 import { ToolViewCard, StatusBadge, LoadingState } from '../shared';

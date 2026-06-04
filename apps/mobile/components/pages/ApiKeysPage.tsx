@@ -13,9 +13,11 @@ import {
   ActivityIndicator,
   StyleSheet,
   Keyboard,
+  TouchableOpacity,
   Linking,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
+import { Text as RNText } from 'react-native';
 import {
   Key,
   Plus,
@@ -31,6 +33,7 @@ import {
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
 import { BottomSheetModal, BottomSheetView, BottomSheetTextInput, BottomSheetBackdrop } from '@gorhom/bottom-sheet';
@@ -79,6 +82,7 @@ interface ApiKeysTabPageProps {
 
 export function ApiKeysTabPage({
   page,
+  onBack,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -86,6 +90,8 @@ export function ApiKeysTabPage({
 }: ApiKeysTabPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
+  const fgColor = isDark ? '#F8F8F8' : '#121215';
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
@@ -110,9 +116,10 @@ function ApiKeysContent() {
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
-  const { sandboxUuid, sandboxId } = useSandboxContext();
+  const { sandboxUuid, sandboxId, sandboxUrl } = useSandboxContext();
 
   const { data: allKeys, isLoading, error, refetch } = useApiKeys();
+  const createKey = useCreateApiKey();
   const revokeKey = useRevokeApiKey();
   const deleteKey = useDeleteApiKey();
   const regenerateKey = useRegenerateApiKey();
@@ -131,6 +138,7 @@ function ApiKeysContent() {
 
   const {
     data: publicShares,
+    isLoading: isSharesLoading,
     refetch: refetchShares,
   } = useQuery({
     queryKey: ['public-shares', sandboxId],
@@ -554,7 +562,7 @@ function SandboxTokenCard({
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>Sandbox Token</Text>
-            <StatusDot status={apiKey.status} />
+            <StatusDot status={apiKey.status} isDark={isDark} />
           </View>
         </View>
         <Pressable onPress={onRegenerate} disabled={isRegenerating} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 9999, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }}>
@@ -607,7 +615,7 @@ function ApiKeyRow({
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{apiKey.title}</Text>
-          <StatusDot status={apiKey.status} />
+          <StatusDot status={apiKey.status} isDark={isDark} />
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
           <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>
@@ -636,7 +644,7 @@ function ApiKeyRow({
 
 // ─── Status Dot ──────────────────────────────────────────────────────────────
 
-function StatusDot({ status }: { status: APIKeyStatus }) {
+function StatusDot({ status, isDark }: { status: APIKeyStatus; isDark: boolean }) {
   const config: Record<APIKeyStatus, { color: string; label: string }> = {
     active: { color: '#34d399', label: 'Active' },
     revoked: { color: '#ef4444', label: 'Revoked' },
@@ -662,13 +670,14 @@ function CreateApiKeySheet({
   sandboxUuid,
   onCreated,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal | null>;
+  sheetRef: React.RefObject<BottomSheetModal>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   renderBackdrop: (props: any) => React.ReactElement;
   sandboxUuid?: string;
   onCreated: (result: APIKeyCreateResponse) => void;
 }) {
+  const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const createKey = useCreateApiKey();
 
@@ -831,13 +840,14 @@ function SecretKeySheet({
   createdKey,
   onDone,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal | null>;
+  sheetRef: React.RefObject<BottomSheetModal>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   renderBackdrop: (props: any) => React.ReactElement;
   createdKey: APIKeyCreateResponse | APIKeyRegenerateResponse | null;
   onDone: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
   const [copied, setCopied] = useState(false);
 
@@ -1032,13 +1042,14 @@ function CreatePublicLinkSheet({
   sandboxId,
   onCreated,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal | null>;
+  sheetRef: React.RefObject<BottomSheetModal>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   renderBackdrop: (props: any) => React.ReactElement;
   sandboxId?: string;
   onCreated: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const sheetPadding = useSheetBottomPadding();
 
   const fg = isDark ? '#f8f8f8' : '#121215';

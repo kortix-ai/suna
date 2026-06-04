@@ -23,7 +23,7 @@ import Animated, {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
-interface PromptExample {
+export interface PromptExample {
   text: string;
   icon?: React.ComponentType<{ className?: string; size?: number }>;
 }
@@ -167,3 +167,5 @@ export function PromptExamples({
     </View>
   );
 }
+
+export default PromptExamples;

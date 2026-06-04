@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface CompanySearchResult {
+export interface CompanySearchResult {
   id: string;
   url: string;
   company_name: string;
@@ -10,7 +10,7 @@ interface CompanySearchResult {
   description: string;
 }
 
-interface CompanySearchData {
+export interface CompanySearchData {
   query: string | null;
   total_results: number;
   results: CompanySearchResult[];
@@ -65,3 +65,4 @@ export function extractCompanySearchData({ toolCall, toolResult }: { toolCall: T
     success: toolResult?.success ?? true
   };
 }
+

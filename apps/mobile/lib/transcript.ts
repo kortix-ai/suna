@@ -96,13 +96,13 @@ function formatMessage(msg: any, parts: any[], options: TranscriptOptions): stri
   return result;
 }
 
-interface SessionInfo {
+export interface SessionInfo {
   id: string;
   title: string;
   time: { created: number; updated: number };
 }
 
-interface MessageWithParts {
+export interface MessageWithParts {
   info: any;
   parts: any[];
 }

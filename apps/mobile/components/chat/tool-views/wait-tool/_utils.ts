@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface WaitData {
+export interface WaitData {
   seconds: number;
   success: boolean;
 }
@@ -25,3 +25,4 @@ export function formatDuration(seconds: number): string {
     return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
   }
 }
+

@@ -4,7 +4,7 @@
  */
 
 // Extensions that can be previewed with rich rendering
-const PREVIEWABLE_EXTENSIONS = [
+export const PREVIEWABLE_EXTENSIONS = [
   'html', 'htm',
   'md', 'markdown',
   'json',
@@ -15,7 +15,7 @@ const PREVIEWABLE_EXTENSIONS = [
 ] as const;
 
 // Document extensions (files that should use DocumentAttachment)
-const DOCUMENT_EXTENSIONS = [
+export const DOCUMENT_EXTENSIONS = [
   'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
   'txt', 'csv', 'json',
   'md', 'markdown',
@@ -23,9 +23,16 @@ const DOCUMENT_EXTENSIONS = [
 ] as const;
 
 // Image extensions
-const IMAGE_EXTENSIONS = [
+export const IMAGE_EXTENSIONS = [
   'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif',
 ] as const;
+
+/**
+ * Get file extension from path or filename
+ */
+export function getExtension(filepath: string): string {
+  return filepath.split('.').pop()?.toLowerCase() || '';
+}
 
 /**
  * Check if file extension is previewable (can show content preview)
@@ -65,6 +72,11 @@ export function isHtmlExtension(ext: string): boolean {
   return e === 'html' || e === 'htm';
 }
 
+export function isCsvExtension(ext: string): boolean {
+  const e = ext.toLowerCase();
+  return e === 'csv' || e === 'tsv';
+}
+
 export function isDocxExtension(ext: string): boolean {
   return ext.toLowerCase() === 'docx';
 }
@@ -72,3 +84,9 @@ export function isDocxExtension(ext: string): boolean {
 export function isPdfExtension(ext: string): boolean {
   return ext.toLowerCase() === 'pdf';
 }
+
+export function isSpreadsheetExtension(ext: string): boolean {
+  const e = ext.toLowerCase();
+  return e === 'xlsx' || e === 'xls';
+}
+

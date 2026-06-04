@@ -19,6 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
+import { CheckCircle2, Loader2 } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
 import { KortixLogo } from '@/components/ui/KortixLogo';
@@ -96,9 +97,52 @@ function CircularProgress({ progress, size = 144, strokeWidth = 6 }: CircularPro
   );
 }
 
+// ─── Stage List Item ─────────────────────────────────────────────────────────
+
+function StageItem({
+  stage,
+  isDone,
+  isActive,
+}: {
+  stage: ProvisioningStageInfo;
+  isDone: boolean;
+  isActive: boolean;
+}) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const primaryColor = isDark ? '#e84d8a' : '#d6336c';
+  const mutedColor = isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.15)';
+  const doneColor = isDark ? 'rgba(232,77,138,0.5)' : 'rgba(214,51,108,0.5)';
+
+  return (
+    <View className="flex-row items-center justify-center gap-3" style={{ height: 36 }}>
+      <View style={{ width: 16, height: 16, alignItems: 'center', justifyContent: 'center' }}>
+        {isDone ? (
+          <CheckCircle2 size={14} color={doneColor} />
+        ) : isActive ? (
+          <Loader2 size={14} color={primaryColor} />
+        ) : (
+          <View style={{ width: 4, height: 4, borderRadius: 2, backgroundColor: mutedColor }} />
+        )}
+      </View>
+      <Text
+        className={`text-[13px] ${
+          isActive
+            ? 'text-foreground/90 font-roobert-medium'
+            : isDone
+              ? 'text-foreground/25 font-roobert'
+              : 'text-foreground/15 font-roobert'
+        }`}
+      >
+        {stage.message}
+      </Text>
+    </View>
+  );
+}
+
 // ─── Main Component ──────────────────────────────────────────────────────────
 
-interface ProvisioningProgressProps {
+export interface ProvisioningProgressProps {
   progress: number;
   stages: ProvisioningStageInfo[] | null;
   currentStage: string | null;

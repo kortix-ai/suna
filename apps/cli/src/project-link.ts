@@ -11,7 +11,7 @@ import { dirname, resolve } from 'node:path';
  * belongs to so commands always hit the right Kortix instance even if
  * the user's globally-active host is a different one.
  */
-interface ProjectLink {
+export interface ProjectLink {
   project_id: string;
   account_id: string;
   /** Named host (from ~/.config/kortix/config.json) this project lives on. */
@@ -21,16 +21,8 @@ interface ProjectLink {
   linked_at: string;
 }
 
-const PROJECT_ID_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-
-function linkFilePath(cwd = process.cwd()): string {
+export function linkFilePath(cwd = process.cwd()): string {
   return resolve(cwd, '.kortix', 'link.json');
-}
-
-export function normalizeProjectId(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return PROJECT_ID_RE.test(trimmed) ? trimmed : null;
 }
 
 /** Is the cwd plausibly a Kortix project? We require either an existing
@@ -46,10 +38,9 @@ export function loadLink(cwd = process.cwd()): ProjectLink | null {
   if (!existsSync(path)) return null;
   try {
     const parsed = JSON.parse(readFileSync(path, 'utf8')) as Partial<ProjectLink>;
-    const projectId = normalizeProjectId(parsed.project_id);
-    if (!projectId) return null;
+    if (typeof parsed.project_id !== 'string' || !parsed.project_id) return null;
     return {
-      project_id: projectId,
+      project_id: parsed.project_id,
       account_id: parsed.account_id ?? '',
       host: typeof parsed.host === 'string' && parsed.host ? parsed.host : undefined,
       host_url:
@@ -62,13 +53,11 @@ export function loadLink(cwd = process.cwd()): ProjectLink | null {
 }
 
 export function saveLink(link: ProjectLink, cwd = process.cwd()): void {
-  const projectId = normalizeProjectId(link.project_id);
-  if (!projectId) throw new Error('Invalid project id');
   const path = linkFilePath(cwd);
   mkdirSync(dirname(path), { recursive: true });
   // Order keys so the file is human-friendly + diffs predictable.
   const ordered = {
-    project_id: projectId,
+    project_id: link.project_id,
     account_id: link.account_id,
     host: link.host,
     host_url: link.host_url,
@@ -90,10 +79,8 @@ export function clearLink(cwd = process.cwd()): void {
  * Returns null if none of those are set.
  */
 export function resolveProjectId(projectArg?: string): string | null {
-  if (projectArg !== undefined) return normalizeProjectId(projectArg);
-  if (process.env.KORTIX_PROJECT_ID !== undefined) {
-    return normalizeProjectId(process.env.KORTIX_PROJECT_ID);
-  }
+  if (projectArg) return projectArg;
+  if (process.env.KORTIX_PROJECT_ID) return process.env.KORTIX_PROJECT_ID;
   const link = loadLink();
   return link?.project_id ?? null;
 }

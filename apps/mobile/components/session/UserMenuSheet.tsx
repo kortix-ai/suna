@@ -1,12 +1,16 @@
 import React, { forwardRef, useMemo } from 'react';
-import { Pressable, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Pressable, View, useWindowDimensions } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
+import { useInstanceProgress } from '@/stores/instance-progress';
+import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import { SandboxConfigHealthBanner } from './SandboxConfigHealthBanner';
 import {
+  ArrowDownToLine,
+  Check,
   ChevronRight,
   LogOut,
   Monitor,
@@ -14,6 +18,7 @@ import {
   Settings,
   SlidersHorizontal,
   Sun,
+  X,
 } from 'lucide-react-native';
 import { getSheetBg, getToggleTrackBg, getToggleActiveBg } from '@/lib/theme-colors';
 
@@ -23,7 +28,9 @@ interface UserMenuSheetProps {
   sandboxLabel?: string;
   sandboxHost?: string;
   onManageInstances: () => void;
+  onAddInstance: () => void;
   onOpenSettings: () => void;
+  onOpenChangelog: () => void;
   onSignOut: () => void;
   onSelectTheme: (value: ThemeOption) => void;
   activeTheme: ThemeOption;
@@ -41,7 +48,9 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
     sandboxLabel,
     sandboxHost,
     onManageInstances,
+    onAddInstance,
     onOpenSettings,
+    onOpenChangelog,
     onSignOut,
     onSelectTheme,
     activeTheme,
@@ -59,6 +68,8 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
   // appearance settings page and any other toggle in the app.
   const toggleTrackBg = getToggleTrackBg(isDark);
   const toggleActiveBg = getToggleActiveBg(isDark);
+  const creatingProgress = useInstanceProgress();
+  const { updateAvailable, latestVersion, changelog: latestChangelog, isUpdating, phase: updatePhase, phaseProgress, updateResult, updateError } = useGlobalSandboxUpdate();
 
   const renderBackdrop = useMemo(
     () => (props: BottomSheetBackdropProps) => (
@@ -115,6 +126,40 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
             </View>
           </View>
 
+          {/* Creating progress */}
+          {creatingProgress && (
+            <>
+              <View className="py-3.5">
+                <View className="flex-row items-center mb-2">
+                  <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: '#FBBF24' }} />
+                  <View className="flex-1">
+                    <Text className="font-roobert-medium text-[15px] text-foreground" numberOfLines={1}>
+                      Local Docker
+                    </Text>
+                    <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
+                      {creatingProgress.message}
+                    </Text>
+                  </View>
+                  <Text className="font-roobert text-xs tabular-nums text-muted-foreground">
+                    {Math.round(creatingProgress.percent)}%
+                  </Text>
+                </View>
+                <View
+                  className="h-1.5 rounded-full overflow-hidden"
+                  style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
+                >
+                  <View
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${Math.max(creatingProgress.percent, 2)}%`,
+                      backgroundColor: isDark ? '#F8F8F8' : '#121215',
+                    }}
+                  />
+                </View>
+              </View>
+            </>
+          )}
+
           {/* Manage instances */}
           <Pressable
             onPress={onManageInstances}
@@ -132,6 +177,98 @@ export const UserMenuSheet = forwardRef<BottomSheetModal, UserMenuSheetProps>(fu
         <View className="mt-2">
           <SandboxConfigHealthBanner />
         </View>
+
+        {/* Update — available / in progress / complete / error */}
+        {(updateAvailable || isUpdating || updateResult || updateError) && latestVersion && (
+          <>
+            <View style={{ height: 1, backgroundColor: dividerColor, marginVertical: 12 }} />
+            {isUpdating ? (
+              /* Updating — show progress */
+              <Pressable onPress={onOpenChangelog} className="rounded-2xl border px-4 py-3.5 active:opacity-90" style={{ borderColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.08)' }}>
+                <View className="flex-row items-center mb-2">
+                  <ActivityIndicator size={14} />
+                  <Text className="ml-2 font-roobert-medium text-[14px] text-foreground flex-1" numberOfLines={1}>Updating to v{latestVersion}</Text>
+                  <Text className="font-roobert text-xs tabular-nums text-muted-foreground">{Math.round(phaseProgress)}%</Text>
+                </View>
+                <View className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}>
+                  <View className="h-full rounded-full" style={{ width: `${Math.max(phaseProgress, 2)}%`, backgroundColor: isDark ? '#F8F8F8' : '#121215' }} />
+                </View>
+              </Pressable>
+            ) : updateResult?.success ? (
+              /* Success */
+              <View className="rounded-2xl border px-4 py-3 border-emerald-500/20 bg-emerald-500/5">
+                <View className="flex-row items-center">
+                  <Icon as={Check} size={16} style={{ color: '#10B981' }} strokeWidth={2.5} />
+                  <Text className="ml-2 font-roobert-medium text-[14px] text-emerald-500 flex-1">Updated to v{updateResult.currentVersion}</Text>
+                </View>
+              </View>
+            ) : updateError ? (
+              /* Error */
+              <Pressable onPress={onOpenChangelog} className="rounded-2xl border px-4 py-3 active:opacity-90" style={{ borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)', backgroundColor: isDark ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.03)' }}>
+                <View className="flex-row items-center">
+                  <Icon as={X} size={16} className="text-destructive" strokeWidth={2.5} />
+                  <Text className="ml-2 font-roobert-medium text-[14px] text-destructive flex-1">Update failed</Text>
+                  <Text className="font-roobert-medium text-xs text-muted-foreground">Tap for details</Text>
+                </View>
+              </Pressable>
+            ) : (
+              /* Available — show banner */
+              <View
+                className="rounded-2xl border px-4 py-3.5"
+                style={{
+                  borderColor: isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)',
+                  backgroundColor: isDark ? 'rgba(239,68,68,0.05)' : 'rgba(239,68,68,0.03)',
+                }}
+              >
+                <View className="flex-row items-center">
+                  <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: '#EF4444' }} />
+                  <View className="flex-1">
+                    <View className="flex-row items-center">
+                      <Text className="font-roobert-medium text-[15px] text-foreground">
+                        New Kortix version
+                      </Text>
+                      <View className="ml-2 rounded-full bg-muted/60 px-1.5 py-0.5">
+                        <Text className="text-[10px] font-roobert-medium text-muted-foreground">v{latestVersion}</Text>
+                      </View>
+                    </View>
+                    {latestChangelog?.changes && latestChangelog.changes.length > 0 && (
+                      <View className="mt-1.5" style={{ gap: 2 }}>
+                        {latestChangelog.changes.slice(0, 4).map((c, i) => (
+                          <Text key={i} className="font-roobert text-xs text-muted-foreground" numberOfLines={1}>
+                            {c.text}
+                          </Text>
+                        ))}
+                        {latestChangelog.changes.length > 4 && (
+                          <Text className="font-roobert text-[11px] text-muted-foreground/60">
+                            +{latestChangelog.changes.length - 4} more
+                          </Text>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                </View>
+                <View className="flex-row mt-3" style={{ gap: 8 }}>
+                  <Pressable
+                    onPress={onOpenChangelog}
+                    className="flex-row items-center justify-center rounded-full px-4 py-2 active:opacity-90"
+                    style={{ backgroundColor: isDark ? '#F8F8F8' : '#121215' }}
+                  >
+                    <Icon as={ArrowDownToLine} size={13} className={isDark ? 'text-[#121215]' : 'text-[#F8F8F8]'} strokeWidth={2.5} />
+                    <Text className={`ml-1.5 font-roobert-semibold text-xs ${isDark ? 'text-[#121215]' : 'text-[#F8F8F8]'}`}>
+                      Update
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={onOpenChangelog}
+                    className="flex-row items-center justify-center rounded-full bg-muted/60 px-4 py-2 active:opacity-80"
+                  >
+                    <Text className="font-roobert-medium text-xs text-foreground">Details</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+          </>
+        )}
 
         <View style={{ height: 1, backgroundColor: dividerColor, marginVertical: 12 }} />
 

@@ -1,6 +1,6 @@
 import type { UnifiedMessage } from '../types/messages';
 
-interface ParsedToolData {
+export interface ParsedToolData {
   toolName: string;
   functionName: string;
   arguments: Record<string, any>;
@@ -9,7 +9,7 @@ interface ParsedToolData {
   toolCallId?: string;
 }
 
-interface ParsedXmlToolCall {
+export interface ParsedXmlToolCall {
   functionName: string;
   parameters: Record<string, any>;
   rawXml: string;
@@ -43,6 +43,12 @@ export function parseToolMessage(messageOrContent: UnifiedMessage | any, content
   }
 }
 
+export function formatToolOutput(output: any, maxLength: number = 500): string {
+  if (!output) return '';
+  const str = typeof output === 'string' ? output : JSON.stringify(output, null, 2);
+  return str.length > maxLength ? str.substring(0, maxLength) + '...' : str;
+}
+
 export function parseXmlToolCalls(content: string): ParsedXmlToolCall[] {
   const results: ParsedXmlToolCall[] = [];
   const regex = /<(\w+)>([\s\S]*?)<\/\1>/g;
@@ -65,8 +71,16 @@ export function parseXmlToolCalls(content: string): ParsedXmlToolCall[] {
   return results;
 }
 
+export function isNewXmlFormat(content: string): boolean {
+  return /<\w+>[\s\S]*<\/\w+>/.test(content);
+}
+
 export function preprocessTextOnlyTools(content: string): string {
   return content;
+}
+
+export function stripXMLTags(content: string): string {
+  return content.replace(/<\/?[^>]+>/g, '');
 }
 
 export function getUserFriendlyToolName(toolName: string): string {

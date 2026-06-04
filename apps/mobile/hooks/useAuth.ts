@@ -3,10 +3,19 @@ import { supabase } from '@/api/supabase';
 import * as WebBrowser from 'expo-web-browser';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import * as Linking from 'expo-linking';
+import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import { Platform, AppState, AppStateStatus } from 'react-native';
 import { useQueryClient } from '@tanstack/react-query';
+import { initializeRevenueCat, shouldUseRevenueCat } from '@/lib/billing';
 import { consumeAuthCallbackState, createAuthCallbackRedirect } from '@/lib/auth/callback-state';
 
+let useTracking: any = null;
+try {
+  const TrackingModule = require('@/contexts/TrackingContext');
+  useTracking = TrackingModule.useTracking;
+} catch (e) {
+  log.warn('⚠️ TrackingContext not available');
+}
 import type {
   AuthState,
   SignInCredentials,
@@ -15,7 +24,7 @@ import type {
   PasswordResetRequest,
   AuthError,
 } from '@/lib/utils/auth-types';
-import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
+import type { Session, User, AuthChangeEvent } from '@supabase/supabase-js';
 import { log, setLoggerUserId } from '@/lib/logger';
 
 // Complete any pending auth sessions (required for web)
@@ -65,8 +74,65 @@ function extractAuthCallbackState(url: string): string | null {
   return null;
 }
 
+/**
+ * Extract tokens from OAuth callback URL
+ * Handles both hash fragment (#) and query params (?)
+ */
+function extractTokensFromUrl(url: string): { access_token: string | null; refresh_token: string | null } {
+  try {
+    // Try hash fragment first (Supabase implicit flow)
+    const hashIndex = url.indexOf('#');
+    if (hashIndex !== -1) {
+      const hashFragment = url.substring(hashIndex + 1);
+      const params = new URLSearchParams(hashFragment);
+      const access_token = params.get('access_token');
+      const refresh_token = params.get('refresh_token');
+      if (access_token && refresh_token) {
+        return { access_token, refresh_token };
+      }
+    }
+    
+    // Try query params (PKCE flow or custom redirect)
+    const { params } = QueryParams.getQueryParams(url);
+    return {
+      access_token: params.access_token || null,
+      refresh_token: params.refresh_token || null,
+    };
+  } catch (e) {
+    log.error('Failed to extract tokens from URL:', e);
+    return { access_token: null, refresh_token: null };
+  }
+}
+
+/**
+ * Create session from OAuth callback URL
+ */
+async function createSessionFromUrl(url: string) {
+  const { access_token, refresh_token } = extractTokensFromUrl(url);
+  
+  if (!access_token || !refresh_token) {
+    log.log('⚠️ No tokens found in URL');
+    return null;
+  }
+  
+  log.log('✅ Tokens extracted, setting session...');
+  const { data, error } = await supabase.auth.setSession({
+    access_token,
+    refresh_token,
+  });
+  
+  if (error) {
+    log.error('❌ Failed to set session:', error);
+    throw error;
+  }
+  
+  return data.session;
+}
+
 export function useAuth() {
   const queryClient = useQueryClient();
+  const trackingState = useTracking ? useTracking() : { canTrack: false, isLoading: false };
+  const { canTrack, isLoading: trackingLoading } = trackingState;
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     session: null,
@@ -76,6 +142,8 @@ export function useAuth() {
 
   const [error, setError] = useState<AuthError | null>(null);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const initializedUserIdRef = useRef<string | null>(null);
+  const initializedCanTrackRef = useRef<boolean | null>(null);
   const oauthSessionActiveRef = useRef<boolean>(false);
 
   // Initialize session once on mount
@@ -94,6 +162,23 @@ export function useAuth() {
         isLoading: false,
         isAuthenticated: !!session,
       });
+
+      if (session?.user && shouldUseRevenueCat()) {
+        // Only initialize if user changed or canTrack changed from false to true
+        const shouldInitialize = 
+          initializedUserIdRef.current !== session.user.id ||
+          (canTrack && initializedCanTrackRef.current !== canTrack);
+
+        if (shouldInitialize) {
+        try {
+          await initializeRevenueCat(session.user.id, session.user.email, canTrack);
+            initializedUserIdRef.current = session.user.id;
+            initializedCanTrackRef.current = canTrack;
+        } catch (error) {
+          log.warn('⚠️ Failed to initialize RevenueCat:', error);
+          }
+        }
+      }
     });
 
     return () => {
@@ -101,7 +186,7 @@ export function useAuth() {
     };
   }, []); // Only run once on mount
 
-  // Handle auth state changes
+  // Handle auth state changes and canTrack changes
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event: AuthChangeEvent, session: Session | null) => {
@@ -119,11 +204,49 @@ export function useAuth() {
           isLoading: false,
           isAuthenticated: !!session,
         });
+
+        if (session?.user && shouldUseRevenueCat() && _event === 'SIGNED_IN') {
+          // Only initialize if user changed or canTrack changed from false to true
+          const shouldInitialize = 
+            initializedUserIdRef.current !== session.user.id ||
+            (canTrack && initializedCanTrackRef.current !== canTrack);
+
+          if (shouldInitialize) {
+          try {
+            await initializeRevenueCat(session.user.id, session.user.email, canTrack);
+              initializedUserIdRef.current = session.user.id;
+              initializedCanTrackRef.current = canTrack;
+          } catch (error) {
+            log.warn('⚠️ Failed to initialize RevenueCat:', error);
+          }
+          }
+        } else if (_event === 'SIGNED_OUT') {
+          initializedUserIdRef.current = null;
+          initializedCanTrackRef.current = null;
+        }
       }
     );
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [canTrack]); // Only depend on canTrack, not trackingLoading
+
+  // Handle canTrack changes for already-initialized RevenueCat
+  useEffect(() => {
+    if (!authState.user || !shouldUseRevenueCat() || !canTrack) {
+      return;
+    }
+
+    // If RevenueCat was initialized with canTrack=false but now it's true, update it
+    if (initializedUserIdRef.current === authState.user.id && initializedCanTrackRef.current !== canTrack) {
+      initializeRevenueCat(authState.user.id, authState.user.email, canTrack)
+        .then(() => {
+          initializedCanTrackRef.current = canTrack;
+        })
+        .catch((error) => {
+          log.warn('⚠️ Failed to update RevenueCat tracking:', error);
+        });
+    }
+  }, [canTrack, authState.user]); // Update when canTrack or user changes
 
   const signIn = useCallback(async ({ email, password }: SignInCredentials) => {
     try {
@@ -563,7 +686,7 @@ export function useAuth() {
 
       log.log('📱 Magic link redirect URL:', emailRedirectTo);
 
-      const { error: magicLinkError } = await supabase.auth.signInWithOtp({
+      const { error: magicLinkError, data } = await supabase.auth.signInWithOtp({
         email: email.trim().toLowerCase(),
         options: {
           emailRedirectTo,
@@ -738,6 +861,16 @@ export function useAuth() {
     try {
       log.log('🎯 Sign out initiated');
       setIsSigningOut(true);
+      
+      if (shouldUseRevenueCat()) {
+        try {
+          const { logoutRevenueCat } = require('@/lib/billing/revenuecat');
+          await logoutRevenueCat();
+          log.log('✅ RevenueCat logout completed - subscription detached from device');
+        } catch (rcError) {
+          log.warn('⚠️  RevenueCat logout failed (non-critical):', rcError);
+        }
+      }
 
       const { error: globalError } = await supabase.auth.signOut({ scope: 'global' });
 

@@ -11,7 +11,7 @@ import { API_URL } from '@/api/config';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-interface PipedreamCredentialStatus {
+export interface PipedreamCredentialStatus {
   configured: boolean;
   source: 'account' | 'default';
   provider: string;
@@ -19,7 +19,7 @@ interface PipedreamCredentialStatus {
 
 // ─── Keys ───────────────────────────────────────────────────────────────────
 
-const pipedreamCredentialKeys = {
+export const pipedreamCredentialKeys = {
   status: ['pipedream-credentials'] as const,
 };
 

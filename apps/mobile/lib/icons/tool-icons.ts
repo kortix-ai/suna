@@ -80,3 +80,6 @@ export function getToolIcon(toolName: string): LucideIcon {
   return ICON_MAP[key] ?? Wrench;
 }
 
+// Re-export the icon key function for type checking
+export { getToolIconKey, type ToolIconKey };
+

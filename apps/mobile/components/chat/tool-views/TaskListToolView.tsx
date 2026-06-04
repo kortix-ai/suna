@@ -3,6 +3,7 @@ import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
+  Clock,
   ListTodo,
   X,
   Circle,
@@ -12,7 +13,7 @@ import { extractTaskListData, type Task, type Section } from './task-list/_utils
 import type { ToolViewProps } from './types';
 import { ToolViewCard, StatusBadge, LoadingState } from './shared';
 
-const TaskItem: React.FC<{ task: Task }> = ({ task }) => {
+const TaskItem: React.FC<{ task: Task; index: number }> = ({ task, index }) => {
   const isCompleted = task.status === "completed";
   const isCancelled = task.status === "cancelled";
   const isPending = !isCompleted && !isCancelled;
@@ -61,8 +62,8 @@ const SectionView: React.FC<{ section: Section }> = ({ section }) => {
     <View className="mb-6">
       <SectionHeader section={section} />
       <View className="gap-2">
-        {section.tasks.map((task) => (
-          <TaskItem key={task.id} task={task} />
+        {section.tasks.map((task, index) => (
+          <TaskItem key={task.id} task={task} index={index} />
         ))}
         {section.tasks.length === 0 && (
           <View className="bg-card border border-border rounded-2xl px-6 py-6 items-center">

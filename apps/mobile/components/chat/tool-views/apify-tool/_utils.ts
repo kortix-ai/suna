@@ -1,18 +1,7 @@
 import { ToolCallData, ToolResultData } from '../types';
 import { log } from '@/lib/logger';
 
-function argsRecord(toolCall: ToolCallData): Record<string, any> {
-  return typeof toolCall.arguments === 'object' && toolCall.arguments !== null
-    ? toolCall.arguments
-    : {};
-}
-
-function resultTimestamp(toolResult: ToolResultData | undefined): string | undefined {
-  const timestamp = (toolResult as (ToolResultData & { timestamp?: unknown }) | undefined)?.timestamp;
-  return typeof timestamp === 'string' ? timestamp : undefined;
-}
-
-interface ApifyActor {
+export interface ApifyActor {
   actor_id: string;
   name: string;
   title: string;
@@ -24,7 +13,7 @@ interface ApifyActor {
   is_premium: boolean;
 }
 
-interface ApifyActorDetails {
+export interface ApifyActorDetails {
   actor_id?: string;
   id?: string;
   name?: string;
@@ -84,7 +73,7 @@ interface ApifyActorDetails {
   [key: string]: any;
 }
 
-interface ApifyRunResult {
+export interface ApifyRunResult {
   run_id: string;
   actor_id: string;
   status: string;
@@ -101,7 +90,7 @@ interface ApifyRunResult {
   message?: string;
 }
 
-interface ApifySearchData {
+export interface ApifySearchData {
   actors: ApifyActor[];
   total: number;
   query: string;
@@ -110,7 +99,7 @@ interface ApifySearchData {
   actualAssistantTimestamp?: string;
 }
 
-interface ApifyRunResultsData {
+export interface ApifyRunResultsData {
   run_id: string;
   actor_id?: string;
   dataset_id: string;
@@ -148,7 +137,7 @@ export function extractApifySearchData(
       return defaultReturn;
     }
 
-    const args = argsRecord(toolCall);
+    const args = toolCall.arguments || {};
     const query: string = args.query || '';
 
     let output: any = null;
@@ -168,9 +157,8 @@ export function extractApifySearchData(
       if (toolResult.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
-      const timestamp = resultTimestamp(toolResult);
-      if (timestamp) {
-        actualToolTimestamp = timestamp;
+      if (toolResult.timestamp) {
+        actualToolTimestamp = toolResult.timestamp;
       }
     }
 
@@ -222,7 +210,7 @@ export function extractApifyActorDetails(
       return defaultReturn;
     }
 
-    const args = argsRecord(toolCall);
+    const args = toolCall.arguments || {};
     const actor_id: string = args.actor_id || '';
 
     let output: any = null;
@@ -242,9 +230,8 @@ export function extractApifyActorDetails(
       if (toolResult.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
-      const timestamp = resultTimestamp(toolResult);
-      if (timestamp) {
-        actualToolTimestamp = timestamp;
+      if (toolResult.timestamp) {
+        actualToolTimestamp = toolResult.timestamp;
       }
     }
 
@@ -327,7 +314,7 @@ export function extractApifyRunData(
       return defaultReturn;
     }
 
-    const args = argsRecord(toolCall);
+    const args = toolCall.arguments || {};
     const run_input = args.run_input;
 
     let output: any = null;
@@ -347,9 +334,8 @@ export function extractApifyRunData(
       if (toolResult.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
-      const timestamp = resultTimestamp(toolResult);
-      if (timestamp) {
-        actualToolTimestamp = timestamp;
+      if (toolResult.timestamp) {
+        actualToolTimestamp = toolResult.timestamp;
       }
     }
 
@@ -383,7 +369,7 @@ export function extractApifyRunData(
   }
 }
 
-interface ApifyApprovalData {
+export interface ApifyApprovalData {
   approval_id: string;
   status: 'pending' | 'approved' | 'rejected' | 'expired' | 'executed';
   actor_id: string;
@@ -438,9 +424,8 @@ export function extractApifyApprovalData(
       if (toolResult.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
-      const timestamp = resultTimestamp(toolResult);
-      if (timestamp) {
-        actualToolTimestamp = timestamp;
+      if (toolResult.timestamp) {
+        actualToolTimestamp = toolResult.timestamp;
       }
     }
 
@@ -502,7 +487,7 @@ export function extractApifyRunResultsData(
       return defaultReturn;
     }
 
-    const args = argsRecord(toolCall);
+    const args = toolCall.arguments || {};
     const run_id: string = args.run_id || '';
 
     let output: any = null;
@@ -522,9 +507,8 @@ export function extractApifyRunResultsData(
       if (toolResult.success !== undefined) {
         actualIsSuccess = toolResult.success;
       }
-      const timestamp = resultTimestamp(toolResult);
-      if (timestamp) {
-        actualToolTimestamp = timestamp;
+      if (toolResult.timestamp) {
+        actualToolTimestamp = toolResult.timestamp;
       }
     }
 
@@ -553,3 +537,4 @@ export function extractApifyRunResultsData(
     return defaultReturn;
   }
 }
+

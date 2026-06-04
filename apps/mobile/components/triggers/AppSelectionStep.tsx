@@ -11,6 +11,7 @@ import { View, Image } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { ChevronRight } from 'lucide-react-native';
+import { useColorScheme } from 'nativewind';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { Loading } from '../loading/loading';
 import { SearchBar } from '@/components/ui/SearchBar';
@@ -39,6 +40,7 @@ interface AppCardProps {
 }
 
 function AppCard({ app, connectionStatus, onPress }: AppCardProps) {
+  const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const scale = useSharedValue(1);
 

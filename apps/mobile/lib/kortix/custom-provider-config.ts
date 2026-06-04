@@ -1,6 +1,6 @@
 /**
  * Custom provider configuration utilities.
- * Ported from the web custom provider configuration flow at 0a31da4.
+ * Ported from web's apps/web/src/components/providers/custom-provider-config.ts (0a31da4).
  *
  * Pure functions — no React or RN dependencies.
  */

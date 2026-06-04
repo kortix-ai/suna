@@ -20,7 +20,7 @@ function formatTimestamp(isoString?: string): string {
 }
 
 export function DocsToolView({ toolCall, toolResult, isStreaming = false, assistantTimestamp, toolTimestamp }: ToolViewProps) {
-  const data = extractDocsData({ toolResult });
+  const data = extractDocsData({ toolCall, toolResult });
 
   if (!toolCall) {
     return null;

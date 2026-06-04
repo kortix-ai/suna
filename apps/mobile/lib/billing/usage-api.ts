@@ -1,6 +1,6 @@
 import { API_URL, getAuthHeaders } from '@/api/config';
 
-interface ThreadUsageRecord {
+export interface ThreadUsageRecord {
   thread_id: string;
   project_id: string | null;
   project_name: string;
@@ -81,3 +81,4 @@ export const usageApi = {
     return fetchApi<ThreadUsageResponse>(`/billing/credit-usage-by-thread?${params.toString()}`);
   },
 };
+

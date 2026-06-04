@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { LucideIcon } from 'lucide-react-native';
+import { Code, Eye, LucideIcon } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 
 interface Tab {
@@ -75,3 +75,4 @@ export function TabSwitcher({
     </View>
   );
 }
+

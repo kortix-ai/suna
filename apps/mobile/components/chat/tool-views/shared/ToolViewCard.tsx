@@ -1,5 +1,6 @@
 import React from 'react';
 import { View } from 'react-native';
+import { useColorScheme } from 'nativewind';
 import { ToolHeader, ToolHeaderProps } from './ToolHeader';
 
 interface ToolViewCardProps {
@@ -17,6 +18,9 @@ export function ToolViewCard({
   footer,
   className = '',
 }: ToolViewCardProps) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+
   return (
     <View className={`flex-1 bg-card ${className}`}>
       {header && (
@@ -35,11 +39,7 @@ export function ToolViewCard({
               isStreaming={header.isStreaming}
             />
           </View>
-          {header.rightContent && (
-            <View className="ml-3">
-              {header.rightContent}
-            </View>
-          )}
+
         </View>
       )}
 
@@ -47,11 +47,7 @@ export function ToolViewCard({
         {children}
       </View>
 
-      {footer && (
-        <View className="px-4 py-3 bg-card border-t border-border">
-          {footer}
-        </View>
-      )}
     </View>
   );
 }
+

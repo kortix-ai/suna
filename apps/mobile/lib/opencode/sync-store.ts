@@ -9,6 +9,7 @@
 
 import { create } from 'zustand';
 import type {
+  Message,
   Part,
   MessageWithParts,
   SessionStatus,
@@ -69,6 +70,10 @@ interface SyncState {
 // ---------------------------------------------------------------------------
 
 const optimisticIds = new Set<string>();
+
+export function markOptimistic(id: string) {
+  optimisticIds.add(id);
+}
 
 export function isOptimistic(id: string): boolean {
   return optimisticIds.has(id);

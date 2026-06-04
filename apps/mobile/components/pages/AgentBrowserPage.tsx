@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   ArrowRight,
 } from 'lucide-react-native';
+import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import { getSandboxPortUrl } from '@/lib/platform/client';
 import { getAuthToken } from '@/api/config';
@@ -39,7 +40,7 @@ interface AgentBrowserPageProps {
   isRightDrawerOpen?: boolean;
 }
 
-export function AgentBrowserPage({ onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: AgentBrowserPageProps) {
+export function AgentBrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: AgentBrowserPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const { sandboxId } = useSandboxContext();
@@ -53,6 +54,7 @@ export function AgentBrowserPage({ onOpenDrawer, onOpenRightDrawer, isDrawerOpen
 
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.4)';
+  const barBg = isDark ? '#1E1E22' : '#F4F4F5';
 
   // Build viewer URL — auto-focus the primary session
   const viewerUrl = useMemo(() => {

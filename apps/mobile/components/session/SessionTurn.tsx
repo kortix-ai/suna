@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { SandboxPreviewCard, detectLocalhostUrls } from '@/components/chat/SandboxPreviewCard';
-import { GroupedReasoningCard } from '@/components/chat';
+import { ReasoningSection, GroupedReasoningCard } from '@/components/chat';
 import { SessionErrorBanner } from './SessionErrorBanner';
 import { getSheetBg } from '@/lib/theme-colors';
 import ReAnimated, {
@@ -49,6 +49,7 @@ import {
   FileText,
   Folder,
   FolderPlus,
+  MonitorPlay,
   type LucideIcon,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
@@ -89,6 +90,7 @@ import {
   getRetryInfo,
   getRetryMessage,
   splitUserParts,
+  isFilePart,
 } from '@/lib/opencode/turns';
 
 // Enable LayoutAnimation on Android
@@ -421,6 +423,9 @@ const BASH_COMMANDS = new Set([
   'ssh', 'scp', 'rsync', 'jq', 'rg', 'fd', 'bat', 'exa',
 ]);
 
+// Bash operators and redirections
+const BASH_OPERATORS = new Set(['&&', '||', '|', ';', '>>', '2>', '2>&1', '>&2']);
+
 interface BashToken {
   text: string;
   type: 'prompt' | 'command' | 'flag' | 'string' | 'operator' | 'redirect' | 'path' | 'plain';
@@ -566,6 +571,7 @@ function getExtFromPath(filePath: string): string {
 }
 
 const MD_HEADING_RE = /^(#{1,6}\s)/;
+const MD_BOLD_RE = /\*\*[^*]+\*\*/g;
 const MD_BULLET_RE = /^(\s*[-*+]|\s*\d+\.)\s/;
 
 function tokenizeMarkdown(line: string): CodeToken[] {
@@ -996,7 +1002,7 @@ function ReadExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boolean
   const input = getToolInput(tool);
   const filePath = input.filePath || '';
 
-  const { content } = useMemo(() => {
+  const { content, lineNumbers } = useMemo(() => {
     if (tool.state.status !== 'completed' || !('output' in tool.state) || !tool.state.output) {
       return { content: '', lineNumbers: false };
     }
@@ -1672,8 +1678,12 @@ function LtmSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: bo
     return '';
   }, [tool.state]);
 
-  const { hits } = useMemo(() => {
-    if (!output) return { hits: [] as any[] };
+  const { label, hits } = useMemo(() => {
+    if (!output) return { label: '', hits: [] as any[] };
+
+    // Parse header: === LTM Search: "query" (N results) ===
+    const headerMatch = output.match(/===\s*(.+?)\s*===/);
+    const label = headerMatch?.[1] || '';
 
     // Parse detailed blocks: #N [type] — content
     const blockRe = /#(\d+)\s*\[(\w+)\]\s*[—–-]\s*([\s\S]*?)(?=\n\s*#\d+\s*\[|$)/g;
@@ -1684,7 +1694,7 @@ function LtmSearchExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: bo
       hits.push({ id: m[1], type: m[2], content });
     }
 
-    return { hits };
+    return { label, hits };
   }, [output]);
 
   if (!output) return null;
@@ -1797,6 +1807,8 @@ function QuestionExpandedContent({ tool, isDark }: { tool: ToolPart; isDark: boo
 
     return pairs;
   }, [input, tool.state]);
+
+  const answeredCount = qaPairs.filter(q => q.answer).length;
 
   if (qaPairs.length === 0) return null;
 
@@ -2863,19 +2875,20 @@ export function SessionTurn({
     [userText, commands],
   );
 
-  // Detect Slack channel messages in user prompts.
+  // Detect channel message (Telegram/Slack) in user message
   const channelMessageInfo = useMemo(() => {
     if (!userText) return undefined;
-    // Match pattern: [Slack · #channel · message from Name]
-    const headerMatch = userText.match(/^\[(Slack)\s*·\s*(?:[^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/);
+    // Match pattern: [Telegram · DM · message from Name] or [Slack · #channel · message from Name]
+    const headerMatch = userText.match(/^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/);
     if (!headerMatch) return undefined;
-    const platform = headerMatch[1] as 'Slack';
-    const userName = headerMatch[2].trim();
-    // Extract the actual message (between header and Slack instructions)
+    const platform = headerMatch[1] as 'Telegram' | 'Slack';
+    const context = headerMatch[2].trim();
+    const userName = headerMatch[3].trim();
+    // Extract the actual message (between header and Chat ID/instructions)
     const afterHeader = userText.slice(headerMatch[0].length);
-    const instrStart = afterHeader.search(/\n\s*── Slack instructions/);
+    const instrStart = afterHeader.search(/\n\s*(Chat ID:|── Telegram instructions|── Slack instructions)/);
     const messageText = instrStart >= 0 ? afterHeader.slice(0, instrStart).trim() : afterHeader.trim();
-    return { platform, userName, messageText };
+    return { platform, context, userName, messageText };
   }, [userText]);
 
   // Detect trigger_event in user message
@@ -2954,6 +2967,12 @@ export function SessionTurn({
     return getTurnCost(allParts);
   }, [working, allParts]);
 
+  // Last assistant message ID (for fork)
+  const lastAssistantMessageId = useMemo(() => {
+    if (turn.assistantMessages.length === 0) return undefined;
+    return turn.assistantMessages[turn.assistantMessages.length - 1].info.id;
+  }, [turn.assistantMessages]);
+
   // User message ID (for fork/edit on user bubble)
   const userMessageId = turn.userMessage.info.id;
 
@@ -2980,11 +2999,11 @@ export function SessionTurn({
             {/* Channel badge + user name */}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <Ionicons
-                name="logo-slack"
+                name={channelMessageInfo.platform === 'Telegram' ? 'paper-plane-outline' : 'logo-slack'}
                 size={14}
-                color="#E91E63"
+                color={channelMessageInfo.platform === 'Telegram' ? '#29B6F6' : '#E91E63'}
               />
-              <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: '#E91E63' }}>
+              <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: channelMessageInfo.platform === 'Telegram' ? '#29B6F6' : '#E91E63' }}>
                 {channelMessageInfo.platform}
               </Text>
               <Text style={{ fontSize: 11, fontFamily: 'Roobert', color: isDark ? '#71717a' : '#a1a1aa' }}>·</Text>
@@ -3128,6 +3147,9 @@ export function SessionTurn({
             userText={userText}
             isDark={isDark}
             isBusy={isBusy}
+            onCopy={async () => {
+              await Clipboard.setStringAsync(userText);
+            }}
             onEdit={() => editSheetRef.current?.present()}
             onFork={() => onFork?.(userMessageId)}
           />
@@ -3375,12 +3397,14 @@ function UserMessageActions({
   userText,
   isDark,
   isBusy,
+  onCopy,
   onEdit,
   onFork,
 }: {
   userText: string;
   isDark: boolean;
   isBusy: boolean;
+  onCopy: () => void;
   onEdit: () => void;
   onFork: () => void;
 }) {

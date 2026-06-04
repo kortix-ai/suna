@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface DocumentParserData {
+export interface DocumentParserData {
   filePath: string | null;
   fileName: string | null;
   content: string | null;

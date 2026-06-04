@@ -1,20 +1,25 @@
-import { LucideIcon, FilePen, Replace, Trash2, FileCode } from 'lucide-react-native';
+import { LucideIcon, FilePen, Replace, Trash2, FileCode, FileSpreadsheet, File } from 'lucide-react-native';
 
-type DiffType = 'unchanged' | 'added' | 'removed';
+export type DiffType = 'unchanged' | 'added' | 'removed';
 
-interface LineDiff {
+export interface LineDiff {
   type: DiffType;
   oldLine: string | null;
   newLine: string | null;
   lineNumber: number;
 }
 
-interface DiffStats {
+export interface CharDiffPart {
+  text: string;
+  type: DiffType;
+}
+
+export interface DiffStats {
   additions: number;
   deletions: number;
 }
 
-const parseNewlines = (text: string): string => {
+export const parseNewlines = (text: string): string => {
   return text.replace(/\\n/g, '\n');
 };
 
@@ -47,6 +52,62 @@ export const generateLineDiff = (oldText: string, newText: string): LineDiff[] =
   return diffLines;
 };
 
+export const generateCharDiff = (oldText: string, newText: string): CharDiffPart[] => {
+  const parsedOldText = parseNewlines(oldText);
+  const parsedNewText = parseNewlines(newText);
+  
+  let prefixLength = 0;
+  while (
+    prefixLength < parsedOldText.length &&
+    prefixLength < parsedNewText.length &&
+    parsedOldText[prefixLength] === parsedNewText[prefixLength]
+  ) {
+    prefixLength++;
+  }
+
+  let oldSuffixStart = parsedOldText.length;
+  let newSuffixStart = parsedNewText.length;
+  while (
+    oldSuffixStart > prefixLength &&
+    newSuffixStart > prefixLength &&
+    parsedOldText[oldSuffixStart - 1] === parsedNewText[newSuffixStart - 1]
+  ) {
+    oldSuffixStart--;
+    newSuffixStart--;
+  }
+
+  const parts: CharDiffPart[] = [];
+
+  if (prefixLength > 0) {
+    parts.push({
+      text: parsedOldText.substring(0, prefixLength),
+      type: 'unchanged',
+    });
+  }
+
+  if (oldSuffixStart > prefixLength) {
+    parts.push({
+      text: parsedOldText.substring(prefixLength, oldSuffixStart),
+      type: 'removed',
+    });
+  }
+  if (newSuffixStart > prefixLength) {
+    parts.push({
+      text: parsedNewText.substring(prefixLength, newSuffixStart),
+      type: 'added',
+    });
+  }
+
+  if (oldSuffixStart < parsedOldText.length) {
+    parts.push({
+      text: parsedOldText.substring(oldSuffixStart),
+      type: 'unchanged',
+    });
+  }
+
+  return parts;
+};
+
 export const calculateDiffStats = (lineDiff: LineDiff[]): DiffStats => {
   return {
     additions: lineDiff.filter(line => line.type === 'added').length,
@@ -54,9 +115,9 @@ export const calculateDiffStats = (lineDiff: LineDiff[]): DiffStats => {
   };
 };
 
-type FileOperation = 'create' | 'rewrite' | 'delete' | 'edit' | 'str-replace' | 'read';
+export type FileOperation = 'create' | 'rewrite' | 'delete' | 'edit' | 'str-replace' | 'read';
 
-interface OperationConfig {
+export interface OperationConfig {
   icon: LucideIcon;
   color: string;
   successMessage: string;
@@ -130,6 +191,16 @@ export const getLanguageFromFileName = (fileName: string): string => {
 
   return extensionMap[extension] || 'text';
 };
+
+export interface ExtractedEditData {
+  filePath: string | null;
+  originalContent: string | null;
+  updatedContent: string | null;
+  success?: boolean;
+  timestamp?: string;
+  errorMessage?: string;
+}
+
 
 export const getOperationType = (name?: string): FileOperation => {
   if (!name) return 'create';
@@ -227,6 +298,13 @@ export const getOperationTitle = (operation: FileOperation): string => {
   return titles[operation] || 'File Operation';
 };
 
+export const getFileIcon = (fileName: string): LucideIcon => {
+  if (fileName.endsWith('.md')) return FileCode;
+  if (fileName.endsWith('.csv')) return FileSpreadsheet;
+  if (fileName.endsWith('.html')) return FileCode;
+  return File;
+};
+
 export const processFilePath = (filePath: string | null): string | null => {
   return filePath
     ? filePath.trim().replace(/\\n/g, '\n').split('\n')[0]
@@ -261,3 +339,86 @@ export const splitContentIntoLines = (fileContent: string | null): string[] => {
   }
   return fileContent.replace(/\\n/g, '\n').split('\n');
 };
+
+export function calculateEmptyLinesNeeded(
+  contentLinesCount: number,
+  containerHeight: number,
+  lineHeight: number = 24, // Default line height in pixels
+  minEmptyLines: number = 20 // Minimum empty lines to add
+): number {
+  // Calculate how many lines can fit in the viewport
+  const visibleLines = Math.floor(containerHeight / lineHeight);
+  
+  // If content already fills the viewport, add minimum empty lines
+  if (contentLinesCount >= visibleLines) {
+    return minEmptyLines;
+  }
+  
+  // Otherwise, calculate how many empty lines needed to fill viewport
+  // Add a buffer to ensure smooth scrolling
+  const emptyLinesNeeded = visibleLines - contentLinesCount + minEmptyLines;
+  
+  return Math.max(emptyLinesNeeded, minEmptyLines);
+}
+
+export function generateEmptyLines(count: number): string[] {
+  return Array.from({ length: count }, () => '');
+}
+
+// REMOVED: extractToolData - Legacy extraction function removed.
+// Use toolCall.arguments and toolResult.output directly instead.
+
+export function extractFilePath(content: any): string | null {
+  if (!content || typeof content !== 'string') return null;
+
+  const patterns = [
+    /(?:path|file_path|filename)["']?\s*:\s*["']([^"']+)["']/,
+    /(?:File|Path|Created|Writing to|Reading from|Editing|Deleting):\s*([^\n]+)/,
+    /`([^`]+\.[a-zA-Z0-9]+)`/,
+    /<(?:create-file|delete-file|full-file-rewrite|str-replace|edit-file)[^>]*\s+file_path=["']([\s\S]*?)["']/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = content.match(pattern);
+    if (match) {
+      return match[1].trim();
+    }
+  }
+
+  return null;
+}
+
+export function extractFileContent(content: any, toolName?: string): string | null {
+  if (!content || typeof content !== 'string') return null;
+
+  const patterns = [
+    /<file_content>([\s\S]*?)<\/file_content>/,
+    /<content>([\s\S]*?)<\/content>/,
+    /```[\w]*\n([\s\S]*?)\n```/,
+    /(?:content|contents|output|new_str)["']?\s*:\s*["']?([\s\S]*?)(?=\n\s*["}]|\s*$)/,
+  ];
+
+  for (const pattern of patterns) {
+    const match = content.match(pattern);
+    if (match) {
+      let extracted = match[1]
+        .replace(/\\n/g, '\n')
+        .replace(/\\t/g, '\t')
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\')
+        .trim();
+      
+      if (extracted.startsWith('"') && extracted.endsWith('"')) {
+        extracted = extracted.slice(1, -1);
+      }
+      
+      return extracted;
+    }
+  }
+
+  return null;
+}
+
+export function extractStreamingFileContent(content: any, toolName?: string): string | null {
+  return extractFileContent(content, toolName);
+}

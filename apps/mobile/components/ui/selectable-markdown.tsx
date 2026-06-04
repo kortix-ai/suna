@@ -20,10 +20,13 @@ import {
   Text as RNText,
   Pressable,
   LogBox,
+  Keyboard,
   Platform,
   Dimensions,
   Linking,
+  TextInput,
   TouchableOpacity,
+  ScrollView,
 } from 'react-native';
 import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
@@ -31,7 +34,7 @@ import Markdown from 'react-native-markdown-display';
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
-import { Copy } from 'lucide-react-native';
+import { Copy, X } from 'lucide-react-native';
 import {
   markdownParser,
   lightMarkdownStyle,
@@ -53,11 +56,88 @@ LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into 
 const MARKDOWN_LINE_HEIGHT = 23; // matches user bubble (text-sm leading-relaxed)
 const MARKDOWN_FONT_SIZE = 14;
 
-// Config: disable special block rendering (tables, code blocks, separators).
-// When true, everything renders as plain markdown without splitting.
+// Debug mode to see height calculations
+let DEBUG_HEIGHTS = false;
+
+// Config: Disable special block rendering (tables, code blocks, separators)
+// When true, everything renders as plain markdown without splitting
 let DISABLE_BLOCK_SPLITTING = true;
 
-interface SelectableMarkdownTextProps {
+export function setBlockSplitting(enabled: boolean) {
+  DISABLE_BLOCK_SPLITTING = !enabled;
+  log.log(`[MD] Block splitting ${enabled ? 'enabled' : 'disabled'}`);
+}
+
+// Runtime tunable values  
+// CHAR_WIDTH_FACTOR: Lower = more chars per line = fewer visual lines = shorter (less over-estimation)
+let CHAR_WIDTH_FACTOR = 0.42;      // Was 0.48, reduced to prevent over-estimation on long text
+let HEADING_CHAR_FACTOR = 0.46;    // Was 0.52
+let EMPTY_LINE_FACTOR = 0.5;
+let BOLD_WIDTH_FACTOR = 1.10;      // Was 1.15, reduced slightly
+
+let BASE_PHANTOM = 8;
+let LINE_PHANTOM_PX = 0.5;
+let MAX_LINE_PHANTOM = 8;
+
+export function enableMarkdownDebug(enabled: boolean = true) {
+  DEBUG_HEIGHTS = enabled;
+  log.log(`[SelectableMarkdown] Debug ${enabled ? 'enabled' : 'disabled'}`);
+}
+
+export function setCharWidthFactor(factor: number) {
+  CHAR_WIDTH_FACTOR = factor;
+  log.log(`[MD] Char width factor: ${factor}`);
+}
+
+export function setHeadingCharFactor(factor: number) {
+  HEADING_CHAR_FACTOR = factor;
+  log.log(`[MD] Heading char factor: ${factor}`);
+}
+
+export function setEmptyLineFactor(factor: number) {
+  EMPTY_LINE_FACTOR = factor;
+  log.log(`[MD] Empty line factor: ${factor}`);
+}
+
+export function setBasePhantom(px: number) {
+  BASE_PHANTOM = px;
+  log.log(`[MD] Base phantom: ${px}px`);
+}
+
+export function setLinePhantom(px: number) {
+  LINE_PHANTOM_PX = px;
+  log.log(`[MD] Line phantom: ${px}px per line`);
+}
+
+export function setMaxLinePhantom(px: number) {
+  MAX_LINE_PHANTOM = px;
+  log.log(`[MD] Max line phantom: ${px}px`);
+}
+
+export function setBoldWidthFactor(factor: number) {
+  BOLD_WIDTH_FACTOR = factor;
+  log.log(`[MD] Bold width factor: ${(factor * 100).toFixed(0)}%`);
+}
+
+export function getFactors() {
+  return { char: CHAR_WIDTH_FACTOR, heading: HEADING_CHAR_FACTOR, empty: EMPTY_LINE_FACTOR, basePhantom: BASE_PHANTOM, linePhantom: LINE_PHANTOM_PX, maxLinePhantom: MAX_LINE_PHANTOM, bold: BOLD_WIDTH_FACTOR };
+}
+
+if (__DEV__) {
+  (globalThis as any).enableMarkdownDebug = enableMarkdownDebug;
+  (globalThis as any).setCharWidthFactor = setCharWidthFactor;
+  (globalThis as any).setHeadingCharFactor = setHeadingCharFactor;
+  (globalThis as any).setEmptyLineFactor = setEmptyLineFactor;
+  (globalThis as any).setBasePhantom = setBasePhantom;
+  (globalThis as any).setLinePhantom = setLinePhantom;
+  (globalThis as any).setMaxLinePhantom = setMaxLinePhantom;
+  (globalThis as any).setBoldWidthFactor = setBoldWidthFactor;
+  (globalThis as any).getFactors = getFactors;
+  log.log('[MD] Tune: setBasePhantom(16) / setLinePhantom(0.5) / setMaxLinePhantom(20)');
+}
+
+
+export interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
   children: string;
   /** Additional style for the text input */
@@ -72,7 +152,7 @@ interface SelectableMarkdownTextProps {
  */
 const createAndroidMarkdownRules = (isDark: boolean) => ({
   // Make all text selectable
-  text: (node: any, _children: any, _parent: any, styles: any, inheritedStyles: any = {}) => (
+  text: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
     <RNText 
       key={node.key} 
       style={[inheritedStyles, styles.text]}
@@ -82,37 +162,37 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
     </RNText>
   ),
   // Wrap textgroup with selectable
-  textgroup: (node: any, children: any, _parent: any, styles: any) => (
+  textgroup: (node: any, children: any, parent: any, styles: any) => (
     <RNText key={node.key} style={styles.textgroup} selectable={true}>
       {children}
     </RNText>
   ),
   // Paragraph - keep View but children will be selectable
-  paragraph: (node: any, children: any, _parent: any, styles: any) => (
+  paragraph: (node: any, children: any, parent: any, styles: any) => (
     <View key={node.key} style={styles.paragraph}>
       {children}
     </View>
   ),
   // Strong/bold text
-  strong: (node: any, children: any, _parent: any, styles: any) => (
+  strong: (node: any, children: any, parent: any, styles: any) => (
     <RNText key={node.key} style={styles.strong} selectable={true}>
       {children}
     </RNText>
   ),
   // Italic text
-  em: (node: any, children: any, _parent: any, styles: any) => (
+  em: (node: any, children: any, parent: any, styles: any) => (
     <RNText key={node.key} style={styles.em} selectable={true}>
       {children}
     </RNText>
   ),
   // Strikethrough
-  s: (node: any, children: any, _parent: any, styles: any) => (
+  s: (node: any, children: any, parent: any, styles: any) => (
     <RNText key={node.key} style={styles.s} selectable={true}>
       {children}
     </RNText>
   ),
   // Links - selectable and pressable
-  link: (node: any, children: any, _parent: any, styles: any) => (
+  link: (node: any, children: any, parent: any, styles: any) => (
     <RNText
       key={node.key}
       style={[styles.link, { color: isDark ? '#3b82f6' : '#2563eb' }]}
@@ -127,7 +207,7 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
     </RNText>
   ),
   // Inline code
-  code_inline: (node: any, _children: any, _parent: any, styles: any) => (
+  code_inline: (node: any, children: any, parent: any, styles: any) => (
     <RNText 
       key={node.key} 
       style={[styles.code_inline, { 
@@ -140,21 +220,21 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
     </RNText>
   ),
   // Headings
-  heading1: (node: any, children: any, _parent: any, styles: any) => (
+  heading1: (node: any, children: any, parent: any, styles: any) => (
     <View key={node.key} style={styles.heading1}>
       <RNText style={[styles.heading1, { fontSize: 26, fontFamily: 'Roobert-Bold' }]} selectable={true}>
         {children}
       </RNText>
     </View>
   ),
-  heading2: (node: any, children: any, _parent: any, styles: any) => (
+  heading2: (node: any, children: any, parent: any, styles: any) => (
     <View key={node.key} style={styles.heading2}>
       <RNText style={[styles.heading2, { fontSize: 22, fontFamily: 'Roobert-Bold' }]} selectable={true}>
         {children}
       </RNText>
     </View>
   ),
-  heading3: (node: any, children: any, _parent: any, styles: any) => (
+  heading3: (node: any, children: any, parent: any, styles: any) => (
     <View key={node.key} style={styles.heading3}>
       <RNText style={[styles.heading3, { fontSize: 18, fontFamily: 'Roobert-SemiBold' }]} selectable={true}>
         {children}
@@ -162,7 +242,7 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
     </View>
   ),
   // Table - renders entire table from AST with coordinated column widths
-  table: (node: any, _children: any, _parent: any, _styles: any) => {
+  table: (node: any, _children: any, parent: any, styles: any) => {
     // Extract plain text from an AST node recursively
     const extractText = (n: any): string => {
       if (!n) return '';
@@ -465,7 +545,7 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
 function CrossPlatformMarkdownText({
   text,
   isDark,
-  style: _style,
+  style,
 }: {
   text: string;
   isDark: boolean;
@@ -485,13 +565,16 @@ function CrossPlatformMarkdownText({
   );
 }
 
+// Keep old name as alias for backwards compatibility
+const AndroidMarkdownText = CrossPlatformMarkdownText;
+
 /**
  * iOS Text Selection Modal
  * Opens on double-tap to allow text selection from raw content
  * Uses BottomSheetModal for consistent styling with rest of app
  */
 interface TextSelectionModalProps {
-  sheetRef: React.RefObject<BottomSheetModal | null>;
+  sheetRef: React.RefObject<BottomSheetModal>;
   text: string;
   isDark: boolean;
   onDismiss: () => void;
@@ -771,6 +854,13 @@ function SimpleTable({ text, isDark }: { text: string; isDark: boolean }) {
 }
 
 /**
+ * Check if text contains a horizontal rule separator
+ */
+function hasSeparator(text: string): boolean {
+  return /^(-{3,}|\*{3,}|_{3,})$/m.test(text);
+}
+
+/**
  * Check if a line is a separator
  */
 function isSeparatorLine(line: string): boolean {
@@ -847,9 +937,210 @@ function Separator({ isDark }: { isDark: boolean }) {
 }
 
 /**
+ * Count content characteristics for debugging
+ */
+function analyzeContent(text: string): { lines: number; headings: number } {
+  const lines = text.split('\n').length;
+  const headingMatches = text.match(/^#{1,6}\s/gm);
+  const headings = headingMatches ? headingMatches.length : 0;
+  return { lines, headings };
+}
+
+
+/**
+ * CALCULATED HEIGHT - NO MEASUREMENT, NO SHIFTING
+ * 
+ * Calculate the ACTUAL height needed based on visual line count.
+ * Set container height directly = actually removes phantom space.
+ * 
+ * The target height IS the realHeight (visual lines × line height).
+ */
+
+/**
+ * Calculate real height based on visual lines (including text wrapping)
+ * 
+ * Key insight from user feedback:
+ * - Char width was too large (0.5) causing over-estimation
+ * - More accurate: ~0.38 for regular, ~0.42 for headings (bolder)
+ * - Empty lines are very short
+ * - List items (-) and checkmarks (✅) need special handling
+ */
+// Common emoji regex - catches most Unicode emojis
+const EMOJI_REGEX = /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{231A}-\u{231B}]|[\u{23E9}-\u{23F3}]|[\u{23F8}-\u{23FA}]|[\u{25AA}-\u{25AB}]|[\u{25B6}]|[\u{25C0}]|[\u{25FB}-\u{25FE}]/gu;
+
+function calculateRealHeight(text: string, screenWidth: number): number {
+  const horizontalPadding = 32; // ThreadPage uses paddingHorizontal: 16 each side
+  const availableWidth = screenWidth - horizontalPadding;
+
+  // Use runtime-tunable factors
+  const charWidth = MARKDOWN_FONT_SIZE * CHAR_WIDTH_FACTOR;
+  const headingCharWidth = 26 * HEADING_CHAR_FACTOR;
+  const charsPerLine = Math.floor(availableWidth / charWidth);
+  const headingCharsPerLine = Math.floor(availableWidth / headingCharWidth);
+
+  const lines = text.split('\n');
+  let totalHeight = 0;
+  let totalVisualLines = 0; // Track total visual lines for phantom calculation
+  let debugInfo: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const trimmed = line.trim();
+
+    // Empty line
+    if (trimmed.length === 0) {
+      const h = MARKDOWN_LINE_HEIGHT * EMPTY_LINE_FACTOR;
+      totalHeight += h;
+      totalVisualLines += 0.5; // Empty lines add less phantom
+      if (DEBUG_HEIGHTS) debugInfo.push(`L${i}: empty → ${h.toFixed(0)}px`);
+      continue;
+    }
+
+    // Heading
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const headingText = headingMatch[2]
+        .replace(/\*\*([^*]+)\*\*/g, '$1')
+        .replace(/\*([^*]+)\*/g, '$1')
+        .replace(EMOJI_REGEX, 'XX'); // Emoji = 2 char width
+      const wrappedLines = Math.max(1, Math.ceil(headingText.length / headingCharsPerLine));
+      const h = wrappedLines * 36;
+      totalHeight += h;
+      totalVisualLines += wrappedLines;
+      if (DEBUG_HEIGHTS) debugInfo.push(`L${i}: h${headingMatch[1].length} ${headingText.length}ch → ${wrappedLines}vl × 36 = ${h}px`);
+      continue;
+    }
+
+    // Horizontal rule (---)
+    if (/^[-*_]{3,}$/.test(trimmed)) {
+      totalHeight += 12;
+      if (DEBUG_HEIGHTS) debugInfo.push(`L${i}: hr → 12px`);
+      continue;
+    }
+
+    // Regular line - calculate effective width accounting for bold
+    // Bold text is wider, so we expand it to simulate extra width
+    let effectiveLength = 0;
+
+    // First, handle bold: **text** → text takes ~15% more width
+    const boldRegex = /\*\*([^*]+)\*\*/g;
+    let lastIndex = 0;
+    let match;
+    let processedLine = line;
+
+    while ((match = boldRegex.exec(line)) !== null) {
+      // Regular text before bold
+      effectiveLength += match.index - lastIndex;
+      // Bold text is wider
+      effectiveLength += match[1].length * BOLD_WIDTH_FACTOR;
+      lastIndex = match.index + match[0].length;
+    }
+    // Remaining text after last bold
+    effectiveLength += line.length - lastIndex;
+
+    // Now strip other markdown for cleaner calculation
+    const cleanLine = processedLine
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/^[-*+]\s+/, '')  // List marker
+      .replace(/^\d+\.\s+/, '') // Numbered list
+      .replace(EMOJI_REGEX, 'XX'); // Emoji = 2 char width (they're wider)
+
+    // Use the larger of clean length or effective length (bold-adjusted)
+    const charCount = Math.max(cleanLine.length, Math.round(effectiveLength));
+    const wrappedLines = Math.max(1, Math.ceil(charCount / charsPerLine));
+    const h = wrappedLines * MARKDOWN_LINE_HEIGHT;
+    totalHeight += h;
+    totalVisualLines += wrappedLines;
+    if (DEBUG_HEIGHTS) {
+      const boldNote = effectiveLength > cleanLine.length ? ` (${Math.round(effectiveLength)}eff)` : '';
+      debugInfo.push(`L${i}: ${cleanLine.length}ch${boldNote}/${charsPerLine}cpl → ${wrappedLines}vl × ${MARKDOWN_LINE_HEIGHT} = ${h}px`);
+    }
+  }
+
+  // Add phantom space: fixed base + tiny per-line with cap
+  // Cap prevents runaway on very long text (100+ lines)
+  const linePhantom = Math.min(totalVisualLines * LINE_PHANTOM_PX, MAX_LINE_PHANTOM);
+  const phantomSpace = Math.round(BASE_PHANTOM + linePhantom);
+  const finalHeight = totalHeight + phantomSpace;
+
+  if (DEBUG_HEIGHTS && debugInfo.length <= 10) {
+    const capNote = linePhantom >= MAX_LINE_PHANTOM ? ' [CAPPED]' : '';
+    log.log(`[MD] Breakdown (w=${availableWidth}, cpl=${charsPerLine}):\n  ${debugInfo.join('\n  ')}\n  TOTAL: ${totalHeight} + ${phantomSpace}px phantom (${BASE_PHANTOM}base + ${linePhantom.toFixed(1)}px line${capNote}) = ${finalHeight}px`);
+  }
+
+  return finalHeight;
+}
+
+/**
+ * PURE CALCULATION - NO MEASUREMENT, NO STATE, NO ADJUSTMENT
+ * 
+ * Calculate height ONCE from text content and use it immediately.
+ * NO onContentSizeChange (causes loops), NO useState (causes re-renders).
+ * Just pure math → render → done.
+ */
+function MeasuredMarkdownInput({
+  text,
+  isDark,
+  style,
+}: {
+  text: string;
+  isDark: boolean;
+  style?: TextStyle;
+}) {
+  const trimmedText = text.trimEnd();
+
+  // Calculate height ONCE - pure function, no state
+  const calculatedHeight = useMemo(() => {
+    const screenWidth = Dimensions.get('window').width;
+    const height = calculateRealHeight(trimmedText, screenWidth);
+
+    if (DEBUG_HEIGHTS) {
+      const preview = trimmedText.substring(0, 40).replace(/\n/g, '↵');
+      const { lines, headings } = analyzeContent(trimmedText);
+      log.log(`[MD] "${preview}..." height=${height.toFixed(0)}px (lines=${lines} h=${headings})`);
+    }
+
+    return Math.max(MARKDOWN_LINE_HEIGHT, height);
+  }, [trimmedText]);
+
+  return (
+    <View
+      style={{
+        height: calculatedHeight,
+        overflow: 'hidden',
+        ...(DEBUG_HEIGHTS ? { borderWidth: 1, borderColor: 'blue' } : {}),
+      }}
+      pointerEvents="box-none"
+    >
+      <MarkdownTextInput
+        value={trimmedText}
+        onChangeText={() => { }}
+        parser={markdownParser}
+        markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
+        style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
+        editable={false}
+        multiline
+        scrollEnabled={false}
+        caretHidden={true}
+        showSoftInputOnFocus={false}
+        selectTextOnFocus={false}
+        contextMenuHidden={Platform.OS === 'android'}
+        onFocus={() => Keyboard.dismiss()}
+      />
+    </View>
+  );
+}
+
+/**
  * Render markdown - uses react-native-markdown-display for both platforms
  * On iOS: double-tap opens text selection modal
  * On Android: text is directly selectable
+ * 
+ * Note: MeasuredMarkdownInput (expensify library) is kept but not used by default.
+ * It can be enabled for iOS if needed for specific use cases.
  */
 function MarkdownWithLinkHandling({
   text,

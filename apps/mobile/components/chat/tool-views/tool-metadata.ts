@@ -7,8 +7,10 @@ import {
   Trash2,
   FileCode,
   Terminal,
+  CheckSquare,
   Network,
   MonitorPlay,
+  FileSearch,
   Clock,
   MessageSquare,
   CheckCircle,
@@ -31,7 +33,7 @@ import {
   ListTodo
 } from 'lucide-react-native';
 
-interface ToolMetadata {
+export interface ToolMetadata {
   icon: LucideIcon;
   iconColor: string;
   iconBgColor: string;
@@ -44,7 +46,7 @@ interface ToolMetadata {
  * Maps tool names to their visual metadata
  * Used by ToolHeader to render consistent tool headers
  */
-const toolMetadataMap: Record<string, ToolMetadata> = {
+export const toolMetadataMap: Record<string, ToolMetadata> = {
   // Web Search Tools
   'web-search': {
     icon: Globe,

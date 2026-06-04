@@ -30,6 +30,8 @@ import Animated, {
   Extrapolate,
   SharedValue,
   FadeIn,
+  withRepeat,
+  Easing,
 } from 'react-native-reanimated';
 import { useLanguage } from '@/contexts';
 import { useAuthContext } from '@/contexts/AuthContext';

@@ -8,7 +8,12 @@
 // Re-export core message types from shared package
 export type {
   UnifiedMessage,
+  ParsedContent,
   ParsedMetadata,
+  MessageGroup,
+  AgentStatus,
+  StreamingToolCall,
+  StreamingMetadata,
 } from '@agentpress/shared';
 
 // ============================================================================
@@ -39,6 +44,26 @@ export interface Thread {
   project?: Project; // Nested project data (always included from API)
 }
 
+export interface AgentRun {
+  id: string;
+  thread_id: string;
+  status: 'running' | 'completed' | 'failed' | 'stopped' | 'cancelled';
+  model_name?: string;
+  error?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_at: string;
+  updated_at: string;
+  metadata?: Record<string, any>;
+}
+
+// Note: ParsedContent, ParsedMetadata now re-exported from @agentpress/shared/types
+
+export interface StreamEvent {
+  event: string;
+  data: string;
+}
+
 // Active agent run (from /agent-runs/active)
 export interface ActiveAgentRun {
   thread_id: string;
@@ -47,11 +72,19 @@ export interface ActiveAgentRun {
   started_at: string;
 }
 
+export interface UnifiedAgentStartResponse {
+  thread_id: string;
+  agent_run_id: string;
+  project_id?: string;
+  sandbox_id?: string;  // Always None - sandbox created lazily
+  status: string;
+}
+
 // ============================================================================
 // Projects
 // ============================================================================
 
-interface Project {
+export interface Project {
   id: string;
   name: string;
   description: string;
@@ -70,9 +103,35 @@ interface Project {
   [key: string]: any;
 }
 
+export interface UpdateProjectInput {
+  name?: string;
+  description?: string;
+  is_public?: boolean;
+}
+
 // ============================================================================
 // Files & Sandbox
 // ============================================================================
+
+export interface FileManifest {
+  id: string;
+  name: string;
+  path: string;
+  size: number;
+  type: string;
+  hash: string;
+  createdAt: Date;
+  updatedAt: Date;
+  downloadUrl?: string;
+}
+
+export interface FolderStructure {
+  id: string;
+  name: string;
+  path: string;
+  files: FileManifest[];
+  folders: FolderStructure[];
+}
 
 export interface SandboxFile {
   name: string;
@@ -81,6 +140,17 @@ export interface SandboxFile {
   size?: number;
   modified?: string;
   content?: string;
+}
+
+export interface UploadedFile {
+  name: string;
+  path: string;
+  size: number;
+  type: string;
+  localUri?: string;
+  isUploading?: boolean;
+  uploadError?: string;
+  cachedBlob?: Blob;
 }
 
 // ============================================================================
@@ -135,7 +205,7 @@ export interface Agent {
   };
 }
 
-interface AgentVersion {
+export interface AgentVersion {
   version_id: string;
   agent_id: string;
   version_number: number;
@@ -157,7 +227,7 @@ export interface AgentsResponse {
   pagination: PaginationInfo;
 }
 
-interface PaginationInfo {
+export interface PaginationInfo {
   current_page: number;
   page_size: number;
   total_items: number;
@@ -177,6 +247,27 @@ export interface AgentsParams {
   has_agentpress_tools?: boolean;
   tools?: string;
   content_type?: string;
+}
+
+export interface AgentCreateRequest {
+  name: string;
+  description?: string;
+  system_prompt?: string;
+  configured_mcps?: Array<{
+    name: string;
+    config: Record<string, any>;
+  }>;
+  custom_mcps?: Array<{
+    name: string;
+    type: 'json' | 'sse';
+    config: Record<string, any>;
+    enabledTools: string[];
+  }>;
+  agentpress_tools?: Record<string, any>;
+  is_default?: boolean;
+  icon_name?: string | null;
+  icon_color?: string | null;
+  icon_background?: string | null;
 }
 
 export interface AgentUpdateRequest {
@@ -243,6 +334,35 @@ export interface TriggerConfiguration {
   config?: Record<string, any>;
 }
 
+export interface TriggerProvider {
+  provider_id: string;
+  name: string;
+  description?: string;
+  trigger_type: string;
+  webhook_enabled: boolean;
+  config_schema: Record<string, any>;
+}
+
+export interface TriggerWithAgent {
+  trigger_id: string;
+  agent_id: string;
+  trigger_type: string;
+  provider_id: string;
+  name: string;
+  description?: string;
+  is_active: boolean;
+  webhook_url?: string;
+  created_at: string;
+  updated_at: string;
+  config?: Record<string, any>;
+  // Agent details
+  agent_name: string;
+  agent_description?: string;
+  icon_name?: string | null;
+  icon_color?: string | null;
+  icon_background?: string | null;
+}
+
 export interface TriggerResponse {
   trigger_id: string;
   agent_id: string;
@@ -255,6 +375,69 @@ export interface TriggerResponse {
   created_at: string;
   updated_at: string;
   config: Record<string, any>;
+}
+
+export interface ProviderResponse {
+  provider_id: string;
+  name: string;
+  description?: string;
+  trigger_type: string;
+  webhook_enabled: boolean;
+  config_schema: Record<string, any>;
+}
+
+// Trigger Config Interfaces
+export interface ScheduleTriggerConfig {
+  cron_expression: string;
+  agent_prompt?: string;
+  timezone?: string;
+}
+
+export interface EventTriggerConfig {
+  profile_id?: string;
+  agent_prompt: string;
+  trigger_slug: string;
+  composio_trigger_id?: string;
+}
+
+export interface WebhookTriggerConfig {
+  webhook_url?: string;
+  secret?: string;
+  headers_validation?: Record<string, string>;
+  expected_content_type?: string;
+}
+
+export interface TelegramTriggerConfig {
+  bot_token: string;
+  secret_token?: string;
+  allowed_users?: number[];
+  allowed_chats?: number[];
+  trigger_commands?: string[];
+  trigger_keywords?: string[];
+  respond_to_all_messages?: boolean;
+  response_mode?: 'reply' | 'new_message';
+}
+
+export interface SlackTriggerConfig {
+  signing_secret: string;
+  bot_token?: string;
+  allowed_channels?: string[];
+  trigger_keywords?: string[];
+  respond_to_mentions?: boolean;
+  respond_to_direct_messages?: boolean;
+}
+
+export interface GitHubTriggerConfig {
+  secret: string;
+  events: string[];
+  repository?: string;
+}
+
+export interface DiscordTriggerConfig {
+  webhook_url: string;
+  bot_token?: string;
+  allowed_channels?: string[];
+  trigger_keywords?: string[];
 }
 
 export interface TriggerApp {
@@ -335,6 +518,17 @@ export interface TriggerUpdateRequest {
   is_active?: boolean;
 }
 
+export interface TriggersResponse {
+  triggers: TriggerConfiguration[];
+}
+
+export interface ProvidersResponse {
+  providers: TriggerProvider[];
+}
+
+export interface TriggerAppsResponse {
+  items: TriggerApp[];
+}
 // ============================================================================
 // API Request/Response Types
 // ============================================================================
@@ -345,4 +539,62 @@ export interface SendMessageInput {
   modelName?: string;
   agentId?: string;
   files?: Array<{ uri: string; name: string; type: string }>;
+}
+
+export interface FileUploadInput {
+  sandboxId: string;
+  file: File | Blob;
+  path: string;
+}
+
+export interface FileUploadResponse {
+  path: string;
+  final_filename: string;
+  size: number;
+  type: string;
+}
+
+// ============================================================================
+// Pagination & Filtering
+// ============================================================================
+
+export interface PaginationParams {
+  page?: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface PaginatedResponse<T> {
+  data: T[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+export interface ThreadsResponse {
+  pagination: {
+    limit: number;
+    page: number;
+    pages: number;
+    total: number;
+  };
+  threads: Thread[];
+}
+
+// ============================================================================
+// Error Types
+// ============================================================================
+
+export interface ApiErrorDetail {
+  message: string;
+  code?: string;
+  field?: string;
+}
+
+export interface ApiErrorResponse {
+  error: string;
+  message: string;
+  detail?: ApiErrorDetail;
+  status: number;
 }

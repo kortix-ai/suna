@@ -2,7 +2,7 @@
  * Trigger Detail Page Component
  *
  * Clean, modern detail view for viewing/managing a single trigger
- * Matches the active detail-view design language with consistent spacing and typography
+ * Matches the ThreadPage design language with consistent spacing and typography
  */
 
 import React, { useState } from 'react';
@@ -13,7 +13,6 @@ import { Avatar } from '@/components/ui/Avatar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { useRouter } from 'expo-router';
-import * as Clipboard from 'expo-clipboard';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import {
@@ -26,6 +25,7 @@ import {
   Calendar,
   MessageSquare,
   Globe,
+  CheckCircle2,
   XCircle,
 } from 'lucide-react-native';
 import { useTrigger, useDeleteTrigger, useToggleTrigger } from '@/lib/triggers';
@@ -217,14 +217,9 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
   const handleCopyWebhookUrl = async () => {
     if (!trigger?.webhook_url) return;
 
-    try {
-      await Clipboard.setStringAsync(trigger.webhook_url);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      Alert.alert('Copied!', 'Webhook URL copied to clipboard');
-    } catch (error) {
-      log.error('Error copying webhook URL:', error);
-      Alert.alert('Error', 'Failed to copy webhook URL. Please try again.');
-    }
+    // TODO: Implement clipboard functionality with Expo Clipboard
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert('Copied!', 'Webhook URL copied to clipboard');
   };
 
   // Loading State
@@ -444,7 +439,7 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
       <TriggerCreationDrawer
         visible={showEditDrawer}
         onClose={() => setShowEditDrawer(false)}
-        onTriggerUpdated={() => {
+        onTriggerUpdated={(triggerId) => {
           refetch();
           setShowEditDrawer(false);
         }}

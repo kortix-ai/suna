@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Code2,
   ImageIcon,
+  AlertTriangle,
 } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
 import type { UnifiedMessage } from '@/api/types';
@@ -78,11 +79,13 @@ export function BrowserToolView({
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
+  project,
   agentStatus = 'idle',
   messages = [],
 }: ToolViewProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const [progress, setProgress] = useState(100);
 
   if (!toolCall) {
     return null;
@@ -232,6 +235,26 @@ export function BrowserToolView({
       setShowContextState(true);
     }
   }, [shouldShowExtractedContent]);
+
+  // Progress indicator during streaming
+  useEffect(() => {
+    if (isRunning) {
+      setProgress(0);
+      const timer = setInterval(() => {
+        setProgress((prevProgress) => {
+          if (prevProgress >= 95) {
+            clearInterval(timer);
+            return prevProgress;
+          }
+          return prevProgress + 2;
+        });
+      }, 500);
+      return () => clearInterval(timer);
+    } else {
+      setProgress(100);
+    }
+  }, [isRunning]);
+
 
   const handleOpenUrl = async () => {
     if (!url) return;

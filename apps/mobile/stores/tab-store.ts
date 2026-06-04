@@ -28,6 +28,7 @@ export const PAGE_TABS: Record<string, PageTab> = {
   'page:workspace':         { id: 'page:workspace',         label: 'Workspace',         icon: 'grid-outline' },
   'page:secrets':           { id: 'page:secrets',           label: 'Secrets Manager',   icon: 'key-outline' },
   'page:llm-providers':     { id: 'page:llm-providers',     label: 'LLM Providers',     icon: 'cube-outline' },
+  'page:ssh':               { id: 'page:ssh',               label: 'SSH',               icon: 'link-outline' },
   'page:api':               { id: 'page:api',               label: 'API',               icon: 'code-slash-outline' },
   'page:triggers':          { id: 'page:triggers',          label: 'Triggers',          icon: 'calendar-outline' },
   'page:channels':          { id: 'page:channels',          label: 'Channels',          icon: 'chatbox-outline' },
@@ -36,6 +37,7 @@ export const PAGE_TABS: Record<string, PageTab> = {
   'page:running-services':  { id: 'page:running-services',  label: 'Service Manager',  icon: 'pulse-outline' },
   'page:browser':           { id: 'page:browser',           label: 'Browser',           icon: 'compass-outline' },
   'page:agent-browser':     { id: 'page:agent-browser',     label: 'Agent Browser',     icon: 'globe-outline' },
+  'page:updates':           { id: 'page:updates',           label: 'Updates',           icon: 'arrow-down-circle-outline' },
   'page:projects':          { id: 'page:projects',          label: 'Projects',          icon: 'folder-outline' },
 };
 

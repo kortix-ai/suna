@@ -10,6 +10,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { opencodeFetch } from './use-opencode-data';
 import { platformKeys } from '@/lib/platform/hooks';
+import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 import { useCompactionStore } from '@/stores/compaction-store';
 

@@ -24,6 +24,7 @@ import Animated, {
   withSequence,
   Easing,
   FadeIn,
+  FadeOut,
 } from 'react-native-reanimated';
 import { Brain, ChevronRight, Loader2 } from 'lucide-react-native';
 import { Icon } from '@/components/ui/icon';
@@ -164,6 +165,7 @@ export function GroupedReasoningCard({ parts, isStreaming = false }: GroupedReas
   if (nonEmptyParts.length === 0) return null;
 
   const mutedColor = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const mutedStrongColor = isDark ? 'rgba(248,248,248,0.7)' : 'rgba(18,18,21,0.7)';
   const borderColor = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
 
   const handleToggle = () => {

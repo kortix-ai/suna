@@ -10,10 +10,11 @@ import { View, Pressable, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColorScheme } from 'nativewind';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import * as Haptics from 'expo-haptics';
 import { Brain, Wrench, Server, Zap, ChevronLeft } from 'lucide-react-native';
-import { useAgent } from '@/lib/agents/hooks';
+import { useAgent, useUpdateAgent } from '@/lib/agents/hooks';
 import { Loading } from '../loading/loading';
 import { InstructionsScreen } from '../workers/screens/InstructionsScreen';
 import { ToolsScreen } from '../workers/screens/ToolsScreen';
@@ -39,6 +40,7 @@ export function WorkerConfigPage({
   initialView: propInitialView,
 }: WorkerConfigPageProps) {
   const router = useRouter();
+  const { colorScheme } = useColorScheme();
   const insets = useSafeAreaInsets();
   // Read params directly from route to react to changes
   const { workerId: routeWorkerId, view: routeView } = useLocalSearchParams<{

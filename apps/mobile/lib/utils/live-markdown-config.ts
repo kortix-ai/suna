@@ -142,6 +142,7 @@ export function markdownParser(input: string) {
  * Font family configuration
  */
 const FONT_FAMILY_BASE = 'Roobert-Regular';
+const FONT_FAMILY_BOLD = 'Roobert-SemiBold';
 const FONT_FAMILY_HEADING = 'Roobert-Bold';
 
 const FONT_FAMILY_MONOSPACE = Platform.select({
@@ -181,12 +182,12 @@ let LINK_UNDERLINE_ENABLED = false;
  * ```
  * Then press 'r' in Metro to hot reload and see changes.
  */
-function setHeadingMarginLeft(value: number) {
+export function setHeadingMarginLeft(value: number) {
   HEADING_MARGIN_LEFT = value;
   log.log(`[MarkdownConfig] Heading margin set to ${value}. Press 'r' in Metro to reload.`);
 }
 
-function getHeadingMarginLeft() {
+export function getHeadingMarginLeft() {
   return HEADING_MARGIN_LEFT;
 }
 
@@ -201,21 +202,21 @@ function getHeadingMarginLeft() {
  * ```
  * Then press 'r' in Metro to hot reload and see changes.
  */
-function setLinkUnderline(enabled: boolean) {
+export function setLinkUnderline(enabled: boolean) {
   LINK_UNDERLINE_ENABLED = enabled;
   log.log(`[MarkdownConfig] Link underline ${enabled ? 'enabled' : 'disabled'}. Press 'r' in Metro to reload.`);
 }
 
-function getLinkUnderline() {
+export function getLinkUnderline() {
   return LINK_UNDERLINE_ENABLED;
 }
 
 // Expose to global for easy console access in dev mode
 if (__DEV__) {
-  (globalThis as any).setHeadingMargin = setHeadingMarginLeft;
-  (globalThis as any).getHeadingMargin = getHeadingMarginLeft;
-  (globalThis as any).setLinkUnderline = setLinkUnderline;
-  (globalThis as any).getLinkUnderline = getLinkUnderline;
+  (global as any).setHeadingMargin = setHeadingMarginLeft;
+  (global as any).getHeadingMargin = getHeadingMarginLeft;
+  (global as any).setLinkUnderline = setLinkUnderline;
+  (global as any).getLinkUnderline = getLinkUnderline;
 }
 
 /**
@@ -315,3 +316,5 @@ export const darkMarkdownStyle: MarkdownStyle = {
     backgroundColor: '#27272a', // zinc-800
   },
 };
+
+

@@ -1,6 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apifyApprovalsApi } from '@/api/apify-approvals';
+import { apifyApprovalsApi, ApifyApproval, ApifyApprovalRequest } from '@/api/apify-approvals';
 import { log } from '@/lib/logger';
+
+export type { ApifyApproval, ApifyApprovalRequest };
 
 export function useApproveApifyRequest(threadId: string) {
   const queryClient = useQueryClient();
@@ -37,3 +39,4 @@ export function useGetApifyApprovalStatus(approvalId: string | null, threadId: s
     },
   });
 }
+

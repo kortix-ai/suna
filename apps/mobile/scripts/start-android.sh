@@ -52,7 +52,7 @@ if ! adb shell pm list packages 2>/dev/null | grep -q "$DEV_CLIENT_PACKAGE"; the
     echo -e "${YELLOW}You need to build and install the dev client first.${NC}"
     echo ""
     echo -e "${GREEN}Recommended (fast, uses cache):${NC}"
-    echo -e "${GREEN}  pnpm run android:build${NC}"
+    echo -e "${GREEN}  npm run android:build${NC}"
     echo -e "${GREEN}  or: eas build:dev --platform android${NC}"
     echo ""
     echo -e "${YELLOW}Alternative (full build):${NC}"
@@ -86,3 +86,4 @@ echo ""
 
 # Start Expo with dev client
 npx expo start --dev-client
+

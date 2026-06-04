@@ -9,6 +9,8 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { ViewToggle } from './ViewToggle';
 import { NavigationControls } from './NavigationControls';
 import { ToolsView } from './ToolsView';
+import { FileBrowserView } from './FileBrowserView';
+import { FileViewerView } from './FileViewerView';
 import { BrowserView } from './BrowserView';
 import { extractToolCallAndResult } from '@/lib/utils/tool-data-extractor';
 import type { UnifiedMessage } from '@/api/types';
@@ -43,10 +45,14 @@ export function KortixComputer({
   toolMessages,
   currentIndex,
   onNavigate,
+  messages,
   agentStatus,
   project,
+  isLoading = false,
+  agentName,
   onFileClick,
   onPromptFill,
+  streamingText,
   sandboxId,
 }: KortixComputerProps) {
   log.log('[KortixComputer] Render - toolMessages:', toolMessages.length, 'currentIndex:', currentIndex);
@@ -58,6 +64,8 @@ export function KortixComputer({
   const {
     isOpen,
     activeView,
+    filesSubView,
+    selectedFilePath,
     pendingToolNavIndex,
     closePanel,
     setActiveView,
@@ -142,6 +150,16 @@ export function KortixComputer({
     closePanel();
   }, [closePanel]);
 
+  const effectiveSandboxId = sandboxId || project?.sandbox?.id || '';
+  const showFilesTab = !!effectiveSandboxId;
+
+  // If files tab is hidden and we're on files view, switch to tools
+  React.useEffect(() => {
+    if (!showFilesTab && activeView === 'files') {
+      setActiveView('tools');
+    }
+  }, [showFilesTab, activeView, setActiveView]);
+
   if (!isOpen) {
     return null;
   }
@@ -171,6 +189,7 @@ export function KortixComputer({
             <ViewToggle
               currentView={activeView}
               onViewChange={setActiveView}
+              showFilesTab={showFilesTab}
             />
             <Pressable
               onPress={handleClose}
@@ -206,6 +225,25 @@ export function KortixComputer({
             />
           )}
 
+          {activeView === 'files' && (
+            <>
+              {filesSubView === 'viewer' && selectedFilePath ? (
+                <FileViewerView
+                  sandboxId={effectiveSandboxId}
+                  filePath={selectedFilePath}
+                  projectId={project?.id}
+                  project={project}
+                />
+              ) : (
+                <FileBrowserView
+                  sandboxId={effectiveSandboxId}
+                  projectId={project?.id}
+                  project={project}
+                />
+              )}
+            </>
+          )}
+
           {activeView === 'browser' && (
             <BrowserView sandbox={project?.sandbox} />
           )}
@@ -230,3 +268,4 @@ export function KortixComputer({
     </Modal>
   );
 }
+

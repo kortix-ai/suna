@@ -6,6 +6,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getAuthToken } from '@/api/config';
+import { log } from '@/lib/logger';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,7 +24,7 @@ export interface Agent {
   options: Record<string, unknown>;
 }
 
-interface ModelInfo {
+export interface ModelInfo {
   id: string;
   name: string;
   family?: string;
@@ -45,7 +46,7 @@ export interface ProviderInfo {
   models: Record<string, ModelInfo>;
 }
 
-interface ProviderListResponse {
+export interface ProviderListResponse {
   all: ProviderInfo[];
   default: Record<string, string>;
   connected: string[];
@@ -221,7 +222,7 @@ export interface McpStatus {
   error?: string;
 }
 
-const opencodeKeys = {
+export const opencodeKeys = {
   agents: (url: string) => ['opencode', 'agents', url] as const,
   providers: (url: string) => ['opencode', 'providers', url] as const,
   config: (url: string) => ['opencode', 'config', url] as const,
@@ -373,7 +374,7 @@ export function useUpdateOpenCodeConfig(sandboxUrl: string | undefined) {
 
 // ─── MCP Mutations ──────────────────────────────────────────────────────────
 
-interface AddMcpServerParams {
+export interface AddMcpServerParams {
   name: string;
   type: 'local' | 'remote';
   command?: string[];

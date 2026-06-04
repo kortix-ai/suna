@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface Paper {
+export interface Paper {
   paper_id: string;
   title: string;
   year?: number;
@@ -9,7 +9,7 @@ interface Paper {
   venue?: string;
 }
 
-interface AuthorPapersData {
+export interface AuthorPapersData {
   author_name: string | null;
   total_papers: number;
   papers: Paper[];
@@ -63,3 +63,4 @@ export function extractAuthorPapersData({ toolCall, toolResult }: { toolCall: To
     success: toolResult?.success ?? true
   };
 }
+

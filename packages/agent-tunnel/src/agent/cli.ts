@@ -5,7 +5,7 @@ import { CapabilityRegistry } from './capabilities/index';
 import { createFilesystemCapability } from './capabilities/filesystem';
 import { createShellCapability } from './capabilities/shell';
 import { createDesktopCapability } from './capabilities/desktop';
-import { hostname, platform, arch } from 'os';
+import { hostname, platform, arch, release } from 'os';
 import { chmodSync, existsSync, mkdirSync, writeFileSync, readFileSync, renameSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
@@ -50,7 +50,7 @@ function clearScreen(): void {
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
-async function printStartup(config: { tunnelId: string; apiUrl: string }, version: string): Promise<void> {
+async function printStartup(config: { tunnelId: string; apiUrl: string }, capabilities: string[], version: string): Promise<void> {
   const machine = hostname();
   const plat = `${platform()} ${arch()}`;
 
@@ -97,6 +97,10 @@ async function printStartup(config: { tunnelId: string; apiUrl: string }, versio
   const titleRLen = 1 + version.length + 3;
   const titlePad = Math.max(1, W - titleLLen - titleRLen);
 
+  const capStr = capabilities
+    .map(name => `${c.green}●${c.reset} ${c.white}${name}${c.reset}`)
+    .join('   ');
+
   const brand = 'created by kortix';
   const brandFill = W - brand.length - 3;
 
@@ -121,7 +125,7 @@ function startAgent(config: TunnelConfig): void {
   registry.register(createDesktopCapability());
 
   clearScreen();
-  printStartup(config, '0.1.2');
+  printStartup(config, registry.getCapabilityNames(), '0.1.2');
 
   const agent = new TunnelAgent(config, registry);
   agent.connect();

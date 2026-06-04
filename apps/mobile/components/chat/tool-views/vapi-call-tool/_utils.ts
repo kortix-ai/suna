@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface MakeCallData {
+export interface MakeCallData {
   phone_number: string;
   first_message: string;
   call_id: string;
@@ -8,7 +8,7 @@ interface MakeCallData {
   message?: string;
 }
 
-interface CallStatusData {
+export interface CallStatusData {
   call_id: string;
   status: string;
   phone_number: string;
@@ -19,13 +19,13 @@ interface CallStatusData {
   cost?: number;
 }
 
-interface EndCallData {
+export interface EndCallData {
   call_id: string;
   status: string;
   message?: string;
 }
 
-interface ListCallsData {
+export interface ListCallsData {
   calls: Array<{
     call_id: string;
     phone_number: string;
@@ -36,7 +36,7 @@ interface ListCallsData {
   count: number;
 }
 
-interface WaitForCallCompletionData {
+export interface WaitForCallCompletionData {
   call_id: string;
   final_status: string;
   duration_seconds?: number;
@@ -71,7 +71,9 @@ export function extractMakeCallData({ toolCall, toolResult }: { toolCall: ToolCa
   };
 }
 
-export function extractCallStatusData({ toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): CallStatusData {
+export function extractCallStatusData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): CallStatusData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
+  
   const output = typeof toolResult?.output === 'string' 
     ? parseContent(toolResult.output) 
     : toolResult?.output;
@@ -107,7 +109,9 @@ export function extractCallStatusData({ toolResult }: { toolCall: ToolCallData; 
   };
 }
 
-export function extractEndCallData({ toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): EndCallData {
+export function extractEndCallData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): EndCallData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
+  
   const output = typeof toolResult?.output === 'string' 
     ? parseContent(toolResult.output) 
     : toolResult?.output;
@@ -119,7 +123,9 @@ export function extractEndCallData({ toolResult }: { toolCall: ToolCallData; too
   };
 }
 
-export function extractListCallsData({ toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): ListCallsData {
+export function extractListCallsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): ListCallsData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
+  
   const output = typeof toolResult?.output === 'string' 
     ? parseContent(toolResult.output) 
     : toolResult?.output;
@@ -130,7 +136,9 @@ export function extractListCallsData({ toolResult }: { toolCall: ToolCallData; t
   };
 }
 
-export function extractWaitForCallCompletionData({ toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): WaitForCallCompletionData {
+export function extractWaitForCallCompletionData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): WaitForCallCompletionData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
+  
   const output = typeof toolResult?.output === 'string' 
     ? parseContent(toolResult.output) 
     : toolResult?.output;
@@ -177,3 +185,4 @@ export const statusConfig = {
   ended: { label: 'Ended', color: 'text-gray-600 dark:text-gray-400', bg: 'bg-gray-500/10' },
   failed: { label: 'Failed', color: 'text-red-600 dark:text-red-400', bg: 'bg-red-500/10' },
 };
+

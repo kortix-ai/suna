@@ -4,6 +4,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Search, Check, Circle } from 'lucide-react-native';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { useColorScheme } from 'nativewind';
 import Animated, {
   useAnimatedStyle,
   withTiming,
@@ -14,6 +15,7 @@ import Animated, {
   Easing,
   FadeIn,
   FadeInDown,
+  SlideInRight,
 } from 'react-native-reanimated';
 
 interface DeepSearchLoadingStateProps {
@@ -100,6 +102,9 @@ function QueryRow({
 }
 
 export function DeepSearchLoadingState({ queries }: DeepSearchLoadingStateProps) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  
   const [activeIndex, setActiveIndex] = useState(0);
   const [completedIndices, setCompletedIndices] = useState<Set<number>>(new Set());
   

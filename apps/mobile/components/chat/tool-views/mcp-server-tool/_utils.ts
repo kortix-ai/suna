@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface McpServer {
+export interface McpServer {
   name: string;
   toolkit_slug: string;
   description: string;
@@ -9,7 +9,7 @@ interface McpServer {
   tags?: string[];
 }
 
-interface McpServerData {
+export interface McpServerData {
   query: string | null;
   servers: McpServer[];
   server?: McpServer;
@@ -75,3 +75,4 @@ export function getPrimaryAuthScheme(authSchemes: string[]): string {
   if (authSchemes?.includes('BEARER_TOKEN')) return 'Bearer Token';
   return authSchemes?.[0] || 'None';
 }
+

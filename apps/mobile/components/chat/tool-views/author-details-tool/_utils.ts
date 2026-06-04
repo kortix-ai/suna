@@ -1,6 +1,6 @@
-import type { ToolResultData } from '@/lib/utils/tool-data-extractor';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface AuthorDetails {
+export interface AuthorDetails {
   author_id: string;
   name: string;
   url: string;
@@ -12,7 +12,7 @@ interface AuthorDetails {
   aliases?: string[];
 }
 
-interface AuthorDetailsData {
+export interface AuthorDetailsData {
   author: AuthorDetails | null;
   success: boolean;
 }
@@ -28,7 +28,9 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractAuthorDetailsData({ toolResult }: { toolResult?: ToolResultData }): AuthorDetailsData {
+export function extractAuthorDetailsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): AuthorDetailsData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
+  
   let author: AuthorDetails | null = null;
   
   if (toolResult?.output) {
@@ -46,3 +48,4 @@ export function extractAuthorDetailsData({ toolResult }: { toolResult?: ToolResu
     success: toolResult?.success ?? true
   };
 }
+

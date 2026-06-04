@@ -193,6 +193,13 @@ export default function SettingsLayout() {
         }}
       />
       <Stack.Screen
+        name="changelog"
+        options={{
+          header: () => <SubpageHeader title="Updates" />,
+          headerShown: true,
+        }}
+      />
+      <Stack.Screen
         name="account-deletion"
         options={{
           header: () => <SubpageHeader title={t('accountDeletion.title')} />,

@@ -14,3 +14,7 @@ export function normalizeArrayValue(value: unknown): string[] {
 export function normalizeAttachments(attachments: unknown): string[] {
   return normalizeArrayValue(attachments);
 }
+
+export function normalizeMimeType(mimeType: string): string {
+  return mimeType.toLowerCase().trim();
+}

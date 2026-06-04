@@ -7,6 +7,7 @@ import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import {
   View,
   FlatList,
+  TextInput,
   Pressable,
   Alert,
   ActivityIndicator,
@@ -18,8 +19,13 @@ import { Icon } from '@/components/ui/icon';
 import { SearchListHeader } from '@/components/ui/search-list-header';
 import {
   ArrowLeft,
+  Search,
+  X,
   ChevronRight,
   Check,
+  Plug,
+  Globe,
+  Zap,
   Settings,
   KeyRound,
   Eye,
@@ -32,10 +38,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
 import { haptics } from '@/lib/haptics';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
+import { SettingsHeader } from './SettingsHeader';
 import { AppIcon } from './integrations/AppIcon';
 import { ManageConnectionSheet } from './integrations/ManageConnectionSheet';
+import { CustomMcpDialog } from './integrations/CustomMcpDialog';
+import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import { useLanguage } from '@/contexts';
+import { useRouter } from 'expo-router';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { log } from '@/lib/logger';
 import {
@@ -62,7 +73,47 @@ import {
   type IntegrationConnection,
 } from '@/hooks/useIntegrations';
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+// ─── Main Page (wrapper) ────────────────────────────────────────────────────
+
+interface IntegrationsPageProps {
+  visible: boolean;
+  onClose: () => void;
+}
+
+export function IntegrationsPage({ visible, onClose }: IntegrationsPageProps) {
+  const { t } = useLanguage();
+  const router = useRouter();
+
+  const handleClose = useCallback(() => {
+    haptics.tap();
+    onClose();
+  }, [onClose]);
+
+  const handleUpgradePress = useCallback(() => {
+    onClose();
+    setTimeout(() => router.push('/plans'), 100);
+  }, [onClose, router]);
+
+  if (!visible) return null;
+
+  return (
+    <View className="absolute inset-0 z-50">
+      <Pressable onPress={handleClose} className="absolute inset-0 bg-black/50" />
+      <View className="absolute bottom-0 left-0 right-0 top-0 bg-background">
+        <SettingsHeader title={t('integrations.title', 'Integrations')} onClose={handleClose} />
+        <IntegrationsContent onUpgradePress={handleUpgradePress} />
+      </View>
+    </View>
+  );
+}
+
+// Also export the content for standalone use
 export { IntegrationsContent as IntegrationsPageContent };
+
+// Legacy export for backward compat (AgentDrawer imports it)
+export const AppBubble = React.memo(() => null);
 
 // ─── Content ────────────────────────────────────────────────────────────────
 
@@ -76,6 +127,10 @@ interface IntegrationsContentProps {
 
 function IntegrationsContent({
   onBack,
+  noPadding,
+  onFullScreenChange,
+  onNavigate,
+  onUpgradePress,
 }: IntegrationsContentProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -158,6 +213,7 @@ function IntegrationsContent({
 
   const {
     data: connections,
+    isLoading: connectionsLoading,
   } = useIntegrationConnections();
 
   const createToken = useCreateConnectToken();
@@ -254,6 +310,8 @@ function IntegrationsContent({
   // ── Colors ──
   const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const border = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+  const inputBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
 
   // ── Sticky search bar (rendered outside FlatList) ──
   const SearchBar = (
@@ -686,5 +744,49 @@ function AppRow({
         </View>
       )}
     </Pressable>
+  );
+}
+
+// ─── Legacy Section Row ─────────────────────────────────────────────────────
+
+function LegacySection({
+  icon: IconComponent,
+  title,
+  description,
+  isDark,
+  onPress,
+}: {
+  icon: typeof Globe;
+  title: string;
+  description: string;
+  isDark: boolean;
+  onPress: () => void;
+}) {
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <AnimatedPressable
+      onPress={onPress}
+      onPressIn={() => { scale.value = withSpring(0.98, { damping: 15, stiffness: 400 }); }}
+      onPressOut={() => { scale.value = withSpring(1, { damping: 15, stiffness: 400 }); }}
+      style={animatedStyle}
+      className="mb-3 rounded-2xl bg-primary/5 p-4"
+    >
+      <View className="flex-row items-center justify-between">
+        <View className="flex-1 flex-row items-center gap-3">
+          <View className="h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+            <Icon as={IconComponent} size={20} className="text-primary" strokeWidth={2} />
+          </View>
+          <View className="flex-1">
+            <Text className="font-roobert-medium text-base text-foreground">{title}</Text>
+            <Text className="font-roobert text-xs text-muted-foreground">{description}</Text>
+          </View>
+        </View>
+        <Icon as={ChevronRight} size={16} className="text-foreground/40" strokeWidth={2} />
+      </View>
+    </AnimatedPressable>
   );
 }

@@ -1,6 +1,6 @@
 /**
  * useSandboxConfigStatus — mobile port of the web SidebarConfigDegradationNotice
- * data flow.
+ * data flow (apps/web/src/components/sidebar/sidebar-left.tsx).
  *
  * Polls the sandbox's /config/status endpoint (fail-soft diagnostics) and
  * exposes a mutation that creates + starts a Kortix task to repair the
@@ -14,7 +14,7 @@ import { opencodeFetch } from '@/lib/opencode/hooks/use-opencode-data';
 
 // ─── Types (mirror the web SidebarSandbox* interfaces) ───────────────────────
 
-interface SandboxConfigProblem {
+export interface SandboxConfigProblem {
   source: string;
   scope: 'global' | 'local' | 'env' | 'managed' | 'remote' | string;
   kind: 'json' | 'schema' | 'substitution' | string;
@@ -22,14 +22,14 @@ interface SandboxConfigProblem {
   issues?: Array<{ message?: string }>;
 }
 
-interface SandboxConfigStatus {
+export interface SandboxConfigStatus {
   valid: boolean;
   loadedSources: string[];
   skippedSources: string[];
   problems: SandboxConfigProblem[];
 }
 
-interface SandboxProjectSummary {
+export interface SandboxProjectSummary {
   id: string;
   name: string;
   path: string;
@@ -55,11 +55,11 @@ function sanitizeDiagnosticText(value: unknown, maxLength = 600): string {
     .slice(0, maxLength);
 }
 
-function pickConfigFixProject(projects: SandboxProjectSummary[]): SandboxProjectSummary | null {
+export function pickConfigFixProject(projects: SandboxProjectSummary[]): SandboxProjectSummary | null {
   return projects.find((project) => project.path === '/workspace') ?? projects[0] ?? null;
 }
 
-function buildConfigFixPrompt(
+export function buildConfigFixPrompt(
   sandboxName: string,
   status: SandboxConfigStatus,
 ): string {

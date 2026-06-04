@@ -12,7 +12,9 @@ import {
   ActivityIndicator,
   Image,
   Alert,
+  FlatList,
   TextInput,
+  ScrollView,
 } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -25,18 +27,21 @@ import {
   type ComposioProfile,
 } from '@/hooks/useComposio';
 import {
+  Plus,
   CheckCircle2,
   Settings,
   X,
   Store,
   Trash2,
   Server,
+  Lock,
   Search,
   Plug,
 } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { ComposioConnectorContent } from '@/components/settings/integrations/ComposioConnector';
 import { ComposioToolsContent } from '@/components/settings/integrations/ComposioToolsSelector';
+import { ComposioAppsContent } from '@/components/settings/integrations/ComposioAppsList';
 import { CustomMcpContent } from '@/components/settings/integrations/CustomMcpDialog';
 import { SvgUri } from 'react-native-svg';
 import { useBillingContext } from '@/contexts/BillingContext';
@@ -45,6 +50,7 @@ import { useRouter } from 'expo-router';
 import {
   BottomSheetModal,
   BottomSheetBackdrop,
+  BottomSheetView,
   BottomSheetFlatList,
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
@@ -181,7 +187,7 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
   const router = useRouter();
   const { data: agent, isLoading: isLoadingAgent } = useAgent(agentId);
   const { data: appsData, isLoading: isLoadingApps } = useComposioApps();
-  const { data: profiles } = useComposioProfiles();
+  const { data: profiles, isLoading: isLoadingProfiles } = useComposioProfiles();
   const updateAgentMutation = useUpdateAgent();
   const { hasFreeTier } = useBillingContext();
 
@@ -192,7 +198,8 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
 
   const [selectedApp, setSelectedApp] = useState<ComposioApp | null>(null);
   const [showConnector, setShowConnector] = useState(false);
-  const [, setShowBrowseApps] = useState(false);
+  const [showBrowseApps, setShowBrowseApps] = useState(false);
+  const [selectedProfile, setSelectedProfile] = useState<ComposioProfile | null>(null);
   const [deletingProfileId, setDeletingProfileId] = useState<string | null>(null);
 
   // Drawer multi-step state
@@ -286,7 +293,7 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
           },
         },
         {
-          onSuccess: () => {
+          onSuccess: (updatedAgent) => {
             setShowConnector(false);
             setSelectedApp(null);
             onUpdate?.();
@@ -342,9 +349,9 @@ export function IntegrationsScreen({ agentId, onUpdate, onUpgradePress }: Integr
   };
 
   const handleToolsSheetConnectorComplete = (
-  profileId: string,
-    _appName: string,
-    _appSlug: string
+    profileId: string,
+    appName: string,
+    appSlug: string
   ) => {
     // After editing connection, go back to tools view
     // Update the profile reference

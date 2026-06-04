@@ -1,14 +1,18 @@
 import * as React from 'react';
-import { View, Pressable, ActivityIndicator } from 'react-native';
+import { View, ScrollView, Pressable, ActivityIndicator, FlatList } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import {
   ArrowLeft,
   Globe,
   CheckCircle2,
+  Circle,
+  Save,
   Search
 } from 'lucide-react-native';
 import { log } from '@/lib/logger';
+import { useColorScheme } from 'nativewind';
+import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useAnimatedStyle,
@@ -18,6 +22,149 @@ import Animated, {
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
+interface CustomMcpToolsContentProps {
+  serverName: string;
+  url: string;
+  tools: any[];
+  onBack?: () => void;
+  onComplete: (enabledTools: string[]) => void;
+  noPadding?: boolean;
+}
+
+export function CustomMcpToolsContent({
+  serverName,
+  url,
+  tools,
+  onBack,
+  onComplete,
+  noPadding = false
+}: CustomMcpToolsContentProps) {
+  const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
+  const [selectedTools, setSelectedTools] = React.useState<Set<string>>(new Set(tools.map(tool => tool.name)));
+  const [isSaving, setIsSaving] = React.useState(false);
+
+  const displayUrl = React.useMemo(() => {
+    try {
+      const urlObj = new URL(url);
+      return urlObj.hostname;
+    } catch {
+      return url;
+    }
+  }, [url]);
+
+  const handleToolToggle = React.useCallback((toolName: string) => {
+    setSelectedTools(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(toolName)) {
+        newSet.delete(toolName);
+      } else {
+        newSet.add(toolName);
+      }
+      return newSet;
+    });
+  }, []);
+
+  const handleSelectAll = React.useCallback(() => {
+    if (selectedTools.size === tools.length) {
+      setSelectedTools(new Set());
+    } else {
+      setSelectedTools(new Set(tools.map(tool => tool.name)));
+    }
+  }, [selectedTools.size, tools]);
+
+  const handleSave = React.useCallback(async () => {
+    setIsSaving(true);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      onComplete(Array.from(selectedTools));
+    } catch (error) {
+      log.error('❌ Failed to save custom MCP configuration:', error);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [selectedTools, onComplete]);
+
+  return (
+    <View className={noPadding ? "pb-6" : "pb-6"}>
+      {/* Header with back button, title, and description */}
+      <View className="flex-row items-center mb-4">
+        {onBack && (
+          <Pressable
+            onPress={onBack}
+            className="flex-row items-center active:opacity-70"
+          >
+            <ArrowLeft
+              size={20}
+              color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'}
+            />
+          </Pressable>
+        )}
+        <View className="flex-1 ml-3">
+          <Text
+            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+            className="text-xl font-roobert-semibold"
+          >
+            {serverName}
+          </Text>
+          <Text
+            style={{ color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)' }}
+            className="text-sm font-roobert"
+          >
+            {displayUrl}
+          </Text>
+        </View>
+      </View>
+
+      <View className="flex-row items-center justify-between mb-6">
+        <Text className="text-sm font-roobert-medium text-muted-foreground uppercase tracking-wider">
+          {selectedTools.size} of {tools.length} selected
+        </Text>
+
+        <Pressable
+          onPress={handleSelectAll}
+          className="px-4 py-2 rounded-full bg-muted/10 active:opacity-70"
+        >
+          <Text className="text-sm font-roobert-semibold text-foreground">
+            {selectedTools.size === tools.length ? 'Deselect All' : 'Select All'}
+          </Text>
+        </Pressable>
+      </View>
+
+      <View className="space-y-3 mb-6">
+        {tools.length > 0 ? (
+          tools.map((tool, index) => (
+            <ToolCard
+              key={tool.name || index}
+              tool={tool}
+              selected={selectedTools.has(tool.name)}
+              onToggle={() => handleToolToggle(tool.name)}
+            />
+          ))
+        ) : (
+          <View className="items-center py-12 px-6">
+            <Icon as={Search} size={48} className="text-muted-foreground/40" />
+            <Text className="text-lg font-roobert-medium text-foreground mt-4">
+              No Tools Available
+            </Text>
+            <Text className="text-sm font-roobert text-muted-foreground text-center">
+              This MCP server doesn't expose any tools
+            </Text>
+          </View>
+        )}
+      </View>
+
+      <ContinueButton
+        onPress={handleSave}
+        disabled={selectedTools.size === 0 || isSaving}
+        isLoading={isSaving}
+        label={isSaving ? 'Adding Tools...' : selectedTools.size === 0 ? 'Select Tools' : selectedTools.size === 1 ? `Add ${selectedTools.size} Tool` : `Add ${selectedTools.size} Tools`}
+      />
+    </View>
+  );
+}
+
+// Legacy component for backward compatibility
 interface CustomMcpToolsSelectorProps {
   serverName: string;
   url: string;
@@ -37,6 +184,7 @@ export function CustomMcpToolsSelector({
   onClose,
   onComplete
 }: CustomMcpToolsSelectorProps) {
+  const { t } = useLanguage();
   const [isSaving, setIsSaving] = React.useState(false);
 
   const handleClose = React.useCallback(() => {
@@ -245,6 +393,7 @@ const ContinueButton = React.memo(({
   disabled = false,
   label,
   isLoading = false,
+  rounded = 'full'
 }: ContinueButtonProps) => {
   const scale = useSharedValue(1);
 

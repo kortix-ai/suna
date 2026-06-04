@@ -1,6 +1,6 @@
 import type { UnifiedMessage, MessageGroup } from '../types/messages';
 
-interface GroupingOptions {
+export interface GroupingOptions {
   streamingTextContent?: string;
   streamingToolCall?: UnifiedMessage | null;
   readOnly?: boolean;
@@ -8,7 +8,7 @@ interface GroupingOptions {
   isStreamingText?: boolean;
 }
 
-function groupMessages(messages: UnifiedMessage[]): MessageGroup[] {
+export function groupMessages(messages: UnifiedMessage[]): MessageGroup[] {
   const groups: MessageGroup[] = [];
   let currentGroup: MessageGroup | null = null;
 
@@ -39,7 +39,15 @@ function groupMessages(messages: UnifiedMessage[]): MessageGroup[] {
 
 export function groupMessagesWithStreaming(
   messages: UnifiedMessage[],
-  _options?: GroupingOptions
+  options?: GroupingOptions
 ): MessageGroup[] {
   return groupMessages(messages);
+}
+
+export function getFirstMessage(group: MessageGroup): UnifiedMessage | undefined {
+  return group.messages[0];
+}
+
+export function getLastMessage(group: MessageGroup): UnifiedMessage | undefined {
+  return group.messages[group.messages.length - 1];
 }

@@ -1,5 +1,8 @@
 export { AuthProvider, useAuthContext } from './AuthContext';
 export { LanguageProvider, useLanguage } from './LanguageContext';
-export { AgentProvider } from './AgentContext';
-export { BillingProvider } from './BillingContext';
-export { AdvancedFeaturesProvider } from './AdvancedFeaturesContext';
+export { AgentProvider, useAgent } from './AgentContext';
+export { BillingProvider, useBillingContext, useHasCredits, useSubscriptionTier } from './BillingContext';
+export { AdvancedFeaturesProvider, useAdvancedFeatures } from './AdvancedFeaturesContext';
+export { TrackingProvider, useTracking } from './TrackingContext';
+export { PresenceProvider, usePresenceContext } from './PresenceContext';
+

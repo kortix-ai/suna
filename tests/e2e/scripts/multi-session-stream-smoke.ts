@@ -14,13 +14,21 @@
  * Run (dev stack up — `pnpm dev`):
  *   bun tests/e2e/scripts/multi-session-stream-smoke.ts
  */
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { optionalEnvValue } from '../helpers/env';
 
 const REPO_ROOT = resolve(import.meta.dir, '../../..');
 const API_ENV = resolve(REPO_ROOT, 'apps/api/.env');
 const WEB_ENV = resolve(REPO_ROOT, 'apps/web/.env');
 
+function fromEnvFile(file: string, key: string): string | null {
+  try {
+    const m = readFileSync(file, 'utf8').match(new RegExp(`^${key}=(.+)$`, 'm'));
+    return m ? m[1].trim().replace(/^["']|["']$/g, '') : null;
+  } catch {
+    return null;
+  }
+}
 function need(v: string | null | undefined, what: string): string {
   if (!v) { console.error(`[multi] missing ${what}`); process.exit(2); }
   return v;
@@ -28,9 +36,9 @@ function need(v: string | null | undefined, what: string): string {
 
 const API = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const SUPABASE = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
-const SERVICE_KEY = need(process.env.E2E_SERVICE_ROLE_KEY || optionalEnvValue('SUPABASE_SERVICE_ROLE_KEY', API_ENV), 'SUPABASE_SERVICE_ROLE_KEY');
-const ANON_KEY = need(process.env.E2E_ANON_KEY || optionalEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY', WEB_ENV), 'anon key');
-const OPENROUTER = need(process.env.E2E_OPENROUTER_API_KEY || optionalEnvValue('OPENROUTER_API_KEY', API_ENV), 'OPENROUTER_API_KEY');
+const SERVICE_KEY = need(fromEnvFile(API_ENV, 'SUPABASE_SERVICE_ROLE_KEY'), 'SUPABASE_SERVICE_ROLE_KEY');
+const ANON_KEY = need(fromEnvFile(WEB_ENV, 'NEXT_PUBLIC_SUPABASE_ANON_KEY'), 'anon key');
+const OPENROUTER = need(fromEnvFile(API_ENV, 'OPENROUTER_API_KEY'), 'OPENROUTER_API_KEY');
 const MODEL = process.env.E2E_MODEL || 'openrouter/openai/gpt-4o-mini';
 const [MODEL_PROVIDER, ...REST] = MODEL.split('/');
 const MODEL_ID = REST.join('/');

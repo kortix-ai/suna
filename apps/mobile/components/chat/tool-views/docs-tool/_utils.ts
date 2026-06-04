@@ -1,12 +1,12 @@
-import type { ToolResultData } from '@/lib/utils/tool-data-extractor';
+import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface DocMetadata {
+export interface DocMetadata {
   description?: string;
   tags?: string[];
   author?: string;
 }
 
-interface DocumentInfo {
+export interface DocumentInfo {
   id: string;
   title: string;
   filename: string;
@@ -18,7 +18,7 @@ interface DocumentInfo {
   content?: string;
 }
 
-interface DocsToolData {
+export interface DocsToolData {
   success: boolean;
   error?: string;
   message?: string;
@@ -39,7 +39,9 @@ const parseContent = (content: any): any => {
   return content;
 };
 
-export function extractDocsData({ toolResult }: { toolResult?: ToolResultData }): DocsToolData {
+export function extractDocsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): DocsToolData {
+  const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : JSON.parse(toolCall.arguments);
+  
   let data: any = null;
   
   if (toolResult?.output) {
@@ -99,3 +101,4 @@ export function stripHtmlTags(html: string): string {
     .replace(/\n\s*\n\s*\n/g, '\n\n')
     .trim();
 }
+

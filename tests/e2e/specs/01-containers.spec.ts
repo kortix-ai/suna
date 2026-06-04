@@ -1,13 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { execSync } from 'child_process';
 
-const composeProject = process.env.E2E_COMPOSE_PROJECT_NAME || 'kortix';
-const sandboxContainer = process.env.E2E_SANDBOX_CONTAINER_NAME || 'kortix-sandbox';
-
-function serviceContainer(service: string): string {
-  return `${composeProject}-${service}-1`;
-}
-
 function containerRunning(name: string): boolean {
   try {
     const out = execSync(`docker ps --format '{{.Names}}' --filter name=${name}`, {
@@ -22,26 +15,26 @@ function containerRunning(name: string): boolean {
 
 test.describe('01 — Docker containers are running', () => {
   test('frontend container is up', () => {
-    expect(containerRunning(serviceContainer('frontend'))).toBe(true);
+    expect(containerRunning('kortix-frontend')).toBe(true);
   });
 
   test('API container is up', () => {
-    expect(containerRunning(serviceContainer('kortix-api'))).toBe(true);
+    expect(containerRunning('kortix-kortix-api')).toBe(true);
   });
 
   test('Supabase Auth container is up', () => {
-    expect(containerRunning(serviceContainer('supabase-auth'))).toBe(true);
+    expect(containerRunning('kortix-supabase-auth')).toBe(true);
   });
 
   test('Supabase Kong container is up', () => {
-    expect(containerRunning(serviceContainer('supabase-kong'))).toBe(true);
+    expect(containerRunning('kortix-supabase-kong')).toBe(true);
   });
 
   test('Supabase DB container is up', () => {
-    expect(containerRunning(serviceContainer('supabase-db'))).toBe(true);
+    expect(containerRunning('kortix-supabase-db')).toBe(true);
   });
 
   test('Sandbox container is up', () => {
-    expect(containerRunning(sandboxContainer)).toBe(true);
+    expect(containerRunning('kortix-sandbox')).toBe(true);
   });
 });

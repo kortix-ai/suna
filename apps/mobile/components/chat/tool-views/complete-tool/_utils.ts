@@ -1,11 +1,22 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface CompleteToolData {
+export interface CompleteToolData {
   text: string | null;
   attachments: string[];
   follow_up_prompts: string[];
   success: boolean;
 }
+
+const parseContent = (content: any): any => {
+  if (typeof content === 'string') {
+    try {
+      return JSON.parse(content);
+    } catch (e) {
+      return content;
+    }
+  }
+  return content;
+};
 
 export function extractCompleteData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): CompleteToolData {
   const args = typeof toolCall.arguments === 'object' && toolCall.arguments !== null
@@ -66,3 +77,4 @@ export function extractCompleteData({ toolCall, toolResult }: { toolCall: ToolCa
     success: toolResult?.success ?? true
   };
 }
+

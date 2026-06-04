@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '../types';
 
-interface AskToolData {
+export interface AskToolData {
   text: string | null;
   attachments: string[];
   follow_up_answers: string[];
@@ -49,3 +49,4 @@ export function extractAskData(
     success: toolResult?.success ?? isSuccess
   };
 }
+

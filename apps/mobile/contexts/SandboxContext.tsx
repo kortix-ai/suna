@@ -30,7 +30,7 @@ interface SandboxContextValue {
   provisioningSandboxId: string | undefined;
   /** The external_id (e.g. 'kortix-sandbox') for proxy URL construction */
   provisioningExternalId: string | undefined;
-  /** The provider of the provisioning sandbox */
+  /** The provider of the provisioning sandbox (local_docker, justavps, etc.) */
   provisioningProvider: string | undefined;
   /** Call this when provisioning completes to refetch sandbox data */
   onProvisioningComplete: () => void;

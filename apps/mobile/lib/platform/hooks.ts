@@ -15,8 +15,15 @@ import {
   getActiveSandbox,
   getSandboxUrl,
   listSandboxes,
+  restartSandbox,
+  stopSandbox,
+  deleteSandbox,
+  getProviders,
+  initLocalSandbox,
+  type SandboxInfo,
+  type LocalSandboxProgress,
 } from './client';
-import type { Session } from './types';
+import type { Session, SessionMessage, SessionStatusMap } from './types';
 
 // ─── Query Keys ──────────────────────────────────────────────────────────────
 
@@ -24,9 +31,11 @@ export const platformKeys = {
   all: ['platform'] as const,
   sandbox: () => [...platformKeys.all, 'sandbox'] as const,
   instances: () => [...platformKeys.all, 'instances'] as const,
+  providers: () => [...platformKeys.all, 'providers'] as const,
   sessions: () => [...platformKeys.all, 'sessions'] as const,
   session: (id: string) => [...platformKeys.sessions(), id] as const,
   sessionMessages: (id: string) => [...platformKeys.session(id), 'messages'] as const,
+  sessionStatus: () => [...platformKeys.all, 'session-status'] as const,
 };
 
 // ─── Helper: Authenticated fetch to OpenCode server ──────────────────────────
@@ -66,10 +75,14 @@ export function useSandbox(enabled: boolean = true) {
       // First try to get existing active sandbox
       let sandbox = await getActiveSandbox();
 
-      // If no active sandbox, list everything the project-session API knows
-      // about. Reuse ANY sandbox the list returns (active / provisioning /
-      // stopped) so a cold app open never accidentally creates a new session
-      // just because the runtime row momentarily says 'stopped'.
+      // If no active sandbox, list everything the platform knows about — this
+      // also probes /platform/local-bridge/status, which discovers a running
+      // local Docker container and upserts it in the DB as 'active'. We reuse
+      // ANY sandbox the list returns (active / provisioning / stopped) so a
+      // cold app open never accidentally routes through POST /platform/init
+      // just because the DB row momentarily says 'stopped' — calling /init
+      // would trigger tryReactivateStaleSandbox → provider.start(), which for
+      // local_docker surfaces to users as a spurious "restart on every open".
       if (!sandbox) {
         log.log('📦 [useSandbox] No active sandbox, listing all sandboxes...');
         const allSandboxes = await listSandboxes();
@@ -150,6 +163,43 @@ export function useSession(sandboxUrl: string | undefined, sessionId: string | u
     },
     enabled: !!sandboxUrl && !!sessionId,
     staleTime: 5 * 1000,
+  });
+}
+
+// ─── Session Messages Hook ───────────────────────────────────────────────────
+
+/**
+ * Get messages for a session.
+ * GET {sandboxUrl}/session/{id}/message
+ */
+export function useSessionMessages(sandboxUrl: string | undefined, sessionId: string | undefined) {
+  return useQuery({
+    queryKey: platformKeys.sessionMessages(sessionId || ''),
+    queryFn: async () => {
+      if (!sandboxUrl || !sessionId) throw new Error('Missing sandboxUrl or sessionId');
+      return opencodeFetch<SessionMessage[]>(sandboxUrl, `/session/${sessionId}/message`);
+    },
+    enabled: !!sandboxUrl && !!sessionId,
+    staleTime: 5 * 1000,
+  });
+}
+
+// ─── Session Status Hook ─────────────────────────────────────────────────────
+
+/**
+ * Get status of all sessions (idle/running/error).
+ * GET {sandboxUrl}/session/status
+ */
+export function useSessionStatuses(sandboxUrl: string | undefined) {
+  return useQuery({
+    queryKey: platformKeys.sessionStatus(),
+    queryFn: async () => {
+      if (!sandboxUrl) throw new Error('No sandbox URL');
+      return opencodeFetch<SessionStatusMap>(sandboxUrl, '/session/status');
+    },
+    enabled: !!sandboxUrl,
+    staleTime: 2 * 1000,
+    refetchInterval: 5000, // Poll session statuses
   });
 }
 
@@ -310,6 +360,65 @@ export function useRenameSession(sandboxUrl: string | undefined) {
   });
 }
 
+// ─── Session Prompt Mutation ─────────────────────────────────────────────────
+
+/**
+ * Send a prompt to a session.
+ * POST {sandboxUrl}/session/{id}/prompt
+ */
+export function useSendPrompt(sandboxUrl: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: {
+      sessionId: string;
+      parts: Array<{ type: 'text'; text: string }>;
+    }) => {
+      if (!sandboxUrl) throw new Error('No sandbox URL');
+
+      log.log('💬 [useSendPrompt] Sending prompt to session:', params.sessionId);
+      await opencodeFetch<void>(sandboxUrl, `/session/${params.sessionId}/prompt`, {
+        method: 'POST',
+        body: JSON.stringify({
+          parts: params.parts,
+        }),
+      });
+
+      log.log('✅ [useSendPrompt] Prompt sent');
+    },
+    onSuccess: (_, params) => {
+      // Invalidate messages so they refetch
+      queryClient.invalidateQueries({
+        queryKey: platformKeys.sessionMessages(params.sessionId),
+      });
+    },
+  });
+}
+
+// ─── Session Abort Mutation ──────────────────────────────────────────────────
+
+/**
+ * Abort a running session.
+ * POST {sandboxUrl}/session/{id}/abort
+ */
+export function useAbortSession(sandboxUrl: string | undefined) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (sessionId: string) => {
+      if (!sandboxUrl) throw new Error('No sandbox URL');
+
+      log.log('⛔ [useAbortSession] Aborting session:', sessionId);
+      await opencodeFetch<void>(sandboxUrl, `/session/${sessionId}/abort`, {
+        method: 'POST',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: platformKeys.sessionStatus() });
+    },
+  });
+}
+
 // ─── Question Reply / Reject ────────────────────────────────────────────────
 
 /**
@@ -372,5 +481,68 @@ export function useInstances(enabled: boolean = true) {
     queryFn: () => listSandboxes(),
     enabled,
     staleTime: 30 * 1000,
+  });
+}
+
+export function useRestartInstance() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: restartSandbox,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: platformKeys.instances() });
+      queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });
+    },
+  });
+}
+
+export function useStopInstance() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: stopSandbox,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: platformKeys.instances() });
+    },
+  });
+}
+
+export function useDeleteInstance() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteSandbox,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: platformKeys.instances() });
+      queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });
+    },
+  });
+}
+
+export function useProviders() {
+  return useQuery({
+    queryKey: platformKeys.providers(),
+    queryFn: getProviders,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+export function useCreateLocalInstance() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (args: { name?: string; onProgress?: (p: LocalSandboxProgress) => void }) =>
+      initLocalSandbox(args.name, args.onProgress),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: platformKeys.instances() });
+      queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });
+    },
+  });
+}
+
+export function useCreateCloudInstance() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (provider: 'daytona' | 'justavps') => ensureSandbox({ provider }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: platformKeys.instances() });
+      queryClient.invalidateQueries({ queryKey: platformKeys.sandbox() });
+    },
   });
 }

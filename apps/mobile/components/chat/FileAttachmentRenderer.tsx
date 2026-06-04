@@ -15,10 +15,10 @@
  */
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { View, Image, Pressable, ActivityIndicator, ScrollView, LayoutChangeEvent } from 'react-native';
+import { View, Image, Pressable, ActivityIndicator, Linking, ScrollView, LayoutChangeEvent } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { FileText, File, Download, ExternalLink, Image as ImageIcon, Play } from 'lucide-react-native';
+import { FileText, File, Download, ExternalLink, Image as ImageIcon, Play, Presentation } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@agentpress/shared';
@@ -148,81 +148,12 @@ function normalizeSandboxWorkspacePath(inputPath: string): string {
     : `/workspace${withLeadingSlash}`;
 }
 
-async function fetchOpenCodeFileContent(
-  sandboxUrl: string,
-  filePath: string,
-  token: string | null,
-  signal?: AbortSignal,
-): Promise<{ content: string; mimeType?: string; encoding?: string }> {
-  const response = await fetch(
-    `${sandboxUrl}/file/content?path=${encodeURIComponent(filePath)}`,
-    {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      signal,
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch file: ${response.status}`);
-  }
-
-  const text = await response.text();
-  try {
-    const parsed = JSON.parse(text);
-    return {
-      content: parsed.content ?? '',
-      mimeType: parsed.mimeType,
-      encoding: parsed.encoding,
-    };
-  } catch {
-    return { content: text };
-  }
-}
-
-async function fetchOpenCodeFileBlob(
-  sandboxUrl: string,
-  filePath: string,
-  token: string | null,
-  signal?: AbortSignal,
-): Promise<Blob> {
-  const headers = { ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-
-  try {
-    const rawResponse = await fetch(
-      `${sandboxUrl}/file/raw?path=${encodeURIComponent(filePath)}`,
-      { headers, signal },
-    );
-
-    if (rawResponse.ok) {
-      const contentType = rawResponse.headers.get('content-type') || '';
-      if (!contentType.includes('text/html')) {
-        return rawResponse.blob();
-      }
-    }
-  } catch (error) {
-    if ((error as any)?.name === 'AbortError') throw error;
-  }
-
-  const data = await fetchOpenCodeFileContent(sandboxUrl, filePath, token, signal);
-  if (data.encoding === 'base64' && data.content) {
-    const binary = atob(data.content);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return new Blob([bytes], { type: data.mimeType || 'application/octet-stream' });
-  }
-
-  return new Blob([data.content || ''], { type: data.mimeType || 'text/plain' });
-}
-
 /**
  * Main File Attachment Renderer Component
  */
 export function FileAttachmentRenderer({
   filePath,
+  sandboxId,
   sandboxUrl,
   compact = false,
   showName = true,
@@ -241,6 +172,7 @@ export function FileAttachmentRenderer({
         slideNumber={presentationParsed.slideNumber}
         filePath={filePath}
         sandboxUrl={sandboxUrl}
+        onPress={onPress}
       />
     );
   }
@@ -264,7 +196,7 @@ export function FileAttachmentRenderer({
       return (
         <ImageAttachment
           file={file}
-          sandboxUrl={sandboxUrl}
+          sandboxId={sandboxId}
           compact={compact}
           showName={showName}
           showPreview={showPreview}
@@ -277,6 +209,7 @@ export function FileAttachmentRenderer({
           file={file}
           compact={compact}
           showPreview={showPreview}
+          sandboxId={sandboxId}
           sandboxUrl={sandboxUrl}
           onPress={onPress}
         />
@@ -297,14 +230,14 @@ export function FileAttachmentRenderer({
  */
 function ImageAttachment({
   file,
-  sandboxUrl,
+  sandboxId,
   compact,
   showName,
   showPreview,
   onPress,
 }: {
   file: FileAttachment;
-  sandboxUrl?: string;
+  sandboxId?: string;
   compact: boolean;
   showName: boolean;
   showPreview: boolean;
@@ -315,6 +248,8 @@ function ImageAttachment({
   const [hasError, setHasError] = useState(false);
   const scale = useSharedValue(1);
 
+  // For sandbox files, we need to use blob URLs with authentication
+  // The useSandboxImageBlob hook handles this properly
   const [blobUrl, setBlobUrl] = useState<string | undefined>();
 
   useEffect(() => {
@@ -331,45 +266,89 @@ function ImageAttachment({
         filePath: file.path,
         fileType: file.type,
         fileExtension: file.extension,
-        sandboxUrl,
+        sandboxId,
         showPreview,
       });
 
-      // For uploaded files (in /workspace/uploads), we need the sandbox URL.
+      // For uploaded files (in /workspace/uploads), we ALWAYS need sandboxId
+      // Don't try to render directly - wait for sandboxId
       const isUploadedFile = file.path.includes('/uploads/') || file.path.includes('/workspace');
-      if (!sandboxUrl && isUploadedFile) {
-        log.log('[ImageAttachment] Waiting for sandboxUrl for uploaded file...');
+      if (!sandboxId && isUploadedFile) {
+        log.log('[ImageAttachment] ⏳ Waiting for sandboxId for uploaded file...');
         setIsLoading(true);
+        // Don't set error, just keep loading - sandboxId might come in next render
         return;
       }
 
       // Non-sandbox, non-uploaded images can render directly (e.g., external URLs)
-      if (!sandboxUrl && !isUploadedFile) {
+      if (!sandboxId && !isUploadedFile) {
         log.log('[ImageAttachment] Non-sandbox image, using direct path');
         setBlobUrl(file.path);
         setIsLoading(false);
         return;
       }
 
-      // If we already have a blob URL for this sandbox URL, don't refetch.
+      // If we already have a blob URL for this sandboxId, don't refetch.
       if (blobUrl && blobUrl.startsWith('data:')) {
         log.log('[ImageAttachment] Already have blob URL, skipping fetch');
         return;
       }
 
+      const apiUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
       const normalizedPath = normalizeSandboxWorkspacePath(file.path);
+      const url = `${apiUrl}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(normalizedPath)}`;
 
       log.log('[ImageAttachment] Fetching sandbox image:', {
         file,
         originalPath: file.path,
         normalizedPath,
-        sandboxUrl,
+        sandboxId,
+        apiUrl,
+        url,
       });
 
       try {
         const token = await getAuthToken();
-        if (!sandboxUrl) throw new Error('Sandbox URL required');
-        const blob = await fetchOpenCodeFileBlob(sandboxUrl, normalizedPath, token, abortController.signal);
+
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: abortController.signal,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text().catch(() => 'Unable to read error response');
+          const errorInfo = {
+            status: response.status,
+            statusText: response.statusText,
+            errorBody: errorText,
+            url,
+            normalizedPath,
+            sandboxId,
+            file,
+            retryCount,
+          };
+          log.error('[ImageAttachment] ❌ HTTP error fetching image:', errorInfo);
+
+          // Retry on 404, 500, 502, 503 (sandbox might be warming up or file not ready yet)
+          const shouldRetry = [404, 500, 502, 503].includes(response.status);
+          if (shouldRetry && retryCount < MAX_RETRIES && !isCancelled) {
+            retryCount++;
+            const delay = Math.min(1000 * Math.pow(2, retryCount - 1), 5000); // Exponential backoff: 1s, 2s, 4s
+            log.log(`[ImageAttachment] 🔄 Retrying in ${delay}ms (attempt ${retryCount}/${MAX_RETRIES})...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            if (!isCancelled) {
+              return run(); // Retry
+            }
+          }
+
+          if (!isCancelled) {
+            setHasError(true);
+            setIsLoading(false);
+          }
+          return;
+        }
+
+        const blob = await response.blob();
         log.log('[ImageAttachment] ✅ Blob received:', {
           size: blob.size,
           type: blob.type,
@@ -393,8 +372,9 @@ function ImageAttachment({
         log.error('[ImageAttachment] ❌ Network error fetching image:', {
           error,
           errorMessage: (error as any)?.message,
+          url,
           normalizedPath,
-          sandboxUrl,
+          sandboxId,
           file,
           retryCount,
         });
@@ -422,20 +402,20 @@ function ImageAttachment({
       isCancelled = true;
       abortController.abort();
     };
-  }, [sandboxUrl, file.path]);
+  }, [sandboxId, file.path]);
 
-  // Reset blob URL when sandboxUrl changes (sandbox becomes available)
+  // Reset blob URL when sandboxId changes (sandbox becomes available)
   useEffect(() => {
-    if (sandboxUrl && blobUrl && !blobUrl.startsWith('data:')) {
-      log.log('[ImageAttachment] Sandbox URL changed, resetting blob URL to refetch');
+    if (sandboxId && blobUrl && !blobUrl.startsWith('data:')) {
+      log.log('[ImageAttachment] SandboxId changed, resetting blob URL to refetch');
       setBlobUrl(undefined);
     }
-  }, [sandboxUrl]);
+  }, [sandboxId]);
 
   const imageUrl = blobUrl || file.path;
 
   // For sandbox images, wait for blob URL before rendering
-  const shouldWaitForBlob = sandboxUrl && !blobUrl && !hasError;
+  const shouldWaitForBlob = sandboxId && !blobUrl && !hasError;
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -559,12 +539,14 @@ function DocumentAttachment({
   file,
   compact,
   showPreview,
+  sandboxId,
   sandboxUrl,
   onPress,
 }: {
   file: FileAttachment;
   compact: boolean;
   showPreview: boolean;
+  sandboxId?: string;
   sandboxUrl?: string;
   onPress?: (path: string) => void;
 }) {
@@ -601,22 +583,35 @@ function DocumentAttachment({
   }, [showPreview, file.extension, file.path]);
 
   useEffect(() => {
-    if (isPreviewable && sandboxUrl) {
+    if (isPreviewable && sandboxId) {
       setIsLoading(true);
       setHasError(false);
 
       const fetchFileContent = async () => {
         try {
           const token = await getAuthToken();
+          const apiUrl = process.env.EXPO_PUBLIC_BACKEND_URL;
 
           let filePath = file.path;
           if (!filePath.startsWith('/')) {
             filePath = '/workspace/' + filePath;
           }
 
+          const url = `${apiUrl}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(filePath)}`;
+
           // DOCX and PDF files need to be fetched as blob
           if (isDocx || isPdf) {
-            const blob = await fetchOpenCodeFileBlob(sandboxUrl, filePath, token);
+            const response = await fetch(url, {
+              headers: {
+                'Authorization': `Bearer ${token}`,
+              },
+            });
+
+            if (!response.ok) {
+              throw new Error(`Failed to fetch file: ${response.status}`);
+            }
+
+            const blob = await response.blob();
             // Convert blob to base64 data URL
             const reader = new FileReader();
             reader.onloadend = () => {
@@ -640,12 +635,19 @@ function DocumentAttachment({
           }
 
           // Text-based files
-          const data = await fetchOpenCodeFileContent(sandboxUrl, filePath, token);
-          const content = data.encoding === 'base64' && data.content
-            ? atob(data.content)
-            : data.content;
-          log.log('[DocumentAttachment] Fetched content length:', content.length);
-          setFileContent(content);
+          const response = await fetch(url, {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          });
+
+          if (!response.ok) {
+            throw new Error(`Failed to fetch file: ${response.status}`);
+          }
+
+          const text = await response.text();
+          log.log('[DocumentAttachment] Fetched content length:', text.length);
+          setFileContent(text);
         } catch (error) {
           log.error('[DocumentAttachment] Failed to fetch file content:', error);
           setHasError(true);
@@ -658,7 +660,7 @@ function DocumentAttachment({
 
       fetchFileContent();
     }
-  }, [isPreviewable, sandboxUrl, file.path, isDocx, isPdf]);
+  }, [isPreviewable, sandboxId, file.path, isDocx, isPdf]);
 
   if (showPreview && isPreviewable) {
     const ext = file.extension?.toLowerCase() || '';
@@ -887,11 +889,13 @@ function PresentationAttachment({
   slideNumber,
   filePath,
   sandboxUrl,
+  onPress,
 }: {
   presentationName: string;
   slideNumber: number;
   filePath: string;
   sandboxUrl: string;
+  onPress?: (path: string) => void;
 }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -1094,6 +1098,29 @@ function HtmlPreviewAttachment({
       </View>
     </View>
   );
+}
+
+/**
+ * Parse message content and extract file references
+ * Matches: [Uploaded File: /workspace/uploads/filename.ext]
+ */
+export function extractFileReferences(content: string): string[] {
+  const filePattern = /\[Uploaded File: ([^\]]+)\]/g;
+  const matches = content.matchAll(filePattern);
+  const files: string[] = [];
+
+  for (const match of matches) {
+    files.push(match[1]);
+  }
+
+  return files;
+}
+
+/**
+ * Remove file references from content to get clean text
+ */
+export function removeFileReferences(content: string): string {
+  return content.replace(/\[Uploaded File: [^\]]+\]/g, '').trim();
 }
 
 /**

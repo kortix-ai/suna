@@ -17,7 +17,7 @@ import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
 import { AnimatedToggleIcon } from '@/components/ui/animated-toggle-icon';
 
-interface PageHeaderProps {
+export interface PageHeaderProps {
   /** The title shown in the center. String, or a custom React node (e.g. an
    *  inline-editable input). If a string is given it's truncated to one line
    *  and styled with the canonical muted-foreground typography. */

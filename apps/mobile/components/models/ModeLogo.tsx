@@ -40,3 +40,5 @@ export function ModeLogo({ mode, height = 14 }: ModeLogoProps) {
   const Logo = isDark ? AdvancedLight : AdvancedDark;
   return <Logo width={width} height={height} />;
 }
+
+export default ModeLogo;

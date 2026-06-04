@@ -14,6 +14,7 @@ import { useColorScheme } from 'nativewind';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { haptics } from '@/lib/haptics';
 import {
+  Menu,
   Play,
   RefreshCw,
   RotateCcw,
@@ -24,6 +25,7 @@ import {
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { Ionicons } from '@expo/vector-icons';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   getSandboxServices,
@@ -81,7 +83,7 @@ interface RunningServicesPageProps {
   isRightDrawerOpen?: boolean;
 }
 
-export function RunningServicesPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: RunningServicesPageProps) {
+export function RunningServicesPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: RunningServicesPageProps) {
   const insets = useSafeAreaInsets();
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -295,6 +297,7 @@ export function RunningServicesPage({ page, onOpenDrawer, onOpenRightDrawer, isD
                   service={service}
                   isDark={isDark}
                   fgColor={fgColor}
+                  mutedColor={mutedColor}
                   borderColor={borderColor}
                   themeColors={themeColors}
                   sandboxUrl={sandboxUrl}
@@ -332,6 +335,7 @@ function ServiceCard({
   service,
   isDark,
   fgColor,
+  mutedColor,
   borderColor,
   themeColors,
   sandboxUrl,
@@ -343,6 +347,7 @@ function ServiceCard({
   service: SandboxService;
   isDark: boolean;
   fgColor: string;
+  mutedColor: string;
   borderColor: string;
   themeColors: { primary: string; primaryForeground: string };
   sandboxUrl: string | undefined;

@@ -9,6 +9,7 @@ import {
   Eye,
   FileText,
   Presentation,
+  Pencil,
   Copy,
   Check,
   FileDiff,
@@ -29,12 +30,14 @@ import {
   splitContentIntoLines,
   generateLineDiff,
   calculateDiffStats,
+  type LineDiff,
 } from './_utils';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { JsonRenderer } from './JsonRenderer';
 import { CsvRenderer } from './CsvRenderer';
 import { XlsxRenderer } from './XlsxRenderer';
 import { ToolViewCard, TabSwitcher, StatusBadge, LoadingState, CodeRenderer, FileDownloadButton } from '../shared';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -60,6 +63,18 @@ function extractSlideNumber(filepath: string): number | null {
   return null;
 }
 
+function processUnicodeContent(text: string, preserveWhitespace = false): string {
+  let processed = text
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => String.fromCharCode(parseInt(code, 16)))
+    .replace(/\\r\\n/g, '\n')
+    .replace(/\\r/g, '\n')
+    .replace(/\\t/g, preserveWhitespace ? '\t' : '  ')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\');
+
+  return processed;
+}
+
 function formatTimestamp(isoString?: string): string {
   if (!isoString) return '';
   try {
@@ -73,12 +88,14 @@ function formatTimestamp(isoString?: string): string {
 export function FileOperationToolView({
   toolCall,
   toolResult,
+  assistantTimestamp,
   toolTimestamp,
   isSuccess = true,
   isStreaming = false,
   project,
   streamingText,
 }: ToolViewProps) {
+  const { openFileInComputer } = useKortixComputerStore();
   const [isCopyingContent, setIsCopyingContent] = useState(false);
   const [activeTab, setActiveTab] = useState<'code' | 'preview' | 'changes'>('preview');
   const sourceScrollRef = useRef<ScrollView>(null);
@@ -767,12 +784,20 @@ export function FileOperationToolView({
         <View className="flex-row items-center justify-between w-full">
           <View className="flex-row items-center gap-2">
             {processedFilePath && (
-              <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
+              <Pressable
+                onPress={() => {
+                  if (isPresentationSlide) return;
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  openFileInComputer(processedFilePath);
+                }}
+                disabled={isPresentationSlide}
+                className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border active:opacity-70"
+              >
                 <Icon as={FileText} size={12} className="text-primary" />
                 <Text className="text-xs font-roobert-medium text-primary" numberOfLines={1}>
                   {fileName || 'File'}
                 </Text>
-              </View>
+              </Pressable>
             )}
             <View className="flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border border-border">
               <Icon as={FileIcon} size={12} className="text-primary" />
@@ -835,6 +860,17 @@ export function FileOperationToolView({
                 />
               </Pressable>
             )}
+            {processedFilePath && !isPresentationSlide && (
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  openFileInComputer(processedFilePath);
+                }}
+                className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
+              >
+                <Icon as={Pencil} size={17} className="text-primary" />
+              </Pressable>
+            )}
           </View>
         </View>
       )}
@@ -851,3 +887,4 @@ export function FileOperationToolView({
     </ToolViewCard>
   );
 }
+

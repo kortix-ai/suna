@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Pressable, Modal, Alert } from 'react-native';
+import { View, Pressable, Modal, Platform, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui/kortix-loader';
@@ -23,7 +23,7 @@ interface FileDownloadButtonProps {
   sandboxUrl?: string;
 }
 
-type ExportFormat = 'pdf' | 'docx' | 'html' | 'markdown' | 'text';
+export type ExportFormat = 'pdf' | 'docx' | 'html' | 'markdown' | 'text';
 
 interface ExportOption {
   format: ExportFormat;
@@ -107,7 +107,7 @@ export function FileDownloadButton({
 
     // Process code blocks first (to protect them from other replacements)
     const codeBlocks: string[] = [];
-    html = html.replace(/```([\s\S]*?)```/g, (_, code) => {
+    html = html.replace(/```([\s\S]*?)```/g, (match, code) => {
       const index = codeBlocks.length;
       codeBlocks.push(`<pre><code>${code.trim()}</code></pre>`);
       return `___CODEBLOCK_${index}___`;
@@ -115,7 +115,7 @@ export function FileDownloadButton({
 
     // Inline code
     const inlineCodes: string[] = [];
-    html = html.replace(/`([^`]+)`/g, (_, code) => {
+    html = html.replace(/`([^`]+)`/g, (match, code) => {
       const index = inlineCodes.length;
       inlineCodes.push(`<code>${code}</code>`);
       return `___INLINECODE_${index}___`;
@@ -641,3 +641,4 @@ ${content}
     </Pressable>
   );
 }
+

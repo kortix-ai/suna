@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
 
-interface SheetsData {
+export interface SheetsData {
   filePath: string | null;
   fileName: string | null;
   action: string;
@@ -21,7 +21,7 @@ const parseContent = (content: any): any => {
 };
 
 export function extractSheetsData({ toolCall, toolResult }: { toolCall: ToolCallData; toolResult?: ToolResultData }): SheetsData {
-  const toolName = toolCall.function_name || '';
+  const toolName = toolCall.function?.name || '';
   
   let filePath: string | null = null;
   let headers: string[] = [];
@@ -70,3 +70,4 @@ function getActionName(toolName: string): string {
   
   return 'Sheet';
 }
+

@@ -7,6 +7,13 @@
 import { API_URL, getAuthHeaders } from './config';
 import { log } from '@/lib/logger';
 
+export interface ApifyApprovalRequest {
+  actor_id: string;
+  run_input: Record<string, any>;
+  max_cost_usd?: number;
+  thread_id?: string;
+}
+
 export interface ApifyApproval {
   approval_id: string;
   status: 'pending' | 'approved' | 'rejected' | 'expired' | 'executed';
@@ -23,7 +30,7 @@ export interface ApifyApproval {
   message?: string;
 }
 
-interface ApifyApprovalResponse {
+export interface ApifyApprovalResponse {
   success: boolean;
   data: ApifyApproval;
 }
@@ -96,3 +103,4 @@ export const apifyApprovalsApi = {
     return response.data;
   },
 };
+

@@ -1,6 +1,6 @@
 import type { ToolCallData, ToolResultData } from '../types';
 
-interface TerminateCommandData {
+export interface TerminateCommandData {
   sessionName: string | null;
   output: string | null;
   success: boolean;

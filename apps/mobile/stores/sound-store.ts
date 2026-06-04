@@ -3,9 +3,9 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
 export type SoundEvent = 'completion' | 'error' | 'notification' | 'send';
-export type SoundPack = 'off' | 'kortix';
+export type SoundPack = 'off' | 'opencode' | 'kortix';
 
-interface SoundPreferences {
+export interface SoundPreferences {
   pack: SoundPack;
   volume: number;
   events: Partial<Record<SoundEvent, boolean>>;
@@ -27,20 +27,6 @@ const DEFAULT_PREFERENCES: SoundPreferences = {
   events: {},
   hapticsEnabled: true,
 };
-
-function normalizePreferences(value: unknown): SoundPreferences {
-  const preferences = (value ?? {}) as Partial<SoundPreferences>;
-  const pack = preferences.pack === 'off' ? 'off' : 'kortix';
-
-  return {
-    ...DEFAULT_PREFERENCES,
-    ...preferences,
-    pack,
-    volume: Math.max(0, Math.min(1, preferences.volume ?? DEFAULT_PREFERENCES.volume)),
-    events: preferences.events ?? {},
-    hapticsEnabled: preferences.hapticsEnabled ?? DEFAULT_PREFERENCES.hapticsEnabled,
-  };
-}
 
 export const useSoundStore = create<SoundState>()(
   persist(
@@ -83,10 +69,6 @@ export const useSoundStore = create<SoundState>()(
     {
       name: '@sound_preferences',
       storage: createJSONStorage(() => AsyncStorage),
-      merge: (persisted, current) => ({
-        ...current,
-        preferences: normalizePreferences((persisted as Partial<SoundState> | undefined)?.preferences),
-      }),
       partialize: (state) => ({
         preferences: state.preferences,
       }),

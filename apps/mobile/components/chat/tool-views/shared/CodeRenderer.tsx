@@ -22,8 +22,35 @@ const getSyntaxColors = (isDark: boolean) => ({
   default: isDark ? '#eeffff' : '#24292e',
 });
 
+// Simple tokenizer for basic syntax highlighting
+function tokenizeCode(code: string, language: string, isDark: boolean): Array<{ text: string; color: string }> {
+  const colors = getSyntaxColors(isDark);
+  const tokens: Array<{ text: string; color: string }> = [];
+  
+  // Common keywords for various languages
+  const keywords = [
+    'function', 'const', 'let', 'var', 'if', 'else', 'for', 'while', 'return',
+    'class', 'import', 'export', 'from', 'async', 'await', 'try', 'catch',
+    'def', 'class', 'if', 'elif', 'else', 'for', 'while', 'return', 'import',
+    'public', 'private', 'protected', 'static', 'void', 'int', 'string',
+  ];
+  
+  // Simple regex patterns
+  const patterns = [
+    { regex: /("([^"\\]|\\.)*"|'([^'\\]|\\.)*')/g, color: colors.string }, // Strings
+    { regex: /(\/\/.*|\/\*[\s\S]*?\*\/)/g, color: colors.comment }, // Comments
+    { regex: /\b(\d+\.?\d*)\b/g, color: colors.number }, // Numbers
+    { regex: new RegExp(`\\b(${keywords.join('|')})\\b`, 'gi'), color: colors.keyword }, // Keywords
+  ];
+  
+  // For now, just return plain text with default color
+  // More sophisticated highlighting can be added later
+  return [{ text: code, color: colors.default }];
+}
+
 export function CodeRenderer({
   code,
+  language = 'text',
   showLineNumbers = false,
   className = '',
 }: CodeRendererProps) {
@@ -78,3 +105,4 @@ export function CodeRenderer({
     </ScrollView>
   );
 }
+

@@ -32,6 +32,7 @@ import {
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import {
   BottomSheetModal,
@@ -178,7 +179,7 @@ interface SecretsPageProps {
   isRightDrawerOpen?: boolean;
 }
 
-export function SecretsPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: SecretsPageProps) {
+export function SecretsPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: SecretsPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();

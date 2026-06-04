@@ -36,10 +36,10 @@ export type BottomBarMenuItem =
       type: 'divider';
     };
 
-interface BottomBarTab {
+export interface BottomBarTab {
   id: string;
   label: string;
-  icon?: string;
+  icon?: keyof typeof Ionicons.glyphMap;
 }
 
 interface BottomBarProps {
@@ -52,6 +52,7 @@ interface BottomBarProps {
   onCompactSession?: () => void;
   onExportTranscript?: () => void;
   onViewChanges?: () => void;
+  onDiagnostics?: () => void;
   onArchiveSession?: () => void;
   customMenuItems?: BottomBarMenuItem[];
   onMenuDismiss?: () => void;
@@ -84,6 +85,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   onCompactSession,
   onExportTranscript,
   onViewChanges,
+  onDiagnostics,
   onArchiveSession,
   customMenuItems,
   onMenuDismiss,
@@ -155,15 +157,29 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   }, []);
 
   const menuItems = useMemo(() => [
+    { icon: 'alert-circle-outline' as const, label: 'Diagnostics', onPress: () => { closeSheet(); onDiagnostics?.(); } },
     { icon: 'git-compare-outline' as const, label: 'View changes', onPress: () => { closeSheet(); onViewChanges?.(); } },
     { icon: 'download-outline' as const, label: 'Export transcript', onPress: () => { closeSheet(); onExportTranscript?.(); } },
     { icon: 'layers-outline' as const, label: 'Compact session', onPress: () => { closeSheet(); onCompactSession?.(); } },
     { icon: 'archive-outline' as const, label: 'Archive session', onPress: () => { closeSheet(); onArchiveSession?.(); } },
-  ], [closeSheet, onViewChanges, onExportTranscript, onCompactSession, onArchiveSession]);
+  ], [closeSheet, onDiagnostics, onViewChanges, onExportTranscript, onCompactSession, onArchiveSession]);
 
 
   const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
   const EASE_IN_OUT = Easing.bezier(0.4, 0, 0.2, 1);
+
+  // Given a viewport x, return the pill id under it in content coords.
+  const pillIdAtX = useCallback((viewportX: number): string | null => {
+    const contentX = viewportX + scrollOffsetRef.current;
+    for (const tab of tabs) {
+      const layout = pillLayoutsRef.current[tab.id];
+      if (!layout) continue;
+      if (contentX >= layout.x && contentX <= layout.x + layout.width) {
+        return tab.id;
+      }
+    }
+    return null;
+  }, [tabs]);
 
   // Find the pill whose center is closest to a given viewport x.
   const pillNearestCenter = useCallback((): string | null => {

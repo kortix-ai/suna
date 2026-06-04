@@ -12,6 +12,7 @@
 import React, { useState, useMemo, useCallback, useRef, forwardRef, useImperativeHandle } from 'react';
 import {
   View,
+  TouchableOpacity,
   FlatList,
   TextInput,
   Pressable,
@@ -19,6 +20,7 @@ import {
   ScrollView,
   ActivityIndicator,
 } from 'react-native';
+import { Text } from '@/components/ui/text';
 import { Text as RNText } from 'react-native';
 import {
   Search,
@@ -35,13 +37,16 @@ import {
   Check,
   FileText,
   Blocks,
+  ArrowUpRight,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
 import {
   BottomSheetModal,
+  BottomSheetView,
   BottomSheetBackdrop,
   BottomSheetScrollView,
 } from '@gorhom/bottom-sheet';
@@ -143,6 +148,15 @@ const KIND_TABS: { value: KindFilter; label: string }[] = [
   { value: 'connector', label: 'Connectors' },
 ];
 
+// ─── Quick action presets (same as frontend) ────────────────────────────────
+
+const COMPOSER_PRESETS: Record<string, { title: string; prompt: string }> = {
+  agent:   { title: 'New agent',   prompt: "HEY let's build a new agent. Ask what job it should own, then scaffold it in the right workspace location and wire up any supporting skills." },
+  skill:   { title: 'New skill',   prompt: "HEY let's build a new skill. Ask what should trigger it, then create the SKILL.md and any supporting files in the right workspace location." },
+  command: { title: 'New command', prompt: "HEY let's build a new slash command. Ask what the command should do, then add it in the right workspace location and connect it to the correct agent." },
+  project: { title: 'New project', prompt: "HEY let's set up a new project. Ask for the name and purpose, then create it in the right workspace location with a clean starting structure." },
+};
+
 // ─── Props ──────────────────────────────────────────────────────────────────
 
 export interface WorkspacePageRef {
@@ -162,7 +176,7 @@ interface WorkspacePageProps {
 
 // ─── Component ──────────────────────────────────────────────────────────────
 
-export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(function WorkspacePage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }, ref) {
+export const WorkspacePage = forwardRef<WorkspacePageRef, WorkspacePageProps>(function WorkspacePage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen, onCreateSessionWithPrompt }, ref) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();

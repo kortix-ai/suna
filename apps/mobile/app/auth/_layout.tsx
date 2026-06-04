@@ -1,4 +1,4 @@
-import { Stack, Redirect } from 'expo-router';
+import { Stack, useRouter, Redirect } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext } from '@/contexts';
 import { View } from 'react-native';
@@ -53,3 +53,4 @@ export default function AuthLayout() {
     </Stack>
   );
 }
+

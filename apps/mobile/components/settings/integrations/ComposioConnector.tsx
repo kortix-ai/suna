@@ -31,7 +31,17 @@ import {
   type ComposioProfile,
 } from '@/hooks/useComposio';
 import * as WebBrowser from 'expo-web-browser';
+import { ToolkitIcon } from './ToolkitIcon';
 import { log } from '@/lib/logger';
+
+interface ComposioConnectorProps {
+  app: ComposioApp;
+  visible: boolean;
+  onClose: () => void;
+  onComplete: (profileId: string, appName: string, appSlug: string) => void;
+  mode?: 'full' | 'profile-only';
+  agentId?: string;
+}
 
 interface ComposioConnectorContentProps {
   app: ComposioApp;
@@ -72,7 +82,7 @@ export function ComposioConnectorContent({
   const [profileName, setProfileName] = React.useState(`${app.name} Profile`);
   const [selectedProfileId, setSelectedProfileId] = React.useState<string>('');
   const [createdProfileId, setCreatedProfileId] = React.useState<string | null>(null);
-  const [, setSelectedProfile] = React.useState<ComposioProfile | null>(null);
+  const [selectedProfile, setSelectedProfile] = React.useState<ComposioProfile | null>(null);
   const [redirectUrl, setRedirectUrl] = React.useState<string | null>(null);
   const [selectedConnectionType, setSelectedConnectionType] = React.useState<
     'existing' | 'new' | null
@@ -90,7 +100,7 @@ export function ComposioConnectorContent({
   >({});
 
   const { mutate: createProfile, isPending: isCreating } = useCreateComposioProfile();
-  const { data: profiles } = useComposioProfiles();
+  const { data: profiles, isLoading: isLoadingProfiles } = useComposioProfiles();
 
   const { data: toolkitDetails, isLoading: isLoadingToolkitDetails } = useComposioToolkitDetails(
     app.slug
@@ -1048,6 +1058,53 @@ export function ComposioConnectorContent({
   return null;
 }
 
+export function ComposioConnector({
+  app,
+  visible,
+  onClose,
+  onComplete,
+  mode = 'full',
+  agentId,
+}: ComposioConnectorProps) {
+  const { t } = useLanguage();
+  const { colorScheme } = useColorScheme();
+
+  if (!visible) return null;
+
+  return (
+    <View className="flex-1">
+      <View className="px-6 pt-6">
+        {/* Header with back button */}
+        <View className="mb-4 flex-row items-center">
+          <Pressable onPress={onClose} className="flex-row items-center active:opacity-70">
+            <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+          </Pressable>
+          <View className="ml-3 flex-1">
+            <Text
+              style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
+              className="font-roobert-semibold text-xl">
+              {t('integrations.connector.connectTo', { app: app.name })}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+        <ComposioConnectorContent
+          app={app}
+          onBack={onClose}
+          onComplete={onComplete}
+          mode={mode}
+          agentId={agentId}
+          noPadding={false}
+        />
+
+        <View className="h-6" />
+      </ScrollView>
+    </View>
+  );
+}
+
 interface ContinueButtonProps {
   onPress: () => void;
   disabled?: boolean;
@@ -1062,6 +1119,7 @@ const ContinueButton = React.memo(
     disabled = false,
     label,
     isLoading = false,
+    rounded = 'full',
   }: ContinueButtonProps) => {
     return (
       <Pressable

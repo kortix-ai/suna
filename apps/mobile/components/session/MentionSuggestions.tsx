@@ -160,10 +160,11 @@ export function MentionSuggestions({
                   key={`${item.kind}-${gi}-${item.label}`}
                   item={item}
                   isSelected={isSelected}
-	                  onPress={() => onSelect(item)}
-	                  accentBg={accentBg}
-	                  fgColor={fgColor}
-	                  mutedFg35={mutedFg35}
+                  onPress={() => onSelect(item)}
+                  accentBg={accentBg}
+                  fgColor={fgColor}
+                  mutedFg={mutedFg}
+                  mutedFg35={mutedFg35}
                   iconMuted={iconMuted}
                   agentBadgeBg={agentBadgeBg}
                   agentBadgeFg={agentBadgeFg}
@@ -205,6 +206,7 @@ function MentionRow({
   onPress,
   accentBg,
   fgColor,
+  mutedFg,
   mutedFg35,
   iconMuted,
   agentBadgeBg,
@@ -215,6 +217,7 @@ function MentionRow({
   onPress: () => void;
   accentBg: string;
   fgColor: string;
+  mutedFg: string;
   mutedFg35: string;
   iconMuted: string;
   agentBadgeBg: string;

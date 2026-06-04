@@ -8,7 +8,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { API_URL, getAuthHeaders } from '@/api/config';
 
-interface ToolMethod {
+export interface ToolMethod {
   name: string;
   display_name: string;
   description: string;
@@ -17,7 +17,7 @@ interface ToolMethod {
   visible?: boolean;
 }
 
-interface ToolMetadata {
+export interface ToolMetadata {
   name: string;
   display_name: string;
   description: string;
@@ -31,7 +31,7 @@ interface ToolMetadata {
   methods: ToolMethod[];
 }
 
-interface ToolsMetadataResponse {
+export interface ToolsMetadataResponse {
   success: boolean;
   tools: Record<string, ToolMetadata>;
 }
@@ -79,6 +79,8 @@ export function useToolsMetadata() {
     gcTime: 1000 * 60 * 60 * 24, // Keep in cache for 24 hours
   });
 }
+
+
 
 
 

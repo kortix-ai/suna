@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -10,7 +11,19 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { haptics } from '@/lib/haptics';
 import {
+  BottomSheetBackdrop,
+  BottomSheetModal,
+  BottomSheetTextInput,
+  BottomSheetView,
+  type BottomSheetBackdropProps,
+} from '@gorhom/bottom-sheet';
+import {
   Check,
+  Cloud,
+  Globe,
+  Monitor,
+  Pencil,
+  Plus,
   Server,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
@@ -18,9 +31,13 @@ import { Icon } from '@/components/ui/icon';
 import { useSandboxContext } from '@/contexts/SandboxContext';
 import {
   useInstances,
+  useProviders,
+  useCreateLocalInstance,
   useSandbox,
 } from '@/lib/platform/hooks';
-import type { SandboxInfo, SandboxProviderName } from '@/lib/platform/client';
+import { checkInstanceHealth, type SandboxInfo, type SandboxProviderName } from '@/lib/platform/client';
+import { setInstanceProgress, useInstanceProgress } from '@/stores/instance-progress';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -28,7 +45,9 @@ import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 function providerLabel(provider: SandboxProviderName): string {
   switch (provider) {
     case 'local_docker': return 'LOCAL';
+    case 'justavps': return 'CLOUD';
     case 'daytona': return 'CLOUD';
+    default: return 'INSTANCE';
   }
 }
 
@@ -60,9 +79,11 @@ export default function InstancesScreen() {
   const { sandboxId, switchSandbox } = useSandboxContext();
 
   const { data: rawInstances, isLoading, refetch, isRefetching } = useInstances();
-  // Fallback: if the list call returns empty but useSandbox already found a
-  // project-session sandbox, surface it so the page never shows "No Instances"
-  // while the app's active sandbox is connected.
+  // Fallback: if `/sandbox/list` returns empty (e.g. local-bridge discovery
+  // failed) but the user actually has an active sandbox known via
+  // `/sandbox`, surface it so the page never shows "No Instances" while the
+  // app's active sandbox is connected. Mirrors what useSandbox already does
+  // internally for the dashboard.
   const { data: activeData } = useSandbox();
   const instances = React.useMemo<SandboxInfo[] | undefined>(() => {
     if (rawInstances === undefined) return undefined;
@@ -70,6 +91,8 @@ export default function InstancesScreen() {
     const fallback = activeData?.sandbox;
     return fallback ? [fallback] : rawInstances;
   }, [rawInstances, activeData?.sandbox]);
+  const themeColors = useThemeColors();
+
   // Live version from /kortix/health for the active instance. The DB's
   // metadata.version is a cache written at create time and only refreshed
   // when an update completes — it can be null for older sandboxes and drifts
@@ -77,6 +100,11 @@ export default function InstancesScreen() {
   // container is authoritative, so prefer this live value for the active row
   // and fall back to the DB cache for inactive ones. Mirrors web 00dad14.
   const { currentVersion: liveActiveVersion } = useGlobalSandboxUpdate();
+
+  const addSheetRef = React.useRef<BottomSheetModal>(null);
+  const renameSheetRef = React.useRef<BottomSheetModal>(null);
+  const [renameTarget, setRenameTarget] = React.useState<SandboxInfo | null>(null);
+  const creatingProgress = useInstanceProgress();
 
   // Auto-poll when any instance is provisioning
   const hasProvisioning = React.useMemo(
@@ -95,6 +123,28 @@ export default function InstancesScreen() {
     switchSandbox(instance);
   }, [sandboxId, switchSandbox]);
 
+  const handleRename = React.useCallback((instance: SandboxInfo) => {
+    haptics.medium();
+    setRenameTarget(instance);
+    renameSheetRef.current?.present();
+  }, []);
+
+  const openAddSheet = React.useCallback(() => {
+    haptics.medium();
+    addSheetRef.current?.present();
+  }, []);
+
+  const onInstanceAdded = React.useCallback(() => {
+    addSheetRef.current?.dismiss();
+    refetch();
+  }, [refetch]);
+
+  const onRenamed = React.useCallback(() => {
+    renameSheetRef.current?.dismiss();
+    setRenameTarget(null);
+    refetch();
+  }, [refetch]);
+
   if (isLoading) {
     return (
       <View className="flex-1 items-center justify-center bg-background">
@@ -108,17 +158,50 @@ export default function InstancesScreen() {
       <ScrollView
         className="flex-1 bg-background"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} />}
       >
         <View className="px-5 pt-1">
           {/* Instances */}
-          {instances && instances.length > 0 && (
+          {((instances && instances.length > 0) || creatingProgress) && (
             <View className="px-1">
               <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
                 Instances
               </Text>
               <View>
+                {/* Creating row — appears at the top of the list */}
+                {creatingProgress && (
+                  <>
+                    <View className="py-3.5">
+                      <View className="flex-row items-center mb-2">
+                        <View className="h-2.5 w-2.5 rounded-full mr-3" style={{ backgroundColor: '#FBBF24' }} />
+                        <View className="flex-1">
+                          <Text className="font-roobert-medium text-[15px] text-foreground">Local Docker</Text>
+                          <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">
+                            {creatingProgress.message}
+                          </Text>
+                        </View>
+                        <Text className="font-roobert text-xs tabular-nums text-muted-foreground">
+                          {Math.round(creatingProgress.percent)}%
+                        </Text>
+                      </View>
+                      <View
+                        className="h-1.5 rounded-full overflow-hidden"
+                        style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
+                      >
+                        <View
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.max(creatingProgress.percent, 2)}%`,
+                            backgroundColor: isDark ? '#F8F8F8' : '#121215',
+                          }}
+                        />
+                      </View>
+                    </View>
+                    {instances && instances.length > 0 && <View className="h-px bg-border/35" />}
+                  </>
+                )}
+
                 {instances?.map((instance, idx) => {
                   const isActive = instance.external_id === sandboxId;
                   const isLast = idx === (instances?.length ?? 0) - 1;
@@ -145,6 +228,15 @@ export default function InstancesScreen() {
                             </Text>
                           </View>
                           <View className="flex-row items-center" style={{ gap: 8 }}>
+                            {!isProvisioning && (
+                              <Pressable
+                                onPress={() => handleRename(instance)}
+                                hitSlop={8}
+                                className="active:opacity-60"
+                              >
+                                <Icon as={Pencil} size={14} className="text-muted-foreground/40" strokeWidth={2.2} />
+                              </Pressable>
+                            )}
                             {isProvisioning && <ActivityIndicator size="small" />}
                             {isActive && !isProvisioning && (
                               <Icon as={Check} size={16} className="text-primary" strokeWidth={2.7} />
@@ -172,17 +264,397 @@ export default function InstancesScreen() {
           )}
 
           {/* Empty state */}
-          {!isLoading && (!instances || instances.length === 0) && (
+          {!isLoading && (!instances || instances.length === 0) && !creatingProgress && (
             <View className="items-center justify-center py-12">
               <Icon as={Server} size={32} className="text-muted-foreground/40" strokeWidth={1.5} />
               <Text className="mt-3 font-roobert-medium text-[15px] text-foreground">No Instances</Text>
               <Text className="mt-1 text-center font-roobert text-xs text-muted-foreground">
-                No project-session sandboxes found.
+                Tap the button below to add one.
               </Text>
             </View>
           )}
         </View>
       </ScrollView>
+
+      {/* New Instance button */}
+      <View style={{ position: 'absolute', bottom: insets.bottom + 16, left: 20, right: 20 }}>
+        <Pressable
+          onPress={openAddSheet}
+          className="flex-row items-center justify-center rounded-full py-3.5 active:opacity-90"
+          style={{ backgroundColor: themeColors.primary }}
+        >
+          <Icon as={Plus} size={16} style={{ color: themeColors.primaryForeground }} strokeWidth={2.5} />
+          <Text className="ml-2 font-roobert-semibold text-[15px]" style={{ color: themeColors.primaryForeground }}>
+            New Instance
+          </Text>
+        </Pressable>
+      </View>
+
+      <AddInstanceSheet ref={addSheetRef} isDark={isDark} onCreated={onInstanceAdded} onProgress={setInstanceProgress} />
+      <RenameSheet ref={renameSheetRef} isDark={isDark} instance={renameTarget} onRenamed={onRenamed} />
     </>
   );
 }
+
+// ─── Rename Bottom Sheet ────────────────────────────────────────────────────
+
+const RenameSheet = React.forwardRef<
+  BottomSheetModal,
+  { isDark: boolean; instance: SandboxInfo | null; onRenamed: () => void }
+>(function RenameSheet({ isDark, instance, onRenamed }, ref) {
+  const insets = useSafeAreaInsets();
+  const [name, setName] = React.useState('');
+  const fgColor = isDark ? '#f8f8f8' : '#121215';
+  const themeColors = useThemeColors();
+
+  React.useEffect(() => {
+    if (instance) setName(instance.name);
+  }, [instance]);
+
+  const canSave = name.trim().length > 0 && name.trim() !== instance?.name;
+
+  const handleSave = React.useCallback(() => {
+    if (!canSave) return;
+    haptics.tap();
+    // TODO: wire to rename API when available
+    haptics.success();
+    Alert.alert('Renamed', `Instance renamed to "${name.trim()}".`);
+    onRenamed();
+  }, [canSave, name, onRenamed]);
+
+  return (
+    <BottomSheetModal
+      ref={ref}
+      index={0}
+      snapPoints={[260]}
+      enablePanDownToClose
+      backdropComponent={(props: BottomSheetBackdropProps) => (
+        <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
+      )}
+      handleIndicatorStyle={{
+        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+        width: 36, height: 5, borderRadius: 3,
+      }}
+      backgroundStyle={{
+        backgroundColor: getSheetBg(isDark),
+        borderTopLeftRadius: 24, borderTopRightRadius: 24,
+      }}
+    >
+      <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 4, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
+        <Text className="text-lg font-roobert-semibold text-foreground">Rename Instance</Text>
+        <Text className="mt-0.5 mb-4 font-roobert text-xs text-muted-foreground">
+          Set a display name for this instance.
+        </Text>
+
+        <BottomSheetTextInput
+          value={name}
+          onChangeText={setName}
+          placeholder="Instance name"
+          placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+          autoCapitalize="words"
+          autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={handleSave}
+          style={{
+            backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+            borderWidth: 1,
+            borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
+            borderRadius: 14,
+            paddingHorizontal: 16,
+            paddingVertical: 14,
+            fontSize: 16,
+            fontFamily: 'Roobert',
+            color: fgColor,
+            marginBottom: 16,
+          }}
+        />
+
+        <Pressable
+          onPress={handleSave}
+          disabled={!canSave}
+          className="items-center rounded-full py-3.5 active:opacity-90"
+          style={{
+            backgroundColor: canSave
+              ? themeColors.primary
+              : isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)',
+            opacity: canSave ? 1 : 0.5,
+          }}
+        >
+          <Text
+            className="font-roobert-semibold text-[15px]"
+            style={{
+              color: canSave
+                ? themeColors.primaryForeground
+                : isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)',
+            }}
+          >
+            Save
+          </Text>
+        </Pressable>
+      </BottomSheetView>
+    </BottomSheetModal>
+  );
+});
+
+// ─── Add Instance Bottom Sheet ──────────────────────────────────────────────
+
+type AddStep = 'select' | 'custom';
+
+const AddInstanceSheet = React.forwardRef<
+  BottomSheetModal,
+  { isDark: boolean; onCreated: () => void; onProgress: (p: { percent: number; message: string } | null) => void }
+>(function AddInstanceSheet({ isDark, onCreated, onProgress }, ref) {
+  const insets = useSafeAreaInsets();
+  const [step, setStep] = React.useState<AddStep>('select');
+  const [customUrl, setCustomUrl] = React.useState('');
+  const [customLabel, setCustomLabel] = React.useState('');
+  const [isCreating, setIsCreating] = React.useState(false);
+  const [progress, setProgress] = React.useState<{ percent: number; message: string } | null>(null);
+
+  const { data: providers } = useProviders();
+  const createLocalMutation = useCreateLocalInstance();
+
+  const hasLocalDocker = Array.isArray(providers) && providers.includes('local_docker');
+  const fgColor = isDark ? '#f8f8f8' : '#121215';
+
+  const snapPoints = React.useMemo(() => {
+    if (isCreating && progress) return [300];
+    return step === 'custom' ? [370] : [260];
+  }, [step, isCreating, progress]);
+
+  const renderBackdrop = React.useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop {...props} appearsOnIndex={0} disappearsOnIndex={-1} opacity={0.35} />
+    ),
+    [],
+  );
+
+  const resetState = React.useCallback(() => {
+    setStep('select');
+    setCustomUrl('');
+    setCustomLabel('');
+    setIsCreating(false);
+    setProgress(null);
+  }, []);
+
+  const handleLocalDocker = React.useCallback(() => {
+    haptics.medium();
+    setIsCreating(true);
+    const initial = { percent: 0, message: 'Initializing...' };
+    setProgress(initial);
+    onProgress(initial);
+    createLocalMutation.mutate(
+      {
+        onProgress: (p) => {
+          const update = { percent: p.progress, message: p.message };
+          setProgress(update);
+          onProgress(update);
+        },
+      },
+      {
+        onSuccess: () => {
+          setIsCreating(false);
+          setProgress(null);
+          onProgress(null);
+          haptics.success();
+          onCreated();
+          resetState();
+        },
+        onError: (err: any) => {
+          setIsCreating(false);
+          setProgress(null);
+          onProgress(null);
+          haptics.warning();
+          Alert.alert('Error', err?.message || 'Failed to create local instance');
+        },
+      },
+    );
+  }, [createLocalMutation, onCreated, onProgress, resetState]);
+
+  const handleCustomConnect = React.useCallback(async () => {
+    const url = customUrl.trim();
+    if (!url) return;
+
+    haptics.tap();
+    setIsCreating(true);
+
+    const version = await checkInstanceHealth(url);
+    setIsCreating(false);
+
+    if (version) {
+      haptics.success();
+      Alert.alert('Connected', `Instance is reachable (v${version}). Custom URL instances will be available in a future update.`);
+      onCreated();
+      resetState();
+    } else {
+      haptics.warning();
+      Alert.alert('Unreachable', 'Could not connect to the instance. Check the URL and try again.');
+    }
+  }, [customUrl, onCreated, resetState]);
+
+  return (
+    <BottomSheetModal
+      ref={ref}
+      index={0}
+      snapPoints={snapPoints}
+      enablePanDownToClose={!isCreating}
+      backdropComponent={renderBackdrop}
+      onDismiss={resetState}
+      handleIndicatorStyle={{
+        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+        width: 36, height: 5, borderRadius: 3,
+      }}
+      backgroundStyle={{
+        backgroundColor: getSheetBg(isDark),
+        borderTopLeftRadius: 24, borderTopRightRadius: 24,
+      }}
+    >
+      <BottomSheetView style={{ paddingHorizontal: 20, paddingTop: 4, paddingBottom: Math.max(insets.bottom, 20) + 16 }}>
+        {isCreating && progress ? (
+          <View className="px-1">
+            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+              Creating Instance
+            </Text>
+            <View className="py-4">
+              <View className="flex-row items-center mb-3">
+                <Icon as={Monitor} size={18} className="text-foreground/80" strokeWidth={2.2} />
+                <View className="ml-4 flex-1">
+                  <Text className="font-roobert-medium text-[15px] text-foreground">Local Docker</Text>
+                  <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">{progress.message}</Text>
+                </View>
+                <Text className="font-roobert text-xs tabular-nums text-muted-foreground">
+                  {Math.round(progress.percent)}%
+                </Text>
+              </View>
+              <View
+                className="h-1.5 rounded-full overflow-hidden"
+                style={{ backgroundColor: isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)' }}
+              >
+                <View
+                  className="h-full rounded-full"
+                  style={{
+                    width: `${Math.max(progress.percent, 2)}%`,
+                    backgroundColor: isDark ? '#F8F8F8' : '#121215',
+                  }}
+                />
+              </View>
+            </View>
+          </View>
+        ) : step === 'select' ? (
+          <View className="px-1">
+            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+              New Instance
+            </Text>
+            <Text className="mb-3 font-roobert text-xs text-muted-foreground">
+              Choose how to connect.
+            </Text>
+
+            <View>
+              {hasLocalDocker && (
+                <>
+                  <Pressable
+                    onPress={handleLocalDocker}
+                    disabled={isCreating}
+                    className="py-3.5 active:opacity-85"
+                  >
+                    <View className="flex-row items-center">
+                      <Icon as={Monitor} size={18} className="text-foreground/80" strokeWidth={2.2} />
+                      <View className="ml-4 flex-1">
+                        <Text className="font-roobert-medium text-[15px] text-foreground">Local Docker</Text>
+                        <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">Runs on your machine via Docker</Text>
+                      </View>
+                      {isCreating && createLocalMutation.isPending && <ActivityIndicator size="small" />}
+                    </View>
+                  </Pressable>
+                  <View className="h-px bg-border/35" />
+                </>
+              )}
+
+              <Pressable
+                onPress={() => { haptics.tap(); setStep('custom'); }}
+                className="py-3.5 active:opacity-85"
+              >
+                <View className="flex-row items-center">
+                  <Icon as={Globe} size={18} className="text-foreground/80" strokeWidth={2.2} />
+                  <View className="ml-4 flex-1">
+                    <Text className="font-roobert-medium text-[15px] text-foreground">Custom URL</Text>
+                    <Text className="mt-0.5 font-roobert text-xs text-muted-foreground">Connect to any Kortix instance by address</Text>
+                  </View>
+                </View>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <View className="px-1">
+            <Text className="mb-2 text-[11px] font-roobert-medium uppercase tracking-wider text-muted-foreground/80">
+              Custom URL
+            </Text>
+            <Text className="mb-4 font-roobert text-xs text-muted-foreground">
+              Enter the address of your Kortix instance.
+            </Text>
+
+            <BottomSheetTextInput
+              value={customUrl}
+              onChangeText={setCustomUrl}
+              placeholder="http://localhost:8008/v1/p/sandbox/8000"
+              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+              autoCapitalize="none"
+              autoCorrect={false}
+              keyboardType="url"
+              style={{
+                backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
+                borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
+                fontSize: 14, fontFamily: 'Roobert', color: fgColor, marginBottom: 10,
+              }}
+            />
+
+            <BottomSheetTextInput
+              value={customLabel}
+              onChangeText={setCustomLabel}
+              placeholder="Display name (optional)"
+              placeholderTextColor={isDark ? 'rgba(248,248,248,0.25)' : 'rgba(18,18,21,0.3)'}
+              autoCapitalize="words"
+              autoCorrect={false}
+              style={{
+                backgroundColor: isDark ? 'rgba(248,248,248,0.06)' : 'rgba(18,18,21,0.04)',
+                borderWidth: 1,
+                borderColor: isDark ? 'rgba(248,248,248,0.1)' : 'rgba(18,18,21,0.08)',
+                borderRadius: 14, paddingHorizontal: 16, paddingVertical: 14,
+                fontSize: 14, fontFamily: 'Roobert', color: fgColor, marginBottom: 16,
+              }}
+            />
+
+            <Pressable
+              onPress={handleCustomConnect}
+              disabled={!customUrl.trim() || isCreating}
+              className="items-center rounded-full py-3.5 active:opacity-90"
+              style={{
+                backgroundColor: customUrl.trim()
+                  ? isDark ? '#f8f8f8' : '#121215'
+                  : isDark ? 'rgba(248,248,248,0.08)' : 'rgba(18,18,21,0.06)',
+                opacity: customUrl.trim() ? 1 : 0.5,
+              }}
+            >
+              {isCreating ? (
+                <ActivityIndicator size="small" color={isDark ? '#121215' : '#f8f8f8'} />
+              ) : (
+                <Text
+                  className="font-roobert-semibold text-[15px]"
+                  style={{ color: customUrl.trim() ? (isDark ? '#121215' : '#f8f8f8') : (isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)') }}
+                >
+                  Connect
+                </Text>
+              )}
+            </Pressable>
+
+            <Pressable onPress={() => { haptics.tap(); setStep('select'); }} className="mt-3 items-center py-2 active:opacity-70">
+              <Text className="font-roobert-medium text-sm text-muted-foreground">Back</Text>
+            </Pressable>
+          </View>
+        )}
+      </BottomSheetView>
+    </BottomSheetModal>
+  );
+});

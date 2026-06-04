@@ -1,11 +1,25 @@
+/**
+ * Triggers Module
+ *
+ * Trigger management functionality
+ */
+
+export * from './api';
+export * from './hooks';
+
 export {
+  triggerKeys,
+  useAllTriggers,
   useAgentTriggers,
-  useComposioAppTriggers,
-  useComposioAppsWithTriggers,
-  useCreateComposioEventTrigger,
+  useTrigger,
   useCreateTrigger,
+  useUpdateTrigger,
   useDeleteTrigger,
   useToggleTrigger,
-  useTrigger,
-  useUpdateTrigger,
+  useTriggerProviders,
+  useTriggerApps,
+  useComposioAppsWithTriggers,
+  useComposioAppTriggers,
+  useCreateComposioEventTrigger,
 } from './hooks';
+

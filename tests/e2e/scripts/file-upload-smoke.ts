@@ -15,13 +15,21 @@
  *
  * Exit 0 = all assertions passed.
  */
+import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { optionalEnvValue } from '../helpers/env';
 
 const REPO_ROOT = resolve(import.meta.dir, '../../..');
 const API_ENV = resolve(REPO_ROOT, 'apps/api/.env');
 const WEB_ENV = resolve(REPO_ROOT, 'apps/web/.env');
 
+function fromEnvFile(file: string, key: string): string | null {
+  try {
+    const m = readFileSync(file, 'utf8').match(new RegExp(`^${key}=(.+)$`, 'm'));
+    return m ? m[1].trim().replace(/^["']|["']$/g, '') : null;
+  } catch {
+    return null;
+  }
+}
 function need(value: string | null | undefined, what: string): string {
   if (!value) { console.error(`[upload] missing ${what}`); process.exit(2); }
   return value;
@@ -29,9 +37,9 @@ function need(value: string | null | undefined, what: string): string {
 
 const API = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const SUPABASE = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
-const SERVICE_KEY = need(process.env.E2E_SERVICE_ROLE_KEY || optionalEnvValue('SUPABASE_SERVICE_ROLE_KEY', API_ENV), 'SUPABASE_SERVICE_ROLE_KEY');
-const ANON_KEY = need(process.env.E2E_ANON_KEY || optionalEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY', WEB_ENV), 'SUPABASE anon key');
-const OPENROUTER = process.env.E2E_OPENROUTER_API_KEY || optionalEnvValue('OPENROUTER_API_KEY', API_ENV);
+const SERVICE_KEY = need(process.env.E2E_SERVICE_ROLE_KEY || fromEnvFile(API_ENV, 'SUPABASE_SERVICE_ROLE_KEY'), 'SUPABASE_SERVICE_ROLE_KEY');
+const ANON_KEY = need(process.env.E2E_ANON_KEY || fromEnvFile(WEB_ENV, 'NEXT_PUBLIC_SUPABASE_ANON_KEY'), 'SUPABASE anon key');
+const OPENROUTER = process.env.E2E_OPENROUTER_API_KEY || fromEnvFile(API_ENV, 'OPENROUTER_API_KEY');
 const MODEL = process.env.E2E_MODEL || 'openrouter/openai/gpt-4o-mini';
 const [MODEL_PROVIDER, ...MODEL_REST] = MODEL.split('/');
 const MODEL_ID = MODEL_REST.join('/');
@@ -86,7 +94,7 @@ async function proxy(ext: string, method: string, path: string, init?: RequestIn
   return { status: res.status, json, text };
 }
 
-const DB_URL = process.env.E2E_DATABASE_URL || optionalEnvValue('DATABASE_URL', API_ENV) || 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+const DB_URL = process.env.E2E_DATABASE_URL || fromEnvFile(API_ENV, 'DATABASE_URL') || 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 
 // Seed a funded credit account for the given account so billing-gated session
 // creation passes in dev. Idempotent (upsert). Uses psql against the local DB.

@@ -11,8 +11,10 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
+  TouchableOpacity,
   RefreshControl,
 } from 'react-native';
+import { Text } from '@/components/ui/text';
 import { Text as RNText } from 'react-native';
 import {
   Plus,
@@ -25,11 +27,16 @@ import {
   WifiOff,
   Monitor,
   Terminal,
+  HardDrive,
   ChevronRight,
   AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  RefreshCw,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import * as Clipboard from 'expo-clipboard';
 import {
@@ -53,6 +60,7 @@ import {
   useTunnelAuditLogs,
   SCOPE_REGISTRY,
   formatRelativeTime,
+  formatTunnelDate,
   type TunnelConnection,
   type ScopeInfo,
 } from '@/hooks/useTunnel';
@@ -71,6 +79,7 @@ interface TunnelTabPageProps {
 
 export function TunnelTabPage({
   page,
+  onBack,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -78,6 +87,8 @@ export function TunnelTabPage({
 }: TunnelTabPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
+  const fgColor = isDark ? '#F8F8F8' : '#121215';
 
   return (
     <View style={{ flex: 1, backgroundColor: isDark ? '#121215' : '#F8F8F8' }}>
@@ -126,6 +137,7 @@ function TunnelContent() {
 
   const fg = isDark ? '#f8f8f8' : '#121215';
   const muted = isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)';
+  const subtleBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.02)';
   const borderColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
   const cardBg = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.01)';
   const accent = theme.primary;
@@ -305,23 +317,23 @@ function TunnelContent() {
 
             {/* Machine info */}
             {item.machineInfo && (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                {Boolean(item.machineInfo.hostname) ? (
-                  <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginRight: 6, marginBottom: 6 }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                {item.machineInfo.hostname && (
+                  <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
                     <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>
                       {String(item.machineInfo.hostname)}
                     </RNText>
                   </View>
-                ) : null}
-                {Boolean(item.machineInfo.platform) ? (
-                  <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginRight: 6, marginBottom: 6 }}>
+                )}
+                {item.machineInfo.platform && (
+                  <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
                     <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>
                       {String(item.machineInfo.platform)}
                     </RNText>
                   </View>
-                ) : null}
+                )}
                 {item.lastHeartbeatAt && (
-                  <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3, marginRight: 6, marginBottom: 6 }}>
+                  <View style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 }}>
                     <RNText style={{ fontSize: 11, fontFamily: 'Roobert', color: muted }}>
                       {formatRelativeTime(item.lastHeartbeatAt)}
                     </RNText>
@@ -353,7 +365,7 @@ function TunnelContent() {
 
 const CreateTunnelSheet = React.forwardRef<
   BottomSheetModal,
-  { renderBackdrop: (props: any) => React.ReactElement }
+  { renderBackdrop: (props: any) => JSX.Element }
 >(function CreateTunnelSheet({ renderBackdrop }, ref) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -469,7 +481,7 @@ type DetailTab = 'permissions' | 'audit' | 'connection';
 
 interface TunnelDetailSheetProps {
   tunnel: TunnelConnection | null;
-  renderBackdrop: (props: any) => React.ReactElement;
+  renderBackdrop: (props: any) => JSX.Element;
   onDelete: (tunnel: TunnelConnection) => void;
   onDismiss: () => void;
 }
@@ -489,6 +501,8 @@ const TunnelDetailSheet = React.forwardRef<BottomSheetModal, TunnelDetailSheetPr
     const accentBg = theme.primaryLight;
     const dangerBg = isDark ? 'rgba(239,68,68,0.08)' : 'rgba(239,68,68,0.05)';
     const dangerBorder = isDark ? 'rgba(239,68,68,0.2)' : 'rgba(239,68,68,0.15)';
+    const tabActiveBg = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.06)';
+    const tabBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.03)';
     const rowBg = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)';
 
     const [activeTab, setActiveTab] = useState<DetailTab>('permissions');

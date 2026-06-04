@@ -7,7 +7,7 @@
  * - Unified / side-by-side view toggle
  * - Expandable file cards that fill available space
  */
-import React, { forwardRef, useMemo, useState, useCallback } from 'react';
+import React, { forwardRef, useMemo, useState, useCallback, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ import {
   LayoutAnimation,
   ScrollView,
   ActivityIndicator,
+  useWindowDimensions,
 } from 'react-native';
 import {
   BottomSheetModal,
@@ -108,6 +109,12 @@ function tokenizeCodeLine(line: string): CodeToken[] {
   return tokens;
 }
 
+function getExtFromPath(filePath: string): string {
+  const dot = filePath.lastIndexOf('.');
+  if (dot < 0) return '';
+  return filePath.slice(dot + 1).toLowerCase();
+}
+
 /** Syntax token colors — same as web's Shiki-style highlighting */
 const SYNTAX_COLORS = {
   keyword: (d: boolean) => d ? '#c4b5fd' : '#7c3aed',      // purple
@@ -170,12 +177,14 @@ const MAX_DIFF_LINES = 500;
 function HighlightedDiffLine({
   text,
   lineType,
+  ext,
   isDark,
   fs,
   lh,
 }: {
   text: string;
   lineType: DiffLine['type'];
+  ext: string;
   isDark: boolean;
   fs: number;
   lh: number;
@@ -195,12 +204,15 @@ function HighlightedDiffLine({
 function UnifiedDiffView({
   lineDiff,
   isDark,
+  filename,
 }: {
   lineDiff: DiffLine[];
   isDark: boolean;
+  filename: string;
 }) {
   const fs = 11;
   const lh = 18;
+  const ext = getExtFromPath(filename);
 
   return (
     <View style={{ paddingVertical: 6 }}>
@@ -238,7 +250,7 @@ function UnifiedDiffView({
               {isRemoved ? '−' : isAdded ? '+' : ' '}
             </Text>
             {/* Code — syntax highlighted */}
-            <HighlightedDiffLine text={line.text} lineType={line.type} isDark={isDark} fs={fs} lh={lh} />
+            <HighlightedDiffLine text={line.text} lineType={line.type} ext={ext} isDark={isDark} fs={fs} lh={lh} />
           </View>
         );
       })}
@@ -310,13 +322,16 @@ function buildSplitLines(lineDiff: DiffLine[]): SplitLine[] {
 function SplitDiffView({
   lineDiff,
   isDark,
+  filename,
 }: {
   lineDiff: DiffLine[];
   isDark: boolean;
+  filename: string;
 }) {
   const splitLines = useMemo(() => buildSplitLines(lineDiff), [lineDiff]);
   const fs = 9.5;
   const lh = 15;
+  const ext = getExtFromPath(filename);
 
   const getSideBg = (type: string) => {
     if (type === 'removed') return isDark ? 'rgba(239,68,68,0.06)' : 'rgba(239,68,68,0.05)';
@@ -361,7 +376,7 @@ function SplitDiffView({
             }}
           >
             {row.left.text ? (
-              <HighlightedDiffLine text={row.left.text} lineType={toDiffType(row.left.type)} isDark={isDark} fs={fs} lh={lh} />
+              <HighlightedDiffLine text={row.left.text} lineType={toDiffType(row.left.type)} ext={ext} isDark={isDark} fs={fs} lh={lh} />
             ) : (
               <Text style={{ fontSize: fs, fontFamily: monoFont, lineHeight: lh, paddingVertical: 1 }}> </Text>
             )}
@@ -375,7 +390,7 @@ function SplitDiffView({
             }}
           >
             {row.right.text ? (
-              <HighlightedDiffLine text={row.right.text} lineType={toDiffType(row.right.type)} isDark={isDark} fs={fs} lh={lh} />
+              <HighlightedDiffLine text={row.right.text} lineType={toDiffType(row.right.type)} ext={ext} isDark={isDark} fs={fs} lh={lh} />
             ) : (
               <Text style={{ fontSize: fs, fontFamily: monoFont, lineHeight: lh, paddingVertical: 1 }}> </Text>
             )}
@@ -540,9 +555,9 @@ function FileDiffCard({
             showsVerticalScrollIndicator
           >
             {viewMode === 'split' ? (
-              <SplitDiffView lineDiff={lineDiff} isDark={isDark} />
+              <SplitDiffView lineDiff={lineDiff} isDark={isDark} filename={diff.file} />
             ) : (
-              <UnifiedDiffView lineDiff={lineDiff} isDark={isDark} />
+              <UnifiedDiffView lineDiff={lineDiff} isDark={isDark} filename={diff.file} />
             )}
           </ScrollView>
         </View>

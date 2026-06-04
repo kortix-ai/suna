@@ -248,6 +248,30 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
     channelRef.current = channel;
   }, [isAuthenticated, user, handlePresenceChange, handlePresenceDelete]);
 
+  const clearPresence = useCallback(async () => {
+    if (DISABLE_PRESENCE || !sessionId || !API_URL) {
+      return;
+    }
+    
+    try {
+      const token = await getAuthToken();
+      if (!token) return;
+
+      await fetch(`${API_URL}/presence/clear?token=${token}&session_id=${sessionId}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      
+      await AsyncStorage.removeItem(SESSION_STORAGE_KEY);
+    } catch (error) {
+      log.error('[Presence] Failed to clear presence:', error);
+    }
+  }, [sessionId]);
+
   const setActiveThreadId = useCallback((threadId: string | null) => {
     const normalized = threadId || null;
     
@@ -350,3 +374,4 @@ export function usePresenceContext() {
   }
   return context;
 }
+

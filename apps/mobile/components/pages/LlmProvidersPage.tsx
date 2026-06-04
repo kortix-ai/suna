@@ -26,10 +26,12 @@ import {
   ChevronDown,
   ChevronUp,
   Cpu,
+  Check,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { ProviderLogo } from '@/components/providers/ProviderLogo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { haptics } from '@/lib/haptics';
 import {
   BottomSheetModal,
@@ -46,6 +48,7 @@ import { useSandboxContext } from '@/contexts/SandboxContext';
 import { useOpenCodeProviders, flattenModels } from '@/lib/opencode/hooks/use-opencode-data';
 import type { ProviderInfo, FlatModel } from '@/lib/opencode/hooks/use-opencode-data';
 import { getAuthToken } from '@/api/config';
+import { log } from '@/lib/logger';
 import {
   EMPTY_CUSTOM_FORM,
   validateCustomProviderForm,
@@ -235,7 +238,7 @@ interface LlmProvidersPageProps {
   isRightDrawerOpen?: boolean;
 }
 
-export function LlmProvidersPage({ page, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: LlmProvidersPageProps) {
+export function LlmProvidersPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isDrawerOpen, isRightDrawerOpen }: LlmProvidersPageProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();

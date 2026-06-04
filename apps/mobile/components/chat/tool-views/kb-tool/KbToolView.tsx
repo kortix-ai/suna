@@ -33,6 +33,7 @@ export function KbToolView({ toolCall, toolResult, isStreaming = false, assistan
   const toolName = toolCall.function_name || '';
   const isInit = toolName.includes('init');
   const isSearch = toolName.includes('search');
+  const isList = toolName.includes('ls') || toolName.includes('list');
   const isSync = toolName.includes('sync');
 
   const totalItems = (data.files?.length || 0) + (data.folders?.length || 0) + (data.items?.length || 0);
