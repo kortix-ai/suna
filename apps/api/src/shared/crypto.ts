@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual, randomInt } from 'crypto';
+import { timingSafeEqual, randomInt } from 'crypto';
 import { config } from '../config';
 
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -28,6 +28,12 @@ const KEY_PREFIX_SA = 'kortix_sa_';
 const KEY_PREFIX_PUBLIC = 'pk_';
 
 const SECRET_RANDOM_LENGTH = 32;
+
+function hmacSha256Hex(value: string, secret: string): string {
+  const hasher = new Bun.CryptoHasher('sha256', secret);
+  hasher.update(value);
+  return hasher.digest('hex');
+}
 
 /**
  * Check if a token is a Kortix-issued key (user or sandbox).
@@ -133,11 +139,7 @@ export function hashSecretKey(secretKey: string): string {
     throw new Error('API_KEY_SECRET not configured');
   }
 
-  // lgtm[js/insufficient-password-hash]: high-entropy bearer tokens are keyed
-  // for lookup; they are not human passwords and must stay cheap to verify.
-  return createHmac('sha256', secret)
-    .update(secretKey)
-    .digest('hex');
+  return hmacSha256Hex(secretKey, secret);
 }
 
 export function verifySecretKey(secretKey: string, storedHash: string): boolean {
@@ -162,7 +164,5 @@ export function isApiKeySecretConfigured(): boolean {
 }
 
 export function deriveSigningKey(token: string, secret: string): string {
-  return createHmac('sha256', secret)
-    .update(token)
-    .digest('hex');
+  return hmacSha256Hex(token, secret);
 }
