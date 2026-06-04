@@ -378,9 +378,9 @@ export function RepoBrowser({ className }: { className?: string }) {
         </span>
       </div>
 
-      <div className="grid h-[520px] grid-cols-[148px_minmax(0,1fr)] sm:grid-cols-[200px_minmax(0,1fr)]">
+      <div className="grid h-[520px] grid-rows-[auto_minmax(0,1fr)] sm:grid-cols-[200px_minmax(0,1fr)] sm:grid-rows-1">
         {/* file tree */}
-        <div className="overflow-y-auto border-r border-border/60 bg-muted/[0.18] p-2">
+        <div className="max-h-[150px] overflow-y-auto border-b border-border/60 bg-muted/[0.18] p-2 sm:max-h-none sm:border-b-0 sm:border-r">
           {TREE.map((node) => (
             <TreeRow
               key={node.name}
