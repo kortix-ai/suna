@@ -14,7 +14,8 @@ import {
   revokeAccountToken,
 } from '../repositories/account-tokens';
 import { sendAccountInviteEmail, buildInviteUrl } from './email';
-import { authorize, ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
+import { ACCOUNT_ACTIONS } from '../iam/actions';
+import { assertAuthorized, authorize } from '../iam/dispatcher';
 import { onMemberAdded, onMemberRemoved } from '../billing/services/seat-management';
 
 function defaultAccountName(email: string | null | undefined): string {

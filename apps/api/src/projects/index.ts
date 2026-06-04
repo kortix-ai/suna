@@ -93,10 +93,12 @@ import { lookupUserIdByEmail } from '../shared/users';
 import {
   ACCOUNT_ACTIONS,
   PROJECT_ACTIONS,
+} from '../iam/actions';
+import {
   authorize,
   assertAuthorized,
   listAccessibleResources,
-} from '../iam';
+} from '../iam/dispatcher';
 import { deriveRequestContext } from '../iam/cache';
 import {
   isSecretUsableBy,

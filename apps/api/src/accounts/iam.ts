@@ -20,11 +20,10 @@ import { db } from '../shared/db';
 import type { AppEnv } from '../types';
 import {
   ACCOUNT_ACTIONS,
-  assertAuthorized,
-  authorize,
   resourceTypeForAction,
   type ResourceType,
-} from '../iam';
+} from '../iam/actions';
+import { assertAuthorized, authorize } from '../iam/dispatcher';
 import {
   addGroupMembers,
   createGroup,

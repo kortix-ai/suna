@@ -18,7 +18,8 @@ import { db } from '../shared/db';
 import { generateWebhookSecret } from '../shared/audit-webhooks';
 import { recordAuditEvent } from '../shared/audit';
 import type { AppEnv } from '../types';
-import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
+import { ACCOUNT_ACTIONS } from '../iam/actions';
+import { assertAuthorized } from '../iam/dispatcher';
 
 export const auditRouter = new Hono<AppEnv>();
 
