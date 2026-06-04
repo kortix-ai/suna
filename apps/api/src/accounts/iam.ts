@@ -326,9 +326,7 @@ iamRouter.post('/:accountId/iam/groups/:groupId/members', async (c) => {
   const body = await readBody(c);
   const userIds: string[] = Array.isArray(body.userIds)
     ? body.userIds.filter((v): v is string => typeof v === 'string')
-    : typeof body.userId === 'string'
-      ? [body.userId]
-      : [];
+    : [];
   if (userIds.length === 0) return c.json({ error: 'userIds required' }, 400);
 
   const result = await addGroupMembers({ accountId, groupId, userIds, addedBy: userId });

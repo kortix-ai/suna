@@ -170,7 +170,7 @@ flow(
         .as(ctx.P.OWNER)
         .post(
           "/v1/accounts/:accountId/iam/groups/:groupId/members",
-          { userId: member.userId! },
+          { userIds: [member.userId!] },
           { params: { accountId: team.id, groupId } },
         );
       r.status(200).body().has("$.added", 1);
@@ -190,7 +190,7 @@ flow(
         .as(member)
         .post(
           "/v1/accounts/:accountId/iam/groups/:groupId/members",
-          { userId: member.userId! },
+          { userIds: [member.userId!] },
           { params: { accountId: team.id, groupId } },
         );
       r.status(403);
