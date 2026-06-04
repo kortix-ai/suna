@@ -12,7 +12,6 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { spawn } from "child_process";
 import { resolve, dirname } from "path";
-import { tmpdir } from "os";
 import { existsSync, unlinkSync } from "fs";
 
 // ── Mock tunnel server ────────────────────────────────────────────────────
