@@ -11,7 +11,8 @@
 //   - PATCH  /:accountId/audit/webhooks/:id
 //   - DELETE /:accountId/audit/webhooks/:id
 
-import { Context, Hono } from 'hono';
+import { Context } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { and, asc, desc, eq, gte, like, lt, or, type SQL } from 'drizzle-orm';
 import { auditEvents, auditWebhooks } from '@kortix/db';
 import { db } from '../shared/db';
@@ -19,8 +20,63 @@ import { generateWebhookSecret } from '../shared/audit-webhooks';
 import { recordAuditEvent } from '../shared/audit';
 import type { AppEnv } from '../types';
 import { ACCOUNT_ACTIONS, assertAuthorized } from '../iam';
+import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 
-export const auditRouter = new Hono<AppEnv>();
+export const auditRouter = makeOpenApiApp<AppEnv>();
+
+const AccountIdParam = z.object({ accountId: z.string() });
+const AuditEventSchema = z
+  .object({
+    event_id: z.string(),
+    occurred_at: z.string(),
+    actor_user_id: z.string().nullable(),
+    action: z.string(),
+    resource_type: z.string().nullable(),
+    resource_id: z.string().nullable(),
+    before: z.any().nullable(),
+    after: z.any().nullable(),
+    ip: z.string().nullable(),
+    user_agent: z.string().nullable(),
+    metadata: z.any().nullable(),
+  })
+  .openapi('AuditEvent');
+const AuditListSchema = z
+  .object({ events: z.array(AuditEventSchema), next_cursor: z.string().nullable() })
+  .openapi('AuditEventList');
+const AuditWebhookSchema = z
+  .object({
+    webhook_id: z.string(),
+    name: z.string(),
+    url: z.string(),
+    enabled: z.boolean(),
+    action_prefix: z.string().nullable(),
+    last_delivered_at: z.string().nullable(),
+    last_error_at: z.string().nullable(),
+    last_error: z.string().nullable(),
+    created_at: z.string(),
+    updated_at: z.string(),
+    secret: z.string().optional(),
+  })
+  .openapi('AuditWebhook');
+const AuditWebhookListSchema = z
+  .object({ webhooks: z.array(AuditWebhookSchema) })
+  .openapi('AuditWebhookList');
+const AuditWebhookInputSchema = z
+  .object({
+    name: z.string(),
+    url: z.string(),
+    action_prefix: z.string().optional(),
+    actionPrefix: z.string().optional(),
+  })
+  .openapi('AuditWebhookCreate');
+const AuditWebhookPatchSchema = z
+  .object({
+    name: z.string().optional(),
+    enabled: z.boolean().optional(),
+    action_prefix: z.string().nullable().optional(),
+    actionPrefix: z.string().nullable().optional(),
+  })
+  .openapi('AuditWebhookPatch');
 
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
@@ -60,7 +116,28 @@ function buildFilters(
 //   ?since=ISO         — only events at or after this timestamp
 //   ?cursor=ISO|uuid   — keyset pagination cursor (occurredAt|eventId)
 //   ?limit=N           — default 50, max 200
-auditRouter.get('/:accountId/audit', async (c) => {
+auditRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/audit',
+    tags: ['accounts'],
+    summary: 'List audit events (cursor-paginated)',
+    ...auth,
+    request: {
+      params: AccountIdParam,
+      query: z.object({
+        action: z.string().optional(),
+        since: z.string().optional(),
+        cursor: z.string().optional(),
+        limit: z.string().optional(),
+      }),
+    },
+    responses: {
+      200: json(AuditListSchema, 'Audit events page'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
@@ -119,7 +196,8 @@ auditRouter.get('/:accountId/audit', async (c) => {
     })),
     next_cursor: nextCursor,
   });
-});
+  },
+);
 
 // ─── Export ───────────────────────────────────────────────────────────────
 // Streams an audit slice as CSV or JSONL. Same filter shape as the list
@@ -153,7 +231,33 @@ const CSV_HEADERS = [
   'metadata',
 ];
 
-auditRouter.get('/:accountId/audit/export', async (c) => {
+auditRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/audit/export',
+    tags: ['accounts'],
+    summary: 'Export audit events as CSV or JSONL',
+    ...auth,
+    request: {
+      params: AccountIdParam,
+      query: z.object({
+        format: z.enum(['csv', 'jsonl']).optional(),
+        action: z.string().optional(),
+        since: z.string().optional(),
+      }),
+    },
+    responses: {
+      200: {
+        description: 'Audit export stream',
+        content: {
+          'text/csv': { schema: z.string() },
+          'application/x-ndjson': { schema: z.string() },
+        },
+      },
+      ...errors(400, 401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.AUDIT_READ);
@@ -237,7 +341,8 @@ auditRouter.get('/:accountId/audit/export', async (c) => {
       'X-Audit-Capped': rows.length >= EXPORT_MAX ? 'true' : 'false',
     },
   });
-});
+  },
+);
 
 // ─── Webhooks ─────────────────────────────────────────────────────────────
 // Per-account HTTP destinations the audit pipeline POSTs to. Managed
@@ -271,7 +376,20 @@ function serializeWebhook(w: typeof auditWebhooks.$inferSelect, includeSecret = 
   };
 }
 
-auditRouter.get('/:accountId/audit/webhooks', async (c) => {
+auditRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{accountId}/audit/webhooks',
+    tags: ['accounts'],
+    summary: 'List audit webhooks',
+    ...auth,
+    request: { params: AccountIdParam },
+    responses: {
+      200: json(AuditWebhookListSchema, 'Audit webhooks'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -282,9 +400,27 @@ auditRouter.get('/:accountId/audit/webhooks', async (c) => {
     .where(eq(auditWebhooks.accountId, accountId))
     .orderBy(desc(auditWebhooks.createdAt));
   return c.json({ webhooks: rows.map((r) => serializeWebhook(r)) });
-});
+  },
+);
 
-auditRouter.post('/:accountId/audit/webhooks', async (c) => {
+auditRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{accountId}/audit/webhooks',
+    tags: ['accounts'],
+    summary: 'Create an audit webhook',
+    ...auth,
+    request: {
+      params: AccountIdParam,
+      body: { content: { 'application/json': { schema: AuditWebhookInputSchema } } },
+    },
+    responses: {
+      201: json(AuditWebhookSchema, 'Created webhook (secret shown once)'),
+      400: json(ErrorSchema, 'Bad request'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
@@ -348,9 +484,26 @@ auditRouter.post('/:accountId/audit/webhooks', async (c) => {
   // Reveal the secret EXACTLY ONCE so the admin can paste it into their
   // verification code. Subsequent GETs never include it.
   return c.json(serializeWebhook(row, true), 201);
-});
+  },
+);
 
-auditRouter.patch('/:accountId/audit/webhooks/:webhookId', async (c) => {
+auditRouter.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{accountId}/audit/webhooks/{webhookId}',
+    tags: ['accounts'],
+    summary: 'Update an audit webhook',
+    ...auth,
+    request: {
+      params: z.object({ accountId: z.string(), webhookId: z.string() }),
+      body: { content: { 'application/json': { schema: AuditWebhookPatchSchema } } },
+    },
+    responses: {
+      200: json(AuditWebhookSchema, 'Updated webhook'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const webhookId = c.req.param('webhookId');
@@ -406,9 +559,25 @@ auditRouter.patch('/:accountId/audit/webhooks/:webhookId', async (c) => {
   });
 
   return c.json(serializeWebhook(updated));
-});
+  },
+);
 
-auditRouter.delete('/:accountId/audit/webhooks/:webhookId', async (c) => {
+auditRouter.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{accountId}/audit/webhooks/{webhookId}',
+    tags: ['accounts'],
+    summary: 'Delete an audit webhook',
+    ...auth,
+    request: {
+      params: z.object({ accountId: z.string(), webhookId: z.string() }),
+    },
+    responses: {
+      200: json(z.object({ deleted: z.boolean() }), 'Deleted'),
+      ...errors(401, 403, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   const webhookId = c.req.param('webhookId');
@@ -437,4 +606,5 @@ auditRouter.delete('/:accountId/audit/webhooks/:webhookId', async (c) => {
   });
 
   return c.json({ deleted: true });
-});
+  },
+);

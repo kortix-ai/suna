@@ -1,5 +1,5 @@
-import { existsSync, statSync } from 'node:fs';
-import { basename, resolve } from 'node:path';
+import { existsSync, statSync, mkdirSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import {
   DEFAULT_STARTER_TEMPLATE_ID,
@@ -35,33 +35,29 @@ function agentSublabel(agent: CodingAgent): string {
   }
 }
 
-const HELP = `Usage: kortix init [options]
+const HELP = `Usage: kortix init [project-name] [options]
 
-Scaffold a Kortix project in the current directory. Drops kortix.toml at
-the repo root + a .kortix/ folder containing the Dockerfile and the
-OpenCode runtime config dir (default agent + Kortix system skill). Then
-wires the Kortix skill into whichever coding agents you pick
-(${SUPPORTED_AGENTS.join(', ')}) so they can configure the project for
-you.
+Start a new Kortix project.
 
-Behavior:
-  * If kortix.toml already exists, init refuses unless you pass --force.
-  * Existing files are preserved by default. Pass --overwrite to clobber.
-  * If the directory isn't a git repo, init runs \`git init -b main\`
-    (skip with --no-git).
+A fresh, self-contained workspace your agents can run from day one — the
+full OpenCode runtime, project memory, and a kortix.toml to make it yours.
+Standalone by design: like create-next-app, init always spins up a new
+project in its own directory; it never touches an existing one.
+
+Arguments:
+  project-name         Your project's name — and the directory it's created
+                       in. Prompted if omitted.
 
 Options:
-  --name <project>     Display name for kortix.toml. Defaults to cwd basename.
+  --name <project>     Alias for the positional project-name.
   --primary <agent>    Primary coding agent — featured in the get-started
                        panel (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
   --template <name>    Starter template: general-knowledge-worker (default) or minimal.
                        Use minimal to skip the general knowledge worker skills.
-  --force              Re-scaffold even if kortix.toml already exists.
-  --overwrite          Overwrite existing files (default: preserve).
-  --no-git             Don't run \`git init\` if the dir isn't a repo.
-  -y, --yes            Skip prompts; accept all defaults (primary only).
+  --no-git             Don't run \`git init\` in the new project directory.
+  -y, --yes            Skip prompts (requires a project-name).
   -h, --help           Show this help.
 `;
 
@@ -158,7 +154,10 @@ function parseFlags(argv: string[]): InitFlags {
       }
       default:
         if (arg.startsWith('-')) throw new Error(`kortix: unknown option "${arg}"`);
-        throw new Error(`kortix: unexpected argument "${arg}"`);
+        // Positional project name (the directory to create), like create-next-app.
+        if (f.name !== undefined) throw new Error(`kortix: unexpected extra argument "${arg}"`);
+        f.name = arg;
+        break;
     }
   }
   return f;
@@ -234,29 +233,34 @@ export async function runInit(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const cwd = process.cwd();
-  const existingManifest = existsSync(resolve(cwd, 'kortix.toml'));
-  if (existingManifest && !flags.force) {
-    process.stderr.write(
-      `kortix init: ${cwd} already has a kortix.toml.\n` +
-        `Pass --force to re-scaffold (will preserve other existing files unless --overwrite).\n`,
-    );
-    return 1;
-  }
-
   printBanner();
 
   // ── Resolve project name ─────────────────────────────────────────────
+  // `kortix init` ALWAYS creates a NEW standalone project in its own fresh
+  // directory (like `create-next-app`) — it never scaffolds into an existing
+  // folder. The project name IS the directory name.
   let projectName: string;
   if (flags.name) {
     projectName = normalizeProjectName(flags.name);
   } else if (flags.yes) {
-    projectName = normalizeProjectName(basename(cwd));
+    process.stderr.write(`kortix init: a project name is required — e.g. \`kortix init my-app\`.\n`);
+    return 2;
   } else {
-    const defaultName = basename(cwd);
-    const answer = await prompt(`Project name`, defaultName);
+    const answer = await prompt(`Project name`, 'my-kortix-project');
     projectName = normalizeProjectName(answer);
   }
+
+  // Create the project in a fresh directory next to the shell's cwd. Refuse to
+  // scaffold into an existing non-empty folder — a Kortix project is standalone.
+  const cwd = resolve(process.cwd(), projectName);
+  if (existsSync(cwd) && statSync(cwd).isDirectory() && readdirSync(cwd).length > 0) {
+    process.stderr.write(
+      `kortix init: "${projectName}" already exists and isn't empty.\n` +
+        `Pick a different name, or remove the directory first.\n`,
+    );
+    return 1;
+  }
+  mkdirSync(cwd, { recursive: true });
 
   // ── Resolve starter template ────────────────────────────────────────
   let template: StarterTemplateId;
@@ -363,6 +367,9 @@ export async function runInit(argv: string[]): Promise<number> {
     for (const f of agentInstall.skipped) lines.push(`  · ${f}`);
   }
   if (gitNote) lines.push(gitNote);
+  lines.push('');
+  lines.push('Next:');
+  lines.push(`  cd ${projectName}`);
   process.stdout.write(`${lines.join('\n')}\n`);
 
   // ── Get started panel ────────────────────────────────────────────────

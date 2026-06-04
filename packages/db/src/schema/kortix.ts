@@ -95,7 +95,6 @@ export const accounts = kortixSchema.table(
   {
     accountId: uuid('account_id').defaultRandom().primaryKey(),
     name: varchar('name', { length: 255 }).notNull(),
-    personalAccount: boolean('personal_account').default(true).notNull(),
     setupCompleteAt: timestamp('setup_complete_at', { withTimezone: true }),
     setupWizardStep: integer('setup_wizard_step').default(0).notNull(),
     // When true the IAM engine rejects every browser/JWT request whose

@@ -1,4 +1,6 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
+import type { AppEnv } from '../types';
+import { makeOpenApiApp, json } from '../openapi';
 import { versionRouter } from './routes/version';
 import { apiKeysRouter } from './routes/api-keys';
 
@@ -9,9 +11,20 @@ import { apiKeysRouter } from './routes/api-keys';
 //
 // Kept as a mount point so /v1/platform is reserved if we want to layer
 // admin-only platform routes here later.
-const platformApp = new Hono();
+const platformApp = makeOpenApiApp<AppEnv>();
 
-platformApp.get('/', (c) => c.json({ ok: true, message: 'platform' }));
+platformApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['platform'],
+    summary: 'Platform sub-app info',
+    responses: {
+      200: json(z.object({ ok: z.boolean(), message: z.string() }), 'Platform mount-point info'),
+    },
+  }),
+  (c) => c.json({ ok: true, message: 'platform' }),
+);
 platformApp.route('/api-keys', apiKeysRouter);
 platformApp.route('/sandbox/version', versionRouter);
 

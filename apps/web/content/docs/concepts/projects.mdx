@@ -17,6 +17,27 @@ Either way the project has a `default_branch` that every
 [session](/docs/concepts/sessions) branches from and every
 [change request](/docs/concepts/change-requests) merges into.
 
+## A project is a workspace, not your codebase
+
+Treat a project as a **standalone workspace** — the home for your agent and
+everything it needs to act: its instructions, its
+[connections](/docs/concepts/connections) to other tools, its
+[automations](/docs/concepts/triggers), and its memory. It can also hold things
+worth keeping around — documents, notes, generated files. Keep it small; it's
+cloned into every session.
+
+Your **code lives elsewhere**. When a task needs a codebase, the agent clones
+that repository on demand, does the work, and opens a pull request back to it.
+Large data and other systems are reached through
+[connections](/docs/concepts/connections), not copied in. The rule of thumb: if
+it's small and truly yours, keep it in the project; if it's large or lives
+somewhere else, reference it.
+
+So you don't turn an existing codebase into a project by dropping a `kortix.toml`
+into it — least of all a large monorepo, which would be cloned into every
+session. You create a **dedicated** project for the agent and point it at the
+repositories and tools it should work with.
+
 ## What the control plane reads from `kortix.toml`
 
 - `[project]` — name, description

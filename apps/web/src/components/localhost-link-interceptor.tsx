@@ -41,18 +41,19 @@ import {
 } from '@/lib/utils/sandbox-url';
 import { enrichPreviewMetadata } from '@/lib/utils/session-context';
 import {
+  getActivePanelSessionId,
   sessionPreviewTabId,
   useSessionBrowserStore,
 } from '@/stores/session-browser-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useTabStore } from '@/stores/tab-store';
 
-const SESSION_PATH_RE = /^\/projects\/[^/]+\/sessions\/([^/?#]+)(?:[/?#]|$)/;
-
+// The session's panel is keyed by the OpenCode chatSessionId (registered by the
+// active SessionLayout), NOT the Kortix session id in the URL — those differ,
+// so the URL id would write to a key nothing reads (panel opens but the Browser
+// tab never selects). Null off-session → fall back to opening externally.
 function getCurrentSessionId(): string | null {
-  if (typeof window === 'undefined') return null;
-  const m = window.location.pathname.match(SESSION_PATH_RE);
-  return m ? m[1] : null;
+  return getActivePanelSessionId();
 }
 
 export function LocalhostLinkInterceptor() {

@@ -208,3 +208,133 @@ flow("DEL-1", { domain: "accounts", routes: ["GET /v1/account/deletion-status"] 
     r.status(200);
   });
 });
+
+// ACCT-3 — GET a single account: a member reads it (200, with role + counts);
+// a NONMEMBER is forbidden (403).
+flow(
+  "ACCT-3",
+  { domain: "accounts", serial: true, routes: ["GET /v1/accounts/:accountId"] },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    await ctx.step("OWNER (member) reads the account → 200", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/accounts/:accountId", { params: { accountId: team.id } });
+      r.status(200).body().has("$.account_id", team.id).exists("$.role").exists("$.member_count");
+    });
+    await ctx.step("NONMEMBER → 403", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .get("/v1/accounts/:accountId", { params: { accountId: team.id } });
+      r.status(403);
+    });
+  },
+);
+
+// TOK-3 — account-PAT revoke semantics: revoke → 200; unknown/already-revoked
+// → 404; a revoked secret used on any route → 401.
+flow(
+  "TOK-3",
+  {
+    domain: "accounts",
+    serial: true,
+    routes: ["POST /v1/accounts/tokens", "DELETE /v1/accounts/tokens/:tokenId", "GET /v1/accounts/me"],
+  },
+  async (ctx) => {
+    let tokenId = "";
+    let secret = "";
+    await ctx.step("mint an account PAT", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).post("/v1/accounts/tokens", { name: ctx.fixtures.name("revoke") });
+      r.status(201).body().exists("$.secret_key").exists("$.token_id");
+      const j = r.json<any>();
+      tokenId = j.token_id;
+      secret = j.secret_key;
+    });
+    await ctx.step("secret authenticates before revoke → 200", async () => {
+      const r = await ctx.client.withBearer(secret).get("/v1/accounts/me");
+      r.status(200);
+    });
+    await ctx.step("revoke → 200 {ok:true}", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del("/v1/accounts/tokens/:tokenId", { params: { tokenId } });
+      r.status(200).body().has("$.ok", true);
+    });
+    await ctx.step("revoke again (already revoked) → 404", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).del("/v1/accounts/tokens/:tokenId", { params: { tokenId } });
+      r.status(404);
+    });
+    await ctx.step("revoke an unknown id → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/accounts/tokens/:tokenId", { params: { tokenId: "00000000-0000-0000-0000-000000000000" } });
+      r.status(404);
+    });
+    await ctx.step("revoked secret on any route → 401", async () => {
+      const r = await ctx.client.withBearer(secret).get("/v1/accounts/me");
+      r.status(401);
+    });
+  },
+);
+
+// TOK-4 — project-scoped PAT (enforceTokenProjectScope): allowed only on its
+// own project + the `/accounts/me` self-identity probe; every other surface
+// (a different project, project-list, account-level routes) → 403.
+flow(
+  "TOK-4",
+  {
+    domain: "accounts",
+    serial: true,
+    routes: [
+      "POST /v1/projects/:projectId/cli-token",
+      "DELETE /v1/projects/:projectId/cli-token/:tokenId",
+      "GET /v1/projects/:projectId",
+      "GET /v1/projects/:projectId/secrets",
+      "GET /v1/projects",
+      "GET /v1/accounts/me",
+      "GET /v1/accounts/tokens",
+    ],
+  },
+  async (ctx) => {
+    const projA = await ctx.fixtures.project();
+    const projB = await ctx.fixtures.project();
+    let secret = "";
+    let tokenId = "";
+    await ctx.step("mint a project-scoped PAT on project A", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/cli-token", { name: ctx.fixtures.name("proj-pat") }, { params: { projectId: projA.id } });
+      r.status(201).body().exists("$.secret_key").has("$.project_id", projA.id);
+      const j = r.json<any>();
+      secret = j.secret_key;
+      tokenId = j.token_id;
+    });
+    const pat = () => ctx.client.withBearer(secret, "PAT_PROJ");
+    await ctx.step("allowed: GET its own project → 200", async () => {
+      const r = await pat().get("/v1/projects/:projectId", { params: { projectId: projA.id } });
+      r.status(200);
+    });
+    await ctx.step("allowed: GET its own project's secrets → 200", async () => {
+      const r = await pat().get("/v1/projects/:projectId/secrets", { params: { projectId: projA.id } });
+      r.status(200);
+    });
+    await ctx.step("allowed: self-identity probe /accounts/me → 200", async () => {
+      const r = await pat().get("/v1/accounts/me");
+      r.status(200);
+    });
+    await ctx.step("denied: a different project → 403", async () => {
+      const r = await pat().get("/v1/projects/:projectId", { params: { projectId: projB.id } });
+      r.status(403);
+    });
+    await ctx.step("denied: enumerate projects → 403", async () => {
+      const r = await pat().get("/v1/projects");
+      r.status(403);
+    });
+    await ctx.step("denied: account-level route → 403", async () => {
+      const r = await pat().get("/v1/accounts/tokens");
+      r.status(403);
+    });
+    await ctx.step("revoke the project token → 200", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/cli-token/:tokenId", { params: { projectId: projA.id, tokenId } });
+      r.status(200).body().has("$.ok", true);
+    });
+  },
+);

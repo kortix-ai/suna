@@ -3,6 +3,7 @@ import { DEFAULT_READ_LIMIT, MAX_LINE_LENGTH } from './opencode-pty/src/shared/c
 import { formatLine, formatSessionInfo } from './opencode-pty/src/plugin/pty/formatters.ts'
 import { initPermissions, checkCommandPermission, checkWorkdirPermission } from './opencode-pty/src/plugin/pty/permissions.ts'
 import { initManager, manager } from './opencode-pty/src/plugin/pty/manager.ts'
+import { featureDisabled } from '../tools/lib/runtime-gate.ts'
 
 const ETX = String.fromCharCode(3)
 const EOT = String.fromCharCode(4)
@@ -69,6 +70,10 @@ function buildPtyOutput(
 }
 
 const PtyToolsPlugin: Plugin = async ({ client, directory, serverUrl }) => {
+  if (featureDisabled('pty')) {
+    console.log('[pty-tools] disabled by Kortix runtime policy — pty_* tools not registered')
+    return {}
+  }
   console.log('[pty-tools] plugin init')
   initPermissions(client, directory)
   initManager(client, serverUrl, directory)

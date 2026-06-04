@@ -39,7 +39,7 @@ interface Command {
 }
 
 const COMMANDS: readonly Command[] = [
-  { name: 'init', blurb: 'Scaffold a Kortix project in the current directory' },
+  { name: 'init', blurb: 'Start a new Kortix project (a fresh standalone directory)' },
   { name: '<project-name>', blurb: 'Create a new directory and scaffold it' },
   { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
   { name: 'validate', blurb: 'Statically validate this project\'s kortix.toml' },

@@ -1,0 +1,11 @@
+-- Remove the accounts.personal_account flag entirely.
+--
+-- The personal/team distinction is gone: an account is just an account, and
+-- "are you subscribed?" is answered per-account (the account that owns a
+-- project), never via a personal flag. The flag previously drove account
+-- display-name defaults, a "personal accounts can't be left" guard, and
+-- team-vs-personal UI — all removed in the same change. `drizzle-kit push
+-- --force` drops the column on schema sync; this migration makes the drop
+-- explicit + idempotent for environments where push is skipped (prod /
+-- externally-managed schema).
+ALTER TABLE kortix.accounts DROP COLUMN IF EXISTS personal_account;

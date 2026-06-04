@@ -7,13 +7,14 @@
  *   POST /v1/projects/legacy-migration/start        → start (durable, no cancel)
  *   GET  /v1/projects/legacy-migration/status       → poll progress
  */
-import type { Hono } from 'hono';
+import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { legacySandboxMigrations, sandboxes } from '@kortix/db';
 import { db } from '../shared/db';
 import { resolveScopedAccountId } from '../shared/resolve-account';
 import type { AppEnv } from '../types';
 import { startMigration, PHASE_ORDER } from './legacy-migration-runner';
+import { json, errors, auth, ErrorSchema } from '../openapi';
 
 // Legacy sandboxes worth offering a migration for. 'archived' is the post-
 // migration end state — still listed (as "Migrated", with an Open link) but not
@@ -62,9 +63,25 @@ async function latestMigration(sandboxId: string): Promise<MigrationRow | null> 
   return row ?? null;
 }
 
-export function registerLegacyMigrationRoutes(app: Hono<AppEnv>): void {
+export function registerLegacyMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
   // Eligibility + current state — what the /projects page calls on load.
-  app.get('/legacy-migration/eligibility', async (c) => {
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/legacy-migration/eligibility',
+      tags: ['projects'],
+      summary: 'Legacy sandbox migration eligibility for the account',
+      ...auth,
+      request: { query: z.object({ account_id: z.string().optional() }) },
+      responses: {
+        200: json(
+          z.object({ eligible: z.boolean(), sandboxes: z.array(z.any()) }),
+          'Eligibility and listed legacy sandboxes',
+        ),
+        ...errors(401),
+      },
+    }),
+    async (c: any) => {
     // Scope to the account the UI currently has selected (?account_id=), not the
     // user's primary membership — otherwise the same legacy machines (and their
     // "Migrated → Open" cards) would surface on every account's projects grid.
@@ -109,11 +126,36 @@ export function registerLegacyMigrationRoutes(app: Hono<AppEnv>): void {
     // Eligible = at least one machine the user can actually migrate right now.
     const eligible = items.some((i) => i.migratable);
     return c.json({ eligible, sandboxes: items });
-  });
+  },
+  );
 
   // Start (or return the in-flight) migration for one legacy sandbox. Idempotent
   // and uncancellable: there is intentionally no DELETE/cancel route.
-  app.post('/legacy-migration/start', async (c) => {
+  app.openapi(
+    createRoute({
+      method: 'post',
+      path: '/legacy-migration/start',
+      tags: ['projects'],
+      summary: 'Start a legacy sandbox migration',
+      ...auth,
+      request: {
+        body: {
+          content: {
+            'application/json': {
+              schema: z.object({ sandbox_id: z.string(), account_id: z.string().optional() }),
+            },
+          },
+        },
+      },
+      responses: {
+        200: json(z.object({ created: z.boolean(), migration: z.any() }), 'Existing in-flight migration'),
+        202: json(z.object({ created: z.boolean(), migration: z.any() }), 'Migration started'),
+        400: json(ErrorSchema, 'Bad request'),
+        404: json(ErrorSchema, 'Not found'),
+        ...errors(401),
+      },
+    }),
+    async (c: any) => {
     const accountId = await resolveScopedAccountId(c, 'body');
     const body = await c.req.json().catch(() => ({}));
     const sandboxId = typeof body?.sandbox_id === 'string' ? body.sandbox_id : null;
@@ -133,10 +175,26 @@ export function registerLegacyMigrationRoutes(app: Hono<AppEnv>): void {
 
     const { migration, created } = await startMigration({ database: db, sandboxId, accountId });
     return c.json({ created, migration: serializeMigration(migration) }, created ? 202 : 200);
-  });
+  },
+  );
 
   // Poll a single sandbox's migration progress.
-  app.get('/legacy-migration/status', async (c) => {
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/legacy-migration/status',
+      tags: ['projects'],
+      summary: "Poll a legacy sandbox's migration progress",
+      ...auth,
+      request: { query: z.object({ sandbox_id: z.string(), account_id: z.string().optional() }) },
+      responses: {
+        200: json(z.object({ migration: z.any() }), 'Migration progress'),
+        400: json(ErrorSchema, 'Bad request'),
+        404: json(ErrorSchema, 'Not found'),
+        ...errors(401),
+      },
+    }),
+    async (c: any) => {
     const accountId = await resolveScopedAccountId(c, 'query');
     const sandboxId = c.req.query('sandbox_id');
     if (!sandboxId) return c.json({ error: 'sandbox_id is required' }, 400);
@@ -149,5 +207,6 @@ export function registerLegacyMigrationRoutes(app: Hono<AppEnv>): void {
     if (!owned) return c.json({ error: 'Legacy sandbox not found for this account' }, 404);
 
     return c.json({ migration: serializeMigration(await latestMigration(sandboxId)) });
-  });
+  },
+  );
 }
