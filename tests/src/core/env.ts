@@ -142,26 +142,6 @@ export function loadEnv(): Env {
   return cached;
 }
 
-/**
- * Hard safety preflight before any destructive (data-creating) run.
- * Mirrors the getSafeTestDbUrl guard pattern: refuse to run against an env we
- * can't positively identify as a test/dev target, and require explicit confirm.
- */
-export function assertSafeForDestructive(env: Env): void {
-  if (env.target === "prod") {
-    throw new Error(
-      `Refusing to run destructive flows against a prod target (${env.apiUrl}). ` +
-        `Prod runs must use --smoke (read-mostly) only.`,
-    );
-  }
-  if (!env.liveConfirm) {
-    throw new Error(
-      "Destructive live flows require KE2E_LIVE_CONFIRM to be set (acknowledges that real " +
-        "accounts/projects/sandboxes will be created and torn down against the target).",
-    );
-  }
-}
-
 export function describeEnv(env: Env): string {
   const caps = Object.entries(env.capabilities)
     .filter(([, v]) => v)

@@ -780,10 +780,6 @@ importers:
         version: 5.9.3
 
   tests:
-    dependencies:
-      zod:
-        specifier: ^3.23.8
-        version: 3.25.76
     devDependencies:
       '@playwright/test':
         specifier: ^1.52.0

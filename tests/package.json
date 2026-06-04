@@ -33,9 +33,6 @@
     "list": "bun bin/ke2e.ts list",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {
-    "zod": "^3.23.8"
-  },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
     "@types/bun": "latest",
