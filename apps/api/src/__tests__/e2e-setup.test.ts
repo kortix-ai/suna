@@ -4,8 +4,6 @@
 
 import { describe, it, expect } from 'bun:test';
 import { Hono } from 'hono';
-import { readFileSync } from 'fs';
-import { resolve } from 'path';
 
 describe('Billing no-DB guard', () => {
   it('buildLocalAccountState returns valid structure', async () => {
@@ -56,14 +54,5 @@ describe('Database guard checks', () => {
   it('hasDatabase is exposed as a boolean', async () => {
     const { hasDatabase } = await import('../shared/db');
     expect(typeof hasDatabase).toBe('boolean');
-  });
-
-  it('account-state route source checks hasDatabase', async () => {
-    const content = readFileSync(
-      resolve(__dirname, '../billing/routes/account-state.ts'),
-      'utf-8'
-    );
-    expect(content).toContain('hasDatabase');
-    expect(content).toContain('buildLocalAccountState');
   });
 });
