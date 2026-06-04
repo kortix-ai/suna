@@ -24,6 +24,20 @@ import { startStaticWebServer } from './static-web'
 // prompts into the same opencode conversation instead of opening a fresh
 // session with no context.
 const OPENCODE_SESSION_PIN_PATH = '/var/run/kortix/opencode-session-id'
+const OPENCODE_SESSION_ID_RE = /^[A-Za-z0-9_-]{1,128}$/
+
+function normalizeOpencodeSessionId(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const id = value.trim()
+  return OPENCODE_SESSION_ID_RE.test(id) ? id : null
+}
+
+function pinOpencodeSessionId(sessionId: string): void {
+  const id = normalizeOpencodeSessionId(sessionId)
+  if (!id) throw new Error('invalid opencode session id')
+  mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
+  writeFileSync(OPENCODE_SESSION_PIN_PATH, id, 'utf8')
+}
 
 async function main() {
   const bootTime = Date.now()
@@ -240,24 +254,24 @@ async function maybeCreateInitialOpencodeSession(
 
   const sessionRes = await waitForInitialSessionCreate(baseUrl, workspace)
   const session = (await sessionRes.json()) as { id?: string }
-  if (!session.id) throw new Error('opencode session create returned no id')
+  const sessionId = normalizeOpencodeSessionId(session.id)
+  if (!sessionId) throw new Error('opencode session create returned invalid id')
 
   if (!prompt) {
     try {
-      mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
-      writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
+      pinOpencodeSessionId(sessionId)
     } catch (err) {
       logger.warn('[boot] failed to pin opencode session id', err)
     }
-    bootState.initialOpenCodeSessionId = session.id
+    bootState.initialOpenCodeSessionId = sessionId
     bootMark('opencode-session-created')
-    logger.info('[boot] initial opencode session created', { sessionId: session.id })
+    logger.info('[boot] initial opencode session created', { sessionId })
     return
   }
 
   const model = resolveOpencodeModel()
   const promptRes = await fetch(
-    `${baseUrl}/session/${session.id}/prompt_async?directory=${encodeURIComponent(workspace)}`,
+    `${baseUrl}/session/${encodeURIComponent(sessionId)}/prompt_async?directory=${encodeURIComponent(workspace)}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -272,14 +286,13 @@ async function maybeCreateInitialOpencodeSession(
     throw new Error(`opencode prompt failed: ${promptRes.status} ${await promptRes.text()}`)
   }
   try {
-    mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
-    writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
+    pinOpencodeSessionId(sessionId)
   } catch (err) {
     logger.warn('[boot] failed to pin opencode session id', err)
   }
-  bootState.initialOpenCodeSessionId = session.id
+  bootState.initialOpenCodeSessionId = sessionId
   bootMark('opencode-session-created')
-  logger.info('[boot] initial prompt delivered', { sessionId: session.id })
+  logger.info('[boot] initial prompt delivered', { sessionId })
 }
 
 async function waitForInitialSessionCreate(baseUrl: string, workspace: string): Promise<Response> {
@@ -394,7 +407,7 @@ export function readPinnedOpencodeSessionId(): string | null {
   try {
     if (!existsSync(OPENCODE_SESSION_PIN_PATH)) return null
     const id = readFileSync(OPENCODE_SESSION_PIN_PATH, 'utf8').trim()
-    return id.length > 0 ? id : null
+    return normalizeOpencodeSessionId(id)
   } catch {
     return null
   }

@@ -38,7 +38,7 @@ export function createPromptRouter(cfg: Config): Hono {
 
     const workspace = process.env.KORTIX_WORKSPACE || '/workspace'
     const baseUrl = `http://127.0.0.1:${cfg.opencodeInternalPort}`
-    const url = `${baseUrl}/session/${opencodeSessionId}/prompt_async?directory=${encodeURIComponent(
+    const url = `${baseUrl}/session/${encodeURIComponent(opencodeSessionId)}/prompt_async?directory=${encodeURIComponent(
       workspace,
     )}`
 
