@@ -36,7 +36,12 @@ const password = 'E2eSandboxTpl123!';
 const api = createApiResultClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
-interface AccountSummary { account_id: string; personal_account: boolean }
+interface AccountSummary {
+  account_id: string;
+  personal_account?: boolean;
+  is_primary_owner?: boolean;
+  account_role?: 'owner' | 'admin' | 'member';
+}
 interface TemplateCreateResult { template_id: string; slug: string }
 
 async function openSandboxSection(page: Page, projectId: string) {
@@ -66,7 +71,9 @@ test.describe('12 — Sandbox templates UI', () => {
       'GET',
       '/accounts',
     );
-    const personalAccount = accounts.json?.find((account) => account.personal_account);
+    const personalAccount = accounts.json?.find(
+      (account) => account.personal_account || account.is_primary_owner || account.account_role === 'owner',
+    );
     expect(personalAccount?.account_id).toBeTruthy();
     projectId = seedSelfHostedProject({
       accountId: personalAccount!.account_id,

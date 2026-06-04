@@ -23,7 +23,8 @@ const authOptions = { supabaseUrl, password };
 interface AccountSummary {
   account_id: string;
   name: string;
-  personal_account: boolean;
+  personal_account?: boolean;
+  is_primary_owner?: boolean;
   account_role: 'owner' | 'admin' | 'member';
 }
 
@@ -231,7 +232,7 @@ test.describe.serial('10 - SPEC production golden paths', () => {
     ownerSession = await signIn(ownerEmail, authOptions);
 
     const accounts = await api<AccountSummary[]>(ownerSession.access_token, 'GET', '/accounts');
-    expect(accounts.some((item) => item.personal_account)).toBe(true);
+    expect(accounts.some((item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner')).toBe(true);
 
     account = await api<AccountSummary>(
       ownerSession.access_token,
@@ -248,7 +249,9 @@ test.describe.serial('10 - SPEC production golden paths', () => {
     const accountProjectName = `golden-account-${runId}`;
 
     const ownerAccounts = await api<AccountSummary[]>(ownerSession.access_token, 'GET', '/accounts');
-    const personalAccount = ownerAccounts.find((item) => item.personal_account);
+    const personalAccount = ownerAccounts.find(
+      (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
+    );
     expect(personalAccount).toBeTruthy();
     expect(ownerAccounts.map((item) => item.account_id)).toContain(account.account_id);
 

@@ -16,7 +16,8 @@ const authOptions = { supabaseUrl, password };
 interface AccountSummary {
   account_id: string;
   name: string;
-  personal_account: boolean;
+  personal_account?: boolean;
+  is_primary_owner?: boolean;
   account_role: 'owner' | 'admin' | 'member';
 }
 
@@ -204,7 +205,9 @@ test.describe.serial('11 - SPEC auth boundaries, concurrency, and SLOs', () => {
     await createAuthUser(ownerEmail, authOptions);
     const ownerSession = await signIn(ownerEmail, authOptions);
     const accounts = await api<AccountSummary[]>(ownerSession.access_token, 'GET', '/accounts');
-    const personalAccount = accounts.find((account) => account.personal_account);
+    const personalAccount = accounts.find(
+      (account) => account.personal_account || account.is_primary_owner || account.account_role === 'owner',
+    );
     expect(personalAccount).toBeTruthy();
     const project = await api<ProjectSummary>(
       ownerSession.access_token,

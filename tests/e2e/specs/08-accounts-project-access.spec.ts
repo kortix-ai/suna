@@ -18,7 +18,8 @@ type ProjectRole = 'manager' | 'editor' | 'viewer';
 interface AccountSummary {
   account_id: string;
   name: string;
-  personal_account: boolean;
+  personal_account?: boolean;
+  is_primary_owner?: boolean;
   account_role: AccountRole;
 }
 
@@ -155,7 +156,9 @@ test.describe('08 — Accounts, invites, and project access', () => {
     const memberSession = await signIn(memberEmail, authOptions);
 
     const ownerInitialAccounts = await api<AccountSummary[]>(ownerSession.access_token, 'GET', '/accounts');
-    const ownerPersonalAccount = ownerInitialAccounts.find((item) => item.personal_account);
+    const ownerPersonalAccount = ownerInitialAccounts.find(
+      (item) => item.personal_account || item.is_primary_owner || item.account_role === 'owner',
+    );
     expect(ownerPersonalAccount).toBeTruthy();
     await api<AccountSummary[]>(memberSession.access_token, 'GET', '/accounts');
 
