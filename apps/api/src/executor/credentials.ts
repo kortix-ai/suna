@@ -4,7 +4,7 @@
  * Credentials are separate (executor_credentials), one row per (connector, user)
  * — user NULL = the shared project credential, a set user = that member's own
  * (per_user mode). Values are encrypted with the project key and resolved
- * server-side only.
+ * server-side only. See docs/specs/executor.md §5–6.
  */
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 import {
@@ -14,7 +14,7 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { decryptProjectSecret, encryptProjectSecret } from '../projects/secrets';
-import { intentToScope, type SecretGrant, type SharingIntent } from './share';
+import { intentToScope, type SecretGrant, type ShareScope, type SharingIntent } from './share';
 
 /* ─── access (connector sharing) ──────────────────────────────────────────── */
 
@@ -117,3 +117,5 @@ export async function upsertCredential(opts: {
   // Reflect "connected" in the connector status.
   await db.update(executorConnectors).set({ status: 'active', updatedAt: new Date() }).where(eq(executorConnectors.connectorId, opts.connectorId));
 }
+
+export type { ShareScope };

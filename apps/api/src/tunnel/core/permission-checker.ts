@@ -5,7 +5,7 @@ import type { TunnelFilesystemScope, TunnelShellScope, TunnelPermissionScope } f
 import { db } from '../../shared/db';
 import type { TunnelCapability } from 'agent-tunnel';
 
-interface PermissionCheckResult {
+export interface PermissionCheckResult {
   allowed: boolean;
   permissionId?: string;
   reason?: string;

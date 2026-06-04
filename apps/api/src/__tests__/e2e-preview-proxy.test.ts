@@ -15,7 +15,6 @@ import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { createHmac, timingSafeEqual } from 'crypto';
 import { runWithContext } from '../lib/request-context';
 
 // ─── Mock state ──────────────────────────────────────────────────────────────
@@ -63,8 +62,8 @@ mock.module('../middleware/auth', () => ({
     c.set('userEmail', 'test@kortix.dev');
     await next();
   },
-  supabaseAuth: async (_c: any, next: any) => { await next(); },
-  apiKeyAuth: async (_c: any, next: any) => { await next(); },
+  supabaseAuth: async (c: any, next: any) => { await next(); },
+  apiKeyAuth: async (c: any, next: any) => { await next(); },
 }));
 
 // DB mock — simulate sandbox + membership queries
@@ -93,10 +92,10 @@ mock.module('../shared/db', () => {
           return [];
         };
         return {
-          from: (_table: any) => ({
+          from: (table: any) => ({
             // `.where(...)` is both awaitable (resolveShareSubject awaits it
             // directly, expecting an array) and chainable via `.limit(n)`.
-            where: (_condition: any) => ({
+            where: (condition: any) => ({
               limit: (n: number) => Promise.resolve(rowsFor().slice(0, n)),
               then: (resolve: (rows: any[]) => unknown, reject?: (reason: unknown) => unknown) =>
                 Promise.resolve(rowsFor()).then(resolve, reject),
@@ -122,6 +121,7 @@ mock.module('../shared/preview-ownership', () => ({
     userId && mockDbSandbox && mockDbMembership
       ? { userId, sandboxId: mockDbSandbox.sandboxId ?? sandboxId, sandboxRole: 'member', scopes: ['*'] }
       : null,
+  clearPreviewOwnershipCache: () => {},
 }));
 
 // Daytona SDK mock
@@ -130,7 +130,7 @@ mock.module('../shared/daytona', () => ({
     get: async (sandboxId: string) => {
       if (mockDaytonaGetError) throw mockDaytonaGetError;
       return {
-        getPreviewLink: async (_port: number) => {
+        getPreviewLink: async (port: number) => {
           if (mockPreviewLinkError) throw mockPreviewLinkError;
           return { url: mockPreviewUrl, token: mockPreviewToken };
         },
@@ -143,7 +143,11 @@ mock.module('../shared/daytona', () => ({
 }));
 
 mock.module('../config', () => ({
-  config: {},
+  config: {
+    isDaytonaEnabled: () => true,
+    isLocalDockerEnabled: () => false,
+    isJustAVPSEnabled: () => false,
+  },
 }));
 
 mock.module('../projects/secrets', () => {
@@ -156,6 +160,7 @@ mock.module('../projects/secrets', () => {
     revision: `rev-${projectId}`,
   });
   return {
+    listProjectSecretsSnapshot: async (projectId: string) => snapshot(projectId),
     listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
   };
 });
@@ -195,24 +200,7 @@ function mockFetch(url: string | URL | Request, init?: RequestInit): Promise<Res
 // ─── Import proxy app AFTER mocks ────────────────────────────────────────────
 
 const { sandboxProxyApp } = await import('../sandbox-proxy/index');
-const { KORTIX_USER_CONTEXT_HEADER } = await import('../shared/kortix-user-context');
-
-function base64urlEncode(buf: Buffer): string {
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-function verifySignedContext(token: string | undefined, secret: string) {
-  expect(token).toBeTruthy();
-  const [payloadB64, sig, extra] = token!.split('.');
-  expect(extra).toBeUndefined();
-  expect(payloadB64).toBeTruthy();
-  expect(sig).toBeTruthy();
-
-  const expected = base64urlEncode(createHmac('sha256', secret).update(payloadB64!).digest());
-  expect(Buffer.from(sig!).length).toBe(Buffer.from(expected).length);
-  expect(timingSafeEqual(Buffer.from(sig!), Buffer.from(expected))).toBe(true);
-  return JSON.parse(Buffer.from(payloadB64!, 'base64url').toString('utf8'));
-}
+const { verifyKortixUserContext, KORTIX_USER_CONTEXT_HEADER } = await import('../shared/kortix-user-context');
 
 // ─── Test app factory ────────────────────────────────────────────────────────
 
@@ -520,13 +508,16 @@ describe('Preview proxy: forwarding', () => {
 
     const signedContext = mockFetchCalls[0].headers[KORTIX_USER_CONTEXT_HEADER.toLowerCase()];
     expect(signedContext).toBeTruthy();
-    const context = verifySignedContext(signedContext, TEST_SERVICE_KEY);
-    expect(context).toMatchObject({
-      userId: TEST_USER_ID,
-      sandboxId: TEST_SESSION_SANDBOX_ID,
-      sandboxRole: 'member',
-      scopes: ['*'],
-    });
+    const verified = verifyKortixUserContext(signedContext, TEST_SERVICE_KEY);
+    expect(verified.ok).toBe(true);
+    if (verified.ok) {
+      expect(verified.context).toMatchObject({
+        userId: TEST_USER_ID,
+        sandboxId: TEST_SESSION_SANDBOX_ID,
+        sandboxRole: 'member',
+        scopes: ['*'],
+      });
+    }
   });
 
   test('marks proxied session sandbox and owning session as active usage', async () => {
@@ -712,7 +703,7 @@ describe('Preview proxy: retry exhaustion', () => {
     // To do this, make all fetch calls throw
     const savedFetch = globalThis.fetch;
     let callCount = 0;
-    globalThis.fetch = ((_url: any) => {
+    globalThis.fetch = ((url: any) => {
       callCount++;
       return Promise.reject(new Error('Connection refused'));
     }) as any;

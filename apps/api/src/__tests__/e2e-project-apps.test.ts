@@ -7,7 +7,7 @@
  * `[[apps]]` config shape is exercised (the user explicitly asked).
  */
 import { beforeEach, describe, expect, test, mock } from 'bun:test';
-import { mockIamEngineAllowAll } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -108,6 +108,8 @@ process.env.KORTIX_APPS_EXPERIMENTAL = 'true';
 
 mockIamEngineAllowAll();
 
+mockIamMembershipSyncNoop();
+
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -149,7 +151,10 @@ mock.module('../projects/git', () => ({
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
   deleteRemoteSessionBranch: async () => undefined,
+  diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
+  getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
+  resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
@@ -172,25 +177,27 @@ mock.module("../snapshots/builder", () => ({
 }));
 
 mock.module('../projects/github', () => ({
+  parseGitHubRepoUrl: () => null,
   buildGitHubAppInstallUrl: () => '',
+  createGitHubAppJwt: () => 'jwt-test',
+  verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
     nonce: 'test-nonce',
     issuedAt: Math.floor(Date.now() / 1000),
   }),
   getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
+  addCollaborator: async () => undefined,
   commitFile: async (opts: { path: string; content: string; message: string }) => {
     repoFiles.set(opts.path, opts.content);
     commitCalls.push({ path: opts.path, message: opts.message, content: opts.content });
   },
   createInstallationToken: async () => ({ token: 't' }),
   createRepo: async () => { throw new Error('not used'); },
+  deleteFile: async () => {},
   deleteRepo: async () => undefined,
-  addCollaborator: async () => undefined,
   getBranchCommitSha: async () => 'a'.repeat(40),
   createBranchRef: async () => undefined,
-  parseGitHubRepoUrl: () => ({ owner: 'kortix-org', repo: 'apps-project' }),
-  deleteFile: async () => {},
   getFileSha: async (opts: { path: string }) => (repoFiles.has(opts.path) ? `sha-${opts.path}` : null),
   getGitHubAppInstallation: async () => ({ account: { login: 'x', type: 'Organization' }, repository_selection: 'all', permissions: {} }),
   getRepo: async () => ({
@@ -239,6 +246,7 @@ mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),
   listProjectSecrets: async () => ({}),
+  listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
   listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
   getProjectSecretValue: async () => null,
 }));

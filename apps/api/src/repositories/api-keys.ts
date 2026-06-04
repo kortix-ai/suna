@@ -11,9 +11,9 @@ import {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-type ApiKeyType = 'user' | 'sandbox';
+export type ApiKeyType = 'user' | 'sandbox';
 
-interface ApiKeyValidationResult {
+export interface ApiKeyValidationResult {
   isValid: boolean;
   accountId?: string;
   sandboxId?: string;
@@ -22,7 +22,7 @@ interface ApiKeyValidationResult {
   error?: string;
 }
 
-interface CreateApiKeyParams {
+export interface CreateApiKeyParams {
   sandboxId: string;
   accountId: string;
   title: string;

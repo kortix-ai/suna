@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { creditAccounts } from '@kortix/db';
 import { db } from '../../shared/db';
 
-type LegacyStripeSyncResult = {
+export type LegacyStripeSyncResult = {
   status:
     | 'already_synced'
     | 'no_customer'
@@ -82,11 +82,8 @@ export async function syncLegacyStripeSubscription(
     if (customerId) candidateCustomerIds.add(customerId);
 
     if (customerEmail) {
-      const escapedEmail = customerEmail
-        .replace(/\\/g, '\\\\')
-        .replace(/'/g, "\\'");
       const customers = await stripe.customers.search({
-        query: `email:'${escapedEmail}'`,
+        query: `email:'${customerEmail.replace(/'/g, "\\'")}'`,
         limit: 10,
       });
 
@@ -196,6 +193,10 @@ export async function syncLegacyStripeSubscription(
             active: true,
             provider: 'stripe',
           });
+
+          console.log(
+            `[legacy-stripe-sync] Synced Stripe sub ${subscription.id} → tier=${tierConfig.name} for ${accountId} (customer=${candidateCustomerId})`,
+          );
         }
 
         return result;

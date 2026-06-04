@@ -2,13 +2,13 @@ import { config } from '../../config';
 
 // === Key Injection Methods ===
 
-type KeyInjectionMethod =
+export type KeyInjectionMethod =
   | { type: 'json_body_field'; field: string }
   | { type: 'header'; headerName: string; prefix?: string };
 
 // === Allowed Route Definition ===
 
-interface AllowedRoute {
+export interface AllowedRoute {
   /** Path to match. Exact match unless prefixMatch is true. */
   path: string;
   /** Allowed HTTP methods */
@@ -109,6 +109,18 @@ export function getProxyServices(): Record<string, ProxyServiceConfig> {
       getKortixApiKey: () => config.REPLICATE_API_TOKEN,
       keyInjection: { type: 'header', headerName: 'Authorization', prefix: 'Token ' },
       allowedRoutes: [
+        // Allowed models — locked to specific models, each with own billing.
+        // (Official-model form: `replicate.run("owner/name")` → /v1/models/.../predictions.)
+        {
+          path: '/v1/models/google/nano-banana/predictions',
+          methods: ['POST'],
+          billingToolName: 'proxy_replicate_nano_banana',
+        },
+        {
+          path: '/v1/models/openai/gpt-image-1.5/predictions',
+          methods: ['POST'],
+          billingToolName: 'proxy_replicate_gpt_image',
+        },
         // Moondream2 vision captioning — used by the sandbox `image_search` tool to
         // enrich image results with descriptions. The Replicate SDK runs a *versioned*
         // community model via `POST /predictions` (with `version` in the body), so the

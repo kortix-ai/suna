@@ -4,14 +4,15 @@
  * sharing), resolves the credential SERVER-SIDE, runs the call, audits it.
  * The sandbox never holds an app secret.
  *
- * Policy enforcement is layered:
+ * Policy enforcement is layered (docs/specs/executor.md §8):
  *   1. project-level [[policies]] (fully-qualified patterns) — admin guardrails
  *   2. connector-level [[connectors.policies]] (relative patterns) — connector-author rules
  *   3. risk-derived default (when `default_mode = risk`) or always_run (`allow_all`)
  *
  * Written against an injectable `GatewayDeps` so the full decision+execution
  * path is unit-tested with fakes (incl. a mocked third party). The HTTP router
- * (router.ts) wires real DB/secret deps.
+ * (router.ts) wires real DB/secret deps. `enforcePolicies` exists for back-compat
+ * with the original allow-all engine; production sets it true.
  */
 import {
   resolveEffectiveAction,
@@ -49,7 +50,7 @@ export interface GatewayAction {
   binding: ActionBinding;
 }
 
-interface ExecutionRecord {
+export interface ExecutionRecord {
   accountId: string;
   projectId: string;
   connectorId: string | null;
@@ -95,9 +96,11 @@ export interface GatewayDeps {
     accountId: string;
     userId: string | null;
   }): Promise<ExecResult>;
+  /** OFF disables ALL policy checks (legacy allow-all). Default ON. */
+  enforcePolicies?: boolean;
 }
 
-interface CallInput {
+export interface CallInput {
   projectId: string;
   accountId: string;
   subject: ShareSubject;
@@ -108,7 +111,7 @@ interface CallInput {
   args?: Record<string, unknown>;
 }
 
-type CallResult =
+export type CallResult =
   | { status: 'ok'; data: unknown; risk: Risk }
   | { status: 'denied'; reason: string }
   | { status: 'pending_approval'; reason: string }
@@ -155,32 +158,34 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
   }
 
   // Layered policy enforcement: project policies first → connector → risk default.
-  const [connectorPolicies, projectPolicies, defaultMode] = await Promise.all([
-    deps.loadPolicies(connector.connectorId),
-    deps.loadProjectPolicies?.(input.projectId) ?? Promise.resolve([] as Policy[]),
-    deps.loadDefaultMode?.(input.projectId) ?? Promise.resolve('allow_all' as DefaultMode),
-  ]);
-  const decision = resolveEffectiveAction({
-    fullPath,
-    relPath: input.actionPath,
-    projectPolicies,
-    connectorPolicies,
-    risk: action.risk,
-    defaultMode,
-  });
-  if (decision.action === 'block') {
-    await audit(deps, input, connector.connectorId, 'denied', action.risk, {
-      reason: 'policy_block',
-      policy_source: decision.source,
+  if (deps.enforcePolicies !== false) {
+    const [connectorPolicies, projectPolicies, defaultMode] = await Promise.all([
+      deps.loadPolicies(connector.connectorId),
+      deps.loadProjectPolicies?.(input.projectId) ?? Promise.resolve([] as Policy[]),
+      deps.loadDefaultMode?.(input.projectId) ?? Promise.resolve('allow_all' as DefaultMode),
+    ]);
+    const decision = resolveEffectiveAction({
+      fullPath,
+      relPath: input.actionPath,
+      projectPolicies,
+      connectorPolicies,
+      risk: action.risk,
+      defaultMode,
     });
-    return { status: 'denied', reason: 'policy_block' };
-  }
-  if (decision.action === 'require_approval') {
-    await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
-      reason: 'policy_require_approval',
-      policy_source: decision.source,
-    });
-    return { status: 'pending_approval', reason: 'policy_require_approval' };
+    if (decision.action === 'block') {
+      await audit(deps, input, connector.connectorId, 'denied', action.risk, {
+        reason: 'policy_block',
+        policy_source: decision.source,
+      });
+      return { status: 'denied', reason: 'policy_block' };
+    }
+    if (decision.action === 'require_approval') {
+      await audit(deps, input, connector.connectorId, 'pending_approval', action.risk, {
+        reason: 'policy_require_approval',
+        policy_source: decision.source,
+      });
+      return { status: 'pending_approval', reason: 'policy_require_approval' };
+    }
   }
 
   try {

@@ -15,7 +15,7 @@ export interface OpencodeSessionLite {
  * Deterministically choose the canonical root: the OLDEST root (no parentID) by
  * creation time, tie-broken by id so the order is total. Null when no root.
  */
-function pickCanonicalRoot(
+export function pickCanonicalRoot(
   sessions: OpencodeSessionLite[],
 ): OpencodeSessionLite | null {
   let best: OpencodeSessionLite | null = null;

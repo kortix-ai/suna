@@ -16,7 +16,7 @@
 import { and, desc, eq, lt } from 'drizzle-orm';
 import { projectSnapshotBuilds } from '@kortix/db';
 import { db } from '../shared/db';
-import type { GitBackedProject } from '../projects/git';
+import { resolveCommitSha, type GitBackedProject } from '../projects/git';
 import { getSandboxProvider, type ProviderState } from './providers';
 import {
   computeTemplateIdentity,
@@ -30,16 +30,18 @@ import {
 import { DEFAULT_SANDBOX_SLUG } from './dockerfile-layer';
 import { classifySnapshotError } from './error-classify';
 
+export { resolveCommitSha };
 export { DEFAULT_SANDBOX_SLUG };
+export type { ResolvedTemplate };
 
-class SnapshotBuildError extends Error {
+export class SnapshotBuildError extends Error {
   constructor(message: string, readonly cause?: unknown) {
     super(message);
     this.name = 'SnapshotBuildError';
   }
 }
 
-type SnapshotBuildSource =
+export type SnapshotBuildSource =
   | 'session-start'
   | 'project-create'
   | 'cr-merge'
@@ -134,6 +136,10 @@ export async function ensureSandboxImage(
         accountId: opts.accountId,
         snapshotName: identity.snapshotName,
       });
+      console.log(
+        `[snapshots] ${template.slug}: identity drifted to ${identity.snapshotName}; ` +
+        `booting last-known-good ${template.providerSnapshotName} and rebuilding in background`,
+      );
       return {
         snapshotName: template.providerSnapshotName,
         slug: template.slug,
@@ -265,7 +271,7 @@ export async function deleteSandboxImage(
 }
 
 /** Stateless view of every template available to the project + live state. */
-interface SandboxTemplateView {
+export interface SandboxTemplateView {
   templateId: string | null;
   slug: string;
   name: string;
@@ -342,7 +348,7 @@ export { resolveTemplateBySlug as resolveTemplate };
 
 // ─── Build log (UI-only, never read on boot) ─────────────────────────────
 
-interface ProjectSnapshotBuildSummary {
+export interface ProjectSnapshotBuildSummary {
   buildId: string;
   projectId: string;
   slug: string;
@@ -430,9 +436,12 @@ export async function reconcileStaleBuilds(
   let closedReady = 0;
   let closedFailed = 0;
   for (const row of rows) {
-    const state: ProviderState = await provider
-      .getSnapshotState(row.snapshotName)
-      .catch(() => 'missing');
+    let state: ProviderState = 'missing';
+    try {
+      state = await provider.getSnapshotState(row.snapshotName);
+    } catch {
+      state = 'missing';
+    }
     if (state === 'active') {
       await closeBuildLogReady(row.buildId);
       closedReady += 1;
@@ -571,7 +580,7 @@ const PLATFORM_PROJECT_SHELL: GitBackedProject = {
   manifestPath: '',
 };
 
-async function ensurePlatformDefaultImage(
+export async function ensurePlatformDefaultImage(
   opts: { source?: SnapshotBuildSource } = {},
 ): Promise<EnsureSandboxImageResult> {
   return ensureSandboxImage(PLATFORM_PROJECT_SHELL, {
@@ -592,9 +601,15 @@ export function kickStartupPreBuild(): void {
   startupPreBuildKicked = true;
   const provider = getSandboxProvider('daytona');
   if (!provider.isConfigured()) {
+    console.log('[snapshots] startup pre-build skipped — sandbox provider not configured');
     return;
   }
   void ensurePlatformDefaultImage({ source: 'startup' })
+    .then((r) =>
+      console.log(
+        `[snapshots] startup pre-build: default image ${r.snapshotName} ${r.built ? 'built' : 'ready'}`,
+      ),
+    )
     .catch((err) =>
       console.warn(
         '[snapshots] startup pre-build of platform default failed:',
@@ -613,7 +628,7 @@ export function kickStartupPreBuild(): void {
  * instead of stalling the next session that boots the slug. Forces a TOML sync
  * so a `[[sandbox.templates]]` edit in the just-merged commit is picked up.
  */
-async function reconcileProjectTemplates(
+export async function reconcileProjectTemplates(
   project: GitBackedProject,
   opts: { accountId: string; source: SnapshotBuildSource },
 ): Promise<{ checked: number; rebuilt: number }> {

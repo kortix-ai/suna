@@ -11,7 +11,22 @@
 import { describe, expect, test } from 'bun:test';
 import {
   foldEffectiveProjectAccess,
+  maxProjectRole,
 } from '../projects/access';
+
+describe('maxProjectRole', () => {
+  test('manager beats editor', () => {
+    expect(maxProjectRole('manager', 'editor')).toBe('manager');
+    expect(maxProjectRole('editor', 'manager')).toBe('manager');
+  });
+  test('editor beats viewer', () => {
+    expect(maxProjectRole('editor', 'viewer')).toBe('editor');
+    expect(maxProjectRole('viewer', 'editor')).toBe('editor');
+  });
+  test('equal roles return that role', () => {
+    expect(maxProjectRole('viewer', 'viewer')).toBe('viewer');
+  });
+});
 
 describe('foldEffectiveProjectAccess', () => {
   describe('implicit access (owner/admin)', () => {

@@ -1,4 +1,4 @@
-interface OpenRouterRequestOpts {
+export interface OpenRouterRequestOpts {
   baseUrl: string;
   apiKey: string;
   appName?: string;

@@ -3,16 +3,16 @@ import { config } from '../../config';
 import { getCreditAccount } from '../repositories/credit-accounts';
 import { isPerSeatAccount, MINIMUM_CREDIT_FOR_RUN } from './tiers';
 
-type BillingGateReason =
+export type BillingGateReason =
   | 'subscription_required'
   | 'insufficient_credits'
   | 'no_account';
 
-interface BillingGateOk {
+export interface BillingGateOk {
   ok: true;
 }
 
-interface BillingGateBlocked {
+export interface BillingGateBlocked {
   ok: false;
   reason: BillingGateReason;
   balance: number;

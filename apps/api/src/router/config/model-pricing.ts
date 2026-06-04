@@ -16,7 +16,7 @@
 // Types
 // ---------------------------------------------------------------------------
 
-interface ModelPricingEntry {
+export interface ModelPricingEntry {
   inputPer1M: number;
   outputPer1M: number;
 }
@@ -69,6 +69,9 @@ let pricingMap: Map<string, ModelPricingEntry> = new Map();
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
+let lastFetchedAt: Date | null = null;
+let modelCount = 0;
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -118,6 +121,21 @@ export function stopModelPricing(): void {
   }
 }
 
+/**
+ * Return a summary for startup logging.
+ */
+export function getModelPricingStatus(): {
+  loaded: boolean;
+  modelCount: number;
+  lastFetchedAt: Date | null;
+} {
+  return {
+    loaded: pricingMap.size > 0,
+    modelCount,
+    lastFetchedAt,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Internal
 // ---------------------------------------------------------------------------
@@ -154,7 +172,15 @@ async function refreshPricing(): Promise<void> {
       }
     }
 
+    // Atomic swap — readers never see a partially-built map
     pricingMap = newMap;
+    modelCount = newMap.size;
+    lastFetchedAt = new Date();
+
+    console.log(
+      `[model-pricing] Loaded ${newMap.size} model prices from models.dev ` +
+        `(${PROXY_PROVIDERS.join(', ')})`,
+    );
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes('abort')) {

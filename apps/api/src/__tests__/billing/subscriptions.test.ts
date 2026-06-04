@@ -22,12 +22,14 @@ mock.module('../../billing/services/seat-management', () => ({
 // ─── Track calls ──────────────────────────────────────────────────────────────
 
 let upsertCreditAccountCalls: any[] = [];
+let updateCreditAccountCalls: any[] = [];
 let upsertCustomerCalls: any[] = [];
 let resetExpiringCreditsCalls: any[] = [];
 let stripeCancelSubCalls: any[] = [];
 
 beforeEach(() => {
   upsertCreditAccountCalls = [];
+  updateCreditAccountCalls = [];
   upsertCustomerCalls = [];
   resetExpiringCreditsCalls = [];
   stripeCancelSubCalls = [];
@@ -42,7 +44,13 @@ beforeEach(() => {
 
   // Credit account repo defaults
   mockRegistry.getCreditAccount = async () => createMockCreditAccount();
-  mockRegistry.updateCreditAccount = async () => {};
+  mockRegistry.getCreditBalance = async () => {
+    const a = createMockCreditAccount();
+    return { balance: a.balance, expiringCredits: a.expiringCredits, nonExpiringCredits: a.nonExpiringCredits, dailyCreditsBalance: a.dailyCreditsBalance, tier: a.tier };
+  };
+  mockRegistry.updateCreditAccount = async (id: string, data: any) => {
+    updateCreditAccountCalls.push({ accountId: id, data });
+  };
   mockRegistry.upsertCreditAccount = async (id: string, data: any) => {
     upsertCreditAccountCalls.push({ accountId: id, data });
   };
@@ -78,6 +86,12 @@ const {
   getOrCreateStripeCustomer,
   createCheckoutSession,
   createPerSeatCheckoutSession,
+  createInlineCheckout,
+  confirmInlineCheckout,
+  cancelSubscription,
+  reactivateSubscription,
+  scheduleDowngrade,
+  cancelScheduledChange,
   cancelFreeSubscriptionForUpgrade,
 } = await import('../../billing/services/subscriptions');
 
@@ -194,6 +208,99 @@ describe('createPerSeatCheckoutSession', () => {
   });
 });
 
+describe('cancelSubscription', () => {
+  test('sets cancel_at_period_end', async () => {
+    let updateParams: any = null;
+    mockRegistry.stripeClient.subscriptions.update = async (id: string, params: any) => {
+      updateParams = params;
+      return createMockStripeSubscription({ ...params, cancel_at: Date.now() / 1000 + 86400 * 30 });
+    };
+
+    const result = await cancelSubscription('acc_test_123');
+    expect(result.success).toBe(true);
+    expect(updateParams.cancel_at_period_end).toBe(true);
+  });
+
+  test('throws during commitment period', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        commitmentType: 'yearly_commitment',
+        commitmentEndDate: new Date(Date.now() + 86400000 * 365).toISOString(), // 1 year from now
+      });
+
+    try {
+      await cancelSubscription('acc_test_123');
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.name).toBe('SubscriptionError');
+      expect(err.message).toContain('commitment');
+    }
+  });
+
+  test('allows cancel after commitment expires', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        commitmentType: 'yearly_commitment',
+        commitmentEndDate: new Date(Date.now() - 86400000).toISOString(), // Yesterday
+      });
+
+    mockRegistry.stripeClient.subscriptions.update = async (id: string, params: any) =>
+      createMockStripeSubscription({ cancel_at: Date.now() / 1000 + 86400 * 30 });
+
+    const result = await cancelSubscription('acc_test_123');
+    expect(result.success).toBe(true);
+  });
+});
+
+describe('reactivateSubscription', () => {
+  test('clears cancel_at_period_end', async () => {
+    let updateParams: any = null;
+    mockRegistry.stripeClient.subscriptions.update = async (id: string, params: any) => {
+      updateParams = params;
+      return createMockStripeSubscription(params);
+    };
+
+    const result = await reactivateSubscription('acc_test_123');
+    expect(result.success).toBe(true);
+    expect(updateParams.cancel_at_period_end).toBe(false);
+  });
+});
+
+describe('scheduleDowngrade', () => {
+  test('stores scheduled change in DB', async () => {
+    const result = await scheduleDowngrade('acc_test_123', 'free');
+
+    expect(result.success).toBe(true);
+    expect(updateCreditAccountCalls.length).toBe(1);
+    expect(updateCreditAccountCalls[0].data.scheduledTierChange).toBe('free');
+    expect(updateCreditAccountCalls[0].data.scheduledTierChangeDate).toBeDefined();
+  });
+
+  test('throws when no active subscription', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({ stripeSubscriptionId: null });
+
+    try {
+      await scheduleDowngrade('acc_test_123', 'free');
+      expect(true).toBe(false);
+    } catch (err: any) {
+      expect(err.name).toBe('SubscriptionError');
+    }
+  });
+});
+
+describe('cancelScheduledChange', () => {
+  test('clears all scheduled fields', async () => {
+    const result = await cancelScheduledChange('acc_test_123');
+
+    expect(result.success).toBe(true);
+    expect(updateCreditAccountCalls.length).toBe(1);
+    expect(updateCreditAccountCalls[0].data.scheduledTierChange).toBeNull();
+    expect(updateCreditAccountCalls[0].data.scheduledTierChangeDate).toBeNull();
+    expect(updateCreditAccountCalls[0].data.scheduledPriceId).toBeNull();
+  });
+});
+
 describe('createCheckoutSession: previous_subscription_id metadata', () => {
   test('includes previous_subscription_id when upgrading from free with existing sub', async () => {
     mockRegistry.getCreditAccount = async () =>
@@ -245,16 +352,161 @@ describe('createCheckoutSession: previous_subscription_id metadata', () => {
   });
 });
 
+describe('createInlineCheckout: free tier handling', () => {
+  test('does not call handleUpgrade when current tier is free (creates new sub instead)', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        tier: 'free',
+        stripeSubscriptionId: 'sub_old_free',
+      });
+
+    let subscriptionCreateCalled = false;
+    mockRegistry.stripeClient.subscriptions.create = async (params: any) => {
+      subscriptionCreateCalled = true;
+      return createMockStripeSubscription({
+        id: 'sub_new_paid',
+        latest_invoice: { amount_due: 5000, payment_intent: { client_secret: 'cs_test' } },
+        metadata: params.metadata,
+      });
+    };
+
+    const result = await createInlineCheckout({
+      accountId: 'acc_test_123',
+      email: 'test@example.com',
+      tierKey: 'pro',
+      billingPeriod: 'monthly',
+    });
+
+    expect(subscriptionCreateCalled).toBe(true);
+    expect((result as any).previous_subscription_id).toBe('sub_old_free');
+  });
+
+  test('includes previous_subscription_id in subscription metadata', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        tier: 'free',
+        stripeSubscriptionId: 'sub_old_free',
+      });
+
+    let capturedParams: any = null;
+    mockRegistry.stripeClient.subscriptions.create = async (params: any) => {
+      capturedParams = params;
+      return createMockStripeSubscription({
+        id: 'sub_new_paid',
+        latest_invoice: { amount_due: 5000, payment_intent: { client_secret: 'cs_test' } },
+        metadata: params.metadata,
+      });
+    };
+
+    await createInlineCheckout({
+      accountId: 'acc_test_123',
+      email: 'test@example.com',
+      tierKey: 'pro',
+      billingPeriod: 'monthly',
+    });
+
+    expect(capturedParams.metadata.previous_subscription_id).toBe('sub_old_free');
+  });
+
+  test('cancels old free sub immediately when amount_due is 0', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        tier: 'free',
+        stripeSubscriptionId: 'sub_old_free',
+      });
+
+    mockRegistry.stripeClient.subscriptions.create = async (params: any) =>
+      createMockStripeSubscription({
+        id: 'sub_new_paid',
+        latest_invoice: { amount_due: 0, payment_intent: null },
+        metadata: params.metadata,
+      });
+
+    const result = await createInlineCheckout({
+      accountId: 'acc_test_123',
+      email: 'test@example.com',
+      tierKey: 'pro',
+      billingPeriod: 'monthly',
+    });
+
+    expect((result as any).no_payment_required).toBe(true);
+    expect(upsertCreditAccountCalls.length).toBe(1);
+    // cancelFreeSubscriptionForUpgrade was called
+    expect(mockRegistry.stripeClient.subscriptions.cancel).toBeDefined();
+  });
+});
+
+describe('confirmInlineCheckout: cancel old free sub', () => {
+  test('cancels old free sub when previous_subscription_id in subscription metadata', async () => {
+    mockRegistry.stripeClient.subscriptions.retrieve = async () =>
+      createMockStripeSubscription({
+        id: 'sub_new_paid',
+        status: 'active',
+        metadata: {
+          account_id: 'acc_test_123',
+          tier_key: 'pro',
+          billing_period: 'monthly',
+          previous_subscription_id: 'sub_old_free',
+        },
+      });
+
+    let cancelledSubId: string | null = null;
+    mockRegistry.stripeClient.subscriptions.cancel = async (id: string) => {
+      cancelledSubId = id;
+      return {};
+    };
+
+    const result = await confirmInlineCheckout({
+      accountId: 'acc_test_123',
+      subscriptionId: 'sub_new_paid',
+      tierKey: 'pro',
+    });
+
+    expect(result.success).toBe(true);
+    //@ts-ignore
+    expect(cancelledSubId).toBe('sub_old_free');
+  });
+
+  test('does not cancel when no previous_subscription_id in metadata', async () => {
+    mockRegistry.stripeClient.subscriptions.retrieve = async () =>
+      createMockStripeSubscription({
+        id: 'sub_new_paid',
+        status: 'active',
+        metadata: {
+          account_id: 'acc_test_123',
+          tier_key: 'pro',
+          billing_period: 'monthly',
+        },
+      });
+
+    let cancelCalled = false;
+    mockRegistry.stripeClient.subscriptions.cancel = async () => {
+      cancelCalled = true;
+      return {};
+    };
+
+    const result = await confirmInlineCheckout({
+      accountId: 'acc_test_123',
+      subscriptionId: 'sub_new_paid',
+      tierKey: 'pro',
+    });
+
+    expect(result.success).toBe(true);
+    expect(cancelCalled).toBe(false);
+  });
+});
+
 describe('cancelFreeSubscriptionForUpgrade', () => {
   test('calls stripe.subscriptions.cancel', async () => {
-    const cancelledIds: string[] = [];
+    let cancelledId: string | null = null;
     mockRegistry.stripeClient.subscriptions.cancel = async (id: string) => {
-      cancelledIds.push(id);
+      cancelledId = id;
       return {};
     };
 
     await cancelFreeSubscriptionForUpgrade('sub_old_free', 'acc_test_123');
-    expect(cancelledIds).toEqual(['sub_old_free']);
+    //@ts-ignore
+    expect(cancelledId).toBe('sub_old_free');
   });
 
   test('does not throw when cancel fails with 404 (resource_missing)', async () => {

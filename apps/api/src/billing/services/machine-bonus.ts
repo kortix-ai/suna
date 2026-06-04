@@ -31,3 +31,7 @@ export async function grantMachineBonusOnce(params: GrantMachineBonusOnceParams)
 export function getStripeMachineBonusKey(subscriptionId: string) {
   return `machine_bonus:subscription:${subscriptionId}`;
 }
+
+export function getLegacyClaimMachineBonusKey(accountId: string) {
+  return `machine_bonus:legacy_claim:${accountId}`;
+}

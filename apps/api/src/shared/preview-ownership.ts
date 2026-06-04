@@ -6,6 +6,9 @@
  *   - A user can hit the sandbox if they're a member of the account that owns
  *     it (account_members.account_id == session_sandboxes.account_id), or if
  *     they're a platform admin.
+ *
+ * The legacy sandbox-members / scope / role machinery has been removed along
+ * with the rest of the /instances surface.
  */
 
 import { db } from './db';
@@ -148,4 +151,18 @@ export async function resolvePreviewUserContext(
   if (!userId) return null;
   const entry = await getOrCompute(previewSandboxId, userId);
   return entry.payload;
+}
+
+export function clearPreviewOwnershipCache(): void {
+  previewContextCache.clear();
+}
+
+/** Drop every cached entry for a user. */
+export function invalidatePreviewCacheForUser(userId: string): void {
+  const suffix = `:${userId}`;
+  for (const key of previewContextCache.keys()) {
+    if (key.endsWith(suffix)) {
+      previewContextCache.delete(key);
+    }
+  }
 }

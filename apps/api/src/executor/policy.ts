@@ -2,7 +2,7 @@
  * Tool-call policy engine — globbed pattern match, first-match-wins, layered
  * resolution. Mirrors executor.sh's model.
  *
- * Two scopes, both declared in kortix.toml:
+ * Two scopes, both declared in kortix.toml (docs/specs/executor.md §8):
  *   • project-level `[[policies]]` — patterns are fully-qualified (`<slug>.<path>`),
  *     apply across ALL connectors, evaluated FIRST.
  *   • connector-level `[[connectors.policies]]` — patterns are relative
@@ -17,8 +17,8 @@
  * The UI exposes only three shapes (`*`, `prefix.*`, exact); the engine supports
  * arbitrary `*` positions for power users authoring kortix.toml by hand.
  */
-type PolicyAction = 'always_run' | 'require_approval' | 'block';
-type Risk = 'read' | 'write' | 'destructive';
+export type PolicyAction = 'always_run' | 'require_approval' | 'block';
+export type Risk = 'read' | 'write' | 'destructive';
 export type DefaultMode = 'risk' | 'allow_all';
 
 export interface Policy {
@@ -29,12 +29,12 @@ export interface Policy {
 }
 
 /** Convert a glob (`*`, `vercel.*`, `*.delete*`, exact) into an anchored regex. */
-function globToRegex(glob: string): RegExp {
+export function globToRegex(glob: string): RegExp {
   const escaped = glob.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
   return new RegExp(`^${escaped}$`, 'i');
 }
 
-function matchesPolicy(pattern: string, path: string): boolean {
+export function matchesPolicy(pattern: string, path: string): boolean {
   if (pattern === '*') return true;
   return globToRegex(pattern).test(path);
 }
@@ -54,12 +54,26 @@ function firstMatchOrNull(path: string, policies: Policy[]): PolicyAction | null
   return null;
 }
 
+/**
+ * Legacy single-scope resolver — kept for back-compat with callers that only
+ * have one list (and for unit tests covering pure first-match semantics).
+ * Falls back to `always_run` when nothing matches (allow-all default).
+ */
+export function resolvePolicyAction(relPath: string, policies: Policy[]): PolicyAction {
+  return firstMatchOrNull(relPath, policies) ?? 'always_run';
+}
+
+/** Is a tool visible to the agent in a single-scope list? Blocked = hidden. */
+export function isVisible(relPath: string, policies: Policy[]): boolean {
+  return resolvePolicyAction(relPath, policies) !== 'block';
+}
+
 /** Map risk → action under `default_mode = risk`. */
-function riskDefaultAction(risk: Risk): PolicyAction {
+export function riskDefaultAction(risk: Risk): PolicyAction {
   return risk === 'read' ? 'always_run' : 'require_approval';
 }
 
-interface EffectiveResolveInput {
+export interface EffectiveResolveInput {
   /** Fully-qualified path, e.g. `stripe.charges.create` — matched against project policies. */
   fullPath: string;
   /** Connector-relative path, e.g. `charges.create` — matched against connector policies. */
@@ -71,7 +85,7 @@ interface EffectiveResolveInput {
   defaultMode: DefaultMode;
 }
 
-interface EffectiveResolveResult {
+export interface EffectiveResolveResult {
   action: PolicyAction;
   /** Why this action — which scope decided. Useful for explainability + audit. */
   source: 'project' | 'connector' | 'risk_default' | 'allow_all';
@@ -96,4 +110,9 @@ export function resolveEffectiveAction(input: EffectiveResolveInput): EffectiveR
 
   if (input.defaultMode === 'allow_all') return { action: 'always_run', source: 'allow_all' };
   return { action: riskDefaultAction(input.risk), source: 'risk_default' };
+}
+
+/** Visibility under layered resolution — blocked tools are hidden from search. */
+export function isVisibleEffective(input: EffectiveResolveInput): boolean {
+  return resolveEffectiveAction(input).action !== 'block';
 }

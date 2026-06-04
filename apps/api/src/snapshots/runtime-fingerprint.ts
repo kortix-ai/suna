@@ -1,8 +1,8 @@
 import { createHash, type Hash } from 'node:crypto';
-import { open, readdir, readlink } from 'node:fs/promises';
+import { lstat, readdir, readFile, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
-interface RuntimeArtifact {
+export interface RuntimeArtifact {
   label: string;
   path: string;
   /**
@@ -14,7 +14,7 @@ interface RuntimeArtifact {
   excludeNames?: readonly string[];
 }
 
-interface RuntimeArtifactFingerprintInput {
+export interface RuntimeArtifactFingerprintInput {
   sandboxVersion: string;
   opencodeVersion: string;
   artifacts: RuntimeArtifact[];
@@ -40,47 +40,28 @@ async function hashPath(
   logicalPath: string,
   excludeNames?: readonly string[],
 ): Promise<void> {
-  try {
-    hash.update(`symlink\0${logicalPath}\0${await readlink(path)}\0`);
-    return;
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== 'EINVAL' && code !== 'ENOENT') throw err;
-  }
-
-  try {
-    const entries = await readdir(path, { withFileTypes: true });
+  const stats = await lstat(path);
+  if (stats.isDirectory()) {
     hash.update(`dir\0${logicalPath}\0`);
+    const entries = await readdir(path, { withFileTypes: true });
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
       if (excludeNames && excludeNames.includes(entry.name)) continue;
       await hashPath(hash, join(path, entry.name), `${logicalPath}/${entry.name}`, excludeNames);
     }
     return;
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== 'ENOTDIR' && code !== 'ENOENT') throw err;
   }
 
-  try {
-    const file = await open(path, 'r');
-    try {
-      const fileStats = await file.stat();
-      if (!fileStats.isFile()) {
-        hash.update(`other\0${logicalPath}\0`);
-        return;
-      }
-      const content = await file.readFile();
-      hash.update(`file\0${logicalPath}\0${content.length}\0`);
-      hash.update(content);
-      hash.update('\0');
-    } finally {
-      await file.close();
-    }
+  if (stats.isFile()) {
+    hash.update(`file\0${logicalPath}\0${stats.size}\0`);
+    hash.update(await readFile(path));
+    hash.update('\0');
     return;
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code !== 'ENOENT' && code !== 'EISDIR' && code !== 'ENXIO') throw err;
+  }
+
+  if (stats.isSymbolicLink()) {
+    hash.update(`symlink\0${logicalPath}\0${await readlink(path)}\0`);
+    return;
   }
 
   hash.update(`other\0${logicalPath}\0`);

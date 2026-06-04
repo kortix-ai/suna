@@ -16,7 +16,7 @@ mock.module('../shared/preview-ownership', () => ({
     if (userId) return mockResolvedAccountId === mockSandboxAccountId;
     return false;
   },
-  resolvePreviewUserContext: async () => null,
+  clearPreviewOwnershipCache: () => {},
 }));
 
 mock.module('../shared/resolve-account', () => ({
@@ -40,6 +40,13 @@ mock.module('../repositories/api-keys', () => ({
 }));
 
 mock.module('../shared/crypto', () => ({
+  // Constants
+  KEY_PREFIX: 'kortix_',
+  KEY_PREFIX_PAT: 'kortix_pat_',
+  KEY_PREFIX_PUBLIC: 'kortix_pk_',
+  KEY_PREFIX_SA: 'kortix_sa_',
+  KEY_PREFIX_SANDBOX: 'kortix_sb_',
+  KEY_PREFIX_TUNNEL: 'kortix_tun_',
   // Token predicates (behaviorally relevant to this suite)
   isKortixToken: (token: string) => token.startsWith('kortix_'),
   isAccountToken: (token: string) => token.startsWith('kortix_pat_'),
@@ -50,6 +57,7 @@ mock.module('../shared/crypto', () => ({
   randomAlphanumeric: (length: number) => 'a'.repeat(length),
   hashSecretKey: (key: string) => `hash:${key}`,
   verifySecretKey: (key: string, hash: string) => hash === `hash:${key}`,
+  timingSafeStringEqual: (a: string, b: string) => a === b,
   generateDeviceCode: () => 'device-code',
   generateTunnelToken: () => 'tunnel-token',
   generateSandboxKeyPair: () => ({ publicKey: 'pub', privateKey: 'priv' }),
@@ -57,6 +65,8 @@ mock.module('../shared/crypto', () => ({
   generateAccountTokenPair: () => ({ secretKey: 'kortix_pat_secret', keyHash: 'hash' }),
   generateApiKeyPair: () => ({ secretKey: 'kortix_secret', keyHash: 'hash' }),
   deriveSigningKey: () => 'signing-key',
+  signMessage: () => 'signature',
+  verifyMessageSignature: () => true,
 }));
 
 mock.module('../repositories/account-tokens', () => ({
@@ -86,15 +96,10 @@ mock.module('../shared/supabase', () => ({
   }),
 }));
 
-mock.module('../shared/auth-audit', () => ({
-  auditLoginSuccess: () => {},
-  auditLoginFail: () => {},
-  auditLogout: () => {},
-  auditSessionFirstSight: () => {},
-}));
-
 mock.module('../config', () => ({
   config: {
+    isLocal: () => false,
+    isLocalDockerEnabled: () => true,
     SANDBOX_CONTAINER_NAME: 'kortix-sandbox',
   },
 }));

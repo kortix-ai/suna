@@ -16,6 +16,7 @@ import {
   getTier,
   getTierByPriceId,
   getMonthlyCredits,
+  isUpgrade,
   mapRevenueCatProductToTier,
   getRevenueCatPeriodType,
   isRevenueCatAnonymous,
@@ -27,7 +28,6 @@ import {
 import { grantCredits, resetExpiringCredits } from './credits';
 import { grantMachineBonusOnce, getStripeMachineBonusKey } from './machine-bonus';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
-import { calculateNextCreditGrant } from './yearly-rotation';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { resolveAccountId } from '../../shared/resolve-account';
 
@@ -54,8 +54,11 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
     .onConflictDoNothing({ target: stripeWebhookEventsProcessed.eventId })
     .returning({ eventId: stripeWebhookEventsProcessed.eventId });
   if (inserted.length === 0) {
+    console.log(`[Webhook] Skipping duplicate ${event.type} (${event.id})`);
     return { received: true, event_type: event.type, deduped: true };
   }
+
+  console.log(`[Webhook] Processing ${event.type} (${event.id})`);
 
   switch (event.type) {
     case 'checkout.session.completed':
@@ -84,10 +87,11 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
       break;
 
     case 'subscription_schedule.released':
+      console.log(`[Webhook] Schedule released: ${(event.data.object as any).id}`);
       break;
 
     default:
-      break;
+      console.log(`[Webhook] Unhandled event type: ${event.type}`);
   }
 
   return { received: true, event_type: event.type };
@@ -135,6 +139,8 @@ async function handleCreditPurchase(session: Stripe.Checkout.Session, accountId:
       await updatePurchaseStatus(purchase.id, 'completed', new Date().toISOString());
     }
   }
+
+  console.log(`[Webhook] Credit purchase: $${amountTotal} for ${accountId}`);
 }
 
 async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, accountId: string) {
@@ -203,7 +209,10 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
     await cancelFreeSubscriptionForUpgrade(previousSubscriptionId, accountId);
   }
 
+  // ── Provision instance (1 subscription = 1 instance) ───────────────────
+  // The checkout metadata carries server_type + location for provisioning.
   const serverType = session.metadata?.server_type;
+  const location = session.metadata?.location;
 
   if (serverType) {
     try {
@@ -211,10 +220,19 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
         accountId,
         idempotencyKey: getStripeMachineBonusKey(subscriptionId),
       });
+      console.log(`[Webhook] Granted machine bonus for ${accountId} (sub=${subscriptionId})`);
     } catch (err) {
       console.error(`[Webhook] Failed to grant machine bonus for ${accountId} (sub=${subscriptionId}):`, err);
     }
+
+    // Legacy auto-provision of a per-account sandbox on checkout-completed
+    // has been removed — sandboxes are now per-session under /v1/projects.
+    void serverType;
+    void location;
+    void tierKey;
   }
+
+  console.log(`[Webhook] Subscription checkout: ${tierKey} for ${accountId} (sub=${subscriptionId})`);
 }
 
 async function handleSubscriptionChange(subscription: Stripe.Subscription) {
@@ -242,8 +260,12 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       previousSubId === account.stripeSubscriptionId;
 
     if (isFreeUpgrade) {
+      console.log(
+        `[Webhook] syncSubscriptionState: detected free→${incomingTier} upgrade for ${accountId}, cancelling old free sub ${account.stripeSubscriptionId}`,
+      );
       await cancelFreeSubscriptionForUpgrade(account.stripeSubscriptionId, accountId);
     } else {
+      console.log(`[Webhook] syncSubscriptionState: skipping stale subscription ${subscription.id} for ${accountId} (current: ${account.stripeSubscriptionId})`);
       return;
     }
   }
@@ -255,6 +277,8 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
   const shouldGrantRecoveryCredits =
     !!resolvedTier &&
     (!account || (!account.stripeSubscriptionId && (!account.tier || account.tier === 'free' || account.tier === 'none')));
+
+  console.log(`[Webhook] syncSubscriptionState: account=${accountId} tier_meta=${tierKey} price=${priceId} resolved=${resolvedTier} status=${subscription.status}`);
 
   const updates: Record<string, any> = {
     stripeSubscriptionId: subscription.id,
@@ -362,13 +386,21 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
 
   const account = await getCreditAccount(accountId);
   if (account?.stripeSubscriptionId && account.stripeSubscriptionId !== subscription.id) {
+    console.log(
+      `[Webhook] handleSubscriptionDeleted: skipping stale subscription ${subscription.id} for ${accountId} (current: ${account.stripeSubscriptionId})`,
+    );
     return;
   }
 
-  await revertToFree(accountId);
+  await revertToFree(accountId, subscription.id);
 }
 
-async function revertToFree(accountId: string) {
+async function revertToFree(accountId: string, subscriptionId?: string) {
+  // Legacy sandbox archive/sub-coupling has been removed — session sandboxes
+  // are per-session and not tied to a Stripe subscription. We just revert
+  // the account's tier on cancellation.
+  void subscriptionId;
+
   await updateCreditAccount(accountId, {
     tier: 'free',
     stripeSubscriptionStatus: 'canceled',
@@ -379,6 +411,7 @@ async function revertToFree(accountId: string) {
     commitmentEndDate: null,
     paymentStatus: 'active',
   });
+  console.log(`[Webhook] Reverted to free tier: ${accountId}`);
 }
 
 async function handleInvoicePaid(invoice: Stripe.Invoice) {
@@ -402,6 +435,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
 
   const periodStart = invoice.period_start;
   if (account.lastRenewalPeriodStart && account.lastRenewalPeriodStart >= periodStart) {
+    console.log(`[Webhook] Renewal already processed for period ${periodStart}`);
     return;
   }
 
@@ -427,9 +461,12 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     lastGrantDate: new Date().toISOString(),
     nextCreditGrant,
   });
+
+  console.log(`[Webhook] Renewal processed: ${credits} credits for ${accountId}`);
 }
 
 async function applyScheduledDowngrade(accountId: string, targetTier: string, account: any) {
+  const tier = getTier(targetTier);
   if (account.stripeSubscriptionId && account.scheduledPriceId) {
     try {
       const stripe = getStripe();
@@ -440,12 +477,14 @@ async function applyScheduledDowngrade(accountId: string, targetTier: string, ac
         await stripe.subscriptions.update(account.stripeSubscriptionId, {
           metadata: { ...subscription.metadata, tier_key: targetTier, downgrade: '', target_tier: '' },
         });
+        console.log(`[Webhook] Price already correct (schedule applied), updated metadata for ${accountId}`);
       } else {
         await stripe.subscriptions.update(account.stripeSubscriptionId, {
           items: [{ id: subscription.items.data[0].id, price: account.scheduledPriceId }],
           proration_behavior: 'none',
           metadata: { ...subscription.metadata, tier_key: targetTier, downgrade: '', target_tier: '' },
         });
+        console.log(`[Webhook] Stripe price updated to ${account.scheduledPriceId} for ${accountId}`);
       }
     } catch (err) {
       console.error(`[Webhook] Failed to update Stripe subscription for ${accountId}:`, err);
@@ -458,12 +497,14 @@ async function applyScheduledDowngrade(accountId: string, targetTier: string, ac
     scheduledTierChangeDate: null,
     scheduledPriceId: null,
   });
+
+  console.log(`[Webhook] Applied scheduled downgrade to ${tier.displayName} for ${accountId}`);
 }
 
 async function handleScheduleCompleted(schedule: any) {
   const accountId = schedule.metadata?.account_id;
   if (!accountId) {
-    console.warn('[Webhook] subscription_schedule.completed missing account_id');
+    console.log(`[Webhook] subscription_schedule.completed: no account_id in metadata`);
     return;
   }
 
@@ -471,6 +512,8 @@ async function handleScheduleCompleted(schedule: any) {
   const isDowngrade = schedule.metadata?.downgrade === 'true';
 
   if (targetTier && isDowngrade) {
+    console.log(`[Webhook] Schedule completed: downgrade to ${targetTier} for ${accountId}`);
+
     await updateCreditAccount(accountId, {
       tier: targetTier,
       scheduledTierChange: null,
@@ -513,7 +556,7 @@ async function handleInvoiceFailed(invoice: Stripe.Invoice) {
     lastPaymentFailure: new Date().toISOString(),
   });
 
-  console.warn(`[Webhook] Payment failed for ${accountId}`);
+  console.log(`[Webhook] Payment failed for ${accountId}`);
 }
 
 async function resolveCanonicalStripeAccountId(
@@ -547,6 +590,7 @@ async function repairStripeSubscriptionAccountMetadata(subscription: Stripe.Subs
         legacy_account_id: rawAccountId,
       },
     });
+    console.log(`[Webhook] Repaired subscription ${subscription.id} account_id ${rawAccountId} -> ${canonicalAccountId}`);
   } catch (err) {
     console.error(`[Webhook] Failed to repair subscription ${subscription.id} account metadata:`, err);
   }
@@ -561,10 +605,13 @@ export async function processRevenueCatWebhook(body: any) {
   if (!appUserId) throw new WebhookError('Missing app_user_id');
 
   if (isRevenueCatAnonymous(appUserId)) {
+    console.log(`[RevenueCat] Skipping anonymous user: ${appUserId}`);
     return { received: true, event_type: eventType, skipped: true };
   }
 
   const accountId = await resolveAccountId(appUserId);
+
+  console.log(`[RevenueCat] Processing ${eventType} for ${appUserId} -> ${accountId}`);
 
   switch (eventType) {
     case 'INITIAL_PURCHASE':
@@ -598,7 +645,7 @@ export async function processRevenueCatWebhook(body: any) {
       break;
 
     default:
-      break;
+      console.log(`[RevenueCat] Unhandled event type: ${eventType}`);
   }
 
   return { received: true, event_type: eventType, account_id: accountId };
@@ -656,6 +703,7 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
         false,
         `machine_bonus:revenuecat:${accountId}:${productId}`,
       );
+      console.log(`[RevenueCat] Granted $${MACHINE_CREDIT_BONUS} machine bonus for ${accountId}`);
     } catch (err) {
       console.error(`[RevenueCat] Failed to grant machine bonus for ${accountId}:`, err);
     }
@@ -664,9 +712,11 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
   if (oldStripeSubscriptionId) {
     await cancelFreeSubscriptionForUpgrade(oldStripeSubscriptionId, accountId);
   }
+
+  console.log(`[RevenueCat] Initial purchase: ${tierKey} for ${accountId}`);
 }
 
-async function handleRevenueCatRenewal(accountId: string, _event: any) {
+async function handleRevenueCatRenewal(accountId: string, event: any) {
   const account = await getCreditAccount(accountId);
   if (!account) return;
 
@@ -682,6 +732,8 @@ async function handleRevenueCatRenewal(accountId: string, _event: any) {
     paymentStatus: 'active',
     lastGrantDate: new Date().toISOString(),
   });
+
+  console.log(`[RevenueCat] Renewal: ${credits} credits for ${accountId}`);
 }
 
 async function handleRevenueCatCancellation(accountId: string, event: any) {
@@ -701,6 +753,8 @@ async function handleRevenueCatCancellation(accountId: string, event: any) {
       revenuecatProductId: null,
     });
   }
+
+  console.log(`[RevenueCat] ${event.type}: ${accountId}`);
 }
 
 async function handleRevenueCatUncancellation(accountId: string, _event: any) {
@@ -710,6 +764,8 @@ async function handleRevenueCatUncancellation(accountId: string, _event: any) {
     revenuecatCancelAtPeriodEnd: null,
     paymentStatus: 'active',
   });
+
+  console.log(`[RevenueCat] Uncancellation: ${accountId}`);
 }
 
 async function handleRevenueCatProductChange(accountId: string, event: any) {
@@ -737,6 +793,8 @@ async function handleRevenueCatProductChange(accountId: string, event: any) {
       });
     }
   }
+
+  console.log(`[RevenueCat] Product change: ${accountId}`);
 }
 
 async function handleRevenueCatTopup(accountId: string, event: any) {
@@ -750,14 +808,30 @@ async function handleRevenueCatTopup(accountId: string, event: any) {
     `Mobile credit purchase: $${price.toFixed(2)}`,
     false,
   );
+
+  console.log(`[RevenueCat] Top-up: $${price} for ${accountId}`);
 }
 
-async function handleRevenueCatBillingIssue(accountId: string, _event: any) {
+async function handleRevenueCatBillingIssue(accountId: string, event: any) {
   await updateCreditAccount(accountId, {
     provider: 'revenuecat',
     paymentStatus: 'past_due',
     lastPaymentFailure: new Date().toISOString(),
   });
 
-  console.warn(`[RevenueCat] Billing issue: ${accountId}`);
+  console.log(`[RevenueCat] Billing issue: ${accountId}`);
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+export function calculateNextCreditGrant(from: Date): Date {
+  const next = new Date(from);
+  const targetMonth = (next.getMonth() + 1) % 12;
+  const targetYear = next.getFullYear() + (next.getMonth() === 11 ? 1 : 0);
+  next.setMonth(next.getMonth() + 1);
+  // Handle month boundary (e.g., Jan 31 → Feb 28): if month overflowed, set to last day of target month
+  if (next.getMonth() !== targetMonth) {
+    next.setDate(0);
+  }
+  return next;
 }

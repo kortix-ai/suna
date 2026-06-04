@@ -1,12 +1,13 @@
-import { timingSafeEqual, randomInt } from 'crypto';
+import { createHash, createHmac, timingSafeEqual, randomBytes } from 'crypto';
 import { config } from '../config';
 
 const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 
 export function randomAlphanumeric(length: number): string {
+  const bytes = randomBytes(length);
   let result = '';
   for (let i = 0; i < length; i++) {
-    result += CHARS[randomInt(CHARS.length)]!;
+    result += CHARS[bytes[i]! % CHARS.length];
   }
   return result;
 }
@@ -20,20 +21,14 @@ export function randomAlphanumeric(length: number): string {
  *
  * Both secret key variants validate through the same path — only the hash is stored.
  */
-const KEY_PREFIX = 'kortix_';
-const KEY_PREFIX_SANDBOX = 'kortix_sb_';
-const KEY_PREFIX_TUNNEL = 'kortix_tnl_';
-const KEY_PREFIX_PAT = 'kortix_pat_';
-const KEY_PREFIX_SA = 'kortix_sa_';
-const KEY_PREFIX_PUBLIC = 'pk_';
+export const KEY_PREFIX = 'kortix_';
+export const KEY_PREFIX_SANDBOX = 'kortix_sb_';
+export const KEY_PREFIX_TUNNEL = 'kortix_tnl_';
+export const KEY_PREFIX_PAT = 'kortix_pat_';
+export const KEY_PREFIX_SA = 'kortix_sa_';
+export const KEY_PREFIX_PUBLIC = 'pk_';
 
 const SECRET_RANDOM_LENGTH = 32;
-
-function hmacSha256Hex(value: string, secret: string): string {
-  const hasher = new Bun.CryptoHasher('sha256', secret);
-  hasher.update(value);
-  return hasher.digest('hex');
-}
 
 /**
  * Check if a token is a Kortix-issued key (user or sandbox).
@@ -119,11 +114,12 @@ const DIGITS = '0123456789';
  * (4 uppercase letters + hyphen + 4 digits)
  */
 export function generateDeviceCode(): string {
+  const bytes = randomBytes(8);
   let letters = '';
   let numbers = '';
   for (let i = 0; i < 4; i++) {
-    letters += UPPER[randomInt(UPPER.length)]!;
-    numbers += DIGITS[randomInt(DIGITS.length)]!;
+    letters += UPPER[bytes[i]! % UPPER.length];
+    numbers += DIGITS[bytes[i + 4]! % DIGITS.length];
   }
   return `${letters}-${numbers}`;
 }
@@ -139,7 +135,9 @@ export function hashSecretKey(secretKey: string): string {
     throw new Error('API_KEY_SECRET not configured');
   }
 
-  return hmacSha256Hex(secretKey, secret);
+  return createHmac('sha256', secret)
+    .update(secretKey)
+    .digest('hex');
 }
 
 export function verifySecretKey(secretKey: string, storedHash: string): boolean {
@@ -163,6 +161,43 @@ export function isApiKeySecretConfigured(): boolean {
   return !!config.API_KEY_SECRET;
 }
 
+/**
+ * Constant-time string comparison to prevent timing attacks.
+ *
+ * Hashes both inputs with SHA-256 first so the comparison is always
+ * on fixed-length 32-byte digests — no string length leakage.
+ */
+export function timingSafeStringEqual(a: string, b: string): boolean {
+  const hashA = createHash('sha256').update(a).digest();
+  const hashB = createHash('sha256').update(b).digest();
+  return timingSafeEqual(hashA, hashB);
+}
+
 export function deriveSigningKey(token: string, secret: string): string {
-  return hmacSha256Hex(token, secret);
+  return createHmac('sha256', secret)
+    .update(token)
+    .digest('hex');
+}
+
+export function signMessage(signingKey: string, payload: string, nonce: number): string {
+  return createHmac('sha256', signingKey)
+    .update(`${nonce}:${payload}`)
+    .digest('hex');
+}
+
+export function verifyMessageSignature(
+  signingKey: string,
+  payload: string,
+  nonce: number,
+  signature: string,
+): boolean {
+  try {
+    const expected = signMessage(signingKey, payload, nonce);
+    const sigBuffer = Buffer.from(signature, 'hex');
+    const expectedBuffer = Buffer.from(expected, 'hex');
+    if (sigBuffer.length !== expectedBuffer.length) return false;
+    return timingSafeEqual(sigBuffer, expectedBuffer);
+  } catch {
+    return false;
+  }
 }

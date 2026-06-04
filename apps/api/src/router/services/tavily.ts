@@ -58,5 +58,7 @@ export async function webSearchTavily(
     published_date: item.published_date || null,
   }));
 
+  console.log(`[KORTIX] Web search for '${query}' returned ${results.length} results`);
+
   return results;
 }

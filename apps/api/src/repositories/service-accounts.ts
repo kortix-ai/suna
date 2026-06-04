@@ -16,7 +16,7 @@ import {
 const THROTTLE_MS = 15 * 60 * 1000;
 const lastUsedCache = new Map<string, number>();
 
-type ServiceAccount = {
+export type ServiceAccount = {
   serviceAccountId: string;
   accountId: string;
   name: string;
@@ -31,7 +31,7 @@ type ServiceAccount = {
   disabledBy: string | null;
 };
 
-interface CreatedServiceAccount extends ServiceAccount {
+export interface CreatedServiceAccount extends ServiceAccount {
   /** Plaintext bearer — shown ONCE at create. Never returned again. */
   secret: string;
 }
@@ -147,7 +147,7 @@ export async function deleteServiceAccount(
   return rows.length > 0;
 }
 
-interface ServiceAccountValidation {
+export interface ServiceAccountValidation {
   isValid: boolean;
   serviceAccountId?: string;
   accountId?: string;

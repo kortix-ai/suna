@@ -1,5 +1,7 @@
 // Public engine entry points used everywhere outside the iam/ module.
-// The wrapper survives because:
+// V2 is the only authorization path — the V1 policy engine and its
+// flag-based dispatcher were retired in PR5. The wrapper survives
+// because:
 //   - assertAuthorized turns "denied" into an HTTPException so V2
 //     itself doesn't need to know about Hono.
 //   - listAccessibleResources collapses non-project resource types
@@ -13,7 +15,7 @@ import type {
   AuthorizeResult,
   AuthorizeTarget,
   RequestContext,
-} from './types';
+} from './engine';
 import type { ResourceType } from './actions';
 import { authorizeV2, listAccessibleProjectsV2 } from './engine-v2';
 

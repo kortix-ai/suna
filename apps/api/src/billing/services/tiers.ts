@@ -1,7 +1,10 @@
 import type { TierConfig, DailyCreditConfig } from '../../types';
 import { config } from '../../config';
 
+export const TOKEN_PRICE_MULTIPLIER = 1.2;
 export const MINIMUM_CREDIT_FOR_RUN = 0.01;
+export const DEFAULT_TOKEN_COST = 0.000002;
+export const CREDITS_PER_DOLLAR = 100;
 
 /** One-time credit grant per machine provisioned ($5 = 500 display credits). */
 export const MACHINE_CREDIT_BONUS = 5;
@@ -15,7 +18,7 @@ export const COMPUTE_PRICE_MARKUP = 1.2;
  * KORTIX_LLM_MARKUP — useful for staging (1.0 = at-cost) or promotional
  * periods. Clamped to >= 1 so we never undercut OpenRouter.
  */
-const DEFAULT_LLM_PRICE_MARKUP = 1.2;
+export const DEFAULT_LLM_PRICE_MARKUP = 1.2;
 
 export function llmPriceMarkup(): number {
   const raw = Number.parseFloat(process.env.KORTIX_LLM_MARKUP ?? '');
@@ -66,6 +69,8 @@ export const COMPUTE_DISK_PRICE_PER_GB_SECOND    = 0.00000003;
  *  this. Applied before the markup so users are billed on our actual (discounted)
  *  cost, not Daytona's list. Bump toward 1.0 if the discount shrinks. */
 export const DAYTONA_DISCOUNT = 0.5;
+/** Stopped-but-not-destroyed sandboxes pay a fraction of the disk rate. v2: not billed; reserved for future. */
+export const COMPUTE_ARCHIVE_DISK_MULTIPLIER     = 0.25;
 
 // Auto-topup defaults for per-seat accounts scale with seat count.
 // effectiveThreshold = AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT × seat_count
@@ -73,11 +78,15 @@ export const DAYTONA_DISCOUNT = 0.5;
 //   threshold = 25% of one seat (top up when wallet has < 1/4 seat-month left)
 //   amount    = 1 seat-month (refill the equivalent of one seat)
 // Legacy accounts keep their flat $5/$20 (auto_topup_customized=true or just unaffected).
-const AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT = 5;
-const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT    = 20;
+export const AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT = 5;
+export const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT    = 20;
 
-// Sensible cap for the per-seat plan. Effectively uncapped for normal use.
+// Sensible caps for the per-seat plan. Effectively uncapped for normal use.
+export const MAX_PROJECTS_PER_ACCOUNT       = 200;
+export const MAX_CONCURRENT_SANDBOXES_PER_SEAT = 3;
 export const MAX_SEATS_PER_ACCOUNT          = 100;
+
+export type BillingModel = 'legacy' | 'per_seat';
 
 /** Default auto-topup for a per-seat account given its current seat count. */
 export function defaultAutoTopupForSeats(seatCount: number): { threshold: number; amount: number } {
@@ -88,10 +97,19 @@ export function defaultAutoTopupForSeats(seatCount: number): { threshold: number
   };
 }
 
+/**
+ * Monthly wallet grant for N seats. $40 per seat, fungible across compute
+ * and LLM usage. Per-category transparency comes from the credit_ledger
+ * (compute_debit / llm_debit), not from a wallet partition.
+ */
+export function grantForSeats(seatCount: number): number {
+  return PER_SEAT_PRICE_USD * Math.max(1, seatCount);
+}
+
 // ─── Compute instance definitions ───────────────────────────────────────────
-// Single source of truth for the machine tiers we sell. Checkout metadata may
-// still carry a server_type for existing flows, but the frontend no longer
-// maintains a duplicate machine-tier pricing table.
+// Single source of truth for the machine tiers we sell.  Prices and specs must
+// stay in sync with the frontend's DISPLAY_PRICES / FALLBACK_TYPES in
+// apps/web/src/hooks/instance/use-server-types.ts.
 
 interface ComputeTier {
   label: string;
@@ -101,7 +119,7 @@ interface ComputeTier {
   priceUsd: number;
 }
 
-const COMPUTE_TIERS: Record<string, ComputeTier> = {
+export const COMPUTE_TIERS: Record<string, ComputeTier> = {
   pro:   { label: 'Pro',   cores: 8,  memoryGb: 16, diskGb: 320, priceUsd: 40 },
   power: { label: 'Power', cores: 12, memoryGb: 24, diskGb: 480, priceUsd: 60 },
   ultra: { label: 'Ultra', cores: 16, memoryGb: 32, diskGb: 640, priceUsd: 80 },
@@ -133,6 +151,7 @@ const TIERS: Record<string, TierConfig> = {
     yearlyPrice: 0,
     monthlyCredits: 0,
     canPurchaseCredits: false,
+    models: [],
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 50,
@@ -145,6 +164,7 @@ const TIERS: Record<string, TierConfig> = {
     yearlyPrice: 0,
     monthlyCredits: 0,
     canPurchaseCredits: false,
+    models: ['haiku'],
     dailyCreditConfig: null,   // No daily credits — BYOC only
     // Hidden from new signup flows. Existing rows with tier='free' continue
     // to be honored for backwards compatibility (they remain billing_model='legacy').
@@ -159,13 +179,15 @@ const TIERS: Record<string, TierConfig> = {
     yearlyPrice: 0,            // No yearly billing
     monthlyCredits: 0,         // No monthly credits — $5 one-time per machine only
     canPurchaseCredits: true,
+    models: ['all'],
     dailyCreditConfig: null,
     hidden: false,
     concurrentSessionLimit: 200,
   },
 
   // Billing v2 — per-member seat plan. $20 × seat_count / month.
-  // The TIERS entry models a single seat; Stripe quantity drives multi-seat billing.
+  // The TIERS entry models a single seat; multi-seat math is in
+  // grantForSeats() and applied at subscription create + renew.
   per_seat: {
     name: 'per_seat',
     displayName: 'Team',
@@ -173,6 +195,7 @@ const TIERS: Record<string, TierConfig> = {
     yearlyPrice: 0,
     monthlyCredits: PER_SEAT_PRICE_USD,
     canPurchaseCredits: true,
+    models: ['all'],
     dailyCreditConfig: null,
     hidden: false,
     concurrentSessionLimit: 200,
@@ -181,14 +204,14 @@ const TIERS: Record<string, TierConfig> = {
   // ── Legacy tiers (kept for backward compat with existing DB rows) ────────
   // All hidden, resolve to their closest equivalent for display.
   // Legacy tiers: monthlyCredits = monthlyPrice (1:1 ratio, i.e. $20 plan → $20 credits → 2000 display credits)
-  tier_2_20:      { name: 'tier_2_20',      displayName: 'Plus (Legacy)',       monthlyPrice: 20,   yearlyPrice: 204,   monthlyCredits: 20,   canPurchaseCredits: true, dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 200 },
-  tier_6_50:      { name: 'tier_6_50',      displayName: 'Pro (Legacy)',        monthlyPrice: 50,   yearlyPrice: 510,   monthlyCredits: 50,   canPurchaseCredits: true, dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 300 },
-  tier_12_100:    { name: 'tier_12_100',    displayName: 'Business (Legacy)',   monthlyPrice: 100,  yearlyPrice: 1020,  monthlyCredits: 100,  canPurchaseCredits: true, dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 400 },
-  tier_25_200:    { name: 'tier_25_200',    displayName: 'Ultra (Legacy)',      monthlyPrice: 200,  yearlyPrice: 2040,  monthlyCredits: 200,  canPurchaseCredits: true, dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 500 },
-  tier_50_400:    { name: 'tier_50_400',    displayName: 'Enterprise (Legacy)', monthlyPrice: 400,  yearlyPrice: 4080,  monthlyCredits: 400,  canPurchaseCredits: true, dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 750 },
-  tier_125_800:   { name: 'tier_125_800',   displayName: 'Scale (Legacy)',      monthlyPrice: 800,  yearlyPrice: 8160,  monthlyCredits: 800,  canPurchaseCredits: true, dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 1000 },
-  tier_200_1000:  { name: 'tier_200_1000',  displayName: 'Max (Legacy)',        monthlyPrice: 1000, yearlyPrice: 10200, monthlyCredits: 1000, canPurchaseCredits: true, dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 1500 },
-  tier_150_1200:  { name: 'tier_150_1200',  displayName: 'Enterprise Max (Legacy)', monthlyPrice: 1200, yearlyPrice: 12240, monthlyCredits: 1200, canPurchaseCredits: true, dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 2000 },
+  tier_2_20:      { name: 'tier_2_20',      displayName: 'Plus (Legacy)',       monthlyPrice: 20,   yearlyPrice: 204,   monthlyCredits: 20,   canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 200 },
+  tier_6_50:      { name: 'tier_6_50',      displayName: 'Pro (Legacy)',        monthlyPrice: 50,   yearlyPrice: 510,   monthlyCredits: 50,   canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 300 },
+  tier_12_100:    { name: 'tier_12_100',    displayName: 'Business (Legacy)',   monthlyPrice: 100,  yearlyPrice: 1020,  monthlyCredits: 100,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 400 },
+  tier_25_200:    { name: 'tier_25_200',    displayName: 'Ultra (Legacy)',      monthlyPrice: 200,  yearlyPrice: 2040,  monthlyCredits: 200,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 500 },
+  tier_50_400:    { name: 'tier_50_400',    displayName: 'Enterprise (Legacy)', monthlyPrice: 400,  yearlyPrice: 4080,  monthlyCredits: 400,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 750 },
+  tier_125_800:   { name: 'tier_125_800',   displayName: 'Scale (Legacy)',      monthlyPrice: 800,  yearlyPrice: 8160,  monthlyCredits: 800,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 1000 },
+  tier_200_1000:  { name: 'tier_200_1000',  displayName: 'Max (Legacy)',        monthlyPrice: 1000, yearlyPrice: 10200, monthlyCredits: 1000, canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 1500 },
+  tier_150_1200:  { name: 'tier_150_1200',  displayName: 'Enterprise Max (Legacy)', monthlyPrice: 1200, yearlyPrice: 12240, monthlyCredits: 1200, canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 2000 },
 };
 
 // ─── Stripe Price IDs ────────────────────────────────────────────────────────
@@ -206,8 +229,11 @@ interface StripePriceConfig {
   computeProductId: string;
 }
 
-// Per-seat Stripe price IDs. Webhook handling for customer.subscription.updated
-// reconciles the `quantity` field on this price item into credit_accounts.seat_count.
+// TODO(billing-v2-ops): create the per-seat Stripe price in prod + staging.
+//   - Recurring monthly, $20 USD per unit, unit = 1 seat.
+//   - Replace the PLACEHOLDER below with the resulting price IDs before deploy.
+//   - Webhook handler for customer.subscription.updated (services/webhooks.ts)
+//     reconciles the `quantity` field on this price item into credit_accounts.seat_count.
 const STRIPE_PRICES_PROD: StripePriceConfig = {
   subscriptions: {
     free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
@@ -260,6 +286,10 @@ function getStripePrices(): StripePriceConfig {
   return config.INTERNAL_KORTIX_ENV === 'prod' ? STRIPE_PRICES_PROD : STRIPE_PRICES_STAGING;
 }
 
+export function getProductId(): string {
+  return getStripePrices().productId;
+}
+
 export function getComputeProductId(): string {
   return getStripePrices().computeProductId;
 }
@@ -277,6 +307,10 @@ export function resolvePriceId(tierKey: string, billingPeriod?: string): string 
 export function resolveCreditPriceId(amountDollars: number): string | null {
   const prices = getStripePrices();
   return prices.credits[amountDollars] ?? null;
+}
+
+export function getCreditPackageAmounts(): number[] {
+  return Object.keys(getStripePrices().credits).map(Number).sort((a, b) => a - b);
 }
 
 // ─── Price ID ↔ Tier reverse lookup ─────────────────────────────────────────
@@ -321,6 +355,18 @@ export function getBillingPeriodByPriceId(priceId: string): 'monthly' | 'yearly'
   return null;
 }
 
+export function getAllTiers(): TierConfig[] {
+  return Object.values(TIERS);
+}
+
+export function getVisibleTiers(): TierConfig[] {
+  return Object.values(TIERS).filter((t) => !t.hidden && t.name !== 'none');
+}
+
+export function isValidTier(name: string): boolean {
+  return name in TIERS;
+}
+
 export function getMonthlyCredits(tierName: string): number {
   return getTier(tierName).monthlyCredits;
 }
@@ -349,8 +395,48 @@ export function isPerSeatAccount(billingModel: string | null | undefined): boole
   return billingModel === 'per_seat';
 }
 
+export function isLegacyAccount(billingModel: string | null | undefined): boolean {
+  // Default for null/undefined is legacy — safer to skip new behaviour than to
+  // accidentally bill a legacy customer twice.
+  return billingModel !== 'per_seat';
+}
+
+/** Legacy paid tiers eligible for the "claim computer" flow. */
+export const LEGACY_PAID_TIERS = ['tier_2_20', 'tier_6_50', 'tier_12_100', 'tier_25_200', 'tier_50_400', 'tier_125_800', 'tier_200_1000', 'tier_150_1200'] as const;
+
+export function isLegacyPaidTier(tierName: string): boolean {
+  return (LEGACY_PAID_TIERS as readonly string[]).includes(tierName);
+}
+
 export function getDailyCreditConfig(tierName: string): DailyCreditConfig | null {
   return getTier(tierName).dailyCreditConfig;
+}
+
+export function getTierOrder(tierName: string): number {
+  const order = [
+    'none',
+    'free',
+    'pro',
+    // Legacy tiers ordered above pro for backward compat
+    'tier_2_20',
+    'tier_6_50',
+    'tier_12_100',
+    'tier_25_200',
+    'tier_50_400',
+    'tier_125_800',
+    'tier_200_1000',
+    'tier_150_1200',
+  ];
+  const idx = order.indexOf(tierName);
+  return idx >= 0 ? idx : 0;
+}
+
+export function isUpgrade(fromTier: string, toTier: string): boolean {
+  return getTierOrder(toTier) > getTierOrder(fromTier);
+}
+
+export function isDowngrade(fromTier: string, toTier: string): boolean {
+  return getTierOrder(toTier) < getTierOrder(fromTier);
 }
 
 // ─── RevenueCat (mobile billing — untouched) ─────────────────────────────────

@@ -37,7 +37,7 @@ mock.module('../shared/db', () => ({
                 clientId: 'client_123',
                 name: 'Trusted Client',
                 redirectUris: ['https://client.example/callback'],
-                scopes: ['profile'],
+                scopes: ['profile', 'machines:read'],
                 active: true,
               }];
             }
@@ -74,7 +74,7 @@ function authRequestUrl() {
   url.searchParams.set('client_id', 'client_123');
   url.searchParams.set('redirect_uri', 'https://client.example/callback');
   url.searchParams.set('response_type', 'code');
-  url.searchParams.set('scope', 'profile');
+  url.searchParams.set('scope', 'profile machines:read');
   url.searchParams.set('state', 'state_abc');
   url.searchParams.set('code_challenge', 'challenge_123');
   url.searchParams.set('code_challenge_method', 'S256');
@@ -108,7 +108,7 @@ describe('OAuth authorization consent request binding', () => {
     expect(await metadata.json()).toMatchObject({
       client_id: 'client_123',
       client_name: 'Trusted Client',
-      scopes: ['profile'],
+      scopes: ['profile', 'machines:read'],
     });
 
     const approved = await app.request('/oauth/authorize/consent', {
@@ -134,7 +134,7 @@ describe('OAuth authorization consent request binding', () => {
     expect(insertedCodes[0]).toMatchObject({
       clientId: 'client_123',
       redirectUri: 'https://client.example/callback',
-      scopes: ['profile'],
+      scopes: ['profile', 'machines:read'],
       codeChallenge: 'challenge_123',
     });
 

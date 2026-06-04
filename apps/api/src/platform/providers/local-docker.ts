@@ -15,7 +15,28 @@ import type {
   ResolvedEndpoint,
   ProvisioningTraits,
   ProvisioningStatus,
-} from './types';
+} from './index';
+import type { SandboxInfo } from './local-docker/types';
+import {
+  getImagePullStatus,
+  setPullStatus,
+  getSandboxUpdateStatus,
+  setUpdateStatus,
+} from './local-docker/status';
+
+// Re-export the public surface so `platform/providers/index.ts` (the only
+// importer) keeps working unchanged.
+export {
+  getImagePullStatus,
+  getSandboxUpdateStatus,
+  resetSandboxUpdateStatus,
+} from './local-docker/status';
+export type {
+  ImagePullStatus,
+  SandboxUpdatePhase,
+  SandboxUpdateStatus,
+  SandboxInfo,
+} from './local-docker/types';
 
 /** Container name — configurable so self-hosted and dev can coexist. */
 const CONTAINER_NAME = config.SANDBOX_CONTAINER_NAME;
@@ -100,14 +121,14 @@ function getSandboxInternalApiUrl(): string {
 }
 
 /**
- * Read key=value pairs from the API env file. These include the credentials
- * that OpenCode needs inside the local sandbox container.
+ * Read key=value pairs from the core/docker/.env file.
+ * API keys and credentials that OpenCode needs inside the container.
  */
 function readSandboxEnv(): string[] {
   const candidates = [
-    resolve(__dirname, '../../.env'),
-    resolve(process.cwd(), 'apps/api/.env'),
-    resolve(process.cwd(), '.env'),
+    resolve(__dirname, '../../../../../core/docker/.env'),
+    resolve(process.cwd(), 'core/docker/.env'),
+    resolve(process.cwd(), '../../core/docker/.env'),
   ];
   for (const envPath of candidates) {
     try {
@@ -135,19 +156,17 @@ function getDocker(): Docker {
   return new Docker();
 }
 
-interface ImagePullStatus {
-  state: 'idle' | 'pulling' | 'done' | 'error';
-  progress: number;
-  message: string;
-  error?: string;
+/**
+ * Derive the target image name from a version string.
+ * Uses the current SANDBOX_IMAGE config as the base (strips existing tag).
+ * e.g. "kortix/kortix-sandbox:0.7.5" + version "0.8.0" → "kortix/kortix-sandbox:0.8.0"
+ */
+function getImageForVersion(version: string): string {
+  const current = config.SANDBOX_IMAGE;
+  const colonIdx = current.lastIndexOf(':');
+  const base = colonIdx > 0 ? current.slice(0, colonIdx) : current;
+  return `${base}:${version}`;
 }
-
-let _pullStatus: ImagePullStatus = { state: 'idle', progress: 0, message: '' };
-
-function getImagePullStatus(): ImagePullStatus {
-  return { ..._pullStatus };
-}
-
 export class LocalDockerProvider implements SandboxProvider {
   readonly name: ProviderName = 'local_docker';
   private docker: Docker;
@@ -163,7 +182,7 @@ export class LocalDockerProvider implements SandboxProvider {
     ],
   };
 
-  async getProvisioningStatus(_sandboxId: string): Promise<ProvisioningStatus | null> {
+  async getProvisioningStatus(sandboxId: string): Promise<ProvisioningStatus | null> {
     const pullStatus = getImagePullStatus();
 
     if (pullStatus.state === 'pulling') {
@@ -233,6 +252,7 @@ export class LocalDockerProvider implements SandboxProvider {
         }
         return existing;
       }
+      console.log(`[LOCAL-DOCKER] Starting stopped sandbox...`);
       const container = this.docker.getContainer(existing.containerId);
       try {
         await container.start();
@@ -252,6 +272,7 @@ export class LocalDockerProvider implements SandboxProvider {
       return this.getSandboxInfo();
     }
 
+    console.log(`[LOCAL-DOCKER] Creating sandbox (image: ${config.SANDBOX_IMAGE})...`);
     await this.createContainer();
     return this.getSandboxInfo();
   }
@@ -295,6 +316,134 @@ export class LocalDockerProvider implements SandboxProvider {
     } catch {
     }
     await container.remove({ v: false });
+  }
+
+  /**
+   * Update the sandbox to a new Docker image version.
+   *
+   * Flow: pull new image → stop container → remove container (preserve volumes)
+   *       → recreate container with new image → start → health check.
+   *
+   * The /workspace volume is preserved across the recreate (v: false on remove).
+   * Returns the new SandboxInfo on success, throws on failure.
+   */
+  async updateSandbox(targetVersion: string): Promise<SandboxInfo> {
+    const updateStatus = getSandboxUpdateStatus();
+    if (updateStatus.phase !== 'idle' && updateStatus.phase !== 'complete' && updateStatus.phase !== 'failed') {
+      throw new Error(`Update already in progress (phase: ${updateStatus.phase})`);
+    }
+
+    const targetImage = getImageForVersion(targetVersion);
+    let previousVersion: string | null = null;
+
+    try {
+      const existing = await this.find();
+      if (existing) {
+        const currentTag = existing.image.split(':').pop() || null;
+        previousVersion = currentTag;
+      }
+
+      setUpdateStatus({
+        phase: 'pulling',
+        progress: 10,
+        message: `Checking image ${targetImage}...`,
+        targetVersion,
+        previousVersion,
+        currentVersion: previousVersion,
+        error: null,
+        startedAt: new Date().toISOString(),
+      });
+      let imageExistsLocally = false;
+      try {
+        await this.docker.getImage(targetImage).inspect();
+        imageExistsLocally = true;
+        console.log(`[LOCAL-DOCKER] Image ${targetImage} already exists locally, skipping pull`);
+        setUpdateStatus({ progress: 50, message: `Image ${targetImage} found locally` });
+      } catch {
+      }
+
+      if (!imageExistsLocally) {
+        console.log(`[LOCAL-DOCKER] Pulling image ${targetImage} for update...`);
+        setUpdateStatus({ message: `Pulling image ${targetImage}...` });
+        await this.pullImageByName(targetImage);
+      }
+
+      setUpdateStatus({ phase: 'stopping', progress: 50, message: 'Stopping sandbox...' });
+      console.log(`[LOCAL-DOCKER] Stopping sandbox for update...`);
+      try {
+        const container = this.docker.getContainer(CONTAINER_NAME);
+        await container.stop({ t: 15 });
+      } catch (err: any) {
+        if (!err?.message?.includes('not running') && !err?.message?.includes('No such container')) {
+          console.warn(`[LOCAL-DOCKER] Stop warning: ${err.message}`);
+        }
+      }
+
+      setUpdateStatus({ phase: 'removing', progress: 60, message: 'Removing old container...' });
+      console.log(`[LOCAL-DOCKER] Removing old container (preserving volumes)...`);
+      try {
+        const container = this.docker.getContainer(CONTAINER_NAME);
+        await container.remove({ v: false, force: true });
+      } catch (err: any) {
+        if (err?.statusCode !== 404) {
+          console.warn(`[LOCAL-DOCKER] Remove warning: ${err.message}`);
+        }
+      }
+      console.log(`[LOCAL-DOCKER] Preparing volume for new container...`);
+      try {
+        const cleanupContainer = await this.docker.createContainer({
+          Image: 'alpine:latest',
+          Cmd: ['sh', '-c', [
+            // Use 911:911 (abc user from linuxserver base image), NOT 1000
+            'for p in /workspace/.secrets /workspace/.lss; do if [ -L "$p" ] && [ "$(readlink "$p" 2>/dev/null || true)" = "$p" ]; then rm -f "$p"; fi; done',
+            'chown -R 911:911 /workspace 2>/dev/null || true',
+            'find /workspace -name "*.db-wal" -o -name "*.db-shm" 2>/dev/null | xargs rm -f',
+            'echo "volume prepared"',
+          ].join(' && ')],
+          HostConfig: {
+            Binds: [`${CONTAINER_NAME}-data:/workspace`],
+          },
+        });
+        await cleanupContainer.start();
+        await cleanupContainer.wait();
+        await cleanupContainer.remove().catch(() => {});
+        console.log(`[LOCAL-DOCKER] Volume prepared (ownership + WAL cleanup)`);
+      } catch (cleanErr: any) {
+        console.warn(`[LOCAL-DOCKER] Volume prep warning: ${cleanErr.message}`);
+      }
+
+      setUpdateStatus({ phase: 'recreating', progress: 70, message: `Recreating with ${targetImage}...` });
+      console.log(`[LOCAL-DOCKER] Recreating sandbox with image ${targetImage}...`);
+      this._serviceKeySynced = false;
+      await this.createContainer(targetImage);
+
+      setUpdateStatus({ phase: 'starting', progress: 80, message: 'Container starting...' });
+      console.log(`[LOCAL-DOCKER] Container created, starting up...`);
+
+      setUpdateStatus({ phase: 'health_check', progress: 90, message: 'Waiting for sandbox to become healthy...' });
+      console.log(`[LOCAL-DOCKER] Waiting for sandbox health check...`);
+      await this.waitForHealth(120_000);
+
+      setUpdateStatus({
+        phase: 'complete',
+        progress: 100,
+        message: `Updated to v${targetVersion}`,
+        currentVersion: targetVersion,
+      });
+      console.log(`[LOCAL-DOCKER] Sandbox updated to ${targetImage} successfully`);
+
+      return this.getSandboxInfo();
+    } catch (err: any) {
+      const errorMsg = err?.message || String(err);
+      setUpdateStatus({
+        phase: 'failed',
+        progress: 0,
+        message: `Update failed: ${errorMsg}`,
+        error: errorMsg,
+      });
+      console.error(`[LOCAL-DOCKER] Sandbox update failed:`, errorMsg);
+      throw err;
+    }
   }
 
   async getStatus(): Promise<SandboxStatus> {
@@ -349,11 +498,13 @@ export class LocalDockerProvider implements SandboxProvider {
       return;
     }
     if (info) {
+      console.log('[LOCAL-DOCKER] Container stopped, starting for cron execution...');
       const container = this.docker.getContainer(CONTAINER_NAME);
       await container.start();
       await this.syncCoreEnvVars();
       return;
     }
+    console.log('[LOCAL-DOCKER] No container found, creating for cron execution...');
     await this.ensure();
   }
 
@@ -377,6 +528,7 @@ export class LocalDockerProvider implements SandboxProvider {
 
     const info = await this.find();
     if (!info || info.status !== 'running') {
+      console.log('[LOCAL-DOCKER] syncCoreEnvVars: no running container found, skipping');
       return;
     }
 
@@ -410,12 +562,15 @@ export class LocalDockerProvider implements SandboxProvider {
 
     if (Object.keys(stale).length === 0) {
       this._serviceKeySynced = true;
+      console.log('[LOCAL-DOCKER] syncCoreEnvVars: all core vars in sync');
       return;
     }
 
+    console.log(`[LOCAL-DOCKER] Syncing ${Object.keys(stale).join(', ')} via secrets manager...`);
     try {
       await this.postMasterEnv(stale, authCandidates);
       this._serviceKeySynced = true;
+      console.log(`[LOCAL-DOCKER] Core env vars synced: ${Object.keys(stale).join(', ')}`);
     } catch (err: any) {
       console.error('[LOCAL-DOCKER] Failed to sync core env vars via /env API, falling back to docker exec:', err.message || err);
       try {
@@ -482,6 +637,7 @@ export class LocalDockerProvider implements SandboxProvider {
       `${shellQuote(buildDockerEnvWriteCommand(stale, '/run/s6/container_environment'))}`;
 
     execSync(cmd, { timeout: 15_000, stdio: 'pipe', env });
+    console.log(`[LOCAL-DOCKER] Core env vars synced via fallback (docker exec): ${Object.keys(stale).join(', ')}`);
   }
 
   /**
@@ -499,6 +655,7 @@ export class LocalDockerProvider implements SandboxProvider {
       containerEnv['TUNNEL_TOKEN'] === token
     ) return;
 
+    console.log('[LOCAL-DOCKER] Syncing DB-registered KORTIX_TOKEN into running container...');
     const authCandidates = getAuthCandidates(token);
     const authBundle = {
       KORTIX_TOKEN: token,
@@ -507,9 +664,11 @@ export class LocalDockerProvider implements SandboxProvider {
     };
     try {
       await this.postMasterEnv(authBundle, authCandidates);
+      console.log('[LOCAL-DOCKER] Sandbox auth bundle synced to container via /env API');
     } catch {
       try {
         this.syncCoreEnvVarsFallback(authBundle);
+        console.log('[LOCAL-DOCKER] Sandbox auth bundle synced to container via docker exec fallback');
       } catch (err: any) {
         console.error('[LOCAL-DOCKER] Failed to sync sandbox auth bundle into container:', err.message || err);
       }
@@ -541,12 +700,12 @@ export class LocalDockerProvider implements SandboxProvider {
    */
   async pullImage(): Promise<void> {
     const image = config.SANDBOX_IMAGE;
-    _pullStatus = { state: 'pulling', progress: 0, message: `Pulling ${image}...` };
+    setPullStatus({ state: 'pulling', progress: 0, message: `Pulling ${image}...` });
 
     await new Promise<void>((resolve, reject) => {
       this.docker.pull(image, (err: Error | null, stream: NodeJS.ReadableStream) => {
         if (err) {
-          _pullStatus = { state: 'error', progress: 0, message: err.message, error: err.message };
+          setPullStatus({ state: 'error', progress: 0, message: err.message, error: err.message });
           return reject(err);
         }
         const layerProgress: Record<string, { current: number; total: number }> = {};
@@ -554,10 +713,11 @@ export class LocalDockerProvider implements SandboxProvider {
           stream,
           (err2: Error | null) => {
             if (err2) {
-              _pullStatus = { state: 'error', progress: 0, message: err2.message, error: err2.message };
+              setPullStatus({ state: 'error', progress: 0, message: err2.message, error: err2.message });
               return reject(err2);
             }
-            _pullStatus = { state: 'done', progress: 100, message: 'Image pulled successfully' };
+            setPullStatus({ state: 'done', progress: 100, message: 'Image pulled successfully' });
+            console.log(`[LOCAL-DOCKER] Image ${image} pulled successfully`);
             resolve();
           },
           (event: any) => {
@@ -570,13 +730,13 @@ export class LocalDockerProvider implements SandboxProvider {
               const totalBytes = layers.reduce((s, l) => s + l.total, 0);
               const currentBytes = layers.reduce((s, l) => s + l.current, 0);
               const pct = totalBytes > 0 ? Math.round((currentBytes / totalBytes) * 100) : 0;
-              _pullStatus = {
+              setPullStatus({
                 state: 'pulling',
                 progress: Math.min(pct, 99),
                 message: `Pulling image... ${pct}%`,
-              };
+              });
             } else if (event.status) {
-              _pullStatus = { ..._pullStatus, message: event.status };
+              setPullStatus({ ...getImagePullStatus(), message: event.status });
             }
           },
         );
@@ -584,9 +744,63 @@ export class LocalDockerProvider implements SandboxProvider {
     });
   }
 
-  private async createContainer(): Promise<void> {
-    const image = config.SANDBOX_IMAGE;
+  /**
+   * Pull a specific image by full name (e.g. "kortix/kortix-sandbox:0.8.0").
+   * Updates both _pullStatus and _updateStatus with progress.
+   */
+  private async pullImageByName(imageName: string): Promise<void> {
+    setPullStatus({ state: 'pulling', progress: 0, message: `Pulling ${imageName}...` });
+
+    await new Promise<void>((resolve, reject) => {
+      this.docker.pull(imageName, (err: Error | null, stream: NodeJS.ReadableStream) => {
+        if (err) {
+          setPullStatus({ state: 'error', progress: 0, message: err.message, error: err.message });
+          return reject(err);
+        }
+        const layerProgress: Record<string, { current: number; total: number }> = {};
+        this.docker.modem.followProgress(
+          stream,
+          (err2: Error | null) => {
+            if (err2) {
+              setPullStatus({ state: 'error', progress: 0, message: err2.message, error: err2.message });
+              return reject(err2);
+            }
+            setPullStatus({ state: 'done', progress: 100, message: 'Image pulled successfully' });
+            console.log(`[LOCAL-DOCKER] Image ${imageName} pulled successfully`);
+            resolve();
+          },
+          (event: any) => {
+            if (event.id && event.progressDetail?.total) {
+              layerProgress[event.id] = {
+                current: event.progressDetail.current || 0,
+                total: event.progressDetail.total,
+              };
+              const layers = Object.values(layerProgress);
+              const totalBytes = layers.reduce((s, l) => s + l.total, 0);
+              const currentBytes = layers.reduce((s, l) => s + l.current, 0);
+              const pct = totalBytes > 0 ? Math.round((currentBytes / totalBytes) * 100) : 0;
+              setPullStatus({
+                state: 'pulling',
+                progress: Math.min(pct, 99),
+                message: `Pulling image... ${pct}%`,
+              });
+              setUpdateStatus({
+                progress: 10 + Math.round(pct * 0.4),
+                message: `Pulling image... ${pct}%`,
+              });
+            } else if (event.status) {
+              setPullStatus({ ...getImagePullStatus(), message: event.status });
+            }
+          },
+        );
+      });
+    });
+  }
+
+  private async createContainer(imageOverride?: string): Promise<void> {
+    const image = imageOverride || config.SANDBOX_IMAGE;
     if (!(await this.hasImage(image))) {
+      console.log(`[LOCAL-DOCKER] Image ${image} not found locally, pulling...`);
       await this.pullImage();
     }
 
@@ -614,12 +828,23 @@ export class LocalDockerProvider implements SandboxProvider {
     // Forward the developer's non-secret env, but NEVER a real provider secret.
     // The sandbox reaches every upstream (LLM gateway, Tavily, …) through the
     // kortix-api router with its KORTIX_TOKEN — it must not hold raw keys.
+    const droppedSecrets: string[] = [];
     const filteredSandboxEnv = sandboxEnvVars.filter((entry) => {
       const varName = entry.split('=')[0];
       if (MANAGED_VARS.has(varName)) return false;
-      if (isForbiddenSandboxEnv(varName)) return false;
+      if (isForbiddenSandboxEnv(varName)) {
+        droppedSecrets.push(varName);
+        return false;
+      }
       return true;
     });
+    if (droppedSecrets.length > 0) {
+      console.log(
+        `[LOCAL-DOCKER] Not injecting ${droppedSecrets.length} secret(s) into sandbox ` +
+        `(reached via router with KORTIX_TOKEN): ${droppedSecrets.join(', ')}`,
+      );
+    }
+
     const sandboxApiBase = getSandboxInternalApiUrl();
 
     const env = [
@@ -690,6 +915,9 @@ export class LocalDockerProvider implements SandboxProvider {
     });
 
     await container.start();
+    console.log(
+      `[LOCAL-DOCKER] Sandbox created and started on ports ${PORT_BASE}-${PORT_BASE + 7}`,
+    );
   }
 
   /**
@@ -731,14 +959,28 @@ export class LocalDockerProvider implements SandboxProvider {
     };
   }
 
-}
+  /**
+   * Wait for the sandbox to pass health checks.
+   * Polls GET /kortix/health until it returns 200 with status "ok".
+   */
+  private async waitForHealth(timeoutMs: number): Promise<void> {
+    const start = Date.now();
+    const healthUrl = `http://localhost:${PORT_MAP['8000']}/kortix/health`;
 
-interface SandboxInfo {
-  containerId: string;
-  name: string;
-  status: SandboxStatus;
-  image: string;
-  baseUrl: string;
-  mappedPorts: Record<string, string>;
-  createdAt: string;
+    while (Date.now() - start < timeoutMs) {
+      try {
+        const res = await fetch(healthUrl, { signal: AbortSignal.timeout(5_000) });
+        if (res.ok) {
+          const data = await res.json() as any;
+          if (data.status === 'ok') {
+            console.log(`[LOCAL-DOCKER] Health check passed`);
+            return;
+          }
+        }
+      } catch {
+      }
+      await new Promise((r) => setTimeout(r, 2_000));
+    }
+    throw new Error(`Health check timed out after ${Math.round(timeoutMs / 1000)}s — sandbox may still be starting`);
+  }
 }

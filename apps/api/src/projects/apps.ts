@@ -64,13 +64,13 @@ export interface AppSpec {
   framework: string | null;
 }
 
-interface AppParseError {
+export interface AppParseError {
   slug: string;
   path: string;
   error: string;
 }
 
-interface LoadedApps {
+export interface LoadedApps {
   specs: AppSpec[];
   errors: AppParseError[];
 }
@@ -208,7 +208,7 @@ export function manifestHashForApp(spec: AppSpec): string {
  * short hash keeps it unique across the shared Freestyle account so two
  * projects can both have an app called "site" without colliding.
  */
-function defaultAppDomain(projectId: string, slug: string): string {
+export function defaultAppDomain(projectId: string, slug: string): string {
   const hash = createHash('sha256').update(`${projectId}:${slug}`).digest('hex').slice(0, 8);
   const label = slug.replace(/_/g, '-').slice(0, 40).replace(/^-+|-+$/g, '') || 'app';
   return `${label}-${hash}.style.dev`;
@@ -240,10 +240,7 @@ function parseAppEntry(entry: unknown, index: number): ParseOk | ParseErr {
   }
 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
-  if (row.enabled !== undefined && typeof row.enabled !== 'boolean') {
-    return err(slug, 'enabled must be a boolean');
-  }
-  const enabled = row.enabled ?? true;
+  const enabled = coerceBool(row.enabled, true);
 
   // Domains — optional. Omit them and the platform auto-issues a stable,
   // free `*.style.dev` URL at deploy time (see `defaultAppDomain`), so the
@@ -310,7 +307,9 @@ function parseAppSource(
     const branch = typeof row.branch === 'string' && row.branch.trim() ? row.branch.trim() : null;
     const rootPath = typeof row.root_path === 'string' && row.root_path.trim()
       ? row.root_path.trim()
-      : null;
+      : typeof row.rootPath === 'string' && row.rootPath.trim()
+        ? row.rootPath.trim()
+        : null;
     // repo is allowed to be null — the deploy path will substitute the
     // project's own repoUrl when missing.
     return { ok: true, value: { type: 'git', repo, branch, rootPath } };
@@ -335,7 +334,9 @@ function parseAppBuild(
   const command = typeof row.command === 'string' && row.command.trim() ? row.command.trim() : null;
   const outDir = typeof row.out_dir === 'string' && row.out_dir.trim()
     ? row.out_dir.trim()
-    : null;
+    : typeof row.outDir === 'string' && row.outDir.trim()
+      ? row.outDir.trim()
+      : null;
   if (!command && !outDir) return { ok: true, value: null };
   return { ok: true, value: { command, outDir } };
 }
@@ -359,6 +360,17 @@ function parseAppEnv(
     out[k] = v;
   }
   return { ok: true, value: out };
+}
+
+function coerceBool(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes' || v === 'on') return true;
+    if (v === 'false' || v === '0' || v === 'no' || v === 'off') return false;
+  }
+  return fallback;
 }
 
 function err(slug: string, message: string): ParseErr {

@@ -3,7 +3,7 @@
  * flow (mirrors triggers/apps). The manifest holds the connector definition +
  * credential MODE (shared/per_user, a static per-app default). ACCESS (who can
  * use) is dynamic and stored on the connector (not git). Credentials live in the
- * split store.
+ * split store. See docs/specs/executor.md §3, §5–6.
  */
 import { and, eq } from 'drizzle-orm';
 import { executorConnectors, projects } from '@kortix/db';
@@ -15,8 +15,8 @@ import {
   projectPoliciesToTomlEntries,
   projectPolicySettingsToToml,
   type ProjectPolicySpec,
+  type DefaultMode,
 } from '../projects/policies';
-import type { DefaultMode } from './policy';
 import { syncProjectConnectors, type SyncResult } from './sync';
 import { setConnectorSharingDb, upsertCredential } from './credentials';
 import type { SharingIntent } from './share';
@@ -30,14 +30,14 @@ export interface ConnectorDraft {
   url?: string;
   transport?: 'http' | 'sse';
   endpoint?: string;
-  base_url?: string;
+  baseUrl?: string;
   spec?: string;
   /** Credential storage mode — default per app (pipedream→per_user, else shared). */
   credential?: 'shared' | 'per_user';
   auth?: { type?: 'none' | 'bearer' | 'basic' | 'custom'; in?: 'header' | 'query'; name?: string; prefix?: string };
 }
 
-type CrudResult =
+export type CrudResult =
   | { ok: true; sync?: SyncResult }
   | { ok: false; error: string; status: number };
 
@@ -55,7 +55,7 @@ function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
     if (d.endpoint) entry.endpoint = d.endpoint;
     if (d.spec) entry.spec = d.spec;
   } else if (d.provider === 'http') {
-    if (d.base_url) entry.base_url = d.base_url;
+    if (d.baseUrl) entry.base_url = d.baseUrl;
     if (d.spec) entry.spec = d.spec;
   } else if (d.provider === 'openapi') {
     if (d.spec) entry.spec = d.spec;
@@ -161,7 +161,7 @@ export async function setConnectorCredentialShared(projectId: string, slug: stri
 
 // ─── Project-level policies (top-level [[policies]] + [policy]) ──────────────
 
-interface ProjectPoliciesView {
+export interface ProjectPoliciesView {
   policies: ProjectPolicySpec[];
   defaultMode: DefaultMode;
   errors: Array<{ path: string; error: string }>;

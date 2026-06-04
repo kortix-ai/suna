@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -32,6 +32,7 @@ let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
+let secretValues: Map<string, string>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
 let lastProvisionInput: {
@@ -87,12 +88,13 @@ function resetState() {
   };
   sessionSandboxRows = [];
   secretRows = [];
+  secretValues = new Map();
   gitConnectionRows = [];
   gitCredentialRows = [];
 }
 
-mock.module('../middleware/auth', () => {
-  const authMiddleware = async (c: any, next: any) => {
+mock.module('../middleware/auth', () => ({
+  supabaseAuth: async (c: any, next: any) => {
     if (c.req.header('Authorization') === `Bearer ${PROJECT_SANDBOX_TOKEN}`) {
       c.set('userId', ACCOUNT_ID);
       c.set('userEmail', '');
@@ -117,12 +119,8 @@ mock.module('../middleware/auth', () => {
     c.set('userEmail', 'contract@example.test');
     c.set('authType', 'supabase');
     await next();
-  };
-  return {
-    combinedAuth: authMiddleware,
-    supabaseAuth: authMiddleware,
-  };
-});
+  },
+}));
 
 mock.module('../projects/git', () => ({
   createRemoteSessionBranch: async () => {
@@ -140,7 +138,9 @@ mock.module('../projects/git', () => ({
   listCommits: async () => ({ entries: [], nextCursor: null }),
   getCommit: async () => null,
   getCommitDiff: async () => null,
+  diffStat: async () => ({ filesChanged: 0, insertions: 0, deletions: 0 }),
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
+  getFileAtRef: async () => null,
   resolveCommitSha: async () => 'a'.repeat(40),
   resolveBranchTip: async () => 'a'.repeat(40),
   getBranchDiff: async () => ({ files: [], diff: '' }),
@@ -155,36 +155,38 @@ mock.module("../snapshots/builder", () => ({
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
+  reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
-  kickProjectTemplatePrebuilds: () => {},
-  reconcileProjectTemplates: async () => {},
+  ensurePlatformDefaultImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   kickStartupPreBuild: () => {},
-  reconcileStaleBuilds: async () => ({ healed: 0 }),
-  ensurePlatformDefaultImage: async () => {},
+  reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
+  kickProjectTemplatePrebuilds: () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
+  parseGitHubRepoUrl: () => null,
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  createGitHubAppJwt: () => 'jwt-test',
+  verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
     nonce: 'test-nonce',
     issuedAt: Math.floor(Date.now() / 1000),
   }),
   getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
+  addCollaborator: async () => undefined,
   deleteFile: async () => undefined,
+  deleteRepo: async () => undefined,
   commitFile: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
   createInstallationToken: async () => ({ token: 'installation-token' }),
   createRepo: async () => {
     throw new Error('not used');
   },
-  deleteRepo: async () => undefined,
-  addCollaborator: async () => undefined,
-  getBranchCommitSha: async () => 'a'.repeat(40),
-  createBranchRef: async () => undefined,
-  parseGitHubRepoUrl: () => ({ owner: 'kortix-org', repo: 'new-project' }),
   getFileSha: async () => null,
   getGitHubAppInstallation: async () => ({
     account: { login: 'kortix-org', type: 'Organization' },
@@ -237,16 +239,19 @@ mock.module('../shared/resolve-account', () => ({
 
 mockIamEngineAllowAll();
 
+mockIamMembershipSyncNoop();
+
 mock.module('../repositories/account-tokens', () => ({
   createAccountToken: async () => ({ secretKey: PROJECT_RUNTIME_PAT }),
   listAccountTokens: async () => [],
   revokeAccountToken: async () => true,
-  validateAccountToken: async () => ({
-    isValid: true,
+  validateAccountToken: async (secretKey: string) => ({
+    isValid: secretKey === PROJECT_RUNTIME_PAT,
     accountId: ACCOUNT_ID,
     userId: USER_ID,
-    tokenId: '00000000-0000-4000-a000-000000000301',
     projectId: PROJECT_ID,
+    tokenId: 'token_test',
+    error: secretKey === PROJECT_RUNTIME_PAT ? undefined : 'Invalid PAT',
   }),
 }));
 
@@ -254,13 +259,12 @@ mock.module('../repositories/account-tokens', () => ({
 // always exercises the rate-limit branch — the real implementation bypasses
 // the cap when KORTIX_BILLING_INTERNAL_ENABLED is false.
 mock.module('../shared/account-limits', () => ({
-  resolveAccountTier: async () => 'free',
-  maxConcurrentSessionsForTier: () => 1,
-  maxProjectsForAccount: async () => Number.MAX_SAFE_INTEGER,
-  sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
-  clearAccountLimitCache: () => {},
   FREE_TIER_PROJECT_LIMIT: 1,
-  MAX_PROJECTS_PER_ACCOUNT: 100,
+  resolveAccountTier: async () => 'free',
+  maxProjectsForAccount: async () => 1,
+  maxConcurrentSessionsForTier: () => 1,
+  sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
+  clearAccountLimitCache: () => undefined,
 }));
 
 mock.module('../shared/supabase', () => ({
@@ -683,8 +687,6 @@ describe('project session API contract', () => {
       { body: { sandbox_url: 'https://sandbox.example' }, message: 'field is server-managed: sandbox_url' },
       { body: { sandboxUrl: 'https://sandbox.example' }, message: 'field is server-managed: sandboxUrl' },
       { body: { error: 'client-owned' }, message: 'field is server-managed: error' },
-      { body: { opencode_session_id: 'oc-123' }, message: 'field is server-managed: opencode_session_id' },
-      { body: { opencodeSessionId: 'oc-123' }, message: 'field is server-managed: opencodeSessionId' },
       { body: { random: 'field' }, message: 'field is not user-editable: random' },
     ];
 
@@ -756,7 +758,6 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.name).toBe('Human name');
-    expect(body.opencode_session_id).toBeNull();
     expect(body.status).toBe('provisioning');
     expect(body.metadata).toEqual({ existing: true, custom: 'ok', name: 'Human name' });
   });
@@ -766,7 +767,7 @@ describe('project session API contract', () => {
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: 'unknown_provider' }),
+      body: JSON.stringify({ provider: 'justavps' }),
     });
 
     expect(res.status).toBe(400);
@@ -825,7 +826,7 @@ describe('project session API contract', () => {
     // injects the single sandbox KORTIX_TOKEN at the provider boundary.
     expect(env.KORTIX_PROJECT_ID).toBe(PROJECT_ID);
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
-    expect(env.KORTIX_REPO_URL).toBe(`https://kortix-e2e.example.test/v1/git/${PROJECT_ID}.git`);
+    expect(env.KORTIX_REPO_URL).toBe(`${process.env.KORTIX_URL}/v1/git/${PROJECT_ID}.git`);
     expect(env.KORTIX_BASE_REF).toBe('main');
     // LLM/tool-router URLs are no longer injected — the sandbox derives any
     // router endpoint it needs from KORTIX_API_URL.
@@ -882,25 +883,6 @@ describe('project session API contract', () => {
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
-  });
-
-  test('rejects legacy session create request aliases', async () => {
-    const app = createApp();
-    const cases = [
-      [{ provider: 'daytona', baseRef: 'main' }, 'base_ref'],
-      [{ provider: 'daytona', base_ref: 'main', agentName: 'reviewer' }, 'agent_name'],
-      [{ provider: 'daytona', base_ref: 'main', sandboxSlug: 'dev' }, 'sandbox_slug'],
-    ] as const;
-
-    for (const [body, canonical] of cases) {
-      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      expect(res.status).toBe(400);
-      expect((await res.json()).error).toContain(canonical);
-    }
   });
 
   test('accepts a client-created session branch without recreating it server-side', async () => {

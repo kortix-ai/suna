@@ -6,9 +6,7 @@
  * test data drifting from production config.
  */
 import { describe, test, expect } from 'bun:test';
-import { matchAllowedRoute, getProxyServices } from '../router/config/proxy-services';
-
-type TestRoute = Parameters<typeof matchAllowedRoute>[2][number];
+import { matchAllowedRoute, getProxyServices, type AllowedRoute } from '../router/config/proxy-services';
 
 // ─── Test data (from real registry — not duplicated) ─────────────────────────
 
@@ -114,14 +112,42 @@ describe('matchAllowedRoute', () => {
   });
 
   describe('replicate routes (per-model billing)', () => {
-    test('rejects model-specific Replicate routes', () => {
-      for (const path of [
+    test('matches nano-banana model route', () => {
+      const result = matchAllowedRoute(
+        'POST',
         '/v1/models/google/nano-banana/predictions',
+        replicateRoutes,
+      );
+      expect(result).not.toBeNull();
+      expect(result!.billingToolName).toBe('proxy_replicate_nano_banana');
+    });
+
+    test('matches gpt-image model route', () => {
+      const result = matchAllowedRoute(
+        'POST',
         '/v1/models/openai/gpt-image-1.5/predictions',
+        replicateRoutes,
+      );
+      expect(result).not.toBeNull();
+      expect(result!.billingToolName).toBe('proxy_replicate_gpt_image');
+    });
+
+    test('rejects unlisted model', () => {
+      const result = matchAllowedRoute(
+        'POST',
         '/v1/models/stability-ai/sdxl/predictions',
-      ]) {
-        expect(matchAllowedRoute('POST', path, replicateRoutes)).toBeNull();
-      }
+        replicateRoutes,
+      );
+      expect(result).toBeNull();
+    });
+
+    test('rejects GET on replicate model routes', () => {
+      const result = matchAllowedRoute(
+        'GET',
+        '/v1/models/google/nano-banana/predictions',
+        replicateRoutes,
+      );
+      expect(result).toBeNull();
     });
 
     test('matches versioned prediction create (moondream2) with body-version gate', () => {
@@ -163,12 +189,12 @@ describe('matchAllowedRoute', () => {
     });
 
     test('root path "/"', () => {
-      const routes: TestRoute[] = [{ path: '/', methods: ['GET'] }];
+      const routes: AllowedRoute[] = [{ path: '/', methods: ['GET'] }];
       expect(matchAllowedRoute('GET', '/', routes)).not.toBeNull();
     });
 
     test('returns first matching route when multiple could match', () => {
-      const routes: TestRoute[] = [
+      const routes: AllowedRoute[] = [
         { path: '/api', methods: ['POST'], prefixMatch: true, billingToolName: 'first' },
         { path: '/api/v2', methods: ['POST'], billingToolName: 'second' },
       ];

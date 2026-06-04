@@ -1,13 +1,12 @@
 import { config } from '../config';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
-import { getTier, isPaidTier } from '../billing/services/tiers';
+import { getTier, isPaidTier, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
 
 // Free accounts may own a single project. Any paid plan (pro or the per-seat
 // team plan) lifts the cap to MAX_PROJECTS_PER_ACCOUNT — effectively uncapped
 // for normal use. Tightening the free limit here is the one knob to turn.
 export const FREE_TIER_PROJECT_LIMIT = 1;
-export const MAX_PROJECTS_PER_ACCOUNT = 100;
 
 const tierCache = new Map<string, { tier: string | null; expiresAt: number }>();
 

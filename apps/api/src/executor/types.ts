@@ -2,8 +2,9 @@
  * Executor shared types. The normalized catalog shape every provider produces —
  * the one thing the gateway, discovery, and policy layer all speak.
  *
- * This mirrors the executor IR's intent (path / input / output / risk) on
- * the Kortix stack.
+ * Design reference: RhysSullivan/executor (MIT) — see docs/specs/executor-reference.md.
+ * We reimplement on our stack; this mirrors their IR's intent (path / input /
+ * output / risk) without their Effect/FumaDB machinery.
  */
 
 /** Risk class, derived from the source's own semantics (GET vs DELETE, query vs mutation, destructiveHint). */

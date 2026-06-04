@@ -1,6 +1,5 @@
 import { config, KORTIX_MARKUP } from '../../config';
-import { resolveOpenRouterId } from '../config/models';
-import type { ModelConfig } from '../config/models';
+import { getModel, getAllModels, resolveOpenRouterId, type ModelConfig } from '../config/models';
 
 /**
  * Calculate cost based on token usage and model pricing.
@@ -42,6 +41,7 @@ export function calculateCost(
  */
 export async function proxyToOpenRouter(
   body: Record<string, unknown>,
+  isStreaming: boolean,
   apiKey = config.OPENROUTER_API_KEY,
   traceHeaders: Record<string, string> = {},
 ): Promise<Response> {
@@ -60,6 +60,8 @@ export async function proxyToOpenRouter(
 
   const url = `${config.OPENROUTER_API_URL}/chat/completions`;
 
+  console.log(`[LLM] Proxying to OpenRouter: ${modelId} → ${openrouterId} (stream=${isStreaming})`);
+
   const response = await fetch(url, {
     method: 'POST',
     headers: {
@@ -75,7 +77,7 @@ export async function proxyToOpenRouter(
   return response;
 }
 
-interface UsageInfo {
+export interface UsageInfo {
   promptTokens: number;
   completionTokens: number;
   cachedTokens: number;
@@ -96,3 +98,6 @@ export function extractUsage(responseBody: any): UsageInfo | null {
     cacheWriteTokens: details?.cache_write_tokens ?? 0,
   };
 }
+
+// Re-export model functions
+export { getModel, getAllModels, resolveOpenRouterId } from '../config/models';

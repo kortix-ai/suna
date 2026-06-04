@@ -1,12 +1,17 @@
 import { eq, and, inArray, sql } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
-import { getSubscriptionInfo } from '../repositories/credit-accounts';
+import {
+  getCreditAccount,
+  getSubscriptionInfo,
+} from '../repositories/credit-accounts';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import {
   getTier,
   getDailyCreditConfig,
   isPaidTier,
+  isLegacyPaidTier,
   isPerSeatAccount,
+  MINIMUM_CREDIT_FOR_RUN,
   PER_SEAT_PRICE_USD,
   TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
   TYPICAL_LLM_BUDGET_PER_SEAT_USD,
@@ -17,6 +22,7 @@ import { getAutoTopupSettings } from './auto-topup';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
 import { db } from '../../shared/db';
+import { config } from '../../config';
 import type {
   AccountStateResponse,
   ScheduledChange,
@@ -39,13 +45,14 @@ async function countActiveSessions(accountId: string): Promise<number> {
   return Number(row?.activeCount ?? 0);
 }
 
-export async function buildAccountState(accountId: string): Promise<AccountStateResponse> {
+export async function buildMinimalAccountState(accountId: string): Promise<AccountStateResponse> {
   const credits = await getCreditSummary(accountId);
   const sub = await getSubscriptionInfo(accountId);
   const isAdmin = await isPlatformAdmin(accountId);
 
-  // If no credit_accounts row exists, return 'none'. Only return 'free' when
-  // the row actually exists with tier='free'.
+  // If no credit_accounts row exists, user hasn't been initialized yet.
+  // Return 'none' so middleware redirects to /setting-up for auto-initialization.
+  // Only return 'free' when the row actually exists with tier='free'.
   const tierName = sub ? (sub.tier ?? 'free') : 'none';
   const tier = getTier(tierName);
   const dailyConfig = getDailyCreditConfig(tierName);
@@ -122,6 +129,10 @@ export async function buildAccountState(accountId: string): Promise<AccountState
     // DB may not be available in local mode
   }
 
+  // Legacy paid users with no active machine can claim a free default computer
+  const hasActiveMachine = instances.some((i: any) => i.status === 'active' || i.status === 'provisioning');
+  const canClaimComputer = isLegacyPaidTier(tierName) && !hasActiveMachine;
+
   const state = {
     credits: {
       total: credits.total,
@@ -153,9 +164,11 @@ export async function buildAccountState(accountId: string): Promise<AccountState
       monthly_credits: tier.monthlyCredits,
       can_purchase_credits: isAdmin ? true : tier.canPurchaseCredits,
     },
+    models: [],
     auto_topup: autoTopup,
     instances,
     can_add_instances: isAdmin || isPaidTier(tierName),
+    can_claim_computer: canClaimComputer,
     billing_model: (isPerSeatAccount(sub?.billingModel) ? 'per_seat' : 'legacy') as 'per_seat' | 'legacy',
     seats: isPerSeatAccount(sub?.billingModel)
       ? {
@@ -177,6 +190,10 @@ export async function buildAccountState(accountId: string): Promise<AccountState
   };
 
   return state;
+}
+
+export async function buildAccountState(accountId: string): Promise<AccountStateResponse> {
+  return buildMinimalAccountState(accountId);
 }
 
 /**
@@ -215,6 +232,7 @@ export function buildLocalAccountState(): AccountStateResponse {
       monthly_credits: 0,
       can_purchase_credits: false,
     },
+    models: [],
     auto_topup: {
       enabled: false,
       threshold: AUTO_TOPUP_DEFAULT_THRESHOLD,
@@ -222,6 +240,7 @@ export function buildLocalAccountState(): AccountStateResponse {
     },
     instances: [],
     can_add_instances: false,
+    can_claim_computer: false,
     billing_model: 'legacy',
   };
 }

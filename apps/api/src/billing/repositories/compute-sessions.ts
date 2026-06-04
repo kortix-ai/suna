@@ -1,4 +1,4 @@
-import { and, eq, isNull, lte } from 'drizzle-orm';
+import { and, eq, isNull, lte, sql } from 'drizzle-orm';
 import { sandboxComputeSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 
@@ -55,4 +55,24 @@ export async function findStaleActiveSessions(cutoff: Date, limit = 100) {
       ),
     )
     .limit(limit);
+}
+
+/** Sum compute cost in $ for an account over a window — used by the usage UI. */
+export async function getComputeUsageSince(accountId: string, since: Date) {
+  const [row] = await db
+    .select({
+      totalCostUsd: sql<string>`COALESCE(SUM(${sandboxComputeSessions.costUsd}), 0)`,
+      sessionCount: sql<number>`COUNT(*)::int`,
+    })
+    .from(sandboxComputeSessions)
+    .where(
+      and(
+        eq(sandboxComputeSessions.accountId, accountId),
+        sql`${sandboxComputeSessions.startedAt} >= ${since.toISOString()}`,
+      ),
+    );
+  return {
+    totalCostUsd: Number(row?.totalCostUsd ?? 0),
+    sessionCount: Number(row?.sessionCount ?? 0),
+  };
 }

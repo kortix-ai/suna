@@ -20,21 +20,14 @@ function manifestWith(triggersBlock: string): string {
 }
 
 describe('kortix.toml — schema versioning', () => {
-  test('missing kortix_version is rejected', () => {
-    expect(() => parseManifestString(MIN_PROJECT)).toThrow(/kortix_version is required/);
+  test('missing kortix_version is treated as v1 (back-compat)', () => {
+    const parsed = parseManifestString(MIN_PROJECT);
+    expect(parsed.schemaVersion).toBe(1);
   });
 
   test('explicit kortix_version = 1 round-trips', () => {
     const parsed = parseManifestString(`kortix_version = 1\n${MIN_PROJECT}`);
     expect(parsed.schemaVersion).toBe(1);
-  });
-
-  test('string kortix_version is rejected', () => {
-    expect(() => parseManifestString(`kortix_version = "1"\n${MIN_PROJECT}`)).toThrow(/positive integer/);
-  });
-
-  test('decimal kortix_version is rejected', () => {
-    expect(() => parseManifestString(`kortix_version = 1.5\n${MIN_PROJECT}`)).toThrow(/positive integer/);
   });
 
   test('a future major version is rejected with a clear error', () => {
@@ -188,16 +181,39 @@ prompt = "do the thing"
     expect(specs[0]!.enabled).toBe(true);
   });
 
+  test('schedule is accepted as an alias for cron', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "aliased"
+type = "cron"
+schedule = "0 */5 * * * *"
+prompt = "body"
+`));
+    const { specs } = extractTriggers(parsed);
+    expect(specs[0]!.cron).toBe('0 */5 * * * *');
+  });
+
+  test('prompt_template is accepted as an alias for prompt', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "old-shape"
+type = "cron"
+cron = "* * * * * *"
+prompt_template = "legacy field name"
+`));
+    const { specs } = extractTriggers(parsed);
+    expect(specs[0]!.promptTemplate).toBe('legacy field name');
+  });
 });
 
 describe('[[triggers]] — validation errors', () => {
   test('an empty manifest yields zero triggers, no errors', () => {
-    const parsed = parseManifestString(`kortix_version = 1\n${MIN_PROJECT}`);
+    const parsed = parseManifestString(MIN_PROJECT);
     expect(extractTriggers(parsed)).toEqual({ specs: [], errors: [] });
   });
 
   test('a [triggers] table (single brackets) is rejected with guidance', () => {
-    const parsed = parseManifestString(`kortix_version = 1\n${MIN_PROJECT}\n[triggers]\nslug = "x"\n`);
+    const parsed = parseManifestString(`${MIN_PROJECT}\n[triggers]\nslug = "x"\n`);
     const { specs, errors } = extractTriggers(parsed);
     expect(specs).toEqual([]);
     expect(errors[0]!.error).toMatch(/array of tables/);
@@ -248,20 +264,6 @@ prompt = "x"
 `));
     const { errors } = extractTriggers(parsed);
     expect(errors[0]!.error).toMatch(/cron triggers must declare/);
-  });
-
-  test('enabled must be a boolean', () => {
-    const parsed = parseManifestString(manifestWith(`
-[[triggers]]
-slug = "string-enabled"
-type = "cron"
-cron = "* * * * * *"
-enabled = "false"
-prompt = "x"
-`));
-    const { specs, errors } = extractTriggers(parsed);
-    expect(specs).toEqual([]);
-    expect(errors[0]!.error).toMatch(/enabled must be a boolean/);
   });
 
   test('rejects a webhook trigger missing secret_env', () => {

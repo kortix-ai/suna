@@ -42,6 +42,10 @@ beforeEach(() => {
 
   // Credit account repo defaults
   mockRegistry.getCreditAccount = async () => createMockCreditAccount();
+  mockRegistry.getCreditBalance = async () => {
+    const a = createMockCreditAccount();
+    return { balance: a.balance, expiringCredits: a.expiringCredits, nonExpiringCredits: a.nonExpiringCredits, dailyCreditsBalance: a.dailyCreditsBalance, tier: a.tier };
+  };
   mockRegistry.updateCreditAccount = async (id: string, data: any) => {
     updateCreditAccountCalls.push({ accountId: id, data });
   };

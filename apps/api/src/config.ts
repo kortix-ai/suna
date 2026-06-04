@@ -1,6 +1,3 @@
-import { randomBytes } from 'node:crypto';
-import { appendFileSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { z } from 'zod';
 
 /**
@@ -75,6 +72,7 @@ const envSchema = z.object({
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
   KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,
+  KORTIX_DEPLOYMENTS_ENABLED:       optBoolFalse,
   // EXPERIMENTAL: turns on the [[apps]] section in kortix.toml — manifest
   // parsing, CRUD routes, manual deploy, and the auto-deploy sweep. Off
   // by default until the wire is hardened.
@@ -119,7 +117,7 @@ const envSchema = z.object({
   // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
   // OFF leaves the direct clone-credential token flow untouched).
   KORTIX_GIT_PROXY:                optBoolFalse,
-  // Warm sandbox pool. ON by default — no enable flag.
+  // Warm sandbox pool (docs/specs/warm-pool.md). ON by default — no enable flag.
   // Default warm sandboxes per active project (operator default; the per-project
   // UI value overrides it).
   KORTIX_WARM_POOL_SIZE:           optInt(1),
@@ -145,12 +143,14 @@ const envSchema = z.object({
   LEGACY_MIGRATION_BACKUP_BUCKET: optStrDefault('legacy-migrations'),
 
   // ── Channels — Slack adapter (optional) ──────────────────────────────────
+  SLACK_BOT_TOKEN:             optStr,
   SLACK_SIGNING_SECRET:        optStr,
+  SLACK_TEAM_ID:               optStr,
   SLACK_CLIENT_ID:             optStr,
   SLACK_CLIENT_SECRET:         optStr,
   SLACK_REDIRECT_URI:          optStr,
-  // Must stay in sync with the configured Slack app OAuth scopes; anything
-  // narrower here means OAuth grants fewer scopes than the bot needs.
+  // Must stay in sync with the Slack app manifest used during channel setup;
+  // anything narrower here means OAuth grants fewer scopes than the bot needs.
   SLACK_OAUTH_SCOPES:          optStrDefault('app_mentions:read,channels:history,channels:read,channels:join,chat:write,chat:write.public,files:read,files:write,groups:history,groups:read,im:history,im:read,im:write,mpim:history,mpim:read,reactions:read,reactions:write,users:read'),
   // Optional banner image rendered at the top of the App Home tab. Must be a
   // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
@@ -160,7 +160,8 @@ const envSchema = z.object({
   // ── LLM Providers (optional — only needed in cloud mode) ─────────────────
   OPENROUTER_API_URL:          optUrl('https://openrouter.ai/api/v1'),
   // Single OpenRouter key for BOTH the router (/v1/router) and the managed LLM
-  // gateway (/v1/llm).
+  // gateway (/v1/llm). The gateway used to read a separate KORTIX_OPENROUTER_API_KEY
+  // — consolidated onto this one var.
   OPENROUTER_API_KEY:          optStr,
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
@@ -182,7 +183,8 @@ const envSchema = z.object({
   REVENUECAT_WEBHOOK_SECRET:   optStr,
 
   // ── Daytona — Sandbox provisioning (conditional: required if daytona provider enabled) ──
-  // Every sandbox boots from a per-project snapshot built by the snapshot builder
+  // Note: there is intentionally no DAYTONA_SNAPSHOT here. Every sandbox
+  // boots from a per-project snapshot built by the snapshot builder
   // (apps/api/src/snapshots/builder.ts). A shared/global fallback image
   // would silently bypass per-project Dockerfiles and is explicitly
   // disallowed.
@@ -193,12 +195,14 @@ const envSchema = z.object({
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL:                  optStr,
+  KORTIX_YOLO_URL:             optUrl('https://api-yolo.kortix.com/v1'),
   ALLOWED_SANDBOX_PROVIDERS:   optStrDefault('daytona'),
   SANDBOX_IMAGE:               optStr,
   KORTIX_LOCAL_IMAGES:         optBoolFalse,
   DOCKER_HOST:                 optStr,
   SANDBOX_NETWORK:             optStr,
-  // Default port base for sandbox port mapping.
+  // Default port base for sandbox port mapping; kept for the queue drainer
+  // and deployments router which still reference it.
   SANDBOX_PORT_BASE:           optInt(14000),
   SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
 
@@ -229,12 +233,15 @@ const envSchema = z.object({
 
   // ── Abuse controls (optional, all have sane defaults) ────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN:      optInt(20),
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE:    optInt(60),
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID:    optInt(600),
   KORTIX_PROXY_REQS_PER_MIN:              optInt(600),
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: optInt(3),
   KORTIX_TRIGGER_SCHEDULER_ENABLED:        optBoolTrue,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS:    optInt(60_000),
-  KORTIX_CONNECTOR_SWEEP_INTERVAL_MS:       optInt(120_000),
+
   // ── Version / GitHub (optional) ───────────────────────────────────────────
+  SANDBOX_VERSION:             optStr,  // dev override: skip npm registry lookup for latest version
   GITHUB_TOKEN:                optStr,  // optional: authenticated GitHub API calls for changelog
 
   // ── Mailtrap (optional — provisioning email notifications) ────────────────
@@ -247,9 +254,11 @@ const envSchema = z.object({
   BETTERSTACK_API_LOG_HOST:    optStr,  // Logtail ingesting host (e.g. s1234.us-east-9.betterstackdata.com)
   BETTERSTACK_API_SENTRY_DSN:  optStr,  // Sentry DSN for error tracking (Better Stack compatible)
 
-  // ── Runtime helper env vars ──────────────────────────────────────────────
+  // ── Stray env vars used directly in other files (centralized here) ───────
   CORS_ALLOWED_ORIGINS:        optStr,
   KORTIX_MASTER_URL:           optStr,
+  OPENCODE_URL:                optStr,
+  KORTIX_DATA_DIR:             optStr,
 });
 
 // ─── Validation + Conditional Checks ────────────────────────────────────────
@@ -380,6 +389,7 @@ function validateEnv(): z.infer<typeof envSchema> {
     process.exit(1);
   }
 
+  console.log(`[config] Environment validated (${Object.keys(envSchema.shape).length} vars, ${warnings.length} warnings)`);
   return result.data;
 }
 
@@ -400,6 +410,7 @@ export const config = {
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
+  KORTIX_DEPLOYMENTS_ENABLED: env.KORTIX_DEPLOYMENTS_ENABLED,
   KORTIX_APPS_EXPERIMENTAL: env.KORTIX_APPS_EXPERIMENTAL,
 
   // ─── Database ──────────────────────────────────────────────────────────────
@@ -454,7 +465,9 @@ export const config = {
   LEGACY_MIGRATION_BACKUP_BUCKET: env.LEGACY_MIGRATION_BACKUP_BUCKET,
 
   // ─── Channels (Slack) ─────────────────────────────────────────────────────
+  SLACK_BOT_TOKEN: env.SLACK_BOT_TOKEN,
   SLACK_SIGNING_SECRET: env.SLACK_SIGNING_SECRET,
+  SLACK_TEAM_ID: env.SLACK_TEAM_ID,
   SLACK_CLIENT_ID: env.SLACK_CLIENT_ID,
   SLACK_CLIENT_SECRET: env.SLACK_CLIENT_SECRET,
   SLACK_REDIRECT_URI: env.SLACK_REDIRECT_URI,
@@ -481,7 +494,8 @@ export const config = {
   REVENUECAT_WEBHOOK_SECRET: env.REVENUECAT_WEBHOOK_SECRET,
 
   // ─── Daytona (Sandbox provisioning + preview proxy) ───────────────────────
-  // Every sandbox boots from its project-specific snapshot resolved at session
+  // No DAYTONA_SNAPSHOT here — see comment in the env schema above. Every
+  // sandbox boots from its project-specific snapshot resolved at session
   // start time by apps/api/src/snapshots/builder.ts.
   DAYTONA_API_KEY: env.DAYTONA_API_KEY,
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
@@ -489,6 +503,7 @@ export const config = {
 
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
+  KORTIX_YOLO_URL: env.KORTIX_YOLO_URL,
   ALLOWED_SANDBOX_PROVIDERS: allowedProviders,
   SANDBOX_IMAGE: env.SANDBOX_IMAGE || 'kortix/kortix-sandbox:latest',
   KORTIX_LOCAL_IMAGES: env.KORTIX_LOCAL_IMAGES,
@@ -501,7 +516,7 @@ export const config = {
    * INTERNAL_SERVICE_KEY -- direction: kortix-api -> sandbox.
    *
    * This is how kortix-api authenticates itself TO the sandbox. Every request
-   * from kortix-api to the sandbox (proxy, cron, health, etc.)
+   * from kortix-api to the sandbox (proxy, cron, health, queue drain, etc.)
    * includes `Authorization: Bearer <INTERNAL_SERVICE_KEY>`. The sandbox's
    * kortix-master middleware validates it.
    *
@@ -512,23 +527,26 @@ export const config = {
    */
   get INTERNAL_SERVICE_KEY(): string {
     if (!process.env.INTERNAL_SERVICE_KEY) {
+      const { randomBytes } = require('crypto');
       const generated = randomBytes(32).toString('hex');
       process.env.INTERNAL_SERVICE_KEY = generated;
+      console.log('[config] Auto-generated INTERNAL_SERVICE_KEY for sandbox auth');
       // Persist to .env so the key survives process restarts (avoids re-sync on every restart)
       try {
+        const { appendFileSync, readFileSync, existsSync } = require('fs');
+        const { resolve } = require('path');
         const candidates = [
           resolve(__dirname, '../../.env'),       // from src/config.ts -> ../../.env
           resolve(process.cwd(), '.env'),          // cwd/.env
         ];
         for (const envPath of candidates) {
-          try {
+          if (existsSync(envPath)) {
             const content = readFileSync(envPath, 'utf-8');
             if (!content.includes('INTERNAL_SERVICE_KEY=')) {
               appendFileSync(envPath, `\n# Auto-generated service key for sandbox auth (do not remove)\nINTERNAL_SERVICE_KEY=${generated}\n`);
+              console.log(`[config] Persisted INTERNAL_SERVICE_KEY to ${envPath}`);
             }
             break;
-          } catch (err: any) {
-            if (err?.code !== 'ENOENT') throw err;
           }
         }
       } catch (err: any) {
@@ -556,13 +574,16 @@ export const config = {
 
   // ─── Abuse Controls ───────────────────────────────────────────────────────
   KORTIX_INVITE_ACCEPT_REQS_PER_MIN: env.KORTIX_INVITE_ACCEPT_REQS_PER_MIN,
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE,
+  KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: env.KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID,
   KORTIX_PROXY_REQS_PER_MIN: env.KORTIX_PROXY_REQS_PER_MIN,
   KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT: env.KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT,
   KORTIX_TRIGGER_SCHEDULER_ENABLED: env.KORTIX_TRIGGER_SCHEDULER_ENABLED,
   KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS: env.KORTIX_TRIGGER_SCHEDULER_INTERVAL_MS,
-  KORTIX_CONNECTOR_SWEEP_INTERVAL_MS: env.KORTIX_CONNECTOR_SWEEP_INTERVAL_MS,
 
   // ─── Version / GitHub ──────────────────────────────────────────────────────
+  /** Dev override: force a specific sandbox version via env var. */
+  SANDBOX_VERSION_OVERRIDE: env.SANDBOX_VERSION,
   GITHUB_TOKEN: env.GITHUB_TOKEN,
 
   // ─── Mailtrap (Email Notifications) ────────────────────────────────────────
@@ -570,11 +591,25 @@ export const config = {
   MAILTRAP_FROM_EMAIL: env.MAILTRAP_FROM_EMAIL,
   MAILTRAP_FROM_NAME: env.MAILTRAP_FROM_NAME,
 
-  // ─── Runtime helper env vars ──────────────────────────────────────────────
+  // ─── Stray env vars (centralized from other files) ────────────────────────
   CORS_ALLOWED_ORIGINS: env.CORS_ALLOWED_ORIGINS,
   KORTIX_MASTER_URL: env.KORTIX_MASTER_URL,
+  OPENCODE_URL: env.OPENCODE_URL,
+  KORTIX_DATA_DIR: env.KORTIX_DATA_DIR,
 
   // ─── Helper Methods ────────────────────────────────────────────────────────
+
+  isProviderEnabled(name: SandboxProviderName): boolean {
+    if (!this.ALLOWED_SANDBOX_PROVIDERS.includes(name)) return false;
+    switch (name) {
+      case 'daytona': return !!this.DAYTONA_API_KEY;
+      case 'local_docker': return !!this.DOCKER_HOST;
+      default: {
+        const exhaustive: never = name;
+        return exhaustive;
+      }
+    }
+  },
 
   /**
    * Default sandbox provider for new sessions. First entry of
@@ -585,6 +620,14 @@ export const config = {
    */
   getDefaultProvider(): SandboxProviderName {
     return this.ALLOWED_SANDBOX_PROVIDERS[0] ?? 'daytona';
+  },
+
+  isDaytonaEnabled(): boolean {
+    return this.ALLOWED_SANDBOX_PROVIDERS.includes('daytona') && !!this.DAYTONA_API_KEY;
+  },
+
+  isLocalDockerEnabled(): boolean {
+    return this.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker') && !!this.DOCKER_HOST;
   },
 
 };
@@ -645,6 +688,16 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
     perResultCost: 0,
     markupMultiplier: 1.5,
   },
+  proxy_replicate_nano_banana: {
+    baseCost: 0.01,
+    perResultCost: 0,
+    markupMultiplier: 1.5,
+  },
+  proxy_replicate_gpt_image: {
+    baseCost: 0.05,
+    perResultCost: 0,
+    markupMultiplier: 1.5,
+  },
   // Moondream2 vision captioning (image_search enrichment) — cheap per-call model.
   proxy_replicate_moondream: {
     baseCost: 0.002,
@@ -659,6 +712,11 @@ const TOOL_PRICING: Record<string, ToolPricing> = {
   },
   proxy_context7: {
     baseCost: 0.001,
+    perResultCost: 0,
+    markupMultiplier: 1.5,
+  },
+  proxy_freestyle_deploy: {
+    baseCost: 0.01,
     perResultCost: 0,
     markupMultiplier: 1.5,
   },

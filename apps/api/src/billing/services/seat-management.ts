@@ -70,7 +70,7 @@ async function resolveSeatSubscriptionItemId(
  * Safe to call repeatedly: if Stripe already has the right quantity, the
  * update is a no-op.
  */
-async function syncSeatQuantity(accountId: string): Promise<{
+export async function syncSeatQuantity(accountId: string): Promise<{
   synced: boolean;
   seatCount: number;
   skipped?: 'legacy' | 'no-subscription' | 'no-item';

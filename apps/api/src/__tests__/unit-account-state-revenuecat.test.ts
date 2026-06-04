@@ -7,14 +7,18 @@ let isAdmin = false;
 
 mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => null,
+  getCreditBalance: async () => null,
   updateCreditAccount: async () => undefined,
   upsertCreditAccount: async () => undefined,
   getSubscriptionInfo: async () => subscriptionInfo,
+  updateBalance: async () => undefined,
   getYearlyAccountsDueForRotation: async () => [],
 }));
 
 mock.module('../billing/services/credits', () => ({
   getCreditSummary: async () => creditSummary,
+  calculateTokenCost: () => 0,
+  getBalance: async () => ({ balance: 0, expiring: 0, nonExpiring: 0, daily: 0 }),
   deductCredits: async () => ({ success: true, cost: 0, newBalance: 0, transactionId: 'tx_mock' }),
   refreshDailyCredits: async () => null,
   grantCredits: async () => undefined,
@@ -29,9 +33,9 @@ mock.module('../shared/platform-roles', () => ({
   isPlatformAdmin: async () => isAdmin,
 }));
 
-const { buildAccountState } = await import('../billing/services/account-state');
+const { buildMinimalAccountState } = await import('../billing/services/account-state');
 
-describe('buildAccountState revenuecat', () => {
+describe('buildMinimalAccountState revenuecat', () => {
   beforeEach(() => {
     subscriptionInfo = {
       tier: 'tier_2_20',
@@ -66,18 +70,19 @@ describe('buildAccountState revenuecat', () => {
   });
 
   test('reports active revenuecat subscription from kortix row', async () => {
-    const state = await buildAccountState('acc_test_123');
+    const state = await buildMinimalAccountState('acc_test_123');
 
     expect(state.subscription.provider).toBe('revenuecat');
     expect(state.subscription.status).toBe('active');
     expect(state.subscription.subscription_id).toBe('rc_sub_123');
     expect(state.tier.name).toBe('tier_2_20');
+    expect(state.can_claim_computer).toBe(true);
   });
 
   test('reports past_due revenuecat subscription correctly', async () => {
     subscriptionInfo.paymentStatus = 'past_due';
 
-    const state = await buildAccountState('acc_test_123');
+    const state = await buildMinimalAccountState('acc_test_123');
 
     expect(state.subscription.status).toBe('past_due');
   });
@@ -85,7 +90,7 @@ describe('buildAccountState revenuecat', () => {
   test('reports canceled revenuecat subscription correctly', async () => {
     subscriptionInfo.revenuecatCancelledAt = new Date().toISOString();
 
-    const state = await buildAccountState('acc_test_123');
+    const state = await buildMinimalAccountState('acc_test_123');
 
     expect(state.subscription.status).toBe('canceled');
     expect(state.subscription.is_cancelled).toBe(true);

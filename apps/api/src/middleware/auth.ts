@@ -212,7 +212,8 @@ export async function supabaseAuth(c: Context, next: Next) {
     c.set('userEmail', local.email);
     c.set('authType', 'supabase');
     // Authenticator Assurance Level — 'aal1' = password-only,
-    // 'aal2' = MFA-verified. Used by the account-wide IAM MFA gate.
+    // 'aal2' = MFA-verified. Surfaced for IAM policy conditions that
+    // require MFA on sensitive actions.
     if (local.payload.aal) c.set('mfaAal', local.payload.aal);
     // Session identity surfaced for the per-account session gate
     // (idle/lifetime/force-logout). `iat` is the seconds-epoch the
@@ -301,7 +302,7 @@ export async function supabaseAuth(c: Context, next: Next) {
  *
  * Used for:
  *   - Preview proxy routes (/v1/p/{sandboxId}/{port}/*)
- *   - Cron, deployment, secrets, providers, servers, tunnel routes
+ *   - Cron, deployment, secrets, providers, servers, queue, tunnel routes
  *   - SSE stream endpoints (clients use fetch() with Authorization header)
  *
  * Sets userId and userEmail in context regardless of token type.

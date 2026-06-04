@@ -14,9 +14,10 @@
  *   /audit/*                 — paginated audit logs
  */
 
-import { Hono } from 'hono';
 import { createWsHandlers, type AuthResult } from 'agent-tunnel';
 import { config } from '../config';
+import type { AppEnv } from '../types';
+import { makeOpenApiApp } from '../openapi';
 import { createConnectionsRouter } from './routes/connections';
 import { createPermissionsRouter } from './routes/permissions';
 import { createPermissionRequestsRouter } from './routes/permission-requests';
@@ -29,7 +30,7 @@ import { notifyTunnelEvent } from './routes/permission-requests';
 
 // ─── Hono Sub-App ────────────────────────────────────────────────────────────
 
-const tunnelApp = new Hono();
+const tunnelApp = makeOpenApiApp<AppEnv>();
 
 tunnelApp.route('/connections', createConnectionsRouter());
 tunnelApp.route('/permissions', createPermissionsRouter());
@@ -111,6 +112,7 @@ let permissionCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 function startTunnelService(): void {
   if (!config.TUNNEL_ENABLED) {
+    console.log('[TUNNEL] Tunnel disabled (TUNNEL_ENABLED=false)');
     return;
   }
 
@@ -263,6 +265,7 @@ function startTunnelService(): void {
     }
   }, 5 * 60_000);
 
+  console.log('[TUNNEL] Tunnel service started');
 }
 
 function stopTunnelService(): void {
@@ -272,6 +275,7 @@ function stopTunnelService(): void {
   }
   heartbeatManager.stop();
   tunnelRelay.shutdown();
+  console.log('[TUNNEL] Tunnel service stopped');
 }
 
 function getTunnelServiceStatus(): { enabled: boolean; connectedAgents: number } {

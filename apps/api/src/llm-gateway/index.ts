@@ -1,14 +1,17 @@
-import { Hono } from 'hono';
 import { createChatCompletionsRoute } from './routes/chat-completions';
 import { createModelsRoute } from './routes/models';
 import { createHealthRoute } from './routes/health';
 import type { LlmGatewayConfig, LlmGatewayHooks } from './types';
+import type { AppEnv } from '../types';
+import { makeOpenApiApp } from '../openapi';
+
+export type { LlmGatewayConfig, LlmGatewayHooks, UsageEvent, AuthedPrincipal } from './types';
 
 export function createLlmGateway(
   config: LlmGatewayConfig,
   hooks: LlmGatewayHooks,
-): Hono {
-  const app = new Hono();
+) {
+  const app = makeOpenApiApp<AppEnv>();
 
   if (!config.enabled) {
     app.all('/*', (c) => c.json({ error: 'LLM gateway is disabled' }, 503));

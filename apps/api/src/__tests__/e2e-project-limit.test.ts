@@ -143,7 +143,10 @@ mock.module('../snapshots/builder', () => ({
   resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickProjectTemplatePrebuilds: () => {},
-  reconcileStaleBuilds: async () => {},
+  kickStartupPreBuild: () => {},
+  reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
+  reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
+  ensurePlatformDefaultImage: async () => ({ snapshotName: 'kortix-default-test', slug: 'default', contentHash: 'a'.repeat(64), built: false, isDefault: true }),
   resolveCommitSha: async () => 'a'.repeat(40),
   DEFAULT_SANDBOX_SLUG: 'default',
 }));

@@ -77,7 +77,7 @@ describe('ops overview dashboard API', () => {
     ];
   });
 
-  test('returns production support signals for API, audit, usage, and migrations', async () => {
+  test('returns production support signals for API, queues, audit, usage, and migrations', async () => {
     const res = await app().request('/v1/ops/overview');
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -94,7 +94,8 @@ describe('ops overview dashboard API', () => {
     });
     expect(body.sessions.by_status).toMatchObject({ running: 4, failed: 1 });
     expect(body.sandboxes.by_provider).toMatchObject({ daytona: 2, local_docker: 2 });
-    expect(body.queues).toBeUndefined();
+    expect(body.queues.queued_total).toBe(0);
+    expect(body.queues.trigger_events_by_status).toEqual({});
     expect(body.audit.events_24h).toBe(9);
     expect(body.audit.recent[0]).toMatchObject({ action: 'POST /v1/projects' });
     expect(body.usage).toMatchObject({

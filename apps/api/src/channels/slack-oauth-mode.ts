@@ -1,6 +1,6 @@
 import { config } from '../config';
 
-interface SlackOauthMode {
+export interface SlackOauthMode {
   available: boolean;
   clientId: string | null;
   clientSecret: string | null;

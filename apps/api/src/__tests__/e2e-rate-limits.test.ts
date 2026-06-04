@@ -6,6 +6,8 @@ let auditRows: Array<Record<string, unknown>> = [];
 mock.module('../config', () => ({
   config: {
     KORTIX_INVITE_ACCEPT_REQS_PER_MIN: 1,
+    KORTIX_LLM_ROUTER_REQS_PER_MIN_FREE: 1,
+    KORTIX_LLM_ROUTER_REQS_PER_MIN_PAID: 2,
     KORTIX_PROXY_REQS_PER_MIN: 1,
   },
 }));
@@ -13,12 +15,9 @@ mock.module('../config', () => ({
 mock.module('../shared/db', () => ({
   db: {
     insert: () => ({
-      values: (values: Record<string, unknown>) => ({
-        returning: async () => {
-          auditRows.push(values);
-          return [{ id: 'audit_test', ...values }];
-        },
-      }),
+      values: async (values: Record<string, unknown>) => {
+        auditRows.push(values);
+      },
     }),
   },
 }));
@@ -26,11 +25,14 @@ mock.module('../shared/db', () => ({
 const {
   createInviteAcceptRateLimitMiddleware,
   createSandboxProxyRateLimitMiddleware,
+  resetRateLimiters,
 } = await import('../shared/rate-limit');
+const { sessionLlmPolicyForTier } = await import('../shared/account-limits');
 
 describe('audited rate limits', () => {
   beforeEach(() => {
     auditRows = [];
+    resetRateLimiters();
   });
 
   test('limits invite acceptance by IP and writes an audit event on hit', async () => {
@@ -87,5 +89,11 @@ describe('audited rate limits', () => {
       resourceId: 'sandbox-1',
       metadata: { limiter: 'sandbox_proxy' },
     });
+  });
+
+  test('scales session LLM router policy by tier', () => {
+    expect(sessionLlmPolicyForTier('free').limit).toBe(1);
+    expect(sessionLlmPolicyForTier('pro').limit).toBe(2);
+    expect(sessionLlmPolicyForTier('tier_12_100').limit).toBe(6);
   });
 });

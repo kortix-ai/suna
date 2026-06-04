@@ -2,7 +2,7 @@ import { platformUserRoles } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { db, hasDatabase } from './db';
 
-type PlatformRole = 'user' | 'admin' | 'super_admin';
+export type PlatformRole = 'user' | 'admin' | 'super_admin';
 
 export async function getPlatformRole(accountId: string): Promise<PlatformRole> {
   if (!hasDatabase) {

@@ -1,6 +1,6 @@
-// Data-access layer for the IAM tables. Currently scoped to groups and
-// group members; historical policy / role / role-permission CRUD is not
-// part of the active IAM V2 surface.
+// Data-access layer for the IAM tables. Currently scoped to groups +
+// group members — V1's policy / role / role-permission CRUD was removed
+// in PR5d together with the V1 engine.
 // Pure CRUD; route handlers do their own assertAuthorized() calls.
 
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
@@ -9,7 +9,7 @@ import { db } from '../shared/db';
 
 // ─── Groups ────────────────────────────────────────────────────────────────
 
-type AccountGroup = {
+export type AccountGroup = {
   groupId: string;
   accountId: string;
   name: string;
@@ -120,7 +120,7 @@ export async function deleteGroup(accountId: string, groupId: string): Promise<b
 
 // ─── Group members ─────────────────────────────────────────────────────────
 
-type GroupMember = {
+export type GroupMember = {
   groupId: string;
   userId: string;
   addedAt: Date;

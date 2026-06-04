@@ -6,6 +6,7 @@
  * `e2e-project-limit.test.ts`.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 
 // Mutable knobs the mocks read.
 let billingEnabled = true;
@@ -26,7 +27,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getSubscriptionInfo: async () => (currentTier === null ? null : { tier: currentTier }),
 }));
 
-const { maxProjectsForAccount, FREE_TIER_PROJECT_LIMIT, MAX_PROJECTS_PER_ACCOUNT, clearAccountLimitCache } = await import(
+const { maxProjectsForAccount, FREE_TIER_PROJECT_LIMIT, clearAccountLimitCache } = await import(
   '../shared/account-limits'
 );
 

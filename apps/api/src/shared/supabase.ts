@@ -21,3 +21,10 @@ export function getSupabase(): SupabaseClient {
 
   return client;
 }
+
+/**
+ * Check if Supabase is configured (needed for JWT auth).
+ */
+export function isSupabaseConfigured(): boolean {
+  return !!(config.SUPABASE_URL && config.SUPABASE_SERVICE_ROLE_KEY);
+}

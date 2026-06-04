@@ -16,7 +16,7 @@ const TRACEPARENT_RE = /^00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})$/;
 const ZERO_TRACE_ID = '00000000000000000000000000000000';
 const ZERO_SPAN_ID = '0000000000000000';
 
-interface RequestContext {
+export interface RequestContext {
   /** Unique ID for this request (for tracing across logs) */
   requestId: string;
   /** W3C trace ID for cross-service trace propagation */

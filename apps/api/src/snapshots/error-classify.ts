@@ -13,7 +13,7 @@
  * most specific buckets are checked first.
  */
 
-type SnapshotErrorCategory =
+export type SnapshotErrorCategory =
   /** User's Dockerfile / build steps failed (RUN, COPY, apt-get, npm…). Fixable by an agent. */
   | 'dockerfile'
   /** Kortix callback URL (KORTIX_URL) unreachable — usually a down dev tunnel. */
@@ -29,7 +29,7 @@ type SnapshotErrorCategory =
   /** Anything we couldn't bucket. */
   | 'unknown';
 
-interface SnapshotErrorInfo {
+export interface SnapshotErrorInfo {
   category: SnapshotErrorCategory;
   /** Short human label for a badge / headline. */
   title: string;
@@ -127,4 +127,9 @@ const INFO: Record<SnapshotErrorCategory, Omit<SnapshotErrorInfo, 'category'>> =
 /** Static metadata (label, hint, agent-fixability) for a category. */
 export function describeSnapshotError(category: SnapshotErrorCategory): SnapshotErrorInfo {
   return { category, ...INFO[category] };
+}
+
+/** Convenience: classify a raw error and return its full descriptor. */
+export function explainSnapshotError(raw: string | null | undefined): SnapshotErrorInfo {
+  return describeSnapshotError(classifySnapshotError(raw));
 }

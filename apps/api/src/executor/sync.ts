@@ -5,9 +5,9 @@
  * (manifest = source of truth, like triggers); this populates the runtime view
  * the gateway + dashboard read. Catalog fetch is best-effort per connector:
  * a connector that can't be reached is stored with status='error' + 0 actions,
- * never failing the whole sweep.
+ * never failing the whole sweep. See docs/specs/executor.md §3, §7.
  */
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { parse as parseToml } from 'smol-toml';
 import {
   executorConnectorActions,
@@ -40,7 +40,7 @@ export interface SyncResult {
   errors: Array<{ slug: string; error: string }>;
 }
 
-interface SyncOptions {
+export interface SyncOptions {
   /**
    * Re-fetch every connector's catalog even when its manifest hash is
    * unchanged. The manual "Sync" button passes this (the user is explicitly
@@ -134,6 +134,8 @@ async function upsertConnector(
 ): Promise<void> {
   const manifestHash = manifestHashForConnector(spec);
   const status = catalog?.error ? 'error' : spec.enabled ? 'active' : 'disabled';
+  // Credentials live in executor_credentials now; authSecret is legacy (kept nullable).
+  const authSecret = spec.auth.secret ?? null;
   const credentialMode = spec.credentialMode;
 
   // Cheap fields reconciled on every sync. `config` (which folds in the
@@ -142,8 +144,7 @@ async function upsertConnector(
     name: spec.name,
     providerType: spec.provider,
     enabled: spec.enabled,
-    // Credentials live in executor_credentials; the legacy auth_secret column stays null.
-    authSecret: null,
+    authSecret,
     credentialMode,
     manifestHash,
     status,
@@ -205,7 +206,7 @@ async function upsertConnector(
 }
 
 /** Fetch + normalize a connector's catalog. Best-effort; never throws. */
-async function resolveCatalog(project: GitBackedProject, spec: ConnectorSpec): Promise<ResolvedCatalog> {
+export async function resolveCatalog(project: GitBackedProject, spec: ConnectorSpec): Promise<ResolvedCatalog> {
   try {
     switch (spec.provider) {
       case 'openapi': {

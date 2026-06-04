@@ -26,29 +26,29 @@ function randomAlphanum(len: number): string {
   return out;
 }
 
-function generateScimSecret(): string {
+export function generateScimSecret(): string {
   return `${SCIM_TOKEN_PREFIX}${randomAlphanum(SCIM_TOKEN_BODY_LEN)}`;
 }
 
-function hashScimSecret(plaintext: string): string {
+export function hashScimSecret(plaintext: string): string {
   // SHA-256 hex. Sufficient for this surface (high-entropy random token,
   // not a low-entropy password). The unique index on secret_hash makes
   // validation an O(log n) lookup.
   return createHash('sha256').update(plaintext).digest('hex');
 }
 
-function isScimSecret(value: string): boolean {
+export function isScimSecret(value: string): boolean {
   return typeof value === 'string' && value.startsWith(SCIM_TOKEN_PREFIX);
 }
 
-interface CreateScimTokenInput {
+export interface CreateScimTokenInput {
   accountId: string;
   name: string;
   createdBy: string;
   expiresAt?: Date;
 }
 
-interface CreateScimTokenResult {
+export interface CreateScimTokenResult {
   tokenId: string;
   name: string;
   /** Plaintext — returned only at creation. Show once, never store. */
@@ -86,7 +86,7 @@ export async function createScimToken(
   };
 }
 
-interface ScimTokenSummary {
+export interface ScimTokenSummary {
   tokenId: string;
   name: string;
   publicPrefix: string;
@@ -142,7 +142,7 @@ export async function revokeScimToken(
   return rows.length > 0;
 }
 
-interface ValidateScimResult {
+export interface ValidateScimResult {
   ok: boolean;
   accountId?: string;
   tokenId?: string;

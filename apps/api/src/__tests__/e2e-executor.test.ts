@@ -10,19 +10,16 @@ import {
   createExecutorRouter,
   type AdminConnectorView,
   type CatalogConnector,
+  type DefaultMode,
   type ExecutorPrincipal,
   type ExecutorRouterDeps,
+  type ProjectPoliciesViewResponse,
+  type ProjectPolicyView,
 } from '../executor/router';
-import type { GatewayAction, GatewayConnector, GatewayDeps } from '../executor/gateway';
-import type { SecretGrant } from '../executor/share';
+import type { GatewayAction, GatewayConnector, GatewayDeps, ExecutionRecord } from '../executor/gateway';
+import type { SecretGrant, SharingIntent } from '../executor/share';
 import { isSecretUsableBy, intentToScope, scopeToIntent } from '../executor/share';
-import { resolveEffectiveAction, type DefaultMode, type Policy } from '../executor/policy';
-
-type ExecutionRecord = Parameters<GatewayDeps['recordExecution']>[0];
-type ProjectPoliciesViewResponse = NonNullable<
-  Awaited<ReturnType<NonNullable<ExecutorRouterDeps['getProjectPolicies']>>>
->;
-type ProjectPolicyView = Parameters<NonNullable<ExecutorRouterDeps['setProjectPolicies']>>[2][number];
+import { resolveEffectiveAction, type Policy } from '../executor/policy';
 
 const ACCOUNT = 'acct-1';
 const PROJECT = 'proj-1';
@@ -44,7 +41,6 @@ interface World {
   upstream: Array<{ url: string; method: string; headers: Record<string, string>; body?: string }>;
   upstreamStatus: number;
   upstreamBody: string;
-  connectorDrafts: Array<Record<string, unknown>>;
 }
 
 let world: World;
@@ -81,7 +77,6 @@ function freshWorld(): World {
     upstream: [],
     upstreamStatus: 200,
     upstreamBody: '{"id":"ch_1","paid":true}',
-    connectorDrafts: [],
   };
 }
 
@@ -97,6 +92,7 @@ function makeGatewayDeps(): GatewayDeps {
     loadPolicies: async (connectorId) => world.policiesByConnector.get(connectorId) ?? [],
     loadProjectPolicies: async () => world.projectPolicies,
     loadDefaultMode: async () => world.defaultMode,
+    enforcePolicies: true,
     recordExecution: async (r) => { world.executions.push(r); },
     fetchImpl: async (url, init) => {
       world.upstream.push({ url, ...init });
@@ -159,7 +155,7 @@ const deps: ExecutorRouterDeps = {
       status: 'active',
       credentialMode: conn.credentialMode,
       actions: [],
-      hasAuth: conn.hasAuth,
+      authSecret: conn.hasAuth ? 'credential' : null,
       sharing: scopeToIntent(conn.shareScope, conn.grants),
       secretSet: conn.hasAuth
         ? world.credentials.has(credKey(conn.connectorId, conn.credentialMode === 'per_user' ? viewerUserId : null))
@@ -173,10 +169,6 @@ const deps: ExecutorRouterDeps = {
     conn.shareScope = shareScope;
     conn.grants = grants;
     return true;
-  },
-  createConnector: async (_projectId, _accountId, draft) => {
-    world.connectorDrafts.push(draft);
-    return { ok: true, sync: { synced: world.connectors.size, errors: [] } };
   },
   getProjectPolicies: async (): Promise<ProjectPoliciesViewResponse> => ({
     policies: world.projectPolicies.map((p) => ({ match: p.match, action: p.action })),
@@ -291,23 +283,11 @@ describe('admin routes', () => {
   test('list shows credential mode + sharing + secretSet', async () => {
     expect((await req(`/projects/${PROJECT}/connectors`)).status).toBe(403);
     const json = await (await req(`/projects/${PROJECT}/connectors`, { headers: { 'x-test-admin': ALICE } })).json();
-    expect(json.connectors[0]).toMatchObject({ slug: 'stripe', credentialMode: 'shared', hasAuth: true, secretSet: true, sharing: { mode: 'project' } });
+    expect(json.connectors[0]).toMatchObject({ slug: 'stripe', credentialMode: 'shared', secretSet: true, sharing: { mode: 'project' } });
   });
 
   test('sync returns count', async () => {
     expect((await (await req(`/projects/${PROJECT}/connectors/sync`, { method: 'POST', headers: { 'x-test-admin': ALICE } })).json()).synced).toBe(1);
-  });
-
-  test('create http connector forwards canonical base_url', async () => {
-    const res = await req(`/projects/${PROJECT}/connectors`, {
-      method: 'POST',
-      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
-      body: JSON.stringify({ slug: 'internal', provider: 'http', base_url: 'https://api.internal' }),
-    });
-    expect(res.status).toBe(200);
-    expect(world.connectorDrafts).toEqual([
-      { slug: 'internal', provider: 'http', base_url: 'https://api.internal' },
-    ]);
   });
 
   test('set sharing restricts → gateway then denies the excluded user', async () => {

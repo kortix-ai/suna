@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
@@ -7,8 +7,9 @@ import { requireAdmin } from '../middleware/require-admin';
 import { config } from '../config';
 import { getTunnelServiceStatus } from '../tunnel';
 import { isOtelTraceExporterConfigured } from '../lib/otel';
+import { makeOpenApiApp, json, errors, auth } from '../openapi';
 
-export const opsApp = new Hono<AppEnv>();
+export const opsApp = makeOpenApiApp<AppEnv>();
 
 opsApp.use('/*', supabaseAuth);
 opsApp.use('/*', requireAdmin);
@@ -105,7 +106,19 @@ function observabilityStatus() {
   };
 }
 
-opsApp.get('/overview', async (c) => {
+opsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/overview',
+    tags: ['ops'],
+    summary: 'Platform operations overview dashboard',
+    ...auth,
+    responses: {
+      200: json(z.record(z.string(), z.any()), 'Operations overview snapshot'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const [
     accountCount,
     projectCount,
@@ -113,6 +126,7 @@ opsApp.get('/overview', async (c) => {
     sessionStatus,
     sandboxStatus,
     sandboxProviders,
+    triggerEventStatus,
     audit24h,
     migrationStatus,
     usage,
@@ -140,6 +154,10 @@ opsApp.get('/overview', async (c) => {
       FROM kortix.session_sandboxes
       GROUP BY provider
     `),
+    // Triggers are file-defined (kortix.toml) now; the project_trigger_events
+    // table is gone and the git path doesn't persist events, so this is always
+    // empty. Field kept for dashboard compatibility.
+    Promise.resolve<Record<string, number>>({}),
     oneCount(sql`
       SELECT count(*)::int AS count
       FROM kortix.audit_events
@@ -154,6 +172,7 @@ opsApp.get('/overview', async (c) => {
     recentAuditEvents(),
   ]);
 
+  const queuedTriggerEvents = triggerEventStatus.queued ?? 0;
   const erroredSessions = sessionStatus.failed ?? 0;
   const erroredSandboxes = sandboxStatus.error ?? 0;
 
@@ -178,6 +197,10 @@ opsApp.get('/overview', async (c) => {
       by_provider: sandboxProviders,
       errored: erroredSandboxes,
     },
+    queues: {
+      trigger_events_by_status: triggerEventStatus,
+      queued_total: queuedTriggerEvents,
+    },
     audit: {
       events_24h: audit24h,
       recent: recentAudit,
@@ -193,4 +216,5 @@ opsApp.get('/overview', async (c) => {
       active_legacy_sandboxes: activeLegacySandboxes,
     },
   });
-});
+  },
+);

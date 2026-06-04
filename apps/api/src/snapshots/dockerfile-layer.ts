@@ -48,7 +48,7 @@ export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
   '',
 ].join('\n') + '\n';
 
-interface BuildLayeredDockerfileOpts {
+export interface BuildLayeredDockerfileOpts {
   /** Literal contents of the user's project Dockerfile. */
   userDockerfile: string;
   /** Pinned opencode CLI version (matches platform-wide `OPENCODE_VERSION`). */
@@ -99,7 +99,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     agentCliPath,
     executorSdkPath,
   } = opts;
-  const trimmed = userDockerfile.trimEnd();
+  const trimmed = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
 
   const kortixLayer = [
     '',
@@ -175,12 +175,21 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
   return `${trimmed}\n${kortixLayer}`;
 }
 
+export function normalizeUserDockerfileForSnapshot(dockerfile: string): string {
+  // The legacy starter Dockerfile installed baseline tools that the injected
+  // Kortix layer installs again. Strip that exact starter block so existing
+  // user Dockerfiles still build cleanly.
+  const starterBlock =
+    /# Bring in baseline tooling\. The Kortix layer on top also installs\n# git\/curl\/ca-certificates\/nodejs\/npm, but having them in your base\n# makes interactive sessions snappier\.\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends \\\n        ca-certificates \\\n        curl \\\n        git \\\n        build-essential \\\n    && rm -rf \/var\/lib\/apt\/lists\/\*\n\n?/;
+  return dockerfile.replace(starterBlock, '');
+}
+
 /**
  * A sandbox template defines one bootable image. Projects can declare multiple
  * via `[[sandbox.templates]]` in kortix.toml; sessions pick one by slug. The platform
  * default template is always available without any config.
  */
-interface SandboxTemplate {
+export interface SandboxTemplate {
   /** Stable identifier the session creator references. Unique per project. */
   slug: string;
   /** Display label shown in the dashboard picker. Optional. */
@@ -247,6 +256,11 @@ export const SANDBOX_SPEC_LIMITS = {
   disk: { min: 1, max: 500 }, // GiB
 } as const;
 
+/** True when no spec field is set — i.e. boot at the platform default size. */
+export function sandboxSpecIsEmpty(spec: SandboxSpec): boolean {
+  return spec.cpu === undefined && spec.memory === undefined && spec.disk === undefined;
+}
+
 function pickResource(value: unknown, bounds: { min: number; max: number }): number | undefined {
   let n: number | undefined;
   if (typeof value === 'number') n = value;
@@ -296,7 +310,10 @@ export function extractSandboxTemplates(
     sandbox && typeof sandbox === 'object' && !Array.isArray(sandbox)
       ? (sandbox as Record<string, unknown>).templates
       : undefined;
-  const arr = Array.isArray(nested) ? nested : undefined;
+  // Migration safety net: the pre-rename `[[sandboxes]]` form still parses at
+  // boot so an un-migrated project on main doesn't lose its templates. The
+  // validator (ship / CR-merge gate) is what enforces the new name.
+  const arr = Array.isArray(nested) ? nested : manifestRaw.sandboxes;
   if (Array.isArray(arr)) {
     for (const entry of arr) {
       if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue;

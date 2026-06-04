@@ -1,4 +1,5 @@
 import { config } from '../../config';
+import { TunnelErrorCode } from 'agent-tunnel';
 
 interface Bucket {
   tokens: number;
@@ -10,7 +11,7 @@ interface RateLimitConfig {
   windowMs: number;
 }
 
-class TunnelRateLimiter {
+export class TunnelRateLimiter {
   private buckets = new Map<string, Bucket>();
 
   private configs: Record<string, RateLimitConfig> = {

@@ -13,7 +13,8 @@
 import { and, desc, eq } from 'drizzle-orm';
 import { deployments, projects } from '@kortix/db';
 import { db } from '../shared/db';
-import { freestyleProvider, type FreestyleDeploymentRequest } from '../deployments/providers/freestyle';
+import { DEFAULT_PROVIDER_NAME, getProvider } from '../deployments/providers';
+import type { DeploymentRequest } from '../deployments/providers';
 import {
   loadProjectApps,
   manifestHashForApp,
@@ -27,7 +28,7 @@ type DeploymentRow = typeof deployments.$inferSelect;
 
 let appSweepRunning = false;
 
-interface AppSweepResult {
+export interface AppSweepResult {
   scannedProjects: number;
   scannedApps: number;
   /** No-op because the stored hash already matches. */
@@ -134,17 +135,17 @@ export async function getLatestDeployment(
 }
 
 /**
- * Translate an AppSpec into the Freestyle deployment request shape. If
+ * Translate an AppSpec into the provider's DeploymentRequest shape. If
  * the spec's git source has no explicit `repo`, we fall back to the
  * project's own repo URL so the most common case (deploy this project's
  * repo) works with zero TOML boilerplate.
  */
-function buildDeploymentRequest(input: {
+export function buildDeploymentRequest(input: {
   project: ProjectRow;
   spec: AppSpec;
-}): FreestyleDeploymentRequest {
+}): DeploymentRequest {
   const { project, spec } = input;
-  let source: FreestyleDeploymentRequest['source'];
+  let source: DeploymentRequest['source'];
   if (spec.source.type === 'git') {
     source = {
       type: 'git',
@@ -170,6 +171,7 @@ function buildDeploymentRequest(input: {
         }
       : undefined,
     env: Object.keys(spec.env).length > 0 ? spec.env : undefined,
+    framework: spec.framework ?? undefined,
   };
 }
 
@@ -187,8 +189,10 @@ export async function deployAppSpec(input: {
   source: 'sweep' | 'manual';
 }): Promise<'active' | 'failed'> {
   const { project, spec, previousVersion, manifestHash, source } = input;
-  // The manifest doesn't expose a provider knob; Apps deploys through Freestyle.
-  const provider = freestyleProvider;
+  // The manifest doesn't expose a provider knob (one way to deploy);
+  // the registry is internal infra so future providers can swap in
+  // without touching the schema.
+  const provider = getProvider(DEFAULT_PROVIDER_NAME);
   const request = buildDeploymentRequest({ project, spec });
   const result = await provider.deploy(request);
 

@@ -11,7 +11,7 @@
  * adapter (currently just Daytona) is resolved via `getSandboxProvider`.
  */
 
-import { and, eq, or } from 'drizzle-orm';
+import { and, eq, isNull, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
@@ -23,12 +23,13 @@ import {
   DEFAULT_SANDBOX_SLUG,
   extractSandboxDefault,
   extractSandboxTemplates,
+  normalizeUserDockerfileForSnapshot,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
   SANDBOX_SPEC_LIMITS,
 } from './dockerfile-layer';
 import { computeSnapshotHash } from './hash';
 import { buildRuntimeArtifactFingerprint } from './runtime-fingerprint';
-import { getSandboxProvider } from './providers';
+import { getSandboxProvider, type SandboxProviderAdapter } from './providers';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -122,7 +123,7 @@ const templateListCache = new Map<string, { at: number; value: ResolvedTemplate[
 
 /** Invalidate the in-memory template list cache for a project. Called from
  *  the CRUD endpoints after a create / update / delete. */
-function invalidateTemplateCache(projectId: string): void {
+export function invalidateTemplateCache(projectId: string): void {
   templateListCache.delete(projectId);
 }
 
@@ -207,13 +208,32 @@ export async function resolveTemplateBySlug(
  * needs no project, no manifest, and no git fetch. Used by the session-boot
  * fast path and the startup pre-build that mints the global default image.
  */
-async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
+export async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
   const [shared] = await db
     .select()
     .from(sandboxTemplates)
     .where(and(eq(sandboxTemplates.slug, DEFAULT_SANDBOX_SLUG), eq(sandboxTemplates.isShared, true)))
     .limit(1);
   return shared ? rowToResolved(shared) : synthesizedDefault();
+}
+
+/**
+ * Fetch a single template row by (project, slug) — DB-only, no synthesis.
+ * Used by CRUD operations that must operate on a concrete row.
+ */
+export async function getTemplateRow(
+  projectId: string | null,
+  slug: string,
+): Promise<DbSandboxTemplate | null> {
+  const conds = [eq(sandboxTemplates.slug, slug)];
+  if (projectId === null) conds.push(isNull(sandboxTemplates.projectId));
+  else conds.push(eq(sandboxTemplates.projectId, projectId));
+  const [row] = await db
+    .select()
+    .from(sandboxTemplates)
+    .where(and(...conds))
+    .limit(1);
+  return row ?? null;
 }
 
 export async function getTemplateById(templateId: string): Promise<DbSandboxTemplate | null> {
@@ -225,7 +245,7 @@ export async function getTemplateById(templateId: string): Promise<DbSandboxTemp
   return row ?? null;
 }
 
-interface CreateTemplateInput {
+export interface CreateTemplateInput {
   projectId: string;
   accountId: string;
   slug: string;
@@ -265,7 +285,7 @@ export async function createTemplate(input: CreateTemplateInput): Promise<DbSand
   return row;
 }
 
-interface UpdateTemplateInput {
+export interface UpdateTemplateInput {
   name?: string;
   image?: string | null;
   dockerfilePath?: string | null;
@@ -384,7 +404,7 @@ export async function computeTemplateIdentity(
   };
 }
 
-async function resolveUserDockerfile(
+export async function resolveUserDockerfile(
   project: GitBackedProject,
   template: ResolvedTemplate,
 ): Promise<{ dockerfile: string; commit: string | null }> {
@@ -392,10 +412,11 @@ async function resolveUserDockerfile(
   if (template.dockerfilePath) {
     const commitSha = await resolveCommitSha(project, project.defaultBranch);
     const bytes = await readRepoFile(project, template.dockerfilePath, commitSha);
-    if (!bytes.trim()) {
+    const normalized = normalizeUserDockerfileForSnapshot(bytes);
+    if (!normalized.trim()) {
       throw new Error(`Sandbox template "${template.slug}": Dockerfile ${template.dockerfilePath} is empty`);
     }
-    return { dockerfile: bytes, commit: commitSha };
+    return { dockerfile: normalized, commit: commitSha };
   }
   if (template.image) {
     return { dockerfile: `FROM ${template.image}\n`, commit: null };

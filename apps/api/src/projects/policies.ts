@@ -3,7 +3,7 @@
  *
  * Project policies span EVERY connector in the project — patterns are
  * fully-qualified (`<connector-slug>.<path>` or globs over that), and they're
- * evaluated before any connector-scoped rule.
+ * evaluated before any connector-scoped rule (docs/specs/executor.md §8).
  * `[policy].default_mode` controls the fallback when no rule matches:
  *   • `risk` — read = always_run, write/destructive = require_approval
  *   • `allow_all` — every tool runs (legacy default for back-compat)
@@ -13,12 +13,13 @@
  * ones. Defaults are permissive (no policies + allow_all) so existing projects
  * without a `[policy]` block keep current behavior.
  */
-import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
+import { MANIFEST_FILENAME, readManifest, type ParsedManifest } from './triggers';
+import type { GitBackedProject } from './git';
 
-type ProjectPolicyAction = 'always_run' | 'require_approval' | 'block';
+export type ProjectPolicyAction = 'always_run' | 'require_approval' | 'block';
 const POLICY_ACTIONS: readonly ProjectPolicyAction[] = ['always_run', 'require_approval', 'block'];
 
-type DefaultMode = 'risk' | 'allow_all';
+export type DefaultMode = 'risk' | 'allow_all';
 const DEFAULT_MODES: readonly DefaultMode[] = ['risk', 'allow_all'];
 
 export interface ProjectPolicySpec {
@@ -27,17 +28,17 @@ export interface ProjectPolicySpec {
   action: ProjectPolicyAction;
 }
 
-interface ProjectPolicySettings {
+export interface ProjectPolicySettings {
   /** Falls back to `allow_all` for missing `[policy]` blocks (back-compat). */
   defaultMode: DefaultMode;
 }
 
-interface ProjectPolicyParseError {
+export interface ProjectPolicyParseError {
   path: string;
   error: string;
 }
 
-interface LoadedProjectPolicies {
+export interface LoadedProjectPolicies {
   policies: ProjectPolicySpec[];
   settings: ProjectPolicySettings;
   errors: ProjectPolicyParseError[];
@@ -109,6 +110,29 @@ export function extractProjectPolicies(manifest: ParsedManifest): LoadedProjectP
   }
 
   return { policies, settings, errors };
+}
+
+/**
+ * Read + parse a project's manifest, then extract `[[policies]]` + `[policy]`.
+ * Returns empty defaults + a single top-level error when the manifest fails to
+ * load — never throws.
+ */
+export async function loadProjectPolicies(project: GitBackedProject): Promise<LoadedProjectPolicies> {
+  let manifest: ParsedManifest | null;
+  try {
+    manifest = await readManifest(project);
+  } catch (err) {
+    return {
+      policies: [],
+      settings: { ...DEFAULT_SETTINGS },
+      errors: [{
+        path: MANIFEST_FILENAME,
+        error: (err as Error).message || 'Failed to read manifest',
+      }],
+    };
+  }
+  if (!manifest) return { policies: [], settings: { ...DEFAULT_SETTINGS }, errors: [] };
+  return extractProjectPolicies(manifest);
 }
 
 /**

@@ -92,7 +92,7 @@ describe('router provider trace propagation', () => {
       'POST',
       '/v1/router/messages',
       async () => {
-        const res = await proxyToAnthropic({ model: 'claude-test', messages: [] });
+        const res = await proxyToAnthropic({ model: 'claude-test', messages: [] }, false);
         expect(res.status).toBe(200);
       },
       '00-11111111111111111111111111111111-2222222222222222-01',

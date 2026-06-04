@@ -1,8 +1,8 @@
 import { config, getToolCost } from '../../config';
 import {
-  deductCredits as deductBillingCredits,
-  getCreditSummary,
-} from '../../billing/services/credits';
+  checkCredits as checkCreditsDb,
+  deductCredits as deductCreditsDb,
+} from '../../repositories/credits';
 import type { BillingCheckResult, BillingDeductResult } from '../../types';
 
 /**
@@ -12,7 +12,8 @@ import type { BillingCheckResult, BillingDeductResult } from '../../types';
  */
 export async function checkCredits(
   accountId: string,
-  minimumRequired: number = 0.01
+  minimumRequired: number = 0.01,
+  options?: { skipDevCheck?: boolean }
 ): Promise<BillingCheckResult> {
   // When billing is disabled (self-host/dev), all checks pass — no Stripe, no
   // real subscriptions, and gating on a $0 balance just stalls everything.
@@ -20,20 +21,12 @@ export async function checkCredits(
     return { hasCredits: true, balance: 0, message: 'Credits check skipped (billing disabled)' };
   }
 
-  let result: Awaited<ReturnType<typeof getCreditSummary>>;
-  try {
-    result = await getCreditSummary(accountId);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Credit check failed';
-    return { hasCredits: false, balance: 0, message };
-  }
+  const result = await checkCreditsDb(accountId, minimumRequired);
 
   return {
-    hasCredits: result.total >= minimumRequired,
-    message: result.total >= minimumRequired
-      ? 'OK'
-      : `Insufficient credits. Balance: $${result.total.toFixed(4)}`,
-    balance: result.total,
+    hasCredits: result.hasCredits,
+    message: result.message,
+    balance: result.balance,
   };
 }
 
@@ -47,7 +40,8 @@ export async function deductToolCredits(
   toolName: string,
   resultCount: number = 0,
   description?: string,
-  sessionId?: string
+  sessionId?: string,
+  options?: { skipDevCheck?: boolean }
 ): Promise<BillingDeductResult> {
   const cost = getToolCost(toolName, resultCount);
   if (cost <= 0) {
@@ -66,21 +60,19 @@ export async function deductToolCredits(
     `Kortix ${toolName.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase())}`;
   const deductDescription = sessionId ? `${baseDescription} [session:${sessionId}]` : baseDescription;
 
-  let result: Awaited<ReturnType<typeof deductBillingCredits>>;
-  try {
-    result = await deductBillingCredits(accountId, cost, deductDescription);
-  } catch (error) {
-    return {
-      success: false,
-      cost: 0,
-      newBalance: 0,
-      error: error instanceof Error ? error.message : 'Deduction error',
-    };
+  console.info(`[BILLING] Deducting $${cost.toFixed(4)} for ${toolName} (direct DB)`);
+
+  const result = await deductCreditsDb(accountId, cost, deductDescription);
+
+  if (!result.success) {
+    return { success: false, cost: 0, newBalance: 0, error: result.error };
   }
+
+  console.info(`[BILLING] Deducted $${cost.toFixed(4)}. New balance: $${result.newBalance?.toFixed(2)}`);
 
   return {
     success: true,
-    cost: result.cost || cost,
+    cost: result.amountDeducted || cost,
     newBalance: result.newBalance || 0,
     transactionId: result.transactionId,
   };
@@ -111,21 +103,19 @@ export async function deductLLMCredits(
   const baseDescription = `LLM: ${model} (${inputTokens}/${outputTokens} tokens)`;
   const description = sessionId ? `${baseDescription} [session:${sessionId}]` : baseDescription;
 
-  let result: Awaited<ReturnType<typeof deductBillingCredits>>;
-  try {
-    result = await deductBillingCredits(accountId, calculatedCost, description, 'llm_debit');
-  } catch (error) {
-    return {
-      success: false,
-      cost: 0,
-      newBalance: 0,
-      error: error instanceof Error ? error.message : 'Deduction error',
-    };
+  console.info(`[BILLING] Deducting $${calculatedCost.toFixed(6)} for ${model} (direct DB)`);
+
+  const result = await deductCreditsDb(accountId, calculatedCost, description);
+
+  if (!result.success) {
+    return { success: false, cost: 0, newBalance: 0, error: result.error };
   }
+
+  console.info(`[BILLING] Deducted $${calculatedCost.toFixed(6)}. New balance: $${result.newBalance?.toFixed(2)}`);
 
   return {
     success: true,
-    cost: result.cost || calculatedCost,
+    cost: result.amountDeducted || calculatedCost,
     newBalance: result.newBalance || 0,
     transactionId: result.transactionId,
   };

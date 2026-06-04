@@ -42,14 +42,15 @@ export const MANIFEST_FILENAME = 'kortix.toml';
 
 /**
  * Schema version of the manifest. Bumped when we make a breaking change to
- * how the file is parsed. A higher major than KNOWN_SCHEMA_VERSION → loaders
+ * how the file is parsed. Manifests without `kortix_version` are treated as
+ * v1 (backward compat). A higher major than KNOWN_SCHEMA_VERSION → loaders
  * refuse to interpret the file so we don't silently misread future fields.
  */
 export const KNOWN_SCHEMA_VERSION = 1;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
-type GitTriggerType = 'cron' | 'webhook';
+export type GitTriggerType = 'cron' | 'webhook';
 
 export interface GitTriggerSpec {
   /** URL-safe slug — unique per project. */
@@ -86,7 +87,7 @@ export interface GitTriggerSpec {
   secretEnv: string | null;
 }
 
-interface GitTriggerParseError {
+export interface GitTriggerParseError {
   slug: string;
   path: string;
   error: string;
@@ -99,7 +100,7 @@ export interface ParsedManifest {
 }
 
 /** Result of `loadProjectTriggers` — same shape callers got pre-refactor. */
-interface LoadedTriggers {
+export interface LoadedTriggers {
   specs: GitTriggerSpec[];
   errors: GitTriggerParseError[];
 }
@@ -131,12 +132,13 @@ export async function readManifest(
  */
 export function parseManifestString(raw: string): ParsedManifest {
   const parsed = parseToml(raw) as Record<string, unknown>;
-  if (parsed.kortix_version == null) {
-    throw new Error('kortix_version is required');
-  }
-  const version = typeof parsed.kortix_version === 'number' ? parsed.kortix_version : NaN;
+  const version = typeof parsed.kortix_version === 'number'
+    ? parsed.kortix_version
+    : typeof parsed.kortix_version === 'string'
+      ? Number(parsed.kortix_version)
+      : KNOWN_SCHEMA_VERSION;
 
-  if (!Number.isFinite(version) || version < 1 || Math.floor(version) !== version) {
+  if (!Number.isFinite(version) || version < 1) {
     throw new Error('kortix_version must be a positive integer');
   }
   if (Math.floor(version) > KNOWN_SCHEMA_VERSION) {
@@ -292,23 +294,36 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
   }
   const type = typeRaw as GitTriggerType;
 
-  const prompt = typeof row.prompt === 'string' ? row.prompt : '';
+  const prompt = typeof row.prompt === 'string'
+    ? row.prompt
+    : typeof row.prompt_template === 'string'
+      ? row.prompt_template
+      : '';
   if (!prompt.trim()) {
     return err(slug, 'prompt is required and may not be empty');
   }
 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
-  const agent = typeof row.agent === 'string' && row.agent.trim() ? row.agent.trim() : 'default';
-  if (row.enabled !== undefined && typeof row.enabled !== 'boolean') {
-    return err(slug, 'enabled must be a boolean');
-  }
-  const enabled = row.enabled ?? true;
+  const agent = typeof row.agent === 'string' && row.agent.trim()
+    ? row.agent.trim()
+    : typeof row.agent_name === 'string' && row.agent_name.trim()
+      ? row.agent_name.trim()
+      : 'default';
+  const enabled = coerceBool(row.enabled, true);
 
   const path = `${MANIFEST_FILENAME}#triggers.${slug}`;
 
   if (type === 'cron') {
-    const cron = typeof row.cron === 'string' ? row.cron.trim() : '';
-    const runAtRaw = typeof row.run_at === 'string' ? row.run_at.trim() : '';
+    const cron = typeof row.cron === 'string'
+      ? row.cron.trim()
+      : typeof row.schedule === 'string'
+        ? row.schedule.trim()
+        : '';
+    const runAtRaw = typeof row.run_at === 'string'
+      ? row.run_at.trim()
+      : typeof row.runAt === 'string'
+        ? row.runAt.trim()
+        : '';
     const timezone = typeof row.timezone === 'string' && row.timezone.trim()
       ? row.timezone.trim()
       : 'UTC';
@@ -357,7 +372,11 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
   }
 
   // webhook
-  const secretEnv = typeof row.secret_env === 'string' ? row.secret_env.trim() : '';
+  const secretEnv = typeof row.secret_env === 'string'
+    ? row.secret_env.trim()
+    : typeof row.secretEnv === 'string'
+      ? row.secretEnv.trim()
+      : '';
   if (!secretEnv) {
     return err(slug, 'webhook triggers must declare `secret_env` pointing at a project_secrets entry');
   }
@@ -380,6 +399,17 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
       secretEnv,
     },
   };
+}
+
+function coerceBool(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes' || v === 'on') return true;
+    if (v === 'false' || v === '0' || v === 'no' || v === 'off') return false;
+  }
+  return fallback;
 }
 
 function err(slug: string, message: string): ParseErr {

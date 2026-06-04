@@ -2,6 +2,7 @@
  * Daytona sandbox provider.
  *
  * Creates sandboxes in Daytona Cloud from a pre-built snapshot.
+ * Extracted from the original account.ts provisioning logic.
  */
 
 import { eq } from 'drizzle-orm';
@@ -9,6 +10,9 @@ import { sandboxes } from '@kortix/db';
 import { getDaytona } from '../../shared/daytona';
 import { db } from '../../shared/db';
 import { config, SANDBOX_VERSION } from '../../config';
+// (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
+// own per-project snapshot, resolved by the snapshot builder. Callers
+// must pass `opts.snapshot`; there is no shared platform-wide image.)
 import type {
   SandboxProvider,
   ProviderName,
@@ -18,7 +22,7 @@ import type {
   ResolvedEndpoint,
   ProvisioningTraits,
   ProvisioningStatus,
-} from './types';
+} from './index';
 
 export class DaytonaProvider implements SandboxProvider {
   readonly name: ProviderName = 'daytona';
@@ -176,6 +180,7 @@ export class DaytonaProvider implements SandboxProvider {
   async ensureRunning(externalId: string): Promise<void> {
     const status = await this.getStatus(externalId);
     if (status === 'running') return;
+    console.log(`[DAYTONA] Sandbox ${externalId} is ${status}, waking up...`);
     await this.start(externalId);
   }
 }

@@ -12,7 +12,7 @@ export interface RateLimitPolicy {
   windowMs: number;
 }
 
-interface RateLimitResult {
+export interface RateLimitResult {
   allowed: boolean;
   limit: number;
   remaining: number;
@@ -29,7 +29,7 @@ interface AuditContext {
   metadata?: Record<string, unknown>;
 }
 
-class TokenBucketRateLimiter {
+export class TokenBucketRateLimiter {
   private buckets = new Map<string, Bucket>();
 
   constructor(private readonly namespace: string) {}
@@ -69,6 +69,9 @@ class TokenBucketRateLimiter {
     return { allowed: true, limit, remaining: bucket.tokens, resetMs };
   }
 
+  reset() {
+    this.buckets.clear();
+  }
 }
 
 function positiveInt(value: unknown, fallback: number) {
@@ -113,7 +116,7 @@ async function auditRateLimitHit(c: Context, context: AuditContext, result: Rate
   });
 }
 
-async function enforceRateLimit(
+export async function enforceRateLimit(
   c: Context,
   limiter: TokenBucketRateLimiter,
   key: string,
@@ -135,6 +138,7 @@ async function enforceRateLimit(
 
 const inviteAcceptLimiter = new TokenBucketRateLimiter('invite_accept');
 const sandboxProxyLimiter = new TokenBucketRateLimiter('sandbox_proxy');
+export const sessionLlmLimiter = new TokenBucketRateLimiter('session_llm');
 
 export function createInviteAcceptRateLimitMiddleware() {
   return async (c: Context, next: Next) => {
@@ -144,7 +148,7 @@ export function createInviteAcceptRateLimitMiddleware() {
       inviteAcceptLimiter,
       clientIp(c),
       {
-        limit: positiveInt(config.KORTIX_INVITE_ACCEPT_REQS_PER_MIN, 20),
+        limit: positiveInt((config as any).KORTIX_INVITE_ACCEPT_REQS_PER_MIN, 20),
         windowMs: 60_000,
       },
       {
@@ -167,7 +171,7 @@ export function createSandboxProxyRateLimitMiddleware() {
       sandboxProxyLimiter,
       sandboxId,
       {
-        limit: positiveInt(config.KORTIX_PROXY_REQS_PER_MIN, 600),
+        limit: positiveInt((config as any).KORTIX_PROXY_REQS_PER_MIN, 600),
         windowMs: 60_000,
       },
       {
@@ -181,4 +185,10 @@ export function createSandboxProxyRateLimitMiddleware() {
     if (denied) return denied;
     await next();
   };
+}
+
+export function resetRateLimiters() {
+  inviteAcceptLimiter.reset();
+  sandboxProxyLimiter.reset();
+  sessionLlmLimiter.reset();
 }

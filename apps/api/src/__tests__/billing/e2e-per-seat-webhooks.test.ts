@@ -19,10 +19,11 @@ import {
   registerCreditsMock,
   resetMockRegistry,
 } from './mocks';
-import { PER_SEAT_PRICE_USD } from '../../billing/services/tiers';
 
 registerGlobalMocks();
 registerCreditsMock();
+
+const { PER_SEAT_PRICE_USD } = await import('../../billing/services/tiers');
 
 const PER_SEAT_PRICE_PLACEHOLDER = 'price_PLACEHOLDER_PER_SEAT';
 
@@ -106,7 +107,7 @@ describe('per-seat webhook reconciliation', () => {
     expect(persistedUpdate?.data.billingModel).toBe('per_seat');
     expect(persistedUpdate?.data.seatSubscriptionItemId).toBe('si_seat_123');
 
-    // Delta = 3 - 1 = 2 seats → grant PER_SEAT_PRICE_USD × 2.
+    // Delta = 3 - 1 = 2 seats.
     expect(grantCreditsCalls.length).toBe(1);
     const [accountId, amount, type, , , idempotencyKey] = grantCreditsCalls[0];
     expect(accountId).toBe('acc_test_123');

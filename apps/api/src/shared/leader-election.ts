@@ -24,7 +24,6 @@
  */
 
 import os from 'node:os';
-import { randomUUID } from 'node:crypto';
 import postgres from 'postgres';
 import { config } from '../config';
 import { logger } from '../lib/logger';
@@ -38,7 +37,7 @@ const TTL_MS = 60_000;
 const RENEW_INTERVAL_MS = 20_000;
 const ACQUIRE_RETRY_MS = 15_000;
 
-interface LeaderElectionHandlers {
+export interface LeaderElectionHandlers {
   /** Called once when this node becomes leader (start singleton workers). */
   onAcquire: () => void | Promise<void>;
   /** Called when this node loses leadership (stop singleton workers). */
@@ -74,7 +73,7 @@ export function shouldDemote(
 
 // ─── Runtime state ───────────────────────────────────────────────────────────
 
-const ownerId = `${os.hostname()}-${process.pid}-${randomUUID().slice(0, 8)}`;
+const ownerId = `${os.hostname()}-${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
 
 let sql: ReturnType<typeof postgres> | null = null;
 let timer: ReturnType<typeof setTimeout> | null = null;
@@ -86,6 +85,10 @@ let tableReady = false;
 
 export function isLeader(): boolean {
   return leader;
+}
+
+export function leaderOwnerId(): string {
+  return ownerId;
 }
 
 async function ensureLeaseTable(): Promise<void> {

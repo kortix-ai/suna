@@ -29,11 +29,11 @@ function positiveInt(raw: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function sandboxIdleTtlMs(): number {
+export function sandboxIdleTtlMs(): number {
   return positiveInt(process.env.KORTIX_SANDBOX_IDLE_TTL, DEFAULT_IDLE_TTL_MS);
 }
 
-function branchRetentionDays(): number {
+export function branchRetentionDays(): number {
   return positiveInt(process.env.KORTIX_BRANCH_RETENTION_DAYS, DEFAULT_BRANCH_RETENTION_DAYS);
 }
 
@@ -101,7 +101,7 @@ export async function hibernateIdleSessionSandboxes(now = new Date()): Promise<{
       isNotNull(sessionSandboxes.externalId),
       // Never hibernate an unclaimed warm-pool box (pool_state set) — it has no
       // session activity by design. Claimed boxes have pool_state cleared and
-      // hibernate normally.
+      // hibernate normally. See docs/specs/warm-pool.md.
       sql`${sessionSandboxes.poolState} IS NULL`,
       sql`coalesce(${sessionSandboxes.lastUsedAt}, ${sessionSandboxes.updatedAt}, ${sessionSandboxes.createdAt}) < ${cutoffParam}::timestamptz`,
     ))
@@ -251,7 +251,7 @@ export async function sweepExpiredSessionBranches(now = new Date()): Promise<{
   return { candidates: rows.length, deleted, skipped, errors };
 }
 
-async function runProjectMaintenance(): Promise<void> {
+export async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
@@ -289,6 +289,7 @@ async function runProjectMaintenance(): Promise<void> {
 }
 
 export function startProjectMaintenance(): void {
+  if (process.env.KORTIX_PROJECT_MAINTENANCE_ENABLED === 'false') return;
   if (globalForProjectMaintenance.__kortixProjectMaintenanceTimer) {
     clearInterval(globalForProjectMaintenance.__kortixProjectMaintenanceTimer);
   }

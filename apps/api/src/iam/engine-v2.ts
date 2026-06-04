@@ -1,4 +1,5 @@
-// IAM V2 engine.
+// IAM V2 engine. The only authorization path — the V1 policy engine and
+// its accounts.iam_v2_enabled rollout flag were retired in PR5.
 //
 // Decides access from three tables:
 //   - account_members         (account_role, is_super_admin)
@@ -6,9 +7,11 @@
 //   - project_group_grants    (group → project → project_role, expanded
 //                               via account_group_members)
 //
+// No iam_policies. No scope grammar. No conditions. No deny precedence.
 // One role determines what you can do at the level that role applies.
 //
-// Pure helpers stay private; the public surface is authorize/list filtering.
+// The pure-function helpers (deriveEffectiveProjectRole, scopeForAction)
+// are exported so they can be unit-tested without a DB.
 
 import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
@@ -25,8 +28,10 @@ import type {
   AuthorizeResult,
   AuthorizeTarget,
   RequestContext,
-} from './types';
+} from './engine';
 import {
+  ACCOUNT_ROLE_PERMS,
+  PROJECT_ROLE_PERMS,
   accountRoleAllows,
   implicitProjectRoleForAccount,
   maxProjectRole,
@@ -35,18 +40,18 @@ import {
   type ProjectRole,
 } from './role-perms';
 
-// ─── Pure helpers ─────────────────────────────────────────────────────────
+// ─── Pure helpers (exported for unit tests) ────────────────────────────────
 
-type ActionScopeV2 = 'account' | 'project';
+export type ActionScopeV2 = 'account' | 'project';
 
 /**
  * V2 scope detection. V2 collapses sandbox/trigger/channel into the
  * project they belong to — callers always pass a project target for
  * those actions. account.*, billing.*, audit.*, member.*, group.*,
- * token.* and project.create are account-level; everything else is
- * project-level.
+ * role.*, policy.*, token.* and project.create are account-level;
+ * everything else is project-level.
  */
-function scopeForActionV2(action: string): ActionScopeV2 {
+export function scopeForActionV2(action: string): ActionScopeV2 {
   if (action === 'project.create') return 'account';
   if (
     action.startsWith('account.') ||
@@ -54,6 +59,8 @@ function scopeForActionV2(action: string): ActionScopeV2 {
     action.startsWith('audit.') ||
     action.startsWith('member.') ||
     action.startsWith('group.') ||
+    action.startsWith('role.') ||
+    action.startsWith('policy.') ||
     action.startsWith('token.')
   ) {
     return 'account';
@@ -69,7 +76,7 @@ function scopeForActionV2(action: string): ActionScopeV2 {
  *   directRole  = project_members.project_role (or null when no direct row)
  *   groupRoles  = [] of project_group_grants.role rows for groups the user is in
  */
-function deriveEffectiveProjectRole(
+export function deriveEffectiveProjectRole(
   accountRole: AccountRole,
   directRole: ProjectRole | null,
   groupRoles: readonly ProjectRole[],
@@ -211,8 +218,9 @@ async function tokenInScope(
 // ─── Public surface ────────────────────────────────────────────────────────
 
 /**
- * Core authorization check. The request context parameter is accepted for
- * the dispatcher contract; IAM V2 has no policy-condition evaluation.
+ * Core authorization check. Same signature as V1 `authorize` so the
+ * dispatch layer can swap them. requestCtx kept for compatibility but
+ * unused — V2 has no policy conditions.
  */
 export async function authorizeV2(
   userId: string,
@@ -220,7 +228,8 @@ export async function authorizeV2(
   action: string,
   target?: AuthorizeTarget,
   actingTokenId?: string,
-  requestCtx: RequestContext = {},
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _requestCtx: RequestContext = {},
 ): Promise<AuthorizeResult> {
   const scope = scopeForActionV2(action);
   const effectiveTarget: AuthorizeTarget = target ?? { type: 'account' };
@@ -248,7 +257,7 @@ export async function authorizeV2(
   if (
     actor.accountMfaRequired &&
     !actingTokenId &&
-    requestCtx.mfaAal !== 'aal2'
+    _requestCtx.mfaAal !== 'aal2'
   ) {
     return { allowed: false, reason: 'account_mfa_required' };
   }
@@ -277,7 +286,7 @@ export async function authorizeV2(
 
 // ─── List accessible resources ─────────────────────────────────────────────
 
-type AccessibleResourcesV2 =
+export type AccessibleResourcesV2 =
   | { mode: 'all' }
   | { mode: 'none' }
   | { mode: 'allow_only'; allowed: Set<string> };
@@ -404,3 +413,31 @@ export async function listAccessibleProjectsV2(
   }
   return { mode: 'allow_only', allowed };
 }
+
+/** Thin assertion wrapper matching V1's `assertAuthorized`. */
+export async function assertAuthorizedV2(
+  userId: string,
+  accountId: string,
+  action: string,
+  target?: AuthorizeTarget,
+  actingTokenId?: string,
+  requestCtx?: RequestContext,
+): Promise<void> {
+  const result = await authorizeV2(
+    userId,
+    accountId,
+    action,
+    target,
+    actingTokenId,
+    requestCtx,
+  );
+  if (!result.allowed) {
+    const err = new Error(`forbidden: ${action} (${result.reason ?? 'denied'})`);
+    (err as Error & { status?: number }).status = 403;
+    throw err;
+  }
+}
+
+// ─── Suppress unused-locals warnings ───────────────────────────────────────
+// PERMS exports are kept for future use by the policies-replacement UI.
+export const _V2_INTERNALS = { ACCOUNT_ROLE_PERMS, PROJECT_ROLE_PERMS };

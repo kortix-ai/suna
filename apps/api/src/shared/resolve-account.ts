@@ -44,7 +44,12 @@ export async function resolveScopedAccountId(
     requested = c.req.query('account_id');
   } else {
     try {
-      const body = await c.req.raw.clone().json();
+      // Use Hono's cached body parse (c.req.json()), NOT c.req.raw.clone().json():
+      // under @hono/zod-openapi the request-validation middleware consumes the raw
+      // body stream before the handler runs, so a clone of c.req.raw is empty by
+      // then → account_id would be missed → a non-member would resolve to their
+      // own account instead of being 403'd. c.req.json() returns the cached parse.
+      const body = await c.req.json();
       const candidate = body?.account_id;
       if (typeof candidate === 'string' && candidate) requested = candidate;
     } catch {
@@ -82,6 +87,10 @@ export async function resolveAccountId(userId: string): Promise<string> {
       .select({ accountId: accountMembers.accountId })
       .from(accountMembers)
       .where(eq(accountMembers.userId, userId))
+      // Deterministic "primary account" = the user's earliest-joined account
+      // (their original). No personal/team flag — there is no such thing now;
+      // a bare (account-agnostic) lookup must be stable, not pick-whatever-row.
+      .orderBy(accountMembers.joinedAt)
       .limit(1);
 
     if (membership) {
@@ -102,7 +111,6 @@ export async function resolveAccountId(userId: string): Promise<string> {
         await db.insert(accounts).values({
           accountId: legacy.accountId,
           name: defaultAccountName(),
-          personalAccount: true,
         }).onConflictDoNothing();
 
         await db.insert(accountMembers).values({
@@ -111,6 +119,8 @@ export async function resolveAccountId(userId: string): Promise<string> {
           accountRole: 'owner',
           isSuperAdmin: true,
         }).onConflictDoNothing();
+
+        console.log(`[resolve-account] Lazy-migrated basejump account ${legacy.accountId} for user ${userId}`);
       } catch (migErr) {
         console.warn(`[resolve-account] Lazy migration failed for ${legacy.accountId}:`, migErr);
       }
@@ -128,7 +138,6 @@ export async function resolveAccountId(userId: string): Promise<string> {
     await db.insert(accounts).values({
       accountId: userId,
       name: defaultAccountName(),
-      personalAccount: true,
     }).onConflictDoNothing();
 
     await db.insert(accountMembers).values({

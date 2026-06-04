@@ -9,6 +9,7 @@ import { getStripe } from '../../shared/stripe';
 import { config } from '../../config';
 import { getCreditAccount, updateCreditAccount } from '../repositories/credit-accounts';
 import { getCustomerByAccountId } from '../repositories/customers';
+import { grantCredits } from './credits';
 import { isPaidTier } from './tiers';
 import { BillingError } from '../../errors';
 import {
@@ -17,6 +18,14 @@ import {
   AUTO_TOPUP_MIN_AMOUNT,
   AUTO_TOPUP_MIN_THRESHOLD,
 } from '@kortix/shared';
+
+// ─── Validation Constants ────────────────────────────────────────────────────
+export {
+  AUTO_TOPUP_DEFAULT_AMOUNT,
+  AUTO_TOPUP_DEFAULT_THRESHOLD,
+  AUTO_TOPUP_MIN_AMOUNT,
+  AUTO_TOPUP_MIN_THRESHOLD,
+};
 
 /** Minimum 60 seconds between successful auto-topup charges. */
 const CHARGE_COOLDOWN_MS = 60_000;
@@ -53,13 +62,13 @@ const inFlight = new Map<string, Promise<void>>();
 
 // ─── Configure ──────────────────────────────────────────────────────────────
 
-interface AutoTopupConfig {
+export interface AutoTopupConfig {
   enabled: boolean;
   threshold: number;  // dollars
   amount: number;     // dollars
 }
 
-function validateAutoTopupConfig(cfg: AutoTopupConfig): string | null {
+export function validateAutoTopupConfig(cfg: AutoTopupConfig): string | null {
   if (!cfg.enabled) return null;
 
   if (cfg.threshold < AUTO_TOPUP_MIN_THRESHOLD) {
@@ -193,6 +202,7 @@ async function tryAutoTopup(accountId: string): Promise<void> {
       ? (FAILURE_BACKOFF_MS[Math.min(previousFailures - 1, FAILURE_BACKOFF_MS.length - 1)] ?? CHARGE_COOLDOWN_MS)
       : CHARGE_COOLDOWN_MS;
     if (elapsed < requiredCooldown) {
+      console.log(`[AutoTopup] cooldown active for ${accountId} (${Math.round(elapsed / 1000)}s / ${Math.round(requiredCooldown / 1000)}s, failures=${previousFailures}), skipping`);
       return;
     }
   }
@@ -216,6 +226,7 @@ async function tryAutoTopup(accountId: string): Promise<void> {
   if (!fresh || !fresh.autoTopupEnabled) return;
   const freshBalance = Number(fresh.balance) || 0;
   if (freshBalance >= threshold) {
+    console.log(`[AutoTopup] balance reached threshold during pre-flight (${freshBalance} >= ${threshold}); skipping`);
     return;
   }
 
@@ -243,7 +254,6 @@ async function tryAutoTopup(accountId: string): Promise<void> {
     });
 
     if (paymentIntent.status === 'succeeded') {
-      const { grantCredits } = await import('./credit-grants');
       await grantCredits(
         accountId,
         amount,
@@ -257,6 +267,7 @@ async function tryAutoTopup(accountId: string): Promise<void> {
         autoTopupConsecutiveFailures: 0,
         autoTopupDisabledReason: null,
       } as any);
+      console.log(`[AutoTopup] charged $${amount} for ${accountId} (balance was $${freshBalance.toFixed(2)})`);
     } else {
       // Pending / requires_action / requires_payment_method — count as a soft
       // failure so we back off, but don't auto-disable.

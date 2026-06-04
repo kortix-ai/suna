@@ -6,6 +6,7 @@ import {
   extractSandboxDefault,
   extractSandboxTemplates,
   PLATFORM_DEFAULT_USER_DOCKERFILE,
+  sandboxSpecIsEmpty,
   SANDBOX_SPEC_LIMITS,
 } from '../snapshots/dockerfile-layer';
 
@@ -45,6 +46,29 @@ describe('buildLayeredDockerfile', () => {
     // The daemon clones at boot via KORTIX_PROJECT_AUTO_CLONE; the layer just
     // creates an empty /workspace.
     expect(merged).toContain('mkdir -p /workspace');
+  });
+
+  test('strips only the generated starter baseline apt block', () => {
+    const user = `FROM ubuntu:24.04
+
+# Bring in baseline tooling. The Kortix layer on top also installs
+# git/curl/ca-certificates/nodejs/npm, but having them in your base
+# makes interactive sessions snappier.
+RUN apt-get update \\
+    && apt-get install -y --no-install-recommends \\
+        ca-certificates \\
+        curl \\
+        git \\
+        build-essential \\
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+`;
+    const merged = buildLayeredDockerfile({ userDockerfile: user, ...COMMON });
+    expect(merged).toContain('FROM ubuntu:24.04');
+    expect(merged).toContain('WORKDIR /workspace');
+    expect(merged).not.toContain('having them in your base');
+    expect(merged.match(/apt-get update/g)?.length).toBe(1);
   });
 
   test('result ends with a trailing newline', () => {
@@ -113,6 +137,21 @@ describe('extractSandboxTemplates', () => {
     expect(out[1]).toMatchObject({ slug: 'python', image: 'python:3.12-slim' });
   });
 
+  test('legacy singular [sandbox] table (no templates) is ignored', () => {
+    const out = extractSandboxTemplates({
+      sandbox: { dockerfile: '.kortix/Dockerfile', cpu: 2 },
+    });
+    expect(out).toHaveLength(0);
+  });
+
+  test('legacy [[sandboxes]] form still parses as a migration safety net', () => {
+    const out = extractSandboxTemplates({
+      sandboxes: [{ slug: 'ml', image: 'python:3.12-slim' }],
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ slug: 'ml', image: 'python:3.12-slim' });
+  });
+
   test('rejects [[sandbox.templates]] entries claiming the reserved "default" slug', () => {
     const out = extractSandboxTemplates({
       sandbox: {
@@ -149,12 +188,10 @@ describe('extractSandboxTemplates', () => {
 
   test('deduplicates by slug (first wins)', () => {
     const out = extractSandboxTemplates({
-      sandbox: {
-        templates: [
-          { slug: 'ml', dockerfile: 'a' },
-          { slug: 'ml', image: 'python:3.12-slim' },
-        ],
-      },
+      sandboxes: [
+        { slug: 'ml', dockerfile: 'a' },
+        { slug: 'ml', image: 'python:3.12-slim' },
+      ],
     });
     expect(out).toHaveLength(1);
     expect(out[0].dockerfile).toBe('a');
@@ -162,9 +199,7 @@ describe('extractSandboxTemplates', () => {
 
   test('clamps over-spec resources rather than rejecting them', () => {
     const out = extractSandboxTemplates({
-      sandbox: {
-        templates: [{ slug: 'huge', dockerfile: 'a', cpu: 9999, memory: 99999 }],
-      },
+      sandboxes: [{ slug: 'huge', dockerfile: 'a', cpu: 9999, memory: 99999 }],
     });
     expect(out[0].spec).toEqual({
       cpu: SANDBOX_SPEC_LIMITS.cpu.max,
@@ -174,12 +209,10 @@ describe('extractSandboxTemplates', () => {
 
   test('rejects absolute and traversal Dockerfile paths', () => {
     const out = extractSandboxTemplates({
-      sandbox: {
-        templates: [
-          { slug: 'a', dockerfile: '/etc/Dockerfile' },
-          { slug: 'b', dockerfile: '../escape/Dockerfile' },
-        ],
-      },
+      sandboxes: [
+        { slug: 'a', dockerfile: '/etc/Dockerfile' },
+        { slug: 'b', dockerfile: '../escape/Dockerfile' },
+      ],
     });
     expect(out[0].dockerfile).toBe(undefined);
     expect(out[1].dockerfile).toBe(undefined);
@@ -191,5 +224,14 @@ describe('buildDefaultSandboxTemplate', () => {
     const tpl = buildDefaultSandboxTemplate();
     expect(tpl.isDefault).toBe(true);
     expect(tpl.slug).toBe(DEFAULT_SANDBOX_SLUG);
+  });
+});
+
+describe('sandboxSpecIsEmpty', () => {
+  test('true only when no field is set', () => {
+    expect(sandboxSpecIsEmpty({})).toBe(true);
+    expect(sandboxSpecIsEmpty({ cpu: 1 })).toBe(false);
+    expect(sandboxSpecIsEmpty({ memory: 2 })).toBe(false);
+    expect(sandboxSpecIsEmpty({ disk: 10 })).toBe(false);
   });
 });

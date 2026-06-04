@@ -77,7 +77,10 @@ mock.module('../projects/git', () => ({
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
   deleteRemoteSessionBranch: async () => undefined,
+  diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
+  getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
+  resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
@@ -98,22 +101,24 @@ mock.module("../snapshots/builder", () => ({
 }));
 
 mock.module('../projects/github', () => ({
+  parseGitHubRepoUrl: () => null,
   buildGitHubAppInstallUrl: () => '',
+  createGitHubAppJwt: () => 'jwt-test',
+  verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
     nonce: 'test-nonce',
     issuedAt: Math.floor(Date.now() / 1000),
   }),
   getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
+  addCollaborator: async () => undefined,
   commitFile: async () => {},
   createInstallationToken: async () => ({ token: 't' }),
   createRepo: async () => { throw new Error('not used'); },
+  deleteFile: async () => {},
   deleteRepo: async () => undefined,
-  addCollaborator: async () => undefined,
   getBranchCommitSha: async () => 'a'.repeat(40),
   createBranchRef: async () => undefined,
-  parseGitHubRepoUrl: () => ({ owner: 'kortix-org', repo: 'gate-project' }),
-  deleteFile: async () => {},
   getFileSha: async () => null,
   getGitHubAppInstallation: async () => ({ account: { login: 'x', type: 'Organization' }, repository_selection: 'all', permissions: {} }),
   getRepo: async () => ({
@@ -148,6 +153,7 @@ mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_p: string, v: string) => v,
   isValidSecretName: () => true,
   listProjectSecrets: async () => ({}),
+  listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
   listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
   getProjectSecretValue: async () => null,
 }));

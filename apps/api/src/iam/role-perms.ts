@@ -54,7 +54,7 @@ const MEMBER_BASELINE: readonly string[] = [
   ACCOUNT_ACTIONS.TOKEN_READ,
 ];
 
-const ACCOUNT_ROLE_PERMS: Record<AccountRole, ReadonlySet<string>> = {
+export const ACCOUNT_ROLE_PERMS: Record<AccountRole, ReadonlySet<string>> = {
   member: new Set<string>(MEMBER_BASELINE),
   admin: new Set<string>([...MEMBER_BASELINE, ...ADMIN_EXTRAS]),
   owner: new Set<string>([...MEMBER_BASELINE, ...ADMIN_EXTRAS, ...OWNER_ONLY]),
@@ -92,7 +92,7 @@ const VIEWER_BASELINE: readonly string[] = [
   PROJECT_ACTIONS.PROJECT_TRIGGER_READ,
 ];
 
-const PROJECT_ROLE_PERMS: Record<ProjectRole, ReadonlySet<string>> = {
+export const PROJECT_ROLE_PERMS: Record<ProjectRole, ReadonlySet<string>> = {
   viewer: new Set<string>(VIEWER_BASELINE),
   editor: new Set<string>([...VIEWER_BASELINE, ...EDITOR_EXTRAS]),
   manager: new Set<string>([...VIEWER_BASELINE, ...EDITOR_EXTRAS, ...MANAGER_ONLY]),

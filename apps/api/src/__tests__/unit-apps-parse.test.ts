@@ -152,6 +152,39 @@ domains = ["b2.style.dev"]
     expect(specs[0]!.build).toBeNull();
   });
 
+  test('rootPath camelCase alias is accepted', () => {
+    const { specs, errors } = parseAndExtract(`
+[[apps]]
+slug = "camel"
+domains = ["c.style.dev"]
+
+  [apps.source]
+  type = "git"
+  repo = "https://github.com/me/x"
+  rootPath = "apps/x"
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]!.source).toMatchObject({ rootPath: 'apps/x' });
+  });
+
+  test('outDir camelCase alias is accepted', () => {
+    const { specs, errors } = parseAndExtract(`
+[[apps]]
+slug = "camel-build"
+domains = ["cb.style.dev"]
+
+  [apps.source]
+  type = "git"
+  repo = "https://github.com/me/x"
+
+  [apps.build]
+  command = "bun run build"
+  outDir = "out"
+`);
+    expect(errors).toEqual([]);
+    expect(specs[0]!.build).toEqual({ command: 'bun run build', outDir: 'out' });
+  });
+
   test('enabled = false is preserved', () => {
     const { specs, errors } = parseAndExtract(`
 [[apps]]
@@ -306,21 +339,6 @@ domains = ["x.style.dev"]
 `);
     expect(specs).toEqual([]);
     expect(errors[0]!.error).toMatch(/Invalid slug/);
-  });
-
-  test('enabled must be a boolean', () => {
-    const { specs, errors } = parseAndExtract(`
-[[apps]]
-slug = "string-enabled"
-enabled = "false"
-domains = ["x.style.dev"]
-
-  [apps.source]
-  type = "git"
-  repo = "https://github.com/me/x"
-`);
-    expect(specs).toEqual([]);
-    expect(errors[0]!.error).toMatch(/enabled must be a boolean/);
   });
 
   test('provider field is ignored by the manifest parser', () => {

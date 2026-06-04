@@ -1,4 +1,4 @@
-import { eq, and } from 'drizzle-orm';
+import { eq, and, lte, ne } from 'drizzle-orm';
 import { accountDeletionRequests } from '@kortix/db';
 import { db } from '../../shared/db';
 
@@ -55,4 +55,20 @@ export async function markDeletionCompleted(requestId: string) {
       completedAt: new Date().toISOString(),
     })
     .where(eq(accountDeletionRequests.id, requestId));
+}
+
+export async function getScheduledDeletions() {
+  const now = new Date().toISOString();
+
+  const rows = await db
+    .select()
+    .from(accountDeletionRequests)
+    .where(
+      and(
+        eq(accountDeletionRequests.status, 'pending'),
+        lte(accountDeletionRequests.scheduledFor, now),
+      ),
+    );
+
+  return rows;
 }

@@ -51,19 +51,6 @@ mock.module('../sandbox-proxy', () => ({
   },
 }));
 
-mock.module('../snapshots/builder', () => ({
-  ensureSandboxImage: async () => ({ snapshotName: 'kortix-default-test', slug: 'default', contentHash: 'a'.repeat(64), built: false, isDefault: true }),
-  deleteSandboxImage: async () => ({ deleted: false, snapshotName: 'kortix-default-test', slug: 'default' }),
-  listSnapshotBuilds: async () => [],
-  listSandboxTemplates: async () => [],
-  resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
-  kickPreBuild: () => {},
-  kickProjectTemplatePrebuilds: () => {},
-  reconcileStaleBuilds: async () => ({ reconciled: 0 }),
-  resolveCommitSha: async () => 'a'.repeat(40),
-  DEFAULT_SANDBOX_SLUG: 'default',
-}));
-
 mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
   searchRepoFileNames: async () => [],
@@ -81,6 +68,18 @@ mock.module('../projects/git', () => ({
   getCommit: async () => null,
   getCommitDiff: async () => null,
   getFileHistory: async () => ({ entries: [], nextCursor: null }),
+  getFileAtRef: async () => null,
+  resolveCommitSha: async () => 'a'.repeat(40),
+  resolveTreeOid: async () => 'b'.repeat(40),
+  materializeRepoContext: async () => '/tmp/fake-snapshot-context',
+  resolveBranchTip: async () => 'a'.repeat(40),
+  getBranchDiff: async () => ({ files: [], diff: '' }),
+  getDiffBetweenShas: async () => ({ files: [], diff: '' }),
+  previewMerge: async () => ({ canMerge: true, conflicts: [] }),
+  mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
+  commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
+  getMergeBase: async () => 'a'.repeat(40),
+  diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
   invalidateProjectMirror: () => {},
 }));
 

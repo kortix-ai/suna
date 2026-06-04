@@ -170,7 +170,7 @@ export async function removeReaction(
 // ─── Streaming (chat.startStream / appendStream / stopStream) ────────────────
 // Renders a live plan block in a channel thread. task_update chunks are the
 // plan checkpoints; markdown_text is the final answer body.
-type StreamTaskStatus = 'pending' | 'in_progress' | 'complete' | 'error';
+export type StreamTaskStatus = 'pending' | 'in_progress' | 'complete' | 'error';
 
 export interface StreamTaskChunk {
   type: 'task_update';
@@ -191,7 +191,7 @@ export interface StreamTaskChunk {
   sources?: Array<{ type: 'url'; url: string; text: string }>;
 }
 
-interface StreamTextChunk {
+export interface StreamTextChunk {
   type: 'markdown_text';
   text: string;
 }
@@ -199,7 +199,7 @@ interface StreamTextChunk {
 // Full Block Kit closing chunk — use for rich answers (headers, sections,
 // images, context actions). Slack validates these against the standard
 // Block Kit schema. Only valid as a closing chunk on chat.stopStream.
-interface StreamBlocksChunk {
+export interface StreamBlocksChunk {
   type: 'blocks';
   blocks: unknown[];
 }

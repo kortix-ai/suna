@@ -7,14 +7,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
   handleCall,
+  type CallInput,
+  type ExecutionRecord,
   type GatewayAction,
   type GatewayConnector,
   type GatewayDeps,
 } from '../executor/gateway';
 import type { DefaultMode, Policy } from '../executor/policy';
-
-type CallInput = Parameters<typeof handleCall>[1];
-type ExecutionRecord = Parameters<GatewayDeps['recordExecution']>[0];
 
 const ALICE = 'user-alice';
 
@@ -46,6 +45,7 @@ interface FakeOpts {
   policies?: Policy[];
   projectPolicies?: Policy[];
   defaultMode?: DefaultMode;
+  enforcePolicies?: boolean;
   fetchStatus?: number;
   fetchBody?: string;
 }
@@ -64,6 +64,7 @@ function makeDeps(o: FakeOpts = {}) {
     loadPolicies: async () => o.policies ?? [],
     loadProjectPolicies: async () => o.projectPolicies ?? [],
     loadDefaultMode: async () => o.defaultMode ?? 'allow_all',
+    enforcePolicies: o.enforcePolicies,
     recordExecution: async (r) => { records.push(r); },
     fetchImpl: async (url, init) => {
       fetchCalls.push({ url, ...init });
@@ -215,14 +216,19 @@ describe('handleCall — pipedream path', () => {
 });
 
 describe('handleCall — policy layer', () => {
+  test('allow-all when enforcePolicies is false even with a block rule', async () => {
+    const { deps } = makeDeps({ policies: [{ match: '*', action: 'block' }], enforcePolicies: false });
+    expect((await handleCall(deps, baseInput)).status).toBe('ok');
+  });
+
   test('block rule denies when enforcement on', async () => {
-    const { deps, fetchCalls } = makeDeps({ policies: [{ match: 'charges.*', action: 'block' }] });
+    const { deps, fetchCalls } = makeDeps({ policies: [{ match: 'charges.*', action: 'block' }], enforcePolicies: true });
     expect(await handleCall(deps, baseInput)).toEqual({ status: 'denied', reason: 'policy_block' });
     expect(fetchCalls).toHaveLength(0);
   });
 
   test('require_approval pauses', async () => {
-    const { deps } = makeDeps({ policies: [{ match: '*', action: 'require_approval' }] });
+    const { deps } = makeDeps({ policies: [{ match: '*', action: 'require_approval' }], enforcePolicies: true });
     expect(await handleCall(deps, baseInput)).toEqual({ status: 'pending_approval', reason: 'policy_require_approval' });
   });
 });

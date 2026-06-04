@@ -21,6 +21,7 @@ let activeDeletionRequest: any = null;
 let createdDeletionRequests: any[] = [];
 let cancelledRequestIds: string[] = [];
 let completedRequestIds: string[] = [];
+let scheduledDeletionRequests: any[] = [];
 
 beforeEach(() => {
   updateCreditAccountCalls = [];
@@ -31,6 +32,7 @@ beforeEach(() => {
   createdDeletionRequests = [];
   cancelledRequestIds = [];
   completedRequestIds = [];
+  scheduledDeletionRequests = [];
   resetMockRegistry();
 
   // Stripe client with cancel tracking
@@ -73,6 +75,7 @@ beforeEach(() => {
   mockRegistry.markDeletionCompleted = async (requestId: string) => {
     completedRequestIds.push(requestId);
   };
+  mockRegistry.getScheduledDeletions = async () => scheduledDeletionRequests;
 });
 
 // Import AFTER mocking
@@ -81,6 +84,7 @@ const {
   getAccountDeletionStatus,
   cancelAccountDeletion,
   deleteAccountImmediately,
+  processScheduledDeletions,
 } = await import('../../billing/services/account-deletion');
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -221,5 +225,62 @@ describe('deleteAccountImmediately', () => {
 
     expect(completedRequestIds.length).toBe(1);
     expect(completedRequestIds[0]).toBe('del_immediate');
+  });
+});
+
+describe('processScheduledDeletions', () => {
+  test('finds due requests and processes each', async () => {
+    scheduledDeletionRequests = [
+      {
+        id: 'del_scheduled_1',
+        accountId: 'acc_test_123',
+        status: 'pending',
+        scheduledFor: new Date(Date.now() - 86400000).toISOString(),
+      },
+    ];
+
+    const result = await processScheduledDeletions();
+
+    expect(result.processed).toBe(1);
+    expect(result.errors.length).toBe(0);
+    expect(completedRequestIds.length).toBe(1);
+  });
+
+  test('skips when no due requests', async () => {
+    scheduledDeletionRequests = [];
+
+    const result = await processScheduledDeletions();
+
+    expect(result.processed).toBe(0);
+  });
+
+  test('continues on error for individual accounts', async () => {
+    // Make the first account fail by having getCreditAccount throw
+    let callCount = 0;
+    mockRegistry.getCreditAccount = async (id: string) => {
+      callCount++;
+      if (callCount === 1) throw new Error('DB error');
+      return createMockCreditAccount();
+    };
+
+    scheduledDeletionRequests = [
+      {
+        id: 'del_fail',
+        accountId: 'acc_fail',
+        status: 'pending',
+        scheduledFor: new Date(Date.now() - 86400000).toISOString(),
+      },
+      {
+        id: 'del_ok',
+        accountId: 'acc_ok',
+        status: 'pending',
+        scheduledFor: new Date(Date.now() - 86400000).toISOString(),
+      },
+    ];
+
+    const result = await processScheduledDeletions();
+
+    expect(result.errors.length).toBe(1);
+    expect(result.processed).toBe(1);
   });
 });

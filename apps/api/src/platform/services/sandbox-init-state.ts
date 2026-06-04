@@ -1,7 +1,7 @@
 import type { CreateSandboxOpts, ProvisionResult, SandboxProvider } from '../providers';
 
-type SandboxInitStatus = 'pending' | 'provisioning' | 'retrying' | 'ready' | 'failed';
-type SandboxHealthStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
+export type SandboxInitStatus = 'pending' | 'provisioning' | 'retrying' | 'ready' | 'failed';
+export type SandboxHealthStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
 
 export const SANDBOX_INIT_MAX_ATTEMPTS = 3;
 /**
@@ -57,7 +57,68 @@ function isProviderCapacityLimited(error: unknown): boolean {
 const PROVIDER_CAPACITY_MAX_ATTEMPTS = 30;
 const PROVIDER_CAPACITY_RETRY_DELAY_MS = 10_000;
 
-function stripSandboxInitFailureMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function getSandboxMetadata(metadata: unknown): Record<string, unknown> {
+  return isRecord(metadata) ? metadata : {};
+}
+
+export function getSandboxInitAttempts(metadata: Record<string, unknown> | null | undefined): number {
+  const raw = metadata?.initAttempts;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+  return 0;
+}
+
+export function getSandboxLastInitError(metadata: Record<string, unknown> | null | undefined): string | null {
+  const candidates = [
+    metadata?.lastInitError,
+    metadata?.provisioningError,
+    metadata?.lastProvisioningError,
+    metadata?.errorMessage,
+  ];
+  for (const value of candidates) {
+    if (typeof value === 'string' && value.trim().length > 0) return value;
+  }
+  return null;
+}
+
+export function deriveSandboxInitStatus(
+  lifecycleStatus: string | null | undefined,
+  metadata: Record<string, unknown> | null | undefined,
+): SandboxInitStatus {
+  const raw = metadata?.initStatus;
+  if (raw === 'pending' || raw === 'provisioning' || raw === 'retrying' || raw === 'ready' || raw === 'failed') {
+    return raw;
+  }
+  switch (lifecycleStatus) {
+    case 'active':
+    case 'stopped':
+    case 'archived':
+      return 'ready';
+    case 'provisioning':
+      return 'provisioning';
+    case 'error':
+      return 'failed';
+    default:
+      return 'pending';
+  }
+}
+
+export function deriveSandboxHealthStatus(
+  lifecycleStatus: string | null | undefined,
+  metadata: Record<string, unknown> | null | undefined,
+): SandboxHealthStatus {
+  const raw = metadata?.healthStatus;
+  if (raw === 'healthy' || raw === 'degraded' || raw === 'offline' || raw === 'unknown') {
+    return raw;
+  }
+  if (lifecycleStatus === 'stopped' || lifecycleStatus === 'archived') return 'offline';
+  return 'unknown';
+}
+
+export function stripSandboxInitFailureMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> {
   const source = metadata ?? {};
   const {
     provisioningError: _provisioningError,

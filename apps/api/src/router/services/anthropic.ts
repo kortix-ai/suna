@@ -6,7 +6,7 @@ const ANTHROPIC_VERSION = '2023-06-01';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-interface AnthropicUsage {
+export interface AnthropicUsage {
   inputTokens: number;
   outputTokens: number;
   cacheCreationInputTokens: number;
@@ -23,6 +23,7 @@ interface AnthropicUsage {
  */
 export async function proxyToAnthropic(
   body: Record<string, unknown>,
+  isStreaming: boolean,
   traceHeaders: Record<string, string> = getTraceHeaders(),
 ): Promise<Response> {
   const apiKey = config.OPENROUTER_API_KEY;
@@ -31,6 +32,10 @@ export async function proxyToAnthropic(
   }
 
   const url = `${config.OPENROUTER_API_URL}/messages`;
+
+  console.log(
+    `[LLM][Anthropic] Proxying via OpenRouter: ${body.model} (stream=${isStreaming})`,
+  );
 
   return fetch(url, {
     method: 'POST',

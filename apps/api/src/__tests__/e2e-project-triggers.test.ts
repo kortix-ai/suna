@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll } from './helpers/iam-mocks';
+import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
@@ -80,6 +80,8 @@ function sign(rawBody: string, secret: string) {
 
 mockIamEngineAllowAll();
 
+mockIamMembershipSyncNoop();
+
 mock.module('../middleware/auth', () => ({
   supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
@@ -123,7 +125,10 @@ mock.module('../projects/git', () => ({
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
   deleteRemoteSessionBranch: async () => undefined,
+  diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
+  getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
+  resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
@@ -131,23 +136,30 @@ mock.module("../snapshots/builder", () => ({
   ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
-  reconcileStaleBuilds: async () => {},
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
+  reconcileStaleBuilds: async () => ({ reconciled: 0 }),
+  ensurePlatformDefaultImage: async () => undefined,
   kickPreBuild: () => {},
+  kickStartupPreBuild: () => {},
+  reconcileProjectTemplates: async () => ({ reconciled: 0 }),
   kickProjectTemplatePrebuilds: () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
+  parseGitHubRepoUrl: () => null,
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  createGitHubAppJwt: () => 'jwt-test',
+  verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
     nonce: 'test-nonce',
     issuedAt: Math.floor(Date.now() / 1000),
   }),
   getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
+  addCollaborator: async () => undefined,
   commitFile: async (opts: { path: string; content: string; message: string }) => {
     repoFiles.set(opts.path, opts.content);
     commitCalls.push({ path: opts.path, message: opts.message });
@@ -156,15 +168,13 @@ mock.module('../projects/github', () => ({
   createRepo: async () => {
     throw new Error('not used');
   },
-  deleteRepo: async () => undefined,
-  addCollaborator: async () => undefined,
-  getBranchCommitSha: async () => 'a'.repeat(40),
-  createBranchRef: async () => undefined,
-  parseGitHubRepoUrl: () => ({ owner: 'kortix-org', repo: 'trigger-project' }),
   deleteFile: async (opts: { path: string; message: string }) => {
     repoFiles.delete(opts.path);
     deleteCalls.push({ path: opts.path, message: opts.message });
   },
+  deleteRepo: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
   getFileSha: async (opts: { path: string }) => {
     return repoFiles.has(opts.path) ? `sha-${opts.path}` : null;
   },
@@ -233,6 +243,7 @@ mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),
   listProjectSecrets: async () => ({}),
+  listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
   listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
   getProjectSecretValue: async (_projectId: string, name: string) =>
     secretValues.get(name) ?? null,
@@ -346,12 +357,6 @@ mock.module('../shared/db', () => ({
     }),
   },
 }));
-
-process.env.ALLOWED_SANDBOX_PROVIDERS = 'local_docker';
-process.env.DOCKER_HOST ||= 'unix:///var/run/docker.sock';
-process.env.KORTIX_WARM_POOL_SIZE = '0';
-process.env.KORTIX_TRIGGER_SCHEDULER_ENABLED = 'false';
-process.env.KORTIX_APPS_EXPERIMENTAL = 'false';
 
 const { projectsApp, projectWebhooksApp, runProjectTriggerSweep } = await import('../projects/index');
 

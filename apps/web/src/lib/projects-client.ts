@@ -50,7 +50,6 @@ export interface KortixAccount {
   account_id: string;
   name: string;
   slug?: string;
-  personal_account?: boolean;
   account_role?: string;
   is_primary_owner?: boolean;
 }
@@ -61,7 +60,6 @@ export type ProjectRole = 'manager' | 'editor' | 'viewer';
 export interface AccountDetail {
   account_id: string;
   name: string;
-  personal_account: boolean;
   /** When true the account is on the simplified IAM V2 model (3 account
    *  roles + 3 project roles, no DB-driven policies). Drives whether the
    *  frontend shows the V1 Policies/Roles tabs or the V2 simple UI. */

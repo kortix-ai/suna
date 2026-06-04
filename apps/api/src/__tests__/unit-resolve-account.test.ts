@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 const accounts = { __table: 'accounts', accountId: 'accountId' };
-const accountMembers = { __table: 'accountMembers', accountId: 'accountId', userId: 'userId' };
+const accountMembers = { __table: 'accountMembers', accountId: 'accountId', userId: 'userId', joinedAt: 'joinedAt' };
 const accountUser = { __table: 'accountUser', accountId: 'accountId', userId: 'userId' };
 const billingCustomers = { __table: 'billingCustomers', accountId: 'accountId', id: 'id', email: 'email', active: 'active', provider: 'provider' };
 const creditAccounts = { __table: 'creditAccounts', accountId: 'accountId', tier: 'tier', stripeSubscriptionId: 'stripeSubscriptionId' };
@@ -39,6 +39,9 @@ const fakeDb = {
     from: (table: { __table: string }) => ({
       where: () => ({
         limit: async (count: number) => rowsForTable(table).slice(0, count),
+        orderBy: () => ({
+          limit: async (count: number) => rowsForTable(table).slice(0, count),
+        }),
       }),
     }),
   }),

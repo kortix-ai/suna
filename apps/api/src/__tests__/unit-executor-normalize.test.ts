@@ -4,12 +4,25 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
+  normalize,
   normalizeGraphql,
   normalizeHttp,
   normalizeMcp,
   normalizeOpenApi,
-  normalizePipedream,
+  namespacePath,
+  riskForMethod,
 } from '../executor/normalize';
+
+describe('riskForMethod', () => {
+  test('GET/HEAD read, DELETE destructive, others write', () => {
+    expect(riskForMethod('get')).toBe('read');
+    expect(riskForMethod('HEAD')).toBe('read');
+    expect(riskForMethod('delete')).toBe('destructive');
+    expect(riskForMethod('post')).toBe('write');
+    expect(riskForMethod('PUT')).toBe('write');
+    expect(riskForMethod('patch')).toBe('write');
+  });
+});
 
 describe('normalizeOpenApi', () => {
   const doc = {
@@ -155,16 +168,27 @@ describe('normalizeHttp', () => {
   });
 });
 
-describe('namespacing', () => {
+describe('dispatch + namespacing', () => {
+  test('normalize() routes by provider', () => {
+    expect(normalize({ provider: 'openapi', doc: { paths: { '/x': { get: { responses: {} } } } } })).toHaveLength(1);
+    const pd = normalize({ provider: 'pipedream', app: 'gmail', actions: [{ key: 'gmail-send-email', name: 'Send Email' }] });
+    expect(pd[0]!.binding).toEqual({ kind: 'pipedream', app: 'gmail', actionKey: 'gmail-send-email' });
+    expect(pd[0]!.path).toBe('send_email');
+  });
+
   test('every pipedream connector gets a generic `request` (Connect Proxy) tool', () => {
-    const pd = normalizePipedream([{ key: 'github-create-issue', name: 'Create Issue' }], 'github');
+    const pd = normalize({ provider: 'pipedream', app: 'github', actions: [{ key: 'github-create-issue', name: 'Create Issue' }] });
     const request = pd.find((a) => a.path === 'request');
     expect(request).toBeDefined();
     expect(request!.binding).toEqual({ kind: 'pipedream_proxy', app: 'github' });
     expect(request!.inputSchema).toMatchObject({ required: ['method', 'url'] });
     // present even when the app exposes no curated actions at all
-    const empty = normalizePipedream([], 'github');
+    const empty = normalize({ provider: 'pipedream', app: 'github', actions: [] });
     expect(empty.some((a) => a.path === 'request')).toBe(true);
+  });
+
+  test('namespacePath prefixes the connector slug', () => {
+    expect(namespacePath('stripe', 'charges.create')).toBe('stripe.charges.create');
   });
 
   test('duplicate relative paths get de-duped', () => {

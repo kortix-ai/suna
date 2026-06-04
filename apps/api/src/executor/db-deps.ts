@@ -2,7 +2,7 @@
  * Production wiring for the executor router — DB-backed ExecutorRouterDeps +
  * GatewayDeps. Access lives on the connector; credentials are split per (connector,
  * user). The pure logic (gateway/share/execute/policy/normalize) is tested; this
- * is the glue to Postgres + the credential store + Pipedream.
+ * is the glue to Postgres + the credential store + Pipedream. See docs/specs/executor.md.
  */
 import type { Context } from 'hono';
 import { and, eq } from 'drizzle-orm';
@@ -17,7 +17,7 @@ import {
 } from '@kortix/db';
 import { db } from '../shared/db';
 import { validateAccountToken } from '../repositories/account-tokens';
-import { authorize } from '../iam/dispatcher';
+import { authorize } from '../iam';
 import {
   isSecretUsableBy,
   resolveShareSubject,
@@ -109,7 +109,7 @@ const nodeFetch: FetchImpl = async (url, init) => {
   return { status: res.status, ok: res.ok, text: () => res.text() };
 };
 
-function makeDbGatewayDeps(): GatewayDeps {
+export function makeDbGatewayDeps(): GatewayDeps {
   return {
     loadConnectorBySlug: async (projectId, slug) => {
       const [row] = await db
@@ -158,6 +158,7 @@ function makeDbGatewayDeps(): GatewayDeps {
     executePipedreamProxy: ({ projectId, connectorSlug, args, accountId, userId }) =>
       runPipedreamProxy(projectId, connectorSlug, args, accountId, userId),
     fetchImpl: nodeFetch,
+    enforcePolicies: true,
   };
 }
 
@@ -290,7 +291,7 @@ async function listConnectors(projectId: string, viewerUserId: string): Promise<
       status: row.status,
       credentialMode: mode,
       actions: actions.map((a) => ({ path: a.path, name: a.name, description: a.description ?? '', risk: a.risk, inputSchema: a.inputSchema ?? null })),
-      hasAuth,
+      authSecret: hasAuth ? 'credential' : null,
       sharing: scopeToIntent(row.shareScope as 'project' | 'restricted', grants),
       secretSet,
     });

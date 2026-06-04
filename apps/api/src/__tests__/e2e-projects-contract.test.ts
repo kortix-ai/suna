@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mockIamMembershipSyncNoop } from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -167,7 +168,7 @@ function queryResult<T = any>(rows: T[]) {
   };
 }
 
-function selectRows(table: unknown, _fields: Record<string, unknown> | undefined, condition: unknown): any[] {
+function selectRows(table: unknown, fields: Record<string, unknown> | undefined, condition: unknown): any[] {
   const values = collectConditionValues(condition);
   const accountId = values.account_id as string | undefined;
   const userId = values.user_id as string | undefined;
@@ -209,7 +210,7 @@ function selectRows(table: unknown, _fields: Record<string, unknown> | undefined
       (!projectId || row.projectId === projectId) &&
       (!status || row.status === status) &&
       (!inArrayProjectIds || inArrayProjectIds.includes(row.projectId))
-    ).map((row) => ({ ...row, metadata: {} }));
+    );
   }
 
   return [];
@@ -274,12 +275,12 @@ function grantProjectRole(values: any, set?: Partial<ProjectMemberRow>) {
   return row;
 }
 
-const {
-  ACCOUNT_ACTIONS: IAM_ACCOUNT_ACTIONS,
-  PROJECT_ACTIONS: IAM_PROJECT_ACTIONS,
-} = await import('../iam/actions');
-
-function createIamDispatcherMock() {
+// `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
+// from `../iam` via `./dispatcher` (the V1 `./engine` was retired), so the role
+// gate must be mocked on the dispatcher. Mirror the legacy role gate against
+// the test's mocked membership rows so viewer/non-member denial is still
+// exercised after the IAM-engine switch.
+mock.module('../iam/dispatcher', () => {
   const isManager = (userId: string): boolean => {
     const am = accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
     return am?.accountRole === 'owner' || am?.accountRole === 'admin';
@@ -295,8 +296,6 @@ function createIamDispatcherMock() {
     return pr === 'manager';
   };
   return {
-    ACCOUNT_ACTIONS: IAM_ACCOUNT_ACTIONS,
-    PROJECT_ACTIONS: IAM_PROJECT_ACTIONS,
     authorize: async (userId: string, _a: unknown, action: string) => ({ allowed: decide(userId, action) }),
     assertAuthorized: async (userId: string, _a: unknown, action: string) => {
       if (!decide(userId, action)) throw new HTTPException(403, { message: 'Forbidden' });
@@ -315,33 +314,18 @@ function createIamDispatcherMock() {
         : { mode: 'allow_only', allowed };
     },
   };
-}
-
-// `projects/index` imports IAM verdicts from the dispatcher and constants from
-// the actions module. Mock the dispatcher role gate against this test's in-memory
-// membership rows so viewer/non-member denial is still exercised.
-mock.module('../iam/dispatcher', () => createIamDispatcherMock());
-
-mock.module('../iam', () => {
-  return {
-    ...createIamDispatcherMock(),
-    ACCOUNT_ACTIONS: IAM_ACCOUNT_ACTIONS,
-    PROJECT_ACTIONS: IAM_PROJECT_ACTIONS,
-  };
 });
 
-mock.module('../middleware/auth', () => {
-  const authMiddleware = async (c: any, next: any) => {
+mockIamMembershipSyncNoop();
+
+mock.module('../middleware/auth', () => ({
+  supabaseAuth: async (c: any, next: any) => {
     const auth = getTestAuth();
     c.set('userId', auth.userId);
     c.set('userEmail', auth.userEmail);
     await next();
-  };
-  return {
-    combinedAuth: authMiddleware,
-    supabaseAuth: authMiddleware,
-  };
-});
+  },
+}));
 
 mock.module('../projects/git', () => ({
   grepRepoFiles: async () => [],
@@ -386,7 +370,10 @@ mock.module('../projects/git', () => ({
   mergeBranches: async () => ({ mergedSha: 'a'.repeat(40) }),
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
   deleteRemoteSessionBranch: async () => undefined,
+  diffStat: async () => ({ files: [], additions: 0, deletions: 0 }),
+  getFileAtRef: async () => null,
   getMergeBase: async () => 'a'.repeat(40),
+  resolveTreeOid: async () => 'b'.repeat(40),
   materializeRepoContext: async () => '/tmp/fake-snapshot-context',
 }));
 
@@ -396,37 +383,39 @@ mock.module("../snapshots/builder", () => ({
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
+  reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
+  ensurePlatformDefaultImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
   kickPreBuild: () => {},
-  kickProjectTemplatePrebuilds: () => {},
-  reconcileProjectTemplates: async () => {},
   kickStartupPreBuild: () => {},
-  reconcileStaleBuilds: async () => ({ healed: 0 }),
-  ensurePlatformDefaultImage: async () => {},
+  reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
+  kickProjectTemplatePrebuilds: () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
+  parseGitHubRepoUrl: () => null,
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  createGitHubAppJwt: () => 'jwt-test',
+  verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
     nonce: 'test-nonce',
     issuedAt: Math.floor(Date.now() / 1000),
   }),
   getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
+  addCollaborator: async () => undefined,
   deleteFile: async () => undefined,
+  deleteRepo: async () => undefined,
   commitFile: async (input: any) => {
     commitCalls.push(input);
   },
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
   createInstallationToken: async () => ({ token: 'installation-token' }),
   createRepo: async () => {
     throw new Error('create-repo route is covered separately');
   },
-  deleteRepo: async () => undefined,
-  addCollaborator: async () => undefined,
-  getBranchCommitSha: async () => 'a'.repeat(40),
-  createBranchRef: async () => undefined,
-  parseGitHubRepoUrl: () => ({ owner: 'kortix-org', repo: 'new-project' }),
   getFileSha: async () => null,
   getGitHubAppInstallation: async () => ({
     account: { login: 'kortix-org', type: 'Organization' },
@@ -477,6 +466,7 @@ mock.module('../billing/repositories/credit-accounts', () => ({
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
+    execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: (condition: unknown) => queryResult(selectRows(table, fields, condition)),
@@ -544,7 +534,15 @@ mock.module('../shared/db', () => ({
             if (table !== projects) return [];
             const row = projectRows.find((project) => project.projectId === values.project_id);
             if (!row) return [];
-            Object.assign(row, updates);
+            const normalizedUpdates = { ...updates };
+            if (
+              normalizedUpdates.metadata &&
+              typeof normalizedUpdates.metadata === 'object' &&
+              'queryChunks' in normalizedUpdates.metadata
+            ) {
+              delete normalizedUpdates.metadata;
+            }
+            Object.assign(row, normalizedUpdates);
             return [row];
           };
           return {

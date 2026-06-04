@@ -3,7 +3,7 @@
  *
  * A connector is one named integration the Executor can call — Pipedream,
  * MCP, OpenAPI, GraphQL, or raw HTTP. The manifest holds the *definition*
- * (provider, endpoint/spec, auth method) and,
+ * (provider, endpoint/spec, auth method + which project-secret to use) and,
  * for the policy layer, the connector-scoped `[[connectors.policies]]`. The
  * secret *value* and Pipedream OAuth live in the platform, never in git;
  * who-can-use-it (sharing) is platform-side too.
@@ -18,6 +18,8 @@
  *
  *     [connectors.auth]
  *     type   = "bearer"
+ *     secret = "STRIPE_API_KEY"     # project-secret NAME; value set in dashboard
+ *
  *     [[connectors.policies]]        # connector-scoped; built last
  *     match  = "*.delete*"
  *     action = "block"
@@ -30,20 +32,22 @@
  *
  * Parser mirrors `projects/apps.ts` + `projects/triggers.ts`: never throws on
  * a bad entry, collects them in `errors` so the UI can render them next to the
- * good ones.
+ * good ones. CRUD round-trips this same file (connectorSpecToTomlEntry).
  */
 import { createHash } from 'node:crypto';
-import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
+import { MANIFEST_FILENAME, readManifest, type ParsedManifest } from './triggers';
+import { isValidSecretName } from './secrets';
+import type { GitBackedProject } from './git';
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 
-type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
 const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http'];
 
-type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'none';
+export type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'none';
 const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'none'];
 
-interface ConnectorAuthSpec {
+export interface ConnectorAuthSpec {
   /** How the credential is attached to outbound calls. */
   type: ConnectorAuthType;
   /** For `custom`: where the credential goes. Defaults to `header`. */
@@ -52,13 +56,15 @@ interface ConnectorAuthSpec {
   name: string | null;
   /** Optional value prefix (e.g. `Bearer`). */
   prefix: string | null;
+  /** Name of the project secret holding the credential. Value set in the dashboard. */
+  secret: string | null;
 }
 
 /** Tool-call policy action — mirrors executor's `approve | require_approval | block`. */
-type ConnectorPolicyAction = 'always_run' | 'require_approval' | 'block';
+export type ConnectorPolicyAction = 'always_run' | 'require_approval' | 'block';
 const POLICY_ACTIONS: readonly ConnectorPolicyAction[] = ['always_run', 'require_approval', 'block'];
 
-interface ConnectorPolicySpec {
+export interface ConnectorPolicySpec {
   /** Glob over this connector's tool paths: `*`, `charges.*`, `charges.create`. */
   match: string;
   action: ConnectorPolicyAction;
@@ -96,18 +102,18 @@ export interface ConnectorSpec {
   policies: ConnectorPolicySpec[];
 }
 
-interface ConnectorParseError {
+export interface ConnectorParseError {
   slug: string;
   path: string;
   error: string;
 }
 
-interface LoadedConnectors {
+export interface LoadedConnectors {
   specs: ConnectorSpec[];
   errors: ConnectorParseError[];
 }
 
-const NO_AUTH: ConnectorAuthSpec = { type: 'none', in: 'header', name: null, prefix: null };
+const NO_AUTH: ConnectorAuthSpec = { type: 'none', in: 'header', name: null, prefix: null, secret: null };
 
 /**
  * Pull `[[connectors]]` out of a parsed manifest. Never throws.
@@ -156,6 +162,79 @@ export function extractConnectors(manifest: ParsedManifest): LoadedConnectors {
 }
 
 /**
+ * Read + parse a project's manifest, then extract `[[connectors]]`. Returns
+ * empty arrays + a single top-level error when the manifest fails to load —
+ * never throws.
+ */
+export async function loadProjectConnectors(project: GitBackedProject): Promise<LoadedConnectors> {
+  let manifest: ParsedManifest | null;
+  try {
+    manifest = await readManifest(project);
+  } catch (err) {
+    return {
+      specs: [],
+      errors: [{
+        slug: '(manifest)',
+        path: MANIFEST_FILENAME,
+        error: (err as Error).message || 'Failed to read manifest',
+      }],
+    };
+  }
+  if (!manifest) return { specs: [], errors: [] };
+  return extractConnectors(manifest);
+}
+
+/**
+ * Convert a ConnectorSpec back to the TOML-shaped object that lives in
+ * `manifest.raw.connectors`. Inverse of `parseConnectorEntry`. Used by the
+ * CRUD path to round-trip a dashboard edit before committing.
+ */
+export function connectorSpecToTomlEntry(spec: ConnectorSpec): Record<string, unknown> {
+  const entry: Record<string, unknown> = {
+    slug: spec.slug,
+    name: spec.name,
+    provider: spec.provider,
+    enabled: spec.enabled,
+  };
+  // Only emit credential mode when it differs from the per-app default.
+  const defaultMode = spec.provider === 'pipedream' ? 'per_user' : 'shared';
+  if (spec.credentialMode !== defaultMode) entry.credential = spec.credentialMode;
+  // Provider-specific keys — only emit what carries information.
+  if (spec.provider === 'pipedream') {
+    if (spec.app) entry.app = spec.app;
+    if (spec.account) entry.account = spec.account;
+  } else if (spec.provider === 'mcp') {
+    if (spec.url) entry.url = spec.url;
+    if (spec.transport) entry.transport = spec.transport;
+  } else if (spec.provider === 'graphql') {
+    if (spec.endpoint) entry.endpoint = spec.endpoint;
+    if (spec.spec) entry.spec = spec.spec;
+  } else if (spec.provider === 'http') {
+    if (spec.baseUrl) entry.base_url = spec.baseUrl;
+    if (spec.spec) entry.spec = spec.spec;
+  } else if (spec.provider === 'openapi') {
+    if (spec.spec) entry.spec = spec.spec;
+  }
+
+  if (spec.auth.type !== 'none') {
+    const auth: Record<string, unknown> = { type: spec.auth.type };
+    if (spec.auth.type === 'custom') {
+      if (spec.auth.in !== 'header') auth.in = spec.auth.in;
+      if (spec.auth.name) auth.name = spec.auth.name;
+    }
+    if (spec.auth.prefix) auth.prefix = spec.auth.prefix;
+    if (spec.auth.secret) auth.secret = spec.auth.secret;
+    entry.auth = auth;
+  }
+
+  if (spec.policies.length > 0) {
+    entry.policies = spec.policies.map((p) => ({ match: p.match, action: p.action }));
+  }
+
+  return entry;
+}
+
+/**
  * Stable hash over everything that should trigger a catalog re-sync when it
  * changes (so the materializer can skip unchanged connectors). `slug`/`name`
  * are excluded — renaming doesn't change what the connector resolves to.
@@ -200,10 +279,7 @@ function parseConnectorEntry(entry: unknown, index: number): ParseOk | ParseErr 
   }
 
   const name = typeof row.name === 'string' && row.name.trim() ? row.name.trim() : slug;
-  if (row.enabled !== undefined && typeof row.enabled !== 'boolean') {
-    return err(slug, 'enabled must be a boolean');
-  }
-  const enabled = row.enabled ?? true;
+  const enabled = coerceBool(row.enabled, true);
 
   // Credential mode — per-app default, overridable via `credential = "..."`.
   const credRaw = typeof row.credential === 'string' ? row.credential.trim().toLowerCase() : '';
@@ -287,7 +363,7 @@ function parseProviderFields(
   }
 
   // http
-  const baseUrl = str(row.base_url);
+  const baseUrl = str(row.base_url) ?? str(row.baseUrl);
   if (!baseUrl) return err(slug, 'provider="http" requires `base_url`');
   return { ok: true, value: { ...base, baseUrl, spec: str(row.spec) } };
 }
@@ -324,11 +400,14 @@ function parseAuth(
   }
   const prefix = typeof row.prefix === 'string' && row.prefix.trim() ? row.prefix.trim() : null;
 
-  if (row.secret !== undefined) {
-    return err(slug, '[connectors.auth].secret is no longer supported; set the connector credential in the dashboard or CLI');
+  // `secret` is optional — credentials live in the platform (executor_credentials),
+  // not as a named project secret. If present it's validated for back-compat.
+  const secret = typeof row.secret === 'string' && row.secret.trim() ? row.secret.trim() : null;
+  if (secret && !isValidSecretName(secret)) {
+    return err(slug, `[connectors.auth].secret "${secret}" must look like a project-secret name (^[A-Z_][A-Z0-9_]{0,63}$)`);
   }
 
-  return { ok: true, value: { type: type as ConnectorAuthType, in: inRaw, name, prefix } };
+  return { ok: true, value: { type: type as ConnectorAuthType, in: inRaw, name, prefix, secret } };
 }
 
 function parsePolicies(
@@ -355,6 +434,17 @@ function parsePolicies(
     out.push({ match, action: action as ConnectorPolicyAction });
   }
   return { ok: true, value: out };
+}
+
+function coerceBool(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v === 'true' || v === '1' || v === 'yes' || v === 'on') return true;
+    if (v === 'false' || v === '0' || v === 'no' || v === 'off') return false;
+  }
+  return fallback;
 }
 
 function err(slug: string, message: string): ParseErr {

@@ -1,7 +1,7 @@
 import { usageEvents } from '@kortix/db';
 import { db } from './db';
 
-interface UsageEventInput {
+export interface UsageEventInput {
   accountId: string;
   projectId?: string | null;
   sessionId?: string | null;

@@ -6,7 +6,8 @@ import { emitOtelSpan } from './lib/otel';
 import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
 import { getRequestUrl } from './lib/request-url';
 
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { mountOpenApiDocs, json, errors, auth } from './openapi';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
@@ -17,10 +18,11 @@ import { BillingError } from './errors';
 // ─── Sub-Service Imports ──────────────────────────────────────────────────── 
 
 import { router } from './router';
-import { billingApp } from './billing';
+import { billingApp, accountDeletionApp } from './billing';
 import { platformApp } from './platform';
 import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
+import { queueApp, startDrainer, stopDrainer } from './queue';
 import { serversApp } from './servers';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { ensureSchema } from './ensure-schema';
@@ -46,6 +48,7 @@ import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
 import { auditStateChangingRequest } from './shared/audit';
 import { opsApp } from './ops';
+import { adminApp } from './admin';
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // A stray rejected promise or throw escaping any fire-and-forget path — the
@@ -77,7 +80,7 @@ process.on('uncaughtException', (err: Error) => {
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
-const app = new Hono();
+const app = new OpenAPIHono();
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
@@ -100,8 +103,8 @@ const localOrigins = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
 ];
-const extraOrigins = config.CORS_ALLOWED_ORIGINS
-  ? config.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
+const extraOrigins = process.env.CORS_ALLOWED_ORIGINS
+  ? process.env.CORS_ALLOWED_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean)
   : [];
 const corsOrigins = [
   ...new Set([
@@ -237,8 +240,24 @@ app.use('/v1/*', auditStateChangingRequest);
 // Falls back to 'dev' for local development.
 const API_VERSION = process.env.KORTIX_VERSION || 'dev';
 
-function healthPayload() {
-  return {
+// OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
+// register into the spec as each sub-router is migrated to @hono/zod-openapi.
+mountOpenApiDocs(app, API_VERSION);
+
+const HealthSchema = z
+  .object({
+    status: z.string(),
+    service: z.string(),
+    version: z.string(),
+    timestamp: z.string(),
+    billing_enabled: z.boolean(),
+    tunnel: z.any(),
+    leader: z.boolean(),
+  })
+  .openapi('Health');
+
+const healthHandler = (c: any) =>
+  c.json({
     status: 'ok',
     service: 'kortix-api',
     version: API_VERSION,
@@ -246,13 +265,58 @@ function healthPayload() {
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
-  };
-}
+  });
 
-app.get('/health', (c) => c.json(healthPayload()));
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/health',
+    tags: ['system'],
+    summary: 'Service health (unversioned, used by the load balancer)',
+    responses: { 200: json(HealthSchema, 'Service health') },
+  }),
+  healthHandler,
+);
 
 // Health check under /v1 prefix (frontend uses NEXT_PUBLIC_BACKEND_URL which includes /v1)
-app.get('/v1/health', (c) => c.json(healthPayload()));
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/v1/health',
+    tags: ['system'],
+    summary: 'Service health',
+    responses: { 200: json(HealthSchema, 'Service health') },
+  }),
+  healthHandler,
+);
+
+// Also expose system status at root for backward compat with frontend
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/v1/system/status',
+    tags: ['system'],
+    summary: 'Maintenance / technical-issue banner status',
+    responses: {
+      200: json(
+        z
+          .object({
+            maintenanceNotice: z.object({ enabled: z.boolean() }).passthrough(),
+            technicalIssue: z.object({ enabled: z.boolean() }).passthrough(),
+            updatedAt: z.string(),
+          })
+          .openapi('SystemStatus'),
+        'System status',
+      ),
+    },
+  }),
+  (c: any) =>
+    c.json({
+      maintenanceNotice: { enabled: false },
+      technicalIssue: { enabled: false },
+      updatedAt: new Date().toISOString(),
+    }),
+);
 
 // ─── Maintenance config (DB-backed; replaces Vercel Edge Config) ─────────────
 // One row in kortix.platform_settings under 'maintenance_config'. GET is public
@@ -269,7 +333,29 @@ const DEFAULT_MAINTENANCE = {
   updatedAt: new Date(0).toISOString(),
 };
 
-app.get('/v1/system/maintenance', async (c) => {
+const MaintenanceSchema = z
+  .object({
+    level: z.string(),
+    title: z.string(),
+    message: z.string(),
+    startTime: z.string().nullable(),
+    endTime: z.string().nullable(),
+    statusUrl: z.string().nullable(),
+    affectedServices: z.array(z.string()),
+    updatedAt: z.string(),
+  })
+  .partial()
+  .openapi('MaintenanceConfig');
+
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/v1/system/maintenance',
+    tags: ['system'],
+    summary: 'Read the maintenance config (public — banner + maintenance page)',
+    responses: { 200: json(MaintenanceSchema, 'Maintenance config') },
+  }),
+  async (c: any) => {
   const { hasDatabase, db } = await import('./shared/db');
   if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
   const { platformSettings } = await import('@kortix/db');
@@ -282,7 +368,18 @@ app.get('/v1/system/maintenance', async (c) => {
   return c.json(row?.value ?? DEFAULT_MAINTENANCE);
 });
 
-app.put('/v1/system/maintenance', supabaseAuth, async (c: any) => {
+app.openapi(
+  createRoute({
+    method: 'put',
+    path: '/v1/system/maintenance',
+    tags: ['system'],
+    summary: 'Update the maintenance config (admin only)',
+    ...auth,
+    middleware: [supabaseAuth] as const,
+    request: { body: { content: { 'application/json': { schema: MaintenanceSchema } } } },
+    responses: { 200: json(MaintenanceSchema, 'Updated config'), ...errors(403, 503) },
+  }),
+  async (c: any) => {
   const accountId = c.get('userId') as string;
   const { getPlatformRole } = await import('./shared/platform-roles');
   const role = await getPlatformRole(accountId);
@@ -299,7 +396,24 @@ app.put('/v1/system/maintenance', supabaseAuth, async (c: any) => {
     .values({ key: MAINTENANCE_KEY, value: config, updatedAt: new Date() })
     .onConflictDoUpdate({ target: platformSettings.key, set: { value: config, updatedAt: new Date() } });
   return c.json(config);
-});
+  },
+);
+
+// ─── Stub Endpoints ─────────────────────────────────────────────────────────
+// These endpoints are called by the frontend but were never implemented.
+// Adding proper stubs stops 404 noise and provides correct responses.
+
+// POST /v1/prewarm — no-op pre-warm. Frontend fires this on login.
+app.openapi(
+  createRoute({
+    method: 'post',
+    path: '/v1/prewarm',
+    tags: ['system'],
+    summary: 'No-op pre-warm (frontend fires this on login)',
+    responses: { 200: json(z.object({ success: z.boolean() }).openapi('Prewarm'), 'ok') },
+  }),
+  (c: any) => c.json({ success: true }),
+);
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
@@ -317,7 +431,20 @@ app.route('/v1/account-invites', accountInvitesRouter);
 app.route('/v1/ops', opsApp);
 
 
-app.get('/v1/user-roles', supabaseAuth, async (c: any) => {
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/v1/user-roles',
+    tags: ['system'],
+    summary: 'The caller’s platform role (admin gate)',
+    ...auth,
+    middleware: [supabaseAuth] as const,
+    responses: {
+      200: json(z.object({ isAdmin: z.boolean(), role: z.string().nullable() }).openapi('UserRoles'), 'Platform role'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
   const { getPlatformRole } = await import('./shared/platform-roles');
 
   const accountId = c.get('userId') as string;
@@ -325,7 +452,8 @@ app.get('/v1/user-roles', supabaseAuth, async (c: any) => {
   const isAdmin = role === 'admin' || role === 'super_admin';
 
   return c.json({ isAdmin, role });
-});
+  },
+);
 
 // ─── Mount Sub-Services ─────────────────────────────────────────────────────
 // All services follow the pattern: /v1/{serviceName}/...
@@ -393,7 +521,8 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
 }
 
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
-app.route('/v1/platform', platformApp); // api keys
+app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
+app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 
@@ -409,36 +538,44 @@ app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix pr
 // KORTIX_EXECUTOR_TOKEN (validated inside the router); admin routes
 // (/projects/:id/connectors*) need user auth, so combinedAuth runs first.
 {
-  const [{ createExecutorRouter }, { dbExecutorRouterDeps }] = await Promise.all([
-    import('./executor/router'),
-    import('./executor/db-deps'),
-  ]);
+  const { executorApp } = await import('./executor');
   app.use('/v1/executor/projects/*', combinedAuth);
-  const executorApp = createExecutorRouter(dbExecutorRouterDeps);
   app.route('/v1/executor', executorApp); // /v1/executor/connectors, /call, /projects/:id/connectors[/sync|/:slug/sharing]
 }
 
 app.route('/v1/webhooks', projectWebhooksApp); // /v1/webhooks/:triggerId — signed project trigger fires
 
-const { slackOauthApp } = await import('./channels/slack-oauth');
-const { slackWebhookApp } = await import('./channels/slack-webhook');
+const { slackWebhookApp, telegramWebhookApp, slackOauthApp } = await import('./channels');
 app.route('/v1/webhooks/slack/oauth', slackOauthApp); // /v1/webhooks/slack/oauth/callback — OAuth dance
 app.route('/v1/webhooks/slack', slackWebhookApp); // /v1/webhooks/slack/:projectId — raw Slack events (BYO mode)
+app.route('/v1/webhooks/telegram', telegramWebhookApp); // /v1/webhooks/telegram/:projectId — Telegram updates
 
-// Access control — public endpoint for signup gating
-app.route('/v1/access', accessControlApp); // /v1/access/check-email
+if (config.KORTIX_DEPLOYMENTS_ENABLED) {
+  const { deploymentsApp } = await import('./deployments');
+  app.route('/v1/deployments', deploymentsApp); // /v1/deployments/*
+}
+
+// Access control — public endpoints for signup gating
+app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
   app.route('/v1/setup', setupApp);        // /v1/setup/install-status (public), rest (auth inside router)
 }
+// /v1/admin/* — admin console (accounts/users/ledger/credits). supabaseAuth +
+// requireAdmin enforced inside the router. Backs apps/web/src/app/admin/.
+app.route('/v1/admin', adminApp);
+
 // OAuth2 provider — public token endpoint, auth on authorize/consent
 app.route('/v1/oauth', oauthApp);
 
 // All remaining routes require authentication (JWT or kortix_ token).
 app.use('/v1/servers/*', combinedAuth);
-app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/sync, DELETE /v1/servers/:id
+app.route('/v1/servers', serversApp);        // /v1/servers, /v1/servers/:id, /v1/servers/sync
+
+app.use('/v1/queue/*', combinedAuth);
+app.route('/v1/queue', queueApp);            // /v1/queue/sessions/:id, /v1/queue/messages/:id, /v1/queue/all, /v1/queue/status
 
 // Public device-auth endpoints (no auth — CLI uses these)
 import { createDeviceAuthPublicRouter } from './tunnel/routes/device-auth';
@@ -553,6 +690,35 @@ app.notFound((c) => {
   );
 });
 
+// === Start Server ===
+
+console.log(`
+╔═══════════════════════════════════════════════════════════╗
+║                  Kortix API Starting                      ║
+╠═══════════════════════════════════════════════════════════╣
+║  Port: ${config.PORT.toString().padEnd(49)}║
+║  Env:  ${config.INTERNAL_KORTIX_ENV.padEnd(49)}║
+╠═══════════════════════════════════════════════════════════╣
+║  Services:                                                ║
+║    /v1/router     (search, LLM, proxy)                    ║
+║    /v1/billing    (subscriptions, credits, webhooks)       ║
+║    /v1/platform   (api keys, sandbox version)               ║
+${config.KORTIX_DEPLOYMENTS_ENABLED ? '║    /v1/deployments (deploy lifecycle)                      ║\n' : ''}║    /v1/projects   (Git-backed projects)                    ║
+${config.KORTIX_APPS_EXPERIMENTAL ? '║    /v1/projects/:id/apps  (experimental [[apps]])         ║\n' : ''}
+║    /v1/setup      (setup & env management)                 ║
+║    /v1/queue      (persistent message queue)               ║
+║    /v1/tunnel     (reverse-tunnel to local machines)         ║
+║    /v1/p         (sandbox proxy — local + cloud)            ║
+╠═══════════════════════════════════════════════════════════╣
+║  Database:   ${config.DATABASE_URL ? '✓ Configured'.padEnd(42) : '✗ NOT SET'.padEnd(42)}║
+║  Supabase:   ${config.SUPABASE_URL ? '✓ Configured'.padEnd(42) : '✗ NOT SET'.padEnd(42)}║
+║  Stripe:     ${config.STRIPE_SECRET_KEY ? '✓ Configured'.padEnd(42) : '✗ NOT SET'.padEnd(42)}║
+║  Billing:    ${(config.KORTIX_BILLING_INTERNAL_ENABLED ? 'ENABLED' : 'DISABLED').padEnd(42)}║
+║  Tunnel:     ${(config.TUNNEL_ENABLED ? 'ENABLED' : 'DISABLED').padEnd(42)}║
+║  Providers:  ${config.ALLOWED_SANDBOX_PROVIDERS.join(', ').padEnd(42)}║
+╚═══════════════════════════════════════════════════════════╝
+`);
+
 // Load LLM pricing from models.dev (non-blocking if it fails).
 // Awaited so pricing is available before the first billing request.
 initModelPricing().catch((err) =>
@@ -583,6 +749,7 @@ let singletonWorkersRunning = false;
 async function startSingletonWorkers() {
   if (singletonWorkersRunning) return;
   singletonWorkersRunning = true;
+  startDrainer();
   startProjectMaintenance();
   startProjectTriggerScheduler();
   // Mint the global platform-default sandbox image once per leadership term so
@@ -599,6 +766,7 @@ async function startSingletonWorkers() {
 async function stopSingletonWorkers() {
   if (!singletonWorkersRunning) return;
   singletonWorkersRunning = false;
+  stopDrainer();
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
   stopLegacyMigrationWorker();
@@ -633,8 +801,11 @@ async function shutdown(signal: string) {
   process.exit(0);
 }
 
-// Keep startup side effects behind Bun's entrypoint guard. Does NOT change
-// production boot — there, import.meta.main is true.
+// Boot only when this module is the entry point (`bun run src/index.ts`, which
+// is how both `pnpm dev` and the Docker CMD launch it). Guarding behind
+// import.meta.main lets tooling and tests `import { app }` to introspect the
+// route table without starting the DB schema check, background workers, or
+// signal handlers. Does NOT change production boot — there, import.meta.main is true.
 if (import.meta.main) {
   ensureSchema()
     .then(async () => {

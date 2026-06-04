@@ -169,21 +169,33 @@ mock.module("../snapshots/builder", () => ({
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
+  reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  ensurePlatformDefaultImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
+  kickStartupPreBuild: () => {},
+  reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
   kickProjectTemplatePrebuilds: () => {},
-  reconcileStaleBuilds: async () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
+  parseGitHubRepoUrl: (repoUrl: string) => {
+    const match = repoUrl.match(/github\.com[:/](?<owner>[^/]+)\/(?<repo>[^/.]+)(?:\.git)?/);
+    return match?.groups ? { owner: match.groups.owner, repo: match.groups.repo } : null;
+  },
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  createGitHubAppJwt: () => 'jwt-test',
   verifyGitHubAppInstallState: (state: string) => state === 'valid-install-state' ? ACCOUNT_ID : null,
   verifyGitHubAppInstallStatePayload: (state: string) => state === 'valid-install-state'
     ? { accountId: ACCOUNT_ID, nonce: 'valid-install-nonce', issuedAt: Math.floor(Date.now() / 1000) }
     : null,
+  addCollaborator: async () => undefined,
   deleteFile: async () => undefined,
+  deleteRepo: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
   commitFile: async (input: any) => {
     commitCalls.push(input);
   },
@@ -204,14 +216,6 @@ mock.module('../projects/github', () => ({
       default_branch: 'main',
       description: null,
     };
-  },
-  deleteRepo: async () => undefined,
-  addCollaborator: async () => undefined,
-  getBranchCommitSha: async () => 'a'.repeat(40),
-  createBranchRef: async () => undefined,
-  parseGitHubRepoUrl: (repoUrl: string) => {
-    const match = repoUrl.match(/github\.com[:/](?<owner>[^/]+)\/(?<repo>[^/.]+)(?:\.git)?$/);
-    return match?.groups ? { owner: match.groups.owner, repo: match.groups.repo } : null;
   },
   getFileSha: async (input: any) => {
     fileShaCalls.push(input);

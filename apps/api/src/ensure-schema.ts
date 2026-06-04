@@ -25,10 +25,12 @@ import postgres from 'postgres';
 
 export async function ensureSchema(): Promise<void> {
   if (!config.DATABASE_URL) {
+    console.log('[schema] No DATABASE_URL configured — skipping');
     return;
   }
 
   if (process.env.KORTIX_SKIP_ENSURE_SCHEMA === '1') {
+    console.log('[schema] KORTIX_SKIP_ENSURE_SCHEMA=1 — skipping');
     // Still probe the critical IAM surface so a stale dev DB shows up
     // as a loud warning instead of opaque 500s on first request. Names
     // listed here are the tables the IAM engine + auth middleware
@@ -40,15 +42,18 @@ export async function ensureSchema(): Promise<void> {
 
   // Production: schema managed externally (CI/CD migrations)
   if (config.INTERNAL_KORTIX_ENV === 'prod') {
+    console.log('[schema] Production mode — skipping auto-push (managed externally)');
     return;
   }
 
   const migrationsDir = join(import.meta.dir, '../../../supabase/migrations');
 
   // Step 1: Run bootstrap migration (schemas, extensions, grants)
+  console.log('[schema] Running bootstrap migration...');
   await runSqlFile(join(migrationsDir, '00000000000000_bootstrap.sql'));
 
   // Step 2: drizzle-kit push (tables, indexes, enums)
+  console.log('[schema] Pushing schema to database...');
   const dbPkgRoot = join(import.meta.dir, '../../../packages/db');
   const configPath = join(dbPkgRoot, 'drizzle.config.ts');
 
@@ -68,7 +73,7 @@ export async function ensureSchema(): Promise<void> {
     },
   );
 
-  const [, stderr] = await Promise.all([
+  const [stdout, stderr] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
   ]);
@@ -76,13 +81,22 @@ export async function ensureSchema(): Promise<void> {
 
   if (exitCode !== 0) {
     console.error('[schema] Push failed (exit', exitCode + ')');
+    if (stdout.trim()) console.error('[schema] stdout:', stdout.trim());
     if (stderr.trim()) console.error('[schema] stderr:', stderr.trim());
-    await ensureKnownSchemaDrift();
     return; // Don't run post-push if push failed
+  }
+
+  console.log('[schema] Schema pushed successfully');
+  if (stdout.trim()) {
+    const summary = stdout.trim().split('\n').filter((l: string) =>
+      l.includes('changes applied') || l.includes('CREATE') || l.includes('ALTER') || l.includes('No changes')
+    );
+    if (summary.length) console.log('[schema]', summary.join(' | '));
   }
 
   // Step 3: Run all post-push migrations (table grants, atomic functions)
   // Each file is executed individually to avoid prepared-statement limits.
+  console.log('[schema] Running post-push migrations...');
   const postPushFiles = readdirSync(migrationsDir)
     .filter(f => f.endsWith('.sql') && f > '00000000000000_bootstrap.sql')
     .sort();
@@ -91,35 +105,7 @@ export async function ensureSchema(): Promise<void> {
     await runSqlFile(join(migrationsDir, file));
   }
 
-  await ensureKnownSchemaDrift();
-}
-
-async function ensureKnownSchemaDrift(): Promise<void> {
-  if (!config.DATABASE_URL) return;
-  const db = postgres(config.DATABASE_URL, { max: 1 });
-  try {
-    await db`
-      ALTER TABLE IF EXISTS kortix.sandbox_templates
-      ADD COLUMN IF NOT EXISTS built_from_commit TEXT
-    `;
-    if (
-      config.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker') &&
-      !config.ALLOWED_SANDBOX_PROVIDERS.includes('daytona')
-    ) {
-      await db`
-        UPDATE kortix.sandbox_templates
-        SET provider = 'local_docker'
-        WHERE project_id IS NULL
-          AND is_shared = TRUE
-          AND slug = 'default'
-          AND provider = 'daytona'
-      `;
-    }
-  } catch (err) {
-    console.error('[schema] ✗ known schema drift repair failed:', (err as Error).message ?? err);
-  } finally {
-    await db.end();
-  }
+  console.log('[schema] All migrations complete');
 }
 
 /**
@@ -191,10 +177,11 @@ async function runSqlFile(filePath: string): Promise<void> {
   const db = postgres(config.DATABASE_URL!, { max: 1 });
   try {
     await db.unsafe(sql);
+    console.log(`[schema] ✓ ${fileName}`);
   } catch (err: any) {
     // pg_cron/pg_net extensions may not exist in local dev — that's OK
     if (err.message?.includes('pg_cron') || err.message?.includes('pg_net')) {
-      console.warn(`[schema] ${fileName}: pg_cron/pg_net extension not available (OK for local dev)`);
+      console.log(`[schema] ⚠ ${fileName}: pg_cron/pg_net extension not available (OK for local dev)`);
     } else {
       console.error(`[schema] ✗ ${fileName}:`, err.message || err);
     }

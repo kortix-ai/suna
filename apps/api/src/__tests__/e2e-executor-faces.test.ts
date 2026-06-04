@@ -8,10 +8,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createExecutorClient } from '../../../../packages/executor-sdk/src/index';
 import { createExecutorRouter, type CatalogConnector, type ExecutorPrincipal, type ExecutorRouterDeps } from '../executor/router';
-import type { GatewayAction, GatewayConnector, GatewayDeps } from '../executor/gateway';
+import type { ExecutionRecord, GatewayAction, GatewayConnector, GatewayDeps } from '../executor/gateway';
 import { isSecretUsableBy } from '../executor/share';
-
-type ExecutionRecord = Parameters<GatewayDeps['recordExecution']>[0];
 
 const ACCOUNT = 'acct-faces';
 const PROJECT = 'proj-faces';

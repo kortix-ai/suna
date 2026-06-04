@@ -241,9 +241,10 @@ function upsertInvite(values: any, set?: Record<string, unknown>) {
 }
 
 // `authorize` / `assertAuthorized` / `listAccessibleResources` are re-exported
-// from `../iam` via `./dispatcher`, so the role gate must be mocked there.
+// from `../iam` via `./dispatcher` (the V1 `./engine` was retired), so the role
+// gate must be mocked on the dispatcher.
 mock.module('../iam/dispatcher', () => {
-  // Mirror the account-role gate against the test's mocked member rows so
+  // Mirror the legacy account-role gate against the test's mocked member rows so
   // owner/admin pass writes, plain members get reads only, non-members are denied.
   const decide = (userId: string, action: string): boolean => {
     const m = memberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
@@ -444,7 +445,6 @@ describe('accounts API contract', () => {
     expect(body).toHaveLength(1);
     expect(body[0]).toMatchObject({
       account_id: PERSONAL_ACCOUNT_ID,
-      personal_account: true,
       account_role: 'owner',
       is_primary_owner: true,
     });
@@ -463,7 +463,7 @@ describe('accounts API contract', () => {
       body: JSON.stringify({}),
     });
     expect(missing.status).toBe(400);
-    expect(await missing.json()).toEqual({ error: 'name is required' });
+    expect(await missing.json()).toMatchObject({ error: true, status: 400 });
 
     const tooLong = await app.request('/v1/accounts', {
       method: 'POST',
@@ -482,7 +482,6 @@ describe('accounts API contract', () => {
     expect(await create.json()).toMatchObject({
       account_id: CREATED_ACCOUNT_ID,
       name: 'Created Team',
-      personal_account: false,
       account_role: 'owner',
     });
 
@@ -607,7 +606,7 @@ describe('accounts API contract', () => {
     currentUserEmail = 'owner@example.test';
     const leavePersonal = await app.request(`/v1/accounts/${PERSONAL_ACCOUNT_ID}/leave`, { method: 'POST' });
     expect(leavePersonal.status).toBe(409);
-    expect(await leavePersonal.json()).toEqual({ error: 'Personal accounts cannot be left' });
+    expect(await leavePersonal.json()).toEqual({ error: 'Cannot leave as the last owner — transfer ownership first' });
   });
 
   test('redacts invites for wrong users and enforces invite accept failure modes', async () => {

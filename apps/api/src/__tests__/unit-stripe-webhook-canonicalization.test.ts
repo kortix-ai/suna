@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 const state = {
   getCreditAccountResult: null as any,
   getCustomerByStripeIdResult: null as any,
-  processedWebhookEventIds: new Set<string>(),
   upsertCreditAccountCalls: [] as Array<{ accountId: string; data: Record<string, unknown> }>,
   updateCreditAccountCalls: [] as Array<{ accountId: string; data: Record<string, unknown> }>,
   resetExpiringCreditsCalls: [] as Array<any[]>,
@@ -42,14 +41,12 @@ mock.module('@kortix/shared', () => ({
 
 mock.module('../billing/repositories/credit-accounts', () => ({
   getCreditAccount: async () => state.getCreditAccountResult,
-  getSubscriptionInfo: async () => state.getCreditAccountResult,
   upsertCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
     state.upsertCreditAccountCalls.push({ accountId, data });
   },
   updateCreditAccount: async (accountId: string, data: Record<string, unknown>) => {
     state.updateCreditAccountCalls.push({ accountId, data });
   },
-  getYearlyAccountsDueForRotation: async () => [],
 }));
 
 mock.module('../billing/repositories/customers', () => ({
@@ -78,27 +75,21 @@ mock.module('../billing/services/subscriptions', () => ({
   cancelFreeSubscriptionForUpgrade: async () => null,
 }));
 
+mock.module('../shared/resolve-account', () => ({
+  resolveAccountId: async (id: string) => id,
+}));
+
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
     insert: () => ({
-      values: (values: { eventId?: string }) => ({
+      values: () => ({
         onConflictDoNothing: () => ({
-          returning: async () => {
-            const eventId = values.eventId;
-            if (!eventId) return [];
-            if (state.processedWebhookEventIds.has(eventId)) return [];
-            state.processedWebhookEventIds.add(eventId);
-            return [{ eventId }];
-          },
+          returning: async () => [{ eventId: 'evt_test_canonical' }],
         }),
       }),
     }),
   },
-}));
-
-mock.module('../shared/resolve-account', () => ({
-  resolveAccountId: async (id: string) => id,
 }));
 
 const { processStripeWebhook } = await import('../billing/services/webhooks');
@@ -106,7 +97,6 @@ const { processStripeWebhook } = await import('../billing/services/webhooks');
 beforeEach(() => {
   state.getCreditAccountResult = null;
   state.getCustomerByStripeIdResult = null;
-  state.processedWebhookEventIds.clear();
   state.upsertCreditAccountCalls = [];
   state.updateCreditAccountCalls = [];
   state.resetExpiringCreditsCalls = [];
