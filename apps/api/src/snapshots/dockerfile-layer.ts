@@ -125,6 +125,37 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     '    && command -v opencode \\',
     '    && opencode --version',
     '',
+    // Bake OpenCode's "one time database migration" at BUILD time. The first time
+    // opencode serves, it migrates its sqlite schema — logged as "Performing one
+    // time database migration (may take a few minutes)" — before it answers any
+    // request. On a fresh VM that runs on the session hot path, adding ~15-35s
+    // before opencode replies to /session; on a warm-pool claim that window is
+    // exactly what surfaces as the FE's "sandbox not ready" 503s. opencode's db
+    // lives in a BAKED path (XDG_DATA_HOME=/opt/kortix/home/.local/share), so we
+    // run opencode here once to complete the migration and bake the migrated db
+    // into the image layer. Every boot afterwards — cold or warm-pool restore —
+    // then finds an already-migrated db and answers in ~2-3s. Env MUST match the
+    // daemon's spawn (apps/kortix-sandbox-agent-server/src/opencode.ts). Best
+    // effort: if opencode can't serve at build time it just falls back to the
+    // old boot-time migration — never fail the whole image build over a warm-up.
+    'RUN set +e; \\',
+    '    export HOME=/opt/kortix/home \\',
+    '        XDG_DATA_HOME=/opt/kortix/home/.local/share \\',
+    '        XDG_CONFIG_HOME=/opt/kortix/home/.config \\',
+    '        XDG_CACHE_HOME=/opt/kortix/home/.cache; \\',
+    '    mkdir -p "$XDG_DATA_HOME" "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME"; \\',
+    '    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-bake.log 2>&1 & oc_pid=$!; \\',
+    '    for i in $(seq 1 180); do \\',
+    '        curl -s -o /dev/null -m 2 http://127.0.0.1:4096/ && break; \\',
+    '        kill -0 "$oc_pid" 2>/dev/null || break; \\',
+    '        sleep 1; \\',
+    '    done; \\',
+    '    sleep 3; \\',
+    '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
+    '    echo "=== migration-bake: opencode data dir ==="; ls -laR "$XDG_DATA_HOME/opencode" 2>/dev/null | head -40; \\',
+    '    echo "=== migration-bake: opencode log tail ==="; tail -25 /tmp/oc-bake.log; \\',
+    '    rm -f /tmp/oc-bake.log; true',
+    '',
     // bun runtime for the agent CLIs (slack, kchannel, …).
     'RUN curl -fsSL https://bun.com/install | bash \\',
     '    && install -m 755 /root/.bun/bin/bun /usr/local/bin/bun \\',
