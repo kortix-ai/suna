@@ -16,8 +16,8 @@ the decisions worth not re-litigating.
 every LLM call as a `<kortix-memory>` block at the front of the system
 prompt — so every agent in every session sees it without doing
 anything. Sub-files (`overview.md`, `integrations.md`, etc.) are NOT
-auto-loaded; agents `read` them on demand when the index points at
-something relevant.
+auto-loaded; agents `view` them on demand with the `memory` tool when
+the index points at something relevant.
 
 Memory is **continuously CRUD'd**:
 
@@ -117,20 +117,37 @@ there's enough depth to warrant a click.
 
 <writing>
 
-### Adding or updating memory
+### The `memory` tool
 
-Memory uses the same `write` / `edit` tools you use for code. There is
-**no special memory tool**.
+Use the dedicated **`memory` tool** for everything under
+`.kortix/memory/` — not the generic `read` / `edit` / `write` tools.
+It's a 1:1 port of Anthropic's memory tool, sandboxed to the memory
+folder, with the same six commands:
 
-1. Identify the right file. Most additions fit `overview.md`,
-   `integrations.md`, `conventions.md`, or `decisions.md`. Create a
-   new file when a topic deserves its own page.
-2. Edit the file. Keep entries short, factual, and consistent with the
-   surrounding prose.
-3. If you added, renamed, or deleted a file, update `MEMORY.md` so the
+| command | what it does |
+|---|---|
+| `view` | List the memory dir (2 levels) or read a file with line numbers (optional `view_range`). **Run this first, every task.** |
+| `create` | Create a new file (`path`, `file_text`). Errors if it already exists. |
+| `str_replace` | Replace a **unique** snippet (`path`, `old_str`, `new_str`). |
+| `insert` | Insert text at a line (`path`, `insert_line`, `insert_text`). |
+| `delete` | Remove a file or directory (`path`). |
+| `rename` | Move/rename (`old_path`, `new_path`). Won't overwrite. |
+
+Paths are repo-relative and must start with `.kortix/memory`
+(e.g. `.kortix/memory/overview.md`). Writes go straight into the real
+`.kortix/memory/` folder, so they show up in the working tree and land
+on `main` through the normal change-request flow (below).
+
+1. `view` `.kortix/memory` to see what's there.
+2. Identify the right file. Most additions fit `overview.md`,
+   `integrations.md`, `conventions.md`, or `decisions.md`. `create` a
+   new file only when a topic deserves its own page.
+3. Edit with `str_replace` / `insert`. Keep entries short, factual, and
+   consistent with the surrounding prose.
+4. If you added, renamed, or deleted a file, update `MEMORY.md` so the
    index matches the folder. The index is the user's table of
    contents — and the only thing every session sees on every turn.
-4. If something turned out to be wrong, delete it. Don't leave stale
+5. If something turned out to be wrong, `delete` it. Don't leave stale
    facts to confuse future agents.
 
 ### Landing memory on `main`
