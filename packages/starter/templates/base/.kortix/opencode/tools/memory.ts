@@ -55,6 +55,32 @@ async function exists(p: string): Promise<boolean> {
     });
 }
 
+/**
+ * fsync a directory so a newly created / renamed / removed entry is durable.
+ *
+ * This is the load-bearing half of "create actually persisted": fsync-ing a
+ * file only flushes its *contents* — the directory entry (the filename) lives
+ * in the parent directory's metadata and is only guaranteed on disk after the
+ * directory itself is fsynced. Without this, `create` can return success and
+ * still vanish if the sandbox is snapshotted or killed before the dirent hits
+ * disk. Best-effort: some platforms/filesystems (notably Windows) reject
+ * fsync on a directory handle — those errors are non-fatal and ignored.
+ */
+async function fsyncDir(dirPath: string): Promise<void> {
+  let handle: fs.FileHandle | undefined;
+  try {
+    handle = await fs.open(dirPath, "r");
+    await handle.sync();
+  } catch (err: any) {
+    // EISDIR/EINVAL/EPERM/EACCES: platform can't fsync a dir handle — fine.
+    if (!["EISDIR", "EINVAL", "EPERM", "EACCES", "ENOTSUP"].includes(err?.code)) {
+      throw err;
+    }
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
 function formatFileSize(bytes: number): string {
   if (bytes === 0) return "0B";
   const k = 1024;
@@ -79,6 +105,9 @@ async function atomicWriteFile(targetPath: string, content: string): Promise<voi
     await handle.close();
     handle = undefined;
     await fs.rename(tempPath, targetPath);
+    // Persist the rename itself: the new dirent isn't durable until the
+    // containing directory is fsynced.
+    await fsyncDir(dir);
   } catch (err) {
     if (handle) await handle.close().catch(() => {});
     await fs.unlink(tempPath).catch(() => {});
@@ -215,18 +244,25 @@ async function view(memoryPath: string, viewRange: number[] | undefined, dir: st
 
 async function create(memoryPath: string, fileText: string, dir: string): Promise<string> {
   const fullPath = await validatePath(memoryPath, dir);
-  await fs.mkdir(path.dirname(fullPath), { recursive: true, mode: DIR_CREATE_MODE });
+  const parent = path.dirname(fullPath);
+  await fs.mkdir(parent, { recursive: true, mode: DIR_CREATE_MODE });
   let handle: fs.FileHandle | undefined;
   try {
+    // "wx" atomically claims a fresh name (no truncation of an existing file).
     handle = await fs.open(fullPath, "wx", FILE_CREATE_MODE);
     await handle.writeFile(fileText, "utf-8");
     await handle.sync();
+    await handle.close();
+    handle = undefined;
   } catch (err: any) {
     if (err?.code === "EEXIST") return `Error: File ${memoryPath} already exists`;
     throw err;
   } finally {
     await handle?.close().catch(() => {});
   }
+  // Without this, the file's *contents* are flushed but its directory entry
+  // may not be — so a create can report success yet not survive a snapshot.
+  await fsyncDir(parent);
   return `File created successfully at: ${memoryPath}`;
 }
 
@@ -311,6 +347,7 @@ async function del(memoryPath: string, dir: string): Promise<string> {
     if (err.code === "ENOENT") return `Error: The path ${memoryPath} does not exist`;
     throw err;
   }
+  await fsyncDir(path.dirname(fullPath));
   return `Successfully deleted ${memoryPath}`;
 }
 
@@ -319,13 +356,17 @@ async function rename(oldPath: string, newPath: string, dir: string): Promise<st
   const newFull = await validatePath(newPath, dir);
   // POSIX rename() silently overwrites; best-effort guard.
   if (await exists(newFull)) return `Error: The destination ${newPath} already exists`;
-  await fs.mkdir(path.dirname(newFull), { recursive: true, mode: DIR_CREATE_MODE });
+  const newParent = path.dirname(newFull);
+  await fs.mkdir(newParent, { recursive: true, mode: DIR_CREATE_MODE });
   try {
     await fs.rename(oldFull, newFull);
   } catch (err: any) {
     if (err.code === "ENOENT") return `Error: The path ${oldPath} does not exist`;
     throw err;
   }
+  // Persist both sides of the move (the entry left one dir and entered another).
+  await fsyncDir(newParent);
+  await fsyncDir(path.dirname(oldFull));
   return `Successfully renamed ${oldPath} to ${newPath}`;
 }
 

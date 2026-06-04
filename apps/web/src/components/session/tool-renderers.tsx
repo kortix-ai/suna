@@ -2032,6 +2032,252 @@ ToolRegistry.register('memory-search', MemorySearchTool);
 ToolRegistry.register('oc-mem_search', MemorySearchTool);
 ToolRegistry.register('oc-mem-search', MemorySearchTool);
 
+// --- Memory (file-based `.kortix/memory` editor) ---
+//
+// The OpenCode `memory` tool is a file editor scoped to `.kortix/memory/`
+// (the project brain). It mirrors the Anthropic memory-tool command shape:
+//   view        { path }                       → dir listing or file content
+//   create      { path, file_text }            → write a new file
+//   str_replace { path, old_str, new_str }     → in-place edit (rendered as a diff)
+//   insert      { path, insert_line, insert_text }
+//   delete      { path }
+//   rename      { old_path, new_path }
+// We render each as a compact, branded card instead of dumping raw output.
+
+const MEMORY_VERBS: Record<string, string> = {
+  view: 'View',
+  create: 'Create',
+  str_replace: 'Edit',
+  insert: 'Insert',
+  delete: 'Delete',
+  rename: 'Rename',
+};
+
+/** Strip the `.kortix/memory/` prefix so paths read as `MEMORY.md`, not the
+ * full repo path. The root dir collapses to `memory`. */
+function memoryRelPath(p?: string): string {
+  if (!p) return '';
+  const rel = p.replace(/^\.kortix\/memory\/?/, '').replace(/\/$/, '');
+  return rel || 'memory';
+}
+
+interface MemoryDirEntry {
+  path: string;
+  size: string;
+  isDir: boolean;
+}
+
+/** Parse the `view` command output into either a directory listing or file
+ * content. Mirrors the two header shapes the tool emits. */
+function parseMemoryView(
+  output: string,
+  viewedPath: string,
+):
+  | { type: 'dir'; entries: MemoryDirEntry[] }
+  | { type: 'file'; content: string }
+  | null {
+  if (!output) return null;
+  const nl = output.indexOf('\n');
+  const header = nl === -1 ? output : output.slice(0, nl);
+  const body = nl === -1 ? '' : output.slice(nl + 1);
+
+  if (/content of .* with line numbers/i.test(header)) {
+    // Strip the leading "   N\t" line-number prefix the tool adds.
+    const content = body
+      .split('\n')
+      .map((line) => line.replace(/^\s*\d+\t/, ''))
+      .join('\n');
+    return { type: 'file', content };
+  }
+
+  if (/files and directories/i.test(header)) {
+    const root = viewedPath.replace(/\/$/, '');
+    const entries: MemoryDirEntry[] = [];
+    for (const line of body.split('\n')) {
+      if (!line.trim()) continue;
+      const tab = line.indexOf('\t');
+      if (tab === -1) continue;
+      const size = line.slice(0, tab).trim();
+      const path = line.slice(tab + 1).trim();
+      if (path === root) continue; // skip the directory total row
+      entries.push({ size, path, isDir: !/\.\w+$/.test(path) });
+    }
+    return { type: 'dir', entries };
+  }
+
+  return null;
+}
+
+function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(part);
+  const streamingInput = partStreamingInput(part);
+  const output = partOutput(part);
+  const status = partStatus(part);
+  const running = useContext(ToolRunningContext);
+  const { openPreview } = useFilePreviewStore();
+
+  const command =
+    (input.command as string) || (streamingInput.command as string) || '';
+  const path =
+    (input.path as string) ||
+    (streamingInput.path as string) ||
+    (input.old_path as string) ||
+    (streamingInput.old_path as string) ||
+    '';
+  const oldPath = (input.old_path as string) || '';
+  const newPath = (input.new_path as string) || '';
+  const fileText =
+    (input.file_text as string) || (streamingInput.file_text as string) || '';
+  const oldStr =
+    (input.old_str as string) ?? (streamingInput.old_str as string) ?? '';
+  const newStr =
+    (input.new_str as string) ?? (streamingInput.new_str as string) ?? '';
+  const insertText =
+    (input.insert_text as string) ||
+    (streamingInput.insert_text as string) ||
+    '';
+  const insertLine = input.insert_line ?? streamingInput.insert_line;
+
+  const verb = MEMORY_VERBS[command] ?? 'Memory';
+  const relPath = memoryRelPath(path);
+  const ext = (relPath.split('.').pop() || 'md').toLowerCase();
+  const isFileTarget = command !== 'view' || /\.\w+$/.test(path);
+
+  // The tool reports edit failures inline (e.g. "No replacement was
+  // performed, old_str ... did not appear verbatim").
+  const failed =
+    !!output &&
+    (/^no replacement was performed/i.test(output.trim()) ||
+      /did not appear/i.test(output));
+
+  const isStreaming = (status === 'pending' && running) || status === 'running';
+
+  const view = useMemo(
+    () => (command === 'view' ? parseMemoryView(output, path) : null),
+    [command, output, path],
+  );
+
+  let body: ReactNode = null;
+  if (command === 'view') {
+    if (view?.type === 'dir') {
+      body =
+        view.entries.length > 0 ? (
+          <div
+            data-scrollable
+            className="max-h-96 space-y-0.5 overflow-auto px-3 py-2"
+          >
+            {view.entries.map((entry) => (
+              <div
+                key={entry.path}
+                className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground/80"
+              >
+                {entry.isDir ? (
+                  <Folder className="size-3 flex-shrink-0 text-muted-foreground/40" />
+                ) : (
+                  <FileText className="size-3 flex-shrink-0 text-muted-foreground/40" />
+                )}
+                <span className="truncate">{memoryRelPath(entry.path)}</span>
+                <span className="ml-auto flex-shrink-0 text-muted-foreground/40">
+                  {entry.size}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <ToolEmptyState message="Memory is empty." />
+        );
+    } else if (view?.type === 'file' && view.content) {
+      body = <ToolCode code={view.content} language={ext} />;
+    } else if (output) {
+      body = <ToolOutputFallback output={output} toolName="memory" />;
+    } else {
+      body = (
+        <ToolEmptyState
+          message={isStreaming ? 'Reading memory…' : 'Nothing to show.'}
+        />
+      );
+    }
+  } else if (command === 'create') {
+    body = fileText ? (
+      <ToolCode code={fileText} language={ext} />
+    ) : (
+      <ToolEmptyState
+        message={isStreaming ? 'Writing memory…' : 'No content.'}
+      />
+    );
+  } else if (command === 'str_replace') {
+    body = failed ? (
+      <ToolError error={output} toolName="memory" />
+    ) : oldStr || newStr ? (
+      <div data-scrollable className="max-h-96 overflow-auto">
+        <InlineDiffView
+          oldValue={oldStr}
+          newValue={newStr}
+          filename={relPath}
+        />
+      </div>
+    ) : (
+      <ToolEmptyState message="No changes." />
+    );
+  } else if (command === 'insert') {
+    body = (
+      <>
+        {insertLine != null && (
+          <div className="px-3 pt-2 text-xs text-muted-foreground/70">
+            Inserted at line {String(insertLine)}
+          </div>
+        )}
+        {insertText ? <ToolCode code={insertText} language={ext} /> : null}
+        {!insertText && insertLine == null ? (
+          <ToolEmptyState message="Nothing inserted." />
+        ) : null}
+      </>
+    );
+  } else if (command === 'rename') {
+    body = (
+      <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 font-mono text-xs text-muted-foreground/80">
+        <span className="truncate">{memoryRelPath(oldPath || path)}</span>
+        <ChevronRight className="size-3 flex-shrink-0 text-muted-foreground/40" />
+        <span className="truncate text-foreground/80">
+          {memoryRelPath(newPath)}
+        </span>
+      </div>
+    );
+  } else if (command === 'delete') {
+    body = (
+      <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground/70">
+        <Trash2 className="size-3 flex-shrink-0" />
+        <span className="truncate font-mono">{relPath}</span>
+      </div>
+    );
+  } else if (output) {
+    body = <ToolOutputFallback output={output} toolName="memory" />;
+  }
+
+  return (
+    <BasicTool
+      icon={<Brain className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Memory',
+        subtitle: command === 'rename' ? memoryRelPath(newPath) : relPath,
+        args: command ? [verb] : undefined,
+      }}
+      onSubtitleClick={
+        path && isFileTarget && command !== 'delete'
+          ? () => openPreview(path)
+          : undefined
+      }
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      {body}
+    </BasicTool>
+  );
+}
+ToolRegistry.register('memory', MemoryTool);
+ToolRegistry.register('oc-memory', MemoryTool);
+
 // --- Bash ---
 
 /**
