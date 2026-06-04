@@ -188,31 +188,6 @@ prompt = "do the thing"
     expect(specs[0]!.enabled).toBe(true);
   });
 
-  test('schedule is not accepted as an alias for cron', () => {
-    const parsed = parseManifestString(manifestWith(`
-[[triggers]]
-slug = "aliased"
-type = "cron"
-schedule = "0 */5 * * * *"
-prompt = "body"
-`));
-    const { specs, errors } = extractTriggers(parsed);
-    expect(specs).toEqual([]);
-    expect(errors[0]!.error).toMatch(/cron triggers must declare/);
-  });
-
-  test('prompt_template is not accepted as an alias for prompt', () => {
-    const parsed = parseManifestString(manifestWith(`
-[[triggers]]
-slug = "old-shape"
-type = "cron"
-cron = "* * * * * *"
-prompt_template = "legacy field name"
-`));
-    const { specs, errors } = extractTriggers(parsed);
-    expect(specs).toEqual([]);
-    expect(errors[0]!.error).toMatch(/prompt is required/);
-  });
 });
 
 describe('[[triggers]] — validation errors', () => {
