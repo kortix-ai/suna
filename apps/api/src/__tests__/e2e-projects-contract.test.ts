@@ -279,11 +279,7 @@ const {
   PROJECT_ACTIONS: IAM_PROJECT_ACTIONS,
 } = await import('../iam/actions');
 
-// `projects/index` imports the public `../iam` barrel, so mock that exact
-// surface while passing through the action constants it also consumes. Mirror
-// the role gate against the test's mocked membership rows so viewer/non-member
-// denial is still exercised after the IAM-engine switch.
-mock.module('../iam', () => {
+function createIamDispatcherMock() {
   const isManager = (userId: string): boolean => {
     const am = accountMemberRows.find((r) => r.userId === userId && r.accountId === ACCOUNT_ID);
     return am?.accountRole === 'owner' || am?.accountRole === 'admin';
@@ -318,6 +314,19 @@ mock.module('../iam', () => {
         ? { mode: 'none', allowed }
         : { mode: 'allow_only', allowed };
     },
+  };
+}
+
+// `projects/index` imports IAM verdicts from the dispatcher and constants from
+// the actions module. Mock the dispatcher role gate against this test's in-memory
+// membership rows so viewer/non-member denial is still exercised.
+mock.module('../iam/dispatcher', () => createIamDispatcherMock());
+
+mock.module('../iam', () => {
+  return {
+    ...createIamDispatcherMock(),
+    ACCOUNT_ACTIONS: IAM_ACCOUNT_ACTIONS,
+    PROJECT_ACTIONS: IAM_PROJECT_ACTIONS,
   };
 });
 
