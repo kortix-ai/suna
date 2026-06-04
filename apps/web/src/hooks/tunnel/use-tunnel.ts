@@ -6,13 +6,10 @@
  * Provides:
  *   - useTunnelConnections()          — list tunnel connections
  *   - useTunnelConnection(tunnelId)   — single connection detail
- *   - useCreateTunnelConnection()     — create a new connection
- *   - useUpdateTunnelConnection()     — update connection
  *   - useDeleteTunnelConnection()     — delete connection
  *   - useTunnelPermissions(tunnelId)  — list permissions
  *   - useGrantTunnelPermission()      — grant permission
  *   - useRevokeTunnelPermission()     — revoke permission
- *   - useTunnelPermissionRequests()   — list pending requests
  *   - useApprovePermissionRequest()   — approve request
  *   - useDenyPermissionRequest()      — deny request
  *   - useTunnelAuditLogs(tunnelId)    — paginated audit logs
@@ -92,7 +89,6 @@ export const tunnelKeys = {
   connections: () => [...tunnelKeys.all, 'connections'] as const,
   connection: (id: string) => [...tunnelKeys.all, 'connection', id] as const,
   permissions: (tunnelId: string) => [...tunnelKeys.all, 'permissions', tunnelId] as const,
-  permissionRequests: () => [...tunnelKeys.all, 'permission-requests'] as const,
   auditLogs: (tunnelId: string, page: number) => [...tunnelKeys.all, 'audit', tunnelId, page] as const,
   deviceAuth: (code: string) => [...tunnelKeys.all, 'device-auth', code] as const,
 };
@@ -135,40 +131,6 @@ export function useTunnelConnection(tunnelId: string) {
     refetchIntervalInBackground: false,
     refetchOnMount: 'always',
     refetchOnWindowFocus: 'always',
-  });
-}
-
-export interface TunnelConnectionCreateResponse extends TunnelConnection {
-  /** One-time setup token — only returned on creation, never retrievable again. */
-  setupToken: string;
-}
-
-export function useCreateTunnelConnection() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (data: { name: string; sandboxId?: string; capabilities?: string[] }) => {
-      const res = await backendApi.post<TunnelConnectionCreateResponse>('/tunnel/connections', data);
-      if (!res.success) throw new Error(res.error?.message || 'Failed to create connection');
-      return res.data!;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: tunnelKeys.connections() });
-    },
-  });
-}
-
-export function useUpdateTunnelConnection() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ tunnelId, ...data }: { tunnelId: string; name?: string; capabilities?: string[] }) => {
-      const res = await backendApi.patch<TunnelConnection>(`/tunnel/connections/${tunnelId}`, data);
-      if (!res.success) throw new Error(res.error?.message || 'Failed to update connection');
-      return res.data!;
-    },
-    onSuccess: (_, vars) => {
-      queryClient.invalidateQueries({ queryKey: tunnelKeys.connections() });
-      queryClient.invalidateQueries({ queryKey: tunnelKeys.connection(vars.tunnelId) });
-    },
   });
 }
 
@@ -237,23 +199,6 @@ export function useRevokeTunnelPermission() {
 
 // ─── Permission Request Hooks ────────────────────────────────────────────────
 
-export function useTunnelPermissionRequests() {
-  return useQuery({
-    queryKey: tunnelKeys.permissionRequests(),
-    queryFn: async () => {
-      const res = await backendApi.get<TunnelPermissionRequest[]>('/tunnel/permission-requests', {
-        showErrors: false,
-        timeout: 10_000,
-      });
-      if (!res.success) throw new Error(res.error?.message || 'Failed to fetch requests');
-      return res.data!;
-    },
-    staleTime: 5_000,
-    refetchInterval: 10_000,
-    refetchIntervalInBackground: false,
-  });
-}
-
 export function useApprovePermissionRequest() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -270,7 +215,6 @@ export function useApprovePermissionRequest() {
       return res.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: tunnelKeys.permissionRequests() });
       queryClient.invalidateQueries({ queryKey: tunnelKeys.all });
     },
   });
@@ -284,7 +228,7 @@ export function useDenyPermissionRequest() {
       if (!res.success) throw new Error(res.error?.message || 'Failed to deny request');
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: tunnelKeys.permissionRequests() });
+      queryClient.invalidateQueries({ queryKey: tunnelKeys.all });
     },
   });
 }
