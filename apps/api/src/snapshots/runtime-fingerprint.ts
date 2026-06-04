@@ -1,5 +1,5 @@
 import { createHash, type Hash } from 'node:crypto';
-import { lstat, open, readdir, readlink } from 'node:fs/promises';
+import { open, readdir, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
 interface RuntimeArtifact {
@@ -40,19 +40,29 @@ async function hashPath(
   logicalPath: string,
   excludeNames?: readonly string[],
 ): Promise<void> {
-  const stats = await lstat(path);
-  if (stats.isDirectory()) {
-    hash.update(`dir\0${logicalPath}\0`);
+  try {
+    hash.update(`symlink\0${logicalPath}\0${await readlink(path)}\0`);
+    return;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'EINVAL' && code !== 'ENOENT') throw err;
+  }
+
+  try {
     const entries = await readdir(path, { withFileTypes: true });
+    hash.update(`dir\0${logicalPath}\0`);
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
       if (excludeNames && excludeNames.includes(entry.name)) continue;
       await hashPath(hash, join(path, entry.name), `${logicalPath}/${entry.name}`, excludeNames);
     }
     return;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOTDIR' && code !== 'ENOENT') throw err;
   }
 
-  if (stats.isFile()) {
+  try {
     const file = await open(path, 'r');
     try {
       const fileStats = await file.stat();
@@ -68,11 +78,9 @@ async function hashPath(
       await file.close();
     }
     return;
-  }
-
-  if (stats.isSymbolicLink()) {
-    hash.update(`symlink\0${logicalPath}\0${await readlink(path)}\0`);
-    return;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT' && code !== 'EISDIR' && code !== 'ENXIO') throw err;
   }
 
   hash.update(`other\0${logicalPath}\0`);
