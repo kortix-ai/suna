@@ -220,7 +220,6 @@ export default function AccountSettingsPage() {
     | null;
   const initialTab =
     tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'members';
-  const isTeam = account ? !account.personal_account : false;
 
   return (
     <div className="flex min-h-screen flex-col bg-background">
@@ -478,7 +477,7 @@ export default function AccountSettingsPage() {
                   />
                 </SettingsGroup>
 
-                {isTeam && canDeleteAccount && (
+                {canDeleteAccount && (
                   <SettingsGroup title="Danger zone">
                     <DangerZoneCard />
                   </SettingsGroup>
@@ -1424,7 +1423,7 @@ function MembersCard({
                                   <Trash2 className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line925JsxTextRemoveFromTeam')}</DropdownMenuItem>
                               </>
                             )}
-                            {isSelf && !account.personal_account && (
+                            {isSelf && (
                               <>
                                 <DropdownMenuSeparator />
                                 <DropdownMenuItem

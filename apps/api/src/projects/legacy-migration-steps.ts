@@ -263,11 +263,17 @@ export async function pushStep(ctx: MigrationContext): Promise<void> {
     'cd "$WS"',
     'export HOME="$(mktemp -d)"',
     `git config --global --add safe.directory ${sq('*')}`,
+    '__keep="$(mktemp -d)"',
+    'for __d in agents skills tools command; do [ -d ".kortix/opencode/$__d" ] && cp -a ".kortix/opencode/$__d" "$__keep/" 2>/dev/null || true; done',
     'rm -rf .kortix/opencode kortix.toml',
     '__ST="$(mktemp -d)"',
     `base64 -d ${sq(STARTER_REMOTE_B64)} | tar xzf - -C "$__ST"`,
     'cp -a -n "$__ST"/. .',
-    `rm -rf "$__ST" ${sq(STARTER_REMOTE_B64)}`,
+    'for __d in agents skills tools command; do [ -d "$__keep/$__d" ] && { mkdir -p ".kortix/opencode/$__d"; cp -a -n "$__keep/$__d/." ".kortix/opencode/$__d/" 2>/dev/null || true; }; done',
+    '[ -d .opencode/skills ]  && { mkdir -p .kortix/opencode/skills;  cp -a -n .opencode/skills/.  .kortix/opencode/skills/  2>/dev/null || true; }',
+    '[ -d .opencode/agent ]   && { mkdir -p .kortix/opencode/agents;  cp -a -n .opencode/agent/.   .kortix/opencode/agents/  2>/dev/null || true; }',
+    '[ -d .opencode/command ] && { mkdir -p .kortix/opencode/command; cp -a -n .opencode/command/. .kortix/opencode/command/ 2>/dev/null || true; }',
+    `rm -rf "$__ST" "$__keep" ${sq(STARTER_REMOTE_B64)}`,
     `printf '%s\\n' ${excludeLine} > .gitignore`,
     'rm -rf .git',
     'find . -type d -name .git -prune -exec rm -rf {} + 2>/dev/null || true',
@@ -318,7 +324,6 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
       await tx.insert(accounts).values({
         accountId: plan.account_id,
         name: `Migrated ${legacy.name || plan.account_id.slice(0, 8)}`,
-        personalAccount: true,
       }).onConflictDoNothing({ target: accounts.accountId });
     }
 

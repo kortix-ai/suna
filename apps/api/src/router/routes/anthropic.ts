@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { HTTPException } from 'hono/http-exception';
 import type { AppContext } from '../../types';
 import {
@@ -18,8 +18,9 @@ import {
   type ActorContext,
 } from '../../shared/actor-context';
 import { getTraceHeaders } from '../../lib/request-context';
+import { makeOpenApiApp, errors, auth } from '../../openapi';
 
-const anthropic = new Hono<{ Variables: AppContext }>();
+const anthropic = makeOpenApiApp<{ Variables: AppContext }>();
 
 
 /**
@@ -34,7 +35,29 @@ const anthropic = new Hono<{ Variables: AppContext }>();
  *
  * Preserves cache_control fields injected by @ai-sdk/anthropic's setCacheKey.
  */
-anthropic.post('/messages', async (c) => {
+anthropic.openapi(
+  createRoute({
+    method: 'post',
+    path: '/messages',
+    tags: ['router'],
+    summary: 'Anthropic Messages API proxy (supports SSE streaming)',
+    ...auth,
+    // NOTE: intentionally NO `request.body` schema — the handler parses the body
+    // manually (model/messages validation → `Validation error: …` HTTPException(400)).
+    // Attaching a schema would change that contract / consume the proxied body.
+    responses: {
+      200: {
+        description:
+          'Anthropic message. JSON when non-streaming; a Server-Sent Events stream (text/event-stream) when stream=true.',
+        content: {
+          'application/json': { schema: z.any() },
+          'text/event-stream': { schema: z.string() },
+        },
+      },
+      ...errors(400, 401, 402, 502),
+    },
+  }),
+  async (c) => {
   const accountId = c.get('accountId');
 
   // Parse request body
@@ -177,7 +200,8 @@ anthropic.post('/messages', async (c) => {
   }
 
   return c.json(responseBody);
-});
+  },
+);
 
 // =============================================================================
 // Helpers

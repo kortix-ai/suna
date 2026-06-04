@@ -1,0 +1,1358 @@
+{
+  "generatedAt": "static",
+  "count": 338,
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/health"
+    },
+    {
+      "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/Groups"
+    },
+    {
+      "method": "POST",
+      "path": "/scim/v2/accounts/:accountId/Groups"
+    },
+    {
+      "method": "DELETE",
+      "path": "/scim/v2/accounts/:accountId/Groups/:groupId"
+    },
+    {
+      "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/Groups/:groupId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/scim/v2/accounts/:accountId/Groups/:groupId"
+    },
+    {
+      "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/ServiceProviderConfig"
+    },
+    {
+      "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/Users"
+    },
+    {
+      "method": "POST",
+      "path": "/scim/v2/accounts/:accountId/Users"
+    },
+    {
+      "method": "DELETE",
+      "path": "/scim/v2/accounts/:accountId/Users/:userId"
+    },
+    {
+      "method": "GET",
+      "path": "/scim/v2/accounts/:accountId/Users/:userId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/scim/v2/accounts/:accountId/Users/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/access/check-email"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/access/request-access"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/access/signup-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/account-invites/:inviteId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/account-invites/:inviteId/accept"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/account-invites/:inviteId/decline"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/account/cancel-deletion"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/account/delete-immediately"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/account/deletion-status"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/account/request-deletion"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/audit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/audit/export"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/audit/webhooks"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/audit/webhooks"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/audit/webhooks/:webhookId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/groups"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/groups"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/groups/:groupId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/groups/:groupId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/groups/:groupId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/groups/:groupId/members"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/groups/:groupId/members"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/groups/:groupId/members/:userId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/groups/:groupId/project-grants"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/members/:userId/effective"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/members/:userId/effective:batch"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/members/:userId/groups"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/members/:userId/project-access"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/members/:userId/super-admin"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/mfa-required"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/mfa-required"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/mfa-required/preview"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/pat-policy"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/pat-policy"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/scim/tokens"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/scim/tokens"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/scim/tokens/:tokenId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/service-accounts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/service-accounts"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/service-accounts/:saId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/service-accounts/:saId/disable"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/session-policy"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/iam/session-policy"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/sessions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/sessions/:sessionId/revoke"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/sso/mappings"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/iam/sso/mappings"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/sso/mappings/:mappingId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/iam/sso/provider"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/iam/sso/provider"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/accounts/:accountId/iam/sso/provider"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/invites"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/invites/:inviteId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/invites/:inviteId/resend"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/leave"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/:accountId/members"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/:accountId/members"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/:accountId/members/:userId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/accounts/:accountId/members/:userId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/me"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/accounts/tokens"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/accounts/tokens"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/accounts/tokens/:tokenId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/credits"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/credits/debit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/ledger"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/users"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/auth/logout"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/account-state"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/account-state/minimal"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/account/cancel-deletion"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/billing/account/delete-immediately"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/account/deletion-status"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/account/request-deletion"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/auto-topup/configure"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/auto-topup/settings"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/auto-topup/setup-status"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/cancel-scheduled-change"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/cancel-subscription"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/checkout-session/:sessionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/claim-per-seat"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/confirm-checkout-session"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/confirm-inline-checkout"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/create-checkout-session"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/create-inline-checkout"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/create-per-seat-checkout"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/create-portal-session"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/credit-breakdown"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/credit-usage"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/cron/yearly-rotation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/deduct"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/deduct-usage"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/proration-preview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/purchase-credits"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/reactivate-subscription"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/schedule-downgrade"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/sync-seat-quantity"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/sync-subscription"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/tier-configurations"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/transactions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/transactions/summary"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/billing/usage-history"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/webhook/revenuecat"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/webhook/stripe"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/webhooks/revenuecat"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/billing/webhooks/stripe"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/docs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/executor/call"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/connectors"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/projects/:projectId/connectors"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/executor/projects/:projectId/connectors"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/connect"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/connect/finalize"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/credential"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/sharing"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/executor/projects/:projectId/connectors/sync"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/projects/:projectId/pipedream/apps"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/projects/:projectId/policies"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/executor/projects/:projectId/policies"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/executor/webhook/pipedream"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/git/:project/git-receive-pack"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/git/:project/git-upload-pack"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/git/:project/info/refs"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/oauth/authorize"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/oauth/authorize/consent"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/oauth/authorize/consent/:requestId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/oauth/claimable-machines"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/oauth/token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/oauth/userinfo"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/openapi.json"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/ops/overview"
+    },
+    {
+      "method": "OPTIONS",
+      "path": "/v1/p/auth"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/p/auth"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/p/share"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/p/share"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/p/share/:token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/api-keys"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/platform/api-keys"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/platform/api-keys/:keyId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/platform/api-keys/:keyId/regenerate"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/platform/api-keys/:keyId/revoke"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/sandbox/version"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/sandbox/version/all"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/sandbox/version/changelog"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/platform/sandbox/version/latest"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/prewarm"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/access"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/access/:userId"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/access/:userId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/access/invite"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/access/pending-invites"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/access/pending-invites/:inviteId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/access/pending-invites/:inviteId/resend"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/apps-config"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/apps/:slug"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/apps/:slug"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:slug/deploy"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/apps/:slug/logs"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/apps/:slug/stop"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/branches"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/change-requests"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/change-requests"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/change-requests/:crId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/change-requests/:crId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/change-requests/:crId/close"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/change-requests/:crId/diff"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/change-requests/:crId/merge"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/change-requests/:crId/merge-preview"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/change-requests/:crId/reopen"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/channels/slack/connect"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/channels/slack/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/slack/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/channels/slack/mode"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/cli-token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/cli-token"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/cli-token/:tokenId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/commits"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/commits/:sha"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/commits/:sha/diff"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/detail"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/experimental"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/files"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/files/archive"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/files/content"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/files/history"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/files/search"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/git-credential"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/git-token"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/git/clone-credential"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/git/collaborators"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/group-grants"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/group-grants"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/group-grants/:groupId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/group-grants/:groupId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/manifest/validate"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/onboarding"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/providers/openai/chatgpt/headless/complete"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/providers/openai/chatgpt/headless/start"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sandbox-health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sandbox-templates"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sandbox-templates"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sandbox-templates/:templateId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/sandbox-templates/:templateId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sandbox-templates/:templateId/build"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sandboxes"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/secrets"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/secrets"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/secrets/:name"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/secrets/:name/personal"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/secrets/:name/personal"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/sessions/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/sessions/:sessionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/commit-push"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/ensure-opencode"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/restart"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/sandbox"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/sharing"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/sessions/:sessionId/wake"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/snapshots"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/snapshots/fix-with-agent"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/snapshots/rebuild"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/triggers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/triggers"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/triggers/:slug"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/triggers/:slug"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/triggers/:slug/fire"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/turn-question"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/turn-stream"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/version-diff"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/warm-pool"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/warm-pool"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/create-repo"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/github/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/github/installation"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/github/installation"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/github/installations"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/github/installations/:installationId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/github/repositories"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/legacy-migration/eligibility"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/legacy-migration/start"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/projects/legacy-migration/status"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/link-repository"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/provision"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/sync-opencode-sessions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/queue/all"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/queue/messages/:messageId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/queue/messages/:messageId/move-down"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/queue/messages/:messageId/move-up"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/queue/sessions/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/queue/sessions/:sessionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/queue/sessions/:sessionId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/queue/status"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/router/chat/completions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/router/health"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/router/image-search"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/router/llm/chat/completions"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/router/llm/models"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/router/messages"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/router/models"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/router/models/:model"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/router/web-search"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/servers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/servers"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/servers/:id"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/servers/:id"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/servers/:id"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/servers/sync"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/bootstrap-owner"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/health"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/install-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/sandbox-providers"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-complete"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/setup/setup-wizard-step"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/setup/status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/system/maintenance"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/system/maintenance"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/system/status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/tunnel/audit/:tunnelId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/tunnel/connections"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tunnel/connections"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/tunnel/connections/:tunnelId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/tunnel/connections/:tunnelId"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/tunnel/connections/:tunnelId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tunnel/connections/:tunnelId/rotate-token"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tunnel/device-auth"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tunnel/device-auth/:code/approve"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tunnel/device-auth/:code/deny"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/tunnel/device-auth/:code/info"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/tunnel/device-auth/:code/status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/tunnel/permission-requests"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tunnel/permission-requests/:requestId/approve"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tunnel/permission-requests/:requestId/deny"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/tunnel/permission-requests/stream"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/tunnel/permissions/:tunnelId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tunnel/permissions/:tunnelId"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/tunnel/permissions/:tunnelId/:permissionId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/tunnel/rpc/:tunnelId"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/user-roles"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/projects/:projectId/:slug"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/slack"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/slack/:projectId"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/slack/commands"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/slack/interactivity"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/webhooks/slack/oauth/callback"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/webhooks/telegram/:projectId"
+    }
+  ]
+}

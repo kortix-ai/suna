@@ -18,6 +18,39 @@ Kortix-specific things — triggers, env spec, sandbox image, deployable apps, p
 The default agent runtime inside every session is **OpenCode**. The same `.kortix/opencode/` config dir drives both the remote sandbox and a local `opencode` run on the user's machine — one source of truth, both surfaces.
 </overview>
 
+<project-as-workspace>
+**A Kortix project is a standalone workspace — not an add-on to a code repo.**
+
+The project's own repo is the agent's home/desk: it owns the agent's config
+(personas, connectors, triggers, channels) and its brain (memory), and it *may*
+hold persistent work artifacts the agent should truly keep (documents, PDFs,
+spreadsheets, notes, generated sites). Keep it small — it is cloned into every
+session.
+
+Anything heavy or better-lived-elsewhere is **referenced, not owned**:
+
+- **Code repos** are external work artifacts. When a task needs one, clone it
+  **on demand** into the session (sparse/shallow as appropriate), do the work,
+  and open a PR back to *that repo's* upstream. The repo is a workspace the agent
+  *visits*, not a repository the project *is*.
+- **Large data / SaaS systems** (Linear, GitHub, Betterstack, Stripe, a data
+  warehouse) are reached via **connectors**, never copied in.
+
+The heuristic is just common sense: *would auto-cloning this into every session be
+sane?* Small and truly yours → keep it in the project. Large or external →
+reference it. A small code repo *could* live inside a project; a giant monorepo
+should not.
+
+**Anti-patterns:** ❌ `kortix init` inside an existing product repo to "make the
+product a Kortix project" — create a new, dedicated project instead. ❌ pulling a
+large repo in as a submodule/subtree. ❌ copying large external data in "so the
+agent has it" — reach it through a connector.
+
+Tradeoff, chosen on purpose: the native CR flow (branch = session, CR = merge to
+`main`) stays first-class for the project's **own** repo; changes to **external**
+code repos go via the agent's git + GitHub connector as plain PRs.
+</project-as-workspace>
+
 <when-to-load>
 Load this skill when the user asks any of:
 

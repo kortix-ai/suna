@@ -1,10 +1,10 @@
-import { Hono } from 'hono';
-import { z } from 'zod';
+import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, desc, count } from 'drizzle-orm';
 import { db } from '../../shared/db';
 import { deployments } from '@kortix/db';
 import { NotFoundError, ValidationError } from '../../errors';
 import type { AppEnv } from '../../types';
+import { makeOpenApiApp, json, errors, auth } from '../../openapi';
 import {
   buildFreestyleConfigLegacy,
   buildFreestyleSourceLegacy,
@@ -12,7 +12,23 @@ import {
   getFreestyleApiKey,
 } from '../providers/freestyle';
 
-const app = new Hono<AppEnv>();
+const app = makeOpenApiApp<AppEnv>();
+
+const DeploymentResultSchema = z
+  .object({ success: z.boolean(), data: z.any() })
+  .openapi('DeploymentResult');
+
+const DeploymentListSchema = z
+  .object({
+    success: z.boolean(),
+    data: z.array(z.any()),
+    total: z.number(),
+    limit: z.number(),
+    offset: z.number(),
+  })
+  .openapi('DeploymentList');
+
+const IdParamSchema = z.object({ id: z.string() });
 
 // ─── Validation Schemas ──────────────────────────────────────────────────────
 
@@ -88,7 +104,22 @@ async function getDeploymentForUser(deploymentId: string, userId: string) {
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 // POST /v1/deployments - Create a deployment via Freestyle
-app.post('/', async (c) => {
+app.openapi(
+  createRoute({
+    method: 'post',
+    path: '/',
+    tags: ['deployments'],
+    summary: 'Create a deployment via Freestyle',
+    ...auth,
+    request: {
+      body: { content: { 'application/json': { schema: createDeploymentSchema } } },
+    },
+    responses: {
+      201: json(DeploymentResultSchema, 'The created deployment record'),
+      ...errors(400, 401),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const body = await c.req.json();
   const parsed = createDeploymentSchema.safeParse(body);
@@ -203,10 +234,30 @@ app.post('/', async (c) => {
 
     return c.json({ success: true, data: updated }, 201);
   }
-});
+  },
+);
 
 // GET /v1/deployments - List deployments (scoped to user)
-app.get('/', async (c) => {
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/',
+    tags: ['deployments'],
+    summary: 'List deployments (scoped to user)',
+    ...auth,
+    request: {
+      query: z.object({
+        status: z.string().optional(),
+        limit: z.string().optional(),
+        offset: z.string().optional(),
+      }),
+    },
+    responses: {
+      200: json(DeploymentListSchema, 'Paginated deployments for the user'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const status = c.req.query('status');
   const limit = Math.min(parseInt(c.req.query('limit') ?? '50', 10) || 50, 100);
@@ -237,10 +288,24 @@ app.get('/', async (c) => {
     limit,
     offset,
   });
-});
+  },
+);
 
 // GET /v1/deployments/:id - Get deployment details (scoped to user)
-app.get('/:id', async (c) => {
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{id}',
+    tags: ['deployments'],
+    summary: 'Get deployment details (scoped to user)',
+    ...auth,
+    request: { params: IdParamSchema },
+    responses: {
+      200: json(DeploymentResultSchema, 'The deployment record'),
+      ...errors(401, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const deploymentId = c.req.param('id');
 
@@ -250,10 +315,24 @@ app.get('/:id', async (c) => {
   }
 
   return c.json({ success: true, data: deployment });
-});
+  },
+);
 
 // POST /v1/deployments/:id/stop - Stop a deployment (delete on Freestyle + update DB)
-app.post('/:id/stop', async (c) => {
+app.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{id}/stop',
+    tags: ['deployments'],
+    summary: 'Stop a deployment (delete on Freestyle + update DB)',
+    ...auth,
+    request: { params: IdParamSchema },
+    responses: {
+      200: json(DeploymentResultSchema, 'The stopped deployment record'),
+      ...errors(401, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const deploymentId = c.req.param('id');
 
@@ -281,10 +360,24 @@ app.post('/:id/stop', async (c) => {
     .returning();
 
   return c.json({ success: true, data: updated });
-});
+  },
+);
 
 // POST /v1/deployments/:id/redeploy - Create a new deployment with same config
-app.post('/:id/redeploy', async (c) => {
+app.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{id}/redeploy',
+    tags: ['deployments'],
+    summary: 'Create a new deployment with the same config',
+    ...auth,
+    request: { params: IdParamSchema },
+    responses: {
+      201: json(DeploymentResultSchema, 'The redeployed deployment record'),
+      ...errors(401, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const deploymentId = c.req.param('id');
 
@@ -380,10 +473,24 @@ app.post('/:id/redeploy', async (c) => {
 
     return c.json({ success: true, data: updated }, 201);
   }
-});
+  },
+);
 
 // DELETE /v1/deployments/:id - Delete deployment record (scoped to user)
-app.delete('/:id', async (c) => {
+app.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{id}',
+    tags: ['deployments'],
+    summary: 'Delete a deployment record (scoped to user)',
+    ...auth,
+    request: { params: IdParamSchema },
+    responses: {
+      200: json(z.object({ success: z.boolean(), message: z.string() }), 'Deletion result'),
+      ...errors(401, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const deploymentId = c.req.param('id');
 
@@ -409,10 +516,25 @@ app.delete('/:id', async (c) => {
     .where(and(eq(deployments.deploymentId, deploymentId), eq(deployments.accountId, userId)));
 
   return c.json({ success: true, message: 'Deployment deleted' });
-});
+  },
+);
 
 // GET /v1/deployments/:id/logs - Get deployment logs from Freestyle
-app.get('/:id/logs', async (c) => {
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{id}/logs',
+    tags: ['deployments'],
+    summary: 'Get deployment logs from Freestyle',
+    ...auth,
+    request: { params: IdParamSchema },
+    responses: {
+      200: json(z.object({ success: z.boolean(), data: z.any() }), 'Deployment logs'),
+      502: json(z.object({ success: z.boolean(), error: z.string() }), 'Freestyle unreachable or unconfigured'),
+      ...errors(401, 404),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const deploymentId = c.req.param('id');
 
@@ -444,6 +566,7 @@ app.get('/:id/logs', async (c) => {
     const errorMessage = err instanceof Error ? err.message : 'Freestyle API unreachable';
     return c.json({ success: false, error: errorMessage }, 502);
   }
-});
+  },
+);
 
 export { app as deploymentsRouter };

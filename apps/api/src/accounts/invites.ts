@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, isNull } from 'drizzle-orm';
 import { accountInvitations, accountMembers, accounts, projectMembers } from '@kortix/db';
 import type { AppEnv } from '../types';
@@ -7,11 +7,39 @@ import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
 import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
 import { onMemberAdded } from '../billing/services/seat-management';
+import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 
-export const accountInvitesRouter = new Hono<AppEnv>();
+export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
 accountInvitesRouter.use('/:inviteId/accept', createInviteAcceptRateLimitMiddleware());
 accountInvitesRouter.use('/*', supabaseAuth);
+
+const InviteIdParam = z.object({ inviteId: z.string() });
+const InviteDescribeSchema = z
+  .object({
+    invite_id: z.string(),
+    email_matches_caller: z.boolean(),
+    expired: z.boolean(),
+    accepted_at: z.string().nullable(),
+    account_id: z.string().nullable(),
+    account_name: z.string().nullable(),
+    email: z.string().nullable(),
+    initial_role: z.string().nullable(),
+    inviter_email: z.string().nullable(),
+    created_at: z.string().nullable(),
+    expires_at: z.string().nullable(),
+  })
+  .openapi('InviteDescribe');
+const InviteAcceptSchema = z
+  .object({
+    account_id: z.string(),
+    account_role: z.string(),
+    already_accepted: z.boolean(),
+    bootstrap_grants_applied: z.array(
+      z.object({ project_id: z.string(), role: z.string() }),
+    ),
+  })
+  .openapi('InviteAccept');
 
 function normalizeEmail(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase();
@@ -70,10 +98,80 @@ function validateBootstrapGrant(raw: unknown): ValidatedGrant | null {
   };
 }
 
+// Apply the invite's bootstrap grants (the project_members rows the inviter
+// wanted this user to land on). Idempotent — onConflictDoUpdate means a
+// re-accept simply re-asserts the grant rather than erroring. Owners/admins
+// skip these: they already hold implicit Manager on every project, so a direct
+// grant is redundant. Errors are best-effort and logged; the account
+// membership itself is already committed and shouldn't roll back because a
+// project no longer exists. Each entry is validated first (see
+// validateBootstrapGrant) so a bad jsonb write can't break acceptance.
+async function applyBootstrapGrants(
+  invite: typeof accountInvitations.$inferSelect,
+  userId: string,
+): Promise<Array<{ project_id: string; role: string }>> {
+  const applied: Array<{ project_id: string; role: string }> = [];
+  const rawBootstraps = invite.bootstrapGrants ?? [];
+  if (rawBootstraps.length === 0 || invite.initialRole !== 'member') return applied;
+
+  for (const raw of rawBootstraps) {
+    const g = validateBootstrapGrant(raw);
+    if (!g) {
+      console.warn('[accept-invite] skipping malformed bootstrap grant', {
+        invite_id: invite.inviteId,
+        raw,
+      });
+      continue;
+    }
+    try {
+      await db
+        .insert(projectMembers)
+        .values({
+          accountId: invite.accountId,
+          projectId: g.project_id,
+          userId,
+          projectRole: g.role,
+          grantedBy: invite.invitedBy,
+          expiresAt: g.expires_at ? new Date(g.expires_at) : null,
+        })
+        .onConflictDoUpdate({
+          target: [projectMembers.projectId, projectMembers.userId],
+          set: {
+            projectRole: g.role,
+            grantedBy: invite.invitedBy,
+            updatedAt: new Date(),
+            ...(g.expires_at ? { expiresAt: new Date(g.expires_at) } : {}),
+          },
+        });
+      applied.push({ project_id: g.project_id, role: g.role });
+    } catch (err) {
+      console.warn(
+        '[accept-invite] failed to apply bootstrap grant',
+        { project_id: g.project_id, role: g.role },
+        err,
+      );
+    }
+  }
+  return applied;
+}
+
 // GET /v1/account-invites/:inviteId — describe an invite. Redacts identifying
 // fields when the caller's email doesn't match the invite, so the URL alone
 // can't be used to enumerate accounts.
-accountInvitesRouter.get('/:inviteId', async (c) => {
+accountInvitesRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{inviteId}',
+    tags: ['accounts'],
+    summary: 'Describe an invite (redacted unless caller email matches)',
+    ...auth,
+    request: { params: InviteIdParam },
+    responses: {
+      200: json(InviteDescribeSchema, 'Invite description'),
+      ...errors(401, 404),
+    },
+  }),
+  async (c: any) => {
   const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
   const inviteId = c.req.param('inviteId');
 
@@ -126,12 +224,28 @@ accountInvitesRouter.get('/:inviteId', async (c) => {
     email_matches_caller: true,
     expired,
   });
-});
+  },
+);
 
 // POST /v1/account-invites/:inviteId/accept — accept an invite. Validates email
 // matches caller, invite isn't expired/accepted, then atomically inserts the
 // member row + stamps accepted_at.
-accountInvitesRouter.post('/:inviteId/accept', async (c) => {
+accountInvitesRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{inviteId}/accept',
+    tags: ['accounts'],
+    summary: 'Accept an invite',
+    ...auth,
+    request: { params: InviteIdParam },
+    responses: {
+      200: json(InviteAcceptSchema, 'Invite accepted'),
+      403: json(ErrorSchema, 'Forbidden'),
+      410: json(ErrorSchema, 'Invite expired'),
+      ...errors(401, 404, 429),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
   const inviteId = c.req.param('inviteId');
@@ -148,35 +262,17 @@ accountInvitesRouter.post('/:inviteId/accept', async (c) => {
     return c.json({ error: 'This invite is addressed to a different account.' }, 403);
   }
 
-  if (invite.acceptedAt) {
-    // Already accepted — make acceptance idempotent for the addressed user.
-    await db
-      .insert(accountMembers)
-      .values({
-        userId,
-        accountId: invite.accountId,
-        accountRole: invite.initialRole,
-      })
-      .onConflictDoNothing({
-        target: [accountMembers.userId, accountMembers.accountId],
-      });
-    // Billing v2 — idempotent for already-accepted invites: onMemberAdded
-    // re-mints YOLO if no active token exists and re-syncs Stripe quantity.
-    void onMemberAdded(invite.accountId, userId).catch(() => {});
-    return c.json({
-      account_id: invite.accountId,
-      account_role: invite.initialRole,
-      already_accepted: true,
-    });
-  }
+  const alreadyAccepted = !!invite.acceptedAt;
 
-  if (isExpired(invite)) {
+  // Only block a *fresh* accept on expiry. An already-accepted invite stays
+  // redeemable for the addressed user so re-entry can heal a grant that was
+  // never written (see below).
+  if (!alreadyAccepted && isExpired(invite)) {
     return c.json({ error: 'This invite has expired. Ask the owner to send a new one.' }, 410);
   }
 
-  // Insert member (skip if already a member via some other path) and stamp
-  // accepted_at. onConflictDoNothing on the (user, account) unique index keeps
-  // this idempotent.
+  // Ensure account membership. onConflictDoNothing on the (user, account) unique
+  // index keeps this idempotent whether it's a first accept or a re-entry.
   await db
     .insert(accountMembers)
     .values({
@@ -188,97 +284,61 @@ accountInvitesRouter.post('/:inviteId/accept', async (c) => {
       target: [accountMembers.userId, accountMembers.accountId],
     });
 
-  const acceptedRows = await db
-    .update(accountInvitations)
-    .set({ acceptedAt: new Date() })
-    .where(
-      and(
-        eq(accountInvitations.inviteId, invite.inviteId),
-        isNull(accountInvitations.acceptedAt),
-      ),
-    )
-    .returning({ inviteId: accountInvitations.inviteId });
+  // Stamp accepted_at on first accept. The isNull guard makes concurrent
+  // accepts collapse to a single write without us caring who won — both
+  // callers still go on to (idempotently) apply grants below.
+  if (!alreadyAccepted) {
+    await db
+      .update(accountInvitations)
+      .set({ acceptedAt: new Date() })
+      .where(
+        and(
+          eq(accountInvitations.inviteId, invite.inviteId),
+          isNull(accountInvitations.acceptedAt),
+        ),
+      );
+  }
 
   // Billing v2 — mint per-member YOLO + push +1 seat to Stripe. No-op for
-  // legacy accounts (guarded inside the service). Fire-and-forget so Stripe
-  // hiccups don't block the user from finishing their invite acceptance.
+  // legacy accounts (guarded inside the service). Idempotent on re-accept.
+  // Fire-and-forget so Stripe hiccups don't block invite acceptance.
   void onMemberAdded(invite.accountId, userId).catch(() => {});
 
-  if (acceptedRows.length === 0) {
-    return c.json({
-      account_id: invite.accountId,
-      account_role: invite.initialRole,
-      already_accepted: true,
-    });
-  }
-
-  // Apply bootstrap grants (project_members rows the inviter wanted
-  // this user to land on). Owners/admins skip these — they already
-  // have implicit Manager on every project, so a direct grant is
-  // redundant noise. Errors are best-effort and logged; the account
-  // membership itself is already committed and shouldn't be rolled
-  // back if a project no longer exists or similar.
-  //
-  // Each grant entry is validated before being applied — see
-  // validateBootstrapGrant above. Malformed entries are skipped with a
-  // warn so a future bad-write to the jsonb column can't break invite
-  // acceptance for the addressed user.
-  const rawBootstraps = invite.bootstrapGrants ?? [];
-  const appliedGrants: Array<{ project_id: string; role: string }> = [];
-  if (rawBootstraps.length > 0 && invite.initialRole === 'member') {
-    for (const raw of rawBootstraps) {
-      const g = validateBootstrapGrant(raw);
-      if (!g) {
-        console.warn(
-          '[accept-invite] skipping malformed bootstrap grant',
-          { invite_id: invite.inviteId, raw },
-        );
-        continue;
-      }
-      try {
-        await db
-          .insert(projectMembers)
-          .values({
-            accountId: invite.accountId,
-            projectId: g.project_id,
-            userId,
-            projectRole: g.role,
-            grantedBy: invite.invitedBy,
-            expiresAt: g.expires_at ? new Date(g.expires_at) : null,
-          })
-          .onConflictDoUpdate({
-            target: [projectMembers.projectId, projectMembers.userId],
-            set: {
-              projectRole: g.role,
-              grantedBy: invite.invitedBy,
-              updatedAt: new Date(),
-              ...(g.expires_at
-                ? { expiresAt: new Date(g.expires_at) }
-                : {}),
-            },
-          });
-        appliedGrants.push({ project_id: g.project_id, role: g.role });
-      } catch (err) {
-        console.warn(
-          '[accept-invite] failed to apply bootstrap grant',
-          { project_id: g.project_id, role: g.role },
-          err,
-        );
-      }
-    }
-  }
+  // Apply bootstrap grants on EVERY accept path — this is what makes acceptance
+  // self-healing. Previously grants ran only on the first accept, AFTER
+  // accepted_at was stamped and best-effort; any failure there (or a retried /
+  // concurrent accept hitting the already-accepted early return) left the
+  // member with no project_members row, so the invited project was invisible
+  // to them and re-clicking the link never fixed it. applyBootstrapGrants is
+  // idempotent, so re-running it on re-entry just heals the missing grant.
+  const appliedGrants = await applyBootstrapGrants(invite, userId);
 
   return c.json({
     account_id: invite.accountId,
     account_role: invite.initialRole,
+    already_accepted: alreadyAccepted,
     bootstrap_grants_applied: appliedGrants,
   });
-});
+  },
+);
 
 // POST /v1/account-invites/:inviteId/decline — decline an invite. Deletes the
 // row outright (cleaner than a `declined_at` sentinel — the invite no longer
 // exists from the recipient's perspective).
-accountInvitesRouter.post('/:inviteId/decline', async (c) => {
+accountInvitesRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{inviteId}/decline',
+    tags: ['accounts'],
+    summary: 'Decline an invite',
+    ...auth,
+    request: { params: InviteIdParam },
+    responses: {
+      200: json(z.object({ ok: z.boolean() }), 'Invite declined'),
+      ...errors(401, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
   const inviteId = c.req.param('inviteId');
 
@@ -301,4 +361,5 @@ accountInvitesRouter.post('/:inviteId/decline', async (c) => {
   await db.delete(accountInvitations).where(eq(accountInvitations.inviteId, invite.inviteId));
 
   return c.json({ ok: true });
-});
+  },
+);

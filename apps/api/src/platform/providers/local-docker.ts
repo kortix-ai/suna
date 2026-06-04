@@ -16,6 +16,27 @@ import type {
   ProvisioningTraits,
   ProvisioningStatus,
 } from './index';
+import type { SandboxInfo } from './local-docker/types';
+import {
+  getImagePullStatus,
+  setPullStatus,
+  getSandboxUpdateStatus,
+  setUpdateStatus,
+} from './local-docker/status';
+
+// Re-export the public surface so `platform/providers/index.ts` (the only
+// importer) keeps working unchanged.
+export {
+  getImagePullStatus,
+  getSandboxUpdateStatus,
+  resetSandboxUpdateStatus,
+} from './local-docker/status';
+export type {
+  ImagePullStatus,
+  SandboxUpdatePhase,
+  SandboxUpdateStatus,
+  SandboxInfo,
+} from './local-docker/types';
 
 /** Container name — configurable so self-hosted and dev can coexist. */
 const CONTAINER_NAME = config.SANDBOX_CONTAINER_NAME;
@@ -133,68 +154,6 @@ function getDocker(): Docker {
     return new Docker({ socketPath });
   }
   return new Docker();
-}
-
-export interface ImagePullStatus {
-  state: 'idle' | 'pulling' | 'done' | 'error';
-  progress: number;
-  message: string;
-  error?: string;
-}
-
-let _pullStatus: ImagePullStatus = { state: 'idle', progress: 0, message: '' };
-
-export function getImagePullStatus(): ImagePullStatus {
-  return { ..._pullStatus };
-}
-
-export type SandboxUpdatePhase =
-  | 'idle'
-  | 'pulling'
-  | 'stopping'
-  | 'removing'
-  | 'recreating'
-  | 'starting'
-  | 'health_check'
-  | 'complete'
-  | 'failed';
-
-export interface SandboxUpdateStatus {
-  phase: SandboxUpdatePhase;
-  progress: number;
-  message: string;
-  targetVersion: string | null;
-  previousVersion: string | null;
-  currentVersion: string | null;
-  error: string | null;
-  startedAt: string | null;
-  updatedAt: string | null;
-}
-
-const IDLE_UPDATE_STATUS: SandboxUpdateStatus = {
-  phase: 'idle',
-  progress: 0,
-  message: '',
-  targetVersion: null,
-  previousVersion: null,
-  currentVersion: null,
-  error: null,
-  startedAt: null,
-  updatedAt: null,
-};
-
-let _updateStatus: SandboxUpdateStatus = { ...IDLE_UPDATE_STATUS };
-
-export function getSandboxUpdateStatus(): SandboxUpdateStatus {
-  return { ..._updateStatus };
-}
-
-export function resetSandboxUpdateStatus(): void {
-  _updateStatus = { ...IDLE_UPDATE_STATUS };
-}
-
-function setUpdateStatus(partial: Partial<SandboxUpdateStatus>): void {
-  _updateStatus = { ..._updateStatus, ...partial, updatedAt: new Date().toISOString() };
 }
 
 /**
@@ -369,8 +328,9 @@ export class LocalDockerProvider implements SandboxProvider {
    * Returns the new SandboxInfo on success, throws on failure.
    */
   async updateSandbox(targetVersion: string): Promise<SandboxInfo> {
-    if (_updateStatus.phase !== 'idle' && _updateStatus.phase !== 'complete' && _updateStatus.phase !== 'failed') {
-      throw new Error(`Update already in progress (phase: ${_updateStatus.phase})`);
+    const updateStatus = getSandboxUpdateStatus();
+    if (updateStatus.phase !== 'idle' && updateStatus.phase !== 'complete' && updateStatus.phase !== 'failed') {
+      throw new Error(`Update already in progress (phase: ${updateStatus.phase})`);
     }
 
     const targetImage = getImageForVersion(targetVersion);
@@ -747,12 +707,12 @@ export class LocalDockerProvider implements SandboxProvider {
    */
   async pullImage(): Promise<void> {
     const image = config.SANDBOX_IMAGE;
-    _pullStatus = { state: 'pulling', progress: 0, message: `Pulling ${image}...` };
+    setPullStatus({ state: 'pulling', progress: 0, message: `Pulling ${image}...` });
 
     await new Promise<void>((resolve, reject) => {
       this.docker.pull(image, (err: Error | null, stream: NodeJS.ReadableStream) => {
         if (err) {
-          _pullStatus = { state: 'error', progress: 0, message: err.message, error: err.message };
+          setPullStatus({ state: 'error', progress: 0, message: err.message, error: err.message });
           return reject(err);
         }
         const layerProgress: Record<string, { current: number; total: number }> = {};
@@ -760,10 +720,10 @@ export class LocalDockerProvider implements SandboxProvider {
           stream,
           (err2: Error | null) => {
             if (err2) {
-              _pullStatus = { state: 'error', progress: 0, message: err2.message, error: err2.message };
+              setPullStatus({ state: 'error', progress: 0, message: err2.message, error: err2.message });
               return reject(err2);
             }
-            _pullStatus = { state: 'done', progress: 100, message: 'Image pulled successfully' };
+            setPullStatus({ state: 'done', progress: 100, message: 'Image pulled successfully' });
             console.log(`[LOCAL-DOCKER] Image ${image} pulled successfully`);
             resolve();
           },
@@ -777,13 +737,13 @@ export class LocalDockerProvider implements SandboxProvider {
               const totalBytes = layers.reduce((s, l) => s + l.total, 0);
               const currentBytes = layers.reduce((s, l) => s + l.current, 0);
               const pct = totalBytes > 0 ? Math.round((currentBytes / totalBytes) * 100) : 0;
-              _pullStatus = {
+              setPullStatus({
                 state: 'pulling',
                 progress: Math.min(pct, 99),
                 message: `Pulling image... ${pct}%`,
-              };
+              });
             } else if (event.status) {
-              _pullStatus = { ..._pullStatus, message: event.status };
+              setPullStatus({ ...getImagePullStatus(), message: event.status });
             }
           },
         );
@@ -796,12 +756,12 @@ export class LocalDockerProvider implements SandboxProvider {
    * Updates both _pullStatus and _updateStatus with progress.
    */
   private async pullImageByName(imageName: string): Promise<void> {
-    _pullStatus = { state: 'pulling', progress: 0, message: `Pulling ${imageName}...` };
+    setPullStatus({ state: 'pulling', progress: 0, message: `Pulling ${imageName}...` });
 
     await new Promise<void>((resolve, reject) => {
       this.docker.pull(imageName, (err: Error | null, stream: NodeJS.ReadableStream) => {
         if (err) {
-          _pullStatus = { state: 'error', progress: 0, message: err.message, error: err.message };
+          setPullStatus({ state: 'error', progress: 0, message: err.message, error: err.message });
           return reject(err);
         }
         const layerProgress: Record<string, { current: number; total: number }> = {};
@@ -809,10 +769,10 @@ export class LocalDockerProvider implements SandboxProvider {
           stream,
           (err2: Error | null) => {
             if (err2) {
-              _pullStatus = { state: 'error', progress: 0, message: err2.message, error: err2.message };
+              setPullStatus({ state: 'error', progress: 0, message: err2.message, error: err2.message });
               return reject(err2);
             }
-            _pullStatus = { state: 'done', progress: 100, message: 'Image pulled successfully' };
+            setPullStatus({ state: 'done', progress: 100, message: 'Image pulled successfully' });
             console.log(`[LOCAL-DOCKER] Image ${imageName} pulled successfully`);
             resolve();
           },
@@ -826,17 +786,17 @@ export class LocalDockerProvider implements SandboxProvider {
               const totalBytes = layers.reduce((s, l) => s + l.total, 0);
               const currentBytes = layers.reduce((s, l) => s + l.current, 0);
               const pct = totalBytes > 0 ? Math.round((currentBytes / totalBytes) * 100) : 0;
-              _pullStatus = {
+              setPullStatus({
                 state: 'pulling',
                 progress: Math.min(pct, 99),
                 message: `Pulling image... ${pct}%`,
-              };
+              });
               setUpdateStatus({
                 progress: 10 + Math.round(pct * 0.4),
                 message: `Pulling image... ${pct}%`,
               });
             } else if (event.status) {
-              _pullStatus = { ..._pullStatus, message: event.status };
+              setPullStatus({ ...getImagePullStatus(), message: event.status });
             }
           },
         );
@@ -1030,14 +990,4 @@ export class LocalDockerProvider implements SandboxProvider {
     }
     throw new Error(`Health check timed out after ${Math.round(timeoutMs / 1000)}s — sandbox may still be starting`);
   }
-}
-
-export interface SandboxInfo {
-  containerId: string;
-  name: string;
-  status: SandboxStatus;
-  image: string;
-  baseUrl: string;
-  mappedPorts: Record<string, string>;
-  createdAt: string;
 }

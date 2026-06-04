@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { sql } from 'drizzle-orm';
 import type { AppEnv } from '../types';
 import { db } from '../shared/db';
@@ -7,8 +7,9 @@ import { requireAdmin } from '../middleware/require-admin';
 import { config } from '../config';
 import { getTunnelServiceStatus } from '../tunnel';
 import { isOtelTraceExporterConfigured } from '../lib/otel';
+import { makeOpenApiApp, json, errors, auth } from '../openapi';
 
-export const opsApp = new Hono<AppEnv>();
+export const opsApp = makeOpenApiApp<AppEnv>();
 
 opsApp.use('/*', supabaseAuth);
 opsApp.use('/*', requireAdmin);
@@ -105,7 +106,19 @@ function observabilityStatus() {
   };
 }
 
-opsApp.get('/overview', async (c) => {
+opsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/overview',
+    tags: ['ops'],
+    summary: 'Platform operations overview dashboard',
+    ...auth,
+    responses: {
+      200: json(z.record(z.string(), z.any()), 'Operations overview snapshot'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
   const [
     accountCount,
     projectCount,
@@ -203,4 +216,5 @@ opsApp.get('/overview', async (c) => {
       active_legacy_sandboxes: activeLegacySandboxes,
     },
   });
-});
+  },
+);

@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { timingSafeEqual } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
@@ -8,10 +8,26 @@ import {
   resolveGitTriggerActor,
 } from '../projects';
 import { loadTelegramWebhookSecretForProject } from './install-store';
+import { makeOpenApiApp, json, errors } from '../openapi';
 
-export const telegramWebhookApp = new Hono();
+export const telegramWebhookApp = makeOpenApiApp();
 
-telegramWebhookApp.post('/:projectId', async (c) => {
+telegramWebhookApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}',
+    tags: ['channels'],
+    summary: 'Telegram bot webhook (secret-token verified)',
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: z.any() } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), challenge: z.string().optional() }).passthrough(), 'Accepted'),
+      ...errors(400, 401, 404),
+    },
+  }),
+  async (c: any) => {
   const projectId = c.req.param('projectId');
   const expected = await loadTelegramWebhookSecretForProject(projectId);
   if (!expected) return c.json({ error: 'Not configured' }, 404);
@@ -39,7 +55,8 @@ telegramWebhookApp.post('/:projectId', async (c) => {
     console.error('[telegram-webhook] spawn failed', err),
   );
   return c.json({ ok: true });
-});
+},
+);
 
 async function spawnAgentTurn(
   projectId: string,

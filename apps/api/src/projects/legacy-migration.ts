@@ -241,7 +241,6 @@ async function ensureAccountAndMembers(tx: Database, legacy: LegacySandboxRow, u
     await tx.insert(accounts).values({
       accountId: legacy.accountId,
       name: `Migrated ${legacy.name || legacy.accountId.slice(0, 8)}`,
-      personalAccount: true,
     });
   }
 

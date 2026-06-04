@@ -14,9 +14,10 @@
  *   /audit/*                 — paginated audit logs
  */
 
-import { Hono } from 'hono';
 import { createWsHandlers, type AuthResult } from 'agent-tunnel';
 import { config } from '../config';
+import type { AppEnv } from '../types';
+import { makeOpenApiApp } from '../openapi';
 import { createConnectionsRouter } from './routes/connections';
 import { createPermissionsRouter } from './routes/permissions';
 import { createPermissionRequestsRouter } from './routes/permission-requests';
@@ -29,7 +30,7 @@ import { notifyTunnelEvent } from './routes/permission-requests';
 
 // ─── Hono Sub-App ────────────────────────────────────────────────────────────
 
-const tunnelApp = new Hono();
+const tunnelApp = makeOpenApiApp<AppEnv>();
 
 tunnelApp.route('/connections', createConnectionsRouter());
 tunnelApp.route('/permissions', createPermissionsRouter());

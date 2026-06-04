@@ -1,10 +1,27 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
+
+// The project routes were decomposed out of the old monolithic projects/index.ts
+// into projects/routes/*.ts + projects/lib/*.ts. Scan the whole projects/ tree so
+// this safety check is robust to where the sandbox-lookup handler lives.
+function readProjectsSource(): string {
+  const root = join(import.meta.dir, '../projects');
+  const out: string[] = [];
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const p = join(dir, entry.name);
+      if (entry.isDirectory()) walk(p);
+      else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) out.push(readFileSync(p, 'utf8'));
+    }
+  };
+  walk(root);
+  return out.join('\n');
+}
 
 describe('kortix-projects SQL safety', () => {
   test('project session sandbox lookup uses Drizzle query builder instead of interpolated SQL', () => {
-    const source = readFileSync(join(import.meta.dir, '../projects/index.ts'), 'utf8');
+    const source = readProjectsSource();
 
     expect(source).toContain('from(sessionSandboxes)');
     expect(source).toContain('eq(sessionSandboxes.sessionId, sessionId)');
