@@ -96,6 +96,21 @@ export class PlatinumProvider implements SandboxProvider {
     const externalId = sandbox.id;
     const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${AGENT_PORT}`;
 
+    // Eagerly expose the agent port so the *.sbx edge route is LIVE the moment
+    // the sandbox is running — before the FE connects. Expose is otherwise lazy
+    // (first /v1/p request triggers it), which left a window where the FE's
+    // /agent, /session, /global/events calls hit an un-routed edge → 504s right
+    // after runtime-ready. Best-effort: a failure here just falls back to the
+    // lazy expose in resolveEndpoint.
+    try {
+      await platinumJson(`/v1/sandboxes/${externalId}/expose`, {
+        method: 'POST',
+        body: JSON.stringify({ port: AGENT_PORT, public: true }),
+      });
+    } catch (err) {
+      console.warn(`[platinum] eager expose ${externalId}:${AGENT_PORT} failed (lazy fallback):`, err);
+    }
+
     return {
       externalId,
       baseUrl,
