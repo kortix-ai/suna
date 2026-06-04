@@ -463,6 +463,7 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
 {
   const { createLlmGateway } = await import('./llm-gateway');
   const { attributeYoloToken } = await import('./billing/services/yolo-tokens');
+  const { validateAccountToken } = await import('./repositories/account-tokens');
   const { assertBillingActive } = await import('./billing/services/billing-gate');
   const { deductForLlmUsage } = await import('./billing/services/credits');
   const { recordUsageEvent } = await import('./shared/usage-events');
@@ -479,7 +480,19 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
         appReferer: config.KORTIX_URL,
       },
       {
-        authenticateToken: (token) => attributeYoloToken(token),
+        authenticateToken: async (token) => {
+          // Legacy per-member YOLO token (prod per-seat path) takes priority.
+          const yolo = await attributeYoloToken(token);
+          if (yolo) return yolo;
+          // YOLO is discontinued; sandboxes now present their account token
+          // (a kortix_pat_ minted at provision). Resolve it to {userId, accountId}
+          // so the managed gateway works for self-hosted / billing-off deploys.
+          const acct = await validateAccountToken(token);
+          if (acct.isValid && acct.userId && acct.accountId) {
+            return { userId: acct.userId, accountId: acct.accountId };
+          }
+          return null;
+        },
         assertBillingActive,
         recordUsage: async (event) => {
           // Always record usage_events for observability (token counts, model,
