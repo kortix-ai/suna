@@ -1,8 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { delimiter, isAbsolute, join, resolve } from 'node:path';
+import { delimiter, dirname, isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 export function repoRoot(): string {
-  return resolve(__dirname, '../../..');
+  return resolve(HERE, '../../..');
 }
 
 export function parseEnvFile(relativePath: string): Record<string, string> {

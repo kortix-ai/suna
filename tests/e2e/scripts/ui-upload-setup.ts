@@ -5,21 +5,18 @@
  * session and waits for the sandbox to go active. Prints JSON the browser
  * driver consumes: { email, password, projectId, sessionId, ext, url }.
  */
-import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { optionalEnvValue } from '../helpers/env';
 
 const REPO_ROOT = resolve(import.meta.dir, '../../..');
 const API_ENV = resolve(REPO_ROOT, 'apps/api/.env');
 const WEB_ENV = resolve(REPO_ROOT, 'apps/web/.env');
-const f = (file: string, key: string) => {
-  try { const m = readFileSync(file, 'utf8').match(new RegExp(`^${key}=(.+)$`, 'm')); return m ? m[1].trim().replace(/^["']|["']$/g, '') : null; } catch { return null; }
-};
 const API = 'http://localhost:8008/v1';
 const SUPABASE = 'http://127.0.0.1:54321';
-const SERVICE_KEY = f(API_ENV, 'SUPABASE_SERVICE_ROLE_KEY')!;
-const ANON_KEY = f(WEB_ENV, 'NEXT_PUBLIC_SUPABASE_ANON_KEY')!;
-const OPENROUTER = f(API_ENV, 'OPENROUTER_API_KEY');
-const DB_URL = f(API_ENV, 'DATABASE_URL') || 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
+const SERVICE_KEY = optionalEnvValue('SUPABASE_SERVICE_ROLE_KEY', API_ENV)!;
+const ANON_KEY = optionalEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY', WEB_ENV)!;
+const OPENROUTER = optionalEnvValue('OPENROUTER_API_KEY', API_ENV);
+const DB_URL = optionalEnvValue('DATABASE_URL', API_ENV) || 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const err = (m: string) => { console.error(JSON.stringify({ error: m })); process.exit(1); };
 
