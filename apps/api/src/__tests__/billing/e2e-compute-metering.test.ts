@@ -84,7 +84,6 @@ mock.module('../../billing/repositories/compute-sessions', () => ({
     sessions.filter(
       (s) => s.state === 'active' && new Date(s.lastBilledAt) <= cutoff,
     ),
-  getComputeUsageSince: async () => ({ totalCostUsd: 0, sessionCount: 0 }),
 }));
 
 // Override the credits mock to actually capture the type tag.
