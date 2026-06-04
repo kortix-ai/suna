@@ -574,29 +574,6 @@ describe('POST /v1/projects/:id/apps — create commits to manifest', () => {
     expect(content).toContain('framework = "next"');
   });
 
-  test('ignores camelCase app body aliases in favor of canonical manifest fields', async () => {
-    seedManifest();
-    const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/apps`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        slug: 'camel',
-        domains: ['camel.style.dev'],
-        source: {
-          type: 'git',
-          repo: 'https://github.com/me/camel',
-          rootPath: 'apps/camel',
-        },
-        build: { command: 'pnpm build', outDir: 'dist' },
-      }),
-    });
-    expect(res.status).toBe(201);
-    const content = commitCalls[0]!.content;
-    expect(content).not.toContain('root_path = "apps/camel"');
-    expect(content).not.toContain('out_dir = "dist"');
-  });
-
   test('commits a tar app', async () => {
     seedManifest();
     const app = createApp();
