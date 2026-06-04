@@ -402,7 +402,7 @@ export async function createProjectSession(input: {
             sandboxProvider: providerName,
             sandboxId: W,
             agentName,
-            status: 'provisioning',
+            status: claimed.ready ? 'running' : 'provisioning',
             createdBy: userId,
             visibility: 'private',
             // Pin the opencode session pre-created at park time so the client

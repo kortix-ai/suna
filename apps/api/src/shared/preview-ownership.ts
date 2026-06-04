@@ -15,7 +15,7 @@ import { db } from './db';
 import { isPlatformAdmin } from './platform-roles';
 import { resolveAccountId } from './resolve-account';
 import { accountMembers, sessionSandboxes } from '@kortix/db';
-import { and, eq, or } from 'drizzle-orm';
+import { and, eq, or, sql } from 'drizzle-orm';
 import type { KortixUserContext } from './kortix-user-context';
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -34,6 +34,19 @@ function cacheKey(previewSandboxId: string, userId: string): string {
 }
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function preferredSandboxOrder() {
+  return [
+    sql`case
+      when ${sessionSandboxes.status} = 'active' then 0
+      when ${sessionSandboxes.status} = 'provisioning' then 1
+      when ${sessionSandboxes.status} = 'stopped' then 2
+      else 3
+    end`,
+    sql`case when ${sessionSandboxes.poolState} is null then 0 else 1 end`,
+    sql`${sessionSandboxes.updatedAt} desc`,
+  ];
+}
 
 /**
  * Resolve the real session sandbox uuid + owning account from a
@@ -54,6 +67,7 @@ async function resolveSandboxRef(
     .select({ sandboxId: sessionSandboxes.sandboxId, accountId: sessionSandboxes.accountId })
     .from(sessionSandboxes)
     .where(idCondition)
+    .orderBy(...preferredSandboxOrder())
     .limit(1);
 
   return row ?? null;

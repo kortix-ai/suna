@@ -123,7 +123,7 @@ export async function getWarmPoolCounts(projectId: string): Promise<{ ready: num
 export async function claimWarmSandbox(input: {
   projectId: string;
   userId: string;
-}): Promise<{ sandboxId: string; externalId: string | null; accountId: string; opencodeSessionId: string | null } | null> {
+}): Promise<{ sandboxId: string; externalId: string | null; accountId: string; opencodeSessionId: string | null; ready: boolean } | null> {
   if (!warmPoolEnabled()) return null;
   // Single statement, locked with SKIP LOCKED so concurrent claims never
   // collide. Prefer parked over booting, and oldest-first (= most booted).
@@ -143,7 +143,7 @@ export async function claimWarmSandbox(input: {
       LIMIT 1
       FOR UPDATE SKIP LOCKED
     )
-    RETURNING sandbox_id, external_id, account_id, metadata
+    RETURNING sandbox_id, external_id, account_id, status, metadata
   `);
   const r = (claimed as unknown as { rows?: any[] }).rows ?? (claimed as unknown as any[]);
   const row = Array.isArray(r) ? r[0] : undefined;
@@ -155,6 +155,7 @@ export async function claimWarmSandbox(input: {
     accountId: row.account_id as string,
     // Pin pre-warmed at park time (see promoteWhenReady) → claim skips ensure-opencode.
     opencodeSessionId: (meta.warmPool?.opencodeSessionId ?? null) as string | null,
+    ready: row.status === 'active' && meta.initStatus === 'ready',
   };
 }
 

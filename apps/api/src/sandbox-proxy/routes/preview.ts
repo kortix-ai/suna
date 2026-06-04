@@ -159,7 +159,7 @@ export async function forwardToSandbox(
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     try {
-      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(sandboxId, port);
+      const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, port);
       const targetUrl = previewUrl.replace(/\/$/, '') + remainingPath + queryString;
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
@@ -387,7 +387,7 @@ export async function resolvePreviewWsUpstream(opts: {
     return { ok: false, status: 503, message: 'sandbox not ready' };
   }
 
-  const { url: previewUrl, token: previewToken } = await resolvePreviewLink(sandboxId, upstreamPort);
+  const { url: previewUrl, token: previewToken } = await resolvePreviewLink(record, upstreamPort);
   const wsBase = previewUrl
     .replace(/\/$/, '')
     .replace(/^http:/i, 'ws:')
