@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
@@ -38,6 +39,10 @@ function parseEnvFile(relativePath: string): Record<string, string> {
     env[match[1]] = match[2].replace(/^['"]|['"]$/g, '').trim();
   }
   return env;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
 }
 
 function candidateEnvFiles(files: string[]): string[] {
@@ -206,7 +211,7 @@ async function ensureAdminSession(): Promise<AuthSession> {
     return signIn(configuredAdminEmail);
   }
 
-  const email = `e2e-admin-ops-${Date.now()}-${Math.random().toString(36).slice(2, 8)}@example.test`;
+  const email = `e2e-admin-ops-${Date.now()}-${randomUUID().slice(0, 8)}@example.test`;
   const user = await createAuthUser(email);
   await grantPlatformAdmin(user.id);
   return signIn(email);
@@ -236,7 +241,7 @@ async function assertAdminRouteClean(page: Page, path: string, expectedTexts: st
   });
 
   await page.goto(path, { waitUntil: 'domcontentloaded' });
-  await expect(page).toHaveURL(new RegExp(`${path.replace(/\//g, '\\/')}$`));
+  await expect(page).toHaveURL(new RegExp(`${escapeRegExp(path)}$`));
 
   for (const text of expectedTexts) {
     await expect(page.getByText(text).first()).toBeVisible();

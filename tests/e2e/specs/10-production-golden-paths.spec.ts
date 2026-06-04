@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
@@ -394,7 +394,7 @@ test.describe.serial('10 - SPEC production golden paths', () => {
   let primarySandbox: SessionSandbox;
 
   test.beforeAll(async () => {
-    runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    runId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
     const ownerEmail = `golden-owner-${runId}@example.test`;
     owner = await createAuthUser(ownerEmail);
     ownerSession = await signIn(ownerEmail);

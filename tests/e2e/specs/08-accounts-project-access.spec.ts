@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
@@ -426,7 +427,7 @@ test.describe('08 — Accounts, invites, and project access', () => {
       }
     });
 
-    const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const runId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
     const ownerEmail = `e2e-owner-${runId}@example.test`;
     const memberEmail = `e2e-member-${runId}@example.test`;
     const invitedEmail = `e2e-invite-${runId}@example.test`;
