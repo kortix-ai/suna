@@ -555,6 +555,7 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `PROJ-15` `POST /projects/legacy-migration/start {sandbox_id}` → missing → 400; unknown → 404; non-justavps → 400.
 `PROJ-16` `POST /projects/:id/turn-question {session_id,questions[]}` → missing → 400.
 `PROJ-17` `POST /projects/:id/turn-stream {session_id,text}` → missing → 400.
+`PROJ-18` Project cap by plan: a FREE account may own exactly 1 project — `POST /projects/provision` for the 2nd → 403 `{code:project_limit_reached,limit}` (checked before any repo is provisioned); paid/team plans get `MAX_PROJECTS_PER_ACCOUNT`. Requires `freestyle`+`stripe` (billing enforced).
 `APP-2` `POST /projects/:id/apps` · `PATCH/DELETE /:slug` → gate off → 404; bad body → 400; dup → 409; unknown → 404.
 `APP-3` `POST /:slug/deploy|stop` · `GET /:slug/logs` → unknown/no-deploy → 404.
 `APP-4` `PATCH /projects/:id/apps-config {enabled}` → 200; non-bool → 400 (not behind apps gate; legacy alias for the `apps` experimental feature).

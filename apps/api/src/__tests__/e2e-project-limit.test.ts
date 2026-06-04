@@ -1,9 +1,15 @@
 /**
- * E2E for `POST /v1/projects/provision` — the managed-git path behind
- * `kortix ship` when a repo has no `origin` remote. The managed backend is
- * provider-agnostic (GitHub is the default + only active one), so this test
- * drives the endpoint against a stub `GitHostBackend` and asserts the
- * provider-neutral behaviour: create repo → mint push token → register project.
+ * E2E for the per-account PROJECT LIMIT — the guard that stops a free account
+ * from creating an unbounded number of projects. Free accounts get 1 project;
+ * any paid plan gets the effectively-uncapped `MAX_PROJECTS_PER_ACCOUNT`.
+ *
+ * This drives the real `POST /v1/projects/provision` handler (and its real
+ * `enforceProjectQuota` chokepoint) against a stubbed managed-git backend and a
+ * db mock with a configurable project count. The limit *number* itself comes
+ * from `maxProjectsForAccount` (mocked here to a controllable value — its
+ * plan→number policy is covered by `unit-project-limit-policy.test.ts`); what
+ * this file proves is the enforcement wiring: at-limit → 403 before any repo is
+ * created; under-limit → 201.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
@@ -15,22 +21,18 @@ const USER_ID = '00000000-0000-4000-a000-000000000001';
 const ACCOUNT_ID = '00000000-0000-4000-a000-000000000101';
 const PROJECT_ID = '00000000-0000-4000-a000-000000000201';
 const REPO_OWNER = 'kortix-managed';
-const EXTERNAL_REPO_ID = 'gh-repo-1';
-const INSTALL_ID = 'install-1';
-const PUSH_TOKEN = 'scoped-push-token-789';
 const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 
-let insertedProject: any | null;
-let grantedProjectRole: any | null;
+// ─── Per-test knobs ───────────────────────────────────────────────────────────
+let projectLimit = 1; // what maxProjectsForAccount returns for the account
+let projectCount = 0; // how many projects the account already owns (count(*))
 
-function setTestAuth(userId = USER_ID, userEmail = 'ship@example.test') {
+function setTestAuth(userId = USER_ID, userEmail = 'limit@example.test') {
   (globalThis as any)[TEST_AUTH_KEY] = { userId, userEmail };
 }
 function getTestAuth() {
-  return (globalThis as any)[TEST_AUTH_KEY] ?? { userId: USER_ID, userEmail: 'ship@example.test' };
+  return (globalThis as any)[TEST_AUTH_KEY] ?? { userId: USER_ID, userEmail: 'limit@example.test' };
 }
-
-// ─── Stub fetch: sandbox secret lookups 404 so keys resolve from env. ─────────
 
 const originalFetch = globalThis.fetch;
 globalThis.fetch = (async (input: any, init?: any) => {
@@ -41,31 +43,23 @@ globalThis.fetch = (async (input: any, init?: any) => {
   return originalFetch(input, init);
 }) as typeof fetch;
 
-// ─── Mocks ───────────────────────────────────────────────────────────────────
-
-// Stub managed git backend. The provision endpoint resolves the backend through
-// `../projects/git-backends`; we register a single `github` backend whose
-// `isConfigured()` we toggle to exercise the configured / not-configured paths.
-let backendConfigured = true;
-let createdSlug = '';
+// ─── Stub managed git backend ────────────────────────────────────────────────
 const backendCalls: string[] = [];
-
 const stubBackend = {
   id: 'github',
-  isConfigured: async () => backendConfigured,
+  isConfigured: async () => true,
   createRepo: async (input: any) => {
     backendCalls.push('createRepo');
-    createdSlug = input.slug;
     return {
       provider: 'github',
       upstreamUrl: `https://github.com/${REPO_OWNER}/${input.slug}.git`,
-      externalRepoId: EXTERNAL_REPO_ID,
+      externalRepoId: 'gh-repo-1',
       repoOwner: REPO_OWNER,
       repoName: input.slug,
-      installationId: INSTALL_ID,
+      installationId: 'install-1',
       credentialRef: null,
       defaultBranch: input.defaultBranch,
-      initialToken: PUSH_TOKEN,
+      initialToken: 'scoped-push-token-789',
     };
   },
   deleteRepo: async () => { backendCalls.push('deleteRepo'); },
@@ -75,16 +69,24 @@ const stubBackend = {
 
 mock.module('../projects/git-backends', () => ({
   hasBackend: (provider: string) => provider === 'github',
-  getBackend: (provider: string) => (provider === 'github' ? stubBackend : stubBackend),
+  getBackend: () => stubBackend,
   getDefaultManagedBackend: () => stubBackend,
   githubBackend: stubBackend,
-  managedGithubInstallId: () => INSTALL_ID,
+  managedGithubInstallId: () => 'install-1',
   managedGithubToken: () => null,
 }));
 
-// Stub the Freestyle *deployments* provider (kept feature, unrelated to managed
-// git) so loading the projects module graph doesn't drag real deployment code —
-// and its transitive DB imports — into this lightweight test.
+// The limit *number* is controlled here; the plan→number policy lives in the
+// real maxProjectsForAccount (see unit-project-limit-policy.test.ts).
+mock.module('../shared/account-limits', () => ({
+  maxProjectsForAccount: async () => projectLimit,
+  maxConcurrentSessionsForTier: () => Number.MAX_SAFE_INTEGER,
+  resolveAccountTier: async () => 'free',
+  sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
+  clearAccountLimitCache: () => {},
+  FREE_TIER_PROJECT_LIMIT: 1,
+}));
+
 mock.module('../deployments/providers/freestyle', () => ({
   getFreestyleApiKey: async () => 'test-key',
   getFreestyleApiUrl: () => 'https://api.freestyle.sh',
@@ -101,14 +103,7 @@ mock.module('../middleware/auth', () => ({
   },
 }));
 
-// Bypass the IAM engine — it queries account-group tables with .innerJoin that
-// this file's lightweight db mock doesn't model. Mock only the engine so the
-// real ../iam barrel still re-exports actions, assertAuthorized, etc. We're
-// verifying provision/delete behavior, not the access-control engine itself.
 mockIamEngineAllowAll();
-
-// grantProjectRole syncs IAM policy rows; no-op those (they hit tables the
-// lightweight db mock doesn't model).
 mockIamMembershipSyncNoop();
 
 mock.module('../projects/git', () => ({
@@ -140,17 +135,17 @@ mock.module('../projects/git', () => ({
   getMergeBase: async () => 'a'.repeat(40),
 }));
 
-mock.module("../snapshots/builder", () => ({
-  ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
-  deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
+mock.module('../snapshots/builder', () => ({
+  ensureSandboxImage: async () => ({ snapshotName: 'kortix-default-test', slug: 'default', contentHash: 'a'.repeat(64), built: false, isDefault: true }),
+  deleteSandboxImage: async () => ({ deleted: false, snapshotName: 'kortix-default-test', slug: 'default' }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
-  resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
+  resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
   kickPreBuild: () => {},
   kickProjectTemplatePrebuilds: () => {},
   reconcileStaleBuilds: async () => {},
-  resolveCommitSha: async () => "a".repeat(40),
-  DEFAULT_SANDBOX_SLUG: "default",
+  resolveCommitSha: async () => 'a'.repeat(40),
+  DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
 mock.module('../platform/services/session-sandbox', () => ({
@@ -163,7 +158,7 @@ mock.module('../shared/resolve-account', () => ({
 
 mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
-    auth: { admin: { getUserById: async () => ({ data: { user: { email: 'ship@example.test' } } }) } },
+    auth: { admin: { getUserById: async () => ({ data: { user: { email: 'limit@example.test' } } }) } },
   }),
 }));
 
@@ -193,13 +188,14 @@ function projectRowFrom(values: any) {
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
+    // `projection` lets us distinguish the count(*) quota query from the
+    // membership / row lookups, which use `.where().limit()`.
     select: (projection?: any) => ({
       from: (table: unknown) => ({
         where: () => {
-          // The project-limit guard's count(*) query is awaited directly
-          // (no .limit()). 0 keeps provision under any plan's cap.
           if (table === projects && projection && typeof projection === 'object' && 'count' in projection) {
-            return Promise.resolve([{ count: 0 }]);
+            // The enforceProjectQuota count(*) query is awaited directly.
+            return Promise.resolve([{ count: projectCount }]);
           }
           return {
             limit: async () => {
@@ -213,23 +209,10 @@ mock.module('../shared/db', () => ({
     insert: (table: unknown) => ({
       values: (values: any) => ({
         onConflictDoUpdate: () => {
-          if (table === projectMembers) {
-            grantedProjectRole = values;
-            return Promise.resolve([]);
-          }
-          return {
-            returning: async () => {
-              if (table !== projects) return [];
-              insertedProject = values;
-              return [projectRowFrom(values)];
-            },
-          };
+          if (table === projectMembers) return Promise.resolve([]);
+          return { returning: async () => (table === projects ? [projectRowFrom(values)] : []) };
         },
-        returning: async () => {
-          if (table !== projects) return [];
-          insertedProject = values;
-          return [projectRowFrom(values)];
-        },
+        returning: async () => (table === projects ? [projectRowFrom(values)] : []),
       }),
     }),
     update: () => ({ set: () => ({ where: () => ({ returning: async () => [] }) }) }),
@@ -251,84 +234,68 @@ function createApp() {
   return app;
 }
 
-describe('POST /v1/projects/provision (managed git)', () => {
+function provision(name = 'Limited Agent') {
+  return createApp().request('/v1/projects/provision', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ account_id: ACCOUNT_ID, name }),
+  });
+}
+
+describe('project limit — POST /v1/projects/provision', () => {
   beforeEach(() => {
     setTestAuth();
-    insertedProject = null;
-    grantedProjectRole = null;
     backendCalls.length = 0;
-    backendConfigured = true;
+    projectLimit = 1;
+    projectCount = 0;
   });
 
-  test('provisions a managed repo + scoped token and registers the project', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'My Agent' }),
-    });
-
+  test('free account creates its first project (count 0 < limit 1) → 201', async () => {
+    projectLimit = 1;
+    projectCount = 0;
+    const res = await provision();
     expect(res.status).toBe(201);
-    const body = await res.json();
-
-    // Repo slug = readable name + the (server-generated) project id; the managed
-    // repo lives under the managed org. Response carries the project + scoped
-    // push token for the CLI.
-    expect(createdSlug).toMatch(/^my-agent-[0-9a-f-]{36}$/);
-    const expectedRepoUrl = `https://github.com/${REPO_OWNER}/${createdSlug}.git`;
-    expect(body.project_id).toBe(PROJECT_ID);
-    expect(body.repo_url).toBe(expectedRepoUrl);
-    expect(body.repo_id).toBe(EXTERNAL_REPO_ID);
-    expect(body.push_token).toBe(PUSH_TOKEN);
-
-    // Persisted row records the canonical typed git-remote reference.
-    expect(insertedProject).toMatchObject({
-      accountId: ACCOUNT_ID,
-      name: 'My Agent',
-      repoUrl: expectedRepoUrl,
-      defaultBranch: 'main',
-      manifestPath: 'kortix.toml',
-      status: 'active',
-      metadata: {
-        git: {
-          url: expectedRepoUrl,
-          provider: 'github',
-          managed: true,
-          auth: { method: 'github_app', installation_id: INSTALL_ID },
-          owner: REPO_OWNER,
-        },
-      },
-    });
-    expect(grantedProjectRole).toMatchObject({
-      accountId: ACCOUNT_ID,
-      projectId: PROJECT_ID,
-      userId: USER_ID,
-      projectRole: 'manager',
-    });
-
-    // Provisioned the repo through the backend seam (no seeding without flag).
     expect(backendCalls).toEqual(['createRepo']);
   });
 
-  test('returns 503 when managed git is not configured', async () => {
-    backendConfigured = false;
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'My Agent' }),
-    });
-    expect(res.status).toBe(503);
+  test('free account at its limit (count 1 ≥ limit 1) → 403, no repo created', async () => {
+    projectLimit = 1;
+    projectCount = 1;
+    const res = await provision();
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.code).toBe('project_limit_reached');
+    expect(body.limit).toBe(1);
+    expect(body.count).toBe(1);
+    expect(body.error).toContain('Free accounts are limited to 1 project');
+    // Blocked BEFORE the managed repo is provisioned — no orphaned upstream repo.
     expect(backendCalls).toHaveLength(0);
   });
 
-  test('rejects an unsupported provider', async () => {
-    const app = createApp();
-    const res = await app.request('/v1/projects/provision', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: ACCOUNT_ID, name: 'My Agent', provider: 'gitlab' }),
-    });
-    expect(res.status).toBe(400);
+  test('paid plan creates well beyond the free limit (count 5 < limit 200) → 201', async () => {
+    projectLimit = 200;
+    projectCount = 5;
+    const res = await provision();
+    expect(res.status).toBe(201);
+    expect(backendCalls).toEqual(['createRepo']);
+  });
+
+  test('paid plan at its (large) cap (count 200 ≥ limit 200) → 403', async () => {
+    projectLimit = 200;
+    projectCount = 200;
+    const res = await provision();
+    expect(res.status).toBe(403);
+    const body = await res.json();
+    expect(body.code).toBe('project_limit_reached');
+    expect(body.error).toContain('limit of 200 projects');
+    expect(backendCalls).toHaveLength(0);
+  });
+
+  test('billing disabled lifts the cap entirely (limit = MAX_SAFE_INTEGER) → 201', async () => {
+    projectLimit = Number.MAX_SAFE_INTEGER;
+    projectCount = 9999;
+    const res = await provision();
+    expect(res.status).toBe(201);
+    expect(backendCalls).toEqual(['createRepo']);
   });
 });

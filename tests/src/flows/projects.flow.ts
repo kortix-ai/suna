@@ -66,6 +66,48 @@ flow("PROJ-7", { domain: "projects", routes: ["PATCH /v1/projects/:projectId"] }
   });
 });
 
+flow(
+  "PROJ-18",
+  {
+    domain: "projects",
+    // `stripe` ⇒ the target enforces billing, so a free account is capped at 1
+    // project; `freestyle` ⇒ managed provisioning is available to reach the cap.
+    requires: ["freestyle", "stripe"],
+    serial: true,
+    routes: ["GET /v1/projects", "POST /v1/projects/provision"],
+  },
+  async (ctx) => {
+    // NONMEMBER is a fresh, UNFUNDED (free) account → its project cap is 1.
+    const list = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/projects");
+    list.status(200);
+    const existing = list.json<any[]>()?.length ?? 0;
+
+    if (existing === 0) {
+      await ctx.step("free account: 1st project allowed (201)", async () => {
+        const r = await ctx.client
+          .as(ctx.P.NONMEMBER)
+          .post("/v1/projects/provision", { name: ctx.fixtures.name("free-1") });
+        // 502 = managed git host transiently unavailable (see PROJ-3).
+        r.status([201, 502]);
+        if (r.statusCode === 201) ctx.track("project", r.json<any>().project_id);
+      });
+    }
+
+    await ctx.step("free account: 2nd project rejected (403 project_limit_reached)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post("/v1/projects/provision", { name: ctx.fixtures.name("free-2") });
+      // The quota gate returns 403 BEFORE any repo is provisioned, so the only
+      // non-403 outcome is a 502 from a failed 1st-project create above (no
+      // project exists to count) — tolerated, not a limit regression.
+      r.status([403, 502]);
+      if (r.statusCode === 403) {
+        r.body().has("$.code", "project_limit_reached").exists("$.limit");
+      }
+    });
+  },
+);
+
 flow("PROJ-8", { domain: "projects", routes: ["DELETE /v1/projects/:projectId"] }, async (ctx) => {
   // Not tracked: this flow deletes it itself.
   const r0 = await ctx.client.as(ctx.P.OWNER).post("/v1/projects/provision", { name: ctx.fixtures.name("del") });
