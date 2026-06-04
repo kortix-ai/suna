@@ -134,18 +134,18 @@ All under `/accounts/:id/iam/*`, each route gated by its named action. Run every
 `IAM-1` `GET …/iam/groups` (`GROUP_READ`) · `POST` (`GROUP_CREATE`) → 201.
 `IAM-2` `GET/PATCH/DELETE …/iam/groups/:gid` (`GROUP_READ`/`UPDATE`/`DELETE`).
 `IAM-3` `GET …/iam/groups/:gid/members` (`GROUP_READ`); `POST`/`DELETE …/members/:userId` (`GROUP_MEMBERS_MANAGE`).
-`IAM-4` `GET …/iam/policies` (`POLICY_READ`) · `POST`/`PATCH …/:pid` (`POLICY_CREATE`) · `DELETE …/:pid` (`POLICY_DELETE`). `POST` body `{principalType: member|group|token, principalId, scopeType, scopeId, roleId, effect: allow|deny}`. **`scopeType=account` requires `scopeId=null`** (else 400); non-account scope requires `scopeId` (else 400); `role.resourceType` must match `scopeType` (else 400); unique-violation → 409.
-`IAM-5` `GET …/iam/roles` · `…/roles/:rid/permissions` · `…/roles/:rid/usage` · `…/iam/actions` (all `ROLE_READ`).
-`IAM-6` `POST …/iam/roles {key,resource_type,actions[]}` (`ROLE_CREATE`); action list with a string ∉ catalog → 400; dup key → 409. `PATCH …/:rid` / `PUT …/:rid/permissions` (`ROLE_UPDATE`); `DELETE …/:rid` (`ROLE_DELETE`), in-use → 409. **System roles (`account_id=NULL`) are immutable → PATCH/PUT/DELETE → 403.**
+`IAM-4` No policy-CRUD surface exists in V2 (the V1 `…/iam/policies` routes were removed in PR5; access is decided purely from the six fixed roles via account/project membership + group grants). The closest black-box surface is the read-only effective probe `GET …/iam/members/:userId/effective?action=…[&resourceType=&resourceId=]` (`MEMBER_READ`; self-probe always allowed) → `{allowed, reason, action, resource_type}`. A member's account-scoped action set is determined by `account_role` (member: account-reads only; admin/owner: write surface) — there is no per-policy allow/deny row to create.
+`IAM-5` No role/permission-catalog read surface exists in V2 (the V1 `…/iam/roles`, `…/roles/:rid/permissions`, `…/roles/:rid/usage`, `…/iam/actions` routes were removed in PR5). Roles are six fixed code-defined sets (account: owner>admin>member; project: manager>editor>viewer). What a role grants is observable only indirectly via the effective probe `GET …/iam/members/:userId/effective?action=…` returning `{allowed, reason}` (e.g. `account.write` allowed for admin/owner, denied for member).
+`IAM-6` No role-CRUD surface exists in V2 (the V1 `POST/PATCH/DELETE …/iam/roles` + `PUT …/:rid/permissions` routes were removed in PR5; roles are immutable, code-defined, not stored per-account). There is nothing to create/rename/delete and no system-role 403 to assert. The fixed role→action mapping is verified through the effective probe (`GET …/iam/members/:userId/effective?action=…`): a project role allows its action set on its own project only.
 `IAM-7` `PATCH …/iam/members/:userId/super-admin {isSuperAdmin:bool}` (`MEMBER_SUPER_ADMIN_GRANT`, OWNER only) → grant/revoke super-admin; ADMIN → 403.
 `IAM-8` `GET …/iam/members/:userId/groups` · `…/effective` (`MEMBER_READ`) → effective permission set.
 
 ### Engine semantics (assert via behavior, not endpoints)
-`IAM-9` **super-admin bypass** — OWNER allowed everything before any policy.
-`IAM-10` **deny-wins** — `DENY_USER` with allow+deny on same action/scope → denied.
-`IAM-11` **token-only eval** — PAT with ≥1 narrowing policy evaluated on its policies alone (no super-admin, no legacy bridge); PAT with 0 policies inherits minter.
-`IAM-12` **legacy bridges** — `member` gets account-reads only (no `project.*`, so cannot list all projects); owner/admin → Administrator action set; `project_members` row → bridged project role.
-`IAM-13` **scope match** — policy with `scope_id=NULL` matches all resources of type; with `scope_id` matches only that resource.
+`IAM-9` **super-admin bypass** — the account creator is super-admin; their effective probe (`…/members/:userId/effective`) is `allowed:true reason:super_admin` for every action (account-write, project.create, and any project action on any/unknown project) regardless of policies or project membership. A revoked-super-admin owner still passes via `account_role`/`project_role`, never `super_admin`. Asserted via the effective endpoint.
+`IAM-10` **no deny precedence** — V2 has NO deny rules (engine: "No deny precedence"; access is allow-by-role only, max-role-wins across direct+group sources). There is no constructible allow+deny conflict via real routes. Closest assertion: stack a low (viewer) direct role and a high (manager) group grant on the same project — effective `project.delete` is `allowed:true` (max wins, never denied by the lower grant). NOTE: classic deny-wins is unverifiable black-box because the feature does not exist.
+`IAM-11` **PATs inherit the minter (no token-only policy eval)** — V2 has no per-token policies; a PAT carries no narrowing policy set, it only optionally binds to one project (`account_tokens.project_id`). An unscoped account PAT's effective access equals its minter's (owner → super-admin set). Asserted by exercising the same `…/effective` reads as the JWT owner. NOTE: per-token policy evaluation is unverifiable black-box because the feature does not exist; project-bound-PAT scope narrowing is covered indirectly by the token/scope flows, not here.
+`IAM-12` **legacy role bridge** — `account_role` maps to the V2 action set: a plain `member` gets account-reads only — `account.read` allowed but `account.write`/`project.create` denied (`reason:account_role_insufficient`), and a project action on a project they're not on is denied (`reason:no_project_membership`), so they cannot reach all projects. owner/admin → Administrator-level set (`account.write` allowed; implicit Manager on every project). Asserted via the effective endpoint.
+`IAM-13` **scope match** — a project group-grant matches only its own project. Grant a group Manager on project A; a member of that group probed with `resourceType=project&resourceId=A` → `project.delete` allowed (`reason:project_role`); the same probe against project B (no grant) → denied (`reason:no_project_membership`). Asserted via the effective endpoint with/without the matching `resourceId`.
 
 ---
 
@@ -164,7 +164,7 @@ DB `projects` (`status active|archived`, unique `(account_id, repo_url)`). Soft 
 
 ### Project access (membership)
 `PACC-1` `GET /projects/:id/access` → `read` → members + effective project roles.
-`PACC-2` `POST /projects/:id/access/invite {email,role}` → `manage` → 200; target without a Kortix account → 404 ("invite to org first"); auto-adds to org as `member` (`ensureOrgMembership`).
+`PACC-2` `POST /projects/:id/access/invite {email,role}` → `manage`. **Existing Kortix user → 200** — `ensureOrgMembership` auto-adds them to the org as `member` then grants the project role (account-manager target → implicit access, `project_role:null`). **Email with no Kortix account yet → 201 `{status:"invited", invite_id, invite_url, project_role}`** — an account invitation with a `bootstrap_grant` is created/merged idempotently so they land on the project at signup. Missing email / bad role → 400; non-account-member caller → 403 (`loadProjectForUser` — 404 only when the project row is missing/archived).
 `PACC-3` `PUT /projects/:id/access/:userId {role}` → `manage`.
 `PACC-4` `DELETE /projects/:id/access/:userId` → `manage`.
 
@@ -300,8 +300,8 @@ GitHub is **outbound only** (repo create, Contents API commits, installation-tok
 
 ### `kortix ship` (alias `deploy`)
 `SHIP-1` first ship, no `origin` → managed: `POST /projects/provision` → set `origin` to freestyle URL, commit, header-injected token push, write `link.json`. Requires `PROJECT_CREATE`.
-`SHIP-2` first ship, existing `origin` → **BYO** (single-writable-origin rule): `POST /projects {repo_url,name}`, **origin never modified**, push with user's own creds.
-`SHIP-3` first ship `--origin <git-url>` → BYO explicit; only this case rewrites `origin` (`git remote set-url`).
+`SHIP-2` first ship, existing `origin` → **BYO** (single-writable-origin rule): `POST /projects {repo_url,name}`, **origin never modified**, push with user's own creds. **NB: the API's BYO `POST /projects` only accepts a GitHub repo_url** (`normalizeRepoUrl`→`resolveGitHubImport`); a non-GitHub origin is rejected 400 before `saveLink`, so ship exits non-zero, writes no link.json, and (proven) never clobbers the origin. The real happy path needs a live GitHub repo + App install.
+`SHIP-3` first ship `--origin <git-url>` → BYO explicit; only this case rewrites `origin` (`git remote set-url`) — but `setOrigin` runs *after* the POST, so a non-GitHub `--origin` 400s first → non-zero exit, no link.json, origin not rewritten (GitHub-only, as SHIP-2).
 `SHIP-4` first ship `--origin freestyle` → force managed even if origin exists.
 `SHIP-5` multiple accounts + no `--account`/`-y` → interactive pick; `--account <id|slug>` mismatch → error listing slugs.
 `SHIP-6` subsequent ship (linked) → `GET /projects/:id` (403→access guidance, 404→gone guidance); managed → `POST /projects/:id/git-token` (fresh token per ship) → commit + push; BYO → `ensureOrigin` only if missing.
@@ -331,14 +331,14 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 ## 16. Billing (gated by `KORTIX_BILLING_INTERNAL_ENABLED`; off → 404 `billing_disabled`)
 
 `BILL-1` `GET /billing/account-state` (always available; off → unlimited mock) · `GET …/account-state/minimal`.
-`BILL-2` `POST /billing/setup/initialize {server_type,location}` → free Stripe sub.
+`BILL-2` `POST /billing/create-checkout-session {server_type,location,...}` → Stripe checkout for a server-type plan (the `/billing/setup/initialize` route in older drafts never shipped; `server_type`/`location` are body fields on create-checkout-session — `billing/routes/subscriptions.ts`). ANON → 401; non-member → 403.
 `BILL-3` `POST /billing/create-checkout-session` · `create-inline-checkout` · `confirm-inline-checkout` · `create-portal-session`.
 `BILL-4` `POST /billing/cancel-subscription` · `reactivate-subscription` · `schedule-downgrade` · `cancel-scheduled-change` · `sync-subscription`; `GET /billing/proration-preview`.
 `BILL-5` `POST /billing/purchase-credits`; `GET /billing/transactions[/summary]`, `credit-usage`, `tier-configurations`, `credit-breakdown`, `usage-history`; `GET /billing/checkout-session/:sessionId` · `POST /billing/confirm-checkout-session`.
 `BILL-6` auto-topup: `GET …/auto-topup/settings|setup-status` · `POST …/auto-topup/configure`. Cron: `POST /billing/cron/yearly-rotation`.
 `BILL-7` `POST /billing/deduct {prompt_tokens,completion_tokens,model}` · `POST /billing/deduct-usage {amount,description}` (agent runtime).
 `BILL-8` `POST /billing/webhooks/stripe` (also `/webhook/stripe`) — Stripe sig: missing sig → 400, misconfigured secret → 500. `POST /billing/webhooks/revenuecat` — **Bearer-token auth, bad → 401** (not an in-body sig). Both public, no auth middleware.
-`BILL-9` write ops require `billing.write` — `BILLING` ok, `MEMBER`/`AUDITOR` → 403.
+`BILL-9` billing write ops (`cancel-subscription`/`reactivate-subscription`/`schedule-downgrade`) — auth boundary: ANON → 401, non-account-member → 403. **NOTE (finding 2026-06-04): there is currently NO `billing.write` IAM gate in code** — write routes resolve the account by *membership* only (`shared/resolve-account.ts`), so any member (not just BILLING/owner/admin) passes. The earlier "MEMBER/AUDITOR → 403" was aspirational; if billing writes should be admin-gated, that's an API fix, not a spec fix.
 
 ---
 
@@ -355,7 +355,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 
 ### Platform API keys
 `PLT-1` `GET /platform/` → `{ok:true,message:"platform"}` (public). `GET /platform/sandbox/version[/latest|/all|/changelog]` (public).
-`PLT-2` `GET/POST /platform/api-keys` · `PATCH /platform/api-keys/:keyId/revoke` · `DELETE /platform/api-keys/:keyId` · `POST …/:keyId/regenerate` (`supabaseAuth`).
+`PLT-2` **sandbox-scoped** API keys (`platform/routes/api-keys.ts`): `GET/POST /platform/api-keys` (sandbox_id required — query for GET, body for POST; `requireSandboxAccess`) · `PATCH /platform/api-keys/:keyId/revoke` · `DELETE /platform/api-keys/:keyId` · `POST …/:keyId/regenerate` (`type:'sandbox'` keys only) (`supabaseAuth`). ANON → 401; missing/non-UUID sandbox_id → 400; unknown sandbox → 404; unknown keyId → 404. (Not account-level keys — every route hinges on a sandbox.)
 
 ### OAuth2 provider (Kortix as IdP for CLI/MCP/tunnel)
 `OAU-1` `GET /oauth/authorize` (public) → redirect to consent.
@@ -557,7 +557,8 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `PROJ-17` `POST /projects/:id/turn-stream {session_id,text}` → missing → 400.
 `APP-2` `POST /projects/:id/apps` · `PATCH/DELETE /:slug` → gate off → 404; bad body → 400; dup → 409; unknown → 404.
 `APP-3` `POST /:slug/deploy|stop` · `GET /:slug/logs` → unknown/no-deploy → 404.
-`APP-4` `PATCH /projects/:id/apps-config {enabled}` → 200; non-bool → 400 (not behind apps gate).
+`APP-4` `PATCH /projects/:id/apps-config {enabled}` → 200; non-bool → 400 (not behind apps gate; legacy alias for the `apps` experimental feature).
+`EXP-1` `PATCH /projects/:id/experimental {feature,enabled}` → 200 with `experimental`/`experimental_features` in body; unknown feature → 400; non-bool enabled → 400; `enabled:null` clears the override → 200.
 `SNAP-3` `POST /projects/:id/snapshots/fix-with-agent` → no failed build → 409; else 201.
 `SBX-3` `GET /projects/:id/sandboxes` · `/sandbox-health` · `/sandbox-templates` → 200.
 `SBX-4` `POST /sandbox-templates` → 201; bad → 400; reserved/dup → 409; `PATCH/DELETE/build /:templateId`; unknown → 404.
