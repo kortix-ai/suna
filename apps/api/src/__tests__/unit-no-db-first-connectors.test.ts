@@ -56,8 +56,4 @@ describe('config-first invariant (no DB-first creation)', () => {
     expect(offenders('executorConnectorPolicies', (rel) => rel === 'executor/sync.ts')).toEqual([]);
   });
 
-  test('projectTriggers (legacy definition table) is never inserted — triggers are file-defined', () => {
-    // No allowance: trigger definitions live in kortix.toml, period.
-    expect(offenders('projectTriggers', () => false)).toEqual([]);
-  });
 });

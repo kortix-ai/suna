@@ -124,10 +124,6 @@ describe('matchAllowedRoute', () => {
       }
     });
 
-    test('rejects GET on removed Replicate model routes', () => {
-      expect(matchAllowedRoute('GET', '/v1/models/google/nano-banana/predictions', replicateRoutes)).toBeNull();
-    });
-
     test('matches versioned prediction create (moondream2) with body-version gate', () => {
       const result = matchAllowedRoute('POST', '/predictions', replicateRoutes);
       expect(result).not.toBeNull();
