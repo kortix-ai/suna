@@ -44,7 +44,12 @@ export async function resolveScopedAccountId(
     requested = c.req.query('account_id');
   } else {
     try {
-      const body = await c.req.raw.clone().json();
+      // Use Hono's cached body parse (c.req.json()), NOT c.req.raw.clone().json():
+      // under @hono/zod-openapi the request-validation middleware consumes the raw
+      // body stream before the handler runs, so a clone of c.req.raw is empty by
+      // then → account_id would be missed → a non-member would resolve to their
+      // own account instead of being 403'd. c.req.json() returns the cached parse.
+      const body = await c.req.json();
       const candidate = body?.account_id;
       if (typeof candidate === 'string' && candidate) requested = candidate;
     } catch {

@@ -220,9 +220,13 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         body: {
           content: {
             'application/json': {
+              // Fields optional at the schema layer: the handler does auth FIRST
+              // (401) then its own field validation (custom invalid_json / "connector
+              // and action are required" 400 envelopes). A required schema here would
+              // 400 before the auth check — see the handler note below.
               schema: z.object({
-                connector: z.string(),
-                action: z.string(),
+                connector: z.string().optional(),
+                action: z.string().optional(),
                 args: z.record(z.string(), z.any()).optional(),
               }),
             },

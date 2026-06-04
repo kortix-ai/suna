@@ -389,7 +389,10 @@ oauthApp.openapi(
       body: {
         content: {
           'application/json': {
-            schema: z.object({ request_id: z.string(), approved: z.boolean().optional() }),
+            // request_id optional at the schema layer so the handler returns the
+            // OAuth-spec `{error:"invalid_request"}` (not the generic validation
+            // hook) when it's missing — preserves the OAuth error contract.
+            schema: z.object({ request_id: z.string().optional(), approved: z.boolean().optional() }),
           },
         },
       },
