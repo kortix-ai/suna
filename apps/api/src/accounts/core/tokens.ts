@@ -52,7 +52,6 @@ accountsRouter.openapi(
     accountId: string;
     accountRole: string;
     name: string;
-    personalAccount: boolean;
   }> = [];
 
   try {
@@ -61,7 +60,6 @@ accountsRouter.openapi(
         accountId: accountMembers.accountId,
         accountRole: accountMembers.accountRole,
         name: accounts.name,
-        personalAccount: accounts.personalAccount,
       })
       .from(accountMembers)
       .innerJoin(accounts, eq(accountMembers.accountId, accounts.accountId))
@@ -76,8 +74,7 @@ accountsRouter.openapi(
     accounts: memberships.map((m) => ({
       account_id: m.accountId,
       slug: m.accountId.slice(0, 8),
-      name: accountDisplayName(m.name, userEmail, m.personalAccount),
-      personal_account: m.personalAccount,
+      name: accountDisplayName(m.name, userEmail),
       role: m.accountRole,
     })),
   });

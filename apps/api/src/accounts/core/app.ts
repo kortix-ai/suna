@@ -19,13 +19,12 @@ export function defaultAccountName(email: string | null | undefined): string {
 export function accountDisplayName(
   name: string | null | undefined,
   email: string | null | undefined,
-  personalAccount: boolean,
 ): string {
   const normalized = name?.trim();
-  if (personalAccount && (!normalized || normalized === 'Personal' || normalized === 'User')) {
+  if (!normalized || normalized === 'Personal' || normalized === 'User') {
     return defaultAccountName(email);
   }
-  return normalized || defaultAccountName(email);
+  return normalized;
 }
 
 // ─── Shared response/request schemas (power the Scalar docs) ────────────────
@@ -35,7 +34,6 @@ export const AccountSummarySchema = z
     account_id: z.string(),
     name: z.string(),
     slug: z.string(),
-    personal_account: z.boolean(),
     created_at: z.string(),
     updated_at: z.string(),
     account_role: z.string().optional(),
@@ -47,7 +45,6 @@ export const AccountDetailSchema = z
   .object({
     account_id: z.string(),
     name: z.string(),
-    personal_account: z.boolean(),
     member_count: z.number(),
     project_count: z.number(),
     role: z.string(),
@@ -107,7 +104,6 @@ export const MeSchema = z
         account_id: z.string(),
         slug: z.string(),
         name: z.string(),
-        personal_account: z.boolean(),
         role: z.string(),
       }),
     ),
@@ -211,7 +207,6 @@ export function serializeAccount(row: typeof accounts.$inferSelect) {
     account_id: row.accountId,
     name: row.name,
     slug: row.accountId.slice(0, 8),
-    personal_account: row.personalAccount,
     created_at: row.createdAt.toISOString(),
     updated_at: row.updatedAt.toISOString(),
   };

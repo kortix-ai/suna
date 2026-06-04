@@ -46,7 +46,6 @@ accountsRouter.openapi(
         accountId: accountMembers.accountId,
         accountRole: accountMembers.accountRole,
         name: accounts.name,
-        personalAccount: accounts.personalAccount,
         createdAt: accounts.createdAt,
         updatedAt: accounts.updatedAt,
       })
@@ -58,9 +57,8 @@ accountsRouter.openapi(
       return c.json(
         memberships.map((m) => ({
           account_id: m.accountId,
-          name: accountDisplayName(m.name, userEmail, m.personalAccount),
+          name: accountDisplayName(m.name, userEmail),
           slug: m.accountId.slice(0, 8),
-          personal_account: m.personalAccount,
           created_at: m.createdAt?.toISOString() ?? new Date().toISOString(),
           updated_at: m.updatedAt?.toISOString() ?? new Date().toISOString(),
           account_role: m.accountRole || 'owner',
@@ -87,7 +85,6 @@ accountsRouter.openapi(
           account_id: m.accountId,
           name: defaultAccountName(userEmail),
           slug: m.accountId.slice(0, 8),
-          personal_account: true,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           account_role: m.accountRole || 'owner',
@@ -103,7 +100,7 @@ accountsRouter.openapi(
     const personalName = defaultAccountName(userEmail);
     const [created] = await db
       .insert(accounts)
-      .values({ name: personalName, personalAccount: true })
+      .values({ name: personalName })
       .returning();
     await db.insert(accountMembers).values({
       userId,
@@ -116,7 +113,6 @@ accountsRouter.openapi(
         account_id: created.accountId,
         name: created.name,
         slug: created.accountId.slice(0, 8),
-        personal_account: true,
         created_at: created.createdAt.toISOString(),
         updated_at: created.updatedAt.toISOString(),
         account_role: 'owner',
@@ -129,7 +125,6 @@ accountsRouter.openapi(
         account_id: userId,
         name: defaultAccountName(userEmail),
         slug: userId.slice(0, 8),
-        personal_account: true,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         account_role: 'owner',
@@ -165,7 +160,7 @@ accountsRouter.openapi(
 
   const [account] = await db
     .insert(accounts)
-    .values({ name, personalAccount: false })
+    .values({ name })
     .returning();
 
   await db.insert(accountMembers).values({
@@ -180,7 +175,6 @@ accountsRouter.openapi(
       account_id: account.accountId,
       name: account.name,
       slug: account.accountId.slice(0, 8),
-      personal_account: account.personalAccount,
       created_at: account.createdAt.toISOString(),
       updated_at: account.updatedAt.toISOString(),
       account_role: 'owner',
@@ -231,7 +225,6 @@ accountsRouter.openapi(
   return c.json({
     account_id: row.accountId,
     name: row.name,
-    personal_account: row.personalAccount,
     member_count: Number(memberCountRow?.n ?? 0),
     project_count: Number(projectCountRow?.n ?? 0),
     role: membership.accountRole,

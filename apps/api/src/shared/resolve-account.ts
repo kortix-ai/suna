@@ -87,6 +87,10 @@ export async function resolveAccountId(userId: string): Promise<string> {
       .select({ accountId: accountMembers.accountId })
       .from(accountMembers)
       .where(eq(accountMembers.userId, userId))
+      // Deterministic "primary account" = the user's earliest-joined account
+      // (their original). No personal/team flag — there is no such thing now;
+      // a bare (account-agnostic) lookup must be stable, not pick-whatever-row.
+      .orderBy(accountMembers.joinedAt)
       .limit(1);
 
     if (membership) {
@@ -107,7 +111,6 @@ export async function resolveAccountId(userId: string): Promise<string> {
         await db.insert(accounts).values({
           accountId: legacy.accountId,
           name: defaultAccountName(),
-          personalAccount: true,
         }).onConflictDoNothing();
 
         await db.insert(accountMembers).values({
@@ -135,7 +138,6 @@ export async function resolveAccountId(userId: string): Promise<string> {
     await db.insert(accounts).values({
       accountId: userId,
       name: defaultAccountName(),
-      personalAccount: true,
     }).onConflictDoNothing();
 
     await db.insert(accountMembers).values({

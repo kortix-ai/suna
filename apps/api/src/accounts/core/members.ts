@@ -599,17 +599,9 @@ accountsRouter.openapi(
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Not a member' }, 404);
 
-  const [account] = await db
-    .select({ personalAccount: accounts.personalAccount })
-    .from(accounts)
-    .where(eq(accounts.accountId, accountId))
-    .limit(1);
-  if (!account) return c.json({ error: 'Not found' }, 404);
-
-  if (account.personalAccount) {
-    return c.json({ error: 'Personal accounts cannot be left' }, 409);
-  }
-
+  // No personal/team distinction — any account can be left, EXCEPT the
+  // last owner (that would orphan the account). That single rule prevents
+  // the only real footgun the old "personal accounts can't be left" guard did.
   if (membership.accountRole === 'owner') {
     const owners = await countOwners(accountId);
     if (owners <= 1) {

@@ -324,7 +324,6 @@ export async function dbStep(ctx: MigrationContext): Promise<void> {
       await tx.insert(accounts).values({
         accountId: plan.account_id,
         name: `Migrated ${legacy.name || plan.account_id.slice(0, 8)}`,
-        personalAccount: true,
       }).onConflictDoNothing({ target: accounts.accountId });
     }
 
