@@ -435,19 +435,14 @@ iamRouter.patch('/:accountId/iam/members/:userId/super-admin', async (c) => {
   await assertAuthorized(callerId, accountId, ACCOUNT_ACTIONS.MEMBER_SUPER_ADMIN_GRANT);
 
   const body = await readBody(c);
-  // Accept camelCase or snake_case, but the field MUST be present and an
-  // actual boolean. The previous `=== true` coercion meant a PATCH that
-  // omitted the field (or sent a non-boolean) silently set
-  // is_super_admin=false — i.e. a malformed/partial request could quietly
-  // REVOKE super-admin. Reject those with a 400 instead of acting on them.
+  // The field MUST be present and an actual boolean. The previous
+  // `=== true` coercion meant a PATCH that omitted the field (or sent a
+  // non-boolean) silently set is_super_admin=false — i.e. a malformed/partial
+  // request could quietly REVOKE super-admin. Reject those with a 400 instead.
   const isSuperAdmin =
-    typeof body.isSuperAdmin === 'boolean'
-      ? body.isSuperAdmin
-      : typeof body.is_super_admin === 'boolean'
-        ? body.is_super_admin
-        : undefined;
+    typeof body.is_super_admin === 'boolean' ? body.is_super_admin : undefined;
   if (isSuperAdmin === undefined) {
-    return c.json({ error: 'isSuperAdmin (boolean) is required' }, 400);
+    return c.json({ error: 'is_super_admin (boolean) is required' }, 400);
   }
 
   // Super-admin grants apply immediately, gated by the caller's own
@@ -1006,12 +1001,7 @@ iamRouter.post('/:accountId/iam/scim/tokens', async (c) => {
   if (!name) return c.json({ error: 'name is required' }, 400);
   if (name.length > 128) return c.json({ error: 'name too long (max 128 chars)' }, 400);
 
-  const expiresAtRaw =
-    typeof body.expires_at === 'string'
-      ? body.expires_at
-      : typeof body.expiresAt === 'string'
-        ? body.expiresAt
-        : null;
+  const expiresAtRaw = typeof body.expires_at === 'string' ? body.expires_at : null;
   let expiresAt: Date | undefined;
   if (expiresAtRaw) {
     const d = new Date(expiresAtRaw);

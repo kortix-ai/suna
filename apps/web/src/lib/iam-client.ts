@@ -181,7 +181,7 @@ export async function setMemberSuperAdmin(
   return unwrap(
     await backendApi.patch<{ user_id: string; is_super_admin: boolean }>(
       `/accounts/${accountId}/iam/members/${userId}/super-admin`,
-      { isSuperAdmin },
+      { is_super_admin: isSuperAdmin },
     ),
   );
 }

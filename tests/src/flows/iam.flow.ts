@@ -280,7 +280,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           "/v1/accounts/:accountId/iam/members/:userId/super-admin",
-          { isSuperAdmin: true },
+          { is_super_admin: true },
           { params: { accountId: team.id, userId: member.userId! } },
         );
       r.status(200).body().has("$.is_super_admin", true);
@@ -290,7 +290,7 @@ flow(
         .as(ctx.P.OWNER)
         .patch(
           "/v1/accounts/:accountId/iam/members/:userId/super-admin",
-          { isSuperAdmin: false },
+          { is_super_admin: false },
           { params: { accountId: team.id, userId: member.userId! } },
         );
       r.status(200).body().has("$.is_super_admin", false);
@@ -310,7 +310,7 @@ flow(
         .as(admin)
         .patch(
           "/v1/accounts/:accountId/iam/members/:userId/super-admin",
-          { isSuperAdmin: true },
+          { is_super_admin: true },
           { params: { accountId: team.id, userId: member.userId! } },
         );
       r.status(403);
