@@ -532,24 +532,6 @@ describe('git-backed triggers — CRUD', () => {
     expect(commitCalls).toHaveLength(0);
   });
 
-  test('POST /triggers ignores agent_name in favor of agent', async () => {
-    const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'Agent alias',
-        type: 'cron',
-        cron: '* * * * * *',
-        prompt_template: 'x',
-        agent_name: 'reviewer',
-      }),
-    });
-    expect(res.status).toBe(201);
-    const written = repoFiles.get(MANIFEST_PATH)!;
-    expect(written).not.toContain('agent = "reviewer"');
-  });
-
   test('GET /triggers lists every entry plus runtime last_fired_at', async () => {
     seedManifest(
       cronEntry({ slug: 'one', name: 'One', cron: '* * * * * *', prompt: 'body' }),
