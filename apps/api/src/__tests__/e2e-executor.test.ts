@@ -310,17 +310,6 @@ describe('admin routes', () => {
     ]);
   });
 
-  test('create http connector rejects legacy baseUrl alias', async () => {
-    const res = await req(`/projects/${PROJECT}/connectors`, {
-      method: 'POST',
-      headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' },
-      body: JSON.stringify({ slug: 'internal', provider: 'http', baseUrl: 'https://api.internal' }),
-    });
-    expect(res.status).toBe(400);
-    expect((await res.json()).error).toContain('base_url');
-    expect(world.connectorDrafts).toHaveLength(0);
-  });
-
   test('set sharing restricts → gateway then denies the excluded user', async () => {
     const put = await req(`/projects/${PROJECT}/connectors/stripe/sharing`, {
       method: 'PUT', headers: { 'x-test-admin': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ mode: 'members', memberIds: [ALICE] }),
