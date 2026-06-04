@@ -1025,7 +1025,7 @@ export const deployments = kortixSchema.table(
     sandboxId: uuid('sandbox_id').references(() => sandboxes.sandboxId, { onDelete: 'set null' }),
     // Optional link back to a Git-backed project + the [[apps]] slug inside
     // its kortix.toml. Populated by the /v1/projects/:id/apps path; nullable
-    // because the legacy /v1/deployments path doesn't carry these.
+    // for historical deployment rows and future non-project deployment sources.
     projectId: uuid('project_id'),
     appSlug: varchar('app_slug', { length: 128 }),
     // Provider that produced this deployment ("freestyle" today; future:

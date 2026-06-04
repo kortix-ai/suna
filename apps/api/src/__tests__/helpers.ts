@@ -202,8 +202,6 @@ export function createMockProvider(
 export interface TestAppOptions {
   userId?: string;
   userEmail?: string;
-  /** Whether to mount deployment routes (requires DATABASE_URL). Default: false */
-  mountDeployments?: boolean;
 }
 
 /**
@@ -254,16 +252,6 @@ export function createTestApp(opts: TestAppOptions = {}) {
     c.set('userEmail', userEmail);
     await next();
   });
-
-  // ─── Deployment routes (module-level db — requires DATABASE_URL) ───────
-  if (opts.mountDeployments && hasDb) {
-    try {
-      const { deploymentsRouter } = require('../deployments/routes/deployments');
-      app.route('/v1/deployments', deploymentsRouter);
-    } catch (e) {
-      console.warn('[test] Failed to mount deployment routes:', e);
-    }
-  }
 
   // [channels v2] Old channel routes removed — managed via sandbox CLI
 

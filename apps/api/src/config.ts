@@ -72,7 +72,6 @@ const envSchema = z.object({
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
   KORTIX_BILLING_INTERNAL_ENABLED:  optBoolFalse,
-  KORTIX_DEPLOYMENTS_ENABLED:       optBoolFalse,
   // EXPERIMENTAL: turns on the [[apps]] section in kortix.toml — manifest
   // parsing, CRUD routes, manual deploy, and the auto-deploy sweep. Off
   // by default until the wire is hardened.
@@ -411,7 +410,6 @@ export const config = {
   INTERNAL_KORTIX_ENV: env.INTERNAL_KORTIX_ENV as InternalKortixEnv,
   // Single master switch — see schema docstring above.
   KORTIX_BILLING_INTERNAL_ENABLED: env.KORTIX_BILLING_INTERNAL_ENABLED,
-  KORTIX_DEPLOYMENTS_ENABLED: env.KORTIX_DEPLOYMENTS_ENABLED,
   KORTIX_APPS_EXPERIMENTAL: env.KORTIX_APPS_EXPERIMENTAL,
 
   // ─── Database ──────────────────────────────────────────────────────────────
