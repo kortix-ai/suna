@@ -105,4 +105,10 @@ describe('API URL joining', () => {
     await client.get('/projects/p1/change-requests');
     expect(calls[0]).toBe('https://tunnel.example/v1/projects/p1/change-requests');
   });
+
+  it('rejects non-http API bases before fetching', () => {
+    expect(() => createApiClient({ apiBase: 'file:///tmp/kortix-auth.json', token: 't' })).toThrow(
+      'Invalid API URL protocol',
+    );
+  });
 });

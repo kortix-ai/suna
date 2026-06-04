@@ -38,6 +38,16 @@ function joinUrl(base: string, path: string): string {
   return `${b}${versioned}`;
 }
 
+function normalizeApiBase(value: string): string {
+  const url = new URL(value);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`Invalid API URL protocol: ${url.protocol}`);
+  }
+  url.search = '';
+  url.hash = '';
+  return url.toString().replace(/\/+$/, '');
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -84,7 +94,7 @@ async function request<T>(
 }
 
 export function createApiClient(opts: ClientOptions): ApiClient {
-  const apiBase = opts.apiBase ?? 'https://api.kortix.com';
+  const apiBase = normalizeApiBase(opts.apiBase ?? 'https://api.kortix.com');
   return {
     apiBase,
     get: <T>(path: string) => request<T>('GET', path, undefined, { apiBase, token: opts.token }),
