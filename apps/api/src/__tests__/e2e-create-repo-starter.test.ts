@@ -80,7 +80,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-system/references/opencode/skills.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/tools.md',
   '.kortix/opencode/skills/kortix-system/SKILL.md',
-  '.kortix/opencode/skills/slack/SKILL.md',
+  '.kortix/opencode/skills/kortix-slack/SKILL.md',
   '.kortix/opencode/tools/image_search.ts',
   '.kortix/opencode/tools/lib/get-env.ts',
   '.kortix/opencode/tools/lib/runtime-gate.ts',
