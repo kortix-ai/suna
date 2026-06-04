@@ -138,7 +138,6 @@ export default tool({
       ),
   },
   async execute(args, _context) {
-    if (featureDisabled("web_tools")) return disabledResult("web_tools", "image_search");
     const serperUrlOverride = getKortixRouterBase("serper") ?? undefined;
     // Route through the Kortix router (derived from KORTIX_API_URL); auth with
     // KORTIX_TOKEN. Fall back to a raw SERPER_API_KEY only when unset.
