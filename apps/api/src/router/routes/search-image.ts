@@ -41,7 +41,7 @@ imageSearch.openapi(
     summary: 'Search for images (Serper / Google Images)',
     ...auth,
     request: {
-      body: { content: { 'application/json': { schema: ImageSearchRequestSchema } } },
+      body: { content: { 'application/json': { schema: z.any() } } },
     },
     responses: {
       200: json(ImageSearchResponseSchema, 'Image search results'),

@@ -39,7 +39,7 @@ webSearch.openapi(
     summary: 'Search the web (Tavily)',
     ...auth,
     request: {
-      body: { content: { 'application/json': { schema: WebSearchRequestSchema } } },
+      body: { content: { 'application/json': { schema: z.any() } } },
     },
     responses: {
       200: json(WebSearchResponseSchema, 'Web search results'),

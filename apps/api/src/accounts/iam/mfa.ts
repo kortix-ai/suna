@@ -138,7 +138,7 @@ iamRouter.openapi(
     tags: ['iam'],
     summary: 'Enable or disable account MFA requirement',
     ...auth,
-    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean() }) } } } },
+    request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ enabled: z.boolean().optional() }) } } } },
     responses: {
       200: json(z.object({ enabled: z.boolean(), unchanged: z.boolean().optional() }), 'Updated MFA-required status'),
       ...errors(401, 403, 404, 409),

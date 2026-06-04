@@ -514,7 +514,7 @@ setupApp.openapi(
     summary: 'Update the current setup wizard step',
     ...auth,
     request: {
-      body: { content: { 'application/json': { schema: z.object({ step: z.number() }) } } },
+      body: { content: { 'application/json': { schema: z.object({ step: z.number().optional() }) } } },
     },
     responses: {
       200: json(z.object({ ok: z.boolean() }), 'Updated'),
