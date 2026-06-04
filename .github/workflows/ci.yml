@@ -16,8 +16,72 @@ permissions:
   contents: read
 
 jobs:
+  # Detect which parts of the repo a PR touches so each build job runs only when
+  # something in its dependency closure changed — no point typechecking the API
+  # for a frontend-only PR, or rebuilding the desktop app for an API-only one.
+  #
+  # Each filter = the app's own dir + every workspace package it depends on (its
+  # pnpm `--filter "X..."` closure) + the shared foundation files that can break
+  # any pnpm build. The Bun-based sandbox agent has its own in-dir lockfile, so it
+  # only shares tsconfig.base.json; desktop runs no TS typecheck.
+  #
+  # A job gated `if: needs.changes.outputs.* == 'true'` reports as "skipped" when
+  # it doesn't run, and GitHub treats a skipped job as passing — safe even if
+  # these are later made required checks. workflow_dispatch always runs the full
+  # suite (the `|| workflow_dispatch` guard on each job).
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      api: ${{ steps.filter.outputs.api }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      cli: ${{ steps.filter.outputs.cli }}
+      sandbox_agent: ${{ steps.filter.outputs.sandbox_agent }}
+      desktop: ${{ steps.filter.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            # Shared foundation for the pnpm-installed jobs (api/frontend/cli):
+            # a change here can break any of their installs/typechecks.
+            pnpm: &pnpm
+              - 'pnpm-lock.yaml'
+              - 'pnpm-workspace.yaml'
+              - 'package.json'
+              - '.npmrc'
+              - 'tsconfig.base.json'
+              - '.github/workflows/ci.yml'
+            api:
+              - *pnpm
+              - 'apps/api/**'
+              - 'packages/agent-tunnel/**'
+              - 'packages/db/**'
+              - 'packages/manifest-schema/**'
+              - 'packages/shared/**'
+              - 'packages/starter/**'
+            frontend:
+              - *pnpm
+              - 'apps/web/**'
+              - 'packages/shared/**'
+            cli:
+              - *pnpm
+              - 'apps/cli/**'
+              - 'packages/manifest-schema/**'
+              - 'packages/starter/**'
+            sandbox_agent:
+              - '.github/workflows/ci.yml'
+              - 'tsconfig.base.json'
+              - 'apps/kortix-sandbox-agent-server/**'
+            desktop:
+              - '.github/workflows/ci.yml'
+              - 'apps/desktop/**'
+
   api-typecheck:
     name: API typecheck
+    needs: changes
+    if: needs.changes.outputs.api == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -49,6 +113,8 @@ jobs:
 
   frontend-build:
     name: Frontend build
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -80,6 +146,8 @@ jobs:
 
   sandbox-agent-build:
     name: Sandbox agent build
+    needs: changes
+    if: needs.changes.outputs.sandbox_agent == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -109,6 +177,8 @@ jobs:
 
   cli-binary-smoke:
     name: CLI binary smoke
+    needs: changes
+    if: needs.changes.outputs.cli == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -148,6 +218,11 @@ jobs:
 
   desktop-installer-smoke:
     name: Desktop installer smoke
+    # Skip on PRs that don't touch desktop code — the Tauri/Rust build is the
+    # slowest job in CI and the desktop shell changes rarely. Push-to-main builds
+    # (desktop.yml) still cover release artifacts.
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -175,6 +250,11 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri
 
       - name: Install pnpm
         run: corepack enable pnpm
