@@ -8,7 +8,7 @@ import {
   resolveGitTriggerActor,
 } from '../projects';
 import { loadTelegramWebhookSecretForProject } from './install-store';
-import { makeOpenApiApp, json, errors, ErrorSchema } from '../openapi';
+import { makeOpenApiApp, json, errors } from '../openapi';
 
 export const telegramWebhookApp = makeOpenApiApp();
 

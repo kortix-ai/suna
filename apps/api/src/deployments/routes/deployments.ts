@@ -4,7 +4,7 @@ import { db } from '../../shared/db';
 import { deployments } from '@kortix/db';
 import { NotFoundError, ValidationError } from '../../errors';
 import type { AppEnv } from '../../types';
-import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../../openapi';
+import { makeOpenApiApp, json, errors, auth } from '../../openapi';
 import {
   buildFreestyleConfigLegacy,
   buildFreestyleSourceLegacy,

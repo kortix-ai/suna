@@ -8,7 +8,7 @@
  */
 
 import { createRoute, z } from '@hono/zod-openapi';
-import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
+import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import type { AppEnv } from '../types';
 import { existsSync } from 'fs';
 import { resolve } from 'path';

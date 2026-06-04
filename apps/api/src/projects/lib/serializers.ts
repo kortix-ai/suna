@@ -1,6 +1,5 @@
 import { config } from '../../config';
 import { isSecretUsableBy, loadGrants, scopeToIntent, type SecretGrant, type ShareSubject, visibilityToIntent } from '../../executor/share';
-import { json } from '../../openapi';
 import { resolveWarmConfig, warmPoolEnabled } from '../../platform/services/warm-pool';
 import { db } from '../../shared/db';
 import { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';

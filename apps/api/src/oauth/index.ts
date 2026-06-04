@@ -15,7 +15,7 @@ import {
   accountMembers,
   sandboxes,
 } from '@kortix/db';
-import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
+import { makeOpenApiApp, json, errors, auth } from '../openapi';
 
 // ─── Token Hashing ──────────────────────────────────────────────────────────
 

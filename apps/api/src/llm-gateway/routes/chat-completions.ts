@@ -4,7 +4,7 @@ import type { AppEnv } from '../../types';
 import { callOpenRouter } from '../services/openrouter-client';
 import { calculateCost } from '../services/pricing';
 import { extractUsageFromJson, extractUsageFromSseBuffer, type ExtractedUsage } from '../services/usage-extractor';
-import { makeOpenApiApp, json, errors } from '../../openapi';
+import { makeOpenApiApp, errors } from '../../openapi';
 
 function newRequestId(): string {
   return `req_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;

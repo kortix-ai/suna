@@ -47,15 +47,15 @@ const CatalogConnectorSchema = z
     name: z.string(),
     provider: z.string(),
     status: z.string(),
-    actions: z.array(z.any()),
+    actions: z.array(CatalogActionSchema),
   })
   .openapi('ExecutorCatalogConnector');
 const ConnectorsResponseSchema = z
-  .object({ connectors: z.array(z.any()) })
+  .object({ connectors: z.array(CatalogConnectorSchema) })
   .openapi('ExecutorConnectors');
 
 const AdminConnectorsResponseSchema = z
-  .object({ connectors: z.array(z.any()) })
+  .object({ connectors: z.array(CatalogConnectorSchema) })
   .openapi('ExecutorAdminConnectors');
 
 // /call returns one of several envelopes by status; model permissively.

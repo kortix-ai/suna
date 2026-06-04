@@ -2,8 +2,7 @@
 // commit-and-push). These write to the remote, so they own the auth-host +
 // fresh-fetch dance.
 
-import { createHash } from 'node:crypto';
-import { rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createBranchRef, getBranchCommitSha, parseGitHubRepoUrl } from '../github';
 import { validateRef } from '../git-ref';
@@ -208,17 +207,15 @@ export async function commitFileToBranch(
     GIT_COMMITTER_EMAIL: email,
   };
 
-  // Scratch blob + index files inside the bare mirror dir; cleaned up below.
-  const suffix = createHash('sha256')
-    .update(`${branch}:${filePath}:${Date.now()}:${Math.random()}`)
-    .digest('hex')
-    .slice(0, 16);
-  const blobFile = join(repoPath, `.kortix-blob-${suffix}`);
-  const indexFile = join(repoPath, `.kortix-index-${suffix}`);
+  // Scratch blob + index files inside a UNIQUE temp dir in the bare mirror dir
+  // (mkdtemp = unguessable name, no predictable-path/symlink race); cleaned up below.
+  const tempDir = await mkdtemp(join(repoPath, '.kortix-tmp-'));
+  const blobFile = join(tempDir, 'blob');
+  const indexFile = join(tempDir, 'index');
   const indexEnv = { GIT_INDEX_FILE: indexFile };
 
   try {
-    await writeFile(blobFile, opts.content);
+    await writeFile(blobFile, opts.content, { flag: 'wx' });
     const blobSha = (await runGit(['hash-object', '-w', blobFile], repoPath, false)).stdout.trim();
     if (!/^[0-9a-f]{40}$/.test(blobSha)) throw new Error('git hash-object did not return a blob SHA');
 
@@ -256,7 +253,6 @@ export async function commitFileToBranch(
     invalidateProjectMirror(project.projectId);
     return { commitSha };
   } finally {
-    await rm(blobFile, { force: true }).catch(() => undefined);
-    await rm(indexFile, { force: true }).catch(() => undefined);
+    await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
   }
 }

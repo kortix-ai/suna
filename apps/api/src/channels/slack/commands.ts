@@ -10,6 +10,7 @@ export async function handleSlashCommand(
   arg: string,
   ctx: { teamId: string; channelId: string },
 ): Promise<SlashResponse> {
+  void arg; // reserved for future subcommands that take an argument
   switch (sub) {
     case 'projects':
     case 'list':
@@ -34,11 +35,9 @@ export async function handleSlashCommand(
         text: `Unknown subcommand \`${sub}\`. Try \`/kortix help\`.`,
       };
   }
-  void arg;
 }
 
 function slashHelp(): SlashResponse {
-  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
   return {
     response_type: 'ephemeral',
     blocks: [

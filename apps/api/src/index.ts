@@ -7,7 +7,7 @@ import { getRequestContext, runWithContext, setContextField } from './lib/reques
 import { getRequestUrl } from './lib/request-url';
 
 import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
-import { mountOpenApiDocs, json, errors, auth, ErrorSchema } from './openapi';
+import { mountOpenApiDocs, json, errors, auth } from './openapi';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';

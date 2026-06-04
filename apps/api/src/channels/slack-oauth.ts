@@ -7,7 +7,7 @@ import { db } from '../shared/db';
 import { config } from '../config';
 import { slackOauthMode } from './slack-oauth-mode';
 import { saveSlackOauthInstall } from './install-store';
-import { makeOpenApiApp, json, errors, ErrorSchema } from '../openapi';
+import { makeOpenApiApp, errors } from '../openapi';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
