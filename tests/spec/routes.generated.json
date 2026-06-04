@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 328,
+  "count": 329,
   "routes": [
     {
       "method": "GET",
@@ -701,6 +701,10 @@
     {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/apps-config"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/experimental"
     },
     {
       "method": "DELETE",

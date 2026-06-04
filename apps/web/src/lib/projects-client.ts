@@ -2,6 +2,23 @@ import { backendApi } from '@/lib/api-client';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 
+/** Stable ids for experimental features (mirrors apps/api experimental/features). */
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel';
+
+/** One experimental feature as described by the API catalog. */
+export interface ExperimentalFeatureView {
+  key: ExperimentalFeatureKey;
+  name: string;
+  description: string;
+  stability: 'experimental' | 'beta';
+  /** Platform supports it (operator env). When false the UI hides the toggle. */
+  available: boolean;
+  /** Effective per-project state (the switch position). */
+  enabled: boolean;
+  /** True when this project set an explicit choice (vs inheriting the default). */
+  overridden: boolean;
+}
+
 export interface KortixProject {
   project_id: string;
   account_id: string;
@@ -16,9 +33,12 @@ export interface KortixProject {
   updated_at: string;
   project_role?: ProjectRole | null;
   effective_project_role?: ProjectRole | null;
-  /** Whether the experimental [[apps]] deployment surface is enabled for THIS
-   *  project. Per-project override (Customize → Settings) over the operator
-   *  default KORTIX_APPS_EXPERIMENTAL. */
+  /** Effective on/off for each experimental feature for THIS project. */
+  experimental?: Record<ExperimentalFeatureKey, boolean>;
+  /** Full experimental-feature catalog (drives Customize → Settings →
+   *  Experimental). Self-describing so the UI never hard-codes the list. */
+  experimental_features?: ExperimentalFeatureView[];
+  /** Back-compat alias for `experimental.apps`. */
   apps_enabled?: boolean;
   /** Effective per-project warm sandbox pool config (Customize → Sandbox). */
   warm_pool?: { enabled: boolean; size: number };
@@ -2131,16 +2151,28 @@ export async function updateProject(
   );
 }
 
-/** Toggle the experimental [[apps]] surface for a project (Customize →
- *  Settings). Pass `enabled: null` to clear the override and fall back to the
- *  operator default. */
+/** Toggle an experimental feature for a project (Customize → Settings →
+ *  Experimental). Pass `enabled: null` to clear the override and fall back to
+ *  the operator default. */
+export async function updateExperimentalFeature(
+  projectId: string,
+  feature: ExperimentalFeatureKey,
+  enabled: boolean | null,
+) {
+  return unwrap(
+    await backendApi.patch<KortixProject>(`/projects/${projectId}/experimental`, {
+      feature,
+      enabled,
+    }),
+  );
+}
+
+/** @deprecated Use {@link updateExperimentalFeature}('apps', …). */
 export async function updateAppsConfig(
   projectId: string,
   input: { enabled: boolean | null },
 ) {
-  return unwrap(
-    await backendApi.patch<KortixProject>(`/projects/${projectId}/apps-config`, input),
-  );
+  return updateExperimentalFeature(projectId, 'apps', input.enabled);
 }
 
 /** Configure the per-project warm sandbox pool (Customize → Sandbox). */

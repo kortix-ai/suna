@@ -133,6 +133,12 @@ import { classifySnapshotError, describeSnapshotError } from '../snapshots/error
 import { provisionSessionSandbox } from '../platform/services/session-sandbox';
 import { claimWarmSandbox, getWarmPoolCounts, notePoolPresence, refillProjectPool, resolveWarmConfig, syncClaimedBoxToBase, warmPoolEnabled } from '../platform/services/warm-pool';
 import { resolveAppsEnabled } from './apps-config';
+import {
+  resolveExperimentalFeatures,
+  buildExperimentalCatalog,
+  applyExperimentalOverride,
+  isExperimentalFeatureKey,
+} from '../experimental/features';
 import { rehydrateSessionChat } from './legacy-migration-rehydrate';
 import { ProvisionTimeline } from '../platform/services/provision-timeline';
 import { getProvider } from '../platform/providers';
@@ -348,11 +354,17 @@ function serializeProject(row: ProjectRow, access?: { projectRole: ProjectRole |
     project_role: access?.projectRole ?? null,
     effective_project_role: access?.effectiveRole ?? null,
     dashboard_url: `${dashboardBaseUrl()}/projects/${row.projectId}`,
-    // Single source of truth for the experimental [[apps]] surface. Threading
-    // the EFFECTIVE per-project value onto the project payload lets the web
-    // client gate the Apps section + sidebar shortcut off the SAME gate that
-    // gates the API routes. Per-project override (metadata.apps_enabled) wins;
-    // KORTIX_APPS_EXPERIMENTAL is the default for projects that haven't chosen.
+    // Experimental features (Customize → Settings → Experimental). Soft-released
+    // surfaces a project can opt into per project — they may move or break.
+    //   • experimental         — effective on/off per feature; gates surfaces.
+    //   • experimental_features — the full catalog (name, description, badge,
+    //                             availability) the UI renders straight from.
+    // Single source of truth = ../experimental/features. Flip a feature here and
+    // both the API gates and the UI light up together.
+    experimental: resolveExperimentalFeatures(row.metadata),
+    experimental_features: buildExperimentalCatalog(row.metadata),
+    // Back-compat alias for the [[apps]] gate (= experimental.apps). Older
+    // clients + the /apps routes still read this flat field.
     apps_enabled: resolveAppsEnabled(row.metadata),
     // Warm sandbox pool (Customize → Sandbox). `warm_pool` is the effective
     // per-project config (UI value over the operator default); `warm_pool_available`
@@ -6126,27 +6138,27 @@ projectsApp.patch('/:projectId/warm-pool', async (c) => {
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
 });
 
-// PATCH /v1/projects/:projectId/apps-config
-// Per-project toggle for the experimental [[apps]] deployment surface
-// (Customize → Settings). DB-only — stored in projects.metadata.apps_enabled,
-// never in kortix.toml. Overrides the operator default KORTIX_APPS_EXPERIMENTAL.
-// `enabled: null` clears the override and falls back to the operator default.
-projectsApp.patch('/:projectId/apps-config', async (c) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
+// Shared writer for an experimental per-project override. DB-only — stored in
+// projects.metadata.experimental[feature], never in kortix.toml. `enabled: null`
+// clears the override and falls back to the operator default.
+async function patchExperimentalFeature(
+  c: Context,
+  projectId: string,
+  feature: unknown,
+  enabled: unknown,
+) {
+  // Auth first (matches the rest of the project routes), then validate body.
   const loaded = await loadProjectForUser(c, projectId, 'manage');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
-  const nextMeta: Record<string, unknown> = { ...meta };
-  if (body.enabled === null) {
-    delete nextMeta.apps_enabled;
-  } else if (typeof body.enabled === 'boolean') {
-    nextMeta.apps_enabled = body.enabled;
-  } else {
+  if (!isExperimentalFeatureKey(feature)) {
+    return c.json({ error: `Unknown experimental feature '${feature}'` }, 400);
+  }
+  if (enabled !== null && typeof enabled !== 'boolean') {
     return c.json({ error: 'enabled must be a boolean or null' }, 400);
   }
 
+  const nextMeta = applyExperimentalOverride(loaded.row.metadata, feature, enabled);
   const [row] = await db
     .update(projects)
     .set({ metadata: nextMeta, updatedAt: new Date() })
@@ -6154,6 +6166,22 @@ projectsApp.patch('/:projectId/apps-config', async (c) => {
     .returning();
   if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
   return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
+}
+
+// PATCH /v1/projects/:projectId/experimental
+// Generic per-project toggle for any experimental feature (Customize →
+// Settings → Experimental). Body: { feature: ExperimentalFeatureKey, enabled:
+// boolean | null }. This is the single write path; /apps-config is a legacy alias.
+projectsApp.patch('/:projectId/experimental', async (c) => {
+  const body = await readBody(c);
+  return patchExperimentalFeature(c, c.req.param('projectId'), body.feature, body.enabled);
+});
+
+// PATCH /v1/projects/:projectId/apps-config  (legacy alias for `apps`)
+// Kept so older clients keep working; delegates to the generic writer above.
+projectsApp.patch('/:projectId/apps-config', async (c) => {
+  const body = await readBody(c);
+  return patchExperimentalFeature(c, c.req.param('projectId'), 'apps', body.enabled);
 });
 
 // PATCH /v1/projects/:projectId/onboarding
