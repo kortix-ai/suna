@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { createHmac, randomUUID } from 'node:crypto';
 import { optionalEnvValue, requireEnvValue } from '../helpers/env';
+import { authHeaders, json } from '../helpers/http';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
@@ -92,27 +93,6 @@ interface OpenCodeFileNode {
 
 function databaseUrl(): string {
   return process.env.E2E_DATABASE_URL || requireEnvValue('DATABASE_URL', 'apps/api/.env');
-}
-
-function authHeaders(token: string) {
-  return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
-}
-
-async function json<T>(
-  response: Response,
-  expectedStatus: number | number[] = 200,
-): Promise<T> {
-  const expected = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
-  const body = await response.text();
-  if (!expected.includes(response.status)) {
-    throw new Error(
-      `Expected ${expected.join('/')} from ${response.url}, got ${response.status}: ${body}`,
-    );
-  }
-  return body ? JSON.parse(body) as T : ({} as T);
 }
 
 async function api<T>(

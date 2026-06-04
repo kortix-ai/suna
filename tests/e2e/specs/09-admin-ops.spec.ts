@@ -5,6 +5,7 @@ import {
   optionalEnvValue,
   requireEnvValue,
 } from '../helpers/env';
+import { json } from '../helpers/http';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
@@ -26,14 +27,6 @@ interface AuthSession {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
-}
-
-async function json<T>(response: Response, expectedStatus = 200): Promise<T> {
-  const body = await response.text();
-  if (response.status !== expectedStatus) {
-    throw new Error(`Expected ${expectedStatus} from ${response.url}, got ${response.status}: ${body}`);
-  }
-  return body ? JSON.parse(body) as T : ({} as T);
 }
 
 async function createAuthUser(email: string): Promise<AuthUser> {

@@ -5,10 +5,12 @@ import {
   optionalEnvValue,
   requireEnvValue,
 } from '../helpers/env';
+import { authHeaders, createApiStatusClient, json } from '../helpers/http';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 const password = 'E2eAccountAccess123!';
+const apiStatus = createApiStatusClient(apiBase);
 
 type AccountRole = 'owner' | 'admin' | 'member';
 type ProjectRole = 'manager' | 'editor' | 'viewer';
@@ -78,27 +80,6 @@ interface ProjectAccessResponse {
   members: ProjectAccessMember[];
 }
 
-function authHeaders(token: string) {
-  return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
-}
-
-async function json<T>(
-  response: Response,
-  expectedStatus: number | number[] = 200,
-): Promise<T> {
-  const expected = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
-  const body = await response.text();
-  if (!expected.includes(response.status)) {
-    throw new Error(
-      `Expected ${expected.join('/')} from ${response.url}, got ${response.status}: ${body}`,
-    );
-  }
-  return body ? JSON.parse(body) as T : ({} as T);
-}
-
 async function api<T>(
   token: string,
   method: string,
@@ -114,21 +95,6 @@ async function api<T>(
     }),
     expectedStatus,
   );
-}
-
-async function apiStatus(
-  token: string,
-  method: string,
-  path: string,
-  body?: Record<string, unknown>,
-): Promise<number> {
-  const response = await fetch(`${apiBase}${path}`, {
-    method,
-    headers: authHeaders(token),
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  await response.text();
-  return response.status;
 }
 
 function escapeSql(value: string): string {

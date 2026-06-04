@@ -1,12 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { requireEnvValue } from '../helpers/env';
+import { authHeaders, createApiStatusClient, json } from '../helpers/http';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 const password = process.env.E2E_BOUNDARY_PASSWORD || 'E2eBoundary123!';
 const runBoundaryTests = process.env.E2E_ENABLE_GOLDEN_PATHS === '1';
 const enforceSlos = process.env.E2E_ENFORCE_SLOS === '1';
+const apiStatus = createApiStatusClient(apiBase);
 
 interface AuthUser {
   id: string;
@@ -47,27 +49,6 @@ interface InviteResult {
   account_role: 'owner' | 'admin' | 'member';
 }
 
-function authHeaders(token: string) {
-  return {
-    Authorization: `Bearer ${token}`,
-    'Content-Type': 'application/json',
-  };
-}
-
-async function json<T>(
-  response: Response,
-  expectedStatus: number | number[] = 200,
-): Promise<T> {
-  const expected = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
-  const body = await response.text();
-  if (!expected.includes(response.status)) {
-    throw new Error(
-      `Expected ${expected.join('/')} from ${response.url}, got ${response.status}: ${body}`,
-    );
-  }
-  return body ? JSON.parse(body) as T : ({} as T);
-}
-
 async function api<T>(
   token: string,
   method: string,
@@ -83,21 +64,6 @@ async function api<T>(
     }),
     expectedStatus,
   );
-}
-
-async function apiStatus(
-  token: string,
-  method: string,
-  path: string,
-  body?: Record<string, unknown>,
-): Promise<number> {
-  const response = await fetch(`${apiBase}${path}`, {
-    method,
-    headers: authHeaders(token),
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  await response.text();
-  return response.status;
 }
 
 async function createAuthUser(email: string): Promise<AuthUser> {
