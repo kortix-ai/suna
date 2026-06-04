@@ -133,6 +133,8 @@ export function hashSecretKey(secretKey: string): string {
     throw new Error('API_KEY_SECRET not configured');
   }
 
+  // codeql[js/insufficient-password-hash]: high-entropy bearer tokens are keyed
+  // for lookup; they are not human passwords and must stay cheap to verify.
   return createHmac('sha256', secret)
     .update(secretKey)
     .digest('hex');
