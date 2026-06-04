@@ -11,13 +11,13 @@ folder of curated markdown files describing what this project is,
 which integrations it talks to, the conventions the team works by, and
 the decisions worth not re-litigating.
 
-`MEMORY.md` is the **index**. The `kortix-simple-memory` plugin
-(`.kortix/opencode/plugins/kortix-simple-memory.ts`) injects it into
-every LLM call as a `<kortix-memory>` block at the front of the system
-prompt — so every agent in every session sees it without doing
-anything. Sub-files (`overview.md`, `integrations.md`, etc.) are NOT
-auto-loaded; agents `view` them on demand with the `memory` tool when
-the index points at something relevant.
+`MEMORY.md` is the **index**. Memory is **not** auto-injected into the
+prompt — the **memory protocol** is: at the start of a task, `view`
+`.kortix/memory` with the `memory` tool to read the index and recover
+prior context, then `view` the sub-files (`overview.md`,
+`integrations.md`, etc.) the index points at when they're relevant.
+Record anything durable as you go — your context window may reset at
+any time, so what isn't written to `.kortix/memory/` is lost.
 
 Memory is **continuously CRUD'd**:
 
@@ -50,7 +50,7 @@ memory is about durable knowledge, not session state.
 <file-layout>
 ```
 .kortix/memory/
-├── MEMORY.md           Index. Auto-injected. One line per sub-file.
+├── MEMORY.md           Index. `view` this first. One line per sub-file.
 ├── overview.md         What this project IS — purpose, shape, stakeholders.
 ├── integrations.md     Third parties, MCP servers, channels, executor connectors.
 ├── conventions.md      Coding patterns, naming, do / don't, style decisions.
@@ -145,8 +145,8 @@ on `main` through the normal change-request flow (below).
 3. Edit with `str_replace` / `insert`. Keep entries short, factual, and
    consistent with the surrounding prose.
 4. If you added, renamed, or deleted a file, update `MEMORY.md` so the
-   index matches the folder. The index is the user's table of
-   contents — and the only thing every session sees on every turn.
+   index matches the folder. The index is the table of contents every
+   agent reads first — keep it accurate.
 5. If something turned out to be wrong, `delete` it. Don't leave stale
    facts to confuse future agents.
 
@@ -194,12 +194,13 @@ changes within a few seconds of the CR merging.
 
 <gotchas>
 
-- **The index is everywhere; sub-files are on demand.** Don't dump
-  every fact into `MEMORY.md` — it gets injected into every turn.
-  Push depth into sub-files; keep the index a clean table of contents.
-- **`<kortix-memory>` content is part of the cached prefix.** If you
-  change `MEMORY.md` mid-session you'll pay one cache write on the
-  next turn (expected, fine). Don't churn it for no reason.
+- **The index is read first; sub-files are on demand.** Don't dump
+  every fact into `MEMORY.md` — keep it a clean table of contents and
+  push depth into sub-files the agent `view`s only when relevant.
+- **`view` your memory before you start.** Nothing is auto-injected;
+  if you skip the `view`, you work blind to what the project already
+  knows. The `memory` tool's description and the agent rules say the
+  same thing — this is the memory protocol.
 - **Memory files are markdown, not databases.** Avoid heavy
   formatting, tables of 50 rows, or auto-generated content. If you
   catch yourself writing a script to generate a memory file, that
@@ -207,9 +208,9 @@ changes within a few seconds of the CR merging.
 - **Memory edits must go through CR.** Direct pushes to `main` bypass
   the user-review contract — the same rule as code. The reflector
   agent enforces this by always ending with `kortix cr open`.
-- **Don't put secrets in memory.** Memory is auto-injected into every
-  LLM call. Secrets, tokens, API keys, and PII belong in the Kortix
-  Secrets Manager, surfaced as env vars at runtime — not in
+- **Don't put secrets in memory.** Memory is read into context and
+  committed to the repo. Secrets, tokens, API keys, and PII belong in
+  the Kortix Secrets Manager, surfaced as env vars at runtime — not in
   `.kortix/memory/`.
 
 </gotchas>

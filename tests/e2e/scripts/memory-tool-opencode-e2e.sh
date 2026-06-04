@@ -23,7 +23,6 @@ MODEL="${1:-${MEMORY_E2E_MODEL:-anthropic/claude-haiku-4-5}}"
 TIMEOUT="${MEMORY_E2E_TIMEOUT:-120}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 TOOL_SRC="$REPO_ROOT/.kortix/opencode/tools/memory.ts"
-PLUGIN_SRC="$REPO_ROOT/.kortix/opencode/plugins/kortix-simple-memory.ts"
 
 command -v opencode >/dev/null || { echo "FAIL: opencode not on PATH"; exit 1; }
 [ -f "$TOOL_SRC" ] || { echo "FAIL: tool not found at $TOOL_SRC"; exit 1; }
@@ -37,9 +36,8 @@ echo "▸ test project: $PROJ"
 echo "▸ model:        $MODEL   (timeout ${TIMEOUT}s)"
 
 # ── Lay out a project that loads the memory tool via .opencode/ ──────────────
-mkdir -p "$PROJ/.opencode/tools" "$PROJ/.opencode/plugins" "$PROJ/.kortix/memory"
-cp "$TOOL_SRC"   "$PROJ/.opencode/tools/memory.ts"
-cp "$PLUGIN_SRC" "$PROJ/.opencode/plugins/kortix-simple-memory.ts"
+mkdir -p "$PROJ/.opencode/tools" "$PROJ/.kortix/memory"
+cp "$TOOL_SRC" "$PROJ/.opencode/tools/memory.ts"
 printf '{ "$schema": "https://opencode.ai/config.json", "permission": "allow" }\n' \
   > "$PROJ/.opencode/opencode.json"
 printf '# Project Memory\n- (e2e seed)\n' > "$PROJ/.kortix/memory/MEMORY.md"

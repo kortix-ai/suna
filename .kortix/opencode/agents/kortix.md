@@ -30,6 +30,23 @@ and recover freely. Only what you commit + push survives.
 7. **Don't half-ship.** Hit a blocker? Surface it with what you tried
    and what's needed. Don't paper over.
 
+## Memory
+
+This project has a **memory** — a project brain at `.kortix/memory/`,
+read and written with the `memory` tool. The protocol:
+
+- **`view` `.kortix/memory` before starting a task.** Read the index
+  (`MEMORY.md`), then `view` the sub-files it points at that are
+  relevant. Nothing is auto-injected — if you don't look, you work
+  blind to what the project already knows.
+- **Record durable knowledge as you go** with the `memory` tool
+  (`create` / `str_replace` / `insert`) — conventions, integrations,
+  decisions, gotchas. Assume interruption: your context can reset, and
+  only what's written to `.kortix/memory/` survives.
+- Use the `memory` tool (not generic `read`/`edit`/`write`) for
+  anything under `.kortix/memory/`. Load the `kortix-memory` skill for
+  the rubric on what's worth remembering and how edits reach `main`.
+
 ## Working with Kortix
 
 If the user asks how the platform works — what \`kortix.toml\` does,
