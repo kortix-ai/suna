@@ -3,8 +3,6 @@ import { config } from '../../config';
 
 export const TOKEN_PRICE_MULTIPLIER = 1.2;
 export const MINIMUM_CREDIT_FOR_RUN = 0.01;
-export const DEFAULT_TOKEN_COST = 0.000002;
-export const CREDITS_PER_DOLLAR = 100;
 
 /** One-time credit grant per machine provisioned ($5 = 500 display credits). */
 export const MACHINE_CREDIT_BONUS = 5;
@@ -69,8 +67,6 @@ export const COMPUTE_DISK_PRICE_PER_GB_SECOND    = 0.00000003;
  *  this. Applied before the markup so users are billed on our actual (discounted)
  *  cost, not Daytona's list. Bump toward 1.0 if the discount shrinks. */
 export const DAYTONA_DISCOUNT = 0.5;
-/** Stopped-but-not-destroyed sandboxes pay a fraction of the disk rate. v2: not billed; reserved for future. */
-export const COMPUTE_ARCHIVE_DISK_MULTIPLIER     = 0.25;
 
 // Auto-topup defaults for per-seat accounts scale with seat count.
 // effectiveThreshold = AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT × seat_count
@@ -83,7 +79,6 @@ export const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT    = 20;
 
 // Sensible caps for the per-seat plan. Effectively uncapped for normal use.
 export const MAX_PROJECTS_PER_ACCOUNT       = 200;
-export const MAX_CONCURRENT_SANDBOXES_PER_SEAT = 3;
 export const MAX_SEATS_PER_ACCOUNT          = 100;
 
 export type BillingModel = 'legacy' | 'per_seat';
@@ -225,7 +220,6 @@ interface TierPriceIds {
 interface StripePriceConfig {
   subscriptions: Record<string, TierPriceIds>;
   credits: Record<number, string>;
-  productId: string;
   computeProductId: string;
 }
 
@@ -256,7 +250,6 @@ const STRIPE_PRICES_PROD: StripePriceConfig = {
     250: 'price_1RxmRAG6l1KZGqIrtBIMsZAj',
     500: 'price_1RxmRGG6l1KZGqIrSyvl6w1G',
   },
-  productId: 'prod_SCl7AQ2C8kK1CD',
   computeProductId: 'prod_SCl7AQ2C8kK1CD', // TODO: create prod compute product
 };
 
@@ -278,16 +271,11 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
     250: 'price_1RxmO6G6l1KZGqIrBF8Kx87G',
     500: 'price_1RxmOFG6l1KZGqIrn4wgORnH',
   },
-  productId: 'prod_U3CxqRenahYVvj',
   computeProductId: 'prod_U6B5Gh1aMPdnLO',
 };
 
 function getStripePrices(): StripePriceConfig {
   return config.INTERNAL_KORTIX_ENV === 'prod' ? STRIPE_PRICES_PROD : STRIPE_PRICES_STAGING;
-}
-
-export function getProductId(): string {
-  return getStripePrices().productId;
 }
 
 export function getComputeProductId(): string {
@@ -307,10 +295,6 @@ export function resolvePriceId(tierKey: string, billingPeriod?: string): string 
 export function resolveCreditPriceId(amountDollars: number): string | null {
   const prices = getStripePrices();
   return prices.credits[amountDollars] ?? null;
-}
-
-export function getCreditPackageAmounts(): number[] {
-  return Object.keys(getStripePrices().credits).map(Number).sort((a, b) => a - b);
 }
 
 // ─── Price ID ↔ Tier reverse lookup ─────────────────────────────────────────
@@ -355,16 +339,8 @@ export function getBillingPeriodByPriceId(priceId: string): 'monthly' | 'yearly'
   return null;
 }
 
-export function getAllTiers(): TierConfig[] {
-  return Object.values(TIERS);
-}
-
 export function getVisibleTiers(): TierConfig[] {
   return Object.values(TIERS).filter((t) => !t.hidden && t.name !== 'none');
-}
-
-export function isValidTier(name: string): boolean {
-  return name in TIERS;
 }
 
 export function getMonthlyCredits(tierName: string): number {
@@ -433,10 +409,6 @@ export function getTierOrder(tierName: string): number {
 
 export function isUpgrade(fromTier: string, toTier: string): boolean {
   return getTierOrder(toTier) > getTierOrder(fromTier);
-}
-
-export function isDowngrade(fromTier: string, toTier: string): boolean {
-  return getTierOrder(toTier) < getTierOrder(fromTier);
 }
 
 // ─── RevenueCat (mobile billing — untouched) ─────────────────────────────────

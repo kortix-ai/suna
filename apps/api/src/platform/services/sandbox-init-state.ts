@@ -57,33 +57,6 @@ function isProviderCapacityLimited(error: unknown): boolean {
 const PROVIDER_CAPACITY_MAX_ATTEMPTS = 30;
 const PROVIDER_CAPACITY_RETRY_DELAY_MS = 10_000;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-export function getSandboxMetadata(metadata: unknown): Record<string, unknown> {
-  return isRecord(metadata) ? metadata : {};
-}
-
-export function getSandboxInitAttempts(metadata: Record<string, unknown> | null | undefined): number {
-  const raw = metadata?.initAttempts;
-  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return Math.floor(raw);
-  return 0;
-}
-
-export function getSandboxLastInitError(metadata: Record<string, unknown> | null | undefined): string | null {
-  const candidates = [
-    metadata?.lastInitError,
-    metadata?.provisioningError,
-    metadata?.lastProvisioningError,
-    metadata?.errorMessage,
-  ];
-  for (const value of candidates) {
-    if (typeof value === 'string' && value.trim().length > 0) return value;
-  }
-  return null;
-}
-
 export function deriveSandboxInitStatus(
   lifecycleStatus: string | null | undefined,
   metadata: Record<string, unknown> | null | undefined,

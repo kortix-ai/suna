@@ -52,7 +52,7 @@ export async function runCoverage(): Promise<boolean> {
 async function readSpecIds(): Promise<Set<string>> {
   const markdown = await Bun.file(SPEC_PATH).text();
   const ids = new Set<string>();
-  const idPattern = /`([A-Z][A-Z0-9]*-\d+[a-z]?)`/g;
+  const idPattern = /`([A-Z][A-Z0-9]*-(?:\d+[a-z]?|[A-Z]))`/g;
   const rangePattern = /`([A-Z][A-Z0-9]*-)(\d+)\.\.(\d+)`/g;
 
   for (const match of markdown.matchAll(idPattern)) ids.add(match[1]);

@@ -202,6 +202,7 @@ All under `/p/:sandboxId/:port/*` (`combinedAuth` + rate-limit). `:sandboxId` = 
 `RUN-6` `GET /p/<sbx>/8000/session/<ocId>/message` (+`/message/<mid>`) → list/get messages (results).
 `RUN-7` `GET /p/<sbx>/8000/session/<ocId>/diff` → working-tree diff; agent commits land on branch `<sessionId>`.
 `RUN-8` proxy authz — request without any valid token/cookie → 401; preview-token from a `share` → scoped 200.
+`Q-4` persistent-queue drainer — boot a real session, `POST /queue/sessions/:sessionId` → 201 queued message, then poll `GET /queue/sessions/:sessionId` until the drainer forwards it to OpenCode and the queue is empty.
 
 ## 10. Files (read via git API; write via sandbox)
 
@@ -330,7 +331,7 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `RTR-1` `POST /router/web-search {query}` · `POST /router/image-search` → `APIKEY` → 200; `ANON`/JWT → 401.
 `RTR-2` `POST /router/chat/completions {model,messages,stream}` (OpenAI-compat) · `GET /router/models` · `GET /router/models/:model` · `POST /router/messages` (Anthropic-style).
 `RTR-4` billed proxy passthrough `ALL /router/:service[/*]` for `tavily|serper|firecrawl|replicate|context7|anthropic|openai|xai|gemini|groq` — Kortix token → managed keys; user key + `X-Kortix-Token` → passthrough; disallowed service/route → 4xx.
-`LLM-1` managed LLM gateway `GET /llm/health` · `GET /llm/models` · `POST /llm/chat/completions`; disabled gateway → 503, missing OpenRouter key → 500, configured chat without bearer → 401.
+`LLM-1` session LLM router `GET /router/llm/models` · `POST /router/llm/chat/completions`; missing session LLM bearer → 401.
 
 ---
 

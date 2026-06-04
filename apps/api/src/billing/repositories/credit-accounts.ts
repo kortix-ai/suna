@@ -1,22 +1,6 @@
-import { eq, and, or, isNull, lte, ne, sql } from 'drizzle-orm';
+import { eq, and, or, isNull, lte, ne } from 'drizzle-orm';
 import { creditAccounts } from '@kortix/db';
 import { db } from '../../shared/db';
-
-/**
- * Read tier from the OLD public.credit_accounts (Suna billing schema).
- * Used ONLY for claim-computer eligibility in cloud env.
- */
-export async function getPublicSchemaTier(accountId: string): Promise<string | null> {
-  try {
-    const result = await db.execute(
-      sql`SELECT tier FROM public.credit_accounts WHERE account_id = ${accountId} LIMIT 1`,
-    );
-    const rows = Array.isArray(result) ? result : (result as any).rows ?? [];
-    return rows[0]?.tier ?? null;
-  } catch {
-    return null;
-  }
-}
 
 export async function getCreditAccount(accountId: string) {
   const [row] = await db
