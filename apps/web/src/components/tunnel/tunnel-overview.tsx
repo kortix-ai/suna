@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Cable, Plus, Monitor, Trash2, Search, X, Terminal, Copy, Check } from 'lucide-react';
+import { Cable, Plus, Monitor, Trash2, Terminal, Copy, Check } from 'lucide-react';
 import { getEnv } from '@/lib/env-config';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';

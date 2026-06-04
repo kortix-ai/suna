@@ -23,7 +23,6 @@ function CodeBlockCode({
 }: CodeBlockCodeProps) {
   const { resolvedTheme } = useTheme();
   const [highlightedHtml, setHighlightedHtml] = useState<string | null>(null);
-  const [mermaidFailed, setMermaidFailed] = useState(false);
 
   // Project-wide Pierre theme (overridable via `theme` prop).
   const themeName = propTheme || resolveShikiThemeName(resolvedTheme);
@@ -33,8 +32,8 @@ function CodeBlockCode({
 
   // Regular syntax highlighting effect
   useEffect(() => {
-    // Skip syntax highlighting for successful mermaid renders
-    if (language === 'mermaid' && !mermaidFailed) {
+    // Mermaid is rendered by MermaidRenderer instead of Shiki.
+    if (language === 'mermaid') {
       return;
     }
 
@@ -60,12 +59,12 @@ function CodeBlockCode({
       setHighlightedHtml(html);
     }
     highlight();
-  }, [code, language, themeInput, themeName, mermaidFailed]);
+  }, [code, language, themeInput, themeName]);
 
   const classNames = cn('[&_pre]:!bg-background/95 [&_pre]:rounded-2xl [&_pre]:p-4 [&_pre]:!overflow-x-auto [&_pre]:!w-px [&_pre]:!flex-grow [&_pre]:!min-w-0 [&_pre]:!box-border [&_.shiki]:!overflow-x-auto [&_.shiki]:!w-px [&_.shiki]:!flex-grow [&_.shiki]:!min-w-0 [&_code]:!min-w-0 [&_code]:!whitespace-pre', 'w-px flex-grow min-w-0 overflow-hidden flex w-full', className);
 
   // Handle Mermaid rendering
-  if (language === 'mermaid' && !mermaidFailed) {
+  if (language === 'mermaid') {
     return (
       <MermaidRenderer 
         chart={code}
