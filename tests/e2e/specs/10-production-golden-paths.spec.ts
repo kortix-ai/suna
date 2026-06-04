@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
 import { createHmac, randomUUID } from 'node:crypto';
 import { optionalEnvValue, requireEnvValue } from '../helpers/env';
 import { authHeaders, json } from '../helpers/http';
@@ -274,7 +275,6 @@ async function stopActiveProjectSessions(token: string, projectId: string) {
 }
 
 function queryScalar(sql: string): string {
-  const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
   return execFileSync('psql', [
     databaseUrl(),
     '-v',
@@ -539,7 +539,6 @@ test.describe.serial('10 - SPEC production golden paths', () => {
     expect(sandbox.external_id).toBeTruthy();
     expect(sandbox.external_id).not.toBe(localSession.session_id);
 
-    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
     const dockerPs = execFileSync('docker', [
       'ps',
       '--format',

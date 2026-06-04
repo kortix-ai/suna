@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import { firstExistingExplicitEnvFile } from './env';
+import { firstExistingExplicitEnvFile, requireEnvValue } from './env';
 
 function escapeSql(value: string): string {
   return value.replace(/'/g, "''");
@@ -16,20 +16,53 @@ interface SeedSelfHostedProjectOptions {
   repoUrl?: string;
 }
 
+export function runSelfHostedSql(sql: string): boolean {
+  const envFile = firstExistingExplicitEnvFile();
+  if (!envFile) return false;
+
+  const composeFile = join(dirname(envFile), 'docker-compose.yml');
+  if (!existsSync(composeFile)) return false;
+
+  execFileSync(
+    'docker',
+    [
+      'compose',
+      '--project-name',
+      process.env.E2E_COMPOSE_PROJECT_NAME || 'kortix-default',
+      '--env-file',
+      envFile,
+      '-f',
+      composeFile,
+      'exec',
+      '-T',
+      'supabase-db',
+      'psql',
+      '-v',
+      'ON_ERROR_STOP=1',
+      '-U',
+      'postgres',
+      '-d',
+      'postgres',
+    ],
+    { input: sql, encoding: 'utf8' },
+  );
+
+  return true;
+}
+
+export function runSqlWithSelfHostFallback(sql: string): void {
+  if (runSelfHostedSql(sql)) return;
+
+  const databaseUrl = requireEnvValue('DATABASE_URL', 'apps/api/.env');
+  execFileSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql]);
+}
+
 export function seedSelfHostedProject({
   accountId,
   userId,
   name,
   repoUrl,
 }: SeedSelfHostedProjectOptions): string {
-  const envFile = firstExistingExplicitEnvFile();
-  if (!envFile) throw new Error('E2E_ENV_FILE is required for self-host project seeding');
-
-  const composeFile = join(dirname(envFile), 'docker-compose.yml');
-  if (!existsSync(composeFile)) {
-    throw new Error(`Self-host docker-compose.yml not found next to ${envFile}`);
-  }
-
   const projectId = randomUUID();
   const projectRepoUrl = repoUrl ?? `https://github.com/kortix-ai/sandbox-template-${projectId}.git`;
   const sql = `
@@ -68,29 +101,8 @@ insert into kortix.project_members (
 );
 `;
 
-  execFileSync(
-    'docker',
-    [
-      'compose',
-      '--project-name',
-      process.env.E2E_COMPOSE_PROJECT_NAME || 'kortix-default',
-      '--env-file',
-      envFile,
-      '-f',
-      composeFile,
-      'exec',
-      '-T',
-      'supabase-db',
-      'psql',
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-U',
-      'postgres',
-      '-d',
-      'postgres',
-    ],
-    { input: sql, encoding: 'utf8' },
-  );
+  const seeded = runSelfHostedSql(sql);
+  if (!seeded) throw new Error('E2E_ENV_FILE with adjacent docker-compose.yml is required for self-host project seeding');
 
   return projectId;
 }

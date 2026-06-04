@@ -1,11 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import {
-  firstExistingExplicitEnvFile,
   optionalEnvValue,
   requireEnvValue,
 } from '../helpers/env';
 import { json } from '../helpers/http';
+import { runSqlWithSelfHostFallback } from '../helpers/self-host';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
@@ -99,47 +99,12 @@ async function installBrowserSession(page: Page, session: AuthSession, returnUrl
 }
 
 async function grantPlatformAdmin(userId: string) {
-  const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
   const sql = `
       INSERT INTO kortix.platform_user_roles (account_id, role, granted_by)
       VALUES ('${userId}', 'super_admin', '${userId}')
       ON CONFLICT (account_id) DO UPDATE SET role = excluded.role;
     `;
-  const envFile = firstExistingExplicitEnvFile();
-  if (envFile) {
-    const fs = require('fs') as typeof import('node:fs');
-    const path = require('path') as typeof import('node:path');
-    const composeFile = path.join(path.dirname(envFile), 'docker-compose.yml');
-    if (fs.existsSync(composeFile)) {
-      execFileSync(
-        'docker',
-        [
-          'compose',
-          '--project-name',
-          process.env.E2E_COMPOSE_PROJECT_NAME || 'kortix-default',
-          '--env-file',
-          envFile,
-          '-f',
-          composeFile,
-          'exec',
-          '-T',
-          'supabase-db',
-          'psql',
-          '-v',
-          'ON_ERROR_STOP=1',
-          '-U',
-          'postgres',
-          '-d',
-          'postgres',
-        ],
-        { input: sql, encoding: 'utf8' },
-      );
-      return;
-    }
-  }
-
-  const databaseUrl = requireEnvValue('DATABASE_URL', 'apps/api/.env');
-  execFileSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql]);
+  runSqlWithSelfHostFallback(sql);
 }
 
 async function ensureAdminSession(): Promise<AuthSession> {

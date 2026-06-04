@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { optionalEnvValue } from '../helpers/env';
 
 const frontendUrl = process.env.E2E_BASE_URL || 'http://localhost:13737';
 const apiUrl = process.env.E2E_API_URL || 'http://localhost:13738/v1';
@@ -17,21 +18,7 @@ test.describe('02 — Services respond on configured endpoints', () => {
 
   test('Supabase Auth health passes', async () => {
     // Kong requires the anon key as apikey header
-    const fs = require('fs');
-    const path = require('path');
-    const explicit = (process.env.E2E_ENV_FILE || '')
-      .split(path.delimiter)
-      .map((item: string) => item.trim())
-      .filter(Boolean);
-    const envPath = [...explicit, `${process.env.HOME}/.kortix/.env`].find((candidate) =>
-      fs.existsSync(candidate),
-    );
-    const anonKey = envPath
-      ? fs
-        .readFileSync(envPath, 'utf8')
-        .match(/^SUPABASE_ANON_KEY=(.+)$/m)?.[1]
-        ?.trim()
-      : '';
+    const anonKey = optionalEnvValue('SUPABASE_ANON_KEY', `${process.env.HOME}/.kortix/.env`) ?? '';
     const res = await fetch(`${supabaseUrl}/auth/v1/health`, {
       headers: anonKey ? { apikey: anonKey } : {},
     });

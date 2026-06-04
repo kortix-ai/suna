@@ -1,3 +1,6 @@
+import { randomBytes } from 'node:crypto';
+import { appendFileSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { z } from 'zod';
 
 /**
@@ -517,13 +520,10 @@ export const config = {
    */
   get INTERNAL_SERVICE_KEY(): string {
     if (!process.env.INTERNAL_SERVICE_KEY) {
-      const { randomBytes } = require('crypto');
       const generated = randomBytes(32).toString('hex');
       process.env.INTERNAL_SERVICE_KEY = generated;
       // Persist to .env so the key survives process restarts (avoids re-sync on every restart)
       try {
-        const { appendFileSync, readFileSync } = require('fs');
-        const { resolve } = require('path');
         const candidates = [
           resolve(__dirname, '../../.env'),       // from src/config.ts -> ../../.env
           resolve(process.cwd(), '.env'),          // cwd/.env
