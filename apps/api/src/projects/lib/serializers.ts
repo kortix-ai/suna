@@ -6,6 +6,7 @@ import { db } from '../../shared/db';
 import { listSandboxTemplates, listSnapshotBuilds } from '../../snapshots/builder';
 import { type ProjectRole } from '../access';
 import { resolveAppsEnabled } from '../apps-config';
+import { resolveExperimentalFeatures, buildExperimentalCatalog } from '../../experimental/features';
 import { isGithubAppConfigured, type GitHubRepo } from '../github';
 import { accountGithubInstallations, deployments, projectGitConnections, projectGitCredentials, projectSecrets, projectSessions, projects } from '@kortix/db';
 import { and, desc, eq, isNull, or } from 'drizzle-orm';
@@ -129,6 +130,11 @@ export function serializeProject(row: ProjectRow, access?: { projectRole: Projec
     // client gate the Apps section + sidebar shortcut off the SAME gate that
     // gates the API routes. Per-project override (metadata.apps_enabled) wins;
     // KORTIX_APPS_EXPERIMENTAL is the default for projects that haven't chosen.
+    // Experimental features (Customize → Settings → Experimental) — `experimental`
+    // is the effective on/off map; `experimental_features` is the self-describing
+    // catalog the UI renders from. SoT = ../../experimental/features.
+    experimental: resolveExperimentalFeatures(row.metadata),
+    experimental_features: buildExperimentalCatalog(row.metadata),
     apps_enabled: resolveAppsEnabled(row.metadata),
     // Warm sandbox pool (Customize → Sandbox). `warm_pool` is the effective
     // per-project config (UI value over the operator default); `warm_pool_available`

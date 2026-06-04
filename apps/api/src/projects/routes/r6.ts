@@ -11,6 +11,7 @@ import { ensureOrgMembership, grantProjectRole, loadProjectForUser, lookupEmails
 import { AccessMemberSchema, AnyObject, projectsApp } from '../lib/app';
 import { getAccountMembership } from '../lib/git';
 import { readBody, serializeProject } from '../lib/serializers';
+import { applyExperimentalOverride, isExperimentalFeatureKey } from '../../experimental/features';
 
 projectsApp.openapi(
   createRoute({
@@ -785,3 +786,47 @@ projectsApp.openapi(
 // with a chosen project_role. Every member of the group inherits that
 // role on that project. These routes work for both V1 and V2 accounts —
 // V1 just ignores the rows because V1's engine reads from iam_policies.
+
+// PATCH /:projectId/experimental — toggle a per-project experimental-feature
+// override (ported from main's unified feature-flag system). Auth-first (matches
+// the other project routes), then validate the body — so the body schema stays
+// permissive (AnyObject) and the handler returns the precise 400/403/404.
+projectsApp.openapi(
+  createRoute({
+    method: 'patch',
+    path: '/{projectId}/experimental',
+    tags: ['projects'],
+    summary: 'Set or clear a per-project experimental feature override',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(AnyObject, 'Updated project (with experimental features)'),
+      ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const body = await readBody(c);
+    const feature = body.feature;
+    const enabled = body.enabled;
+    const loaded = await loadProjectForUser(c, projectId, 'manage');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    if (!isExperimentalFeatureKey(feature)) {
+      return c.json({ error: `Unknown experimental feature '${feature}'` }, 400);
+    }
+    if (enabled !== null && typeof enabled !== 'boolean') {
+      return c.json({ error: 'enabled must be a boolean or null' }, 400);
+    }
+    const nextMeta = applyExperimentalOverride(loaded.row.metadata, feature, enabled);
+    const [row] = await db
+      .update(projects)
+      .set({ metadata: nextMeta, updatedAt: new Date() })
+      .where(eq(projects.projectId, projectId))
+      .returning();
+    if (!row || row.status === 'archived') return c.json({ error: 'Not found' }, 404);
+    return c.json(serializeProject(row, { projectRole: loaded.projectRole, effectiveRole: loaded.effectiveRole }));
+  },
+);
