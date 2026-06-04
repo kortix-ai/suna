@@ -60,7 +60,7 @@ const AGENT_BROWSER_VERSION = '0.27.0';
 // itself is not hashed into the snapshot fingerprint, so a layer change needs a
 // manual version bump to invalidate cached images). v2: bake OpenCode config
 // deps into /opt/kortix/opencode-config-deps for offline boot-time install.
-const RUNTIME_LAYER_VERSION = 'baked-oc-deps-v5';
+const RUNTIME_LAYER_VERSION = 'baked-oc-deps-v6';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
 const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
