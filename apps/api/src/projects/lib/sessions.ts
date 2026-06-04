@@ -17,8 +17,6 @@ import { Context } from 'hono';
 import { randomUUID } from 'node:crypto';
 import { resolveProjectGitAuth } from './git';
 import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES, ProjectRow, ProjectSessionRow, RequestAuditContext, UUID_V4_REGEX, deriveKortixApiRoot, normalizeJsonObject, normalizeString } from './serializers';
-import { readManifest } from '../triggers';
-import { parseRuntimeFlags, resolveEffectiveRuntime, runtimeEnvVars } from '../runtime';
 
 export type SessionCreateError = {
   status: number;
@@ -290,12 +288,6 @@ export async function createProjectSession(input: {
     providerName = requestedProvider as SandboxProviderName;
   }
 
-  // Per-session Kortix runtime override (enforce a built-in feature on/off for
-  // just this session). Merged over the project's kortix.toml [runtime] default
-  // below; the session override wins. Body: { runtime: { disable_all?, memory?,
-  // web_tools?, pty?, show?, executor? } }.
-  const sessionRuntimeOverride = parseRuntimeFlags(body.runtime ?? body.runtime_override ?? body.runtimeOverride);
-
   const callbackUnreachable = providerName === 'local_docker' ? null : sandboxCallbackUnreachableReason();
   if (callbackUnreachable) {
     return { error: { status: 503, body: { error: callbackUnreachable, code: 'KORTIX_URL_UNREACHABLE' } } };
@@ -484,33 +476,17 @@ export async function createProjectSession(input: {
         ...project,
         gitAuthToken: gitAuth.auth?.token ?? null,
       }));
-      const envPromise = (async () => {
-        const base = await buildSessionSandboxEnvVars({
-          accountId,
-          projectId,
-          sessionId,
-          userId,
-          repoUrl: project.repoUrl,
-          baseRef,
-          agentName,
-          initialPrompt,
-          opencodeModel,
-        });
-        // Kortix runtime control: project kortix.toml [runtime] default ⊕
-        // per-session override (session wins). Resolves to KORTIX_RUNTIME_*
-        // env the daemon forwards to OpenCode, where built-ins self-gate.
-        // Manifest read is best-effort + non-fatal (defaults to all-on).
-        let projectRuntime = {};
-        try {
-          const gitProject = await projectWithGitAuthPromise;
-          const manifest = await readManifest(gitProject);
-          projectRuntime = parseRuntimeFlags((manifest?.raw as Record<string, unknown> | undefined)?.runtime);
-        } catch {
-          /* no manifest / unreadable → all-on defaults */
-        }
-        const effectiveRuntime = resolveEffectiveRuntime(projectRuntime, sessionRuntimeOverride);
-        return { ...base, ...runtimeEnvVars(effectiveRuntime) };
-      })().then((envVars) => {
+      const envPromise = buildSessionSandboxEnvVars({
+        accountId,
+        projectId,
+        sessionId,
+        userId,
+        repoUrl: project.repoUrl,
+        baseRef,
+        agentName,
+        initialPrompt,
+        opencodeModel,
+      }).then((envVars) => {
         tl.mark('env-vars');
         return envVars;
       });
