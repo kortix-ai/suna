@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { hostname } from 'node:os';
 
 import { DEFAULT_API_BASE, authFileLocation, saveAuthForHost } from '../api/auth.ts';
@@ -10,6 +9,7 @@ import {
 } from '../api/config.ts';
 import { ApiError, createApiClient } from '../api/client.ts';
 import { startCallbackServer } from '../api/browser-auth.ts';
+import { openInBrowser } from '../browser.ts';
 import { C, status } from '../style.ts';
 import type { MeResponse } from '../api/types.ts';
 
@@ -222,27 +222,5 @@ function webDashboardUrl(apiBase: string): string {
     return url.origin;
   } catch {
     return 'https://kortix.com';
-  }
-}
-
-function openInBrowser(url: string): void {
-  const platform = process.platform;
-  let cmd: string;
-  let args: string[];
-  if (platform === 'darwin') {
-    cmd = 'open';
-    args = [url];
-  } else if (platform === 'win32') {
-    cmd = 'cmd';
-    args = ['/c', 'start', '', url];
-  } else {
-    cmd = 'xdg-open';
-    args = [url];
-  }
-  try {
-    const child = spawn(cmd, args, { stdio: 'ignore', detached: true });
-    child.unref();
-  } catch {
-    /* user can copy-paste the URL from stdout */
   }
 }

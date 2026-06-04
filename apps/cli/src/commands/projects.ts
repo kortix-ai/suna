@@ -1,4 +1,3 @@
-import { spawnSync } from 'node:child_process';
 import { loadAuth } from '../api/auth.ts';
 import { activeHostName } from '../api/config.ts';
 import { ApiError, clientFromAuth } from '../api/client.ts';
@@ -12,6 +11,7 @@ import {
 } from '../project-link.ts';
 import { selectFromList } from '../tui-select.ts';
 import { takeFlagBool } from '../command-helpers.ts';
+import { openInBrowser } from '../browser.ts';
 import { C, pad, status } from '../style.ts';
 import type { ProjectSummary } from '../api/types.ts';
 
@@ -337,15 +337,4 @@ function webDashboardUrl(apiBase: string): string {
   } catch {
     return 'https://kortix.com';
   }
-}
-
-function openInBrowser(url: string): void {
-  const cmd =
-    process.platform === 'darwin'
-      ? 'open'
-      : process.platform === 'win32'
-        ? 'cmd'
-        : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
-  spawnSync(cmd, args, { stdio: 'ignore' });
 }

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { getHost, upsertHost, type Host } from '../api/config.ts';
+import { openInBrowser } from '../browser.ts';
 import { prompt, selectFrom } from '../prompts.ts';
 import { C, status } from '../style.ts';
 
@@ -1032,10 +1033,4 @@ function b64url(value: string): string {
 
 function sqlString(value: string): string {
   return value.replace(/'/g, "''");
-}
-
-function openInBrowser(url: string): void {
-  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
-  spawnSync(cmd, args, { stdio: 'ignore' });
 }
