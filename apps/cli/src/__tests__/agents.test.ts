@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { lstatSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  lstatSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+  mkdirSync,
+} from 'node:fs';
 import { join, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -35,9 +46,14 @@ describe('installAgentSkills', () => {
 
     for (const path of result.written) {
       const abs = join(dir, path);
-      expect(lstatSync(abs).isSymbolicLink()).toBe(false);
-      expect(readFileSync(abs, 'utf8')).toContain(CANONICAL_SKILL);
-      expect(readFileSync(abs, 'utf8')).toContain('name: kortix');
+      const fd = openSync(abs, constants.O_RDONLY | constants.O_NOFOLLOW);
+      try {
+        const text = readFileSync(fd, 'utf8');
+        expect(text).toContain(CANONICAL_SKILL);
+        expect(text).toContain('name: kortix');
+      } finally {
+        closeSync(fd);
+      }
     }
   });
 
