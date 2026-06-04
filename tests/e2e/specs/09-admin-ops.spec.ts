@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { json } from '../helpers/http';
 import { type AuthSession, createAuthUser, installBrowserSession, signIn } from '../helpers/session-auth';
 import { runSqlWithSelfHostFallback } from '../helpers/self-host';
 

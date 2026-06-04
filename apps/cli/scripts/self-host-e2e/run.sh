@@ -19,6 +19,7 @@ API_IMAGE=${API_IMAGE:-}
 SANDBOX_IMAGE=${SANDBOX_IMAGE:-}
 KORTIX_LOCAL_IMAGES=${KORTIX_LOCAL_IMAGES:-false}
 KEEP_ON_FAIL=${KEEP_ON_FAIL:-false}
+KEEP_ON_SUCCESS=${KEEP_ON_SUCCESS:-false}
 EMAIL=${EMAIL:-owner-$INSTANCE@kortix.local}
 PASSWORD=${PASSWORD:-kortix-e2e-password}
 CONFIG_DIR="$HOME/.config/kortix/self-host/$INSTANCE"
@@ -129,6 +130,21 @@ raise SystemExit(1)' >/dev/null 2>&1; then
   done
 }
 
+wait_for_db_table() {
+  local name=$1
+  local table=$2
+  local timeout=${3:-120}
+  local start
+  start=$(date +%s)
+  until psql_selfhost -tAc "select to_regclass('$table') is not null" 2>/dev/null | grep -q '^t$'; do
+    if [ $(( $(date +%s) - start )) -ge "$timeout" ]; then
+      die "$name did not become ready: $table"
+    fi
+    sleep 2
+  done
+  ok "$name ready"
+}
+
 compose() {
   docker compose \
     --project-name "kortix-$INSTANCE" \
@@ -144,6 +160,11 @@ psql_selfhost() {
 cleanup() {
   local rc=$?
   set +e
+  if [ "$rc" -eq 0 ] && [ "$KEEP_ON_SUCCESS" = "true" ]; then
+    note "Keeping successful stack for follow-up checks: $INSTANCE"
+    note "Inspect with: kortix self-host logs --instance $INSTANCE"
+    return 0
+  fi
   if [ "$rc" -ne 0 ] && [ "$KEEP_ON_FAIL" = "true" ]; then
     note "Keeping failed stack for inspection: $INSTANCE"
     note "Inspect with: kortix self-host logs --instance $INSTANCE"
@@ -208,6 +229,7 @@ ok "Docker Compose started"
 section "HTTP Health"
 wait_for_json "API" "$API_PUBLIC_URL/v1/health" 180
 wait_for_json "frontend runtime config" "$PUBLIC_URL/api/runtime-config" 180
+wait_for_db_table "Kortix schema" "kortix.project_snapshot_builds" 180
 
 source "$CONFIG_DIR/.env"
 curl -fsS -H "apikey: $SUPABASE_ANON_KEY" "$SUPABASE_PUBLIC_URL/auth/v1/health" >/dev/null
@@ -281,27 +303,27 @@ insert into kortix.project_members (
   '$USER_ID'::uuid
 );
 
-insert into kortix.project_runtime_snapshots (
+insert into kortix.project_snapshot_builds (
   account_id,
   project_id,
-  provider,
   commit_sha,
   branch,
-  snapshot_id,
+  snapshot_name,
+  content_hash,
   status,
   metadata
 ) values (
   '$ACCOUNT_ID'::uuid,
   '$PROJECT_ID'::uuid,
-  'local_docker',
   '$PROJECT_COMMIT',
   'main',
+  'self-host-e2e-ready',
   'self-host-e2e-ready',
   'ready',
   '{"self_host_e2e":true}'::jsonb
 );
 SQL
-ok "Project and ready local_docker snapshot seeded: $PROJECT_ID"
+ok "Project and ready snapshot build log seeded: $PROJECT_ID"
 
 curl -fsS -H "authorization: Bearer $ACCESS_TOKEN" "$API_PUBLIC_URL/v1/projects/$PROJECT_ID/sessions" >/dev/null
 ok "Seeded project is visible to API"
@@ -326,8 +348,8 @@ if status not in ("ok", "degraded"):
 ok "Sandbox /kortix/health returned healthy JSON"
 
 section "CLI Host Registration"
-$CLI hosts info local >/dev/null
-ok "CLI registered local host"
+$CLI hosts info selfhost >/dev/null
+ok "CLI registered selfhost host"
 
 section "Result"
 ok "Full self-host e2e passed"
