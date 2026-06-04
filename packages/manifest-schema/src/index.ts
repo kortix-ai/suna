@@ -108,6 +108,7 @@ export function validateManifest(
   validateConnectors(parsed.connectors, 'connectors', issues);
   validateChannels(parsed.channels, 'channels', issues);
   validateApps(parsed.apps, 'apps', issues);
+  validateRuntime(parsed.runtime, 'runtime', issues);
 
   return {
     valid: !issues.some((i) => i.severity === 'error'),
@@ -749,6 +750,52 @@ function validateApps(node: unknown, path: string, issues: ManifestIssue[]): voi
 }
 
 // ─── Primitive helpers ────────────────────────────────────────────────────
+
+/** The built-in Kortix runtime features toggleable under `[runtime]`. */
+export const RUNTIME_FEATURE_KEYS = ['memory', 'web_tools', 'pty', 'show', 'executor'] as const;
+
+/**
+ * Validate the `[runtime]` table — the Kortix runtime defaults. Every built-in
+ * is ON unless turned off here (or enforced off per-session via the API).
+ * `disable_all = true` runs the session as plain OpenCode.
+ *
+ *   [runtime]
+ *   disable_all = false
+ *   memory = true
+ *   web_tools = true
+ *   pty = true
+ *   show = true
+ *   executor = true
+ */
+function validateRuntime(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node == null) return;
+  if (!isTable(node)) {
+    issues.push({ path, message: '[runtime] must be a table.', severity: 'error' });
+    return;
+  }
+  expectBooleanOrAbsent(node.disable_all, `${path}.disable_all`, issues);
+  for (const key of RUNTIME_FEATURE_KEYS) {
+    expectBooleanOrAbsent(node[key], `${path}.${key}`, issues);
+  }
+  // Unknown keys are a likely typo (e.g. `web_search` instead of `web_tools`) —
+  // warn but don't fail, so the schema can add features without breaking older manifests.
+  for (const key of Object.keys(node)) {
+    if (key !== 'disable_all' && !(RUNTIME_FEATURE_KEYS as readonly string[]).includes(key)) {
+      issues.push({
+        path: `${path}.${key}`,
+        message: `unknown [runtime] feature "${key}". Known features: ${RUNTIME_FEATURE_KEYS.join(', ')}.`,
+        severity: 'warning',
+      });
+    }
+  }
+}
+
+function expectBooleanOrAbsent(value: unknown, path: string, issues: ManifestIssue[]): void {
+  if (value === undefined || value === null) return;
+  if (typeof value !== 'boolean') {
+    issues.push({ path, message: 'must be a boolean (true/false).', severity: 'error' });
+  }
+}
 
 function isTable(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);

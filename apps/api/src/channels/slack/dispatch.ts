@@ -484,7 +484,7 @@ async function deliverFollowUpToSandbox(
 
 const TURN_INSTRUCTIONS = [
   'How to work:',
-  '- **First, load the `slack` skill** via the `skill` tool. It is the canonical',
+  '- **First, load the `kortix-slack` skill** via the `skill` tool. It is the canonical',
   '  reference for posting in Slack — covers step/send semantics, link syntax,',
   '  Block Kit answers, sources, tone, and gotchas. Do not skip it.',
   '- As you go, post a short progress checkpoint before each major step:',
@@ -506,7 +506,7 @@ const TURN_INSTRUCTIONS = [
   '  and resumes the tool with the user\'s answers (`string[][]` — one array per question).',
   '  WRONG:  `slack send --blocks-file questions.json` (non-interactive — they can\'t reply!)',
   '  RIGHT:  call the `question` tool with one or more QuestionInfo entries.',
-  '  Load the `slack` skill (`<asking-the-user>`) for the QuestionInfo schema + examples.',
+  '  Load the `kortix-slack` skill (`<asking-the-user>`) for the QuestionInfo schema + examples.',
   '- Deliver the answer as a rich Block Kit message whenever the response',
   '  benefits from structure (headers, sections, lists, links, bullets):',
   '    slack send --text "fallback summary" --blocks-file /tmp/answer.json',

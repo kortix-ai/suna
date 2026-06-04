@@ -28,6 +28,7 @@ Every run:
   2. git add -A + commit                      (skipped if nothing changed)
   3. offer to set any [env] secret not yet set (prompts you; skip with --no-env)
   4. push the branch you're on → the same-named branch on the project's repo
+  5. connect any declared connector that still needs auth   (skip with --no-connect)
 
 First ship vs. after:
   * First ship   creates the cloud project + a git repo, links this folder
@@ -67,6 +68,7 @@ Options:
   --no-commit          Don't commit. Fail if the working tree is dirty.
   --no-verify          Skip the kortix.toml validation (compile) check.
   --no-env             Skip the [env] secret check + prompts.
+  --no-connect         Skip the connector connect/credential prompts.
   -y, --yes            Don't prompt; use the active account, skip secret prompts.
   -n, --dry-run        Print what would happen, do nothing.
   --project <id>       Operate on this project id (default: linked).
@@ -83,6 +85,7 @@ interface ShipFlags {
   noCommit: boolean;
   noVerify: boolean;
   noEnv: boolean;
+  noConnect: boolean;
   yes: boolean;
   dryRun: boolean;
   project?: string;
@@ -306,6 +309,156 @@ async function ensureProjectEnv(
   }
 }
 
+// ── Connectors: guided connect on ship ──────────────────────────────────────
+
+interface ShipConnector {
+  slug: string;
+  name: string;
+  provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+  status: 'active' | 'disabled' | 'needs_auth' | 'error';
+  authSecret: string | null;
+  secretSet: boolean;
+}
+
+/**
+ * After a successful push, reconcile the connector catalog from the just-shipped
+ * manifest and walk the user through connecting anything that still needs auth —
+ * Pipedream apps via a 1-click authorize link + finalize, and
+ * HTTP/OpenAPI/GraphQL/MCP connectors via their credential secret. Mirrors
+ * `ensureProjectEnv` so a single `kortix ship` leaves the project ready to run.
+ * Skipped with --no-connect; non-interactive / --yes only nags with the slugs
+ * left to connect. Never hard-fails the ship.
+ */
+async function ensureConnectorsConnected(
+  client: ApiClient,
+  projectId: string,
+  flags: ShipFlags,
+): Promise<void> {
+  if (flags.noConnect) return;
+  const ex = `/executor/projects/${projectId}`;
+
+  // The catalog materializes from the manifest we just pushed — sync first so
+  // the cloud knows about freshly-added connectors. Best-effort.
+  try {
+    await client.post(`${ex}/connectors/sync`);
+  } catch {
+    // A sync failure shouldn't block the ship; connectors can be set up later.
+  }
+
+  let connectors: ShipConnector[];
+  try {
+    const resp = await client.get<{ connectors: ShipConnector[] }>(`${ex}/connectors`);
+    connectors = resp.connectors;
+  } catch {
+    return; // don't block the ship over connector setup
+  }
+  if (connectors.length === 0) return;
+
+  const pending = connectors.filter(
+    (c) => c.status === 'needs_auth' || (!!c.authSecret && !c.secretSet),
+  );
+  if (pending.length === 0) {
+    process.stdout.write(
+      `  ${C.dim}connectors  ${connectors.length} declared, all connected${C.reset}\n`,
+    );
+    return;
+  }
+
+  const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true;
+  if (!interactive || flags.yes) {
+    const slugs = pending.map((c) => c.slug).join(', ');
+    process.stdout.write(
+      `  ${status.warn(`${pending.length} connector${pending.length === 1 ? '' : 's'} not connected: ${slugs}`)}\n` +
+        `  ${C.dim}Connect ${pending.length === 1 ? 'it' : 'them'} with ${C.reset}${C.cyan}kortix connectors connect <slug>${C.reset}${C.dim} (or re-run ship interactively).${C.reset}\n`,
+    );
+    return;
+  }
+
+  process.stdout.write(
+    `\n  ${C.bold}connectors${C.reset}  ${C.dim}${pending.length} need setup — connect ${pending.length === 1 ? 'it' : 'them'} now (blank = skip):${C.reset}\n`,
+  );
+  let connected = 0;
+  for (const c of pending) {
+    if (c.provider === 'pipedream') {
+      if (await connectPipedreamApp(client, ex, c)) connected += 1;
+    } else if (c.authSecret) {
+      if (await setConnectorCredential(client, ex, c)) connected += 1;
+    } else {
+      process.stdout.write(`    ${C.dim}${c.slug}: no auth flow to run — skipped${C.reset}\n`);
+    }
+  }
+  if (connected > 0) {
+    process.stdout.write(
+      `  ${C.dim}${connected} connector${connected === 1 ? '' : 's'} connected.${C.reset}\n`,
+    );
+  }
+}
+
+/** Pipedream 1-click: mint a connect link, let the user authorize, then finalize. */
+async function connectPipedreamApp(
+  client: ApiClient,
+  ex: string,
+  c: ShipConnector,
+): Promise<boolean> {
+  try {
+    const resp = await client.post<{ token: string; app: string; connectUrl?: string }>(
+      `${ex}/connectors/${encodeURIComponent(c.slug)}/connect`,
+    );
+    process.stdout.write(`\n    ${C.bold}${c.slug}${C.reset} ${C.faded}(${c.name})${C.reset}\n`);
+    if (resp.connectUrl) {
+      process.stdout.write(`    ${C.dim}Authorize:${C.reset} ${C.cyan}${resp.connectUrl}${C.reset}\n`);
+    } else {
+      process.stdout.write(
+        `    ${C.dim}Complete the connect in the dashboard with token ${C.faded}${resp.token}${C.reset}\n`,
+      );
+    }
+    const ack = (await prompt(`    ${C.dim}Press Enter once authorized (blank to skip)${C.reset}`)).trim();
+    if (ack.toLowerCase() === 's' || ack.toLowerCase() === 'skip' || ack === '-') {
+      process.stdout.write(
+        `    ${C.dim}skipped — finalize later with kortix connectors finalize ${c.slug}${C.reset}\n`,
+      );
+      return false;
+    }
+    const fin = await client.post<{ connected: boolean; accountId?: string }>(
+      `${ex}/connectors/${encodeURIComponent(c.slug)}/connect/finalize`,
+    );
+    if (fin.connected) {
+      process.stdout.write(`    ${status.ok(`${C.bold}${c.slug}${C.reset} connected`)}\n`);
+      return true;
+    }
+    process.stdout.write(
+      `    ${status.warn(`${c.slug} not connected yet`)} ${C.dim}— finish authorizing, then run kortix connectors finalize ${c.slug}.${C.reset}\n`,
+    );
+    return false;
+  } catch (err) {
+    const msg = err instanceof ApiError ? err.message : (err as Error).message;
+    process.stderr.write(`    ${status.err(`connect ${c.slug} failed: ${msg}`)}\n`);
+    return false;
+  }
+}
+
+/** HTTP/OpenAPI/GraphQL/MCP: store the bearer/basic credential secret value. */
+async function setConnectorCredential(
+  client: ApiClient,
+  ex: string,
+  c: ShipConnector,
+): Promise<boolean> {
+  const value = await promptSecret(`    ${c.slug} ${C.dim}(credential → ${c.authSecret})${C.reset}`);
+  if (!value) {
+    process.stdout.write(`    ${C.dim}skipped ${c.slug}${C.reset}\n`);
+    return false;
+  }
+  try {
+    await client.put(`${ex}/connectors/${encodeURIComponent(c.slug)}/credential`, { value });
+    process.stdout.write(`    ${status.ok(`${C.bold}${c.slug}${C.reset} credential set`)}\n`);
+    return true;
+  } catch (err) {
+    const msg = err instanceof ApiError ? err.message : (err as Error).message;
+    process.stderr.write(`    ${status.err(`couldn't set ${c.slug}: ${msg}`)}\n`);
+    return false;
+  }
+}
+
 function isGitHubUrl(url: string): boolean {
   return /(^https?:\/\/github\.com\/)|(^git@github\.com:)/i.test(url);
 }
@@ -460,6 +613,8 @@ async function shipFirstTime(
   const pushed = pushCurrentBranch(repoUrl, pushToken);
   if (!pushed) return 1;
 
+  await ensureConnectorsConnected(client, project.project_id, flags);
+
   reportShipped(auth, project, repoUrl);
   return 0;
 }
@@ -526,6 +681,8 @@ async function shipExisting(
 
   const pushed = pushCurrentBranch(repoUrl, pushToken);
   if (!pushed) return 1;
+
+  await ensureConnectorsConnected(client, projectId, flags);
 
   reportShipped(auth, project, repoUrl);
   return 0;
@@ -741,6 +898,7 @@ function parseFlags(argv: string[]): ShipFlags {
     noCommit: false,
     noVerify: false,
     noEnv: false,
+    noConnect: false,
     yes: false,
     dryRun: false,
     help: false,
@@ -755,6 +913,7 @@ function parseFlags(argv: string[]): ShipFlags {
   flags.noCommit = takeFlagBool(rest, ['--no-commit']);
   flags.noVerify = takeFlagBool(rest, ['--no-verify']);
   flags.noEnv = takeFlagBool(rest, ['--no-env']);
+  flags.noConnect = takeFlagBool(rest, ['--no-connect']);
   flags.yes = takeFlagBool(rest, ['-y', '--yes']);
   flags.dryRun = takeFlagBool(rest, ['-n', '--dry-run']);
   flags.help = takeFlagBool(rest, ['-h', '--help']);

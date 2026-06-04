@@ -54,6 +54,24 @@ optional = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY"]
 [opencode]
 config_dir = ".kortix/opencode"
 
+# ─── Runtime ─────────────────────────────────────────────────────────────
+# Kortix ships built-in OpenCode features on top of plain OpenCode: persistent
+# memory, web search/scrape tools, an interactive terminal, the `show` tool,
+# and the executor (connectors) MCP. They're all ON by default. Turn any off
+# here to change the project default, or flip `disable_all = true` to run the
+# project as plain OpenCode with none of the Kortix built-ins.
+#
+# A session can also enforce its own override at start time (the session wins
+# over these defaults) via the create-session API `runtime` field.
+#
+# [runtime]
+# disable_all = false   # true → plain OpenCode, all built-ins off
+# memory      = true    # persistent project memory (the `memory` tool)
+# web_tools   = true    # web_search / image_search / scrape_webpage
+# pty         = true    # interactive terminal (pty_* tools)
+# show        = true    # the `show` tool (render output to the user)
+# executor    = true    # connectors MCP (Slack, GitHub, … via the executor)
+
 # ─── Triggers ────────────────────────────────────────────────────────────
 # Each `[[triggers]]` entry spawns a fresh session that runs `prompt` as
 # its initial message. Add from the Kortix UI or uncomment one below.
@@ -142,23 +160,9 @@ nothing is worth changing.
 # dashboard's Apps panel, or edit here by hand. Experimental — gated by the
 # platform flag KORTIX_APPS_EXPERIMENTAL.
 #
-# This starter ships with one ready-to-deploy app (the `app/` folder). Open
-# the Apps panel and hit Deploy to put it live, then edit app/index.js — or
-# ask your agent to build it out — and redeploy.
-
-[[apps]]
-slug = "welcome"
-name = "Welcome site"
-enabled = true
-# No domains → a free *.style.dev URL is issued automatically.
-
-  [apps.source]
-  type = "git"            # deploys THIS project's repo (omit `repo`)
-  root_path = "app"       # the folder to deploy
-
-# Want a second app? Copy the block above. Point `root_path` at any folder,
-# set `repo`/`branch` to deploy a different repo, or add a `[apps.build]`
-# (command + out_dir) and `[apps.env]` for frameworks like Next or Vite:
+# No app ships by default. Add one by pointing `root_path` at a folder in this
+# repo (or set `repo`/`branch` for another repo), and add a `[apps.build]`
+# (command + out_dir) + `[apps.env]` for frameworks like Next or Vite:
 #
 # [[apps]]
 # slug = "marketing-site"

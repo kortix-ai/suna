@@ -12,9 +12,9 @@
  * (and the `memory-reflector` agent) exactly like code.
  *
  * Paths are repo-relative and MUST live under `.kortix/memory`
- * (e.g. `.kortix/memory/overview.md`). The `kortix-simple-memory` plugin
- * still injects `MEMORY.md` into the system prompt and tells the agent to
- * `view` its memory before doing anything else.
+ * (e.g. `.kortix/memory/overview.md`). Nothing is auto-injected: the agent
+ * rules + this tool's description carry the memory protocol — `view` your
+ * memory before starting a task, and record durable progress as you go.
  *
  * Security (ported verbatim from the hardened SDK source, post-CVE):
  *  - path boundary check uses a trailing separator so a sibling dir like
@@ -30,6 +30,7 @@ import { tool } from "@opencode-ai/plugin";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
+import { featureDisabled, disabledResult } from "./lib/runtime-gate";
 
 /** Repo-relative root every memory path must live under. */
 const MEMORY_PREFIX = ".kortix/memory";
@@ -376,6 +377,7 @@ export default tool({
   },
 
   async execute(args, context) {
+    if (featureDisabled("memory")) return disabledResult("memory", "memory");
     const dir = context.directory;
     try {
       switch (args.command) {

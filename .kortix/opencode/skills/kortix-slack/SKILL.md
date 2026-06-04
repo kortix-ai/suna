@@ -1,5 +1,5 @@
 ---
-name: slack
+name: kortix-slack
 description: How to answer in Slack as a teammate. Covers the live plan-block stream (`slack step` with --detail/--output, `slack send` to finalize the answer), file uploads, posting to other channels/threads, reactions, search, message editing/deletion, and the tone the bot should use. Load this when the turn is triggered from Slack (the prompt mentions a Slack workspace/channel/thread, or when `$SLACK_BOT_TOKEN` is set in the env), or when the user asks how to do anything in Slack.
 ---
 

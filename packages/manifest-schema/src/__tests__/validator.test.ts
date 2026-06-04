@@ -380,6 +380,51 @@ slug = "site"
   });
 });
 
+describe('validateManifest — [runtime]', () => {
+  test('accepts a full valid [runtime] table', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version = 1
+[runtime]
+disable_all = false
+memory = true
+web_tools = false
+pty = true
+show = true
+executor = false
+`);
+    expect(valid).toBe(true);
+    expect(errorPaths).toEqual([]);
+  });
+
+  test('rejects non-boolean feature values', () => {
+    const { valid, errorPaths } = summarize(`
+kortix_version = 1
+[runtime]
+memory = "yes"
+`);
+    expect(valid).toBe(false);
+    expect(errorPaths).toContain('runtime.memory');
+  });
+
+  test('warns on an unknown feature key (likely typo)', () => {
+    const { valid, warningPaths } = summarize(`
+kortix_version = 1
+[runtime]
+web_search = false
+`);
+    expect(valid).toBe(true); // warning, not error
+    expect(warningPaths).toContain('runtime.web_search');
+  });
+
+  test('errors when [runtime] is not a table', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+runtime = "off"
+`);
+    expect(errorPaths).toContain('runtime');
+  });
+});
+
 describe('formatIssues', () => {
   test('renders both errors and warnings in a stable shape', () => {
     const { issues } = validateManifest(`

@@ -1,6 +1,7 @@
 import { tool } from "@opencode-ai/plugin";
 import { existsSync } from "fs";
 import { resolve } from "path";
+import { featureDisabled, disabledResult } from "./lib/runtime-gate";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -322,6 +323,7 @@ export default tool({
   },
 
   async execute(args, _context) {
+    if (featureDisabled("show")) return disabledResult("show", "show");
     const action = args.action;
 
     // ── Multi-item mode (items array) ──

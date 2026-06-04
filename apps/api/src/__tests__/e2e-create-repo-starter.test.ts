@@ -24,19 +24,19 @@ const TEST_AUTH_KEY = '__KORTIX_E2E_AUTH__';
 // -worker skill pack). Ordered by `path.localeCompare` to match getStarterFiles'
 // stable sort. Regenerate from `packages/starter/templates/base` when the base
 // scaffold changes.
+// The full Kortix OpenCode runtime ships as source in the base starter
+// (self-contained). Simplifications kept: no `app/`, a single
+// `.kortix/memory/MEMORY.md` seed. Ordered by `path.localeCompare` to match
+// getStarterFiles' stable sort. The general-knowledge-worker template adds its
+// skill pack on top.
 const BASE_STARTER_PATHS = [
   '.gitignore',
-  '.kortix/memory/conventions.md',
-  '.kortix/memory/decisions.md',
-  '.kortix/memory/integrations.md',
   '.kortix/memory/MEMORY.md',
-  '.kortix/memory/overview.md',
   '.kortix/opencode/agents/kortix.md',
   '.kortix/opencode/agents/memory-reflector.md',
   '.kortix/opencode/bun.lock',
   '.kortix/opencode/opencode.jsonc',
   '.kortix/opencode/package.json',
-  '.kortix/opencode/plugins/kortix-simple-memory.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/constants.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/buffer.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/formatters.ts',
@@ -51,6 +51,7 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/agent-browser/SKILL.md',
   '.kortix/opencode/skills/kortix-executor/SKILL.md',
   '.kortix/opencode/skills/kortix-memory/SKILL.md',
+  '.kortix/opencode/skills/kortix-slack/SKILL.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/change-requests.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md',
   '.kortix/opencode/skills/kortix-system/references/kortix/kortix-toml.md',
@@ -65,15 +66,13 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-system/references/opencode/skills.md',
   '.kortix/opencode/skills/kortix-system/references/opencode/tools.md',
   '.kortix/opencode/skills/kortix-system/SKILL.md',
-  '.kortix/opencode/skills/slack/SKILL.md',
   '.kortix/opencode/tools/image_search.ts',
   '.kortix/opencode/tools/lib/get-env.ts',
+  '.kortix/opencode/tools/lib/runtime-gate.ts',
   '.kortix/opencode/tools/memory.ts',
   '.kortix/opencode/tools/scrape_webpage.ts',
   '.kortix/opencode/tools/show.ts',
   '.kortix/opencode/tools/web_search.ts',
-  'app/index.js',
-  'app/package.json',
   'kortix.toml',
   'README.md',
 ];
@@ -169,33 +168,31 @@ mock.module("../snapshots/builder", () => ({
   deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
-  reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
-  ensurePlatformDefaultImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
-  kickStartupPreBuild: () => {},
-  reconcileProjectTemplates: async () => ({ checked: 0, updated: 0 }),
   kickProjectTemplatePrebuilds: () => {},
+  reconcileStaleBuilds: async () => ({ checked: 0, updated: 0 }),
+  reconcileProjectTemplates: async () => {},
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
-  parseGitHubRepoUrl: (repoUrl: string) => {
-    const match = repoUrl.match(/github\.com[:/](?<owner>[^/]+)\/(?<repo>[^/.]+)(?:\.git)?/);
-    return match?.groups ? { owner: match.groups.owner, repo: match.groups.repo } : null;
-  },
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
-  createGitHubAppJwt: () => 'jwt-test',
   verifyGitHubAppInstallState: (state: string) => state === 'valid-install-state' ? ACCOUNT_ID : null,
   verifyGitHubAppInstallStatePayload: (state: string) => state === 'valid-install-state'
     ? { accountId: ACCOUNT_ID, nonce: 'valid-install-nonce', issuedAt: Math.floor(Date.now() / 1000) }
     : null,
-  addCollaborator: async () => undefined,
   deleteFile: async () => undefined,
   deleteRepo: async () => undefined,
-  getBranchCommitSha: async () => 'a'.repeat(40),
+  addCollaborator: async () => undefined,
   createBranchRef: async () => undefined,
+  createGitHubAppJwt: () => 'test-jwt',
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  parseGitHubRepoUrl: (url: string) => {
+    const m = url.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
+    return m ? { owner: m[1], repo: m[2] } : null;
+  },
   commitFile: async (input: any) => {
     commitCalls.push(input);
   },
@@ -478,8 +475,13 @@ describe('create-repo starter scaffold contract', () => {
     expect(new Set(files.map((file) => file.path)).size).toBe(BASE_STARTER_PATHS.length);
     expect(files.every((file) => file.content.trim().length > 0)).toBe(true);
 
-    const agent = files.find((file) => file.path === '.kortix/opencode/agents/kortix.md');
-    expect(agent?.content).toContain('permission:\n  "*": allow');
+    // The full core ships as source (self-contained): tools, skills, agents.
+    expect(files.find((file) => file.path === '.kortix/opencode/tools/show.ts')).toBeDefined();
+    expect(files.find((file) => file.path === '.kortix/opencode/skills/kortix-system/SKILL.md')).toBeDefined();
+    expect(files.find((file) => file.path === '.kortix/opencode/agents/kortix.md')).toBeDefined();
+    // The manifest IS shipped and names the project.
+    const manifest = files.find((file) => file.path === 'kortix.toml');
+    expect(manifest?.content).toContain('name = "Company OS"');
   });
 
   test('defaults to the general knowledge worker starter scaffold', () => {
