@@ -5,6 +5,7 @@ import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
 import { runCr } from './commands/cr.ts';
 import { runCreate } from './commands/create.ts';
+import { runDev } from './commands/dev.ts';
 import { runEnv } from './commands/env.ts';
 import { runFiles } from './commands/files.ts';
 import { runHosts } from './commands/hosts.ts';
@@ -43,6 +44,7 @@ const COMMANDS: readonly Command[] = [
   { name: '<project-name>', blurb: 'Create a new directory and scaffold it' },
   { name: 'ship', blurb: 'Create the cloud project (first run) + push your code' },
   { name: 'validate', blurb: 'Statically validate this project\'s kortix.toml' },
+  { name: 'dev', args: '[opencode args…]', blurb: 'Run OpenCode locally against this config (test agents/skills/tools)' },
   { name: 'self-host', args: '<subcommand>', blurb: 'Run your own Kortix Cloud from Docker images' },
   { name: 'login', blurb: 'Authenticate against the Kortix cloud' },
   { name: 'logout', blurb: 'Remove the stored auth token' },
@@ -123,6 +125,9 @@ async function main(argv: string[]): Promise<number> {
   }
   if (argv[0] === 'validate') {
     return runValidate(argv.slice(1));
+  }
+  if (argv[0] === 'dev') {
+    return runDev(argv.slice(1));
   }
   if (argv[0] === 'login') {
     return runLogin(argv.slice(1));
