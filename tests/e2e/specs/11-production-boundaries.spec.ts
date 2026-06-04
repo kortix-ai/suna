@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { requireEnvValue } from '../helpers/env';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
@@ -44,47 +45,6 @@ interface InviteResult {
   invite_id?: string;
   email: string;
   account_role: 'owner' | 'admin' | 'member';
-}
-
-function repoRoot(): string {
-  const path = require('path') as typeof import('node:path');
-  return path.resolve(__dirname, '../../..');
-}
-
-function parseEnvFile(relativePath: string): Record<string, string> {
-  const fs = require('fs') as typeof import('node:fs');
-  const path = require('path') as typeof import('node:path');
-  const filePath = path.isAbsolute(relativePath)
-    ? relativePath
-    : path.join(repoRoot(), relativePath);
-  if (!fs.existsSync(filePath)) return {};
-
-  const env: Record<string, string> = {};
-  for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
-    const match = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!match) continue;
-    env[match[1]] = match[2].replace(/^['"]|['"]$/g, '').trim();
-  }
-  return env;
-}
-
-function candidateEnvFiles(files: string[]): string[] {
-  const path = require('path') as typeof import('node:path');
-  const explicit = (process.env.E2E_ENV_FILE || '')
-    .split(path.delimiter)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return [...explicit, ...files];
-}
-
-function requireEnvValue(name: string, ...files: string[]): string {
-  if (process.env[name]) return process.env[name]!;
-
-  for (const file of candidateEnvFiles(files)) {
-    const value = parseEnvFile(file)[name];
-    if (value) return value;
-  }
-  throw new Error(`${name} was not found in ${candidateEnvFiles(files).join(', ')}`);
 }
 
 function authHeaders(token: string) {

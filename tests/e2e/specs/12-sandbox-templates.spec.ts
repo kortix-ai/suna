@@ -19,6 +19,11 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
+import {
+  firstExistingExplicitEnvFile,
+  optionalEnvValue as envValue,
+  requireEnvValue as envRequired,
+} from '../helpers/env';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -36,45 +41,6 @@ interface AuthSession {
   user: AuthUser;
 }
 
-function repoRoot(): string {
-  const path = require('path') as typeof import('node:path');
-  return path.resolve(__dirname, '../../..');
-}
-
-function parseEnvFile(rel: string): Record<string, string> {
-  const fs = require('fs') as typeof import('node:fs');
-  const path = require('path') as typeof import('node:path');
-  const file = path.isAbsolute(rel) ? rel : path.join(repoRoot(), rel);
-  if (!fs.existsSync(file)) return {};
-  const env: Record<string, string> = {};
-  for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
-    const m = line.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!m) continue;
-    env[m[1]] = m[2].replace(/^['"]|['"]$/g, '').trim();
-  }
-  return env;
-}
-
-function envValue(name: string, ...files: string[]): string | undefined {
-  if (process.env[name]) return process.env[name];
-  const path = require('path') as typeof import('node:path');
-  const explicit = (process.env.E2E_ENV_FILE || '')
-    .split(path.delimiter)
-    .map((item) => item.trim())
-    .filter(Boolean);
-  for (const f of [...explicit, ...files]) {
-    const v = parseEnvFile(f)[name];
-    if (v) return v;
-  }
-  return undefined;
-}
-
-function envRequired(name: string, ...files: string[]): string {
-  const v = envValue(name, ...files);
-  if (!v) throw new Error(`${name} not found in env or ${files.join(', ')}`);
-  return v;
-}
-
 function escapeSql(value: string): string {
   return value.replace(/'/g, "''");
 }
@@ -84,11 +50,7 @@ function seedSelfHostedProject(accountId: string, userId: string, name: string):
   const crypto = require('crypto') as typeof import('node:crypto');
   const fs = require('fs') as typeof import('node:fs');
   const path = require('path') as typeof import('node:path');
-  const envFile = (process.env.E2E_ENV_FILE || '')
-    .split(path.delimiter)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .find((candidate) => fs.existsSync(candidate));
+  const envFile = firstExistingExplicitEnvFile();
   if (!envFile) throw new Error('E2E_ENV_FILE is required for self-host project seeding');
 
   const composeFile = path.join(path.dirname(envFile), 'docker-compose.yml');
