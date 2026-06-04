@@ -1,101 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import {
-  optionalEnvValue,
-  requireEnvValue,
-} from '../helpers/env';
-import { json } from '../helpers/http';
+import { type AuthSession, createAuthUser, installBrowserSession, signIn } from '../helpers/session-auth';
 import { runSqlWithSelfHostFallback } from '../helpers/self-host';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 const password = process.env.E2E_ADMIN_PASSWORD || 'E2eAccountAccess123!';
-
-interface AuthUser {
-  id: string;
-  email?: string;
-}
-
-interface AuthSession {
-  access_token: string;
-  refresh_token: string;
-  expires_at: number;
-  expires_in: number;
-  token_type: string;
-  user: AuthUser;
-}
+const authOptions = { supabaseUrl, password, envFiles: ['apps/api/.env'] };
 
 function escapeRegExp(value: string): string {
   return value.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
-}
-
-async function createAuthUser(email: string): Promise<AuthUser> {
-  const serviceRoleKey = requireEnvValue('SUPABASE_SERVICE_ROLE_KEY', 'apps/api/.env');
-  const response = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      email,
-      password,
-      email_confirm: true,
-    }),
-  });
-  const body = await json<{ user?: AuthUser } & AuthUser>(response, 200);
-  return body.user ?? body;
-}
-
-async function signIn(email: string): Promise<AuthSession> {
-  const anonKey =
-    optionalEnvValue('SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env') ||
-    requireEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env');
-  return json<AuthSession>(
-    await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: {
-        apikey: anonKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-    }),
-    200,
-  );
-}
-
-async function installBrowserSession(page: Page, session: AuthSession, returnUrl: string) {
-  await page.context().clearCookies();
-  await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => {
-    localStorage.clear();
-    sessionStorage.clear();
-  });
-  await page.goto('/auth', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2_000);
-
-  const lockScreen = page.getByText('Click or press Enter to sign in');
-  if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    const emailInput = page.locator('input[name="email"]');
-    for (let attempt = 0; attempt < 3 && !(await emailInput.isVisible().catch(() => false)); attempt++) {
-      await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(750);
-    }
-  }
-
-  await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('tab', { name: /^Sign in$/i }).click();
-  const usePassword = page.getByRole('button', { name: /Use password instead/i });
-  if (await usePassword.isVisible().catch(() => false)) {
-    await usePassword.click();
-  }
-  await page.locator('input[name="email"]').fill(session.user.email || '');
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('form').getByRole('button', { name: /^Sign in$/i }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith('/auth'), { timeout: 30_000 });
-  await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
 }
 
 async function grantPlatformAdmin(userId: string) {
@@ -110,13 +24,13 @@ async function grantPlatformAdmin(userId: string) {
 async function ensureAdminSession(): Promise<AuthSession> {
   const configuredAdminEmail = process.env.E2E_ADMIN_EMAIL;
   if (configuredAdminEmail) {
-    return signIn(configuredAdminEmail);
+    return signIn(configuredAdminEmail, authOptions);
   }
 
   const email = `e2e-admin-ops-${Date.now()}-${randomUUID().slice(0, 8)}@example.test`;
-  const user = await createAuthUser(email);
+  const user = await createAuthUser(email, authOptions);
   await grantPlatformAdmin(user.id);
-  return signIn(email);
+  return signIn(email, authOptions);
 }
 
 async function assertAdminRouteClean(page: Page, path: string, expectedTexts: string[]) {
@@ -165,7 +79,7 @@ test.describe('09 - Admin operations console', () => {
     const session = await ensureAdminSession();
     // Let the assertions below own the admin navigations; otherwise the
     // immediate duplicate /admin load can abort Supabase's user fetch.
-    await installBrowserSession(page, session, '/favicon.png');
+    await installBrowserSession(page, session, '/favicon.png', password);
 
     await assertAdminRouteClean(page, '/admin', [
       'Admin overview',

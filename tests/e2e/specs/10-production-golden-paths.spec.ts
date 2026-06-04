@@ -1,28 +1,22 @@
 import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { createHmac, randomUUID } from 'node:crypto';
-import { optionalEnvValue, requireEnvValue } from '../helpers/env';
+import { requireEnvValue } from '../helpers/env';
 import { authHeaders, json } from '../helpers/http';
+import {
+  type AuthSession,
+  type AuthUser,
+  createAuthUser,
+  installBrowserSession,
+  signIn,
+} from '../helpers/session-auth';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 const password = process.env.E2E_GOLDEN_PASSWORD || 'E2eGoldenPaths123!';
 const runGoldenPaths = process.env.E2E_ENABLE_GOLDEN_PATHS === '1';
 const enforceSlos = process.env.E2E_ENFORCE_SLOS === '1';
-
-interface AuthUser {
-  id: string;
-  email?: string;
-}
-
-interface AuthSession {
-  access_token: string;
-  refresh_token: string;
-  expires_at: number;
-  expires_in: number;
-  token_type: string;
-  user: AuthUser;
-}
+const authOptions = { supabaseUrl, password };
 
 interface AccountSummary {
   account_id: string;
@@ -111,75 +105,6 @@ async function api<T>(
     }),
     expectedStatus,
   );
-}
-
-async function createAuthUser(email: string): Promise<AuthUser> {
-  const serviceRoleKey = requireEnvValue('SUPABASE_SERVICE_ROLE_KEY', 'apps/api/.env');
-  const response = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      email,
-      password,
-      email_confirm: true,
-    }),
-  });
-  const body = await json<{ user?: AuthUser } & AuthUser>(response, 200);
-  return body.user ?? body;
-}
-
-async function signIn(email: string): Promise<AuthSession> {
-  const anonKey =
-    optionalEnvValue('SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env') ||
-    requireEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env');
-  return json<AuthSession>(
-    await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: {
-        apikey: anonKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-    }),
-    200,
-  );
-}
-
-async function installBrowserSession(page: Page, session: AuthSession, returnUrl: string) {
-  await page.context().clearCookies();
-  await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => {
-    localStorage.clear();
-    sessionStorage.clear();
-  });
-  await page.goto('/auth', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2_000);
-
-  const lockScreen = page.getByText('Click or press Enter to sign in');
-  if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    const emailInput = page.locator('input[name="email"]');
-    for (let attempt = 0; attempt < 3 && !(await emailInput.isVisible().catch(() => false)); attempt++) {
-      await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(750);
-    }
-  }
-
-  await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('tab', { name: /^Sign in$/i }).click();
-  const usePassword = page.getByRole('button', { name: /Use password instead/i });
-  if (await usePassword.isVisible().catch(() => false)) {
-    await usePassword.click();
-  }
-  await page.locator('input[name="email"]').fill(session.user.email || '');
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('form').getByRole('button', { name: /^Sign in$/i }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith('/auth'), { timeout: 30_000 });
-  await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
 }
 
 async function selectAccountForUi(page: Page, accountId: string) {
@@ -326,8 +251,8 @@ test.describe.serial('10 - SPEC production golden paths', () => {
   test.beforeAll(async () => {
     runId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
     const ownerEmail = `golden-owner-${runId}@example.test`;
-    owner = await createAuthUser(ownerEmail);
-    ownerSession = await signIn(ownerEmail);
+    owner = await createAuthUser(ownerEmail, authOptions);
+    ownerSession = await signIn(ownerEmail, authOptions);
 
     const accounts = await api<AccountSummary[]>(ownerSession.access_token, 'GET', '/accounts');
     expect(accounts.some((item) => item.personal_account)).toBe(true);
@@ -403,12 +328,12 @@ test.describe.serial('10 - SPEC production golden paths', () => {
     expect(invite.status).toBe('pending');
     expect(invite.invite_id).toBeTruthy();
 
-    await createAuthUser(bobEmail);
-    const bobSession = await signIn(bobEmail);
+    await createAuthUser(bobEmail, authOptions);
+    const bobSession = await signIn(bobEmail, authOptions);
     const bobAccounts = await api<AccountSummary[]>(bobSession.access_token, 'GET', '/accounts');
     expect(bobAccounts.map((item) => item.account_id)).toContain(account.account_id);
 
-    await installBrowserSession(page, ownerSession, '/projects');
+    await installBrowserSession(page, ownerSession, '/projects', password);
     await selectAccountForUi(page, personalAccount!.account_id);
     await page.goto('/projects', { waitUntil: 'domcontentloaded' });
     await expect(page.locator('h3', { hasText: personalProjectName })).toBeVisible();
@@ -556,7 +481,7 @@ test.describe.serial('10 - SPEC production golden paths', () => {
   test('E2E-6: new session opens the project chat route without legacy redirects', async ({ page }) => {
     expect(project).toBeTruthy();
     await stopActiveProjectSessions(ownerSession.access_token, project.project_id);
-    await installBrowserSession(page, ownerSession, `/projects/${project.project_id}/sessions`);
+    await installBrowserSession(page, ownerSession, `/projects/${project.project_id}/sessions`, password);
     await selectAccountForUi(page, account.account_id);
     await page.goto(`/projects/${project.project_id}/sessions`, { waitUntil: 'domcontentloaded' });
 

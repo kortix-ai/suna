@@ -1,33 +1,17 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import {
-  optionalEnvValue,
-  requireEnvValue,
-} from '../helpers/env';
 import { authHeaders, createApiStatusClient, json } from '../helpers/http';
+import { type AuthSession, createAuthUser, installBrowserSession, signIn } from '../helpers/session-auth';
 import { seedSelfHostedProject } from '../helpers/self-host';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 const password = 'E2eAccountAccess123!';
 const apiStatus = createApiStatusClient(apiBase);
+const authOptions = { supabaseUrl, password };
 
 type AccountRole = 'owner' | 'admin' | 'member';
 type ProjectRole = 'manager' | 'editor' | 'viewer';
-
-interface AuthUser {
-  id: string;
-  email?: string;
-}
-
-interface AuthSession {
-  access_token: string;
-  refresh_token: string;
-  expires_at: number;
-  expires_in: number;
-  token_type: string;
-  user: AuthUser;
-}
 
 interface AccountSummary {
   account_id: string;
@@ -123,75 +107,6 @@ async function createProjectForAccessTest(
   throw new Error(`Expected 201/409 from ${response.url}, got ${response.status}: ${body}`);
 }
 
-async function createAuthUser(email: string): Promise<AuthUser> {
-  const serviceRoleKey = requireEnvValue('SUPABASE_SERVICE_ROLE_KEY', 'apps/api/.env');
-  const response = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      email,
-      password,
-      email_confirm: true,
-    }),
-  });
-  const body = await json<{ user?: AuthUser } & AuthUser>(response, 200);
-  return body.user ?? body;
-}
-
-async function signIn(email: string): Promise<AuthSession> {
-  const anonKey =
-    optionalEnvValue('SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env') ||
-    requireEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env');
-  return json<AuthSession>(
-    await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-      method: 'POST',
-      headers: {
-        apikey: anonKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-    }),
-    200,
-  );
-}
-
-async function installBrowserSession(page: Page, session: AuthSession, returnUrl: string) {
-  await page.context().clearCookies();
-  await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => {
-    localStorage.clear();
-    sessionStorage.clear();
-  });
-  await page.goto('/auth', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2_000);
-
-  const lockScreen = page.getByText('Click or press Enter to sign in');
-  if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    const emailInput = page.locator('input[name="email"]');
-    for (let attempt = 0; attempt < 3 && !(await emailInput.isVisible().catch(() => false)); attempt++) {
-      await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(750);
-    }
-  }
-
-  await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('tab', { name: /^Sign in$/i }).click();
-  const usePassword = page.getByRole('button', { name: /Use password instead/i });
-  if (await usePassword.isVisible().catch(() => false)) {
-    await usePassword.click();
-  }
-  await page.locator('input[name="email"]').fill(session.user.email || '');
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('form').getByRole('button', { name: /^Sign in$/i }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith('/auth'), { timeout: 30_000 });
-  await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
-}
-
 async function selectAccountForUi(page: Page, accountId: string) {
   await page.evaluate((id) => {
     localStorage.setItem(
@@ -258,10 +173,10 @@ test.describe('08 — Accounts, invites, and project access', () => {
     const accountName = `E2E Org ${runId}`;
     const initialProjectName = `E2E Project ${runId}`;
 
-    const owner = await createAuthUser(ownerEmail);
-    const member = await createAuthUser(memberEmail);
-    const ownerSession = await signIn(ownerEmail);
-    const memberSession = await signIn(memberEmail);
+    const owner = await createAuthUser(ownerEmail, authOptions);
+    const member = await createAuthUser(memberEmail, authOptions);
+    const ownerSession = await signIn(ownerEmail, authOptions);
+    const memberSession = await signIn(memberEmail, authOptions);
 
     const ownerInitialAccounts = await api<AccountSummary[]>(ownerSession.access_token, 'GET', '/accounts');
     const ownerPersonalAccount = ownerInitialAccounts.find((item) => item.personal_account);
@@ -394,7 +309,7 @@ test.describe('08 — Accounts, invites, and project access', () => {
     );
     expect(await apiStatus(memberSession.access_token, 'GET', `/projects/${project.project_id}`)).toBe(403);
 
-    await installBrowserSession(page, ownerSession, `/projects/${project.project_id}`);
+    await installBrowserSession(page, ownerSession, `/projects/${project.project_id}`, password);
     await selectAccountForUi(page, account.account_id);
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page).toHaveURL(new RegExp(`/projects/${project.project_id}$`));
@@ -420,7 +335,7 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
     await expect(page.getByText(accountName).first()).toBeVisible();
 
-    await installBrowserSession(page, ownerSession, `/accounts/${account.account_id}`);
+    await installBrowserSession(page, ownerSession, `/accounts/${account.account_id}`, password);
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
     await expect(page.getByText(memberEmail)).toBeVisible();
     await expect(page.getByText(invitedEmail)).toBeVisible();
@@ -439,8 +354,8 @@ test.describe('08 — Accounts, invites, and project access', () => {
     expect((await uiInviteResponse).status()).toBe(201);
     await expect(page.getByText(uiInvitedEmail)).toBeVisible();
 
-    await createAuthUser(uiInvitedEmail);
-    const uiInvitedSession = await signIn(uiInvitedEmail);
+    await createAuthUser(uiInvitedEmail, authOptions);
+    const uiInvitedSession = await signIn(uiInvitedEmail, authOptions);
     const uiInvitedAccounts = await api<AccountSummary[]>(uiInvitedSession.access_token, 'GET', '/accounts');
     expect(uiInvitedAccounts.some((item) => item.account_id === account.account_id)).toBe(true);
 
@@ -464,7 +379,7 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await expect(memberAccessRow).toBeVisible({ timeout: 15_000 });
     await expect(memberAccessRow.getByRole('combobox')).toContainText('Viewer');
 
-    await installBrowserSession(page, memberSession, '/projects');
+    await installBrowserSession(page, memberSession, '/projects', password);
     await selectAccountForUi(page, account.account_id);
     await page.goto('/projects', { waitUntil: 'domcontentloaded' });
     await expect(page.getByText(`${initialProjectName} Admin`)).toBeVisible();
@@ -478,10 +393,10 @@ test.describe('08 — Accounts, invites, and project access', () => {
     await expect(page.getByText(`${initialProjectName} Admin`)).toHaveCount(0);
     await expect(page.getByText(/No projects yet/i)).toBeVisible();
 
-    const invitedUser = await createAuthUser(invitedEmail);
-    const invitedSession = await signIn(invitedEmail);
+    const invitedUser = await createAuthUser(invitedEmail, authOptions);
+    const invitedSession = await signIn(invitedEmail, authOptions);
     expect(invitedUser.id).toBeTruthy();
-    await installBrowserSession(page, invitedSession, `/invites/${accountInviteId}`);
+    await installBrowserSession(page, invitedSession, `/invites/${accountInviteId}`, password);
     await expect(page.getByRole('heading', { name: accountName })).toBeVisible();
     if (page.url().includes(`/invites/${accountInviteId}`)) {
       await expect(page.getByText(/Team account/i)).toBeVisible();

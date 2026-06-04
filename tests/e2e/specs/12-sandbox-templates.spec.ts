@@ -20,64 +20,22 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import {
-  optionalEnvValue as envValue,
-  requireEnvValue as envRequired,
-} from '../helpers/env';
+  type AuthSession,
+  type AuthUser,
+  createAuthUser,
+  deleteAuthUser,
+  installBrowserSession,
+  signIn,
+} from '../helpers/session-auth';
 import { seedSelfHostedProject } from '../helpers/self-host';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
 const password = 'E2eSandboxTpl123!';
+const authOptions = { supabaseUrl, password };
 
-interface AuthUser { id: string; email?: string }
 interface AccountSummary { account_id: string; personal_account: boolean }
 interface TemplateCreateResult { template_id: string; slug: string }
-interface AuthSession {
-  access_token: string;
-  refresh_token: string;
-  expires_at: number;
-  expires_in: number;
-  token_type: string;
-  user: AuthUser;
-}
-
-async function createAuthUser(email: string): Promise<AuthUser> {
-  const serviceRoleKey = envRequired('SUPABASE_SERVICE_ROLE_KEY', 'apps/api/.env', 'apps/web/.env');
-  const res = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
-    method: 'POST',
-    headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ email, password, email_confirm: true }),
-  });
-  if (!res.ok) throw new Error(`createAuthUser failed: ${res.status} ${await res.text()}`);
-  const body = await res.json() as { user?: AuthUser } & AuthUser;
-  return body.user ?? body;
-}
-
-async function deleteAuthUser(userId: string): Promise<void> {
-  const serviceRoleKey = envValue('SUPABASE_SERVICE_ROLE_KEY', 'apps/api/.env', 'apps/web/.env');
-  if (!serviceRoleKey) return;
-  await fetch(`${supabaseUrl}/auth/v1/admin/users/${userId}`, {
-    method: 'DELETE',
-    headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` },
-  }).catch(() => {});
-}
-
-async function signIn(email: string): Promise<AuthSession> {
-  const anonKey =
-    envValue('SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env') ||
-    envRequired('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'apps/web/.env', 'apps/api/.env');
-  const res = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-    method: 'POST',
-    headers: { apikey: anonKey, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
-  });
-  if (!res.ok) throw new Error(`signIn failed: ${res.status} ${await res.text()}`);
-  return res.json() as Promise<AuthSession>;
-}
 
 async function api<T>(
   token: string,
@@ -110,39 +68,6 @@ async function api<T>(
   return { status: res.status, json };
 }
 
-async function installBrowserSession(page: Page, session: AuthSession, returnUrl: string) {
-  await page.context().clearCookies();
-  await page.goto('/favicon.png', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => {
-    localStorage.clear();
-    sessionStorage.clear();
-  });
-  await page.goto('/auth', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(2_000);
-
-  const lockScreen = page.getByText('Click or press Enter to sign in');
-  if (await lockScreen.isVisible({ timeout: 5_000 }).catch(() => false)) {
-    const emailInput = page.locator('input[name="email"]');
-    for (let attempt = 0; attempt < 3 && !(await emailInput.isVisible().catch(() => false)); attempt++) {
-      await page.locator('div.fixed.inset-0.cursor-pointer').first().click({ force: true });
-      await page.keyboard.press('Enter');
-      await page.waitForTimeout(750);
-    }
-  }
-
-  await expect(page.locator('input[name="email"]')).toBeVisible({ timeout: 15_000 });
-  await page.getByRole('tab', { name: /^Sign in$/i }).click();
-  const usePassword = page.getByRole('button', { name: /Use password instead/i });
-  if (await usePassword.isVisible().catch(() => false)) {
-    await usePassword.click();
-  }
-  await page.locator('input[name="email"]').fill(session.user.email || '');
-  await page.locator('input[name="password"]').fill(password);
-  await page.locator('form').getByRole('button', { name: /^Sign in$/i }).click();
-  await page.waitForURL((url) => !url.pathname.startsWith('/auth'), { timeout: 30_000 });
-  await page.goto(returnUrl, { waitUntil: 'domcontentloaded' });
-}
-
 async function openSandboxSection(page: Page, projectId: string) {
   await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible({ timeout: 30_000 });
   const sandboxHeading = page.getByRole('heading', { name: /Sandbox templates/i });
@@ -162,8 +87,8 @@ test.describe('12 — Sandbox templates UI', () => {
 
   test.beforeAll(async () => {
     const email = `e2e-sbx-${Date.now()}@kortix.test`;
-    user = await createAuthUser(email);
-    session = await signIn(email);
+    user = await createAuthUser(email, authOptions);
+    session = await signIn(email, authOptions);
     const projectName = `e2e-ui-tpl-${Math.floor(Date.now() / 1000)}`;
     const accounts = await api<AccountSummary[]>(
       session.access_token,
@@ -183,7 +108,7 @@ test.describe('12 — Sandbox templates UI', () => {
     if (projectId && session) {
       await api(session.access_token, 'DELETE', `/projects/${projectId}`).catch(() => {});
     }
-    if (user?.id) await deleteAuthUser(user.id);
+    if (user?.id) await deleteAuthUser(user.id, authOptions);
   });
 
   test('sandboxes API returns platform default before opening the panel', async () => {
@@ -202,7 +127,7 @@ test.describe('12 — Sandbox templates UI', () => {
     const pageErrors: string[] = [];
     page.on('pageerror', (err) => pageErrors.push(err.message));
 
-    await installBrowserSession(page, session, `/projects/${projectId}/customize/sandbox`);
+    await installBrowserSession(page, session, `/projects/${projectId}/customize/sandbox`, password);
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
 
@@ -249,7 +174,7 @@ test.describe('12 — Sandbox templates UI', () => {
       }
     });
 
-    await installBrowserSession(page, session, `/projects/${projectId}/customize/sandbox`);
+    await installBrowserSession(page, session, `/projects/${projectId}/customize/sandbox`, password);
     await openSandboxSection(page, projectId);
     pageErrors.length = 0;
 
