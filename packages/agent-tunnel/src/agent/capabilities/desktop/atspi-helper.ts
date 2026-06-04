@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -276,7 +276,15 @@ async function ensureHelper(): Promise<string> {
   }
 
   mkdirSync(BIN_DIR, { recursive: true });
-  writeFileSync(HELPER_PATH, PYTHON_SOURCE, { mode: 0o755 });
+  let fd: number | null = null;
+  try {
+    fd = openSync(HELPER_PATH, 'wx', 0o755);
+    writeFileSync(fd, PYTHON_SOURCE);
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
+  } finally {
+    if (fd !== null) closeSync(fd);
+  }
   written = true;
 
   return HELPER_PATH;
