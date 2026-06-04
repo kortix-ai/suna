@@ -7,7 +7,7 @@ import { createTemplate, deleteTemplate, getTemplateById, updateTemplate } from 
 import { commitFile, createRepo, getFileSha } from '../github';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
 import { createRoute, z } from '@hono/zod-openapi';
-import { loadProjectForUser, resolveProjectAccount } from '../lib/access';
+import { enforceProjectQuota, loadProjectForUser, resolveProjectAccount } from '../lib/access';
 import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, registerGitHubLinkedProject, registerPatLinkedProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
 import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
@@ -59,6 +59,8 @@ projectsApp.openapi(
     } catch (error) {
       return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
     }
+    const patQuota = await enforceProjectQuota(c, scope.accountId, { repoUrl: patImport.repo.clone_url });
+    if (patQuota) return patQuota;
     const row = await registerPatLinkedProject({
       accountId: scope.accountId,
       userId: scope.userId,
@@ -95,6 +97,9 @@ projectsApp.openapi(
     }
     return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
   }
+
+  const linkQuota = await enforceProjectQuota(c, scope.accountId, { repoUrl: imported.repo.clone_url });
+  if (linkQuota) return linkQuota;
 
   const row = await registerGitHubLinkedProject({
     accountId: scope.accountId,
@@ -176,6 +181,11 @@ projectsApp.openapi(
       install_url: await createGitHubInstallationInstallUrl(scope.accountId, scope.userId),
     }, 409);
   }
+
+  // create-repo always provisions a fresh GitHub repo, so block before we
+  // create anything upstream — a straight count, no idempotent re-link.
+  const createRepoQuota = await enforceProjectQuota(c, scope.accountId);
+  if (createRepoQuota) return createRepoQuota;
 
   // Auto-dedupe name collisions: GitHub 422s when the repo name is taken, so
   // try "name", then "name-2", "name-3", … until one is free (up to 12 tries).

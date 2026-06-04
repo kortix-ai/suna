@@ -499,3 +499,49 @@ flow(
     });
   },
 );
+
+// PACC-2 — project email invite. A brand-new email (no Kortix account yet)
+// creates an account invitation carrying a bootstrap project grant → 201
+// {status:"invited"}. Validation (missing email / bad role → 400) and the
+// manage gate (non-member → 404, project not loadable) are enforced.
+flow(
+  "PACC-2",
+  { domain: "projects", serial: true, routes: ["POST /v1/projects/:projectId/access/invite"] },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const p = await team.project();
+    await ctx.step("invite an email with no Kortix account → 201 invitation created", async () => {
+      const email = `${ctx.fixtures.name("invitee")}@example.com`.toLowerCase();
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/access/invite", { email, role: "editor" }, { params: { projectId: p.id } });
+      r.status(201).body().has("$.status", "invited").has("$.project_role", "editor").exists("$.invite_id");
+    });
+    await ctx.step("missing email → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/access/invite", { role: "editor" }, { params: { projectId: p.id } });
+      r.status(400);
+    });
+    await ctx.step("invalid role → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/access/invite",
+          { email: "nope@example.com", role: "superboss" },
+          { params: { projectId: p.id } },
+        );
+      r.status(400);
+    });
+    await ctx.step("NONMEMBER cannot invite → 403 (not a member of the account)", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post(
+          "/v1/projects/:projectId/access/invite",
+          { email: "stranger@example.com", role: "viewer" },
+          { params: { projectId: p.id } },
+        );
+      r.status(403);
+    });
+  },
+);

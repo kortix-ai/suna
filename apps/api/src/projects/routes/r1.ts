@@ -15,7 +15,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { grantProjectRole, loadProjectForUser, resolveProjectAccount } from '../lib/access';
+import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, registerGitHubLinkedProject, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeGitHubRepo, serializeProject } from '../lib/serializers';
@@ -238,6 +238,9 @@ projectsApp.openapi(
     return c.json({ error: (error as Error).message || 'Failed to validate GitHub repository' }, 400);
   }
 
+  const quota = await enforceProjectQuota(c, scope.accountId, { repoUrl: imported.repo.clone_url });
+  if (quota) return quota;
+
   const row = await registerGitHubLinkedProject({
     accountId: scope.accountId,
     userId: scope.userId,
@@ -328,6 +331,12 @@ projectsApp.openapi(
   ).slice(0, 40);
   const repoSlug = `${baseSlug}-${projectId}`;
   const defaultBranch = normalizeString(body.default_branch ?? body.defaultBranch) ?? 'main';
+
+  // Provision always mints a brand-new managed repo, so the quota check is a
+  // straight count — no repoUrl to treat as an idempotent re-link. Runs after
+  // request validation but before we create anything upstream.
+  const provisionQuota = await enforceProjectQuota(c, scope.accountId);
+  if (provisionQuota) return provisionQuota;
 
   let provisioned: Awaited<ReturnType<typeof backend.createRepo>>;
   try {

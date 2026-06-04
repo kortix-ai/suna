@@ -8,11 +8,58 @@ import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
 import { effectiveProjectRole, roleAllows, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
 import { accountMembers, projectMembers, projectSessions, projects } from '@kortix/db';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { maxProjectsForAccount } from '../../shared/account-limits';
 import { getAccountMembership } from './git';
 import { ProjectRow, ProjectSessionRow, normalizeString } from './serializers';
+
+// Enforce the per-account project cap (free → 1, paid → effectively uncapped).
+// Returns a 403 Response to send, or null when the account may create another
+// project. `repoUrl`, when supplied, makes re-linking a repo the account already
+// owns idempotent — that's an update, not a new project, so it never trips the
+// limit even when the account is at its cap.
+export async function enforceProjectQuota(
+  c: Context,
+  accountId: string,
+  opts?: { repoUrl?: string | null },
+): Promise<Response | null> {
+  const limit = await maxProjectsForAccount(accountId);
+  if (limit >= Number.MAX_SAFE_INTEGER) return null;
+
+  if (opts?.repoUrl) {
+    const [existing] = await db
+      .select({ projectId: projects.projectId })
+      .from(projects)
+      .where(and(eq(projects.accountId, accountId), eq(projects.repoUrl, opts.repoUrl)))
+      .limit(1);
+    if (existing) return null;
+  }
+
+  // Count only ACTIVE projects — an archived (soft-deleted) project must not
+  // permanently consume a free account's single slot.
+  const [counted] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(projects)
+    .where(and(eq(projects.accountId, accountId), eq(projects.status, 'active')));
+  const count = counted?.count ?? 0;
+  if (count >= limit) {
+    return c.json(
+      {
+        error:
+          limit === 1
+            ? 'Free accounts are limited to 1 project. Upgrade to a paid plan to create more.'
+            : `This account has reached its limit of ${limit} projects.`,
+        code: 'project_limit_reached',
+        limit,
+        count,
+      },
+      403,
+    );
+  }
+  return null;
+}
 
 export async function loadVisibleSession(
   loaded: { row: ProjectRow; userId: string; effectiveRole: ProjectRole },
