@@ -1,11 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import {
-  firstExistingExplicitEnvFile,
   optionalEnvValue,
   requireEnvValue,
 } from '../helpers/env';
 import { authHeaders, createApiStatusClient, json } from '../helpers/http';
+import { seedSelfHostedProject } from '../helpers/self-host';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
@@ -97,93 +97,6 @@ async function api<T>(
   );
 }
 
-function escapeSql(value: string): string {
-  return value.replace(/'/g, "''");
-}
-
-function seedSelfHostedProject(
-  accountId: string,
-  ownerUserId: string,
-  name: string,
-  repoUrl: string,
-): string {
-  const childProcess = require('child_process') as typeof import('node:child_process');
-  const crypto = require('crypto') as typeof import('node:crypto');
-  const fs = require('fs') as typeof import('node:fs');
-  const path = require('path') as typeof import('node:path');
-  const envFile = firstExistingExplicitEnvFile();
-  if (!envFile) throw new Error('E2E_ENV_FILE is required for self-host project seeding');
-
-  const composeFile = path.join(path.dirname(envFile), 'docker-compose.yml');
-  if (!fs.existsSync(composeFile)) {
-    throw new Error(`Self-host docker-compose.yml not found next to ${envFile}`);
-  }
-
-  const projectId = crypto.randomUUID();
-  const composeProject = process.env.E2E_COMPOSE_PROJECT_NAME || 'kortix-default';
-  const sql = `
-insert into kortix.projects (
-  project_id,
-  account_id,
-  name,
-  repo_url,
-  default_branch,
-  manifest_path,
-  status,
-  metadata
-) values (
-  '${projectId}'::uuid,
-  '${escapeSql(accountId)}'::uuid,
-  '${escapeSql(name)}',
-  '${escapeSql(repoUrl)}',
-  'main',
-  'kortix.toml',
-  'active',
-  '{"self_host_e2e":true}'::jsonb
-);
-
-insert into kortix.project_members (
-  account_id,
-  project_id,
-  user_id,
-  project_role,
-  granted_by
-) values (
-  '${escapeSql(accountId)}'::uuid,
-  '${projectId}'::uuid,
-  '${escapeSql(ownerUserId)}'::uuid,
-  'manager',
-  '${escapeSql(ownerUserId)}'::uuid
-);
-`;
-
-  childProcess.execFileSync(
-    'docker',
-    [
-      'compose',
-      '--project-name',
-      composeProject,
-      '--env-file',
-      envFile,
-      '-f',
-      composeFile,
-      'exec',
-      '-T',
-      'supabase-db',
-      'psql',
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-U',
-      'postgres',
-      '-d',
-      'postgres',
-    ],
-    { input: sql, encoding: 'utf8' },
-  );
-
-  return projectId;
-}
-
 async function createProjectForAccessTest(
   token: string,
   accountId: string,
@@ -204,7 +117,7 @@ async function createProjectForAccessTest(
   const body = await response.text();
   if (response.status === 201) return JSON.parse(body) as ProjectSummary;
   if (response.status === 409 && body.includes('GitHub App installation required')) {
-    const projectId = seedSelfHostedProject(accountId, ownerUserId, name, repoUrl);
+    const projectId = seedSelfHostedProject({ accountId, userId: ownerUserId, name, repoUrl });
     return api<ProjectSummary>(token, 'GET', `/projects/${projectId}`);
   }
   throw new Error(`Expected 201/409 from ${response.url}, got ${response.status}: ${body}`);

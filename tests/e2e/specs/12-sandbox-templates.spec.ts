@@ -20,10 +20,10 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import {
-  firstExistingExplicitEnvFile,
   optionalEnvValue as envValue,
   requireEnvValue as envRequired,
 } from '../helpers/env';
+import { seedSelfHostedProject } from '../helpers/self-host';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
@@ -39,82 +39,6 @@ interface AuthSession {
   expires_in: number;
   token_type: string;
   user: AuthUser;
-}
-
-function escapeSql(value: string): string {
-  return value.replace(/'/g, "''");
-}
-
-function seedSelfHostedProject(accountId: string, userId: string, name: string): string {
-  const childProcess = require('child_process') as typeof import('node:child_process');
-  const crypto = require('crypto') as typeof import('node:crypto');
-  const fs = require('fs') as typeof import('node:fs');
-  const path = require('path') as typeof import('node:path');
-  const envFile = firstExistingExplicitEnvFile();
-  if (!envFile) throw new Error('E2E_ENV_FILE is required for self-host project seeding');
-
-  const composeFile = path.join(path.dirname(envFile), 'docker-compose.yml');
-  const projectId = crypto.randomUUID();
-  const repoUrl = `https://github.com/kortix-ai/sandbox-template-${projectId}.git`;
-  const sql = `
-insert into kortix.projects (
-  project_id,
-  account_id,
-  name,
-  repo_url,
-  default_branch,
-  manifest_path,
-  status,
-  metadata
-) values (
-  '${projectId}'::uuid,
-  '${escapeSql(accountId)}'::uuid,
-  '${escapeSql(name)}',
-  '${escapeSql(repoUrl)}',
-  'main',
-  'kortix.toml',
-  'active',
-  '{"self_host_e2e":true}'::jsonb
-);
-
-insert into kortix.project_members (
-  account_id,
-  project_id,
-  user_id,
-  project_role,
-  granted_by
-) values (
-  '${escapeSql(accountId)}'::uuid,
-  '${projectId}'::uuid,
-  '${escapeSql(userId)}'::uuid,
-  'manager',
-  '${escapeSql(userId)}'::uuid
-);
-`;
-  childProcess.execFileSync(
-    'docker',
-    [
-      'compose',
-      '--project-name',
-      process.env.E2E_COMPOSE_PROJECT_NAME || 'kortix-default',
-      '--env-file',
-      envFile,
-      '-f',
-      composeFile,
-      'exec',
-      '-T',
-      'supabase-db',
-      'psql',
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-U',
-      'postgres',
-      '-d',
-      'postgres',
-    ],
-    { input: sql, encoding: 'utf8' },
-  );
-  return projectId;
 }
 
 async function createAuthUser(email: string): Promise<AuthUser> {
@@ -248,7 +172,11 @@ test.describe('12 — Sandbox templates UI', () => {
     );
     const personalAccount = accounts.json?.find((account) => account.personal_account);
     expect(personalAccount?.account_id).toBeTruthy();
-    projectId = seedSelfHostedProject(personalAccount!.account_id, user.id, projectName);
+    projectId = seedSelfHostedProject({
+      accountId: personalAccount!.account_id,
+      userId: user.id,
+      name: projectName,
+    });
   });
 
   test.afterAll(async () => {
