@@ -705,7 +705,7 @@ iamRouter.post('/:accountId/iam/members/:userId/effective:batch', async (c) => {
   }
 
   const body = await readBody(c);
-  const rawProbes = body.probes ?? body.queries;
+  const rawProbes = body.probes;
   if (!Array.isArray(rawProbes)) {
     return c.json({ error: 'probes must be an array' }, 400);
   }
@@ -1112,11 +1112,11 @@ iamRouter.put('/:accountId/iam/sso/provider', async (c) => {
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const body = await readBody(c);
-  const supabaseSsoProviderId = (body.supabase_sso_provider_id ?? body.supabaseSsoProviderId) as unknown;
+  const supabaseSsoProviderId = body.supabase_sso_provider_id as unknown;
   const name = body.name as unknown;
-  const primaryDomain = (body.primary_domain ?? body.primaryDomain) as unknown;
-  const groupClaimName = (body.group_claim_name ?? body.groupClaimName) as unknown;
-  const autoCreateMembers = (body.auto_create_members ?? body.autoCreateMembers) as unknown;
+  const primaryDomain = body.primary_domain as unknown;
+  const groupClaimName = body.group_claim_name as unknown;
+  const autoCreateMembers = body.auto_create_members as unknown;
 
   if (typeof supabaseSsoProviderId !== 'string' || !/^[0-9a-f-]{36}$/i.test(supabaseSsoProviderId)) {
     return c.json({ error: 'supabase_sso_provider_id must be a UUID' }, 400);
@@ -1222,8 +1222,8 @@ iamRouter.post('/:accountId/iam/sso/mappings', async (c) => {
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
 
   const body = await readBody(c);
-  const claimValue = (body.claim_value ?? body.claimValue) as unknown;
-  const groupId = (body.group_id ?? body.groupId) as unknown;
+  const claimValue = body.claim_value as unknown;
+  const groupId = body.group_id as unknown;
   if (typeof claimValue !== 'string' || claimValue.trim().length === 0) {
     return c.json({ error: 'claim_value is required' }, 400);
   }
@@ -1348,11 +1348,11 @@ iamRouter.patch('/:accountId/iam/session-policy', async (c) => {
   try {
     maxLifetimeMinutes = parseLimit(
       'max_lifetime_minutes',
-      body.max_lifetime_minutes ?? body.maxLifetimeMinutes,
+      body.max_lifetime_minutes,
     );
     idleTimeoutMinutes = parseLimit(
       'idle_timeout_minutes',
-      body.idle_timeout_minutes ?? body.idleTimeoutMinutes,
+      body.idle_timeout_minutes,
     );
   } catch (err) {
     if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
@@ -1544,15 +1544,15 @@ iamRouter.patch('/:accountId/iam/pat-policy', async (c) => {
   try {
     maxLifetimeDays = parseDays(
       'max_lifetime_days',
-      body.max_lifetime_days ?? body.maxLifetimeDays,
+      body.max_lifetime_days,
       PAT_MAX_LIFETIME_DAYS,
     );
     idleRevokeDays = parseDays(
       'idle_revoke_days',
-      body.idle_revoke_days ?? body.idleRevokeDays,
+      body.idle_revoke_days,
       PAT_MAX_IDLE_DAYS,
     );
-    const reqRaw = body.require_expiry ?? body.requireExpiry;
+    const reqRaw = body.require_expiry;
     if (reqRaw !== undefined) {
       if (typeof reqRaw !== 'boolean') {
         return c.json({ error: 'require_expiry must be a boolean' }, 400);

@@ -311,9 +311,7 @@ auditRouter.post('/:accountId/audit/webhooks', async (c) => {
   const actionPrefix =
     typeof body.action_prefix === 'string' && body.action_prefix.trim()
       ? body.action_prefix.trim()
-      : typeof body.actionPrefix === 'string' && body.actionPrefix.trim()
-        ? body.actionPrefix.trim()
-        : null;
+      : null;
 
   const secret = generateWebhookSecret();
 
@@ -376,8 +374,8 @@ auditRouter.patch('/:accountId/audit/webhooks/:webhookId', async (c) => {
   if (typeof body.enabled === 'boolean') {
     updates.enabled = body.enabled;
   }
-  if (body.action_prefix !== undefined || body.actionPrefix !== undefined) {
-    const raw = body.action_prefix ?? body.actionPrefix;
+  if (body.action_prefix !== undefined) {
+    const raw = body.action_prefix;
     updates.actionPrefix = typeof raw === 'string' && raw.trim() ? raw.trim() : null;
   }
   // url is intentionally NOT editable here — the integration on the other
