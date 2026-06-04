@@ -46,7 +46,7 @@ function exec(cmd: string, args: string[]): Promise<string> {
       if (code !== 0) reject(new Error(`${cmd} failed (${code}): ${stderr}`));
       else resolve(stdout);
     });
-    proc.on('error', () => {
+    proc.on('error', (err) => {
       reject(new Error(`${cmd} not found. Install it: sudo apt install ${cmd}`));
     });
   });

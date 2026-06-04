@@ -1,24 +1,12 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import {
-  closeSync,
-  constants,
-  lstatSync,
-  mkdtempSync,
-  openSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-  mkdirSync,
-} from 'node:fs';
+import { lstatSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { installAgentSkills } from '../agents';
+import { CANONICAL_SKILL, installAgentSkills } from '../agents';
 import { applyScaffold } from '../scaffold';
 
 let dir: string;
-const CANONICAL_SKILL = '.kortix/opencode/skills/kortix-system/SKILL.md';
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'kortix-agents-'));
@@ -46,14 +34,9 @@ describe('installAgentSkills', () => {
 
     for (const path of result.written) {
       const abs = join(dir, path);
-      const fd = openSync(abs, constants.O_RDONLY | constants.O_NOFOLLOW);
-      try {
-        const text = readFileSync(fd, 'utf8');
-        expect(text).toContain(CANONICAL_SKILL);
-        expect(text).toContain('name: kortix');
-      } finally {
-        closeSync(fd);
-      }
+      expect(lstatSync(abs).isSymbolicLink()).toBe(false);
+      expect(readFileSync(abs, 'utf8')).toContain(CANONICAL_SKILL);
+      expect(readFileSync(abs, 'utf8')).toContain('name: kortix');
     }
   });
 

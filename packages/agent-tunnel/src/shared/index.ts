@@ -24,6 +24,7 @@ export type {
   TunnelRelayEvents,
   TunnelRelayConfig,
   HeartbeatConfig,
+  TunnelServerConfig,
   TunnelAuthMessage,
   AuthResult,
   TunnelCapability,

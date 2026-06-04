@@ -1,12 +1,12 @@
 import { createServer, type Server } from 'node:http';
 import { randomBytes } from 'node:crypto';
 
-interface BrowserAuthResult {
+export interface BrowserAuthResult {
   /** The plaintext PAT the dashboard minted on behalf of the user. */
   token: string;
 }
 
-interface BrowserAuthSession {
+export interface BrowserAuthSession {
   /** Localhost port the CLI is listening on. */
   port: number;
   /** Opaque nonce — must match in the callback. */

@@ -6,7 +6,7 @@ import { ApiError } from './client.ts';
  * The Kortix API exposes it at /v1/p/{sandboxId}/4096/* with the same
  * Bearer-token auth the rest of the CLI uses.
  */
-const OPENCODE_PORT = 4096;
+export const OPENCODE_PORT = 4096;
 
 interface RequestOpts {
   apiBase: string;
@@ -41,7 +41,7 @@ function joinProxyUrl(opts: RequestOpts): string {
  * Make an HTTP call against a sandbox service through the Kortix proxy.
  * Used for talking to OpenCode (port 4096) from the CLI.
  */
-async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
+export async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
   const url = joinProxyUrl(opts);
   const headers: Record<string, string> = {
     Authorization: `Bearer ${opts.token}`,
@@ -91,7 +91,7 @@ async function sandboxRequest<T>(opts: RequestOpts): Promise<T> {
   return payload as T;
 }
 
-interface SandboxOpencodeOpts {
+export interface SandboxOpencodeOpts {
   auth: Auth;
   sandboxId: string;
 }
@@ -161,7 +161,7 @@ export function opencodeClient(opts: SandboxOpencodeOpts) {
 
 // ── OpenCode response shapes (subset we use) ──────────────────────────────
 
-interface OpencodeSession {
+export interface OpencodeSession {
   id: string;
   parentID?: string | null;
   title?: string;
@@ -169,7 +169,7 @@ interface OpencodeSession {
   time?: { created?: number; updated?: number };
 }
 
-type OpencodePromptPart =
+export type OpencodePromptPart =
   | { type: 'text'; text: string }
   | { type: 'file'; mime: string; url: string; filename?: string };
 
@@ -178,16 +178,16 @@ export interface OpencodeMessageWithParts {
   parts: OpencodePart[];
 }
 
-type OpencodeMessage = OpencodeUserMessage | OpencodeAssistantMessage;
+export type OpencodeMessage = OpencodeUserMessage | OpencodeAssistantMessage;
 
-interface OpencodeUserMessage {
+export interface OpencodeUserMessage {
   id: string;
   role: 'user';
   sessionID: string;
   time?: { created?: number };
 }
 
-interface OpencodeAssistantMessage {
+export interface OpencodeAssistantMessage {
   id: string;
   role: 'assistant';
   sessionID: string;

@@ -3,53 +3,31 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { loadLocalManifest } from '../manifest';
-import { validateManifest, type ManifestIssue } from '@kortix/manifest-schema';
+import { envSpecFromManifest, lintManifest, loadLocalManifest } from '../manifest';
 import { parse as parseToml } from 'smol-toml';
 
 function lintToml(toml: string) {
-  return classifyIssues(validateManifest(parseToml(toml) as Record<string, unknown>).issues);
+  return lintManifest(parseToml(toml) as Record<string, unknown>);
 }
 
-function classifyIssues(issues: ManifestIssue[]) {
-  const errors: string[] = [];
-  const warnings: string[] = [];
-  for (const issue of issues) {
-    const formatted = `${issue.path}: ${issue.message}`;
-    if (issue.severity === 'error') errors.push(formatted);
-    else warnings.push(formatted);
-  }
-  return { errors, warnings };
-}
-
-describe('loadLocalManifest env parsing', () => {
-  let dir: string;
-
-  beforeEach(() => {
-    dir = mkdtempSync(join(tmpdir(), 'kortix-manifest-env-'));
-  });
-
-  afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
-  });
-
+describe('envSpecFromManifest', () => {
   test('normalizes, uppercases, dedupes, and drops bad names', () => {
-    writeFileSync(
-      join(dir, 'kortix.toml'),
-      'kortix_version = 1\n[env]\nrequired = ["anthropic_api_key", "ANTHROPIC_API_KEY", " openai_api_key ", "1bad", 42]\noptional = ["foo"]\n',
-    );
-    const manifest = loadLocalManifest(dir);
-    expect(manifest?.env.required).toEqual(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY']);
-    expect(manifest?.env.optional).toEqual(['FOO']);
+    const spec = envSpecFromManifest({
+      env: {
+        required: ['anthropic_api_key', 'ANTHROPIC_API_KEY', ' openai_api_key ', '1bad', 42],
+        optional: ['foo'],
+      },
+    });
+    expect(spec.required).toEqual(['ANTHROPIC_API_KEY', 'OPENAI_API_KEY']);
+    expect(spec.optional).toEqual(['FOO']);
   });
 
   test('missing [env] yields empty spec', () => {
-    writeFileSync(join(dir, 'kortix.toml'), 'kortix_version = 1\n[project]\nname = "x"\n');
-    expect(loadLocalManifest(dir)?.env).toEqual({ required: [], optional: [] });
+    expect(envSpecFromManifest({})).toEqual({ required: [], optional: [] });
   });
 });
 
-describe('manifest validation', () => {
+describe('lintManifest', () => {
   test('a clean starter-shaped manifest has no errors', () => {
     const issues = lintToml(`
       kortix_version = 1

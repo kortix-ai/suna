@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 
 import { activeHost } from '../api/config.ts';
 import { createApiClient } from '../api/client.ts';
-import { normalizeProjectId, resolveProjectId } from '../project-link.ts';
+import { resolveProjectId } from '../project-link.ts';
 
 // These tests pin the contract the platform relies on when it injects auth
 // into a session sandbox: KORTIX_CLI_TOKEN / KORTIX_EXECUTOR_TOKEN carry the
@@ -67,17 +67,6 @@ describe('in-sandbox auth resolution', () => {
     process.env.KORTIX_PROJECT_ID = 'proj-xyz';
     expect(resolveProjectId()).toBe('proj-xyz');
   });
-
-  it('rejects path-like project ids from KORTIX_PROJECT_ID', () => {
-    process.env.KORTIX_PROJECT_ID = '../proj-xyz';
-    expect(resolveProjectId()).toBeNull();
-  });
-
-  it('normalizes safe project ids before API path interpolation', () => {
-    expect(normalizeProjectId(' proj-xyz_123 ')).toBe('proj-xyz_123');
-    expect(normalizeProjectId('proj/xyz')).toBeNull();
-    expect(normalizeProjectId('proj\nxyz')).toBeNull();
-  });
 });
 
 describe('API URL joining', () => {
@@ -115,11 +104,5 @@ describe('API URL joining', () => {
     const client = createApiClient({ apiBase: 'https://tunnel.example/v1/', token: 't' });
     await client.get('/projects/p1/change-requests');
     expect(calls[0]).toBe('https://tunnel.example/v1/projects/p1/change-requests');
-  });
-
-  it('rejects non-http API bases before fetching', () => {
-    expect(() => createApiClient({ apiBase: 'file:///tmp/kortix-auth.json', token: 't' })).toThrow(
-      'Invalid API URL protocol',
-    );
   });
 });

@@ -20,13 +20,28 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/opencode.jsonc',
   '.kortix/opencode/package.json',
   '.kortix/opencode/plugins/kortix-simple-memory.ts',
+  '.kortix/opencode/pty/opencode-pty/index.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/constants.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/buffer.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/formatters.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/manager.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/notification-manager.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/output-manager.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/permissions.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/session-lifecycle.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/kill.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/kill.txt',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/list.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/list.txt',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/read.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/read.txt',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/spawn.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/spawn.txt',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/write.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/tools/write.txt',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/types.ts',
+  '.kortix/opencode/pty/opencode-pty/src/plugin/pty/utils.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/pty/wildcard.ts',
   '.kortix/opencode/pty/opencode-pty/src/plugin/types.ts',
   '.kortix/opencode/pty/opencode-pty/src/shared/constants.ts',
@@ -55,8 +70,6 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/tools/show.ts',
   '.kortix/opencode/tools/web_search.ts',
   'README.md',
-  'app/index.js',
-  'app/package.json',
   'kortix.toml',
 ];
 
@@ -100,8 +113,7 @@ describe('applyScaffold', () => {
     // Manifest declares the opencode config dir explicitly. Sandbox templates
     // are no longer pre-seeded — the project boots from the platform default
     // and users can add custom `[[sandbox.templates]]` entries on demand.
-    expect(manifest).not.toMatch(/^\s*\[sandbox\]\s*$/m);
-    expect(manifest).not.toMatch(/^\s*\[\[sandbox\.templates\]\]\s*$/m);
+    expect(manifest).not.toContain('[sandbox]');
     expect(manifest).toContain('config_dir = ".kortix/opencode"');
 
     // Sanity-check a couple of the other content files.

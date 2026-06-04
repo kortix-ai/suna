@@ -1,7 +1,11 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { parse as parseToml } from 'smol-toml';
-import { ENV_NAME_RE } from '@kortix/manifest-schema';
+import {
+  ENV_NAME_RE,
+  validateManifest,
+  type ManifestIssue,
+} from '@kortix/manifest-schema';
 
 /** The `[env]` contract from kortix.toml — names the runtime needs. */
 export interface EnvSpec {
@@ -15,6 +19,14 @@ export interface LocalManifest {
   raw: string;
   data: Record<string, unknown>;
   env: EnvSpec;
+}
+
+/** Result of `verifyManifest` — hard errors block a ship, warnings don't. */
+export interface ManifestIssues {
+  errors: string[];
+  warnings: string[];
+  /** Structured issues from the canonical validator. */
+  raw: ManifestIssue[];
 }
 
 /**
@@ -37,7 +49,7 @@ function normalizeEnvNames(value: unknown): string[] {
   return out;
 }
 
-function envSpecFromManifest(data: Record<string, unknown>): EnvSpec {
+export function envSpecFromManifest(data: Record<string, unknown>): EnvSpec {
   const env = data.env && typeof data.env === 'object' ? (data.env as Record<string, unknown>) : {};
   return {
     required: normalizeEnvNames(env.required),
@@ -45,7 +57,7 @@ function envSpecFromManifest(data: Record<string, unknown>): EnvSpec {
   };
 }
 
-function manifestPath(cwd: string = process.cwd()): string {
+export function manifestPath(cwd: string = process.cwd()): string {
   return resolve(cwd, 'kortix.toml');
 }
 
@@ -60,4 +72,36 @@ export function loadLocalManifest(cwd: string = process.cwd()): LocalManifest | 
   const raw = readFileSync(path, 'utf8');
   const data = parseToml(raw) as Record<string, unknown>;
   return { path, raw, data, env: envSpecFromManifest(data) };
+}
+
+/**
+ * Static-validate a parsed manifest the way the backend would. Thin shim
+ * over `@kortix/manifest-schema/validateManifest` — kept as the legacy entry
+ * point for callers that already had a parsed object handy. The canonical
+ * schema covers every section (project, env, opencode, sandboxes, triggers,
+ * connectors, channels, apps).
+ */
+export function lintManifest(data: Record<string, unknown>): ManifestIssues {
+  const { issues } = validateManifest(data);
+  return classifyIssues(issues);
+}
+
+/**
+ * Validate the on-disk kortix.toml from raw text. Returns a syntax-error
+ * issue when the TOML doesn't parse; otherwise runs the canonical schema.
+ */
+export function lintManifestText(raw: string): ManifestIssues {
+  const { issues } = validateManifest(raw);
+  return classifyIssues(issues);
+}
+
+function classifyIssues(issues: ManifestIssue[]): ManifestIssues {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+  for (const issue of issues) {
+    const formatted = `${issue.path}: ${issue.message}`;
+    if (issue.severity === 'error') errors.push(formatted);
+    else warnings.push(formatted);
+  }
+  return { errors, warnings, raw: issues };
 }

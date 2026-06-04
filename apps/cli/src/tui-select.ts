@@ -12,7 +12,7 @@ import { C, stripAnsi, visibleWidth } from './style.ts';
  * Falls back to a numbered-prompt mode when stdin isn't a TTY (CI, pipe,
  * `script` wrapper). That keeps tests + non-interactive callers working.
  */
-interface SelectItem<T> {
+export interface SelectItem<T> {
   /** What gets returned when the user picks this row. */
   value: T;
   /** Primary line (shown bold when selected). */
@@ -21,7 +21,7 @@ interface SelectItem<T> {
   sublabel?: string;
 }
 
-interface SelectOpts<T> {
+export interface SelectOpts<T> {
   /** Heading shown above the list. */
   title?: string;
   /** Items to choose from. Empty → returns null without prompting. */
@@ -224,7 +224,7 @@ function countPhysicalRows(s: string, cols: number | undefined): number {
 // `result[0]` if they need a singular pick alongside the set).
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface MultiSelectOpts<T> extends Omit<SelectOpts<T>, 'initialIndex'> {
+export interface MultiSelectOpts<T> extends Omit<SelectOpts<T>, 'initialIndex'> {
   /** Indices to start with toggled on. */
   initiallySelected?: number[];
   /** Require at least one to be toggled before allowing Enter. */

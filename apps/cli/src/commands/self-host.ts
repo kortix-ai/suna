@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 
 import { takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { getHost, upsertHost, type Host } from '../api/config.ts';
-import { openInBrowser } from '../browser.ts';
 import { prompt, selectFrom } from '../prompts.ts';
 import { C, status } from '../style.ts';
 
@@ -191,7 +190,7 @@ async function selfHostInit(flags: GlobalFlags): Promise<number> {
   writeEnv(flags.instance, env);
   writeDbInit(flags.instance, env);
   writeKongConfig(flags.instance);
-  writeCompose(flags.instance);
+  writeCompose(flags.instance, env);
   renderInitSummary(flags.instance, dir, env, existing !== null);
   return 0;
 }
@@ -230,7 +229,7 @@ async function selfHostStart(flags: GlobalFlags): Promise<number> {
   writeEnv(flags.instance, env);
   writeDbInit(flags.instance, env);
   writeKongConfig(flags.instance);
-  writeCompose(flags.instance);
+  writeCompose(flags.instance, env);
 
   process.stdout.write(`\n  ${C.bold}kortix self-host start${C.reset}\n`);
   process.stdout.write(`  ${C.dim}instance ${C.reset}${flags.instance}\n`);
@@ -317,7 +316,7 @@ function selfHostEnv(args: string[], flags: GlobalFlags): number {
     writeEnv(flags.instance, env);
     writeDbInit(flags.instance, env);
     writeKongConfig(flags.instance);
-    writeCompose(flags.instance);
+    writeCompose(flags.instance, env);
     process.stdout.write(`${status.ok('Updated self-host environment')}\n`);
     return 0;
   }
@@ -335,7 +334,7 @@ async function selfHostConfigure(flags: GlobalFlags): Promise<number> {
   writeEnv(flags.instance, env);
   writeDbInit(flags.instance, env);
   writeKongConfig(flags.instance);
-  writeCompose(flags.instance);
+  writeCompose(flags.instance, env);
   process.stdout.write(`${status.ok('Updated self-host integration config')}\n`);
   renderIntegrationSummary(env);
   return 0;
@@ -644,7 +643,7 @@ function defaultEnv(flags: GlobalFlags): SelfHostEnv {
   };
 }
 
-function writeCompose(instance: string): void {
+function writeCompose(instance: string, env: SelfHostEnv): void {
   const project = composeProject(instance);
   const text = `services:
   supabase-db:
@@ -700,6 +699,8 @@ function writeCompose(instance: string): void {
       GOTRUE_SMTP_ADMIN_EMAIL: admin@localhost
       GOTRUE_SMTP_HOST: localhost
       GOTRUE_SMTP_PORT: "587"
+      GOTRUE_SMTP_USER: unused
+      GOTRUE_SMTP_PASS: unused
       GOTRUE_SMTP_SENDER_NAME: Kortix
       GOTRUE_MAILER_URLPATHS_INVITE: /auth/v1/verify
       GOTRUE_MAILER_URLPATHS_CONFIRMATION: /auth/v1/verify
@@ -1033,4 +1034,10 @@ function b64url(value: string): string {
 
 function sqlString(value: string): string {
   return value.replace(/'/g, "''");
+}
+
+function openInBrowser(url: string): void {
+  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  spawnSync(cmd, args, { stdio: 'ignore' });
 }

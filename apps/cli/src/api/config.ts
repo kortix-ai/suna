@@ -39,19 +39,19 @@ import { dirname, resolve } from 'node:path';
 
 export const DEFAULT_API_BASE = process.env.KORTIX_DEFAULT_API_BASE ?? 'https://api.kortix.com';
 // Local `pnpm dev` API server.
-const DEFAULT_LOCAL_DEV_API_BASE = 'http://localhost:8008';
+export const DEFAULT_LOCAL_DEV_API_BASE = 'http://localhost:8008';
 // Kortix-internal hosted dev API.
-const DEFAULT_INTERNAL_DEV_API_BASE = 'http://dev-api.kortix.com';
+export const DEFAULT_INTERNAL_DEV_API_BASE = 'http://dev-api.kortix.com';
 // The self-host Docker stack publishes its API on this port by default
 // (see `kortix self-host` DEFAULT_API_URL). The built-in `selfhost` host is
 // pre-pointed here so `kortix hosts use selfhost` works before login;
 // `kortix self-host start` rewrites it to the actual published port.
-const DEFAULT_SELFHOST_API_BASE = 'http://localhost:13738';
+export const DEFAULT_SELFHOST_API_BASE = 'http://localhost:13738';
 
-const CLOUD_HOST_NAME = 'cloud';
-const LOCAL_DEV_HOST_NAME = 'local-dev';
-const INTERNAL_DEV_HOST_NAME = 'kortix-internal-dev';
-const SELFHOST_HOST_NAME = 'selfhost';
+export const CLOUD_HOST_NAME = 'cloud';
+export const LOCAL_DEV_HOST_NAME = 'local-dev';
+export const INTERNAL_DEV_HOST_NAME = 'kortix-internal-dev';
+export const SELFHOST_HOST_NAME = 'selfhost';
 export const DEFAULT_HOST_NAME = CLOUD_HOST_NAME;
 
 // Legacy built-in names migrated to the new scheme on load.
@@ -68,7 +68,7 @@ export interface Host {
   logged_in_at: string;
 }
 
-interface Config {
+export interface Config {
   active: string;
   hosts: Record<string, Host>;
 }
@@ -102,7 +102,7 @@ function shouldImportSingleHostAuth(currentPath: string): boolean {
 
 // ─── Load / save ──────────────────────────────────────────────────────────
 
-function loadConfig(): Config {
+export function loadConfig(): Config {
   // Try the multi-host file first.
   const path = configFilePath();
   if (existsSync(path)) {
@@ -145,7 +145,7 @@ function loadConfig(): Config {
   return normalizeConfig({ active: DEFAULT_HOST_NAME, hosts: {} });
 }
 
-function saveConfig(config: Config): void {
+export function saveConfig(config: Config): void {
   const path = configFilePath();
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, JSON.stringify(config, null, 2) + '\n', 'utf8');
@@ -154,6 +154,11 @@ function saveConfig(config: Config): void {
   } catch {
     /* Windows */
   }
+}
+
+export function deleteConfig(): void {
+  const path = configFilePath();
+  if (existsSync(path)) rmSync(path, { force: true });
 }
 
 // ─── Active host helpers ──────────────────────────────────────────────────

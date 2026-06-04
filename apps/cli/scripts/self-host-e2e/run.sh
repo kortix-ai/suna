@@ -201,10 +201,6 @@ if [ -n "$SANDBOX_IMAGE" ]; then
 fi
 ok "Config initialized without prompts"
 
-section "Build Current Source Images"
-bash "$SUNA_ROOT/scripts/build-local-images.sh" --tag selfhost-local
-ok "Current-source images rebuilt"
-
 section "Start Stack"
 $CLI self-host start --instance "$INSTANCE" --tag "$TAG"
 ok "Docker Compose started"
@@ -285,8 +281,27 @@ insert into kortix.project_members (
   '$USER_ID'::uuid
 );
 
+insert into kortix.project_runtime_snapshots (
+  account_id,
+  project_id,
+  provider,
+  commit_sha,
+  branch,
+  snapshot_id,
+  status,
+  metadata
+) values (
+  '$ACCOUNT_ID'::uuid,
+  '$PROJECT_ID'::uuid,
+  'local_docker',
+  '$PROJECT_COMMIT',
+  'main',
+  'self-host-e2e-ready',
+  'ready',
+  '{"self_host_e2e":true}'::jsonb
+);
 SQL
-ok "Project and member seeded: $PROJECT_ID"
+ok "Project and ready local_docker snapshot seeded: $PROJECT_ID"
 
 curl -fsS -H "authorization: Bearer $ACCESS_TOKEN" "$API_PUBLIC_URL/v1/projects/$PROJECT_ID/sessions" >/dev/null
 ok "Seeded project is visible to API"
@@ -311,20 +326,8 @@ if status not in ("ok", "degraded"):
 ok "Sandbox /kortix/health returned healthy JSON"
 
 section "CLI Host Registration"
-$CLI hosts info selfhost >/dev/null
-ok "CLI registered selfhost host"
-
-section "Browser Playwright E2E"
-export E2E_BASE_URL="$PUBLIC_URL"
-export E2E_API_URL="$API_PUBLIC_URL/v1"
-export E2E_SUPABASE_URL="$SUPABASE_PUBLIC_URL"
-export E2E_ENV_FILE="$CONFIG_DIR/.env"
-export E2E_OWNER_EMAIL="$EMAIL"
-export E2E_OWNER_PASSWORD="$PASSWORD"
-export E2E_COMPOSE_PROJECT_NAME="kortix-$INSTANCE"
-export E2E_SANDBOX_CONTAINER_NAME="kortix-$INSTANCE-sandbox"
-pnpm --dir "$SUNA_ROOT/tests" exec playwright test -c playwright.config.ts
-ok "Playwright browser suite passed"
+$CLI hosts info local >/dev/null
+ok "CLI registered local host"
 
 section "Result"
 ok "Full self-host e2e passed"

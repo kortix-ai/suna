@@ -19,7 +19,7 @@ export interface ApiClient {
   delete<T = unknown>(path: string): Promise<T>;
 }
 
-interface ClientOptions {
+export interface ClientOptions {
   apiBase?: string;
   token?: string;
 }
@@ -36,16 +36,6 @@ function joinUrl(base: string, path: string): string {
   // Hono mounts v1 routes. Normalize incoming `/accounts/me` -> `/v1/accounts/me`.
   const versioned = p.startsWith('/v1/') ? p : `/v1${p}`;
   return `${b}${versioned}`;
-}
-
-function normalizeApiBase(value: string): string {
-  const url = new URL(value);
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`Invalid API URL protocol: ${url.protocol}`);
-  }
-  url.search = '';
-  url.hash = '';
-  return url.toString().replace(/\/+$/, '');
 }
 
 async function request<T>(
@@ -94,7 +84,7 @@ async function request<T>(
 }
 
 export function createApiClient(opts: ClientOptions): ApiClient {
-  const apiBase = normalizeApiBase(opts.apiBase ?? 'https://api.kortix.com');
+  const apiBase = opts.apiBase ?? 'https://api.kortix.com';
   return {
     apiBase,
     get: <T>(path: string) => request<T>('GET', path, undefined, { apiBase, token: opts.token }),

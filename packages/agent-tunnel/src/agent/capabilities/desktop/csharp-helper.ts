@@ -774,7 +774,7 @@ class Helper
 
 let compiled = false;
 
-async function ensureHelper(): Promise<string> {
+export async function ensureHelper(): Promise<string> {
   if (compiled && existsSync(HELPER_PATH)) return HELPER_PATH;
 
   if (existsSync(HELPER_PATH)) {
@@ -828,7 +828,7 @@ async function ensureHelper(): Promise<string> {
   return HELPER_PATH;
 }
 
-interface CSharpHelperRequest {
+export interface CSharpHelperRequest {
   action: string;
   x?: number;
   y?: number;
@@ -856,7 +856,7 @@ interface CSharpHelperRequest {
   value?: string;
 }
 
-interface CSharpHelperResponse {
+export interface CSharpHelperResponse {
   ok: boolean;
   x?: number;
   y?: number;

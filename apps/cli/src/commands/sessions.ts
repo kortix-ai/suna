@@ -6,7 +6,6 @@ import {
   surfaceApiError,
   takeFlagValue,
 } from '../command-helpers.ts';
-import { openInBrowser } from '../browser.ts';
 import { runSessionsChat } from './sessions-chat.ts';
 import { C, pad, status } from '../style.ts';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
@@ -443,4 +442,15 @@ function webDashboardUrl(apiBase: string): string {
   } catch {
     return 'https://kortix.com';
   }
+}
+
+function openInBrowser(url: string): void {
+  const cmd =
+    process.platform === 'darwin'
+      ? 'open'
+      : process.platform === 'win32'
+        ? 'cmd'
+        : 'xdg-open';
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  spawnSync(cmd, args, { stdio: 'ignore' });
 }

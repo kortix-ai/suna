@@ -11,6 +11,7 @@ import {
 } from '../manifest-edit.ts';
 import { C, pad, status } from '../style.ts';
 import type {
+  ProjectTrigger,
   ProjectTriggersResponse,
   TriggerFireResponse,
 } from '../api/types.ts';

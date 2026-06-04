@@ -27,6 +27,7 @@ export type {
   TunnelRelayEvents,
   TunnelRelayConfig,
   HeartbeatConfig,
+  TunnelServerConfig,
   TunnelAuthMessage,
   AuthResult,
   TunnelCapability,
@@ -39,6 +40,9 @@ export { TunnelRelay, TunnelRelayError } from './server';
 export { HeartbeatManager } from './server';
 export { createWsHandlers } from './server';
 export type { WsHandlers, WsHandlerOptions } from './server';
+export { createTunnelRouter } from './server';
+export { startTunnelServer } from './server';
+export type { TunnelServer } from './server';
 
 // ─── Client: SDK ────────────────────────────────────────────────────────────
 export { TunnelClient, TunnelClientError } from './client';

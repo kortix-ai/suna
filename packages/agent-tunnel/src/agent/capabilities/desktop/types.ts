@@ -79,7 +79,7 @@ export interface ScreenInfo {
   scaleFactor: number;
 }
 
-interface AXElement {
+export interface AXElement {
   id: string;
   role: string;
   subrole?: string;

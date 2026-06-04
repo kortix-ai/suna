@@ -46,34 +46,6 @@ const DEFAULTS: Partial<TunnelConfig> = {
   shellEnvPassthrough: ['PATH', 'HOME', 'USER', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'NODE_ENV', 'HOSTNAME'],
 };
 
-function compactConfig(input: Partial<TunnelConfig>): Partial<TunnelConfig> {
-  return Object.fromEntries(
-    Object.entries(input).filter(([, value]) => value !== undefined),
-  ) as Partial<TunnelConfig>;
-}
-
-function normalizeApiUrl(value: unknown): string {
-  if (typeof value !== 'string' || !value.trim()) {
-    throw new Error('Tunnel API URL is required');
-  }
-  const url = new URL(value.trim());
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error(`Invalid tunnel API URL protocol: ${url.protocol}`);
-  }
-  url.search = '';
-  url.hash = '';
-  return url.toString().replace(/\/+$/, '');
-}
-
-function normalizeWsPath(value: unknown): string {
-  if (typeof value !== 'string' || !value.trim()) return '/ws';
-  const path = value.trim();
-  if (!path.startsWith('/') || path.includes('?') || path.includes('#') || path.includes('://')) {
-    throw new Error('Tunnel WebSocket path must be an absolute path');
-  }
-  return path;
-}
-
 export function loadConfig(overrides: Partial<TunnelConfig> = {}): TunnelConfig {
   let fileConfig: Partial<TunnelConfig> = {};
   if (existsSync(CONFIG_FILE)) {
@@ -95,12 +67,8 @@ export function loadConfig(overrides: Partial<TunnelConfig> = {}): TunnelConfig 
     ...DEFAULTS,
     ...fileConfig,
     ...envConfig,
-    ...compactConfig(overrides),
+    ...overrides,
   } as TunnelConfig;
 
-  return {
-    ...merged,
-    apiUrl: normalizeApiUrl(merged.apiUrl),
-    wsPath: normalizeWsPath(merged.wsPath),
-  };
+  return merged;
 }

@@ -95,7 +95,7 @@ function wrap(text: string, width: number): string[] {
   return lines;
 }
 
-interface GetStartedInput {
+export interface GetStartedInput {
   prompt: string;
 }
 

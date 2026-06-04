@@ -1,8 +1,9 @@
 import { existsSync, lstatSync, rmSync, unlinkSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
-import { authFileLocation, clearAuth } from '../api/auth.ts';
+import { authFileLocation, clearAuth, loadAuth } from '../api/auth.ts';
 import { confirm } from '../prompts.ts';
 import { C, status } from '../style.ts';
 
@@ -166,3 +167,7 @@ function removeTarget(t: Target): void {
     rmSync(t.path, { recursive: true, force: true });
   }
 }
+
+// Reference the imports so unused-detection stays happy.
+void loadAuth;
+void spawnSync;

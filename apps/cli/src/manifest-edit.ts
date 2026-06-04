@@ -10,11 +10,11 @@ import { parse as parseToml } from 'smol-toml';
  * scaffold survives intact. `kortix ship` then reconciles the change.
  */
 
-function manifestFile(cwd: string = process.cwd()): string {
+export function manifestFile(cwd: string = process.cwd()): string {
   return resolve(cwd, 'kortix.toml');
 }
 
-function readManifestText(cwd?: string): string {
+export function readManifestText(cwd?: string): string {
   const path = manifestFile(cwd);
   if (!existsSync(path)) {
     throw new Error('No kortix.toml here — run `kortix init` first (config is file-based).');
@@ -45,6 +45,23 @@ export function arrayEntryExists(section: string, field: string, value: string, 
   const arr = resolveSection(data, section);
   if (!Array.isArray(arr)) return false;
   return arr.some((e) => e && typeof e === 'object' && (e as Record<string, unknown>)[field] === value);
+}
+
+/** Read a single `[[section]]` entry as an object (or null). */
+export function readArrayEntry(
+  section: string,
+  field: string,
+  value: string,
+  cwd?: string,
+): Record<string, unknown> | null {
+  const data = parseToml(readManifestText(cwd)) as Record<string, unknown>;
+  const arr = resolveSection(data, section);
+  if (!Array.isArray(arr)) return null;
+  return (
+    (arr.find((e) => e && typeof e === 'object' && (e as Record<string, unknown>)[field] === value) as
+      | Record<string, unknown>
+      | undefined) ?? null
+  );
 }
 
 /** Append an `[[section]]` block built from `fields` (insertion order). */

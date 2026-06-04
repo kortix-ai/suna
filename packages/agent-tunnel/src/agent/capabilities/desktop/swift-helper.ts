@@ -609,7 +609,7 @@ handleRequest(req)
 
 let compiled = false;
 
-async function ensureHelper(): Promise<string> {
+export async function ensureHelper(): Promise<string> {
   if (compiled && existsSync(HELPER_PATH)) return HELPER_PATH;
 
   if (existsSync(HELPER_PATH)) {
@@ -648,7 +648,7 @@ async function ensureHelper(): Promise<string> {
   return HELPER_PATH;
 }
 
-interface HelperRequest {
+export interface HelperRequest {
   action: string;
   x?: number;
   y?: number;
@@ -671,7 +671,7 @@ interface HelperRequest {
   value?: string;
 }
 
-interface HelperResponse {
+export interface HelperResponse {
   ok: boolean;
   x?: number;
   y?: number;

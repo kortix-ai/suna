@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { signMessage, verifyMessageSignature } from '../shared/crypto';
 import {
   type JsonRpcRequest,
+  type JsonRpcResponse,
   type JsonRpcNotification,
   type PendingRPC,
   type RelayRpcOptions,
