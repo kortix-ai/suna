@@ -1,13 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { ArrowRight, Check, Loader2, Mail } from 'lucide-react';
 import Cal, { getCalApi } from '@calcom/embed-react';
+import { ArrowRight, Check, Loader2, Mail } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -17,6 +14,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
@@ -24,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Shared demo qualifier
@@ -190,8 +190,13 @@ export function DemoQualifierDialog({
         </DialogContent>
       ) : step === 'form' ? (
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[420px]">
-          <form onSubmit={(e) => { e.preventDefault(); void submit(); }}>
-            <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void submit();
+            }}
+          >
+            <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
               <DialogTitle>{title}</DialogTitle>
               <DialogDescription>{description}</DialogDescription>
             </DialogHeader>
@@ -241,10 +246,7 @@ export function DemoQualifierDialog({
                 <Label htmlFor="dq-size">
                   Company size <span className="text-destructive">*</span>
                 </Label>
-                <Select
-                  value={size ?? undefined}
-                  onValueChange={(v) => setSize(v as CompanySize)}
-                >
+                <Select value={size ?? undefined} onValueChange={(v) => setSize(v as CompanySize)}>
                   <SelectTrigger id="dq-size" className="w-full">
                     <SelectValue placeholder="Select company size" />
                   </SelectTrigger>
@@ -261,7 +263,7 @@ export function DemoQualifierDialog({
               <div className="space-y-1.5">
                 <Label htmlFor="dq-goal">
                   What do you want Kortix to do?{' '}
-                  <span className="font-normal text-muted-foreground">(optional)</span>
+                  <span className="text-muted-foreground font-normal">(optional)</span>
                 </Label>
                 <Textarea
                   id="dq-goal"
@@ -273,13 +275,11 @@ export function DemoQualifierDialog({
                 />
               </div>
 
-              {error && <p className="text-sm text-destructive">{error}</p>}
+              {error && <p className="text-destructive text-sm">{error}</p>}
             </div>
 
-            <DialogFooter variant="bar" className="justify-between">
-              <span className="text-xs text-muted-foreground">
-                No spam — a human replies.
-              </span>
+            <DialogFooter className="justify-between">
+              <span className="text-muted-foreground text-xs">No spam — a human replies.</span>
               <Button type="submit" disabled={submitting}>
                 {submitting ? (
                   <>
@@ -300,7 +300,7 @@ export function DemoQualifierDialog({
         // Disqualified → self-serve. Confirm capture, then frame self-serve as
         // the faster path (not a rejection).
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[420px]">
-          <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
+          <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
             <DialogTitle>You can start right now</DialogTitle>
             <DialogDescription>
               No call needed — Kortix is self-serve, so you can dive straight in.
@@ -311,13 +311,13 @@ export function DemoQualifierDialog({
             <InfoBanner tone="success" icon={Check} title="Request received">
               We&apos;ve saved your details and we&apos;ll be in touch if it&apos;s a fit.
             </InfoBanner>
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              Spin up your first agent in minutes — most teams your size are up
-              and running the same day. If you hit a wall, we&apos;re one email away.
+            <p className="text-muted-foreground text-sm leading-relaxed">
+              Spin up your first agent in minutes — most teams your size are up and running the same
+              day. If you hit a wall, we&apos;re one email away.
             </p>
           </div>
 
-          <DialogFooter variant="bar">
+          <DialogFooter>
             <Button asChild variant="ghost">
               <a href={`mailto:${CONTACT_EMAIL}`}>
                 <Mail />

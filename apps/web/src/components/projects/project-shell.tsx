@@ -115,7 +115,7 @@ export function ProjectShell({
   }
 
   return (
-    <BillingAccountProvider accountId={projectDetail?.account_id ?? null}>
+    <BillingAccountProvider accountId={projectDetail?.project?.account_id ?? null}>
     <AppProviders
       showSidebar
       showRightSidebar={false}

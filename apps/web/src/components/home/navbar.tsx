@@ -123,196 +123,198 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     if (!isDrawerOpen) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    return () => {
+      document.body.style.overflow = prev;
+    };
   }, [isDrawerOpen]);
 
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
   const handleOverlayClick = () => setIsDrawerOpen(false);
 
   return (
-    <header
-      className={cn(
-        'w-full px-5 pt-4 transition-colors duration-300',
-        isAbsolute ? '' : 'sticky top-0 z-50',
-        hasScrolled && 'bg-background/80 pb-2 backdrop-blur-xl',
-      )}
-    >
-      <div className="mx-auto flex h-[52px] max-w-6xl items-center justify-between">
-        <div className="flex flex-1 items-center gap-8">
-          <ContextMenu>
-            <ContextMenuTrigger asChild>
-              <Link href="/" className="hit-area-4 flex shrink-0 items-center">
-                <KortixLogo size={18} variant="logomark" />
-              </Link>
-            </ContextMenuTrigger>
-            <ContextMenuContent className="w-64">
-              <ContextMenuSub>
-                <ContextMenuSubTrigger className="gap-2 text-sm">
-                  <KortixLogo size={14} variant="symbol" />
-                  {tHardcodedUi.raw('componentsHomeNavbar.line221JsxTextDownloadSymbol')}
-                </ContextMenuSubTrigger>
-                <ContextMenuSubContent className="w-40">
-                  {[
-                    {
-                      label: 'Black · SVG',
-                      href: '/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg',
-                      file: 'kortix-symbol-black.svg',
-                    },
-                    {
-                      label: 'Black · PNG',
-                      href: '/brandkit/Logo/Brandmark/PNG/Brandmark Black.png',
-                      file: 'kortix-symbol-black.png',
-                    },
-                    {
-                      label: 'White · SVG',
-                      href: '/brandkit/Logo/Brandmark/SVG/Brandmark White.svg',
-                      file: 'kortix-symbol-white.svg',
-                    },
-                    {
-                      label: 'White · PNG',
-                      href: '/brandkit/Logo/Brandmark/PNG/Brandmark White.png',
-                      file: 'kortix-symbol-white.png',
-                    },
-                  ].map((d) => (
-                    <ContextMenuItem
-                      key={d.file}
-                      onClick={() => {
-                        const a = document.createElement('a');
-                        a.href = d.href;
-                        a.download = d.file;
-                        a.click();
-                      }}
-                      className="cursor-pointer text-sm"
-                    >
-                      {d.label}
-                    </ContextMenuItem>
-                  ))}
-                </ContextMenuSubContent>
-              </ContextMenuSub>
-              <ContextMenuSub>
-                <ContextMenuSubTrigger className="gap-2 text-sm">
-                  <Type className="size-3.5 shrink-0" />
-                  {tHardcodedUi.raw('componentsHomeNavbar.line239JsxTextDownloadWordmark')}
-                </ContextMenuSubTrigger>
-                <ContextMenuSubContent className="w-40">
-                  {[
-                    {
-                      label: 'Black · SVG',
-                      href: '/brandkit/Logo/Logomark/SVG/Logomark Black.svg',
-                      file: 'kortix-logo-black.svg',
-                    },
-                    {
-                      label: 'Black · PNG',
-                      href: '/brandkit/Logo/Logomark/PNG/Logomark Black.png',
-                      file: 'kortix-logo-black.png',
-                    },
-                    {
-                      label: 'White · SVG',
-                      href: '/brandkit/Logo/Logomark/SVG/Logomark White.svg',
-                      file: 'kortix-logo-white.svg',
-                    },
-                    {
-                      label: 'White · PNG',
-                      href: '/brandkit/Logo/Logomark/PNG/Logomark White.png',
-                      file: 'kortix-logo-white.png',
-                    },
-                  ].map((d) => (
-                    <ContextMenuItem
-                      key={d.file}
-                      onClick={() => {
-                        const a = document.createElement('a');
-                        a.href = d.href;
-                        a.download = d.file;
-                        a.click();
-                      }}
-                      className="cursor-pointer text-sm"
-                    >
-                      {d.label}
-                    </ContextMenuItem>
-                  ))}
-                </ContextMenuSubContent>
-              </ContextMenuSub>
-              <ContextMenuItem
-                onClick={() => router.push('/design-system')}
-                className="cursor-pointer gap-2 text-sm"
-              >
-                <Layers className="size-3.5 shrink-0" />
-                {tHardcodedUi.raw('componentsHomeNavbar.line259JsxTextDesignSystem')}
-              </ContextMenuItem>
-            </ContextMenuContent>
-          </ContextMenu>
+    <>
+      <header
+        className={cn(
+          'w-full px-5 pt-4 transition-colors duration-300',
+          isAbsolute ? '' : 'sticky top-0 z-50',
+          hasScrolled && 'bg-background/80 pb-2 backdrop-blur-xl',
+        )}
+      >
+        <div className="mx-auto flex h-[52px] max-w-6xl items-center justify-between">
+          <div className="flex flex-1 items-center gap-8">
+            <ContextMenu>
+              <ContextMenuTrigger asChild>
+                <Link href="/" className="hit-area-4 flex shrink-0 items-center">
+                  <KortixLogo size={18} variant="logomark" />
+                </Link>
+              </ContextMenuTrigger>
+              <ContextMenuContent className="w-64">
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger className="gap-2 text-sm">
+                    <KortixLogo size={14} variant="symbol" />
+                    {tHardcodedUi.raw('componentsHomeNavbar.line221JsxTextDownloadSymbol')}
+                  </ContextMenuSubTrigger>
+                  <ContextMenuSubContent className="w-40">
+                    {[
+                      {
+                        label: 'Black · SVG',
+                        href: '/brandkit/Logo/Brandmark/SVG/Brandmark Black.svg',
+                        file: 'kortix-symbol-black.svg',
+                      },
+                      {
+                        label: 'Black · PNG',
+                        href: '/brandkit/Logo/Brandmark/PNG/Brandmark Black.png',
+                        file: 'kortix-symbol-black.png',
+                      },
+                      {
+                        label: 'White · SVG',
+                        href: '/brandkit/Logo/Brandmark/SVG/Brandmark White.svg',
+                        file: 'kortix-symbol-white.svg',
+                      },
+                      {
+                        label: 'White · PNG',
+                        href: '/brandkit/Logo/Brandmark/PNG/Brandmark White.png',
+                        file: 'kortix-symbol-white.png',
+                      },
+                    ].map((d) => (
+                      <ContextMenuItem
+                        key={d.file}
+                        onClick={() => {
+                          const a = document.createElement('a');
+                          a.href = d.href;
+                          a.download = d.file;
+                          a.click();
+                        }}
+                        className="cursor-pointer text-sm"
+                      >
+                        {d.label}
+                      </ContextMenuItem>
+                    ))}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger className="gap-2 text-sm">
+                    <Type className="size-3.5 shrink-0" />
+                    {tHardcodedUi.raw('componentsHomeNavbar.line239JsxTextDownloadWordmark')}
+                  </ContextMenuSubTrigger>
+                  <ContextMenuSubContent className="w-40">
+                    {[
+                      {
+                        label: 'Black · SVG',
+                        href: '/brandkit/Logo/Logomark/SVG/Logomark Black.svg',
+                        file: 'kortix-logo-black.svg',
+                      },
+                      {
+                        label: 'Black · PNG',
+                        href: '/brandkit/Logo/Logomark/PNG/Logomark Black.png',
+                        file: 'kortix-logo-black.png',
+                      },
+                      {
+                        label: 'White · SVG',
+                        href: '/brandkit/Logo/Logomark/SVG/Logomark White.svg',
+                        file: 'kortix-logo-white.svg',
+                      },
+                      {
+                        label: 'White · PNG',
+                        href: '/brandkit/Logo/Logomark/PNG/Logomark White.png',
+                        file: 'kortix-logo-white.png',
+                      },
+                    ].map((d) => (
+                      <ContextMenuItem
+                        key={d.file}
+                        onClick={() => {
+                          const a = document.createElement('a');
+                          a.href = d.href;
+                          a.download = d.file;
+                          a.click();
+                        }}
+                        className="cursor-pointer text-sm"
+                      >
+                        {d.label}
+                      </ContextMenuItem>
+                    ))}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+                <ContextMenuItem
+                  onClick={() => router.push('/design-system')}
+                  className="cursor-pointer gap-2 text-sm"
+                >
+                  <Layers className="size-3.5 shrink-0" />
+                  {tHardcodedUi.raw('componentsHomeNavbar.line259JsxTextDesignSystem')}
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
 
-          <nav className="hidden items-center justify-center gap-2 md:flex">
-            <ProductMegaMenu />
-            {filteredNavLinks.map((item) => (
-              <Button
-                key={item.id}
-                variant="ghost"
-                size="sm"
-                asChild
-                className={cn(
-                  pathname === item.href
-                    ? 'text-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                <Link key={item.id} href={item.href}>
-                  {item.name}
+            <nav className="hidden items-center justify-center gap-2 md:flex">
+              <ProductMegaMenu />
+              {filteredNavLinks.map((item) => (
+                <Button
+                  key={item.id}
+                  variant="ghost"
+                  size="sm"
+                  asChild
+                  className={cn(
+                    pathname === item.href
+                      ? 'text-foreground'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  <Link key={item.id} href={item.href}>
+                    {item.name}
+                  </Link>
+                </Button>
+              ))}
+            </nav>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1.5">
+            {formattedStars && !starsLoading && (
+              <Button variant="ghost" asChild className="hidden sm:flex">
+                <Link
+                  href="https://github.com/kortix-ai/suna"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Icon.Github className="size-3.5" />
+                  <span className={cn('font-medium tabular-nums', starsLoading && 'opacity-50')}>
+                    {formattedStars}
+                  </span>
                 </Link>
               </Button>
-            ))}
-          </nav>
-        </div>
+            )}
 
-        <div className="flex shrink-0 items-center gap-1.5">
-          {formattedStars && !starsLoading && (
-            <Button variant="ghost" asChild className="hidden sm:flex">
-              <Link
-                href="https://github.com/kortix-ai/suna"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                <Icon.Github className="size-3.5" />
-                <span className={cn('font-medium tabular-nums', starsLoading && 'opacity-50')}>
-                  {formattedStars}
-                </span>
+            <Button asChild variant="ghost" className="hidden sm:inline-flex">
+              <Link href="/enterprise">
+                {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
               </Link>
             </Button>
-          )}
+            {user ? (
+              <Button asChild>
+                <Link href="/projects">Projects</Link>
+              </Button>
+            ) : (
+              <Button
+                onClick={() => {
+                  trackCtaSignup();
+                  router.push(CTA_LINK);
+                }}
+              >
+                {tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}
+              </Button>
+            )}
 
-          <Button asChild variant="ghost" className="hidden sm:inline-flex">
-            <Link href="/enterprise">
-              {tHardcodedUi.raw('componentsHomeNavbar.line301JsxTextRequestDemo')}
-            </Link>
-          </Button>
-          {user ? (
-            <Button asChild>
-              <Link href="/projects">Projects</Link>
-            </Button>
-          ) : (
             <Button
-              onClick={() => {
-                trackCtaSignup();
-                router.push(CTA_LINK);
-              }}
+              onClick={toggleDrawer}
+              variant="ghost"
+              size="icon"
+              className="rounded-full md:hidden"
+              aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
             >
-              {tHardcodedUi.raw('componentsHomeNavbar.line312JsxTextGetStarted')}
+              <Menu className="size-5" />
             </Button>
-          )}
-
-          <Button
-            onClick={toggleDrawer}
-            variant="ghost"
-            size="icon"
-            className="rounded-full md:hidden"
-            aria-label={tHardcodedUi.raw('componentsHomeNavbar.line322JsxAttrAriaLabelOpenMenu')}
-          >
-            <Menu className="size-5" />
-          </Button>
+          </div>
         </div>
-      </div>
-    </header>
-
+      </header>
       <AnimatePresence>
         {isDrawerOpen && isMobile && (
           <motion.div
@@ -438,9 +440,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             </div>
           </motion.div>
         )}
-      </AnimatePresence>,
-        document.body,
-      )}
+      </AnimatePresence>
     </>
   );
 }
