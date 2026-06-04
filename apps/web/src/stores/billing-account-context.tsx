@@ -20,7 +20,8 @@ export function BillingAccountProvider({
   accountId,
   children,
 }: {
-  accountId: string;
+  // `null` = fall back to the user's primary account (global surfaces).
+  accountId: string | null;
   children: React.ReactNode;
 }) {
   return (

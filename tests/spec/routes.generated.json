@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 329,
+  "count": 338,
   "routes": [
     {
       "method": "GET",
@@ -323,6 +323,26 @@
       "path": "/v1/accounts/tokens/:tokenId"
     },
     {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/credits"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/admin/api/accounts/:id/credits/debit"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/ledger"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/admin/api/accounts/:id/users"
+    },
+    {
       "method": "POST",
       "path": "/v1/auth/logout"
     },
@@ -479,6 +499,10 @@
       "path": "/v1/billing/webhooks/stripe"
     },
     {
+      "method": "GET",
+      "path": "/v1/docs"
+    },
+    {
       "method": "POST",
       "path": "/v1/executor/call"
     },
@@ -573,6 +597,10 @@
     {
       "method": "GET",
       "path": "/v1/oauth/userinfo"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/openapi.json"
     },
     {
       "method": "GET",
@@ -703,10 +731,6 @@
       "path": "/v1/projects/:projectId/apps-config"
     },
     {
-      "method": "PATCH",
-      "path": "/v1/projects/:projectId/experimental"
-    },
-    {
       "method": "DELETE",
       "path": "/v1/projects/:projectId/apps/:slug"
     },
@@ -809,6 +833,10 @@
     {
       "method": "GET",
       "path": "/v1/projects/:projectId/detail"
+    },
+    {
+      "method": "PATCH",
+      "path": "/v1/projects/:projectId/experimental"
     },
     {
       "method": "GET",
@@ -1201,6 +1229,14 @@
     {
       "method": "GET",
       "path": "/v1/setup/status"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/system/maintenance"
+    },
+    {
+      "method": "PUT",
+      "path": "/v1/system/maintenance"
     },
     {
       "method": "GET",
