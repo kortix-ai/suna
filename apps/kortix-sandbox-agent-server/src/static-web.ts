@@ -161,7 +161,7 @@ function notFound(absPath: string): Response {
   })
 }
 
-function readError(absPath: string, error: unknown): Response {
+function readError(error: unknown): Response {
   const message = error instanceof Error ? error.message : String(error)
   return new Response(`Read error: ${message}`, {
     status: 500,
@@ -211,7 +211,7 @@ function serveFile(absPath: string, baseUrl: string, injectBaseTag = false): Res
     const code = (e as { code?: string })?.code
     if (code === 'ENOENT' || code === 'ENOTDIR') return notFound(absPath)
     if (code === 'EISDIR') return serveDirectory(absPath, baseUrl)
-    return readError(absPath, e)
+    return readError(e)
   }
 }
 
