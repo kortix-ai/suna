@@ -7,13 +7,14 @@ import { applyScaffold } from '../scaffold';
 
 let dir: string;
 
+// The full Kortix OpenCode runtime ships as editable SOURCE in the base starter
+// (self-contained — clone + run opencode locally works). Simplifications kept:
+// no `app/`, a single `.kortix/memory/MEMORY.md` seed (no stub sub-files). The
+// general-knowledge-worker template adds its skill pack on top. (Updates will be
+// managed via the Kortix registry later — see the registry plan.)
 const BASE_STARTER_PATHS = [
   '.gitignore',
   '.kortix/memory/MEMORY.md',
-  '.kortix/memory/conventions.md',
-  '.kortix/memory/decisions.md',
-  '.kortix/memory/integrations.md',
-  '.kortix/memory/overview.md',
   '.kortix/opencode/agents/kortix.md',
   '.kortix/opencode/agents/memory-reflector.md',
   '.kortix/opencode/bun.lock',
@@ -111,19 +112,20 @@ describe('applyScaffold', () => {
     expect(manifest).toContain('name = "Hello World"');
     expect(manifest).not.toContain('{{projectName}}');
 
-    // Manifest declares the opencode config dir explicitly. Sandbox templates
-    // are no longer pre-seeded — the project boots from the platform default
-    // and users can add custom `[[sandbox.templates]]` entries on demand.
-    expect(manifest).not.toContain('[sandbox]');
+    // Manifest declares the opencode config dir explicitly. No active
+    // `[sandbox]` table is pre-seeded (a commented `# [sandbox]` example is fine).
+    expect(manifest).not.toMatch(/^\[sandbox\]/m);
     expect(manifest).toContain('config_dir = ".kortix/opencode"');
 
-    // Sanity-check a couple of the other content files.
-    const agent = readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8');
-    expect(agent)
-      .toContain('You are a **Kortix general knowledge worker** for **Hello World**.');
-    expect(agent).toContain('permission:\n  "*": allow');
-    expect(readFileSync(join(dir, '.kortix/opencode/tools/show.ts'), 'utf8'))
-      .toContain('import { tool } from "@opencode-ai/plugin"');
+    // The full core ships as source (self-contained) — tools, skills, agents.
+    expect(result.written).toContain('.kortix/opencode/tools/show.ts');
+    expect(result.written).toContain('.kortix/opencode/skills/kortix-system/SKILL.md');
+    expect(result.written).toContain('.kortix/opencode/agents/kortix.md');
+    // The persona is interpolated with the project name.
+    expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toContain('Hello World');
+    // Simplifications kept: no app/, single memory seed (no stub sub-files).
+    expect(result.written.some((p) => p.startsWith('app/'))).toBe(false);
+    expect(result.written).not.toContain('.kortix/memory/overview.md');
   });
 
   test('minimal template writes only the shared Kortix starter', () => {
@@ -135,8 +137,7 @@ describe('applyScaffold', () => {
   });
 
   test('preserveExisting leaves prior files alone, fills in the rest', () => {
-    // Pre-seed a file we expect to be preserved + a folder we expect
-    // to be untouched.
+    // Pre-seed shipped files we expect to be preserved.
     mkdirSync(join(dir, '.kortix/opencode/agents'), { recursive: true });
     writeFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'CUSTOM PERSONA', 'utf8');
     writeFileSync(join(dir, 'README.md'), 'CUSTOM README', 'utf8');
@@ -149,7 +150,7 @@ describe('applyScaffold', () => {
 
     expect(result.skipped.sort()).toEqual(['.kortix/opencode/agents/kortix.md', 'README.md']);
     expect(result.written).toContain('kortix.toml');
-    expect(result.written).toContain('.kortix/opencode/tools/show.ts');
+    expect(result.written).toContain('.kortix/memory/MEMORY.md');
 
     expect(readFileSync(join(dir, '.kortix/opencode/agents/kortix.md'), 'utf8')).toBe('CUSTOM PERSONA');
     expect(readFileSync(join(dir, 'README.md'), 'utf8')).toBe('CUSTOM README');
