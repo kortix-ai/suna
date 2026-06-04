@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Maximize2, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { randomBase62 } from '@/lib/utils/random';
 
 // Global cache for rendered Mermaid diagrams
 const mermaidCache = new Map<string, string>();
@@ -272,7 +273,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
         mermaidInstance = mermaid;
       }
 
-      const chartId = `mermaid-fullscreen-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const chartId = `mermaid-fullscreen-${Date.now()}-${randomBase62(9)}`;
       const result = await mermaidInstance.render(chartId, chart);
 
       // Cache the fullscreen result too
@@ -398,7 +399,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
         }
 
         // Create a unique ID for this chart
-        const chartId = `mermaid-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const chartId = `mermaid-${Date.now()}-${randomBase62(9)}`;
 
         // Wrap Mermaid render in additional error handling to catch parsing errors
         let result;

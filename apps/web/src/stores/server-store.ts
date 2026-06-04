@@ -6,6 +6,7 @@ import { authenticatedFetch, getSupabaseAccessToken } from '@/lib/auth-token';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
+import { randomHex } from '@/lib/utils/random';
 
 /**
  * SDK client reset callback — set by opencode-sdk.ts to break the circular
@@ -200,7 +201,7 @@ function deriveProxyBaseFromServerUrl(url: string): { sandboxId: string; backend
 }
 
 function generateId(): string {
-  return `srv_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  return `srv_${Date.now().toString(36)}_${randomHex(3)}`;
 }
 
 // ── API sync helpers (fire-and-forget) ──────────────────────────────────────

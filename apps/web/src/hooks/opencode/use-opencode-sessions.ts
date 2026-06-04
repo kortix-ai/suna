@@ -8,6 +8,7 @@ import { useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useServerStore } from '@/stores/server-store';
 import { ScopedCache } from '@/lib/storage/managed-storage';
+import { randomBase62 } from '@/lib/utils/random';
 import type {
   Session,
   Message,
@@ -418,10 +419,7 @@ export function ascendingId(prefix: 'msg' | 'prt' = 'msg'): string {
   idCounter++;
   const encoded = BigInt(now) * BigInt(0x1000) + BigInt(idCounter);
   const hex = encoded.toString(16).padStart(12, '0').slice(0, 12);
-  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
-  let rand = '';
-  for (let i = 0; i < 14; i++) rand += chars[Math.floor(Math.random() * 62)];
-  return `${prefix}_${hex}${rand}`;
+  return `${prefix}_${hex}${randomBase62(14)}`;
 }
 
 export function useAbortOpenCodeSession() {
