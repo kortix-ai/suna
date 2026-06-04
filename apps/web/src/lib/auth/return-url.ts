@@ -1,5 +1,5 @@
 // Post-auth landing goes to the projects list.
-const DEFAULT_AUTH_RETURN_URL = '/projects';
+export const DEFAULT_AUTH_RETURN_URL = '/projects';
 const LEGACY_AUTH_RETURN_PREFIXES = [
   '/dashboard',
   '/instances',

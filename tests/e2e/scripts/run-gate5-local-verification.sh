@@ -34,6 +34,18 @@ env_file_value() {
   local file="${GATE5_LOCAL_ENV_FILE:-${E2E_ENV_FILE:-}}"
   [ -n "$file" ] || return 0
   [ -f "$file" ] || return 0
+
+  local decrypted=""
+  if command -v dotenvx >/dev/null 2>&1; then
+    decrypted="$(dotenvx get "$key" -f "$file" 2>/dev/null || true)"
+  elif [ -x "$REPO_ROOT/node_modules/.bin/dotenvx" ]; then
+    decrypted="$("$REPO_ROOT/node_modules/.bin/dotenvx" get "$key" -f "$file" 2>/dev/null || true)"
+  fi
+  if [ -n "$decrypted" ] && [[ "$decrypted" != encrypted:* ]]; then
+    printf '%s' "$decrypted"
+    return 0
+  fi
+
   grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2- | sed -e "s/^['\"]//" -e "s/['\"]$//" || true
 }
 
