@@ -378,10 +378,6 @@ versionRouter.openapi(
 
 export { versionRouter };
 
-export function detectVersionChannel(version: string | null | undefined): VersionChannel {
+function detectVersionChannel(version: string | null | undefined): VersionChannel {
   return version?.startsWith('dev-') ? 'dev' : 'stable';
-}
-
-export async function getLatestVersionForChannel(channel: VersionChannel): Promise<LatestVersionResult> {
-  return channel === 'dev' ? getLatestDev() : getLatestStable();
 }

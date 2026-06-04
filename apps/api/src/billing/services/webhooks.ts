@@ -824,7 +824,7 @@ async function handleRevenueCatBillingIssue(accountId: string, event: any) {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-export function calculateNextCreditGrant(from: Date): Date {
+function calculateNextCreditGrant(from: Date): Date {
   const next = new Date(from);
   const targetMonth = (next.getMonth() + 1) % 12;
   const targetYear = next.getFullYear() + (next.getMonth() === 11 ? 1 : 0);

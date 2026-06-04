@@ -26,18 +26,18 @@ function randomAlphanum(len: number): string {
   return out;
 }
 
-export function generateScimSecret(): string {
+function generateScimSecret(): string {
   return `${SCIM_TOKEN_PREFIX}${randomAlphanum(SCIM_TOKEN_BODY_LEN)}`;
 }
 
-export function hashScimSecret(plaintext: string): string {
+function hashScimSecret(plaintext: string): string {
   // SHA-256 hex. Sufficient for this surface (high-entropy random token,
   // not a low-entropy password). The unique index on secret_hash makes
   // validation an O(log n) lookup.
   return createHash('sha256').update(plaintext).digest('hex');
 }
 
-export function isScimSecret(value: string): boolean {
+function isScimSecret(value: string): boolean {
   return typeof value === 'string' && value.startsWith(SCIM_TOKEN_PREFIX);
 }
 

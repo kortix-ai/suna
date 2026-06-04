@@ -29,7 +29,6 @@ import {
 export {
   getImagePullStatus,
   getSandboxUpdateStatus,
-  resetSandboxUpdateStatus,
 } from './local-docker/status';
 export type {
   ImagePullStatus,

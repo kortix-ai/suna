@@ -114,7 +114,7 @@ interface ComputeTier {
   priceUsd: number;
 }
 
-export const COMPUTE_TIERS: Record<string, ComputeTier> = {
+const COMPUTE_TIERS: Record<string, ComputeTier> = {
   pro:   { label: 'Pro',   cores: 8,  memoryGb: 16, diskGb: 320, priceUsd: 40 },
   power: { label: 'Power', cores: 12, memoryGb: 24, diskGb: 480, priceUsd: 60 },
   ultra: { label: 'Ultra', cores: 16, memoryGb: 32, diskGb: 640, priceUsd: 80 },
@@ -378,7 +378,7 @@ export function isLegacyAccount(billingModel: string | null | undefined): boolea
 }
 
 /** Legacy paid tiers eligible for the "claim computer" flow. */
-export const LEGACY_PAID_TIERS = ['tier_2_20', 'tier_6_50', 'tier_12_100', 'tier_25_200', 'tier_50_400', 'tier_125_800', 'tier_200_1000', 'tier_150_1200'] as const;
+const LEGACY_PAID_TIERS = ['tier_2_20', 'tier_6_50', 'tier_12_100', 'tier_25_200', 'tier_50_400', 'tier_125_800', 'tier_200_1000', 'tier_150_1200'] as const;
 
 export function isLegacyPaidTier(tierName: string): boolean {
   return (LEGACY_PAID_TIERS as readonly string[]).includes(tierName);
@@ -388,7 +388,7 @@ export function getDailyCreditConfig(tierName: string): DailyCreditConfig | null
   return getTier(tierName).dailyCreditConfig;
 }
 
-export function getTierOrder(tierName: string): number {
+function getTierOrder(tierName: string): number {
   const order = [
     'none',
     'free',

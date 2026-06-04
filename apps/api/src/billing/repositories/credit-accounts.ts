@@ -114,18 +114,3 @@ export async function getYearlyAccountsDueForRotation() {
 
   return rows;
 }
-
-export async function updateBalance(
-  accountId: string,
-  fields: {
-    balance?: string;
-    expiringCredits?: string;
-    nonExpiringCredits?: string;
-    dailyCreditsBalance?: string;
-  },
-) {
-  await db
-    .update(creditAccounts)
-    .set({ ...fields, updatedAt: new Date().toISOString() })
-    .where(eq(creditAccounts.accountId, accountId));
-}
