@@ -328,7 +328,7 @@ function unwrapError(raw: unknown): string {
     }
   }
 
-  if (typeof raw === 'object' && raw !== null) {
+  if (typeof raw === 'object') {
     return extractErrorFromObject(raw) || 'An error occurred';
   }
 

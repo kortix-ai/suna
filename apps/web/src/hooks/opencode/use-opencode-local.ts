@@ -87,7 +87,7 @@ interface OpenCodeLocal {
  */
 export function parseModelKey(model: unknown): ModelKey | undefined {
   if (!model) return undefined;
-  if (typeof model === 'object' && model !== null) {
+  if (typeof model === 'object') {
     const obj = model as Record<string, unknown>;
     if (typeof obj.providerID === 'string' && typeof obj.modelID === 'string') {
       return { providerID: obj.providerID, modelID: obj.modelID };

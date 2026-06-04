@@ -182,21 +182,6 @@ async function api<T>(
   );
 }
 
-async function apiStatus(
-  token: string,
-  method: string,
-  path: string,
-  body?: Record<string, unknown>,
-): Promise<number> {
-  const response = await fetch(`${apiBase}${path}`, {
-    method,
-    headers: authHeaders(token),
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  await response.text();
-  return response.status;
-}
-
 async function createAuthUser(email: string): Promise<AuthUser> {
   const serviceRoleKey = requireEnvValue('SUPABASE_SERVICE_ROLE_KEY', 'apps/api/.env');
   const response = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {

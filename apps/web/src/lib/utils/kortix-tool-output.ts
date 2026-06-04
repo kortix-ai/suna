@@ -15,7 +15,7 @@ export interface ProjectEntry {
 }
 
 export function parseProjectListOutput(output: string): ProjectEntry[] {
-	if (!output || typeof output !== 'string') return [];
+	if (!output) return [];
 	const projects: ProjectEntry[] = [];
 
 	// Try 4-column format first: | **name** | `/path` | sessions | description |
@@ -51,14 +51,14 @@ interface ProjectSelectData {
 }
 
 export function parseProjectSelectOutput(output: string): ProjectSelectData | null {
-	if (!output || typeof output !== 'string') return null;
+	if (!output) return null;
 	const nameMatch = output.match(/Project\s+\*\*([^*]+)\*\*\s+selected/i);
 	const pathMatch = output.match(/Path:\s+`([^`]+)`/);
 	if (!nameMatch) return null;
 	return {
 		name: nameMatch[1],
 		path: pathMatch?.[1] || '',
-		success: !!nameMatch && output.includes('selected'),
+		success: output.includes('selected'),
 	};
 }
 
@@ -70,7 +70,7 @@ interface ProjectCreateData {
 }
 
 export function parseProjectCreateOutput(output: string): ProjectCreateData | null {
-	if (!output || typeof output !== 'string') return null;
+	if (!output) return null;
 	const nameMatch = output.match(/Project\s+\*\*([^*]+)\*\*\s+at/i);
 	const pathMatch = output.match(/at\s+`([^`]+)`/);
 	const idMatch = output.match(/\((proj-[^)]+)\)/);
@@ -79,7 +79,7 @@ export function parseProjectCreateOutput(output: string): ProjectCreateData | nu
 		name: nameMatch[1],
 		path: pathMatch?.[1] || '',
 		id: idMatch?.[1] || '',
-		success: !!nameMatch && !output.toLowerCase().includes('failed'),
+		success: !output.toLowerCase().includes('failed'),
 	};
 }
 
@@ -94,7 +94,7 @@ export interface ConnectorEntry {
 }
 
 export function parseConnectorListOutput(output: string): ConnectorEntry[] {
-	if (!output || typeof output !== 'string') return [];
+	if (!output) return [];
 	const connectors: ConnectorEntry[] = [];
 	// Parse markdown table: | Name | Description | Source |
 	const lineRe = /^\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|\s*([^|]*?)\s*\|$/gm;
@@ -121,7 +121,7 @@ interface ConnectorGetData {
 }
 
 export function parseConnectorGetOutput(output: string): ConnectorGetData | null {
-	if (!output || typeof output !== 'string') return null;
+	if (!output) return null;
 
 	const nameMatch = output.match(/^name:\s*(.+)$/m);
 	const descriptionMatch = output.match(/^description:\s*(.+)$/m);
@@ -147,7 +147,7 @@ interface ConnectorSetupData {
 }
 
 export function parseConnectorSetupOutput(output: string): ConnectorSetupData | null {
-	if (!output || typeof output !== 'string') return null;
+	if (!output) return null;
 
 	// Match "Created/updated X connectors:" or legacy "Scaffolded X connectors"
 	const countMatch = output.match(/(?:Created\/updated|Scaffolded)\s+(\d+)\s+connectors/i);
