@@ -172,7 +172,7 @@ export function renderSupabaseProject(name: string, worktreePath: string, projec
   const rewritten = rewriteConfigToml(srcToml, projectId, ports);
   writeFileSync(join(sbDir, 'config.toml'), rewritten);
 
-  for (const sub of ['migrations', 'seed.sql', 'functions']) {
+  for (const sub of ['seed.sql', 'functions']) {
     const target = join(worktreePath, 'supabase', sub);
     const link = join(sbDir, sub);
     if (existsSync(target) && !existsSync(link)) {
@@ -180,6 +180,13 @@ export function renderSupabaseProject(name: string, worktreePath: string, projec
     }
   }
   return wd;
+}
+
+export async function runMigrate(worktreePath: string, ports: Ports): Promise<number> {
+  return run(['pnpm', '--filter', '@kortix/db', 'db:migrate'], {
+    cwd: worktreePath,
+    env: { DATABASE_URL: `postgresql://postgres:postgres@127.0.0.1:${ports.sbDb}/postgres` },
+  });
 }
 
 export function rewriteConfigToml(toml: string, projectId: string, ports: Ports): string {
@@ -246,14 +253,19 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds): Record<string, string>
     ...(c.serviceRoleKey ? { SUPABASE_SERVICE_ROLE_KEY: c.serviceRoleKey } : {}),
     SCHEDULER_ENABLED: 'false',
     KORTIX_BILLING_INTERNAL_ENABLED: 'false',
+    CORS_ALLOWED_ORIGINS: `http://localhost:${ports.web}`,
   };
 }
 
 export function webLaunchEnv(ports: Ports, c: SlotCreds): Record<string, string> {
   return {
     WEB_PORT: String(ports.web),
+    // Per-slot absolute API URL (the web's runtime env-schema requires a full
+    // url()); unique per worktree so they never collide. The api whitelists this
+    // web's origin via CORS_ALLOWED_ORIGINS, so the cross-origin call passes.
     KORTIX_API_PROXY_TARGET: `http://localhost:${ports.api}`,
     NEXT_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
+    KORTIX_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
     BACKEND_URL: `http://localhost:${ports.api}/v1`,
     NEXT_PUBLIC_SUPABASE_URL: c.supabaseUrl,
     ...(c.anonKey ? { NEXT_PUBLIC_SUPABASE_ANON_KEY: c.anonKey } : {}),

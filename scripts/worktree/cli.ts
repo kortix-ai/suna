@@ -18,7 +18,7 @@
 import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
   lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists,
-  renderSupabaseProject, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv,
+  renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv,
   writeMarker, ensureDeps, checkDeps, pnpmStore, supaWorkdir, slotDir, WT_HOME, REGISTRY_PATH,
   type Registry, type SlotEntry, type Ports,
 } from './lib';
@@ -28,7 +28,6 @@ import { join } from 'node:path';
 const API_FILTER = 'kortix-api';
 const WEB_FILTER = 'Kortix-Computer-Frontend';
 
-// ── arg parsing ──────────────────────────────────────────────────────────────
 interface Args { cmd: string; name?: string; flags: Record<string, string | boolean>; }
 function parseArgs(argv: string[]): Args {
   const cmd = argv[0] ?? 'help';
@@ -73,7 +72,6 @@ function portsLine(p: Ports): string {
   return `web ${p.web} · api ${p.api} · db ${p.sbDb} · studio ${p.sbStudio} · inbucket ${p.sbInbucket}`;
 }
 
-// ── create ───────────────────────────────────────────────────────────────────
 async function cmdCreate(a: Args) {
   const name = need(a.name);
   const tunnel = !!a.flags.tunnel;
@@ -88,14 +86,12 @@ async function cmdCreate(a: Args) {
   const root = repoRoot();
   const wtPath = defaultWorktreePath(root, name);
   const branch = (typeof a.flags.branch === 'string' && a.flags.branch) || name;
-  const from = (typeof a.flags.from === 'string' && a.flags.from) || 'main';
+  const from = (typeof a.flags.from === 'string' && a.flags.from) || 'HEAD';
 
-  // Allocate (or resume) a slot under lock.
   const entry = await withLock<SlotEntry>(() => {
     const reg = loadRegistry();
     if (reg.slots[name]) { console.log(`▸ Resuming existing worktree "${name}" (slot ${reg.slots[name].slot})`); return reg.slots[name]; }
     let slot = lowestFreeSlot(reg);
-    // Probe the derived ports; bump slots if any are occupied by a foreign process.
     for (let tries = 0; tries < 6; tries++) {
       const ports = computePorts(slot);
       const clash = (Object.entries(ports) as [string, number][]).map(([k, p]) => ({ k, p, ...portInUse(p) })).find((x) => x.inUse);
@@ -116,7 +112,6 @@ async function cmdCreate(a: Args) {
 
   console.log(`\n▸ Slot ${entry.slot} — ${portsLine(entry.ports)}`);
 
-  // git worktree
   console.log(`\n▸ Git worktree → ${wtPath}`);
   const existing = sh(['git', '-C', root, 'worktree', 'list', '--porcelain']).stdout;
   if (existing.includes(`worktree ${wtPath}`)) {
@@ -129,21 +124,28 @@ async function cmdCreate(a: Args) {
     if (!r.ok) { console.error(`✗ git worktree add -b failed: ${r.stderr}`); process.exit(1); }
   }
 
-  // isolated supabase project dir
   console.log(`\n▸ Rendering isolated Supabase project (id ${entry.projectId})`);
   renderSupabaseProject(name, wtPath, entry.projectId, entry.ports);
 
-  // install deps (own store)
   console.log(`\n▸ Installing dependencies (own pnpm store)`);
   const inst = await run(['pnpm', 'install', '--store-dir', pnpmStore(name)], { cwd: wtPath });
   if (inst !== 0) { console.error(`✗ pnpm install failed — fix and re-run 'pnpm worktree create --name ${name}'`); process.exit(1); }
 
-  // supabase up + migrate
   console.log(`\n▸ Starting isolated Supabase on db ${entry.ports.sbDb} / api ${entry.ports.sbApi}`);
   const upCode = await (supa(name, ['start'], { stream: true }) as Promise<number>);
   if (upCode !== 0) { console.error('✗ supabase start failed'); process.exit(1); }
-  console.log(`\n▸ Applying migrations (supabase db reset)`);
-  await (supa(name, ['db', 'reset'], { stream: true }) as Promise<number>);
+  console.log(`\n▸ Building schema (pnpm db:migrate)`);
+  const migCode = await runMigrate(wtPath, entry.ports);
+  if (migCode !== 0) { console.error(`✗ db:migrate failed — fix and re-run 'pnpm worktree create --name ${name}'`); process.exit(1); }
+  // Verify the schema actually built — a base branch WITHOUT the Drizzle
+  // migrations (e.g. an un-migrated `main`) would otherwise leave an empty DB
+  // and a silently-broken worktree. Fail loud instead.
+  const built = sh(['bash', '-lc', `psql "postgresql://postgres:postgres@127.0.0.1:${entry.ports.sbDb}/postgres" -tAc "select 1 from information_schema.tables where table_schema='kortix' limit 1" 2>/dev/null`]).stdout.trim();
+  if (built !== '1') {
+    console.error(`\n✗ schema not built — branch "${branch}" has no Drizzle migrations (packages/db/drizzle).`);
+    console.error(`  Recreate from a branch that has them: --from migrations/drizzle-rebuild (or merge it into main).`);
+    process.exit(1);
+  }
 
   writeMarker(wtPath, entry);
   await withLock(() => { const reg = loadRegistry(); if (reg.slots[name]) { reg.slots[name].status = 'created'; saveRegistry(reg); } });
@@ -158,7 +160,6 @@ async function cmdCreate(a: Args) {
   }
 }
 
-// ── start ────────────────────────────────────────────────────────────────────
 async function cmdStart(a: Args) {
   const name = need(a.name);
   const reg = loadRegistry();
@@ -167,18 +168,17 @@ async function cmdStart(a: Args) {
   if (!existsSync(entry.path)) { console.error(`✗ worktree dir missing (${entry.path}); run 'pnpm worktree nuke ${name}' then recreate`); process.exit(1); }
   if (!sh(['docker', 'info']).ok) { console.error('✗ Docker daemon not running — start Docker and retry'); process.exit(1); }
 
-  // refresh the rendered config (idempotent — picks up any base-port change)
   renderSupabaseProject(name, entry.path, entry.projectId, entry.ports);
 
-  // ensure supabase up
   const st0 = sh(['supabase', '--workdir', supaWorkdir(name), 'status']);
   if (!st0.ok) {
     console.log(`▸ Starting Supabase for "${name}"…`);
     await (supa(name, ['start'], { stream: true }) as Promise<number>);
   }
+  console.log(`▸ Applying pending migrations (pnpm db:migrate)`);
+  await runMigrate(entry.path, entry.ports);
   const creds = slotCredsFromStatus(entry.ports, supaStatusEnv(name));
 
-  // free the web/api ports if a stale process holds them
   for (const p of [entry.ports.web, entry.ports.api]) {
     const u = portInUse(p);
     if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]);
@@ -188,7 +188,6 @@ async function cmdStart(a: Args) {
 
   console.log(`\n🚀 "${name}"  web http://localhost:${entry.ports.web}  ·  api http://localhost:${entry.ports.api}  ·  studio http://localhost:${entry.ports.sbStudio}\n`);
 
-  // launch api + web concurrently, stream both, stop on Ctrl+C
   const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], {
     cwd: entry.path, env: { ...process.env, ...apiLaunchEnv(entry.ports, creds) },
     stdout: 'inherit', stderr: 'inherit',
@@ -197,14 +196,34 @@ async function cmdStart(a: Args) {
     cwd: entry.path, env: { ...process.env, ...webLaunchEnv(entry.ports, creds) },
     stdout: 'inherit', stderr: 'inherit',
   });
-  const cleanup = () => { try { api.kill(); } catch {} try { web.kill(); } catch {} };
-  process.on('SIGINT', () => { console.log('\n▸ stopping…'); cleanup(); process.exit(0); });
-  process.on('SIGTERM', () => { cleanup(); process.exit(0); });
-  await Promise.race([api.exited, web.exited]);
-  cleanup();
+  // Graceful shutdown: signal the wrappers AND the real port listeners (pnpm →
+  // bun → next, so killing the wrapper alone orphans the server), then WAIT for
+  // them to exit before returning — otherwise Ctrl+C drops you back to the prompt
+  // while the servers are still closing (the "hang"), and can leave ports held.
+  const killListeners = (sig: string) => {
+    for (const p of [entry.ports.web, entry.ports.api]) {
+      const u = portInUse(p);
+      if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${sig} ${u.pid} 2>/dev/null || true`]);
+    }
+  };
+  let stopping = false;
+  const shutdown = async () => {
+    if (stopping) return; stopping = true;
+    console.log('\n▸ stopping…');
+    try { api.kill(); } catch {} try { web.kill(); } catch {}
+    killListeners('');                                   // SIGTERM the listeners
+    await Promise.race([Promise.all([api.exited, web.exited]), Bun.sleep(6000)]);
+    killListeners('-9');                                 // force anything still bound
+    await withLock(() => { const r = loadRegistry(); if (r.slots[name]) { r.slots[name].status = 'stopped'; saveRegistry(r); } });
+    console.log('✓ stopped.');
+    process.exit(0);
+  };
+  process.on('SIGINT', () => { void shutdown(); });
+  process.on('SIGTERM', () => { void shutdown(); });
+  await Promise.race([api.exited, web.exited]);          // a server died on its own
+  await shutdown();
 }
 
-// ── stop ─────────────────────────────────────────────────────────────────────
 async function cmdStop(a: Args) {
   const name = need(a.name);
   const reg = loadRegistry();
@@ -220,7 +239,6 @@ async function cmdStop(a: Args) {
   console.log(`✓ stopped (data preserved). Restart with 'pnpm worktree start ${name}'.`);
 }
 
-// ── nuke ─────────────────────────────────────────────────────────────────────
 async function cmdNuke(a: Args) {
   const name = need(a.name);
   const reg = loadRegistry();
@@ -231,23 +249,25 @@ async function cmdNuke(a: Args) {
   for (const p of [entry.ports.web, entry.ports.api]) {
     const u = portInUse(p); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]);
   }
-  // drop supabase + its volumes for THIS project only
   sh(['supabase', '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
   sh(['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
   sh(['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null || true`]);
   sh(['bash', '-lc', `docker network rm supabase_network_${pid} 2>/dev/null || true`]);
-  // remove the git worktree
   const root = repoRoot();
   const force = a.flags.force ? ['--force'] : [];
   if (existsSync(entry.path)) sh(['git', '-C', root, 'worktree', 'remove', ...force, entry.path]);
   sh(['git', '-C', root, 'worktree', 'prune']);
-  // remove slot state (store + rendered project) and free the slot
+  if (entry.branch) {
+    const del = sh(['git', '-C', root, 'branch', '-d', entry.branch]);
+    if (del.ok) console.log(`  deleted branch "${entry.branch}"`);
+    else if (a.flags.force) { sh(['git', '-C', root, 'branch', '-D', entry.branch]); console.log(`  force-deleted branch "${entry.branch}" (had unmerged commits)`); }
+    else console.log(`  kept branch "${entry.branch}" (unmerged commits) — \`git branch -D ${entry.branch}\` or \`nuke --force\` to drop it`);
+  }
   try { rmSync(slotDir(name), { recursive: true, force: true }); } catch {}
   await withLock(() => { const r = loadRegistry(); delete r.slots[name]; saveRegistry(r); });
   console.log(`✓ removed "${name}" — slot ${entry.slot} freed.`);
 }
 
-// ── list ─────────────────────────────────────────────────────────────────────
 function cmdList() {
   const reg = loadRegistry();
   const names = Object.keys(reg.slots);
@@ -262,7 +282,6 @@ function cmdList() {
   }
 }
 
-// ── status ───────────────────────────────────────────────────────────────────
 function probe(port: number): string { return portInUse(port).inUse ? '🟢' : '⚪'; }
 function cmdStatus(a: Args) {
   const reg = loadRegistry();
@@ -278,7 +297,6 @@ function cmdStatus(a: Args) {
   }
 }
 
-// ── doctor ───────────────────────────────────────────────────────────────────
 async function cmdDoctor(a: Args) {
   console.log('▸ Toolchain:');
   await ensureDeps({ tunnel: false, install: !!a.flags.yes });
@@ -296,7 +314,6 @@ async function cmdDoctor(a: Args) {
   console.log(`\n  registry: ${REGISTRY_PATH}`);
 }
 
-// ── main ─────────────────────────────────────────────────────────────────────
 const a = parseArgs(process.argv.slice(2));
 try {
   switch (a.cmd) {
