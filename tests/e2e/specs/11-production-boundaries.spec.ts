@@ -1,13 +1,15 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { authHeaders, createApiStatusClient, json } from '../helpers/http';
+import { authHeaders, createApiJsonClient, createApiStatusClient } from '../helpers/http';
 import { createAuthUser, installBrowserSession, signIn } from '../helpers/session-auth';
+import { selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 const password = process.env.E2E_BOUNDARY_PASSWORD || 'E2eBoundary123!';
 const runBoundaryTests = process.env.E2E_ENABLE_GOLDEN_PATHS === '1';
 const enforceSlos = process.env.E2E_ENFORCE_SLOS === '1';
+const api = createApiJsonClient(apiBase);
 const apiStatus = createApiStatusClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
@@ -34,32 +36,6 @@ interface InviteResult {
   invite_id?: string;
   email: string;
   account_role: 'owner' | 'admin' | 'member';
-}
-
-async function api<T>(
-  token: string,
-  method: string,
-  path: string,
-  body?: Record<string, unknown>,
-  expectedStatus: number | number[] = 200,
-): Promise<T> {
-  return json<T>(
-    await fetch(`${apiBase}${path}`, {
-      method,
-      headers: authHeaders(token),
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
-    expectedStatus,
-  );
-}
-
-async function selectAccountForUi(page: Page, accountId: string) {
-  await page.evaluate((id) => {
-    localStorage.setItem(
-      'kortix.currentAccount',
-      JSON.stringify({ state: { selectedAccountId: id }, version: 1 }),
-    );
-  }, accountId);
 }
 
 function percentile(values: number[], p: number) {

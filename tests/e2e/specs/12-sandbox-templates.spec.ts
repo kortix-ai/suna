@@ -27,46 +27,17 @@ import {
   installBrowserSession,
   signIn,
 } from '../helpers/session-auth';
+import { createApiResultClient } from '../helpers/http';
 import { seedSelfHostedProject } from '../helpers/self-host';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:8008/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://127.0.0.1:54321';
 const password = 'E2eSandboxTpl123!';
+const api = createApiResultClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
 interface AccountSummary { account_id: string; personal_account: boolean }
 interface TemplateCreateResult { template_id: string; slug: string }
-
-async function api<T>(
-  token: string,
-  method: 'GET' | 'POST' | 'DELETE',
-  path: string,
-  body?: unknown,
-): Promise<{ status: number; json: T | null }> {
-  let res: Response | null = null;
-  let lastError: unknown = null;
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      res = await fetch(`${apiBase}${path}`, {
-        method,
-        headers: {
-          Authorization: `Bearer ${token}`,
-          ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-        },
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-      });
-      break;
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
-    }
-  }
-  if (!res) throw lastError;
-  const text = await res.text();
-  let json: T | null = null;
-  try { json = text ? (JSON.parse(text) as T) : null; } catch { json = null; }
-  return { status: res.status, json };
-}
 
 async function openSandboxSection(page: Page, projectId: string) {
   await expect(page.getByRole('dialog', { name: /Customize/i })).toBeVisible({ timeout: 30_000 });

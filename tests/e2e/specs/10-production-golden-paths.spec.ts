@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { createHmac, randomUUID } from 'node:crypto';
 import { requireEnvValue } from '../helpers/env';
-import { authHeaders, json } from '../helpers/http';
+import { createApiJsonClient, json } from '../helpers/http';
 import {
   type AuthSession,
   type AuthUser,
@@ -10,12 +10,14 @@ import {
   installBrowserSession,
   signIn,
 } from '../helpers/session-auth';
+import { selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 const password = process.env.E2E_GOLDEN_PASSWORD || 'E2eGoldenPaths123!';
 const runGoldenPaths = process.env.E2E_ENABLE_GOLDEN_PATHS === '1';
 const enforceSlos = process.env.E2E_ENFORCE_SLOS === '1';
+const api = createApiJsonClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
 interface AccountSummary {
@@ -88,32 +90,6 @@ interface OpenCodeFileNode {
 
 function databaseUrl(): string {
   return process.env.E2E_DATABASE_URL || requireEnvValue('DATABASE_URL', 'apps/api/.env');
-}
-
-async function api<T>(
-  token: string,
-  method: string,
-  path: string,
-  body?: Record<string, unknown>,
-  expectedStatus: number | number[] = 200,
-): Promise<T> {
-  return json<T>(
-    await fetch(`${apiBase}${path}`, {
-      method,
-      headers: authHeaders(token),
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
-    expectedStatus,
-  );
-}
-
-async function selectAccountForUi(page: Page, accountId: string) {
-  await page.evaluate((id) => {
-    localStorage.setItem(
-      'kortix.currentAccount',
-      JSON.stringify({ state: { selectedAccountId: id }, version: 1 }),
-    );
-  }, accountId);
 }
 
 async function poll<T>(

@@ -1,12 +1,14 @@
 import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
-import { authHeaders, createApiStatusClient, json } from '../helpers/http';
+import { authHeaders, createApiJsonClient, createApiStatusClient } from '../helpers/http';
 import { type AuthSession, createAuthUser, installBrowserSession, signIn } from '../helpers/session-auth';
 import { seedSelfHostedProject } from '../helpers/self-host';
+import { selectAccountForUi } from '../helpers/ui';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 const password = 'E2eAccountAccess123!';
+const api = createApiJsonClient(apiBase);
 const apiStatus = createApiStatusClient(apiBase);
 const authOptions = { supabaseUrl, password };
 
@@ -64,23 +66,6 @@ interface ProjectAccessResponse {
   members: ProjectAccessMember[];
 }
 
-async function api<T>(
-  token: string,
-  method: string,
-  path: string,
-  body?: Record<string, unknown>,
-  expectedStatus: number | number[] = 200,
-): Promise<T> {
-  return json<T>(
-    await fetch(`${apiBase}${path}`, {
-      method,
-      headers: authHeaders(token),
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
-    expectedStatus,
-  );
-}
-
 async function createProjectForAccessTest(
   token: string,
   accountId: string,
@@ -105,15 +90,6 @@ async function createProjectForAccessTest(
     return api<ProjectSummary>(token, 'GET', `/projects/${projectId}`);
   }
   throw new Error(`Expected 201/409 from ${response.url}, got ${response.status}: ${body}`);
-}
-
-async function selectAccountForUi(page: Page, accountId: string) {
-  await page.evaluate((id) => {
-    localStorage.setItem(
-      'kortix.currentAccount',
-      JSON.stringify({ state: { selectedAccountId: id }, version: 1 }),
-    );
-  }, accountId);
 }
 
 async function dismissProjectOnboarding(page: Page) {
