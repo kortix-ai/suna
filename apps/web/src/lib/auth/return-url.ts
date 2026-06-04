@@ -47,5 +47,3 @@ export function sanitizeAuthReturnUrl(
 
   return trimmedValue;
 }
-
-export { DEFAULT_AUTH_RETURN_URL };

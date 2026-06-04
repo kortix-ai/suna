@@ -7,19 +7,6 @@ import { useTheme } from 'next-themes';
 import { MermaidRenderer } from './mermaid-renderer';
 import { SHIKI_THEMES, resolveShikiThemeName } from '@/lib/shiki-theme';
 
-export type CodeBlockProps = {
-  children?: React.ReactNode;
-  className?: string;
-} & React.HTMLProps<HTMLDivElement>;
-
-function CodeBlock({ children, className, ...props }: CodeBlockProps) {
-  return (
-    <div className={cn('w-px flex-grow min-w-0 overflow-hidden flex', className)} {...props}>
-      {children}
-    </div>
-  );
-}
-
 export type CodeBlockCodeProps = {
   code: string;
   language?: string;
@@ -102,19 +89,4 @@ function CodeBlockCode({
     </div>
   );
 }
-
-export type CodeBlockGroupProps = React.HTMLAttributes<HTMLDivElement>;
-
-function CodeBlockGroup({
-  children,
-  className,
-  ...props
-}: CodeBlockGroupProps) {
-  return (
-    <div className={cn('', className)} {...props}>
-      {children}
-    </div>
-  );
-}
-
-export { CodeBlockGroup, CodeBlockCode, CodeBlock };
+export { CodeBlockCode };
