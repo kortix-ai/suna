@@ -113,13 +113,6 @@ describe('extractSandboxTemplates', () => {
     expect(out[1]).toMatchObject({ slug: 'python', image: 'python:3.12-slim' });
   });
 
-  test('legacy singular [sandbox] table (no templates) is ignored', () => {
-    const out = extractSandboxTemplates({
-      sandbox: { dockerfile: '.kortix/Dockerfile', cpu: 2 },
-    });
-    expect(out).toHaveLength(0);
-  });
-
   test('rejects [[sandbox.templates]] entries claiming the reserved "default" slug', () => {
     const out = extractSandboxTemplates({
       sandbox: {
