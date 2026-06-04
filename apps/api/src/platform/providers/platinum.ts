@@ -102,13 +102,44 @@ export class PlatinumProvider implements SandboxProvider {
     // /agent, /session, /global/events calls hit an un-routed edge → 504s right
     // after runtime-ready. Best-effort: a failure here just falls back to the
     // lazy expose in resolveEndpoint.
+    let exposedUrl = '';
     try {
-      await platinumJson(`/v1/sandboxes/${externalId}/expose`, {
+      const exposed = await platinumJson<PlatinumExposedPort>(`/v1/sandboxes/${externalId}/expose`, {
         method: 'POST',
         body: JSON.stringify({ port: AGENT_PORT, public: true }),
       });
+      exposedUrl = (exposed.url ?? '').replace(/\/$/, '');
     } catch (err) {
       console.warn(`[platinum] eager expose ${externalId}:${AGENT_PORT} failed (lazy fallback):`, err);
+    }
+
+    // Wait for the in-guest runtime to actually be READY before returning. A
+    // warm claim is instant (~0.1s) but the daemon then materializes the repo
+    // (git clone) + confirms opencode; until runtimeReady the proxy 503s. If we
+    // return at 'running' (VM up), the FE immediately hits /session, /command,
+    // /global/events, prompt_async — all 503 "opencode not ready" — and the
+    // session-chat gives up after 3 retries. Daytona's create returns a usable
+    // box; this gives parity: the session only goes live once the sandbox serves.
+    // Repo clone is usually ~2s but can transiently stall, so poll up to 75s.
+    // Best-effort: on timeout we return anyway and the FE's retries cover the tail.
+    if (exposedUrl) {
+      const token = envVars.KORTIX_TOKEN;
+      const deadline = Date.now() + 75_000;
+      let ready = false;
+      while (Date.now() < deadline) {
+        try {
+          const r = await fetch(`${exposedUrl}/kortix/health`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            signal: AbortSignal.timeout(6000),
+          });
+          if (r.ok) {
+            const h = (await r.json().catch(() => ({}))) as { runtimeReady?: boolean };
+            if (h?.runtimeReady === true) { ready = true; break; }
+          }
+        } catch { /* keep polling through transient edge/clone hiccups */ }
+        await new Promise((res) => setTimeout(res, 1000));
+      }
+      if (!ready) console.warn(`[platinum] ${externalId} not runtimeReady within 75s — returning anyway (FE will retry)`);
     }
 
     return {
