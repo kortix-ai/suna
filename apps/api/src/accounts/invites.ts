@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, isNull } from 'drizzle-orm';
 import { accountInvitations, accountMembers, accounts, projectMembers } from '@kortix/db';
 import type { AppEnv } from '../types';
@@ -7,11 +7,39 @@ import { supabaseAuth } from '../middleware/auth';
 import { getSupabase } from '../shared/supabase';
 import { createInviteAcceptRateLimitMiddleware } from '../shared/rate-limit';
 import { onMemberAdded } from '../billing/services/seat-management';
+import { makeOpenApiApp, json, errors, auth, ErrorSchema } from '../openapi';
 
-export const accountInvitesRouter = new Hono<AppEnv>();
+export const accountInvitesRouter = makeOpenApiApp<AppEnv>();
 
 accountInvitesRouter.use('/:inviteId/accept', createInviteAcceptRateLimitMiddleware());
 accountInvitesRouter.use('/*', supabaseAuth);
+
+const InviteIdParam = z.object({ inviteId: z.string() });
+const InviteDescribeSchema = z
+  .object({
+    invite_id: z.string(),
+    email_matches_caller: z.boolean(),
+    expired: z.boolean(),
+    accepted_at: z.string().nullable(),
+    account_id: z.string().nullable(),
+    account_name: z.string().nullable(),
+    email: z.string().nullable(),
+    initial_role: z.string().nullable(),
+    inviter_email: z.string().nullable(),
+    created_at: z.string().nullable(),
+    expires_at: z.string().nullable(),
+  })
+  .openapi('InviteDescribe');
+const InviteAcceptSchema = z
+  .object({
+    account_id: z.string(),
+    account_role: z.string(),
+    already_accepted: z.boolean(),
+    bootstrap_grants_applied: z.array(
+      z.object({ project_id: z.string(), role: z.string() }),
+    ),
+  })
+  .openapi('InviteAccept');
 
 function normalizeEmail(value: string | undefined | null): string {
   return (value ?? '').trim().toLowerCase();
@@ -130,7 +158,20 @@ async function applyBootstrapGrants(
 // GET /v1/account-invites/:inviteId — describe an invite. Redacts identifying
 // fields when the caller's email doesn't match the invite, so the URL alone
 // can't be used to enumerate accounts.
-accountInvitesRouter.get('/:inviteId', async (c) => {
+accountInvitesRouter.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{inviteId}',
+    tags: ['accounts'],
+    summary: 'Describe an invite (redacted unless caller email matches)',
+    ...auth,
+    request: { params: InviteIdParam },
+    responses: {
+      200: json(InviteDescribeSchema, 'Invite description'),
+      ...errors(401, 404),
+    },
+  }),
+  async (c: any) => {
   const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
   const inviteId = c.req.param('inviteId');
 
@@ -183,12 +224,28 @@ accountInvitesRouter.get('/:inviteId', async (c) => {
     email_matches_caller: true,
     expired,
   });
-});
+  },
+);
 
 // POST /v1/account-invites/:inviteId/accept — accept an invite. Validates email
 // matches caller, invite isn't expired/accepted, then atomically inserts the
 // member row + stamps accepted_at.
-accountInvitesRouter.post('/:inviteId/accept', async (c) => {
+accountInvitesRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{inviteId}/accept',
+    tags: ['accounts'],
+    summary: 'Accept an invite',
+    ...auth,
+    request: { params: InviteIdParam },
+    responses: {
+      200: json(InviteAcceptSchema, 'Invite accepted'),
+      403: json(ErrorSchema, 'Forbidden'),
+      410: json(ErrorSchema, 'Invite expired'),
+      ...errors(401, 404, 429),
+    },
+  }),
+  async (c: any) => {
   const userId = c.get('userId') as string;
   const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
   const inviteId = c.req.param('inviteId');
@@ -262,12 +319,26 @@ accountInvitesRouter.post('/:inviteId/accept', async (c) => {
     already_accepted: alreadyAccepted,
     bootstrap_grants_applied: appliedGrants,
   });
-});
+  },
+);
 
 // POST /v1/account-invites/:inviteId/decline — decline an invite. Deletes the
 // row outright (cleaner than a `declined_at` sentinel — the invite no longer
 // exists from the recipient's perspective).
-accountInvitesRouter.post('/:inviteId/decline', async (c) => {
+accountInvitesRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{inviteId}/decline',
+    tags: ['accounts'],
+    summary: 'Decline an invite',
+    ...auth,
+    request: { params: InviteIdParam },
+    responses: {
+      200: json(z.object({ ok: z.boolean() }), 'Invite declined'),
+      ...errors(401, 403, 404, 409),
+    },
+  }),
+  async (c: any) => {
   const callerEmail = normalizeEmail(c.get('userEmail') as string | undefined);
   const inviteId = c.req.param('inviteId');
 
@@ -290,4 +361,5 @@ accountInvitesRouter.post('/:inviteId/decline', async (c) => {
   await db.delete(accountInvitations).where(eq(accountInvitations.inviteId, invite.inviteId));
 
   return c.json({ ok: true });
-});
+  },
+);

@@ -8,8 +8,9 @@
  * checklist): we deliberately drop "connect a repo" (every project already
  * has one) and re-order around real first-day value — connect tools → invite
  * the team → try a request → save it as an agent → automate it. Step 1 is a
- * personal "want help from Marko?" offer (cal embed), gated by the
- * SHOW_PERSONAL_CONTACT flag so self-hosters never see the founder's face.
+ * personal "want help from Marko?" offer (cal embed), gated by
+ * useShowPersonalContact() — cloud build flag AND a paid plan, so self-hosters
+ * and free accounts never see the founder's face.
  *
  * Navigation is local (`currentIndex`) — user explicitly clicks Back/Continue;
  * pre-done steps still get shown, with an "Already set up" pill instead of
@@ -61,7 +62,7 @@ import {
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 import type { CustomizeSection } from '@/lib/customize-sections';
-import { SHOW_PERSONAL_CONTACT } from '@/lib/kortix-flags';
+import { useShowPersonalContact } from '@/hooks/use-show-personal-contact';
 import { STARTER_PROMPTS, type StarterPrompt } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 
@@ -100,6 +101,7 @@ type WizardStep = {
 };
 
 export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
+  const showPersonalContact = useShowPersonalContact();
   const onboarding = useProjectOnboarding(projectId);
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const customizeOpen = useCustomizeStore((s) => s.open);
@@ -178,7 +180,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   const [stagedPromptId, setStagedPromptId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!SHOW_PERSONAL_CONTACT) return;
+    if (!showPersonalContact) return;
     (async () => {
       const cal = await getCalApi({ namespace: CAL_NAMESPACE });
       cal('ui', { hideEventTypeDetails: true, layout: 'month_view' });
@@ -195,7 +197,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
         },
       });
     })();
-  }, []);
+  }, [showPersonalContact]);
 
   const openSection = useCallback(
     (section: CustomizeSection) => openCustomize(section),
@@ -205,7 +207,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   const steps: WizardStep[] = useMemo(() => {
     const list: WizardStep[] = [];
 
-    if (SHOW_PERSONAL_CONTACT) {
+    if (showPersonalContact) {
       list.push({
         id: 'founder',
         icon: Sparkles,
@@ -300,6 +302,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
 
     return list;
   }, [
+    showPersonalContact,
     connectors.data,
     access.data,
     sessions.data,
@@ -428,7 +431,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
         )}
       </AnimatePresence>
 
-      {SHOW_PERSONAL_CONTACT && (
+      {showPersonalContact && (
         <Dialog open={calOpen} onOpenChange={setCalOpen}>
           <DialogContent
             hideCloseButton

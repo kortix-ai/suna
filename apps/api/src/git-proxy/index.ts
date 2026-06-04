@@ -17,7 +17,7 @@
  *
  * Scope: `git-receive-pack` ⇒ write; `git-upload-pack` ⇒ read.
  */
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import {
   authorizeGitProxy,
   resolveProjectUpstream,
@@ -31,8 +31,37 @@ import {
   normalizeProjectId,
   scopeForService,
 } from './parse';
+import { makeOpenApiApp } from '../openapi';
 
-export const gitProxyApp = new Hono();
+export const gitProxyApp = makeOpenApiApp();
+
+/**
+ * The git smart-HTTP protocol streams raw binary pack data (pkt-line framed),
+ * authenticates via a custom Basic/Bearer credential helper, and returns
+ * `application/x-git-*` bodies — none of which map to JSON schemas. These routes
+ * are registered purely for OpenAPI VISIBILITY: paths, methods, and generic
+ * responses. We deliberately do NOT attach request/response validation
+ * (no `c.req.valid`) so the raw transport and auth flow are untouched.
+ */
+const gitResponses = {
+  200: { description: 'git smart-HTTP response (raw application/x-git-* body)' },
+  401: {
+    description: 'Authentication required / credential helper re-challenge',
+    headers: { 'WWW-Authenticate': { schema: { type: 'string' } } },
+  },
+  403: { description: 'Token not authorized for the requested scope' },
+  404: { description: 'Project not found' },
+  502: { description: 'No upstream configured / upstream unreachable' },
+} as const;
+
+/** Loose path-param doc; handlers keep their own raw param reads + `.git` stripping. */
+const projectParam = z.object({
+  project: z.string().openapi({
+    param: { name: 'project', in: 'path' },
+    description: 'Project id, optionally suffixed with `.git`',
+    example: 'abc123.git',
+  }),
+});
 
 /** Ask git to (re)authenticate via the credential helper. */
 function unauthorized(c: any, message: string) {
@@ -100,20 +129,58 @@ async function forward(c: any, projectId: string, scope: GitScope, suffix: strin
 }
 
 // Ref discovery — scope is determined by the requested service.
-gitProxyApp.get('/:project/info/refs', async (c) => {
-  const projectId = normalizeProjectId(c.req.param('project'));
-  const scope = scopeForService(c.req.query('service'));
-  return forward(c, projectId, scope, '/info/refs');
-});
+gitProxyApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{project}/info/refs',
+    tags: ['git'],
+    summary: 'git smart-HTTP ref discovery (clone/fetch/push negotiation)',
+    request: {
+      params: projectParam,
+      query: z.object({
+        service: z
+          .enum(['git-upload-pack', 'git-receive-pack'])
+          .optional()
+          .openapi({ description: 'git service; receive-pack ⇒ write, else read' }),
+      }),
+    },
+    responses: gitResponses,
+  }),
+  async (c) => {
+    const projectId = normalizeProjectId(c.req.param('project'));
+    const scope = scopeForService(c.req.query('service'));
+    return forward(c, projectId, scope, '/info/refs');
+  },
+);
 
 // Clone / fetch.
-gitProxyApp.post('/:project/git-upload-pack', async (c) => {
-  const projectId = normalizeProjectId(c.req.param('project'));
-  return forward(c, projectId, 'read', '/git-upload-pack');
-});
+gitProxyApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{project}/git-upload-pack',
+    tags: ['git'],
+    summary: 'git-upload-pack (clone / fetch) — raw pack stream',
+    request: { params: projectParam },
+    responses: gitResponses,
+  }),
+  async (c) => {
+    const projectId = normalizeProjectId(c.req.param('project'));
+    return forward(c, projectId, 'read', '/git-upload-pack');
+  },
+);
 
 // Push.
-gitProxyApp.post('/:project/git-receive-pack', async (c) => {
-  const projectId = normalizeProjectId(c.req.param('project'));
-  return forward(c, projectId, 'write', '/git-receive-pack');
-});
+gitProxyApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{project}/git-receive-pack',
+    tags: ['git'],
+    summary: 'git-receive-pack (push) — raw pack stream',
+    request: { params: projectParam },
+    responses: gitResponses,
+  }),
+  async (c) => {
+    const projectId = normalizeProjectId(c.req.param('project'));
+    return forward(c, projectId, 'write', '/git-receive-pack');
+  },
+);

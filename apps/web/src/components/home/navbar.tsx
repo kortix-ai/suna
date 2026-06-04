@@ -78,6 +78,8 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  // Portal target only exists after mount (SSR has no document).
+  const [mounted, setMounted] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -113,6 +115,16 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     handleScroll(); // Initial check
     return () => window.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
+
+  useEffect(() => setMounted(true), []);
+
+  // Lock background scroll while the full-screen drawer is open.
+  useEffect(() => {
+    if (!isDrawerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [isDrawerOpen]);
 
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
   const handleOverlayClick = () => setIsDrawerOpen(false);
@@ -299,6 +311,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           </Button>
         </div>
       </div>
+    </header>
 
       <AnimatePresence>
         {isDrawerOpen && isMobile && (
@@ -425,7 +438,9 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             </div>
           </motion.div>
         )}
-      </AnimatePresence>
-    </header>
+      </AnimatePresence>,
+        document.body,
+      )}
+    </>
   );
 }

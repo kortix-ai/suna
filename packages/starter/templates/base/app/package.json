@@ -1,8 +1,0 @@
-{
-  "name": "kortix-app",
-  "private": true,
-  "type": "module",
-  "scripts": {
-    "build": "echo 'no build step — this app is served directly from index.js'"
-  }
-}

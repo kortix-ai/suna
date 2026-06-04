@@ -1,7 +1,9 @@
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { supabaseAuth } from '../middleware/auth';
 import { config } from '../config';
+import type { AppEnv } from '../types';
+import { makeOpenApiApp, json } from '../openapi';
 
 import { accountStateRouter } from './routes/account-state';
 import { subscriptionsRouter } from './routes/subscriptions';
@@ -10,8 +12,8 @@ import { creditsRouter } from './routes/credits';
 import { webhooksRouter } from './routes/webhooks';
 import { accountDeletionRouter } from './routes/account-deletion';
 
-const billingApp = new Hono();
-const accountDeletionApp = new Hono();
+const billingApp = makeOpenApiApp<AppEnv>();
+const accountDeletionApp = makeOpenApiApp<AppEnv>();
 
 // Webhooks — NO auth (handlers verify signatures internally)
 billingApp.route('/webhooks', webhooksRouter);
@@ -62,14 +64,25 @@ accountDeletionApp.use('*', async (c, next) => {
 accountDeletionApp.route('/', accountDeletionRouter);
 
 // Yearly credit rotation cron endpoint
-billingApp.post('/cron/yearly-rotation', async (c: any) => {
-  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
-    return c.json({ skipped: true, reason: 'billing disabled' });
-  }
-  const { processYearlyCreditRotation } = await import('./services/yearly-rotation');
-  const result = await processYearlyCreditRotation();
-  return c.json(result);
-});
+billingApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/cron/yearly-rotation',
+    tags: ['billing'],
+    summary: 'Run the yearly credit rotation (cron)',
+    responses: {
+      200: json(z.record(z.string(), z.any()), 'Rotation result'),
+    },
+  }),
+  async (c: any) => {
+    if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
+      return c.json({ skipped: true, reason: 'billing disabled' });
+    }
+    const { processYearlyCreditRotation } = await import('./services/yearly-rotation');
+    const result = await processYearlyCreditRotation();
+    return c.json(result);
+  },
+);
 
 if (config.KORTIX_BILLING_INTERNAL_ENABLED) {
   const YEARLY_ROTATION_INTERVAL_MS = 60 * 60 * 1000;

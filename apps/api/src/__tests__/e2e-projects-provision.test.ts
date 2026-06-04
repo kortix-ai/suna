@@ -193,14 +193,21 @@ function projectRowFrom(values: any) {
 mock.module('../shared/db', () => ({
   hasDatabase: true,
   db: {
-    select: () => ({
+    select: (projection?: any) => ({
       from: (table: unknown) => ({
-        where: () => ({
-          limit: async () => {
-            if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
-            return [];
-          },
-        }),
+        where: () => {
+          // The project-limit guard's count(*) query is awaited directly
+          // (no .limit()). 0 keeps provision under any plan's cap.
+          if (table === projects && projection && typeof projection === 'object' && 'count' in projection) {
+            return Promise.resolve([{ count: 0 }]);
+          }
+          return {
+            limit: async () => {
+              if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
+              return [];
+            },
+          };
+        },
       }),
     }),
     insert: (table: unknown) => ({

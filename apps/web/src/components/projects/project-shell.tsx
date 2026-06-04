@@ -3,7 +3,7 @@
 import { Suspense, lazy, useCallback, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { AnimatePresence, motion } from 'motion/react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '@/components/AuthProvider';
 import { AppProviders } from '@/components/layout/app-providers';
@@ -14,9 +14,10 @@ import { ProjectOnboardingWizard } from '@/components/projects/project-onboardin
 import { ProjectSidebar } from '@/components/projects/project-sidebar';
 import { ProjectMobileMenuBar, ProjectTabBar } from '@/components/projects/project-tab-bar';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import { createProjectSession } from '@/lib/projects-client';
+import { createProjectSession, getProjectDetail } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useIsSwitchingProject } from '@/stores/project-switch-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 
@@ -47,6 +48,17 @@ export function ProjectShell({
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
+
+  // Scope ALL billing checks inside a project (subscription gate, credits,
+  // upgrade dialog, …) to the account that OWNS the project — not the viewer's
+  // arbitrary default account. A project's "are you subscribed?" answer is the
+  // owning account's answer, full stop. Reuses the shared project-detail query
+  // (same key) so this adds no extra fetch.
+  const { data: projectDetail } = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    enabled: !!projectId,
+  });
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
@@ -103,6 +115,7 @@ export function ProjectShell({
   }
 
   return (
+    <BillingAccountProvider accountId={projectDetail?.account_id ?? null}>
     <AppProviders
       showSidebar
       showRightSidebar={false}
@@ -201,5 +214,6 @@ export function ProjectShell({
           sees one CTA at a time. */}
       <PersonalOnboardingWelcome projectId={projectId} />
     </AppProviders>
+    </BillingAccountProvider>
   );
 }

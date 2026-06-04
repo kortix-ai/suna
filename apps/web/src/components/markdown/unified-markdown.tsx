@@ -17,6 +17,10 @@ import { isMermaidCode } from '@/lib/mermaid-utils';
 import { autoLinkUrls } from '@kortix/shared';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
 import { useFilePreviewStore } from '@/stores/file-preview-store';
+import {
+  getActivePanelSessionId,
+  openFileInSessionPanel,
+} from '@/stores/session-browser-store';
 import { wrapChildrenWithPaths } from '@/components/common/clickable-path';
 import { looksLikeFilePath as sharedLooksLikeFilePath } from '@/lib/utils/path-detection';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
@@ -696,6 +700,7 @@ function looksLikeFilePath(text: string): boolean {
 /** Inline code that opens file preview modal when it looks like a file path */
 function ClickableInlineCode({ children }: { children: React.ReactNode }) {
   const openPreview = useFilePreviewStore((s) => s.openPreview);
+  const { proxyUrl } = useSandboxProxy();
   const text = String(children).trim();
   const isUrl = looksLikeUrl(text);
   const isFile = looksLikeFilePath(text);
@@ -707,8 +712,20 @@ function ClickableInlineCode({ children }: { children: React.ReactNode }) {
       toast.error(`Cannot open relative path: ${text}`);
       return;
     }
+    // Inside a session → reveal in the side-panel Files tab; else the modal.
+    const sessionId = getActivePanelSessionId();
+    if (sessionId) {
+      openFileInSessionPanel(sessionId, text);
+      return;
+    }
     openPreview(text);
   }, [text, openPreview, isAbsolute]);
+
+  // Proxy localhost URLs so the global <LocalhostLinkInterceptor> routes the
+  // click into the session's Browser tab. Without this, the raw localhost href
+  // matches the dev app's own origin and the interceptor's same-origin guard
+  // skips it (the "click does nothing" bug). Non-localhost URLs pass through.
+  const resolvedUrlHref = isUrl ? (proxyUrl(text) ?? text) : text;
 
   const baseInline =
     "px-[0.35rem] py-[0.1rem] rounded-[5px] text-sm font-mono " +
@@ -718,7 +735,7 @@ function ClickableInlineCode({ children }: { children: React.ReactNode }) {
   if (isUrl) {
     return (
       <a
-        href={text}
+        href={resolvedUrlHref}
         target="_blank"
         rel="noopener noreferrer"
         className={cn(

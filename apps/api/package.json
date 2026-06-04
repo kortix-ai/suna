@@ -19,11 +19,13 @@
   },
   "dependencies": {
     "@daytonaio/sdk": "^0.143.0",
+    "@hono/zod-openapi": "^0.19.10",
     "@kortix/db": "workspace:*",
     "@kortix/manifest-schema": "workspace:*",
     "@kortix/shared": "workspace:*",
     "@kortix/starter": "workspace:*",
     "@logtail/node": "^0.5.8",
+    "@scalar/hono-api-reference": "^0.10.20",
     "@sentry/bun": "^10.47.0",
     "@supabase/supabase-js": "^2.95.3",
     "agent-tunnel": "workspace:@kortix/agent-tunnel@*",

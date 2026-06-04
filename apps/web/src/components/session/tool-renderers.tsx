@@ -111,6 +111,7 @@ import {
   getActiveSessionContext,
 } from '@/lib/utils/session-context';
 import {
+  getActivePanelSessionId,
   sessionPreviewTabId,
   useSessionBrowserStore,
 } from '@/stores/session-browser-store';
@@ -268,7 +269,8 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
   const navigateToPreviewTab = useCallback(() => {
     if (!navigationEnabled || !proxy) return;
     const parsed = parseLocalhostUrl(url);
-    const sid = sessionId || getActiveSessionContext()?.sourceSessionId || null;
+    const sid =
+      sessionId || getActivePanelSessionId() || getActiveSessionContext()?.sourceSessionId || null;
 
     // Inside a session → open the right-side panel's internal browser, matching
     // a localhost link click in chat (see LocalhostLinkInterceptor.openInPanel).

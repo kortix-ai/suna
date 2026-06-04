@@ -6,7 +6,8 @@ import { emitOtelSpan } from './lib/otel';
 import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
 import { getRequestUrl } from './lib/request-url';
 
-import { Hono } from 'hono';
+import { OpenAPIHono, createRoute, z } from '@hono/zod-openapi';
+import { mountOpenApiDocs, json, errors, auth } from './openapi';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { prettyJSON } from 'hono/pretty-json';
@@ -29,6 +30,7 @@ import { initModelPricing, stopModelPricing } from './router/config/model-pricin
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
+import { startLeaderElection, stopLeaderElection, isLeader } from './shared/leader-election';
 import { oauthApp } from './oauth';
 import {
   projectWebhooksApp,
@@ -46,6 +48,7 @@ import { scimRouter } from './scim';
 import { accountInvitesRouter } from './accounts/invites';
 import { auditStateChangingRequest } from './shared/audit';
 import { opsApp } from './ops';
+import { adminApp } from './admin';
 
 // ─── Process-level crash guards ───────────────────────────────────────────────
 // A stray rejected promise or throw escaping any fire-and-forget path — the
@@ -77,7 +80,7 @@ process.on('uncaughtException', (err: Error) => {
 
 // ─── App Setup ──────────────────────────────────────────────────────────────
 
-const app = new Hono();
+const app = new OpenAPIHono();
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
@@ -237,37 +240,83 @@ app.use('/v1/*', auditStateChangingRequest);
 // Falls back to 'dev' for local development.
 const API_VERSION = process.env.KORTIX_VERSION || 'dev';
 
-app.get('/health', (c) => {
-  return c.json({
+// OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
+// register into the spec as each sub-router is migrated to @hono/zod-openapi.
+mountOpenApiDocs(app, API_VERSION);
+
+const HealthSchema = z
+  .object({
+    status: z.string(),
+    service: z.string(),
+    version: z.string(),
+    timestamp: z.string(),
+    billing_enabled: z.boolean(),
+    tunnel: z.any(),
+    leader: z.boolean(),
+  })
+  .openapi('Health');
+
+const healthHandler = (c: any) =>
+  c.json({
     status: 'ok',
     service: 'kortix-api',
     version: API_VERSION,
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     tunnel: getTunnelServiceStatus(),
+    leader: isLeader(),
   });
-});
+
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/health',
+    tags: ['system'],
+    summary: 'Service health (unversioned, used by the load balancer)',
+    responses: { 200: json(HealthSchema, 'Service health') },
+  }),
+  healthHandler,
+);
 
 // Health check under /v1 prefix (frontend uses NEXT_PUBLIC_BACKEND_URL which includes /v1)
-app.get('/v1/health', (c) => {
-  return c.json({
-    status: 'ok',
-    service: 'kortix-api',
-    version: API_VERSION,
-    timestamp: new Date().toISOString(),
-    billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
-    tunnel: getTunnelServiceStatus(),
-  });
-});
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/v1/health',
+    tags: ['system'],
+    summary: 'Service health',
+    responses: { 200: json(HealthSchema, 'Service health') },
+  }),
+  healthHandler,
+);
 
 // Also expose system status at root for backward compat with frontend
-app.get('/v1/system/status', (c) => {
-  return c.json({
-    maintenanceNotice: { enabled: false },
-    technicalIssue: { enabled: false },
-    updatedAt: new Date().toISOString(),
-  });
-});
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/v1/system/status',
+    tags: ['system'],
+    summary: 'Maintenance / technical-issue banner status',
+    responses: {
+      200: json(
+        z
+          .object({
+            maintenanceNotice: z.object({ enabled: z.boolean() }).passthrough(),
+            technicalIssue: z.object({ enabled: z.boolean() }).passthrough(),
+            updatedAt: z.string(),
+          })
+          .openapi('SystemStatus'),
+        'System status',
+      ),
+    },
+  }),
+  (c: any) =>
+    c.json({
+      maintenanceNotice: { enabled: false },
+      technicalIssue: { enabled: false },
+      updatedAt: new Date().toISOString(),
+    }),
+);
 
 // ─── Maintenance config (DB-backed; replaces Vercel Edge Config) ─────────────
 // One row in kortix.platform_settings under 'maintenance_config'. GET is public
@@ -284,7 +333,29 @@ const DEFAULT_MAINTENANCE = {
   updatedAt: new Date(0).toISOString(),
 };
 
-app.get('/v1/system/maintenance', async (c) => {
+const MaintenanceSchema = z
+  .object({
+    level: z.string(),
+    title: z.string(),
+    message: z.string(),
+    startTime: z.string().nullable(),
+    endTime: z.string().nullable(),
+    statusUrl: z.string().nullable(),
+    affectedServices: z.array(z.string()),
+    updatedAt: z.string(),
+  })
+  .partial()
+  .openapi('MaintenanceConfig');
+
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/v1/system/maintenance',
+    tags: ['system'],
+    summary: 'Read the maintenance config (public — banner + maintenance page)',
+    responses: { 200: json(MaintenanceSchema, 'Maintenance config') },
+  }),
+  async (c: any) => {
   const { hasDatabase, db } = await import('./shared/db');
   if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
   const { platformSettings } = await import('@kortix/db');
@@ -297,7 +368,18 @@ app.get('/v1/system/maintenance', async (c) => {
   return c.json(row?.value ?? DEFAULT_MAINTENANCE);
 });
 
-app.put('/v1/system/maintenance', supabaseAuth, async (c: any) => {
+app.openapi(
+  createRoute({
+    method: 'put',
+    path: '/v1/system/maintenance',
+    tags: ['system'],
+    summary: 'Update the maintenance config (admin only)',
+    ...auth,
+    middleware: [supabaseAuth] as const,
+    request: { body: { content: { 'application/json': { schema: MaintenanceSchema } } } },
+    responses: { 200: json(MaintenanceSchema, 'Updated config'), ...errors(403, 503) },
+  }),
+  async (c: any) => {
   const accountId = c.get('userId') as string;
   const { getPlatformRole } = await import('./shared/platform-roles');
   const role = await getPlatformRole(accountId);
@@ -314,16 +396,24 @@ app.put('/v1/system/maintenance', supabaseAuth, async (c: any) => {
     .values({ key: MAINTENANCE_KEY, value: config, updatedAt: new Date() })
     .onConflictDoUpdate({ target: platformSettings.key, set: { value: config, updatedAt: new Date() } });
   return c.json(config);
-});
+  },
+);
 
 // ─── Stub Endpoints ─────────────────────────────────────────────────────────
 // These endpoints are called by the frontend but were never implemented.
 // Adding proper stubs stops 404 noise and provides correct responses.
 
 // POST /v1/prewarm — no-op pre-warm. Frontend fires this on login.
-app.post('/v1/prewarm', (c) => {
-  return c.json({ success: true });
-});
+app.openapi(
+  createRoute({
+    method: 'post',
+    path: '/v1/prewarm',
+    tags: ['system'],
+    summary: 'No-op pre-warm (frontend fires this on login)',
+    responses: { 200: json(z.object({ success: z.boolean() }).openapi('Prewarm'), 'ok') },
+  }),
+  (c: any) => c.json({ success: true }),
+);
 
 // /v1/accounts/* — account & member management lives in ./accounts router.
 app.route('/v1/accounts', accountsRouter);
@@ -341,7 +431,20 @@ app.route('/v1/account-invites', accountInvitesRouter);
 app.route('/v1/ops', opsApp);
 
 
-app.get('/v1/user-roles', supabaseAuth, async (c: any) => {
+app.openapi(
+  createRoute({
+    method: 'get',
+    path: '/v1/user-roles',
+    tags: ['system'],
+    summary: 'The caller’s platform role (admin gate)',
+    ...auth,
+    middleware: [supabaseAuth] as const,
+    responses: {
+      200: json(z.object({ isAdmin: z.boolean(), role: z.string().nullable() }).openapi('UserRoles'), 'Platform role'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
   const { getPlatformRole } = await import('./shared/platform-roles');
 
   const accountId = c.get('userId') as string;
@@ -349,7 +452,8 @@ app.get('/v1/user-roles', supabaseAuth, async (c: any) => {
   const isAdmin = role === 'admin' || role === 'super_admin';
 
   return c.json({ isAdmin, role });
-});
+  },
+);
 
 // ─── Mount Sub-Services ─────────────────────────────────────────────────────
 // All services follow the pattern: /v1/{serviceName}/...
@@ -459,7 +563,9 @@ app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/acce
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
   app.route('/v1/setup', setupApp);        // /v1/setup/install-status (public), rest (auth inside router)
 }
-// /v1/admin/* — legacy admin dashboard surface removed. Web admin pages will 404.
+// /v1/admin/* — admin console (accounts/users/ledger/credits). supabaseAuth +
+// requireAdmin enforced inside the router. Backs apps/web/src/app/admin/.
+app.route('/v1/admin', adminApp);
 
 // OAuth2 provider — public token endpoint, auth on authorize/consent
 app.route('/v1/oauth', oauthApp);
@@ -624,37 +730,69 @@ let schemaReady = false;
 
 // Ensure DB schema exists before starting services that depend on it.
 // This is idempotent — safe to run on every startup.
-// Start background services after the schema is ready. The access-control cache
-// and tunnel service serve request-path needs; the rest are background WORKERS
-// (queue drainer, project maintenance, trigger scheduler, startup pre-build,
-// legacy-migration worker, grant-expiry sweeper). Every API node runs them.
-async function startBackgroundServices() {
+// Services that run on EVERY replica. The access-control cache and tunnel
+// service serve request-path needs (per-node caches + the WS acceptor), so they
+// must be live on each node behind the load balancer.
+async function startReplicaServices() {
   startAccessControlCache();
   startTunnelService();
+}
 
+// Singleton background WORKERS — must run on EXACTLY ONE replica at a time
+// (the elected leader). On ECS Fargate the API runs as N replicas (prod: min 2,
+// up to 10); running these on every replica would double-fire cron triggers
+// (N duplicate paid agent sessions + duplicate external side effects),
+// over-provision the warm pool, and double-run legacy migrations. Leader
+// election (shared/leader-election.ts) starts/stops these via onAcquire/onRelease.
+// The guard makes start/stop idempotent across leadership flaps.
+let singletonWorkersRunning = false;
+async function startSingletonWorkers() {
+  if (singletonWorkersRunning) return;
+  singletonWorkersRunning = true;
   startDrainer();
   startProjectMaintenance();
   startProjectTriggerScheduler();
-  // Mint the global platform-default sandbox image once per boot so the first
-  // session anywhere lands on a cache hit. Idempotent + best-effort; the
-  // session-boot graceful path is the lazy fallback if this is skipped.
+  // Mint the global platform-default sandbox image once per leadership term so
+  // the first session anywhere lands on a cache hit. Idempotent + best-effort;
+  // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
   startLegacyMigrationWorker();
-  // IAM V2 time-bounded grants: tick every 60s, emit one audit event
-  // per row that just transitioned to expired. Engine already filters
-  // expired rows out of authorize() so correctness doesn't depend on
-  // this — it's purely for the audit trail.
+  // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
+  // that just transitioned to expired. Engine already filters expired rows out
+  // of authorize() so correctness doesn't depend on this — it's the audit trail.
   const { startGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   startGrantExpirySweeper();
+}
+async function stopSingletonWorkers() {
+  if (!singletonWorkersRunning) return;
+  singletonWorkersRunning = false;
+  stopDrainer();
+  stopProjectTriggerScheduler();
+  stopProjectMaintenance();
+  stopLegacyMigrationWorker();
+  const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
+  stopGrantExpirySweeper();
+}
+
+// Boot the per-node services, then begin leader election. The leader runs the
+// singleton workers; every other replica just serves requests. Works with one
+// replica (sole leader) or many (exactly one leader), and with no DATABASE_URL
+// (self-host single node → sole leader, no coordination).
+async function bootServices() {
+  await startReplicaServices();
+  startLeaderElection({
+    onAcquire: () => startSingletonWorkers(),
+    onRelease: () => stopSingletonWorkers(),
+  });
 }
 
 // Graceful shutdown
 async function shutdown(signal: string) {
   appLogger.info(`Shutting down gracefully`, { signal });
-  stopDrainer();
-  stopProjectTriggerScheduler();
-  stopProjectMaintenance();
-  stopLegacyMigrationWorker();
+  // Releases the lease (so a peer takes over immediately instead of waiting out
+  // the TTL) and stops the singleton workers via onRelease — but only if this
+  // node was the leader. Then stop the per-node services.
+  await stopLeaderElection();
   stopModelPricing();
   stopTunnelService();
   stopAccessControlCache();
@@ -676,12 +814,12 @@ if (import.meta.main) {
       // boot-time system-role seed + membership-policy backfill from V1
       // are no longer needed. Permissions resolve directly from
       // account_members.account_role and project_members.project_role.
-      await startBackgroundServices();
+      await bootServices();
     })
     .catch(async (err) => {
       console.error('[startup] ensureSchema failed, starting services anyway:', err);
       schemaReady = true;
-      await startBackgroundServices();
+      await bootServices();
     });
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));

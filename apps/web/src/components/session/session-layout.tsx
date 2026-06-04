@@ -81,6 +81,7 @@ export const SessionLayout = memo(function SessionLayout({
   // persisted 'files' selection to 'explorer'.
   const panelView: SessionPanelView = storedPanelView === 'files' ? 'explorer' : storedPanelView;
   const setPanelView = useSessionBrowserStore((s) => s.setView);
+  const setActivePanelSession = useSessionBrowserStore((s) => s.setActiveSessionId);
   const showBrowser = panelView === 'browser';
   const showExplorer = panelView === 'explorer';
   const showTerminal = panelView === 'terminal';
@@ -119,6 +120,23 @@ export const SessionLayout = memo(function SessionLayout({
   // actually is a tab.
   const isInTabSystem = useTabStore((s) => !!s.tabs[sessionId]);
   const shouldHandleHotkey = isInTabSystem ? isActiveTab : true;
+
+  // Publish this layout's panel key (the OpenCode chatSessionId) as the active
+  // session whenever it's the visible one, so chat click handlers (file paths,
+  // localhost links) route into THIS panel rather than guessing from the URL —
+  // the URL carries the Kortix session id, which differs from this key. Only
+  // the active tab (or the sole standalone layout) registers; clear on unmount
+  // if we still own the slot.
+  const isVisibleLayout = isInTabSystem ? isActiveTab : true;
+  useEffect(() => {
+    if (!isVisibleLayout) return;
+    setActivePanelSession(sessionId);
+    return () => {
+      if (useSessionBrowserStore.getState().activeSessionId === sessionId) {
+        setActivePanelSession(null);
+      }
+    };
+  }, [isVisibleLayout, sessionId, setActivePanelSession]);
   useEffect(() => {
     if (!shouldHandleHotkey) return;
     const onKey = (e: KeyboardEvent) => {

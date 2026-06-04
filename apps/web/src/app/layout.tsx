@@ -348,6 +348,12 @@ export default async function RootLayout({
             }),
           }}
         />
+
+        {/* Domain integration — script tag verification */}
+        <script
+          src="https://d2mvefebd70kbz.cloudfront.net/scripts/019e82ba-9ec3-733e-8a8e-9ff5cc2e1d35.js"
+          async
+        />
       </head>
 
       {/* suppressHydrationWarning silences Grammarly et al. injecting
