@@ -1,6 +1,6 @@
 import { hostname, platform, arch, release } from 'os';
 import type { TunnelConfig } from './config';
-import { CapabilityRegistry, type RpcHandler } from './capabilities/index';
+import { CapabilityRegistry } from './capabilities/index';
 import { PermissionGuard } from './security/permission-guard';
 import type { LocalPermission } from './security/permission-guard';
 import { signMessage, verifyMessageSignature } from '../shared/crypto';
@@ -142,7 +142,7 @@ export class TunnelAgent {
       }
     });
 
-    this.ws.addEventListener('error', (event) => {
+    this.ws.addEventListener('error', () => {
       log(`${c.red}✗${c.reset}`, `WebSocket error`);
     });
   }
