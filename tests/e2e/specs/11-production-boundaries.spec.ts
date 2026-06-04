@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
@@ -248,7 +249,7 @@ test.describe.serial('11 - SPEC auth boundaries, concurrency, and SLOs', () => {
   test.setTimeout(420_000);
 
   test('§10.6/§10.7 API boundaries and invite concurrency hold', async () => {
-    const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const runId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
     const ownerEmail = `boundary-owner-${runId}@example.test`;
     const memberEmail = `boundary-member-${runId}@example.test`;
     const inviteeEmail = `boundary-invitee-${runId}@example.test`;
@@ -375,7 +376,7 @@ test.describe.serial('11 - SPEC auth boundaries, concurrency, and SLOs', () => {
   test('§10.6.C SLO probes meet the configured production budgets', async ({ page }) => {
     const healthLimit = threshold('E2E_SLO_HEALTH_MS', 250);
     const projectsFirstPaintLimit = threshold('E2E_SLO_PROJECTS_FIRST_PAINT_MS', 1500);
-    const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const runId = `${Date.now()}-${randomUUID().slice(0, 8)}`;
     const ownerEmail = `slo-owner-${runId}@example.test`;
 
     await createAuthUser(ownerEmail);
