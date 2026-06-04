@@ -30,6 +30,7 @@ import { tool } from "@opencode-ai/plugin";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { randomUUID } from "node:crypto";
+import { featureDisabled, disabledResult } from "./lib/runtime-gate";
 
 /** Repo-relative root every memory path must live under. */
 const MEMORY_PREFIX = ".kortix/memory";
@@ -376,6 +377,7 @@ export default tool({
   },
 
   async execute(args, context) {
+    if (featureDisabled("memory")) return disabledResult("memory", "memory");
     const dir = context.directory;
     try {
       switch (args.command) {

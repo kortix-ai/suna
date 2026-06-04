@@ -27,7 +27,17 @@ export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | 
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
   const llmApiKey = env.KORTIX_LLM_API_KEY
 
-  const hasExecutor = !!executorToken && !!apiUrl
+  // Kortix runtime gate: the executor MCP is a built-in feature that can be
+  // turned off via kortix.toml [runtime] / a session override (forwarded here
+  // as env). disable_all (pure-OpenCode mode) also drops it. The LLM gateway
+  // is the model provider, not a "feature" — it stays regardless so the
+  // session still has models.
+  const FALSEY = ['off', 'false', '0', 'no', 'disabled']
+  const executorOff =
+    (env.KORTIX_RUNTIME_DISABLE_ALL || '').toLowerCase() === 'true' ||
+    FALSEY.includes((env.KORTIX_RUNTIME_EXECUTOR || '').toLowerCase())
+
+  const hasExecutor = !!executorToken && !!apiUrl && !executorOff
   const hasLlmGateway = !!llmBaseUrl && !!llmApiKey
   if (!hasExecutor && !hasLlmGateway) return undefined
 

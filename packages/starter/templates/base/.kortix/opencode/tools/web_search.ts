@@ -1,6 +1,7 @@
 import { tool } from "@opencode-ai/plugin";
 import { tavily } from "@tavily/core";
 import { getEnv, getKortixRouterBase } from "./lib/get-env";
+import { featureDisabled, disabledResult } from "./lib/runtime-gate";
 
 interface SearchResult {
   title: string;
@@ -77,6 +78,7 @@ export default tool({
       ),
   },
   async execute(args, _context) {
+    if (featureDisabled("web_tools")) return disabledResult("web_tools", "web_search");
     // Route through the Kortix router (derived from KORTIX_API_URL) and auth with
     // KORTIX_TOKEN; the router injects the real upstream key. Fall back to a raw
     // TAVILY_API_KEY only when KORTIX_API_URL is unset (self-host/direct).
