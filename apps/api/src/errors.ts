@@ -44,40 +44,8 @@ export class NotFoundError extends HTTPException {
   }
 }
 
-export class ConflictError extends HTTPException {
-  constructor(message: string) {
-    super(409, { message });
-  }
-}
-
 export class ValidationError extends HTTPException {
   constructor(message: string) {
     super(400, { message });
-  }
-}
-
-export class ExecutionError extends Error {
-  constructor(
-    message: string,
-    public readonly triggerId: string,
-    public readonly cause?: Error,
-  ) {
-    super(message);
-    this.name = 'ExecutionError';
-  }
-}
-
-// ─── Channel Errors ──────────────────────────────────────────────────────────
-
-export class ChannelError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ChannelError';
-  }
-}
-
-export class WebhookVerificationError extends HTTPException {
-  constructor(message: string = 'Webhook verification failed') {
-    super(401, { message });
   }
 }

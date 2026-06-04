@@ -25,8 +25,4 @@ export function getProvider(name: string | null | undefined): DeploymentProvider
   return provider;
 }
 
-export function listProviderNames(): string[] {
-  return Object.keys(PROVIDERS);
-}
-
 export type { DeploymentProvider, DeploymentRequest, DeploymentResult, AppSource, AppBuild } from './types';

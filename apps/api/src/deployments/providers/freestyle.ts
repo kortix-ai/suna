@@ -81,7 +81,7 @@ export async function getFreestyleApiKey(): Promise<string> {
   return val;
 }
 
-export function getFreestyleApiUrl(): string {
+function getFreestyleApiUrl(): string {
   return process.env.FREESTYLE_API_URL || config.FREESTYLE_API_URL || 'https://api.freestyle.sh';
 }
 

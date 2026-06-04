@@ -6,7 +6,16 @@
 //
 // Secrets / env-vars are intentionally absent — handled separately later.
 
-export const RESOURCE_TYPES = [
+type ResourceTypeValue =
+  | 'account'
+  | 'project'
+  | 'sandbox'
+  | 'trigger'
+  | 'channel'
+  | 'member'
+  | 'group';
+
+const RESOURCE_TYPES = [
   'account',
   'project',
   'sandbox',
@@ -14,8 +23,8 @@ export const RESOURCE_TYPES = [
   'channel',
   'member',
   'group',
-] as const;
-export type ResourceType = (typeof RESOURCE_TYPES)[number];
+] as const satisfies readonly ResourceTypeValue[];
+export type ResourceType = ResourceTypeValue;
 
 // ─── Account-scoped actions ────────────────────────────────────────────────
 // Always granted via a policy with scope_type='account' (the Everything scope).
@@ -85,85 +94,6 @@ export const PROJECT_ACTIONS = {
   PROJECT_TRIGGER_DELETE: 'project.trigger.delete',
   PROJECT_TRIGGER_FIRE: 'project.trigger.fire',
 } as const;
-
-// ─── Trigger-scoped actions (when scoped to an individual trigger) ─────────
-
-export const TRIGGER_ACTIONS = {
-  TRIGGER_READ: 'trigger.read',
-  TRIGGER_UPDATE: 'trigger.update',
-  TRIGGER_DELETE: 'trigger.delete',
-  TRIGGER_FIRE: 'trigger.fire',
-} as const;
-
-// ─── Channel-scoped actions ────────────────────────────────────────────────
-
-export const CHANNEL_ACTIONS = {
-  CHANNEL_READ: 'channel.read',
-  CHANNEL_CONNECT: 'channel.connect',
-  CHANNEL_SEND: 'channel.send',
-  CHANNEL_DISCONNECT: 'channel.disconnect',
-} as const;
-
-// ─── Aggregate type for all valid action strings ───────────────────────────
-
-export const ALL_ACTIONS = {
-  ...ACCOUNT_ACTIONS,
-  ...PROJECT_ACTIONS,
-  ...TRIGGER_ACTIONS,
-  ...CHANNEL_ACTIONS,
-} as const;
-
-export type Action = (typeof ALL_ACTIONS)[keyof typeof ALL_ACTIONS];
-
-// Set of every valid action string. Used to validate custom-role action
-// lists at the API boundary — unknown strings are rejected so a typo can't
-// create a role that grants nothing useful.
-export const VALID_ACTIONS: ReadonlySet<string> = new Set([
-  ...Object.values(ACCOUNT_ACTIONS),
-  ...Object.values(PROJECT_ACTIONS),
-  ...Object.values(TRIGGER_ACTIONS),
-  ...Object.values(CHANNEL_ACTIONS),
-]);
-
-/**
- * Catalog grouped for the UI's action picker. Each item carries a human
- * label so the frontend doesn't have to title-case dotted strings.
- */
-export interface ActionCatalogEntry {
-  action: string;
-  label: string;
-  resourceType: ResourceType;
-}
-
-function label(action: string): string {
-  return action
-    .split('.')
-    .map((part) => part[0]?.toUpperCase() + part.slice(1).replace(/_/g, ' '))
-    .join(' · ');
-}
-
-export const ACTION_CATALOG: ActionCatalogEntry[] = [
-  ...Object.values(ACCOUNT_ACTIONS).map((a) => ({
-    action: a,
-    label: label(a),
-    resourceType: resourceTypeForAction(a),
-  })),
-  ...Object.values(PROJECT_ACTIONS).map((a) => ({
-    action: a,
-    label: label(a),
-    resourceType: resourceTypeForAction(a),
-  })),
-  ...Object.values(TRIGGER_ACTIONS).map((a) => ({
-    action: a,
-    label: label(a),
-    resourceType: resourceTypeForAction(a),
-  })),
-  ...Object.values(CHANNEL_ACTIONS).map((a) => ({
-    action: a,
-    label: label(a),
-    resourceType: resourceTypeForAction(a),
-  })),
-];
 
 /**
  * Returns the resource_type the engine should match against for a given
