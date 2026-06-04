@@ -212,7 +212,7 @@ function parseLtmEntry(text: string): ParsedLtmMemory | null {
 
   const caption = compactBody.match(/Caption:\s*([\s\S]*?)(?=\s+Content:|\s+Session:|\s+Created:|\s+Tags:|$)/i)?.[1]?.trim() ?? '';
   const content = compactBody.match(/Content:\s*([\s\S]*?)(?=\s+Session:|\s+Created:|\s+Tags:|$)/i)?.[1]?.trim() ?? '';
-  const session = compactBody.match(/Session:\s*([^\s|]+(?:\s*[^\s|]+)*)?(?=\s+Created:|\s+Tags:|$)/i)?.[1]?.trim() || null;
+  const session = compactBody.match(/Session:\s*([\s\S]*?)(?=\s+Created:|\s+Tags:|$)/i)?.[1]?.trim() || null;
   const createdAndUpdated = compactBody.match(/Created:\s*([\s\S]*?)(?=\s+Tags:|$)/i)?.[1]?.trim() ?? '';
   const created = createdAndUpdated.split('|')[0]?.trim() || null;
   const updated = createdAndUpdated.includes('|')

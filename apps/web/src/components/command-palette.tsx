@@ -300,7 +300,10 @@ function MessagesPage({
       .map((turn) => {
         const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
         const raw = textParts.map((p) => p.text).join(' ');
-        const stripped = stripKortixSystemTags(raw).replace(/<[^>]+>/g, '').trim();
+        const stripped = stripKortixSystemTags(raw)
+          .replaceAll('<', '')
+          .replaceAll('>', '')
+          .trim();
         return {
           id: turn.userMessage.info.id,
           text: stripped,
