@@ -1,13 +1,21 @@
 import { test, expect } from '@playwright/test';
-import { ownerEmail, ownerPassword, getAccessToken } from '../helpers/auth';
+import { signIn } from '../helpers/session-auth';
+
+const ownerEmail = process.env.E2E_OWNER_EMAIL || 'test-e2e@kortix.ai';
+const ownerPassword = process.env.E2E_OWNER_PASSWORD || 'e2e-testpass-123';
+const authOptions = {
+  supabaseUrl: process.env.E2E_SUPABASE_URL || 'http://localhost:13740',
+  password: ownerPassword,
+  envFiles: [`${process.env.HOME}/.kortix/.env`, 'apps/web/.env', 'apps/api/.env'],
+};
 
 test.describe('04 — Authentication flow', () => {
   test.setTimeout(120_000);
 
   test('owner can authenticate via Supabase API', async () => {
-    const token = await getAccessToken();
-    expect(token).toBeTruthy();
-    expect(token).toMatch(/^eyJ/); // JWT
+    const session = await signIn(ownerEmail, authOptions);
+    expect(session.access_token).toBeTruthy();
+    expect(session.access_token).toMatch(/^eyJ/); // JWT
   });
 
   test('browser login flow reaches wizard', async ({ page }) => {
