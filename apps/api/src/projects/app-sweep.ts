@@ -171,7 +171,6 @@ export function buildDeploymentRequest(input: {
         }
       : undefined,
     env: Object.keys(spec.env).length > 0 ? spec.env : undefined,
-    framework: spec.framework ?? undefined,
   };
 }
 

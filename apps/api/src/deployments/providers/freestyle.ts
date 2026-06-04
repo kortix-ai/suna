@@ -60,7 +60,7 @@ let _cachedFreestyleKey = '';
 let _cachedFreestyleKeyAt = 0;
 const CACHE_TTL_MS = 60_000;
 
-export async function getFreestyleApiKey(): Promise<string> {
+async function getFreestyleApiKey(): Promise<string> {
   if (process.env.FREESTYLE_API_KEY) return process.env.FREESTYLE_API_KEY;
   if (config.FREESTYLE_API_KEY) return config.FREESTYLE_API_KEY;
   const now = Date.now();
@@ -80,7 +80,7 @@ function getFreestyleApiUrl(): string {
 }
 
 /** Low-level Freestyle REST call. Returns the raw Response. */
-export async function callFreestyle(
+async function callFreestyle(
   path: string,
   options: { method: string; body?: unknown; timeoutMs?: number },
 ): Promise<Response> {

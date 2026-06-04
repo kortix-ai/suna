@@ -42,7 +42,6 @@ export interface DeploymentRequest {
   domains: string[];
   build?: AppBuild;
   env?: Record<string, string>;
-  framework?: string;
 }
 
 export interface DeploymentResult {

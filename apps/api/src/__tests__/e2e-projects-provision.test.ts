@@ -86,10 +86,12 @@ mock.module('../projects/git-backends', () => ({
 // git) so loading the projects module graph doesn't drag real deployment code —
 // and its transitive DB imports — into this lightweight test.
 mock.module('../deployments/providers/freestyle', () => ({
-  getFreestyleApiKey: async () => 'test-key',
-  getFreestyleApiUrl: () => 'https://api.freestyle.sh',
-  callFreestyle: async () => ({ ok: true, status: 200, json: async () => ({}), text: async () => '' }),
-  freestyleProvider: { name: 'freestyle', deploy: async () => ({}), stop: async () => {}, logs: async () => ({}) },
+  freestyleProvider: {
+    name: 'freestyle',
+    deploy: async () => ({ providerId: 'deployment-test', liveUrl: null, status: 'active' }),
+    stop: async () => {},
+    logs: async () => ({}),
+  },
 }));
 
 mock.module('../middleware/auth', () => ({
