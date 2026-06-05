@@ -35,10 +35,6 @@ const die = (s: string): never => { console.error(`\n${pc.red('✗')} ${s}`); pr
 const url = (u: string) => pc.cyan(pc.underline(u));
 const dot = (up: boolean) => (up ? pc.green('●') : pc.dim('○'));
 
-// Run a slow teardown command under an animated spinner. Async (Bun.spawn +
-// await) so the event loop stays free to render frames — a synchronous sh()
-// would block the loop and freeze the spinner. Exit code is ignored; these are
-// best-effort cleanup steps.
 async function spin(label: string, cmd: string[]): Promise<void> {
   const s = clack.spinner();
   s.start(label);
@@ -307,8 +303,6 @@ async function cmdStart(a: Args) {
     else warn('no tunnel (cloudflared missing or timed out) — cloud sandboxes won’t be reachable; `brew install cloudflared` and restart, or pass --no-tunnel to silence');
   }
 
-  // --stripe: forward Stripe (test-mode) webhooks to THIS worktree's API and
-  // turn billing on, so checkout/subscription flows can be tested end-to-end.
   let stripe: StripeListen | null = null;
   if (a.flags.stripe) {
     step('Stripe webhook forwarding (billing on)');
@@ -316,8 +310,6 @@ async function cmdStart(a: Args) {
     if (stripe) sub(`stripe listen → http://localhost:${e.ports.api}/v1/billing/webhooks/stripe  ${pc.dim('(whsec injected)')}`);
     else warn('stripe CLI missing or not logged in — billing NOT enabled. Install it and run `stripe login`, then restart with --stripe.');
   }
-  // STRIPE_SECRET_KEY (test mode) is inherited from the worktree's local .env;
-  // if it's absent the API will refuse to boot with billing on.
 
   console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  studio http://localhost:${e.ports.sbStudio}`);
   if (tunnel) console.log(`${pc.dim('   sandbox callback')} ${url(tunnel.url)}`);
@@ -365,7 +357,6 @@ async function cmdNuke(a: Args) {
   const pid = e!.projectId;
   step(`Nuking "${name}" ${pc.dim('(project ' + pid + ')')}`);
   for (const port of [e!.ports.web, e!.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
-  // The slow part — show progress so it isn't a silent ~minute-long black hole.
   await spin('Stopping Supabase containers', ['supabase', '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
   await spin('Removing Docker containers', ['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
   await spin('Removing volumes & network', ['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null; docker network rm supabase_network_${pid} 2>/dev/null || true`]);
