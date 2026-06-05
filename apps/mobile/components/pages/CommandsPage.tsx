@@ -145,19 +145,21 @@ function CommandDetail({
         <Text style={{ fontSize: 11, fontFamily: MONO, color: muted, marginTop: 8 }} numberOfLines={1}>
           {command.path}
         </Text>
-
-        {command.description ? (
-          <Text style={{ fontSize: 14, lineHeight: 20, color: muted, marginTop: 10 }}>
-            {command.description}
-          </Text>
-        ) : null}
       </View>
 
+      {/* Description + source body — scroll together so a long description never
+          dominates a fixed header. */}
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }}
         showsVerticalScrollIndicator={false}
       >
+        {command.description ? (
+          <View style={{ marginBottom: 14 }}>
+            <Text style={{ fontSize: 14, lineHeight: 21, color: muted }}>{command.description}</Text>
+            <View style={{ height: 1, backgroundColor: border, marginTop: 14 }} />
+          </View>
+        ) : null}
         {fileQuery.isLoading ? (
           <View style={{ paddingVertical: 40, alignItems: 'center' }}>
             <ActivityIndicator size="small" color={muted} />
