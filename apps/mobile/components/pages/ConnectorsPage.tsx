@@ -160,9 +160,11 @@ function ConnectorDetail({
 
   const Icon = providerIcon(connector.provider);
   const status = STATUS_META[connector.status];
-  const needsCredential = !!connector.authSecret && !connector.secretSet;
   const isPipedream = connector.provider === 'pipedream';
-  const needsConnect = isPipedream && connector.status === 'needs_auth';
+  // Web parity: Pipedream connectors connect a per-user account whenever the
+  // credential isn't set yet; custom connectors with an auth secret set a value.
+  const needsConnect = isPipedream && !connector.secretSet;
+  const needsCredential = !isPipedream && !!connector.authSecret && !connector.secretSet;
   const showTopAction = needsConnect || needsCredential;
 
   const handleReconnect = useCallback(async () => {
@@ -242,7 +244,9 @@ function ConnectorDetail({
           </TouchableOpacity>
           <Text style={{ fontSize: 12.5, color: muted, marginTop: 8, textAlign: 'center' }}>
             {needsConnect
-              ? 'This connector needs to be authorized before it can run.'
+              ? connector.credentialMode === 'per_user'
+                ? 'Connect your account to use this connector.'
+                : 'Connect an account before this connector can run.'
               : 'This connector needs a credential before it can run.'}
           </Text>
         </View>
@@ -321,6 +325,10 @@ function ConnectorRow({
   const Icon = providerIcon(connector.provider);
   const status = STATUS_META[connector.status];
   const showStatusDot = connector.status !== 'active';
+  const isPipedream = connector.provider === 'pipedream';
+  const needsConnect = isPipedream && !connector.secretSet;
+  const needsCredential = !isPipedream && !!connector.authSecret && !connector.secretSet;
+  const needsSetup = needsConnect || needsCredential;
 
   return (
     <TouchableOpacity
@@ -345,7 +353,13 @@ function ConnectorRow({
         </Text>
       </View>
 
-      <ChevronRight size={18} color={muted} />
+      {needsSetup ? (
+        <View style={{ paddingHorizontal: 11, paddingVertical: 6, borderRadius: 999, backgroundColor: 'rgba(217,119,6,0.12)' }}>
+          <Text style={{ fontSize: 11.5, fontFamily: 'Roobert-Medium', color: '#d97706' }}>{needsConnect ? 'Connect' : 'Set up'}</Text>
+        </View>
+      ) : (
+        <ChevronRight size={18} color={muted} />
+      )}
     </TouchableOpacity>
   );
 }
