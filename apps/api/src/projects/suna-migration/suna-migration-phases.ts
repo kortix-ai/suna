@@ -147,6 +147,10 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
         git: { url: repoUrl, upstream_url: repoUrl, default_branch: defaultBranch, provider, managed: true,
                owner: ctx.progress.repo_owner, name: ctx.progress.repo_name },
         suna_migration: { run_id: ctx.runId, migrated_at: now.toISOString(), sessions: specs.length },
+        // kickProvisionOnOpen reads source_sandbox_id from the PROJECT metadata to
+        // fire the on-open chat rehydrate. The archive is keyed by projectId and
+        // shared by every session, so it's a project-level value.
+        legacy_migration: { run_id: ctx.runId, source_sandbox_id: projectId, migrated_at: now.toISOString() },
       },
     }).onConflictDoNothing({ target: projects.projectId });
 
