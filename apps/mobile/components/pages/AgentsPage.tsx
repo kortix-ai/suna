@@ -26,6 +26,7 @@ import {
   ChevronRight,
   ChevronLeft,
   Pencil,
+  Plus,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
@@ -341,10 +342,20 @@ export function AgentsPage({
                 </TouchableOpacity>
               </View>
             ) : filtered.length === 0 ? (
-              <View style={{ padding: 40, alignItems: 'center' }}>
+              <View style={{ padding: 40, alignItems: 'center', gap: 14 }}>
                 <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
                   {agents.length === 0 ? 'No agents in this project yet.' : 'No agents match your search.'}
                 </Text>
+                {agents.length === 0 && (
+                  <TouchableOpacity
+                    onPress={() => onConfigure(newConfigPrompt('agent'))}
+                    activeOpacity={0.7}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: border }}
+                  >
+                    <Plus size={15} color={fg} />
+                    <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>New agent</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             ) : (
               filtered.map((agent, i) => (

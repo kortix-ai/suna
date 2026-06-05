@@ -25,6 +25,7 @@ import {
   ChevronRight,
   ChevronLeft,
   Pencil,
+  Plus,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
@@ -296,10 +297,20 @@ export function SkillsPage({
                 </TouchableOpacity>
               </View>
             ) : filtered.length === 0 ? (
-              <View style={{ padding: 40, alignItems: 'center' }}>
+              <View style={{ padding: 40, alignItems: 'center', gap: 14 }}>
                 <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
                   {skills.length === 0 ? 'No skills in this project yet.' : 'No skills match your search.'}
                 </Text>
+                {skills.length === 0 && (
+                  <TouchableOpacity
+                    onPress={() => onConfigure(newConfigPrompt('skill'))}
+                    activeOpacity={0.7}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: border }}
+                  >
+                    <Plus size={15} color={fg} />
+                    <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>New skill</Text>
+                  </TouchableOpacity>
+                )}
               </View>
             ) : (
               filtered.map((skill, i) => (
