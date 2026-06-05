@@ -638,3 +638,51 @@ export function deletePersonalProjectSecret(projectId: string, name: string) {
     { method: 'DELETE' },
   );
 }
+
+// ── Channels — Slack (web parity: customize/sections/channels-view) ───────────
+// One Slack workspace install per project. Either 1-click OAuth ("Add to
+// Slack", when the server has Slack creds) or BYO (paste a bot token + signing
+// secret from your own Slack app manifest).
+
+export interface SlackInstallation {
+  workspaceId: string;
+  workspaceName: string | null;
+  botUserId: string | null;
+  installedAt: string;
+}
+
+export interface SlackMode {
+  oauth_available: boolean;
+  install_url: string | null;
+}
+
+const channelsBase = (projectId: string) =>
+  `/projects/${encodeURIComponent(projectId)}/channels`;
+
+/** Current Slack install, or null when not connected. */
+export function getSlackInstallation(projectId: string) {
+  return apiFetch<SlackInstallation | null>(`${channelsBase(projectId)}/slack/installation`);
+}
+
+/** Whether 1-click OAuth is available + the pre-signed install URL. */
+export function getSlackMode(projectId: string) {
+  return apiFetch<SlackMode>(`${channelsBase(projectId)}/slack/mode`);
+}
+
+/** BYO connect: validate a bot token + signing secret against Slack. */
+export function connectSlack(
+  projectId: string,
+  input: { bot_token: string; signing_secret: string },
+) {
+  return apiFetch<SlackInstallation>(`${channelsBase(projectId)}/slack/connect`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+/** Remove the Slack install (deletes its secrets, stops events). */
+export function disconnectSlack(projectId: string) {
+  return apiFetch<{ status: string }>(`${channelsBase(projectId)}/slack/installation`, {
+    method: 'DELETE',
+  });
+}

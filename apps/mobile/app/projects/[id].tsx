@@ -82,6 +82,7 @@ import { SkillsPage } from '@/components/pages/SkillsPage';
 import { CommandsPage } from '@/components/pages/CommandsPage';
 import { ConnectorsPage } from '@/components/pages/ConnectorsPage';
 import { SecretsNavPage } from '@/components/pages/SecretsNavPage';
+import { ChannelsNavPage } from '@/components/pages/ChannelsNavPage';
 import { MemoryPage } from '@/components/pages/MemoryPage';
 import { LlmProvidersPage } from '@/components/pages/LlmProvidersPage';
 import { TerminalPage } from '@/components/pages/TerminalPage';
@@ -2074,6 +2075,17 @@ export default function ProjectSessionScreen() {
           /* Active page tab — Secrets (web sidebar CONNECT) */
           ) : activePageId === 'page:secrets-nav' && PAGE_TABS[activePageId] && !showTabsOverview ? (
             <SecretsNavPage
+              page={PAGE_TABS[activePageId]}
+              projectId={projectId}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Channels (web sidebar CONNECT) */
+          ) : activePageId === 'page:channels-nav' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <ChannelsNavPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}

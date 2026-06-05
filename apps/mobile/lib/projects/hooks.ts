@@ -7,10 +7,14 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import {
   archiveProject,
   createAccount,
+  connectSlack,
   createProjectSession,
   deleteConnector,
   deletePersonalProjectSecret,
   deleteProjectSecret,
+  disconnectSlack,
+  getSlackInstallation,
+  getSlackMode,
   getProject,
   getProjectDetail,
   linkRepository,
@@ -47,6 +51,8 @@ export const projectKeys = {
   projectSessions: (projectId: string | null | undefined) => ['project-sessions', projectId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
   secrets: (projectId: string | null | undefined) => ['project-secrets', projectId] as const,
+  slackInstall: (projectId: string | null | undefined) => ['slack-install', projectId] as const,
+  slackMode: (projectId: string | null | undefined) => ['slack-mode', projectId] as const,
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
   policies: (projectId: string | null | undefined) => ['project-policies', projectId] as const,
   pipedreamApps: (projectId: string | null | undefined, q: string) =>
@@ -321,5 +327,45 @@ export function useDeletePersonalProjectSecret(projectId: string) {
   return useMutation({
     mutationFn: (name: string) => deletePersonalProjectSecret(projectId, name),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.secrets(projectId) }),
+  });
+}
+
+// ── Channels — Slack (web parity) ─────────────────────────────────────────────
+
+/** Current Slack install (null when not connected). Polls while pending. */
+export function useSlackInstallation(projectId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.slackInstall(projectId),
+    queryFn: () => getSlackInstallation(projectId!),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+}
+
+/** Whether 1-click OAuth is available + the install URL (degrades gracefully). */
+export function useSlackMode(projectId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.slackMode(projectId),
+    queryFn: () =>
+      getSlackMode(projectId!).catch(() => ({ oauth_available: false, install_url: null })),
+    enabled: !!projectId,
+    staleTime: 60_000,
+  });
+}
+
+export function useConnectSlack(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { bot_token: string; signing_secret: string }) =>
+      connectSlack(projectId, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.slackInstall(projectId) }),
+  });
+}
+
+export function useDisconnectSlack(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => disconnectSlack(projectId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.slackInstall(projectId) }),
   });
 }
