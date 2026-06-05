@@ -70,7 +70,7 @@ function partObject(p: NormalizedPart, sessionID: string, messageID: string, atM
   };
 }
 
-export interface WriteResult { sessions: number; messages: number; parts: number; unknownTables: string[]; }
+export interface WriteResult { sessions: number; messages: number; parts: number; unknownTables: string[]; sessionIds: Array<{ id: string; title: string }>; }
 
 /**
  * Create a project + sessions + messages + parts for one migrated workspace.
@@ -79,7 +79,7 @@ export interface WriteResult { sessions: number; messages: number; parts: number
  */
 export function writeConversations(dbPath: string, projectId: string, sessions: SessionToWrite[]): WriteResult {
   const db = new Database(dbPath);
-  const res: WriteResult = { sessions: 0, messages: 0, parts: 0, unknownTables: [] };
+  const res: WriteResult = { sessions: 0, messages: 0, parts: 0, unknownTables: [], sessionIds: [] };
   try {
     db.exec('PRAGMA foreign_keys=OFF');
     const projectCols = tableColumns(db, 'project');
@@ -96,6 +96,7 @@ export function writeConversations(dbPath: string, projectId: string, sessions: 
     const tx = db.transaction(() => {
       for (const s of sessions) {
         const sessionID = id('ses', now);
+        res.sessionIds.push({ id: sessionID, title: s.title.slice(0, 200) });
         insertAdaptive(db, 'session', sessionCols, {
           id: sessionID, project_id: projectId, parent_id: null,
           title: s.title.slice(0, 200), slug: null,

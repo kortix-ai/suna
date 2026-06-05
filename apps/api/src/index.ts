@@ -42,6 +42,7 @@ import { startProjectMaintenance, stopProjectMaintenance } from './projects/main
 import { kickStartupPreBuild } from './snapshots/builder';
 import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
 import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
+import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
 import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
 import { scimRouter } from './scim';
@@ -537,6 +538,7 @@ app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billin
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
+registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
