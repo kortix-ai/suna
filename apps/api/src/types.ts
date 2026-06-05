@@ -226,6 +226,10 @@ export interface AccountStateResponse {
   can_add_instances: boolean;
   /** True when a legacy paid user has no active machine and can claim one. */
   can_claim_computer?: boolean;
+  /** True only for genuine legacy per-machine accounts with a machine to migrate
+   *  to per-seat — gates the "Claim seat-based pricing" card so new per-seat-era
+   *  users never see a no-op claim. */
+  can_claim_per_seat?: boolean;
 
   // Billing v2 — surfaced for per-seat accounts only. Legacy accounts get
   // billing_model='legacy' here and the frontend renders the legacy UI.

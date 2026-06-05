@@ -115,6 +115,10 @@ export interface AccountState {
   }>;
   can_add_instances?: boolean;
   can_claim_computer?: boolean;
+  // True only for genuine legacy per-machine accounts that have a machine to
+  // migrate — gates the "Claim seat-based pricing" card (new per-seat-era users
+  // must not see it, or the claim dead-ends on "nothing to switch").
+  can_claim_per_seat?: boolean;
   // Billing v2 — present for accounts on the new per-seat plan.
   billing_model?: 'legacy' | 'per_seat';
   seats?: {

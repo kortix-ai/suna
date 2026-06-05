@@ -11,6 +11,7 @@ import {
   isPaidTier,
   isLegacyPaidTier,
   isPerSeatAccount,
+  canClaimPerSeat,
   MINIMUM_CREDIT_FOR_RUN,
   PER_SEAT_PRICE_USD,
   TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
@@ -133,6 +134,16 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   const hasActiveMachine = instances.some((i: any) => i.status === 'active' || i.status === 'provisioning');
   const canClaimComputer = isLegacyPaidTier(tierName) && !hasActiveMachine;
 
+  // Only genuine legacy per-machine accounts (with a machine to move off of)
+  // should see the "Claim seat-based pricing" card — never new per-seat-era
+  // free users, whose claim would dead-end on "nothing to switch".
+  const canClaimPerSeatPricing = canClaimPerSeat({
+    billingModel: sub?.billingModel,
+    hasLegacyMachine: instances.length > 0,
+    commitmentType: sub?.commitmentType ?? null,
+    commitmentEndDate: sub?.commitmentEndDate ?? null,
+  });
+
   const state = {
     credits: {
       total: credits.total,
@@ -169,6 +180,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     instances,
     can_add_instances: isAdmin || isPaidTier(tierName),
     can_claim_computer: canClaimComputer,
+    can_claim_per_seat: canClaimPerSeatPricing,
     billing_model: (isPerSeatAccount(sub?.billingModel) ? 'per_seat' : 'legacy') as 'per_seat' | 'legacy',
     seats: isPerSeatAccount(sub?.billingModel)
       ? {
@@ -241,6 +253,7 @@ export function buildLocalAccountState(): AccountStateResponse {
     instances: [],
     can_add_instances: false,
     can_claim_computer: false,
+    can_claim_per_seat: false,
     billing_model: 'legacy',
   };
 }

@@ -7,7 +7,12 @@ import type { AccountState } from '@/lib/api/billing';
 
 export function ClaimPerSeatCard({ accountState }: { accountState?: AccountState }) {
   const claim = useClaimPerSeat();
-  if (!accountState || accountState.billing_model !== 'legacy') return null;
+  // Show ONLY for genuine legacy accounts with a machine to migrate. A plain
+  // `billing_model === 'legacy'` check also matched new per-seat-era free users
+  // (whose model is the legacy default), dead-ending their claim on "nothing to
+  // switch" and hiding the normal top-up path. can_claim_per_seat is computed
+  // server-side to mirror what the claim will actually do.
+  if (!accountState || !accountState.can_claim_per_seat) return null;
 
   return (
     <div className="rounded-2xl border border-primary/20 bg-primary/5 p-4 space-y-3">
