@@ -55,7 +55,6 @@ export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
     async (c: any) => {
       const accountId = await resolveScopedAccountId(c, 'query');
       const latest = await latestSunaMigration(db, accountId);
-      // Already done or in-flight → not eligible to start (UI shows status/hides).
       if (latest && ['completed', 'running', 'planned'].includes(latest.status)) {
         return c.json({ eligible: false, migration: serialize(latest) });
       }
@@ -68,7 +67,11 @@ export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
     createRoute({
       method: 'post', path: '/suna-migration/start', tags: ['projects'],
       summary: 'Start the Suna → opencode migration for the account', ...auth,
-      request: { body: { content: { 'application/json': { schema: z.object({ account_id: z.string().optional() }) } } } },
+      request: { body: { content: { 'application/json': { schema: z.object({
+        account_id: z.string().optional(),
+        limit: z.number().int().positive().max(200).optional(),
+        offset: z.number().int().nonnegative().optional(),
+      }) } } } },
       responses: {
         200: json(z.object({ created: z.boolean(), migration: z.any() }), 'Existing in-flight migration'),
         202: json(z.object({ created: z.boolean(), migration: z.any() }), 'Migration started'),
@@ -78,10 +81,15 @@ export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
     }),
     async (c: any) => {
       const accountId = await resolveScopedAccountId(c, 'body');
+      const body = await c.req.json().catch(() => ({}));
       if ((await countSunaProjects(accountId)) === 0) {
         return c.json({ error: 'No Suna projects found for this account' }, 400);
       }
-      const { migration, created } = await startSunaMigration({ database: db, accountId });
+      const { migration, created } = await startSunaMigration({
+        database: db, accountId,
+        limit: typeof body?.limit === 'number' ? body.limit : undefined,
+        offset: typeof body?.offset === 'number' ? body.offset : undefined,
+      });
       return c.json({ created, migration: serialize(migration) }, created ? 202 : 200);
     },
   );

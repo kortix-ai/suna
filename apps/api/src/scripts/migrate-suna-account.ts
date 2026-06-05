@@ -34,7 +34,7 @@ const accountId = arg('--account-id');
 const buildDir = arg('--build');
 const pushDir = arg('--push-repo');
 const limit = arg('--limit');
-if (limit) process.env.KORTIX_SUNA_MIGRATION_LIMIT = limit; // caps discovery (test / huge accounts)
+const offset = arg('--offset');
 const mode = pushDir ? 'push-repo' : Bun.argv.includes('--apply') ? 'apply' : buildDir ? 'build' : 'plan';
 if (!accountId) { console.error('--account-id <uuid> required'); process.exit(2); }
 if (mode === 'build' && !buildDir) { console.error('--build <dir> required'); process.exit(2); }
@@ -166,8 +166,11 @@ async function main() {
   //    Run against STAGING first, bounded with --limit. ──
   if (mode === 'apply') {
     const { startSunaMigration, driveSunaMigration, latestSunaMigration } = await import('../projects/suna-migration/suna-migration-runner');
-    console.log(`Starting migration${limit ? ` (limit ${limit})` : ''} for ${accountId} …`);
-    const { migration } = await startSunaMigration({ database: db, accountId: accountId!, autoDrive: false });
+    console.log(`Starting migration (limit ${limit ?? 25}, offset ${offset ?? 0}) for ${accountId} …`);
+    const { migration } = await startSunaMigration({
+      database: db, accountId: accountId!, autoDrive: false,
+      limit: limit ? Number(limit) : undefined, offset: offset ? Number(offset) : undefined,
+    });
     await driveSunaMigration(db, migration.migrationId); // drive synchronously so the script reports the outcome
     const final = await latestSunaMigration(db, accountId!);
     console.log(`\n  status: ${final?.status}  phase: ${final?.phase}  project_id: ${final?.projectId ?? '—'}`);
