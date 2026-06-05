@@ -338,6 +338,11 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       if (!deps.createConnector) return c.json({ error: 'not supported' }, 501);
       let body: any;
       try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      if (body?.sharing !== undefined) {
+        const intent = parseSharingIntent(body.sharing, admin.userId);
+        if (!intent) return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+        body.sharing = intent;
+      }
       const result = await deps.createConnector(projectId, admin.accountId, body);
       return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
     },
