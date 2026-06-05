@@ -27,7 +27,6 @@ import pc from 'picocolors';
 const API_FILTER = 'kortix-api';
 const WEB_FILTER = 'Kortix-Computer-Frontend';
 
-// ── styled output ────────────────────────────────────────────────────────────
 const step = (s: string) => console.log(`\n${pc.cyan('▸')} ${pc.bold(s)}`);
 const sub = (s: string) => console.log(`  ${pc.dim(s)}`);
 const ok = (s: string) => console.log(`${pc.green('✓')} ${s}`);
@@ -36,7 +35,6 @@ const die = (s: string): never => { console.error(`\n${pc.red('✗')} ${s}`); pr
 const url = (u: string) => pc.cyan(pc.underline(u));
 const dot = (up: boolean) => (up ? pc.green('●') : pc.dim('○'));
 
-// ── arg parsing ──────────────────────────────────────────────────────────────
 interface Args { cmd: string; name?: string; flags: Record<string, string | boolean>; }
 function parseArgs(argv: string[]): Args {
   const cmd = argv[0] ?? 'help';
@@ -80,18 +78,11 @@ function portsLine(p: Ports): string {
     `${pc.dim('·')} db ${pc.green(String(p.sbDb))} ${pc.dim('·')} studio ${pc.green(String(p.sbStudio))} ${pc.dim('·')} inbucket ${pc.green(String(p.sbInbucket))}`;
 }
 
-// ── git helpers for the branch picker ────────────────────────────────────────
 function currentBranch(): string { return sh(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim() || 'main'; }
-// Recent local branches, newest commit first — the picker shows what you're
-// actually working on, not an unscrollable wall of every branch in the repo.
 function recentBranches(limit = 12): string[] {
   return sh(['git', 'for-each-ref', `--count=${limit}`, '--sort=-committerdate', '--format=%(refname:short)', 'refs/heads'])
     .stdout.split('\n').map((s) => s.trim()).filter(Boolean);
 }
-// Git stores refs hierarchically, so a name can collide with an existing
-// namespace: `billing` can't be a branch if `billing/x` exists (billing is a
-// directory), and `a/b` can't be created if `a` is already a branch. Detect
-// this up front so a bad name fails before anything is provisioned.
 function branchConflict(root: string, branch: string): string | null {
   if (!sh(['git', '-C', root, 'check-ref-format', `refs/heads/${branch}`]).ok)
     return `"${branch}" is not a valid git branch name`;
@@ -105,7 +96,6 @@ function branchConflict(root: string, branch: string): string | null {
   return null;
 }
 
-// ── interactive prompts ──────────────────────────────────────────────────────
 function cancelled(v: unknown): boolean { if (clack.isCancel(v)) { clack.cancel('Cancelled.'); return true; } return false; }
 
 async function promptCreate(): Promise<Args | null> {
@@ -116,8 +106,6 @@ async function promptCreate(): Promise<Args | null> {
   });
   if (cancelled(name)) return null;
   const cur = currentBranch();
-  // Show recent branches (current + main first), capped to a scrollable window,
-  // plus an escape hatch to type any branch — so 100-branch repos stay usable.
   const seen = new Set<string>();
   const ordered = ['main', cur, ...recentBranches(12)].filter((b) => b && !seen.has(b) && (seen.add(b), true));
   const OTHER = ' other';
@@ -186,10 +174,9 @@ async function menu(): Promise<Args | null> {
   return { cmd, name: undefined, flags: {} };
 }
 
-// ── create ───────────────────────────────────────────────────────────────────
 async function cmdCreate(a: Args) {
   const name = need(a.name);
-  const tunnel = !a.flags['no-tunnel'];   // surface cloudflared (optional) unless opted out
+  const tunnel = !a.flags['no-tunnel'];
   const install = !!a.flags.yes;
 
   step('Preflight: toolchain');
@@ -202,8 +189,6 @@ async function cmdCreate(a: Args) {
   const branch = (typeof a.flags.branch === 'string' && a.flags.branch) || name;
   const from = (typeof a.flags.from === 'string' && a.flags.from) || 'HEAD';
 
-  // Fail fast on bad/colliding branch names — before allocating a slot, so a
-  // doomed create never leaves a half-provisioned worktree behind.
   if (!branchExists(root, branch)) {
     const conflict = branchConflict(root, branch);
     if (conflict) die(`can't create branch "${branch}": ${conflict}.\n  Pick another name: pnpm worktree create --name ${name} --branch <branch>`);
@@ -231,8 +216,6 @@ async function cmdCreate(a: Args) {
 
   step(`Slot ${entry.slot} — ${portsLine(entry.ports)}`);
 
-  // If a step fails before the worktree exists on disk, drop the slot we just
-  // reserved (only when we created it) so the registry isn't left dangling.
   const failCreate = async (msg: string): Promise<never> => {
     if (isNew) await withLock(() => { const r = loadRegistry(); delete r.slots[name]; saveRegistry(r); });
     return die(msg);
@@ -280,7 +263,6 @@ async function cmdCreate(a: Args) {
   else { await cmdStart({ cmd: 'start', name, flags: a.flags['no-tunnel'] ? { 'no-tunnel': true } : {} }); }
 }
 
-// ── start ────────────────────────────────────────────────────────────────────
 async function cmdStart(a: Args) {
   const name = need(a.name);
   const reg = loadRegistry();
@@ -302,10 +284,6 @@ async function cmdStart(a: Args) {
   for (const port of [e.ports.web, e.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
   await withLock(() => { const r = loadRegistry(); if (r.slots[name]) { r.slots[name].status = 'running'; saveRegistry(r); } });
 
-  // Cloud Daytona sandboxes call back to the API (callbacks + LLM gateway) and
-  // can't reach this machine's localhost — front it with a Cloudflare quick
-  // tunnel and hand the public URL to the API as KORTIX_URL. Mirrors
-  // dev-local.sh's ensure_dev_tunnel. Opt out with --no-tunnel for offline work.
   let tunnel: Tunnel | null = null;
   if (!a.flags['no-tunnel']) {
     step('Cloudflare tunnel (cloud sandbox callback)');
@@ -339,7 +317,6 @@ async function cmdStart(a: Args) {
   await shutdown();
 }
 
-// ── stop ─────────────────────────────────────────────────────────────────────
 async function cmdStop(a: Args) {
   const name = need(a.name);
   const reg = loadRegistry();
@@ -352,7 +329,6 @@ async function cmdStop(a: Args) {
   ok(`stopped (data preserved). Restart with ${pc.cyan('pnpm worktree start ' + name)}.`);
 }
 
-// ── nuke ─────────────────────────────────────────────────────────────────────
 async function cmdNuke(a: Args) {
   const name = need(a.name);
   const reg = loadRegistry();
@@ -380,7 +356,6 @@ async function cmdNuke(a: Args) {
   ok(`removed "${name}" — slot ${e!.slot} freed.`);
 }
 
-// ── list ─────────────────────────────────────────────────────────────────────
 function cmdList() {
   const reg = loadRegistry();
   const names = Object.keys(reg.slots);
@@ -397,7 +372,6 @@ function cmdList() {
   console.log('');
 }
 
-// ── status ───────────────────────────────────────────────────────────────────
 function cmdStatus(a: Args) {
   const reg = loadRegistry();
   const names = a.name ? [sanitizeName(a.name)] : Object.keys(reg.slots);
@@ -413,7 +387,6 @@ function cmdStatus(a: Args) {
   console.log('');
 }
 
-// ── doctor ───────────────────────────────────────────────────────────────────
 async function cmdDoctor(a: Args) {
   step('Toolchain');
   await ensureDeps({ tunnel: true, install: !!a.flags.yes });
@@ -431,14 +404,11 @@ async function cmdDoctor(a: Args) {
   console.log(`\n  ${pc.dim('registry: ' + REGISTRY_PATH)}`);
 }
 
-// ── pr ───────────────────────────────────────────────────────────────────────
-// owner/repo from a remote's URL (ssh or https), for a fallback compare link.
 function repoSlug(path: string, remote = 'origin'): string | null {
   const u = sh(['git', '-C', path, 'remote', 'get-url', remote]).stdout.trim();
   return u.match(/[:/]([^/:]+\/[^/]+?)(?:\.git)?$/)?.[1] ?? null;
 }
 
-// Push the worktree's branch and open a PR — closes the loop create → work → pr.
 async function cmdPr(a: Args) {
   const name = need(a.name);
   const reg = loadRegistry();
@@ -466,9 +436,6 @@ async function cmdPr(a: Args) {
   }
 
   step('Opening pull request');
-  // --fill derives a proper title + body from the branch's commit messages;
-  // --title overrides it. gh runs in the worktree so it infers the repo and,
-  // on a fork, prompts for the base repo (inherited stdio lets you answer).
   const gh = ['gh', 'pr', 'create', '--head', branch, '--base', base];
   if (typeof a.flags.repo === 'string') gh.push('--repo', a.flags.repo);
   if (typeof a.flags.title === 'string') gh.push('--title', a.flags.title, '--body', typeof a.flags.body === 'string' ? a.flags.body : '');
@@ -480,7 +447,6 @@ async function cmdPr(a: Args) {
   ok(`PR opened for ${pc.bold(branch)}.`);
 }
 
-// ── main ─────────────────────────────────────────────────────────────────────
 let a = parseArgs(process.argv.slice(2));
 const tty = !!process.stdin.isTTY && !!process.stdout.isTTY;
 try {
