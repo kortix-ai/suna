@@ -164,7 +164,12 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
           // and would close Customize. Keep Customize open when the interaction
           // targets such an overlay — it closes itself (X / backdrop / Esc).
           const target = event.detail.originalEvent.target as Element | null;
-          if (target?.closest('[data-file-preview-overlay]')) {
+          // The Pipedream Connect SDK appends its overlay <iframe> to <body>,
+          // outside this dialog. Interacting with it must not close Customize.
+          if (
+            target?.closest('[data-file-preview-overlay]') ||
+            target?.closest('iframe[id^="pipedream-connect-iframe-"]')
+          ) {
             event.preventDefault();
           }
         }}

@@ -57,10 +57,12 @@ export {
   scopeEffectEnum,
   sandboxInvites,
   legacySandboxMigrations,
+  sunaAccountMigrations,
   deployments,
   kortixApiKeys,
   accountTokens,
   serverEntries,
+  workerLeaderLease,
   // Relations
   projectsRelations,
   projectGitConnectionsRelations,

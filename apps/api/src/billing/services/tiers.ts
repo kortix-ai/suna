@@ -282,8 +282,37 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
   computeProductId: 'prod_U6B5Gh1aMPdnLO',
 };
 
+// Local-dev Stripe TEST-mode sandbox. Every id here lives in the test mode of
+// the main Kortix Stripe account (acct_1R5BVvG6l1KZGqIr) — the account your
+// local `STRIPE_SECRET_KEY` (sk_test_…) points at. The prod/staging configs
+// above are LIVE-mode ids in other accounts and 404 with a test key ("No such
+// price"), which is why local per-seat checkout was failing. Created via the
+// Stripe API; regenerate with apps/api/scripts/ or the Stripe dashboard (test
+// mode) if the sandbox account is ever reset.
+const STRIPE_PRICES_DEV: StripePriceConfig = {
+  subscriptions: {
+    free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
+    pro:  { monthly: 'price_1TeyA7G6l1KZGqIr7ZhEpoVm' },
+    per_seat: { monthly: 'price_1TeyA7G6l1KZGqIrTb2DKGS0' }, // test "Kortix seat" $40/mo
+  },
+  credits: {
+    10:  'price_1TeyA8G6l1KZGqIrWYDbPN0O',
+    25:  'price_1TeyA9G6l1KZGqIrbdZNyyDn',
+    50:  'price_1TeyA9G6l1KZGqIrNbj3otrU',
+    100: 'price_1TeyA9G6l1KZGqIrqSwPsznA',
+    250: 'price_1TeyAAG6l1KZGqIrZavIxtSE',
+    500: 'price_1TeyAAG6l1KZGqIrm5HnnDaT',
+  },
+  productId: 'prod_UeGhOr4r0v9gna',
+  computeProductId: 'prod_UeGh9sa2UA2wRR',
+};
+
 function getStripePrices(): StripePriceConfig {
-  return config.INTERNAL_KORTIX_ENV === 'prod' ? STRIPE_PRICES_PROD : STRIPE_PRICES_STAGING;
+  switch (config.INTERNAL_KORTIX_ENV) {
+    case 'prod':    return STRIPE_PRICES_PROD;
+    case 'staging': return STRIPE_PRICES_STAGING;
+    default:        return STRIPE_PRICES_DEV; // 'dev' / unset → local test sandbox
+  }
 }
 
 export function getProductId(): string {
@@ -399,6 +428,34 @@ export function isLegacyAccount(billingModel: string | null | undefined): boolea
   // Default for null/undefined is legacy — safer to skip new behaviour than to
   // accidentally bill a legacy customer twice.
   return billingModel !== 'per_seat';
+}
+
+/**
+ * Whether to show the "Claim seat-based pricing" card. It must appear ONLY for a
+ * genuine legacy per-machine account that has something to migrate, so clicking
+ * actually does something. A new per-seat-era user (no machine) must NOT see it:
+ * `billing_model` is `'legacy'` for everyone who isn't explicitly `per_seat`
+ * (incl. brand-new free accounts with a null model), so gating the card on
+ * `billing_model === 'legacy'` showed it to new users — whose claim then
+ * dead-ends on "nothing to switch" while the card hides the normal top-up /
+ * subscribe path, stranding them out of credits. Mirrors the preconditions of
+ * maybeMigrateLegacyAccount (not already per-seat; has a legacy machine; not
+ * under an active yearly commitment) so the card never offers a no-op.
+ */
+export function canClaimPerSeat(args: {
+  billingModel: string | null | undefined;
+  hasLegacyMachine: boolean;
+  commitmentType?: string | null;
+  commitmentEndDate?: string | Date | null;
+  now?: Date;
+}): boolean {
+  if (isPerSeatAccount(args.billingModel)) return false;
+  if (!args.hasLegacyMachine) return false;
+  if (args.commitmentType === 'yearly_commitment' && args.commitmentEndDate) {
+    const ends = new Date(args.commitmentEndDate);
+    if (ends > (args.now ?? new Date())) return false;
+  }
+  return true;
 }
 
 /** Legacy paid tiers eligible for the "claim computer" flow. */

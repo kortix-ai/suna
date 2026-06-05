@@ -677,6 +677,17 @@ export const chatEventDedup = kortixSchema.table(
   (table) => [index('idx_chat_event_dedup_expiry').on(table.expiresAt)],
 );
 
+// Single-row-per-lock advisory lease for cross-replica leader election (the
+// scheduler / sweepers elect one leader so background work doesn't double-run
+// across ECS tasks). Previously SQL-migration-only; folded into the schema so
+// `kortix.*` is 100% Drizzle-owned and the migration engine has one source.
+export const workerLeaderLease = kortixSchema.table('worker_leader_lease', {
+  lockKey: text('lock_key').primaryKey(),
+  ownerId: text('owner_id').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Per-session sandbox runtime row. Decoupled from `kortix.sandboxes` (the
 // legacy /instances table) on purpose: project sessions carry no billing
 // state, no sandbox_members roster, and no team membership semantics — their
@@ -1014,6 +1025,40 @@ export const legacySandboxMigrations = kortixSchema.table(
     index('idx_legacy_sandbox_migrations_status').on(table.status),
     index('idx_legacy_sandbox_migrations_account').on(table.accountId),
     index('idx_legacy_sandbox_migrations_heartbeat').on(table.status, table.heartbeatAt),
+  ],
+);
+
+// Suna (agentpress) → opencode migration. One row per ACCOUNT: all of the
+// account's old Suna projects become ONE new project with N sessions (chats),
+// each chat's sandbox files archived under legacy/<slug>/. Same durable-runner
+// model as legacy_sandbox_migrations (phase/progress/heartbeat lease, resumable
+// by the worker), but keyed on account_id since the source is public.resources,
+// not kortix.sandboxes.
+export const sunaAccountMigrations = kortixSchema.table(
+  'suna_account_migrations',
+  {
+    migrationId: uuid('migration_id').defaultRandom().primaryKey(),
+    runId: text('run_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id'),
+    status: varchar('status', { length: 32 }).default('planned').notNull(),
+    mode: varchar('mode', { length: 32 }).default('dry_run').notNull(),
+    plan: jsonb('plan').default({}).$type<Record<string, unknown>>().notNull(),
+    error: text('error'),
+    phase: varchar('phase', { length: 32 }),
+    progress: jsonb('progress').default({}).$type<Record<string, unknown>>().notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    appliedAt: timestamp('applied_at', { withTimezone: true }),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_suna_account_migrations_status').on(table.status),
+    index('idx_suna_account_migrations_account').on(table.accountId),
+    index('idx_suna_account_migrations_heartbeat').on(table.status, table.heartbeatAt),
   ],
 );
 
