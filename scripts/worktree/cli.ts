@@ -61,6 +61,7 @@ ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev
   ${pc.cyan('pnpm worktree')}                 ${pc.dim('interactive menu')}
   ${pc.cyan('pnpm worktree create')}          ${pc.dim('guided wizard (or --name <n> --from <branch> [--no-tunnel])')}
   ${pc.cyan('start')} ${pc.dim('<n>')}   ${pc.cyan('stop')} ${pc.dim('<n>')}   ${pc.cyan('nuke')} ${pc.dim('<n> [--force]')}
+  ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base main --draft --web]')}
   ${pc.cyan('list')}        ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
 
 Each worktree gets a unique port block (base ${BASE.web}/${BASE.api}, +${STRIDE} per slot),
@@ -169,6 +170,7 @@ async function menu(): Promise<Args | null> {
       { value: 'stop', label: `${pc.yellow('■')} stop`, hint: 'stop a worktree (keeps data)' },
       { value: 'list', label: `${pc.blue('≡')} list`, hint: 'all worktrees + ports' },
       { value: 'status', label: `${pc.magenta('◇')} status`, hint: 'live health' },
+      { value: 'pr', label: `${pc.green('⇡')} pr`, hint: 'push the branch + open a PR' },
       { value: 'nuke', label: `${pc.red('✗')} nuke`, hint: 'tear down + free the slot' },
       { value: 'doctor', label: `${pc.dim('✚')} doctor`, hint: 'check the toolchain' },
     ],
@@ -176,7 +178,7 @@ async function menu(): Promise<Args | null> {
   if (cancelled(action)) return null;
   const cmd = String(action);
   if (cmd === 'create') return promptCreate();
-  if (['start', 'stop', 'nuke', 'status'].includes(cmd)) {
+  if (['start', 'stop', 'nuke', 'status', 'pr'].includes(cmd)) {
     const name = await pickWorktree(cmd);
     if (!name) return null;
     return { cmd, name, flags: cmd === 'nuke' ? { force: true } : {} };
@@ -429,6 +431,55 @@ async function cmdDoctor(a: Args) {
   console.log(`\n  ${pc.dim('registry: ' + REGISTRY_PATH)}`);
 }
 
+// ── pr ───────────────────────────────────────────────────────────────────────
+// owner/repo from a remote's URL (ssh or https), for a fallback compare link.
+function repoSlug(path: string, remote = 'origin'): string | null {
+  const u = sh(['git', '-C', path, 'remote', 'get-url', remote]).stdout.trim();
+  return u.match(/[:/]([^/:]+\/[^/]+?)(?:\.git)?$/)?.[1] ?? null;
+}
+
+// Push the worktree's branch and open a PR — closes the loop create → work → pr.
+async function cmdPr(a: Args) {
+  const name = need(a.name);
+  const reg = loadRegistry();
+  const e = reg.slots[name];
+  if (!e) die(`unknown worktree "${name}" — create it first`);
+  if (!existsSync(e.path)) die(`worktree dir missing (${e.path})`);
+  const { path, branch } = e;
+  const base = (typeof a.flags.base === 'string' && a.flags.base) || 'main';
+
+  const ahead = sh(['git', '-C', path, 'rev-list', '--count', `${base}..${branch}`]).stdout.trim();
+  if (!ahead || ahead === '0') die(`"${branch}" has no commits ahead of ${base} — commit something first`);
+  if (sh(['git', '-C', path, 'status', '--porcelain']).stdout.trim())
+    warn(`uncommitted changes in "${name}" won't be in the PR — commit them first if you want them included`);
+
+  step(`Pushing ${pc.bold(branch)} → origin ${pc.dim(`(${ahead} commit${ahead === '1' ? '' : 's'} ahead of ${base})`)}`);
+  if (await run(['git', '-C', path, 'push', '-u', 'origin', branch]) !== 0)
+    die('git push failed — check your remote auth and retry');
+
+  if (!which('gh')) {
+    const slug = repoSlug(path);
+    warn('gh CLI not found — branch pushed. Open the PR here:');
+    sub(slug ? url(`https://github.com/${slug}/compare/${base}...${branch}?expand=1`) : `compare ${base}...${branch} on GitHub`);
+    sub(`or install it (${pc.cyan('brew install gh')}) and re-run ${pc.cyan('pnpm worktree pr ' + name)}`);
+    return;
+  }
+
+  step('Opening pull request');
+  // --fill derives a proper title + body from the branch's commit messages;
+  // --title overrides it. gh runs in the worktree so it infers the repo and,
+  // on a fork, prompts for the base repo (inherited stdio lets you answer).
+  const gh = ['gh', 'pr', 'create', '--head', branch, '--base', base];
+  if (typeof a.flags.repo === 'string') gh.push('--repo', a.flags.repo);
+  if (typeof a.flags.title === 'string') gh.push('--title', a.flags.title, '--body', typeof a.flags.body === 'string' ? a.flags.body : '');
+  else gh.push('--fill');
+  if (a.flags.draft) gh.push('--draft');
+  if (a.flags.web) gh.push('--web');
+  if (await run(gh, { cwd: path }) !== 0)
+    die(`gh pr create failed — a PR may already exist, or the base repo needs selecting. Retry with ${pc.cyan('pnpm worktree pr ' + name + ' --web')}`);
+  ok(`PR opened for ${pc.bold(branch)}.`);
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 let a = parseArgs(process.argv.slice(2));
 const tty = !!process.stdin.isTTY && !!process.stdout.isTTY;
@@ -443,7 +494,7 @@ try {
     const r = await promptCreate();
     if (!r) process.exit(0);
     a = r;
-  } else if (tty && ['start', 'stop', 'nuke', 'rm', 'status'].includes(a.cmd) && !a.name) {
+  } else if (tty && ['start', 'stop', 'nuke', 'rm', 'status', 'pr'].includes(a.cmd) && !a.name) {
     clack.intro(pc.bgCyan(pc.black(` pnpm worktree · ${a.cmd} `)));
     const n = await pickWorktree(a.cmd);
     if (!n) process.exit(0);
@@ -457,6 +508,7 @@ try {
     case 'nuke': case 'rm': await cmdNuke(a); break;
     case 'list': case 'ls': cmdList(); break;
     case 'status': cmdStatus(a); break;
+    case 'pr': await cmdPr(a); break;
     case 'doctor': await cmdDoctor(a); break;
     default: usage();
   }
