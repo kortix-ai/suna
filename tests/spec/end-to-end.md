@@ -45,6 +45,8 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 `SYS-3` `GET /v1/user-roles` (`supabaseAuth`) → `{isAdmin, role}` (platform role).
 `SYS-4` `GET /v1/router/health` → router health (no auth).
 `SYS-5` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`. Every state-changing `/v1/*` passes `auditStateChangingRequest`.
+`SYS-6` `GET /v1/system/maintenance` → public read of the maintenance config (banner + maintenance page); default `{level:"none",…}`. Write is admin-only (`ADM-6`).
+`DOCS-1` `GET /v1/openapi.json` → public OpenAPI 3.1 spec (typed via `@hono/zod-openapi`). `GET /v1/docs` → public Scalar API reference (HTML).
 
 ---
 
@@ -380,7 +382,16 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `APP-1` `GET /projects/:id/apps` (`read`) · `POST` (`manage`) · `PATCH/DELETE /:slug` (`manage`) · `POST /:slug/deploy|stop` (`manage`) · `GET /:slug/logs` (`read`).
 
 ### Ops (platform admin)
-`OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200; non-admin → 403. Legacy `/v1/admin/*` → 404.
+`OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200; non-admin → 403.
+
+### Admin console API (platform admin)
+The `/v1/admin/api/*` surface backs `apps/web/src/app/admin/` — all guarded by `supabaseAuth` + `requireAdmin` (platform admin/super_admin): ANON → 401, authed non-admin → 403. The 200 happy paths run when a platform-admin token is provided (`KE2E_ADMIN_TOKEN`, capability `admin`).
+`ADM-1` `GET /v1/admin/api/accounts` → paged account list (search/tier/balance filters) → 200; non-admin → 403.
+`ADM-2` `GET /v1/admin/api/accounts/:id/users` → the account's member users → 200; non-admin → 403.
+`ADM-3` `GET /v1/admin/api/accounts/:id/ledger` → the account's credit ledger → 200; non-admin → 403.
+`ADM-4` `POST /v1/admin/api/accounts/:id/credits {amount,description?,isExpiring?}` → grant credits → 200 `{ok:true,balance}`; non-positive amount → 400; non-admin → 403.
+`ADM-5` `POST /v1/admin/api/accounts/:id/credits/debit {amount,description?}` → debit credits → 200 `{ok:true,balance}`; non-positive amount → 400; non-admin → 403.
+`ADM-6` `PUT /v1/system/maintenance` (`supabaseAuth`, handler does admin check) → update maintenance config → 200; non-admin → 403; ANON → 401.
 
 ---
 
