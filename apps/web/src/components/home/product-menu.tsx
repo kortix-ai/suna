@@ -1,17 +1,5 @@
 'use client';
 
-import Link from 'next/link';
-import {
-  Bot,
-  Sparkles,
-  Blocks,
-  Clock,
-  Radio,
-  Shield,
-  Boxes,
-  type LucideIcon,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
 import {
   NavigationMenu,
   NavigationMenuContent,
@@ -20,27 +8,28 @@ import {
   NavigationMenuList,
   NavigationMenuTrigger,
 } from '@/components/ui/navigation-menu';
+import { cn } from '@/lib/utils';
+import { Blocks, Boxes, Radio, type LucideIcon } from 'lucide-react';
+import Link from 'next/link';
+import { HiMiniSparkles } from 'react-icons/hi2';
+import { IconType } from 'react-icons/lib';
+import { MdShield } from 'react-icons/md';
+import { PiClockCountdownFill } from 'react-icons/pi';
 import { marketingButtonVariants } from '../ui/marketing/button';
 
 export interface ProductItem {
   title: string;
   desc: string;
   href: string;
-  icon: LucideIcon;
+  icon: LucideIcon | IconType;
 }
 
 export const PRODUCT_ITEMS: ProductItem[] = [
   {
-    title: 'Agents',
-    desc: 'A specialist agent for every role.',
-    href: '/#agents',
-    icon: Bot,
-  },
-  {
     title: 'Skills',
     desc: 'Reusable know-how every agent shares.',
     href: '/#skills',
-    icon: Sparkles,
+    icon: HiMiniSparkles,
   },
   {
     title: 'Integrations',
@@ -52,7 +41,7 @@ export const PRODUCT_ITEMS: ProductItem[] = [
     title: 'Scheduling',
     desc: 'Work that runs on a schedule, 24/7.',
     href: '/#scheduling',
-    icon: Clock,
+    icon: PiClockCountdownFill,
   },
   {
     title: 'Channels',
@@ -64,7 +53,7 @@ export const PRODUCT_ITEMS: ProductItem[] = [
     title: 'Security',
     desc: 'Roles, scoping, secrets & audit.',
     href: '/#security',
-    icon: Shield,
+    icon: MdShield,
   },
   {
     title: 'Framework',
@@ -82,7 +71,7 @@ export function ProductMegaMenu() {
           <NavigationMenuTrigger
             className={cn(
               marketingButtonVariants({ variant: 'ghost', size: 'sm' }),
-              'text-muted-foreground hover:text-foreground data-[state=open]:text-foreground ',
+              'text-muted-foreground hover:text-foreground data-[state=open]:text-foreground',
             )}
           >
             Product
@@ -95,16 +84,16 @@ export function ProductMegaMenu() {
                   <NavigationMenuLink key={item.title} asChild>
                     <Link
                       href={item.href}
-                      className="group flex flex-row items-start gap-4 rounded-sm p-3 py-2 transition-colors "
+                      className="group flex flex-row items-start gap-4 rounded-sm p-3 py-2 transition-colors"
                     >
-                      <span className="shrink-0 mt-1">
+                      <span className="mt-1 shrink-0">
                         <Icon className="size-6" />
                       </span>
                       <span className="min-w-0">
-                        <span className="block text-sm font-medium text-foreground">
+                        <span className="text-foreground block text-sm font-medium">
                           {item.title}
                         </span>
-                        <span className="block text-sm leading-snug text-muted-foreground">
+                        <span className="text-muted-foreground block text-sm leading-snug">
                           {item.desc}
                         </span>
                       </span>

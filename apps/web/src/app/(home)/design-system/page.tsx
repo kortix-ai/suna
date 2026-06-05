@@ -829,7 +829,7 @@ function TocSidebar() {
               <a
                 href={`#${s.id}`}
                 className={cn(
-                  'block py-1 text-xs transition-colors',
+                  'block py-1 text-sm transition-colors',
                   activeId === s.id || isParentActive
                     ? 'text-foreground font-medium'
                     : 'text-muted-foreground hover:text-foreground',
@@ -844,7 +844,7 @@ function TocSidebar() {
                       <a
                         href={`#${c.id}`}
                         className={cn(
-                          'block py-0.5 text-xs transition-colors',
+                          'block py-0.5 text-sm transition-colors',
                           activeId === c.id
                             ? 'text-foreground font-medium'
                             : 'text-muted-foreground hover:text-foreground',
