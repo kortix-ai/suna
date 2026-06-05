@@ -433,9 +433,9 @@ function ConnectorRow({
 }
 
 function sharingLabel(s: ConnectorSharing): string {
-  if (s.mode === 'project') return 'Project-wide';
+  if (s.mode === 'project') return 'Everyone';
   if (s.mode === 'private') return 'Only me';
-  return 'Select members';
+  return 'Specific members';
 }
 
 /** Forward-facing provider label — "App" for the 1-click (Pipedream) connectors. */
@@ -457,6 +457,18 @@ function setupToSharing(s: ConnectorSetup): ConnectorSharing {
   return { mode: 'members', memberIds: s.memberIds };
 }
 
+/**
+ * Two distinct questions, kept distinct on purpose:
+ *
+ *   1. THE ACCOUNT — is there one shared connection for the whole project, or
+ *      does each member link their own? (the "key": whose credential runs the call)
+ *   2. WHO CAN USE IT — which members are allowed to call the connector at all
+ *      (the "lock": access to the tool surface)
+ *
+ * #2 only makes sense for a SHARED account — if every member brings their own,
+ * there is no shared credential to gate, so the access question collapses to
+ * "anyone who connects". We hide it in that case and scope it project-wide.
+ */
 function ConnectorSetupFields({
   projectId,
   value,
@@ -466,27 +478,57 @@ function ConnectorSetupFields({
   value: ConnectorSetup;
   onChange: (s: ConnectorSetup) => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
+  const isShared = value.credential === 'shared';
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div className="space-y-2">
-        <Label>Credential</Label>
-        <RadioGroup value={value.credential} onValueChange={(v) => onChange({ ...value, credential: v as ConnectorSetup['credential'] })} className="space-y-2">
-          <ShareOption value="shared" label="Shared" desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line372JsxAttrDescOneConnectionForTheWholeProject')} current={value.credential} />
-          <ShareOption value="per_user" label={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line373JsxAttrLabelEachMemberConnectsTheirOwn')} desc={tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line373JsxAttrDescEveryMemberLinksTheirOwnAccountBYO')} current={value.credential} />
+        <div className="space-y-0.5">
+          <Label>The account</Label>
+          <p className="text-xs text-muted-foreground">How this app gets connected.</p>
+        </div>
+        <RadioGroup
+          value={value.credential}
+          onValueChange={(v) => {
+            const credential = v as ConnectorSetup['credential'];
+            // Switching to per-user retires the access question → scope project-wide.
+            onChange(credential === 'shared' ? { ...value, credential } : { ...value, credential, access: 'project', memberIds: [] });
+          }}
+          className="space-y-2"
+        >
+          <ShareOption
+            value="shared"
+            label="One shared connection"
+            desc="Connect the app once — every session uses that same account."
+            current={value.credential}
+          />
+          <ShareOption
+            value="per_user"
+            label="Each member connects their own"
+            desc="Every member links their own account the first time they use it (BYO)."
+            current={value.credential}
+          />
         </RadioGroup>
       </div>
-      <SharingPicker
-        projectId={projectId}
-        value={{ mode: value.access, memberIds: value.memberIds }}
-        onChange={(s) => onChange({ ...value, access: s.mode, memberIds: s.memberIds })}
-        copy={{
-          heading: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line377JsxTextWhoCanUseIt'),
-          project: { label: 'Project-wide', desc: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line379JsxAttrDescEveryMemberOfThisProject') },
-          private: { label: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line380JsxAttrLabelOnlyMe'), desc: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line380JsxAttrDescJustYou') },
-          members: { label: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line381JsxAttrLabelSelectMembers'), desc: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line381JsxAttrDescAChosenListOfMembers') },
-        }}
-      />
+
+      {isShared && (
+        <div className="space-y-2">
+          <div className="space-y-0.5">
+            <Label>Who can use it</Label>
+            <p className="text-xs text-muted-foreground">Members allowed to run tools with the connected account.</p>
+          </div>
+          <SharingPicker
+            projectId={projectId}
+            showHeading={false}
+            value={{ mode: value.access, memberIds: value.memberIds }}
+            onChange={(s) => onChange({ ...value, access: s.mode, memberIds: s.memberIds })}
+            copy={{
+              project: { label: 'Everyone in the project', desc: 'Any member can use the connected account' },
+              private: { label: 'Only me', desc: 'Just you' },
+              members: { label: 'Specific members', desc: 'A chosen list of members' },
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -619,7 +661,6 @@ function ConfigureAppDialog({
   onOpenChange: (o: boolean) => void;
   onAdded: () => void;
 }) {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   const [setup, setSetup] = useState<ConnectorSetup>({ credential: 'per_user', access: 'project', memberIds: [] });
   const save = useMutation({
     mutationFn: () =>
@@ -639,7 +680,7 @@ function ConfigureAppDialog({
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
           <DialogTitle>Add {app?.name}</DialogTitle>
-          <DialogDescription>{tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line553JsxTextChooseHowTheCredentialIsStoredAndWho')}</DialogDescription>
+          <DialogDescription>Choose how it&apos;s connected, then who can use it.</DialogDescription>
         </DialogHeader>
         <div className="max-h-[58vh] overflow-y-auto px-6 py-5">
           <ConnectorSetupFields projectId={projectId} value={setup} onChange={setSetup} />
@@ -935,9 +976,9 @@ function ConnectorSharingDialog({
             value={{ mode, memberIds }}
             onChange={(s) => { setMode(s.mode); setMemberIds(s.memberIds); }}
             copy={{
-              project: { label: 'Project-wide', desc: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line848JsxAttrDescEveryMemberOfThisProject') },
-              private: { label: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line849JsxAttrLabelOnlyMe'), desc: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line849JsxAttrDescJustYou') },
-              members: { label: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line850JsxAttrLabelSelectMembers'), desc: tHardcodedUi.raw('appProjectsIdCustomizeConnectorsPage.line850JsxAttrDescAChosenListOfMembers') },
+              project: { label: 'Everyone in the project', desc: 'Any member can call this connector' },
+              private: { label: 'Only me', desc: 'Just you' },
+              members: { label: 'Specific members', desc: 'A chosen list of members' },
             }}
           />
         </div>
