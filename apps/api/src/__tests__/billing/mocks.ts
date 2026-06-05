@@ -25,6 +25,9 @@ export const mockRegistry = {
   getCustomerByAccountId: null as ((id: string) => Promise<any>) | null,
   getCustomerByStripeId: null as ((id: string) => Promise<any>) | null,
   upsertCustomer: null as ((data: any) => Promise<void>) | null,
+  listAccountStripeCustomerIds: null as ((id: string) => Promise<string[]>) | null,
+  deleteCustomerByStripeId: null as ((id: string) => Promise<void>) | null,
+  recordWebhookEvent: null as (() => Promise<boolean>) | null,
 
   grantCredits: null as ((...args: any[]) => Promise<void>) | null,
   resetExpiringCredits: null as ((...args: any[]) => Promise<void>) | null,
@@ -118,6 +121,18 @@ export function registerGlobalMocks() {
     },
     upsertCustomer: async (data: any) =>
       mockRegistry.upsertCustomer ? mockRegistry.upsertCustomer(data) : undefined,
+    listAccountStripeCustomerIds: async (id: string) =>
+      mockRegistry.listAccountStripeCustomerIds ? mockRegistry.listAccountStripeCustomerIds(id) : [],
+    deleteCustomerByStripeId: async (id: string) =>
+      mockRegistry.deleteCustomerByStripeId ? mockRegistry.deleteCustomerByStripeId(id) : undefined,
+  }));
+
+  // Webhook dedup + per-account advisory lock use the raw db (no DATABASE_URL in
+  // tests). Default: every event is new; the lock is a pass-through.
+  mock.module('../../billing/services/webhook-concurrency', () => ({
+    recordWebhookEvent: async () =>
+      mockRegistry.recordWebhookEvent ? mockRegistry.recordWebhookEvent() : true,
+    withAccountLock: async (_accountId: string, fn: () => Promise<any>) => fn(),
   }));
 
   // NOTE: The credits service mock is NOT registered here.

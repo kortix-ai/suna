@@ -10,6 +10,7 @@ import {
   COMPUTE_MEMORY_PRICE_PER_GB_SECOND,
   COMPUTE_DISK_PRICE_PER_GB_SECOND,
   COMPUTE_PRICE_MARKUP,
+  DAYTONA_DISCOUNT,
   AUTO_TOPUP_DEFAULT_THRESHOLD_PER_SEAT,
   AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT,
   DEFAULT_LLM_PRICE_MARKUP,
@@ -24,20 +25,22 @@ import {
 import { calculateComputeCost } from '../../billing/services/compute-metering';
 
 describe('Per-seat pricing math', () => {
-  test('$20/seat — typical budget split is display-only and adds up', () => {
-    expect(PER_SEAT_PRICE_USD).toBe(20);
+  test('$40/seat; typical compute+LLM budget split is a display figure ($20)', () => {
+    expect(PER_SEAT_PRICE_USD).toBe(40);
+    // Display-only "typical" split — illustrative usage, not a wallet partition,
+    // so it doesn't have to equal the seat price.
     expect(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD + TYPICAL_LLM_BUDGET_PER_SEAT_USD).toBe(20);
   });
 
-  test('seat grant equals $20 × seat count (single fungible wallet)', () => {
-    expect(grantForSeats(1)).toBe(20);
-    expect(grantForSeats(5)).toBe(100);
-    expect(grantForSeats(10)).toBe(200);
+  test('seat grant equals $40 × seat count (single fungible wallet)', () => {
+    expect(grantForSeats(1)).toBe(40);
+    expect(grantForSeats(5)).toBe(200);
+    expect(grantForSeats(10)).toBe(400);
   });
 
   test('seat counts below 1 are clamped to 1', () => {
-    expect(grantForSeats(0)).toBe(20);
-    expect(grantForSeats(-3)).toBe(20);
+    expect(grantForSeats(0)).toBe(40);
+    expect(grantForSeats(-3)).toBe(40);
   });
 
   test('auto-topup defaults scale with seat count', () => {
@@ -131,6 +134,7 @@ describe('Compute cost calculation', () => {
       (spec.cpuCores * COMPUTE_CPU_PRICE_PER_CORE_SECOND * seconds +
         spec.memoryGb * COMPUTE_MEMORY_PRICE_PER_GB_SECOND * seconds +
         spec.diskGb * COMPUTE_DISK_PRICE_PER_GB_SECOND * seconds) *
+      DAYTONA_DISCOUNT *
       COMPUTE_PRICE_MARKUP;
 
     const actual = calculateComputeCost(spec, seconds);
@@ -156,12 +160,12 @@ describe('Compute cost calculation', () => {
   });
 
   test('monthly heavy usage exceeds typical compute budget (overage funded via topup)', () => {
-    // 8h × 22 days at $0.12/hr ≈ $21+, which exceeds the $12 typical compute
-    // budget but stays within the $20 fungible seat wallet.
+    // 8h × 22 days of compute exceeds the $12 typical compute budget per seat,
+    // funded from the fungible seat wallet.
     const monthlySeconds = 8 * 3600 * 22;
     const monthlyCost = calculateComputeCost(spec, monthlySeconds);
-    expect(monthlyCost).toBeGreaterThan(20);
-    expect(monthlyCost).toBeLessThan(30);
+    expect(monthlyCost).toBeGreaterThan(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD);
+    expect(monthlyCost).toBeLessThan(PER_SEAT_PRICE_USD);
   });
 });
 
