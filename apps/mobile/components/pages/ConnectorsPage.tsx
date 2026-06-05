@@ -370,8 +370,8 @@ function ConnectorDetail({
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18 }}>
           <Share2 size={15} color={muted} style={{ marginRight: 10 }} />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Access</Text>
-            <Text style={{ fontSize: 14, color: fg, marginTop: 1 }}>{sharingLabel(connector.sharing)}</Text>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 1 }}>Access</Text>
+            <Text style={{ fontSize: 14, lineHeight: 17, color: fg }}>{sharingLabel(connector.sharing)}</Text>
           </View>
           <TouchableOpacity onPress={() => { haptics.tap(); onEditSharing(); }} activeOpacity={0.7} style={{ paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: border }}>
             <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: muted }}>Manage</Text>
@@ -385,21 +385,26 @@ function ConnectorDetail({
         {connector.actions.length === 0 ? (
           <Text style={{ fontSize: 13, color: muted }}>No tools indexed yet. Try Sync.</Text>
         ) : (
-          connector.actions.map((action) => (
-            <View key={action.path} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: border }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ flex: 1, fontSize: 13, fontFamily: MONO, color: fg }} numberOfLines={1}>
-                  {action.path}
-                </Text>
-                <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: `${RISK_COLOR[action.risk]}22` }}>
-                  <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: RISK_COLOR[action.risk] }}>{action.risk}</Text>
+          connector.actions.map((action) => {
+            const toolTitle =
+              action.name && action.name !== action.path ? action.name : prettifyAppName(action.path);
+            return (
+              <View key={action.path} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: border }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
+                    {toolTitle}
+                  </Text>
+                  <View style={{ paddingHorizontal: 7, paddingVertical: 2, borderRadius: 999, backgroundColor: `${RISK_COLOR[action.risk]}22` }}>
+                    <Text style={{ fontSize: 10, fontFamily: 'Roobert-Medium', color: RISK_COLOR[action.risk] }}>{action.risk}</Text>
+                  </View>
                 </View>
+                <Text style={{ fontSize: 11.5, fontFamily: MONO, color: muted, marginTop: 2 }} numberOfLines={1}>{action.path}</Text>
+                {action.description ? (
+                  <Text style={{ fontSize: 13, lineHeight: 18, color: muted, marginTop: 3 }}>{action.description}</Text>
+                ) : null}
               </View>
-              {action.description ? (
-                <Text style={{ fontSize: 13, lineHeight: 18, color: muted, marginTop: 3 }}>{action.description}</Text>
-              ) : null}
-            </View>
-          ))
+            );
+          })
         )}
 
       </BottomSheetScrollView>
@@ -481,12 +486,12 @@ function ConnectorRow({
 
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
+          <Text style={{ fontSize: 15, lineHeight: 18, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
             {displayName}
           </Text>
           {showStatusDot && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: status.color }} />}
         </View>
-        <Text style={{ fontSize: 13, color: muted, marginTop: 2 }} numberOfLines={1}>
+        <Text style={{ fontSize: 13, lineHeight: 16, color: muted }} numberOfLines={1}>
           {providerLabel(connector.provider)} · {connector.actions.length} {connector.actions.length === 1 ? 'tool' : 'tools'}
           {connector.credentialMode === 'per_user' ? ' · Per-user' : ''}
         </Text>
