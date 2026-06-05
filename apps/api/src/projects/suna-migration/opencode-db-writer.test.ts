@@ -3,30 +3,15 @@ import { Database } from 'bun:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { writeConversations } from './opencode-db-writer';
+import { writeConversations, seedOpencodeSchema } from './opencode-db-writer';
 import { normalizeAgentpressThread, type AgentpressMessageRow } from './agentpress-mapper';
 
-// Mirror the opencode tables the repo confirms (session: legacy-migration-steps.ts:124)
-// plus a plausible message/part layout. The writer is schema-adaptive, so this is
-// the contract we validate the WRITER against; real columns are introspected at apply.
-function freshOpencodeDb(path: string) {
-  const db = new Database(path);
-  db.exec(`
-    CREATE TABLE project (id TEXT PRIMARY KEY, time_created INTEGER, time_initialized INTEGER);
-    CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT, parent_id TEXT, title TEXT, slug TEXT,
-                          time_created INTEGER, time_updated INTEGER, time_archived INTEGER);
-    CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, role TEXT, time_created INTEGER, data TEXT);
-    CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, type TEXT, time_created INTEGER, data TEXT);
-  `);
-  db.close();
-}
-
 describe('writeConversations', () => {
-  test('writes a project/session/messages/parts that the migration enumerate query can read', () => {
+  test('writes opencode-real rows (session NOT-NULL cols, message/part data blobs) opencode can serve', () => {
     const dir = mkdtempSync(join(tmpdir(), 'oc-writer-'));
     const dbPath = join(dir, 'opencode.db');
     try {
-      freshOpencodeDb(dbPath);
+      seedOpencodeSchema(dbPath);
 
       const rows: AgentpressMessageRow[] = [
         { message_id: 'a', type: 'user', is_llm_message: true, content: { role: 'user', content: 'Olá' }, created_at: '2026-03-31T01:00:00Z' },
@@ -36,24 +21,34 @@ describe('writeConversations', () => {
       const messages = normalizeAgentpressThread(rows);
 
       const res = writeConversations(dbPath, 'proj_test', [{ title: 'Formação em Cardiologia', messages }]);
-      expect(res.unknownTables).toEqual([]);          // all tables resolved
       expect(res).toMatchObject({ sessions: 1, messages: 2, parts: 3 }); // user text + assistant text + tool
 
-      // The SAME query the live system uses to list sessions (legacy-migration-steps.ts).
       const db = new Database(dbPath, { readonly: true });
       try {
-        const sessions = db.query(
-          "select id, coalesce(nullif(title,''), slug, id) as title from session where parent_id is null and time_archived is null order by time_updated desc",
-        ).all() as Array<{ id: string; title: string }>;
+        // The migration journal must be seeded so opencode skips re-migrating.
+        const migs = db.query('select count(*) as n from __drizzle_migrations').get() as { n: number };
+        expect(migs.n).toBe(8);
+
+        // opencode lists sessions scoped to the workspace directory.
+        const sessions = db.query("select id, title, slug, directory, version from session where directory = '/workspace'").all() as any[];
         expect(sessions).toHaveLength(1);
         expect(sessions[0].title).toBe('Formação em Cardiologia');
+        expect(sessions[0].slug).toBeTruthy();   // NOT NULL
+        expect(sessions[0].version).toBeTruthy(); // NOT NULL
+        expect(res.sessionIds[0].id).toBe(sessions[0].id);
 
-        const msgs = db.query('select * from message order by time_created').all() as any[];
-        expect(msgs.map((m) => m.role)).toEqual(['user', 'assistant']);
+        // project carries the NOT-NULL worktree/sandboxes opencode requires.
+        const proj = db.query('select worktree, sandboxes from project').get() as any;
+        expect(proj.worktree).toBe('/workspace');
+        expect(proj.sandboxes).toBe('[]');
 
-        // tool part carries parsed input + folded output
-        const toolPart = (db.query("select data from part where type='tool'").all() as any[])
-          .map((r) => JSON.parse(r.data))[0];
+        // message.data holds the role (no role column in real schema).
+        const msgs = db.query('select data from message order by time_created').all() as any[];
+        expect(msgs.map((m) => JSON.parse(m.data).role)).toEqual(['user', 'assistant']);
+
+        // tool part: type/tool/state live in the data blob, input parsed + output folded.
+        const toolPart = (db.query('select data from part').all() as any[])
+          .map((r) => JSON.parse(r.data)).find((d) => d.type === 'tool');
         expect(toolPart.tool).toBe('complete');
         expect(toolPart.state.status).toBe('completed');
         expect(toolPart.state.input).toEqual({ text: 'ok' });
@@ -64,15 +59,21 @@ describe('writeConversations', () => {
     }
   });
 
-  test('reports unknown tables instead of silently dropping (schema drift guard)', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'oc-writer2-'));
+  test('seedOpencodeSchema reproduces opencode real schema (session/message/part columns)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'oc-schema-'));
     const dbPath = join(dir, 'opencode.db');
     try {
-      const db = new Database(dbPath);
-      db.exec('CREATE TABLE project (id TEXT PRIMARY KEY); CREATE TABLE session (id TEXT PRIMARY KEY, project_id TEXT, title TEXT, parent_id TEXT, time_archived INTEGER, time_updated INTEGER);');
-      db.close();
-      const res = writeConversations(dbPath, 'p', [{ title: 't', messages: [{ role: 'user', parts: [{ type: 'text', text: 'hi' }], createdAt: '2026-01-01T00:00:00Z', sourceMessageId: 'x' }] }]);
-      expect(res.unknownTables.sort()).toEqual(['message', 'part']);
+      seedOpencodeSchema(dbPath);
+      const db = new Database(dbPath, { readonly: true });
+      try {
+        const cols = (t: string) => new Set((db.query(`PRAGMA table_info("${t}")`).all() as Array<{ name: string }>).map((r) => r.name));
+        // The NOT-NULL columns whose absence broke the old hand-authored schema.
+        expect(cols('session')).toEqual(new Set(['id', 'project_id', 'parent_id', 'slug', 'directory', 'title', 'version', 'share_url', 'summary_additions', 'summary_deletions', 'summary_files', 'summary_diffs', 'revert', 'permission', 'time_created', 'time_updated', 'time_compacting', 'time_archived', 'workspace_id']));
+        expect(cols('message')).toEqual(new Set(['id', 'session_id', 'time_created', 'time_updated', 'data']));
+        expect(cols('part')).toEqual(new Set(['id', 'message_id', 'session_id', 'time_created', 'time_updated', 'data']));
+        expect(cols('project').has('worktree')).toBe(true);
+        expect(cols('project').has('sandboxes')).toBe(true);
+      } finally { db.close(); }
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
