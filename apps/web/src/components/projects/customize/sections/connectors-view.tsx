@@ -17,6 +17,7 @@ import { createFrontendClient } from '@pipedream/sdk/browser';
 import {
   Boxes,
   Check,
+  ChevronDown,
   ChevronRight,
   Globe,
   KeyRound,
@@ -37,6 +38,8 @@ import {
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import {
   Dialog,
   DialogContent,
@@ -94,11 +97,6 @@ const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'd
   destructive: 'destructive',
 };
 
-const RISK_DOT: Record<ConnectorAction['risk'], string> = {
-  read: 'bg-muted-foreground/40',
-  write: 'bg-amber-500',
-  destructive: 'bg-destructive',
-};
 
 /** Forward-facing provider label — "App" for the 1-click (Pipedream) connectors. */
 function providerLabel(p: AdminConnector['provider']): string {
@@ -659,6 +657,37 @@ const POLICY_LABEL: Record<ConnectorPolicyAction, { label: string; tint: string 
   block: { label: 'Block', tint: 'text-destructive' },
 };
 
+/** Quiet per-row permission control: muted "Default", colored only when overridden. */
+function PermissionPicker({ value, onChange }: { value: PolicyChoice; onChange: (c: PolicyChoice) => void }) {
+  const meta = value === 'default'
+    ? { label: 'Default', tint: 'text-muted-foreground' }
+    : { label: POLICY_LABEL[value].label, tint: POLICY_LABEL[value].tint };
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'inline-flex shrink-0 items-center gap-0.5 rounded-full px-2 py-0.5 text-xs font-medium transition-colors hover:bg-muted',
+            meta.tint,
+          )}
+        >
+          {meta.label}
+          <ChevronDown className="size-3 opacity-40" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-28">
+        {POLICY_CHOICES.map((c) => (
+          <DropdownMenuItem key={c.value} onClick={() => onChange(c.value)} className="text-xs">
+            <span className={cn(c.value !== 'default' && POLICY_LABEL[c.value].tint)}>{c.label}</span>
+            {c.value === value && <Check className="ml-auto size-3.5" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 let _rid = 0;
 const ruleId = () => `r${++_rid}`;
 
@@ -715,6 +744,7 @@ function PermissionsSection({ projectId, connector }: { projectId: string; conne
   const [expanded, setExpanded] = useState<string | null>(null);
   const [showRules, setShowRules] = useState(false);
   const [serverSig, setServerSig] = useState('');
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     if (!policiesQuery.data) return;
@@ -758,6 +788,35 @@ function PermissionsSection({ projectId, connector }: { projectId: string; conne
     });
   const governingRule = (path: string) => rules.find((r) => r.match.trim() && clientMatch(r.match.trim(), path));
 
+  // ── Multi-select + bulk apply ──
+  const filteredPaths = useMemo(() => filtered.map((t) => t.path), [filtered]);
+  const allFilteredSelected = filteredPaths.length > 0 && filteredPaths.every((p) => selected.has(p));
+  const someFilteredSelected = filteredPaths.some((p) => selected.has(p));
+  const toggleSel = (path: string) =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (n.has(path)) n.delete(path);
+      else n.add(path);
+      return n;
+    });
+  const toggleAllFiltered = () =>
+    setSelected((s) => {
+      const n = new Set(s);
+      if (allFilteredSelected) filteredPaths.forEach((p) => n.delete(p));
+      else filteredPaths.forEach((p) => n.add(p));
+      return n;
+    });
+  const applyBulk = (choice: PolicyChoice) => {
+    setPerTool((m) => {
+      const next = { ...m };
+      for (const p of selected) {
+        if (choice === 'default') delete next[p];
+        else next[p] = choice;
+      }
+      return next;
+    });
+  };
+
   return (
     <section className="space-y-3">
       <div className="flex items-end justify-between gap-3">
@@ -777,38 +836,82 @@ function PermissionsSection({ projectId, connector }: { projectId: string; conne
         <InfoBanner tone="neutral" title="No tools yet">Connect the profile, then Sync to pull this app’s tools.</InfoBanner>
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border/60">
-          {filtered.map((t, i) => {
-            const explicit = perTool[t.path];
-            const ruled = !explicit ? governingRule(t.path) : undefined;
-            const isOpen = expanded === t.path;
-            return (
-              <div key={t.path} className={cn(i > 0 && 'border-t border-border/60')}>
-                <div className="flex items-center gap-2 px-3 py-1.5">
-                  <button type="button" onClick={() => setExpanded(isOpen ? null : t.path)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-                    <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform', isOpen && 'rotate-90')} />
-                    <span className={cn('size-1.5 shrink-0 rounded-full', RISK_DOT[t.risk])} aria-label={t.risk} />
-                    <span className="truncate font-mono text-xs text-foreground">{t.path}</span>
-                    {ruled && <span className={cn('shrink-0 text-[11px]', POLICY_LABEL[ruled.action].tint)} title={`Pattern rule: ${ruled.match}`}>{POLICY_LABEL[ruled.action].label}*</span>}
+          {/* Select-all + bulk apply */}
+          <div className="flex h-9 items-center gap-2 border-b border-border/60 bg-muted/30 px-3">
+            <Checkbox
+              checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+              onCheckedChange={toggleAllFiltered}
+              aria-label="Select all tools"
+              className="size-3.5"
+            />
+            {selected.size > 0 ? (
+              <>
+                <span className="text-xs font-medium text-foreground">{selected.size} selected</span>
+                <span className="text-xs text-muted-foreground">· set to</span>
+                {POLICY_CHOICES.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    onClick={() => applyBulk(c.value)}
+                    className={cn(
+                      'rounded-full px-2 py-0.5 text-xs font-medium transition-colors hover:bg-muted',
+                      c.value === 'default' ? 'text-muted-foreground' : POLICY_LABEL[c.value].tint,
+                    )}
+                  >
+                    {c.label}
                   </button>
-                  <Select value={explicit ?? 'default'} onValueChange={(v) => setChoice(t.path, v as PolicyChoice)}>
-                    <SelectTrigger className="h-7 w-[92px] shrink-0 text-xs"><SelectValue /></SelectTrigger>
-                    <SelectContent>{POLICY_CHOICES.map((c) => <SelectItem key={c.value} value={c.value} className="text-xs">{c.label}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                {isOpen && (
-                  <div className="space-y-3 border-t border-border/60 bg-muted/20 px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={RISK_VARIANT[t.risk]} size="sm">{t.risk}</Badge>
-                      {t.description && <span className="text-xs text-muted-foreground">{t.description}</span>}
-                    </div>
-                    <pre className="overflow-x-auto rounded-2xl border border-border/60 bg-card p-3 font-mono text-xs text-foreground">{tsSignature(connector.slug, t)}</pre>
-                    <pre className="max-h-56 overflow-auto rounded-2xl border border-border/60 bg-card p-3 font-mono text-xs text-foreground">{JSON.stringify(t.inputSchema ?? { type: 'object', properties: {} }, null, 2)}</pre>
+                ))}
+                <button type="button" onClick={() => setSelected(new Set())} className="ml-auto text-xs text-muted-foreground transition-colors hover:text-foreground">
+                  Clear
+                </button>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground">{filtered.length} {filtered.length === 1 ? 'tool' : 'tools'} · tap a permission to change it</span>
+            )}
+          </div>
+
+          <div className="max-h-[52vh] overflow-y-auto">
+            {filtered.map((t) => {
+              const explicit = perTool[t.path];
+              const ruled = !explicit ? governingRule(t.path) : undefined;
+              const isOpen = expanded === t.path;
+              const isSel = selected.has(t.path);
+              return (
+                <div key={t.path} className="border-t border-border/60 first:border-t-0">
+                  <div className={cn('group flex items-center gap-2.5 px-3 py-1.5 transition-colors', isSel ? 'bg-primary/[0.05]' : 'hover:bg-muted/30')}>
+                    <Checkbox
+                      checked={isSel}
+                      onCheckedChange={() => toggleSel(t.path)}
+                      aria-label={`Select ${t.path}`}
+                      className={cn('size-3.5 shrink-0 transition-opacity', isSel ? '' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100')}
+                    />
+                    <button type="button" onClick={() => setExpanded(isOpen ? null : t.path)} className="flex min-w-0 flex-1 items-baseline gap-2 text-left">
+                      <span className="shrink-0 font-mono text-xs text-foreground">{t.path}</span>
+                      {t.description && <span className="truncate text-xs text-muted-foreground/70">{t.description}</span>}
+                    </button>
+                    {ruled && (
+                      <span className={cn('shrink-0 text-[11px] opacity-80', POLICY_LABEL[ruled.action].tint)} title={`From pattern rule: ${ruled.match}`}>
+                        {POLICY_LABEL[ruled.action].label} · rule
+                      </span>
+                    )}
+                    <ChevronRight className={cn('size-3 shrink-0 transition', isOpen ? 'rotate-90 text-muted-foreground/70' : 'text-muted-foreground/40 opacity-0 group-hover:opacity-100')} />
+                    <PermissionPicker value={explicit ?? 'default'} onChange={(c) => setChoice(t.path, c)} />
                   </div>
-                )}
-              </div>
-            );
-          })}
-          {filtered.length === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No tools match “{search}”.</p>}
+                  {isOpen && (
+                    <div className="space-y-3 bg-muted/20 px-4 pb-3 pt-1">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={RISK_VARIANT[t.risk]} size="sm">{t.risk}</Badge>
+                        {t.description && <span className="text-xs text-muted-foreground">{t.description}</span>}
+                      </div>
+                      <pre className="overflow-x-auto rounded-2xl border border-border/60 bg-card p-3 font-mono text-xs text-foreground">{tsSignature(connector.slug, t)}</pre>
+                      <pre className="max-h-56 overflow-auto rounded-2xl border border-border/60 bg-card p-3 font-mono text-xs text-foreground">{JSON.stringify(t.inputSchema ?? { type: 'object', properties: {} }, null, 2)}</pre>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {filtered.length === 0 && <p className="px-3 py-6 text-center text-xs text-muted-foreground">No tools match “{search}”.</p>}
+          </div>
         </div>
       )}
 
