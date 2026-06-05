@@ -424,8 +424,26 @@ adminApp.openapi(
     const [proj] = await db.select().from(projects).where(eq(projects.projectId, sess.projectId)).limit(1);
     if (!proj) return c.json({ error: 'project not found' }, 404);
     const oldProvider = sb.provider; const oldExternalId = sb.externalId;
+    const { getProvider } = await import('../platform/providers');
+    // Data migration is via the session git branch (KORTIX_BRANCH_NAME=sessionId):
+    // the target re-clones it, so only *committed* work crosses over. Flush the
+    // old box's working tree to the branch first (best-effort, only while it's
+    // still active) so uncommitted changes survive the move. Same daemon contract
+    // as the /commit-push route — resolveEndpoint injects the service Bearer.
+    if (oldExternalId && sb.status === 'active') {
+      try {
+        const ep = await getProvider(oldProvider as any).resolveEndpoint(oldExternalId);
+        const res = await fetch(`${ep.url.replace(/\/$/, '')}/kortix/git/commit-push`, {
+          method: 'POST', headers: ep.headers,
+          body: JSON.stringify({ message: `chore: flush before migrate ${oldProvider}→${target}` }),
+          signal: AbortSignal.timeout(30_000),
+        });
+        console.log(`[migrate] flush ${sessionId} ${oldProvider}: ${res.status}`);
+      } catch (e: any) {
+        console.warn('[migrate] pre-teardown commit-push failed (committed work still migrates):', e?.message ?? e);
+      }
+    }
     if (oldExternalId) {
-      const { getProvider } = await import('../platform/providers');
       getProvider(oldProvider as any).remove(oldExternalId).catch((e: any) => console.warn('[migrate] old remove failed:', e?.message ?? e));
     }
     await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId));

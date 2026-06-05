@@ -5,10 +5,8 @@
  * Extracted from the original account.ts provisioning logic.
  */
 
-import { eq } from 'drizzle-orm';
-import { sandboxes } from '@kortix/db';
 import { getDaytona } from '../../shared/daytona';
-import { db } from '../../shared/db';
+import { serviceKeyForExternalId } from '../service-key';
 import { config, SANDBOX_VERSION } from '../../config';
 // (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
 // own per-project snapshot, resolved by the snapshot builder. Callers
@@ -166,14 +164,9 @@ export class DaytonaProvider implements SandboxProvider {
       headers['X-Daytona-Preview-Token'] = token;
     }
 
-    // Look up the service key from config.serviceKey so we can authenticate to the sandbox.
+    // Look up the service key (sandboxes OR session_sandboxes) to authenticate to the sandbox.
     try {
-      const [row] = await db
-        .select({ config: sandboxes.config })
-        .from(sandboxes)
-        .where(eq(sandboxes.externalId, externalId))
-        .limit(1);
-      const serviceKey = (row?.config as Record<string, unknown>)?.serviceKey as string | undefined;
+      const serviceKey = await serviceKeyForExternalId(externalId);
       if (serviceKey) {
         headers['Authorization'] = `Bearer ${serviceKey}`;
       }

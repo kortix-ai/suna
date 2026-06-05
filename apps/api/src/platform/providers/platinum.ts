@@ -12,10 +12,8 @@
  *     (added as a header in resolveEndpoint, same effective auth as Daytona).
  */
 
-import { eq } from 'drizzle-orm';
-import { sandboxes } from '@kortix/db';
 import { platinumJson } from '../../shared/platinum';
-import { db } from '../../shared/db';
+import { serviceKeyForExternalId } from '../service-key';
 import { config, SANDBOX_VERSION } from '../../config';
 import type {
   SandboxProvider,
@@ -211,12 +209,7 @@ export class PlatinumProvider implements SandboxProvider {
 
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     try {
-      const [row] = await db
-        .select({ config: sandboxes.config })
-        .from(sandboxes)
-        .where(eq(sandboxes.externalId, externalId))
-        .limit(1);
-      const serviceKey = (row?.config as Record<string, unknown>)?.serviceKey as string | undefined;
+      const serviceKey = await serviceKeyForExternalId(externalId);
       if (serviceKey) headers['Authorization'] = `Bearer ${serviceKey}`;
     } catch (err) {
       console.warn(`[PLATINUM] Failed to look up service key for ${externalId}:`, err);
