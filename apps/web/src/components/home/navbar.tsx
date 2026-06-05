@@ -254,6 +254,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                   size="sm"
                   asChild
                   className={cn(
+                    'font-medium',
                     pathname === item.href
                       ? 'text-foreground'
                       : 'text-muted-foreground hover:text-foreground',

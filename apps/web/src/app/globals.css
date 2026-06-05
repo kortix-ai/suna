@@ -492,7 +492,7 @@
   --kortix-blue: oklch(0.652 0.177 252.624);
   --kortix-yellow: oklch(0.732 0.15 90.688);
   --kortix-orange: oklch(0.691 0.142 71.784);
-  --kortix-green: oklch(0.809 0.12 147.181);
+  --kortix-green: oklch(0.571 0.181 145);
   --kortix-purple: oklch(0.675 0.131 306.212);
   --kortix-red: oklch(0.648 0.202 24.745);
 
@@ -596,7 +596,7 @@
   --kortix-blue: oklch(0.652 0.177 252.624);
   --kortix-yellow: oklch(0.732 0.15 90.688);
   --kortix-orange: oklch(0.691 0.142 71.784);
-  --kortix-green: oklch(0.809 0.12 147.181);
+  --kortix-green: oklch(0.571 0.181 145);
   --kortix-purple: oklch(0.675 0.131 306.212);
   --kortix-red: oklch(0.648 0.202 24.745);
 }
@@ -1413,4 +1413,36 @@ html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-app-header {
   100% {
     opacity: 1;
   }
+}
+
+@keyframes sweep-out {
+  0% {
+    width: 0;
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  60% {
+    width: 100%;
+    opacity: 1;
+  }
+  100% {
+    width: 100%;
+    opacity: 0;
+  }
+}
+
+.horizontal-sweep {
+  width: 0;
+  background: linear-gradient(
+    to right,
+    transparent,
+    var(--kortix-blue),
+    var(--kortix-blue),
+    transparent
+  );
+  animation: sweep-out 2.5s ease-out infinite;
+  /* delay so it starts ~when the vertical mask reaches bottom */
+  animation-delay: 1.25s;
 }

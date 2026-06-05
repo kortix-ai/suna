@@ -7,16 +7,7 @@ import { Button } from '@/components/ui/marketing/button';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { EnterpriseCalModal } from '@/features/enterprise/cal-modal';
 import { cn } from '@/lib/utils';
-import {
-  Code2,
-  FileClock,
-  GitBranch,
-  Globe,
-  KeyRound,
-  Plug,
-  Server,
-  ShieldCheck,
-} from 'lucide-react';
+import { Code2, GitBranch, Globe, KeyRound, Plug, Server, ShieldCheck } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useState } from 'react';

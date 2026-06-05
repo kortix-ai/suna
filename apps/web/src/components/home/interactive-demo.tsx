@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import { Warp } from '@paper-design/shaders-react';
 import {
@@ -14,7 +15,6 @@ import {
   Bot,
   Check,
   ChevronRight,
-  ChevronsUpDown,
   Clock,
   Database,
   Download,
@@ -25,14 +25,10 @@ import {
   Key,
   Mail,
   MessageSquare,
-  Mic,
   Paperclip,
   Plus,
   Radio,
   Search,
-  Send,
-  Settings2,
-  Sparkles,
   TrendingUp,
   Users,
   Wrench,
@@ -40,11 +36,13 @@ import {
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
+import { FaCircle } from 'react-icons/fa';
 import { GoHomeFill } from 'react-icons/go';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import { MdShield } from 'react-icons/md';
-import { PiChatCircleDotsFill, PiClockCountdownFill } from 'react-icons/pi';
-import { RiRobot3Fill } from 'react-icons/ri';
+import { PiChatCircleDotsFill, PiCheckCircleFill, PiClockCountdownFill } from 'react-icons/pi';
+import { RiMessage2Fill, RiMicAiFill, RiRobot3Fill, RiSettings3Fill } from 'react-icons/ri';
+import { Button } from '../ui/marketing/button';
 
 const favicon = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 
@@ -78,19 +76,6 @@ function PageHead({
   );
 }
 
-function FauxButton({ children, primary }: { children: React.ReactNode; primary?: boolean }) {
-  return (
-    <span
-      className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-full px-3.5 text-xs font-medium',
-        primary ? 'bg-foreground text-background' : 'border-border text-foreground border',
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
 function Panel({
   title,
   count,
@@ -105,9 +90,9 @@ function Panel({
   className?: string;
 }) {
   return (
-    <div className={cn('border-border/60 bg-card overflow-hidden rounded-2xl border', className)}>
+    <div className={cn('border-border bg-card overflow-hidden rounded-sm border', className)}>
       {title && (
-        <div className="border-border/60 flex items-center justify-between border-b px-4 py-2.5">
+        <div className="border-border flex items-center justify-between border-b px-4 py-2.5">
           <span className="text-foreground text-sm font-semibold">
             {title}
             {count && <span className="text-muted-foreground ml-1.5 font-normal">{count}</span>}
@@ -132,15 +117,17 @@ function Row({
   trailing?: React.ReactNode;
 }) {
   return (
-    <div className="border-border/60 hover:bg-muted/30 flex items-center gap-3 border-b px-4 py-3 last:border-0">
+    <div className="border-border hover:bg-muted/30 flex items-center gap-3 border-b px-4 py-3 last:border-0">
       <span className="shrink-0">{leading}</span>
       <div className="min-w-0 flex-1">
         <div className="text-foreground truncate text-sm font-medium">{title}</div>
-        {subtitle && (
-          <div className="text-muted-foreground mt-0.5 truncate text-xs">{subtitle}</div>
-        )}
+        {subtitle && <div className="text-muted-foreground truncate text-xs">{subtitle}</div>}
       </div>
-      {trailing && <span className="shrink-0">{trailing}</span>}
+      {trailing && (
+        <Badge size="sm" variant="transparent">
+          {trailing}
+        </Badge>
+      )}
     </div>
   );
 }
@@ -204,13 +191,13 @@ function HomePage() {
           'componentsHomeInteractiveDemo.line156JsxAttrSubThursdayMay22AcmeAgi',
         )}
         action={
-          <FauxButton>
-            <Settings2 className="size-3.5" /> Customize
-          </FauxButton>
+          <Button variant="default" size="sm">
+            <RiSettings3Fill className="size-3.5" /> Customize
+          </Button>
         }
       />
 
-      <div className="border-border bg-card rounded-2xl border p-3 shadow-sm">
+      <div className="border-border bg-card rounded-md border p-3">
         <div className="text-muted-foreground px-1 pb-2 text-sm">
           {tHardcodedUi.raw(
             'componentsHomeInteractiveDemo.line160JsxTextAskKortixToDoAnythingAcrossYourCompany',
@@ -218,23 +205,32 @@ function HomePage() {
         </div>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <span className="border-border text-muted-foreground inline-flex size-7 items-center justify-center rounded-full border">
+            <span className="text-muted-foreground inline-flex size-7 items-center justify-center rounded-sm">
               <Paperclip className="size-3.5" />
             </span>
-            <span className="border-border text-foreground inline-flex h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs">
-              <Bot className="size-3.5" /> finance-agent
+            <span className="text-foreground inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-xs">
+              <RiRobot3Fill className="size-3.5" /> finance-agent
             </span>
-            <span className="border-border text-muted-foreground hidden h-7 items-center gap-1.5 rounded-full border px-2.5 text-xs sm:inline-flex">
-              <Sparkles className="size-3.5" />
+            <span className="text-muted-foreground hidden h-7 items-center gap-1.5 rounded-full px-2.5 text-xs sm:inline-flex">
+              <Icon.Claude className="size-3.5" />
               {tHardcodedUi.raw('componentsHomeInteractiveDemo.line165JsxTextOpus47')}
             </span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="border-border text-muted-foreground inline-flex size-7 items-center justify-center rounded-full border">
-              <Mic className="size-3.5" />
+            <span className="text-muted-foreground inline-flex size-7 items-center justify-center">
+              <RiMicAiFill className="size-3.5" />
             </span>
-            <span className="bg-foreground text-background inline-flex size-7 items-center justify-center rounded-full">
-              <Send className="size-3.5" />
+            <span className="bg-foreground text-background inline-flex size-6 items-center justify-center rounded-sm">
+              <svg
+                className="size-3.5"
+                width="24"
+                height="24"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M20.04 2.323c1.016-.355 1.992.621 1.637 1.637l-5.925 16.93c-.385 1.098-1.915 1.16-2.387.097l-2.859-6.432 4.024-4.025a.75.75 0 0 0-1.06-1.06l-4.025 4.024-6.432-2.859c-1.063-.473-1-2.002.097-2.387z" />
+              </svg>
             </span>
           </div>
         </div>
@@ -242,7 +238,7 @@ function HomePage() {
 
       <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         {stats.map(([n, l]) => (
-          <div key={l} className="border-border/60 bg-card rounded-2xl border px-4 py-3">
+          <div key={l} className="border-border bg-card rounded-sm border px-4 py-3">
             <div className="text-foreground text-xl font-semibold tracking-tight">{n}</div>
             <div className="text-muted-foreground mt-0.5 text-xs">{l}</div>
           </div>
@@ -263,7 +259,7 @@ function HomePage() {
           ).map(([name, last, Icon, on]) => (
             <Row
               key={name}
-              leading={<EntityAvatar icon={Icon} size="sm" />}
+              leading={<EntityAvatar icon={Icon} size="md" />}
               title={name}
               subtitle={last}
               trailing={<StatusDot on={on} />}
@@ -286,8 +282,8 @@ function HomePage() {
             <Row
               key={title}
               leading={
-                <span className="border-border bg-muted/40 flex size-8 items-center justify-center rounded-lg border">
-                  <MessageSquare className="text-muted-foreground size-3.5" />
+                <span className="border-border bg-muted/40 flex size-8 items-center justify-center rounded-md border">
+                  <RiMessage2Fill className="text-muted-foreground size-3.5" />
                 </span>
               }
               title={title}
@@ -298,7 +294,7 @@ function HomePage() {
                 </InlineMeta>
               }
               trailing={
-                <Badge size="sm" variant={st === 'success' ? 'success' : 'secondary'}>
+                <Badge size="sm" variant={st === 'success' ? 'badgeSuccess' : 'secondary'}>
                   {st === 'success' ? 'done' : 'running'}
                 </Badge>
               }
@@ -328,17 +324,17 @@ function ChatPage() {
 
         <div>
           <div className="mb-2 flex items-center gap-2">
-            <span className="border-border bg-muted/60 flex size-6 items-center justify-center rounded-md border">
-              <Bot className="size-3.5" />
+            <span className="text-foreground flex items-center gap-2 text-sm font-medium">
+              <RiRobot3Fill className="size-3.5" />
+              finance-agent
             </span>
-            <span className="text-foreground text-sm font-medium">finance-agent</span>
             <Badge size="sm" variant="secondary">
               working
             </Badge>
             <span className="text-muted-foreground ml-auto text-xs">14:32</span>
           </div>
 
-          <div className="border-border/60 bg-card overflow-hidden rounded-2xl border">
+          <div className="border-border/60 bg-card overflow-hidden rounded-md border">
             <div className="border-border/60 bg-muted/40 flex items-center gap-2 border-b px-3 py-2 text-xs">
               <Database className="text-muted-foreground size-3.5" />
               <span className="text-foreground font-medium">query_warehouse</span>
@@ -367,13 +363,13 @@ function ChatPage() {
               'Drafted 12 slides from your board template',
               'Charted revenue, burn, and pipeline',
             ].map((s) => (
-              <div key={s} className="flex items-start gap-2.5 text-sm">
-                <Check className="mt-[1px] size-3.5 shrink-0 text-emerald-500" />
+              <div key={s} className="flex items-center gap-2 text-sm">
+                <PiCheckCircleFill className="text-kortix-green size-3.5 shrink-0" />
                 <span className="text-muted-foreground">{s}</span>
               </div>
             ))}
-            <div className="flex items-start gap-2.5 text-sm">
-              <span className="bg-foreground/40 mt-[5px] size-1.5 shrink-0 animate-pulse rounded-full" />
+            <div className="flex items-center gap-2 text-sm">
+              <FaCircle className="text-muted-foreground size-3 shrink-0" />
               <span className="text-foreground">
                 {tHardcodedUi.raw(
                   'componentsHomeInteractiveDemo.line260JsxTextFormattingAmpFinalReview',
@@ -382,7 +378,7 @@ function ChatPage() {
             </div>
           </div>
 
-          <div className="border-border/60 bg-card mt-3 flex items-center gap-3 rounded-2xl border p-3">
+          <div className="border-border/60 bg-card mt-3 flex items-center gap-3 rounded-md border p-3">
             <span className="bg-foreground/[0.06] text-foreground flex size-9 items-center justify-center rounded-lg">
               <FileText className="size-4" />
             </span>
@@ -394,20 +390,29 @@ function ChatPage() {
                 )}
               </div>
             </div>
-            <span className="border-border text-muted-foreground inline-flex size-8 items-center justify-center rounded-full border">
+            <span className="text-background/90 bg-primary/90 inline-flex size-8 items-center justify-center rounded-md border">
               <Download className="size-4" />
             </span>
           </div>
         </div>
       </div>
 
-      <div className="border-border bg-card mt-4 flex items-center gap-2 rounded-2xl border px-3 py-2.5 shadow-sm">
+      <div className="border-border bg-card mt-4 flex items-center gap-2 rounded-md border p-2.5">
         <Paperclip className="text-muted-foreground size-4" />
         <span className="text-muted-foreground flex-1 text-sm">
           {tHardcodedUi.raw('componentsHomeInteractiveDemo.line279JsxTextReplyToFinanceAgent')}
         </span>
-        <span className="bg-foreground text-background inline-flex size-7 items-center justify-center rounded-full">
-          <Send className="size-3.5" />
+        <span className="text-background bg-primary/90 inline-flex size-7 items-center justify-center rounded-md">
+          <svg
+            className="size-3.5"
+            width="24"
+            height="24"
+            fill="currentColor"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path d="M20.04 2.323c1.016-.355 1.992.621 1.637 1.637l-5.925 16.93c-.385 1.098-1.915 1.16-2.387.097l-2.859-6.432 4.024-4.025a.75.75 0 0 0-1.06-1.06l-4.025 4.024-6.432-2.859c-1.063-.473-1-2.002.097-2.387z" />
+          </svg>
         </span>
       </div>
     </div>
@@ -443,10 +448,10 @@ function AgentsPage() {
           'componentsHomeInteractiveDemo.line296JsxAttrSubText5Deployed4RunningNow',
         )}
         action={
-          <FauxButton primary>
+          <Button variant="default" size="sm">
             <Plus className="size-3.5" />
             {tHardcodedUi.raw('componentsHomeInteractiveDemo.line296JsxTextNewAgent')}
-          </FauxButton>
+          </Button>
         }
       />
       <Panel>
@@ -485,18 +490,18 @@ function SkillsPage() {
           'componentsHomeInteractiveDemo.line326JsxAttrSubText4LibrariesSharedAcrossEveryAgent',
         )}
         action={
-          <FauxButton primary>
+          <Button variant="default" size="sm">
             <Plus className="size-3.5" />
             {tHardcodedUi.raw('componentsHomeInteractiveDemo.line326JsxTextNewSkill')}
-          </FauxButton>
+          </Button>
         }
       />
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {libs.map(([name, count, skills]) => (
-          <div key={name} className="border-border/60 bg-card rounded-2xl border p-4">
+          <div key={name} className="border-border/60 bg-card rounded-md border p-3">
             <div className="mb-3 flex items-center gap-2">
-              <span className="border-border bg-muted/40 flex size-7 items-center justify-center rounded-lg border">
-                <Sparkles className="text-foreground/70 size-3.5" />
+              <span className="border-border bg-muted/40 flex size-7 items-center justify-center rounded-md border">
+                <HiMiniSparkles className="text-foreground/70 size-3.5" />
               </span>
               <span className="text-foreground text-sm font-semibold">{name}</span>
               <Badge size="sm" variant="muted" className="ml-auto">
@@ -505,7 +510,7 @@ function SkillsPage() {
             </div>
             <ul className="space-y-1.5">
               {skills.map((s) => (
-                <li key={s} className="text-muted-foreground flex items-center gap-2 text-xs">
+                <li key={s} className="text-muted-foreground flex items-center gap-2 text-sm">
                   <FileText className="size-3 shrink-0" />
                   {s}
                 </li>
@@ -549,7 +554,7 @@ function IntegrationsPage() {
         {tools.map(([d, name, connected]) => (
           <div
             key={name}
-            className="border-border/60 bg-card flex items-center gap-2.5 rounded-2xl border px-3 py-2.5"
+            className="border-border/60 bg-card flex items-center gap-2.5 rounded-md border p-2.5"
           >
             <img
               src={favicon(d)}
@@ -591,10 +596,10 @@ function SchedulingPage() {
           'componentsHomeInteractiveDemo.line395JsxAttrSubText3ActiveRunsInYourTimezone',
         )}
         action={
-          <FauxButton primary>
+          <Button size="sm">
             <Plus className="size-3.5" />
             {tHardcodedUi.raw('componentsHomeInteractiveDemo.line395JsxTextNewSchedule')}
-          </FauxButton>
+          </Button>
         }
       />
       <Panel>
@@ -633,10 +638,10 @@ function ChannelsPage() {
           'componentsHomeInteractiveDemo.line420JsxAttrSubText4ConnectedRoutingInboundToAgents',
         )}
         action={
-          <FauxButton primary>
+          <Button size="sm">
             <Plus className="size-3.5" />
             {tHardcodedUi.raw('componentsHomeInteractiveDemo.line420JsxTextAddChannel')}
-          </FauxButton>
+          </Button>
         }
       />
       <Panel>
@@ -682,9 +687,9 @@ function SecurityPage() {
         title={tHardcodedUi.raw('componentsHomeInteractiveDemo.line449JsxAttrTitleMembersRoles')}
         count="· 3"
         action={
-          <FauxButton>
+          <Button variant="outline" size="sm">
             <Plus className="size-3.5" /> Invite
-          </FauxButton>
+          </Button>
         }
       >
         {members.map(([email, name, role]) => (
@@ -816,7 +821,24 @@ const ORDER: PageId[] = [
   'security',
 ];
 
-export function InteractiveDemo() {
+export function InteractiveDemo({
+  gradientbg = true,
+  tab = true,
+  embedded = false,
+  className,
+  contentClassName,
+  innerClassName,
+  aside = true,
+}: {
+  gradientbg?: boolean;
+  tab?: boolean;
+  /** Fills a fixed-aspect parent (e.g. homepage screen carousel) without min-height blowout. */
+  embedded?: boolean;
+  className?: string;
+  contentClassName?: string;
+  innerClassName?: string;
+  aside?: boolean;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [active, setActive] = useState<PageId>('home');
   const page = PAGES[active];
@@ -849,142 +871,205 @@ export function InteractiveDemo() {
   }, []);
 
   return (
-    <div className="relative mx-auto w-full max-w-6xl space-y-8">
-      <div className="relative -mx-1.5 overflow-hidden rounded p-4 sm:mx-0 md:rounded-sm md:p-8 lg:p-10">
-        <div className="absolute inset-0">
-          <Warp
-            speed={4.3}
-            scale={0.9}
-            softness={1.5}
-            proportion={0.64}
-            swirl={0.86}
-            swirlIterations={7}
-            shape="edge"
-            distortion={0.2}
-            shapeScale={0.6}
-            colors={['#A7E58B', '#324472', '#0A180D']}
-            style={{ height: '100%', width: '100%' }}
-          />
+    <div
+      className={cn(
+        'relative mx-auto w-full max-w-6xl space-y-8',
+        embedded && 'mx-0 h-full max-w-none space-y-0',
+        className,
+      )}
+    >
+      <div
+        className={cn(
+          'relative -mx-1.5 overflow-hidden p-4 sm:mx-0 md:p-8 lg:p-10',
+          embedded && 'mx-0 h-full p-0',
+          contentClassName,
+          aside && 'rounded sm:rounded-sm',
+        )}
+      >
+        {gradientbg && (
+          <div className="absolute inset-0">
+            <Warp
+              speed={4.3}
+              scale={0.9}
+              softness={1.5}
+              proportion={0.64}
+              swirl={0.86}
+              swirlIterations={7}
+              shape="edge"
+              distortion={0.2}
+              shapeScale={0.6}
+              colors={['#A7E58B', '#324472', '#0A180D']}
+              style={{ height: '100%', width: '100%' }}
+            />
 
-          <span
-            className="absolute inset-0 bg-white mix-blend-color will-change-[clip-path,opacity]"
-            style={{ clipPath: 'inset(0px calc(100% - 600px) 0px 0px)', opacity: 0 }}
-          ></span>
-        </div>
-        <div className="relative z-10">
-          <div className="border-border bg-background overflow-hidden rounded-md border shadow-2xl ring-1 ring-black/[0.02]">
-            <div className="border-border/60 bg-muted/30 flex h-12 items-center gap-3 border-b px-4">
+            <span
+              className="absolute inset-0 bg-white mix-blend-color will-change-[clip-path,opacity]"
+              style={{ clipPath: 'inset(0px calc(100% - 600px) 0px 0px)', opacity: 0 }}
+            ></span>
+          </div>
+        )}
+
+        <div className={cn('relative z-10', embedded && 'h-full')}>
+          <div
+            className={cn(
+              'border-border bg-background overflow-hidden',
+              embedded && 'flex h-full flex-col',
+              innerClassName,
+              aside && 'rounded sm:rounded-sm',
+            )}
+          >
+            <div
+              className={cn(
+                'border-border/60 bg-muted/30 flex shrink-0 items-center gap-3 px-4',
+                embedded ? 'h-9 px-3' : 'h-12',
+                !aside ? 'bg-primary dark:bg-card' : 'border-b',
+              )}
+            >
               <div className="flex gap-1.5">
-                <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
-                <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
-                <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
+                <span className="bg-background/30 dark:bg-muted-foreground/15 size-2.5 rounded-full" />
+                <span className="bg-background/30 dark:bg-muted-foreground/15 size-2.5 rounded-full" />
+                <span className="bg-background/30 dark:bg-muted-foreground/15 size-2.5 rounded-full" />
               </div>
-              <div className="ml-2 flex min-w-0 items-center gap-1.5 text-xs">
-                <EntityAvatar
-                  label={tHardcodedUi.raw(
-                    'componentsHomeInteractiveDemo.line528JsxAttrLabelAcmeAgi',
-                  )}
-                  size="xs"
-                />
-                <span className="text-foreground font-medium">
-                  {tHardcodedUi.raw('componentsHomeInteractiveDemo.line529JsxTextAcmeAgi')}
-                </span>
-                <ChevronRight className="text-muted-foreground/40 size-3" />
-                <span className="text-muted-foreground truncate">{page.label}</span>
-              </div>
-              <div className="ml-auto flex items-center gap-2">
-                <span className="border-border bg-background text-muted-foreground hidden h-8 w-44 items-center gap-2 rounded-full border px-3 text-xs md:flex">
-                  <Search className="size-3.5" /> Search
-                  <span className="text-muted-foreground/50 ml-auto font-mono text-xs">
-                    {tHardcodedUi.raw('componentsHomeInteractiveDemo.line536JsxTextK')}
+
+              {aside && (
+                <div className="ml-2 flex min-w-0 items-center gap-1.5 text-xs">
+                  <EntityAvatar
+                    label={tHardcodedUi.raw(
+                      'componentsHomeInteractiveDemo.line528JsxAttrLabelAcmeAgi',
+                    )}
+                    size="xs"
+                  />
+                  <span className="text-foreground font-medium">
+                    {tHardcodedUi.raw('componentsHomeInteractiveDemo.line529JsxTextAcmeAgi')}
                   </span>
+                  <ChevronRight className="text-muted-foreground/40 size-3" />
+                  <span className="text-muted-foreground truncate">{page.label}</span>
+                </div>
+              )}
+
+              <div className="ml-auto flex items-center gap-2">
+                <span
+                  className={cn(
+                    'hidden h-8 w-44 items-center gap-2 rounded-md border px-3 text-xs md:flex',
+                    aside
+                      ? 'bg-background border-border text-muted-foreground'
+                      : 'bg-foreground dark:bg-muted dark:text-muted-foreground text-background border-background/20',
+                  )}
+                >
+                  <Search className="size-3.5" /> Search
                 </span>
-                <span className="border-border text-muted-foreground flex size-8 items-center justify-center rounded-full border">
+                <span
+                  className={cn(
+                    'border-border text-muted-foreground flex size-8 items-center justify-center rounded-full border',
+                    aside
+                      ? 'bg-background border-border text-muted-foreground'
+                      : 'bg-foreground dark:bg-muted dark:text-muted-foreground text-background border-background/20',
+                  )}
+                >
                   <Bell className="size-4" />
                 </span>
-                <UserAvatar
-                  email={tHardcodedUi.raw(
-                    'componentsHomeInteractiveDemo.line539JsxAttrEmailSarahAcmeAi',
+                <span
+                  className={cn(
+                    'flex size-8 items-center justify-center rounded-md border p-1 text-sm',
+                    aside
+                      ? 'bg-background border-border text-muted-foreground'
+                      : 'bg-foreground dark:bg-muted dark:text-muted-foreground text-background border-background/20',
                   )}
-                  name="Sarah Chen"
-                  size="sm"
-                />
+                >
+                  {tHardcodedUi.raw('componentsHomeInteractiveDemo.line539JsxTextSarahAcmeAi')}
+                </span>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 lg:h-[540px] lg:grid-cols-[230px_1fr]">
-              <aside className="border-border/60 bg-muted/20 hidden flex-col border-r p-3 lg:flex">
-                <button className="hover:bg-foreground/[0.04] mb-3 flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors">
-                  <EntityAvatar
-                    label={tHardcodedUi.raw(
-                      'componentsHomeInteractiveDemo.line547JsxAttrLabelAcmeAgi',
-                    )}
-                    size="sm"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="text-foreground block truncate text-sm font-semibold">
-                      {tHardcodedUi.raw('componentsHomeInteractiveDemo.line549JsxTextAcmeAgi')}
-                    </span>
-                    <span className="text-muted-foreground block truncate text-xs">
-                      {tHardcodedUi.raw(
-                        'componentsHomeInteractiveDemo.line550JsxTextEnterprise24Seats',
+            <div
+              className={cn(
+                'grid min-h-0 w-full grid-cols-1',
+                aside
+                  ? 'lg:h-[540px] lg:grid-cols-[230px_1fr]'
+                  : 'bg-background h-full rounded-t-md lg:h-full lg:grid-cols-1',
+                embedded && 'h-full flex-1',
+              )}
+            >
+              {aside && (
+                <aside className="border-border/60 bg-muted/20 hidden flex-col border-r p-3 lg:flex">
+                  <button className="hover:bg-foreground/[0.04] mb-3 flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors">
+                    <EntityAvatar
+                      label={tHardcodedUi.raw(
+                        'componentsHomeInteractiveDemo.line547JsxAttrLabelAcmeAgi',
                       )}
-                    </span>
-                  </span>
-                  <ChevronsUpDown className="text-muted-foreground size-3.5" />
-                </button>
-
-                <div className="bg-foreground text-background mb-1 flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium">
-                  <Plus className="size-4" />
-                  {tHardcodedUi.raw('componentsHomeInteractiveDemo.line556JsxTextNewSession')}
-                </div>
-                <div className="text-muted-foreground mb-3 flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm">
-                  <Search className="size-4" /> Search
-                  <span className="text-muted-foreground/50 ml-auto font-mono text-xs">
-                    {tHardcodedUi.raw('componentsHomeInteractiveDemo.line560JsxTextK')}
-                  </span>
-                </div>
-
-                <nav className="flex flex-col gap-0.5">
-                  {ORDER.map((id) => {
-                    const { label, icon: Icon } = PAGES[id];
-                    return (
-                      <button
-                        key={id}
-                        onClick={() => setActive(id)}
-                        className={cn(
-                          'flex items-center gap-2.5 rounded-lg px-3 py-1.5 text-sm transition-colors',
-                          id === active
-                            ? 'bg-foreground/[0.07] text-foreground font-medium'
-                            : 'text-muted-foreground hover:text-foreground',
+                      size="md"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="text-foreground block truncate text-xs font-semibold">
+                        {tHardcodedUi.raw('componentsHomeInteractiveDemo.line549JsxTextAcmeAgi')}
+                      </span>
+                      <span className="text-muted-foreground block truncate text-xs">
+                        {tHardcodedUi.raw(
+                          'componentsHomeInteractiveDemo.line550JsxTextEnterprise24Seats',
                         )}
-                      >
-                        {Icon}
-                        {label}
-                      </button>
-                    );
-                  })}
-                </nav>
-
-                <div className="mt-auto flex items-center gap-2.5 rounded-lg px-2 pt-3 pb-1">
-                  <UserAvatar
-                    email={tHardcodedUi.raw(
-                      'componentsHomeInteractiveDemo.line583JsxAttrEmailSarahAcmeAi',
-                    )}
-                    name="Sarah Chen"
-                    size="sm"
-                  />
-                  <span className="min-w-0 flex-1">
-                    <span className="text-foreground block truncate text-sm font-medium">
-                      {tHardcodedUi.raw('componentsHomeInteractiveDemo.line585JsxTextSarahChen')}
+                      </span>
                     </span>
-                    <span className="text-muted-foreground block truncate text-xs">Owner</span>
-                  </span>
-                  <ChevronsUpDown className="text-muted-foreground size-3.5" />
-                </div>
-              </aside>
+                  </button>
 
-              <div className="[&::-webkit-scrollbar-thumb]:bg-border min-h-[460px] overflow-y-auto p-5 sm:p-6 lg:h-[540px] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full">
+                  <div className="bg-foreground text-background border-border mb-1 flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm font-medium">
+                    <Plus className="size-4" />
+                    {tHardcodedUi.raw('componentsHomeInteractiveDemo.line556JsxTextNewSession')}
+                  </div>
+                  <div className="text-muted-foreground mb-3 flex items-center gap-2.5 rounded-md p-1.5 px-2.5 text-sm">
+                    <Search className="size-4" /> Search
+                    <span className="text-muted-foreground/50 ml-auto font-mono text-xs">
+                      {tHardcodedUi.raw('componentsHomeInteractiveDemo.line560JsxTextK')}
+                    </span>
+                  </div>
+
+                  <nav className="flex flex-col gap-0.5">
+                    {ORDER.map((id) => {
+                      const { label, icon: Icon } = PAGES[id];
+                      return (
+                        <button
+                          key={id}
+                          onClick={() => setActive(id)}
+                          className={cn(
+                            'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
+                            id === active
+                              ? 'bg-foreground/[0.07] text-foreground font-medium'
+                              : 'text-muted-foreground hover:text-foreground',
+                          )}
+                        >
+                          {Icon}
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </nav>
+
+                  <div className="hover:bg-foreground/[0.07] mt-auto flex items-center gap-2.5 rounded-md p-1.5 px-2.5">
+                    <UserAvatar
+                      email={tHardcodedUi.raw(
+                        'componentsHomeInteractiveDemo.line583JsxAttrEmailSarahAcmeAi',
+                      )}
+                      name="Sarah Chen"
+                      size="md"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="text-foreground block truncate text-xs font-medium">
+                        {tHardcodedUi.raw('componentsHomeInteractiveDemo.line585JsxTextSarahChen')}
+                      </span>
+                      <span className="text-muted-foreground block truncate text-xs">Owner</span>
+                    </span>
+                  </div>
+                </aside>
+              )}
+
+              <div
+                className={cn(
+                  '[&::-webkit-scrollbar-thumb]:bg-border w-full overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full',
+                  embedded
+                    ? 'h-full min-h-0 overflow-hidden p-3'
+                    : 'min-h-[460px] p-5 sm:p-6 lg:h-[540px]',
+                  !aside && 'h-full p-5 sm:p-6 lg:h-full',
+                )}
+              >
                 <AnimatePresence mode="wait">
                   <motion.div
                     key={active}
@@ -992,7 +1077,7 @@ export function InteractiveDemo() {
                     animate={{ opacity: 1, y: 0 }}
                     exit={{ opacity: 0, y: -8 }}
                     transition={{ duration: 0.25, ease: 'easeInOut' }}
-                    className="h-full"
+                    className="h-full w-full"
                   >
                     {page.render()}
                   </motion.div>
@@ -1003,119 +1088,123 @@ export function InteractiveDemo() {
         </div>
       </div>
 
-      <div className="hidden lg:block">
-        <div className="mx-auto w-full max-w-full overflow-x-auto scroll-smooth [-ms-overflow-style:none] [scrollbar-width:none] lg:w-auto lg:overflow-visible [&::-webkit-scrollbar]:hidden">
-          <div className="bg-border dark:bg-card mx-auto w-max rounded-xl p-1">
-            <div className="shadow-custom flex w-max items-center gap-0.5 rounded-full">
-              {ORDER.map((id, index) => {
-                const { label, icon: Icon } = PAGES[id];
-                const isActive = id === active;
-                return (
-                  <button
-                    key={id}
-                    ref={(el) => {
-                      if (el) tabRefs.current[id] = el;
-                      else delete tabRefs.current[id];
-                    }}
-                    aria-label={label}
-                    aria-current={isActive ? 'page' : undefined}
-                    className={cn(
-                      'text-foreground hit-area-3 flex shrink-0 cursor-pointer items-center justify-center transition-colors duration-150 ease-out',
-                      !isActive ? 'gap-2 rounded-full px-3.5 py-0 [&>svg]:size-4' : '',
-                      index !== 0 && 'rounded-tl-none',
-                      index !== ORDER.length - 1 && 'rounded-tr-none',
-                    )}
-                    type="button"
-                    onClick={() => setActive(id)}
-                  >
-                    {isActive ? (
-                      <span className="relative flex items-stretch">
-                        {index !== 0 && <TabScallopEdge side="left" />}
-                        <span className="bg-background relative z-10 flex items-center gap-2 rounded-t-xl px-3.5 py-1 [&>svg]:size-4">
-                          {Icon}
-                          {label}
-                        </span>
-                        {index !== ORDER.length - 1 && <TabScallopEdge side="right" />}
-                      </span>
-                    ) : (
-                      <>
-                        {Icon}
-                        {label}
-                      </>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+      {tab && (
+        <>
+          <div className="hidden lg:block">
+            <div className="mx-auto w-full max-w-full [scrollbar-width:none] overflow-x-auto scroll-smooth [-ms-overflow-style:none] lg:w-auto lg:overflow-visible [&::-webkit-scrollbar]:hidden">
+              <div className="bg-border dark:bg-card mx-auto w-max rounded-xl p-1">
+                <div className="shadow-custom flex w-max items-center gap-0.5 rounded-full">
+                  {ORDER.map((id, index) => {
+                    const { label, icon: Icon } = PAGES[id];
+                    const isActive = id === active;
+                    return (
+                      <button
+                        key={id}
+                        ref={(el) => {
+                          if (el) tabRefs.current[id] = el;
+                          else delete tabRefs.current[id];
+                        }}
+                        aria-label={label}
+                        aria-current={isActive ? 'page' : undefined}
+                        className={cn(
+                          'text-foreground hit-area-3 flex shrink-0 cursor-pointer items-center justify-center transition-colors duration-150 ease-out',
+                          !isActive ? 'gap-2 rounded-full px-3.5 py-0 [&>svg]:size-4' : '',
+                          index !== 0 && 'rounded-tl-none',
+                          index !== ORDER.length - 1 && 'rounded-tr-none',
+                        )}
+                        type="button"
+                        onClick={() => setActive(id)}
+                      >
+                        {isActive ? (
+                          <span className="relative flex items-stretch">
+                            {index !== 0 && <TabScallopEdge side="left" />}
+                            <span className="bg-background relative z-10 flex items-center gap-2 rounded-t-xl px-3.5 py-1 [&>svg]:size-4">
+                              {Icon}
+                              {label}
+                            </span>
+                            {index !== ORDER.length - 1 && <TabScallopEdge side="right" />}
+                          </span>
+                        ) : (
+                          <>
+                            {Icon}
+                            {label}
+                          </>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
 
-            <div
-              className={cn(
-                'bg-background h-full w-full rounded-b-[calc(var(--radius-xl)-4px)]',
+                <div
+                  className={cn(
+                    'bg-background h-full w-full rounded-b-[calc(var(--radius-xl)-4px)]',
 
-                active !== 'home' && 'rounded-tl-[calc(var(--radius-xl)-4px)]',
-                active !== 'security' && 'rounded-tr-[calc(var(--radius-xl)-4px)]',
-              )}
-            >
-              <AnimatePresence mode="wait">
-                <motion.p
-                  key={active}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -6 }}
-                  transition={{ duration: 0.25, ease: 'easeInOut' }}
-                  className="text-muted-foreground py-2 text-center text-sm leading-relaxed"
+                    active !== 'home' && 'rounded-tl-[calc(var(--radius-xl)-4px)]',
+                    active !== 'security' && 'rounded-tr-[calc(var(--radius-xl)-4px)]',
+                  )}
                 >
-                  {page.context}
-                </motion.p>
-              </AnimatePresence>
+                  <AnimatePresence mode="wait">
+                    <motion.p
+                      key={active}
+                      initial={{ opacity: 0, y: 6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.25, ease: 'easeInOut' }}
+                      className="text-muted-foreground py-2 text-center text-sm leading-relaxed"
+                    >
+                      {page.context}
+                    </motion.p>
+                  </AnimatePresence>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      </div>
 
-      <div className="lg:hidden">
-        <div className="mx-auto w-full max-w-full overflow-x-auto scroll-smooth rounded-full [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-          <div className="bg-foreground/10 shadow-custom mx-auto flex w-max items-center gap-0.5 rounded-full p-1">
-            {ORDER.map((id) => {
-              const { label, icon: Icon } = PAGES[id];
-              const isActive = id === active;
-              return (
-                <button
-                  key={id}
-                  ref={(el) => {
-                    if (el) mobileTabRefs.current[id] = el;
-                    else delete mobileTabRefs.current[id];
-                  }}
-                  aria-label={label}
-                  aria-current={isActive ? 'page' : undefined}
-                  className="text-foreground flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full px-3.5 py-2 transition-colors duration-150 ease-out [&>svg]:size-4"
-                  type="button"
-                  style={{
-                    backgroundColor: isActive ? 'var(--background)' : 'transparent',
-                  }}
-                  onClick={() => setActive(id)}
-                >
-                  {Icon}
-                  {label}
-                </button>
-              );
-            })}
+          <div className="lg:hidden">
+            <div className="mx-auto w-full max-w-full [scrollbar-width:none] overflow-x-auto scroll-smooth rounded-full [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              <div className="bg-foreground/10 shadow-custom mx-auto flex w-max items-center gap-0.5 rounded-full p-1">
+                {ORDER.map((id) => {
+                  const { label, icon: Icon } = PAGES[id];
+                  const isActive = id === active;
+                  return (
+                    <button
+                      key={id}
+                      ref={(el) => {
+                        if (el) mobileTabRefs.current[id] = el;
+                        else delete mobileTabRefs.current[id];
+                      }}
+                      aria-label={label}
+                      aria-current={isActive ? 'page' : undefined}
+                      className="text-foreground flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full px-3.5 py-2 transition-colors duration-150 ease-out [&>svg]:size-4"
+                      type="button"
+                      style={{
+                        backgroundColor: isActive ? 'var(--background)' : 'transparent',
+                      }}
+                      onClick={() => setActive(id)}
+                    >
+                      {Icon}
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <AnimatePresence mode="wait">
+              <motion.p
+                key={active}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                transition={{ duration: 0.25, ease: 'easeInOut' }}
+                className="text-muted-foreground mx-auto mt-5 max-w-xl px-4 text-center text-sm leading-relaxed"
+              >
+                {page.context}
+              </motion.p>
+            </AnimatePresence>
           </div>
-        </div>
-
-        <AnimatePresence mode="wait">
-          <motion.p
-            key={active}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -6 }}
-            transition={{ duration: 0.25, ease: 'easeInOut' }}
-            className="text-muted-foreground mx-auto mt-5 max-w-xl px-4 text-center text-sm leading-relaxed"
-          >
-            {page.context}
-          </motion.p>
-        </AnimatePresence>
-      </div>
+        </>
+      )}
     </div>
   );
 }

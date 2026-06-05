@@ -1,8 +1,12 @@
 'use client';
 
 import { useAuth } from '@/components/AuthProvider';
+import { CodeWindow } from '@/components/home/code-window';
 import { InteractiveDemo } from '@/components/home/interactive-demo';
 import { Reveal } from '@/components/home/reveal';
+import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import {
   Item,
   ItemActions,
@@ -14,28 +18,47 @@ import {
 } from '@/components/ui/item';
 import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
+import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { Icon } from '@/features/icon/icon';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { cn } from '@/lib/utils';
-import { Box, Building2, Code2, GitBranch, Server } from 'lucide-react';
-import { motion } from 'motion/react';
+import {
+  AtSign,
+  Box,
+  Building2,
+  Code2,
+  FileText,
+  GitBranch,
+  MoreHorizontal,
+  Plus,
+  Server,
+  Smile,
+} from 'lucide-react';
+import {
+  AnimatePresence,
+  motion,
+  useInView,
+  useScroll,
+  useSpring,
+  useTransform,
+} from 'motion/react';
 import { useTranslations } from 'next-intl';
+import Image from 'next/image';
 import Link from 'next/link';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { FaUsers } from 'react-icons/fa';
+import { FiBookmark } from 'react-icons/fi';
+import { HiOutlineDotsHorizontal } from 'react-icons/hi';
 import { HiArrowRight, HiMiniSparkles } from 'react-icons/hi2';
 import { MdShield } from 'react-icons/md';
+import { PiBellFill, PiChatCircleDotsFill, PiChatsCircleFill, PiFilesFill } from 'react-icons/pi';
 import { TbChevronUpRight } from 'react-icons/tb';
 
 const DEMO_URL = '/contact';
-const DOCS_URL = '/docs';
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
-// Default host used for SSR / first paint; replaced with the live frontend
-// origin once mounted so the install command always matches the deployment.
-const DEFAULT_INSTALL_HOST = 'kortix.com';
-const SHOT = (f: string) => `/images/landing-showcase/platform/${f}`;
+
 const favicon = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 
 const INTEGRATIONS = [
@@ -221,7 +244,7 @@ function LogoMarquee({ items, reverse = false }: { items: string[]; reverse?: bo
         {loop.map((d, i) => (
           <span
             key={`${d}-${i}`}
-            className="bg-secondary/20 mr-3 flex h-12 shrink-0 items-center justify-center gap-4 rounded px-4"
+            className="bg-card mr-3 flex h-12 shrink-0 items-center justify-center gap-4 rounded px-4"
           >
             {/* Dynamic Google favicon URLs are intentionally left outside next/image config. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -234,7 +257,7 @@ function LogoMarquee({ items, reverse = false }: { items: string[]; reverse?: bo
               decoding="async"
               className="size-6"
             />
-            <span className="text-muted-foreground font-mono text-sm tracking-wider capitalize">
+            <span className="text-muted-foreground text-sm font-medium tracking-wider capitalize">
               {d.split('.')[0]}
             </span>
           </span>
@@ -311,6 +334,36 @@ const SPLIT_PATHS = [
   },
 ] as const;
 
+const WORKFORCE_MAP_CAPABILITIES = [
+  {
+    icon: HiMiniSparkles,
+    titleKey: 'workforceMapAgentsTitle',
+    descKey: 'workforceMapAgentsDesc',
+  },
+  {
+    icon: GitBranch,
+    titleKey: 'workforceMapAutomationsTitle',
+    descKey: 'workforceMapAutomationsDesc',
+  },
+  {
+    icon: Box,
+    titleKey: 'workforceMapIntegrationsTitle',
+    descKey: 'workforceMapIntegrationsDesc',
+  },
+  {
+    icon: Server,
+    titleKey: 'workforceMapMemoryTitle',
+    descKey: 'workforceMapMemoryDesc',
+  },
+] as const;
+
+const WORKFORCE_MAP_DOMAINS = [
+  { icon: PiChatCircleDotsFill, labelKey: 'workforceMapPillCommunication' },
+  { icon: FileText, labelKey: 'workforceMapPillDocs' },
+  { icon: Code2, labelKey: 'workforceMapPillCode' },
+  { icon: Building2, labelKey: 'workforceMapPillCrm' },
+] as const;
+
 function LogoMarqueeRows() {
   return (
     <div className="relative space-y-3 mask-x-from-80%">
@@ -318,6 +371,75 @@ function LogoMarqueeRows() {
       <LogoMarquee items={INTEGRATIONS_ROW_2} reverse />
       <LogoMarquee items={INTEGRATIONS_ROW_3} />
     </div>
+  );
+}
+
+const MORNING_BRIEF_MARKDOWN = `##### Here's your morning brief:
+
+- **Stripe revenue:** +$3,482
+- **3 enterprise leads replied**
+- **2 customers reported onboarding friction**
+- **Production uptime:** 99.98%
+- **GitHub:** 14 PRs merged
+- **Slack:** 3 discussions need your input
+
+##### I've prepared a detailed report if you'd like to review it.`;
+
+const CHAT_THINKING_MS = 3000;
+const CHAT_STREAM_CHARS_PER_TICK = 6;
+const CHAT_STREAM_TICK_MS = 28;
+
+function ChatMorningBriefReply() {
+  const [phase, setPhase] = useState<'thinking' | 'streaming' | 'done'>('thinking');
+  const [streamedContent, setStreamedContent] = useState('');
+
+  useEffect(() => {
+    const thinkingTimer = window.setTimeout(() => {
+      setPhase('streaming');
+    }, CHAT_THINKING_MS);
+
+    return () => window.clearTimeout(thinkingTimer);
+  }, []);
+
+  useEffect(() => {
+    if (phase !== 'streaming') return;
+
+    let index = 0;
+
+    const interval = window.setInterval(() => {
+      index = Math.min(index + CHAT_STREAM_CHARS_PER_TICK, MORNING_BRIEF_MARKDOWN.length);
+      setStreamedContent(MORNING_BRIEF_MARKDOWN.slice(0, index));
+
+      if (index >= MORNING_BRIEF_MARKDOWN.length) {
+        window.clearInterval(interval);
+        setPhase('done');
+      }
+    }, CHAT_STREAM_TICK_MS);
+
+    return () => window.clearInterval(interval);
+  }, [phase]);
+
+  if (phase === 'thinking') {
+    return (
+      <div className="flex items-center gap-1.5 py-0.5">
+        <span className="relative flex size-2.5 shrink-0">
+          <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
+          <span className="bg-muted-foreground/50 relative inline-flex size-2.5 rounded-full" />
+        </span>
+        <AnimatedThinkingText
+          statusText="Gathering overnight updates..."
+          className="text-muted-foreground text-xs"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <UnifiedMarkdown
+      content={streamedContent}
+      isStreaming={phase === 'streaming'}
+      className="prose prose-sm [&_*]:text-muted-foreground max-w-none space-y-0 text-xs font-medium [&_*]:text-xs [&_*]:font-medium [&_div]:space-y-0 [&_h5]:font-medium [&_ul]:ml-0"
+    />
   );
 }
 
@@ -336,6 +458,51 @@ export default function Home() {
     trackCtaSignup();
     window.location.href = user ? '/projects' : '/auth';
   }, [user]);
+
+  const screenCardsRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: screenCardsRef,
+    offset: ['center end', 'start center'],
+  });
+
+  const STACK_STEP = 10;
+  const SPREAD = 240;
+  const smoothProgress = useSpring(scrollYProgress, {
+    stiffness: 100,
+    damping: 30,
+    mass: 1,
+    restDelta: 0.001,
+  });
+  const mobileCardX = useTransform(smoothProgress, [0, 1], [SPREAD + STACK_STEP * 2, 0]);
+  const middleCardX = useTransform(smoothProgress, [0, 1], [SPREAD - STACK_STEP * 2, 0]);
+  const desktopCardX = useTransform(smoothProgress, [0, 1], [-SPREAD, 0]);
+
+  const chatDemoDesktopRef = useRef<HTMLDivElement>(null);
+  const chatDemoMobileRef = useRef<HTMLDivElement>(null);
+  const isChatDemoDesktopInView = useInView(chatDemoDesktopRef, { once: true, amount: 0.4 });
+  const isChatDemoMobileInView = useInView(chatDemoMobileRef, { once: true, amount: 0.4 });
+  const isChatDemoInView = isChatDemoDesktopInView || isChatDemoMobileInView;
+  const [visibleChatMessages, setVisibleChatMessages] = useState(0);
+
+  useEffect(() => {
+    if (!isChatDemoInView) return;
+
+    setVisibleChatMessages(1);
+    const secondMessageTimer = window.setTimeout(() => setVisibleChatMessages(2), 2000);
+    const thirdMessageTimer = window.setTimeout(() => setVisibleChatMessages(3), 4000);
+
+    return () => {
+      window.clearTimeout(secondMessageTimer);
+      window.clearTimeout(thirdMessageTimer);
+    };
+  }, [isChatDemoInView]);
+
+  const PATHS = [
+    'M0.999991 1.00002C0.999992 25.9576 458 1.00001 458 53',
+    'M326 1.00001C326 25.9575 471 1.00001 471 53',
+    'M955 1.00002C955 25.9576 498 1.00001 498 53',
+    'M630 1.00001C630 25.9575 485 1.00001 485 53',
+  ];
 
   return (
     <>
@@ -445,6 +612,542 @@ export default function Home() {
           </Reveal>
         </section>
 
+        <section id="different-screen-section" className="py-16 sm:py-24">
+          <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 sm:gap-12">
+            <Reveal>
+              <div className="mb-12 max-w-2xl">
+                <Eyebrow>{tHardcodedUi.raw('appHomePage.line225JsxTextOpenCodeNative')}</Eyebrow>
+                <h2 className="mt-3 text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
+                  {tHome('differentScreenSectionTitle')}
+                </h2>
+                <p className="text-muted-foreground mt-4 text-base text-balance">
+                  {tHome('differentScreenSectionDescription')}
+                </p>
+              </div>
+            </Reveal>
+          </div>
+
+          <div ref={screenCardsRef} className="m-auto hidden w-full lg:block">
+            <div className="flex w-full items-center justify-center px-6">
+              <div className="relative mx-auto grid w-full grid-cols-16 place-items-center items-center gap-4 overflow-visible">
+                <motion.div
+                  style={{ x: mobileCardX }}
+                  className="border-muted-foreground dark:border-card relative z-3 col-span-3 flex aspect-auto h-full shrink-0 items-center justify-center overflow-hidden rounded-xl border-4 shadow-sm"
+                >
+                  <img
+                    src="https://play-lh.googleusercontent.com/cOVrXDLdhhoyLso-DO_R267tBMzWEayo10WvzWin7FSxYy8P09bLmzbmAVAgv4nTBTA9hxSAq55GxVGzMHcCTA=w5120-h2880"
+                    alt="Mobile"
+                    className="h-full w-full object-cover"
+                  />
+
+                  <div className="bg-muted-foreground absolute bottom-3.5 h-1 w-[30%] rounded-full" />
+                </motion.div>
+
+                <motion.div
+                  style={{ x: middleCardX }}
+                  transition={{ duration: 0.5 }}
+                  className="border-primary dark:border-card bg-primary dark:bg-card relative z-2 col-span-6 flex aspect-video h-full w-full min-w-0 flex-1 flex-row items-center justify-center gap-1 rounded-[calc(var(--radius)+2px)] border-4 p-0.5 pl-0 shadow-sm"
+                >
+                  <div className="flex h-full min-h-0 w-12 flex-col items-center justify-start gap-5 py-2">
+                    <FaUsers className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
+                    <PiChatsCircleFill className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
+                    <PiBellFill className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
+                    <PiFilesFill className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
+                    <FiBookmark className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
+                    <HiOutlineDotsHorizontal className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
+                  </div>
+                  <div
+                    ref={chatDemoDesktopRef}
+                    className="bg-background flex h-full min-h-0 flex-1 flex-col items-end justify-end space-y-4 rounded-md p-4"
+                  >
+                    <AnimatePresence initial={false}>
+                      {visibleChatMessages >= 1 ? (
+                        <motion.div
+                          key="chat-message-1"
+                          initial={{
+                            opacity: 0,
+                            y: 10,
+                          }}
+                          animate={{
+                            opacity: 1,
+                            y: 0,
+                          }}
+                          transition={{
+                            duration: 0.5,
+                            ease: 'easeIn',
+                          }}
+                          className="flex w-full flex-row items-start justify-start gap-2"
+                        >
+                          <span className="bg-primary flex size-[2.1rem] shrink-0 items-center justify-center rounded-md">
+                            <KortixLogo size={16} className="text-background" />
+                          </span>
+                          <div className="flex min-w-0 flex-1 flex-col gap-0">
+                            <div className="flex flex-row items-center justify-start gap-1">
+                              <span
+                                className="text-foreground block truncate text-xs font-semibold"
+                                style={{
+                                  textBox: 'trim-both',
+                                }}
+                              >
+                                Kortix
+                              </span>
+                              <span
+                                className="bg-muted rounded-[0.2rem] p-[0.07rem] px-1 py-[0.04rem] text-[7px]"
+                                style={{ textBox: 'trim-both' }}
+                              >
+                                APP
+                              </span>
+                              <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
+                                {new Date(Date.now()).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric',
+                                })}
+                              </span>
+                            </div>
+                            <span
+                              className="text-muted-foreground block truncate text-xs font-medium"
+                              style={{
+                                textBox: 'trim-both',
+                              }}
+                            >
+                              Hey! 👋 What can I help you with?
+                            </span>
+                          </div>
+                        </motion.div>
+                      ) : null}
+
+                      {visibleChatMessages >= 2 ? (
+                        <motion.div
+                          key="chat-message-2"
+                          initial={{
+                            opacity: 0,
+                            y: 10,
+                          }}
+                          animate={{
+                            opacity: 1,
+                            y: 0,
+                          }}
+                          transition={{
+                            duration: 0.5,
+                            ease: 'easeIn',
+                          }}
+                          className="flex w-full flex-row items-start justify-start gap-2"
+                        >
+                          <span className="bg-primary relative flex size-[2.1rem] shrink-0 items-center justify-center overflow-hidden rounded-md">
+                            <Image
+                              src="https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/marko.png"
+                              alt="Marko Kraemer"
+                              className="size-full"
+                              fill
+                            />
+                          </span>
+
+                          <div className="flex min-w-0 flex-1 flex-col gap-0">
+                            <div className="flex flex-row items-center justify-start gap-1">
+                              <span
+                                className="text-foreground block truncate text-xs font-semibold"
+                                style={{
+                                  textBox: 'trim-both',
+                                }}
+                              >
+                                Marko
+                              </span>
+                              <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
+                                {new Date(Date.now()).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric',
+                                })}
+                              </span>
+                            </div>
+                            <span
+                              className="text-muted-foreground block truncate text-xs font-medium"
+                              style={{
+                                textBox: 'trim-both',
+                              }}
+                            >
+                              What happened while I was sleeping?
+                            </span>
+                          </div>
+                        </motion.div>
+                      ) : null}
+
+                      {visibleChatMessages >= 3 ? (
+                        <motion.div
+                          key="chat-message-3"
+                          initial={{
+                            opacity: 0,
+                            y: 10,
+                          }}
+                          animate={{
+                            opacity: 1,
+                            y: 0,
+                          }}
+                          transition={{
+                            duration: 0.3,
+                            ease: 'easeIn',
+                          }}
+                          className="flex w-full flex-row items-start justify-start gap-2"
+                        >
+                          <span className="bg-primary flex size-[2.1rem] shrink-0 items-center justify-center rounded-md">
+                            <KortixLogo size={16} className="text-background" />
+                          </span>
+                          <div className="flex min-w-0 flex-1 flex-col gap-0">
+                            <div className="flex flex-row items-center justify-start gap-1">
+                              <span
+                                className="text-foreground block truncate text-xs font-semibold"
+                                style={{
+                                  textBox: 'trim-both',
+                                }}
+                              >
+                                Kortix
+                              </span>
+                              <span
+                                className="bg-muted rounded-[0.2rem] p-[0.07rem] px-1 py-[0.04rem] text-[7px]"
+                                style={{ textBox: 'trim-both' }}
+                              >
+                                APP
+                              </span>
+                              <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
+                                {new Date(Date.now()).toLocaleDateString('en-US', {
+                                  year: 'numeric',
+                                  month: 'long',
+                                  day: 'numeric',
+                                })}
+                              </span>
+                            </div>
+                            <div
+                              className="text-muted-foreground block text-xs font-medium"
+                              style={{
+                                textBox: 'trim-both',
+                              }}
+                            >
+                              <ChatMorningBriefReply />
+                            </div>
+                          </div>
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
+
+                    <div className="border-border bg-card w-full shrink-0 rounded-(--radius-lg) border">
+                      <div className="px-3 py-2">
+                        <Textarea
+                          minHeight={20}
+                          maxHeight={10}
+                          placeholder="Type your message here..."
+                          className="resize-none rounded-none border-none bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between px-1.5 pb-1.5">
+                        <div className="text-muted-foreground flex items-center">
+                          <span className="flex size-7 items-center justify-center">
+                            <Plus className="size-[1.05rem] stroke-[1.5]" />
+                          </span>
+                          <span className="flex size-7 items-center justify-center text-[0.8rem] font-semibold tracking-tight">
+                            Aa
+                          </span>
+                          <span className="flex size-7 items-center justify-center">
+                            <Smile className="size-[1.05rem] stroke-[1.5]" />
+                          </span>
+                          <span className="flex size-7 items-center justify-center">
+                            <AtSign className="size-[1.05rem] stroke-[1.5]" />
+                          </span>
+                          <span className="flex size-7 items-center justify-center">
+                            <MoreHorizontal className="size-[1.05rem] stroke-[1.5]" />
+                          </span>
+                        </div>
+                        <div className="text-muted-foreground flex items-center">
+                          <span className="flex size-7 items-center justify-center">
+                            <svg
+                              className="size-[1.05rem]"
+                              width="24"
+                              height="24"
+                              fill="currentColor"
+                              viewBox="0 0 24 24"
+                              xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path d="M20.04 2.323c1.016-.355 1.992.621 1.637 1.637l-5.925 16.93c-.385 1.098-1.915 1.16-2.387.097l-2.859-6.432 4.024-4.025a.75.75 0 0 0-1.06-1.06l-4.025 4.024-6.432-2.859c-1.063-.473-1-2.002.097-2.387z" />
+                            </svg>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+
+                <motion.div
+                  style={{ x: desktopCardX }}
+                  transition={{ duration: 0.5 }}
+                  className="border-primary dark:border-card relative z-1 col-span-7 aspect-video h-full w-full min-w-0 flex-1 rounded-[calc(var(--radius)+2px)] border-5 shadow-sm"
+                >
+                  <InteractiveDemo
+                    gradientbg={false}
+                    tab={false}
+                    className="max-w-full"
+                    contentClassName="max-w-full md:p-0 lg:p-0 p-0 "
+                    innerClassName="border-none shadow-none bg-primary dark:bg-card rounded-none"
+                    aside={false}
+                  />
+                </motion.div>
+              </div>
+            </div>
+          </div>
+
+          <div className="scrollbar-hide w-full overflow-x-auto scroll-smooth pb-12 lg:hidden">
+            <div className="flex w-full gap-2 pl-6">
+              <div className="border-primary dark:border-card relative aspect-9/19.5 h-[min(95vw,480px)] shrink-0 overflow-hidden rounded-xl border-4 shadow-sm">
+                <img
+                  src="https://play-lh.googleusercontent.com/cOVrXDLdhhoyLso-DO_R267tBMzWEayo10WvzWin7FSxYy8P09bLmzbmAVAgv4nTBTA9hxSAq55GxVGzMHcCTA=w5120-h2880"
+                  alt="Mobile"
+                  className="h-full w-full object-cover"
+                />
+                <div className="bg-muted-foreground absolute bottom-3.5 left-1/2 h-1 w-[30%] -translate-x-1/2 rounded-full" />
+              </div>
+
+              <div className="border-primary dark:border-card bg-primary dark:bg-card relative z-2 flex aspect-video h-[min(95vw,480px)] w-[100%] shrink-0 flex-row items-center justify-center gap-1 overflow-y-auto rounded-[calc(var(--radius)+2px)] border-4 p-0.5 pl-0 shadow-sm">
+                <div className="flex h-full min-h-0 w-12 flex-col items-center justify-start gap-5 py-2">
+                  <FaUsers className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
+                  <PiChatsCircleFill className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
+                  <PiBellFill className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
+                  <PiFilesFill className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
+                  <FiBookmark className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
+                  <HiOutlineDotsHorizontal className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
+                </div>
+                <div
+                  ref={chatDemoMobileRef}
+                  className="bg-background flex h-full min-h-0 flex-1 flex-col items-end justify-end space-y-4 rounded-md p-4"
+                >
+                  <AnimatePresence initial={false}>
+                    {visibleChatMessages >= 1 ? (
+                      <motion.div
+                        key="chat-message-1"
+                        initial={{
+                          opacity: 0,
+                          y: 10,
+                        }}
+                        animate={{
+                          opacity: 1,
+                          y: 0,
+                        }}
+                        transition={{
+                          duration: 0.5,
+                          ease: 'easeIn',
+                        }}
+                        className="flex w-full flex-row items-start justify-start gap-2"
+                      >
+                        <span className="bg-primary flex size-[2.1rem] shrink-0 items-center justify-center rounded-md">
+                          <KortixLogo size={16} className="text-background" />
+                        </span>
+                        <div className="flex min-w-0 flex-1 flex-col gap-0">
+                          <div className="flex flex-row items-center justify-start gap-1">
+                            <span
+                              className="text-foreground block truncate text-xs font-semibold"
+                              style={{
+                                textBox: 'trim-both',
+                              }}
+                            >
+                              Kortix
+                            </span>
+                            <span
+                              className="bg-muted rounded-[0.2rem] p-[0.07rem] px-1 py-[0.04rem] text-[7px]"
+                              style={{ textBox: 'trim-both' }}
+                            >
+                              APP
+                            </span>
+                            <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
+                              {new Date(Date.now()).toLocaleDateString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                              })}
+                            </span>
+                          </div>
+                          <span
+                            className="text-muted-foreground block truncate text-xs font-medium"
+                            style={{
+                              textBox: 'trim-both',
+                            }}
+                          >
+                            Hey! 👋 What can I help you with?
+                          </span>
+                        </div>
+                      </motion.div>
+                    ) : null}
+
+                    {visibleChatMessages >= 2 ? (
+                      <motion.div
+                        key="chat-message-2"
+                        initial={{
+                          opacity: 0,
+                          y: 10,
+                        }}
+                        animate={{
+                          opacity: 1,
+                          y: 0,
+                        }}
+                        transition={{
+                          duration: 0.5,
+                          ease: 'easeIn',
+                        }}
+                        className="flex w-full flex-row items-start justify-start gap-2"
+                      >
+                        <span className="bg-primary relative flex size-[2.1rem] shrink-0 items-center justify-center overflow-hidden rounded-md">
+                          <Image
+                            src="https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/marko.png"
+                            alt="Marko Kraemer"
+                            className="size-full"
+                            fill
+                          />
+                        </span>
+
+                        <div className="flex min-w-0 flex-1 flex-col gap-0">
+                          <div className="flex flex-row items-center justify-start gap-1">
+                            <span
+                              className="text-foreground block truncate text-xs font-semibold"
+                              style={{
+                                textBox: 'trim-both',
+                              }}
+                            >
+                              Marko
+                            </span>
+                            <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
+                              {new Date(Date.now()).toLocaleDateString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                              })}
+                            </span>
+                          </div>
+                          <span
+                            className="text-muted-foreground block truncate text-xs font-medium"
+                            style={{
+                              textBox: 'trim-both',
+                            }}
+                          >
+                            What happened while I was sleeping?
+                          </span>
+                        </div>
+                      </motion.div>
+                    ) : null}
+
+                    {visibleChatMessages >= 3 ? (
+                      <motion.div
+                        key="chat-message-3"
+                        initial={{
+                          opacity: 0,
+                          y: 10,
+                        }}
+                        animate={{
+                          opacity: 1,
+                          y: 0,
+                        }}
+                        transition={{
+                          duration: 0.3,
+                          ease: 'easeIn',
+                        }}
+                        className="flex w-full flex-row items-start justify-start gap-2"
+                      >
+                        <span className="bg-primary flex size-[2.1rem] shrink-0 items-center justify-center rounded-md">
+                          <KortixLogo size={16} className="text-background" />
+                        </span>
+                        <div className="flex min-w-0 flex-1 flex-col gap-0">
+                          <div className="flex flex-row items-center justify-start gap-1">
+                            <span
+                              className="text-foreground block truncate text-xs font-semibold"
+                              style={{
+                                textBox: 'trim-both',
+                              }}
+                            >
+                              Kortix
+                            </span>
+                            <span
+                              className="bg-muted rounded-[0.2rem] p-[0.07rem] px-1 py-[0.04rem] text-[7px]"
+                              style={{ textBox: 'trim-both' }}
+                            >
+                              APP
+                            </span>
+                            <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
+                              {new Date(Date.now()).toLocaleDateString('en-US', {
+                                year: 'numeric',
+                                month: 'long',
+                                day: 'numeric',
+                              })}
+                            </span>
+                          </div>
+                          <div
+                            className="text-muted-foreground block text-xs font-medium"
+                            style={{
+                              textBox: 'trim-both',
+                            }}
+                          >
+                            <ChatMorningBriefReply />
+                          </div>
+                        </div>
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>
+
+                  <div className="border-border bg-card w-full shrink-0 rounded-(--radius-lg) border">
+                    <div className="px-3 py-2">
+                      <Textarea
+                        minHeight={20}
+                        maxHeight={10}
+                        placeholder="Type your message here..."
+                        className="resize-none rounded-none border-none bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between px-1.5 pb-1.5">
+                      <div className="text-muted-foreground flex items-center">
+                        <span className="flex size-7 items-center justify-center">
+                          <Plus className="size-[1.05rem] stroke-[1.5]" />
+                        </span>
+                        <span className="flex size-7 items-center justify-center text-[0.8rem] font-semibold tracking-tight">
+                          Aa
+                        </span>
+                        <span className="flex size-7 items-center justify-center">
+                          <Smile className="size-[1.05rem] stroke-[1.5]" />
+                        </span>
+                        <span className="flex size-7 items-center justify-center">
+                          <AtSign className="size-[1.05rem] stroke-[1.5]" />
+                        </span>
+                        <span className="flex size-7 items-center justify-center">
+                          <MoreHorizontal className="size-[1.05rem] stroke-[1.5]" />
+                        </span>
+                      </div>
+                      <div className="text-muted-foreground flex items-center">
+                        <span className="flex size-7 items-center justify-center">
+                          <svg
+                            className="size-[1.05rem]"
+                            width="24"
+                            height="24"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                            xmlns="http://www.w3.org/2000/svg"
+                          >
+                            <path d="M20.04 2.323c1.016-.355 1.992.621 1.637 1.637l-5.925 16.93c-.385 1.098-1.915 1.16-2.387.097l-2.859-6.432 4.024-4.025a.75.75 0 0 0-1.06-1.06l-4.025 4.024-6.432-2.859c-1.063-.473-1-2.002.097-2.387z" />
+                          </svg>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="border-primary dark:border-card relative z-1 aspect-video h-[min(95vw,480px)] w-[100%] shrink-0 overflow-hidden rounded-[calc(var(--radius)+2px)] border-5 shadow-sm">
+                <InteractiveDemo
+                  gradientbg={false}
+                  tab={false}
+                  className="w-full max-w-full"
+                  contentClassName="max-w-full mx-0 md:p-0 lg:p-0 p-0 "
+                  innerClassName="border-none shadow-none bg-primary dark:bg-card rounded-none"
+                  aside={false}
+                />
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
           <Reveal>
             <div className="mb-12 max-w-2xl">
@@ -514,16 +1217,7 @@ export default function Home() {
 
           <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-14">
             <Reveal>
-              <div className="mb-12 max-w-2xl">
-                <Eyebrow>Enterprise</Eyebrow>
-                <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                  Secure enough to run the whole company
-                </h2>
-                <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                  Fine-grained control over who — and which agent — can do what. Built for the teams
-                  that take security seriously.
-                </p>
-              </div>
+              <CodeWindow />
             </Reveal>
             <Reveal delay={0.1}>
               <div className="w-full">
@@ -579,6 +1273,125 @@ export default function Home() {
               </div>
             </Reveal>
           </div>
+        </section>
+
+        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
+          <Reveal>
+            <div className="mb-12 max-w-2xl">
+              <Eyebrow>{tHome('workforceMapEyebrow')}</Eyebrow>
+              <h2 className="mt-3 text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
+                {tHome('workforceMapTitle')}
+              </h2>
+              <p className="text-muted-foreground mt-4 text-base text-balance">
+                {tHome('workforceMapDescription')}
+              </p>
+            </div>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <section className="flex flex-col items-center gap-5 pb-24 md:gap-0">
+              <div className="relative grid w-full grid-cols-2 gap-5 md:grid-cols-4">
+                {WORKFORCE_MAP_CAPABILITIES.map(({ icon: Icon, titleKey, descKey }) => (
+                  <div
+                    key={titleKey}
+                    className="group border-border bg-card hover:bg-background flex w-full flex-col justify-between gap-4 rounded-sm border p-4 shadow-sm transition md:aspect-[283/200]"
+                  >
+                    <div className="bg-secondary group-hover:bg-card self-start rounded-lg p-2.5">
+                      <Icon className="text-foreground size-5 shrink-0" />
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-body-emphasis text-foreground transition">
+                        {tHome(titleKey)}
+                      </p>
+                      <p className="text-body-sm text-muted-foreground transition">
+                        {tHome(descKey)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <svg
+                viewBox="0 0 956 54"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className="text-border mx-auto hidden max-w-[956px] md:block"
+              >
+                <defs>
+                  <linearGradient id="flow" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--kortix-blue)" />
+                    <stop offset="100%" stopColor="var(--background)" />
+                  </linearGradient>
+
+                  <linearGradient id="reveal" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="white" stopOpacity="0" />
+                    <stop offset="45%" stopColor="white" stopOpacity="1" />
+                    <stop offset="55%" stopColor="white" stopOpacity="1" />
+                    <stop offset="100%" stopColor="white" stopOpacity="0" />
+                    <animateTransform
+                      attributeName="gradientTransform"
+                      type="translate"
+                      from="0 -1"
+                      to="0 1"
+                      dur="2.5s"
+                      repeatCount="indefinite"
+                    />
+                  </linearGradient>
+
+                  <mask id="mask">
+                    <rect width="956" height="54" fill="url(#reveal)" />
+                  </mask>
+                </defs>
+
+                {PATHS.map((d, i) => (
+                  <path
+                    key={`b${i}`}
+                    d={d}
+                    stroke="currentColor"
+                    strokeOpacity="0.5"
+                    strokeWidth="2"
+                  />
+                ))}
+
+                <g mask="url(#mask)">
+                  {PATHS.map((d, i) => (
+                    <path key={`g${i}`} d={d} stroke="url(#flow)" strokeWidth="2" />
+                  ))}
+                </g>
+              </svg>
+
+              <div className="text-body-sm relative mx-auto grid w-full max-w-[856px] grid-flow-col-dense grid-cols-3 grid-rows-2 items-center gap-2 md:mx-auto md:flex md:w-auto md:flex-row md:gap-5">
+                {WORKFORCE_MAP_DOMAINS.slice(0, 2).map(({ icon: Icon, labelKey }) => (
+                  <div
+                    key={labelKey}
+                    className="group bg-card text-foreground border-border flex h-[46px] items-center justify-center gap-0.5 rounded-sm border px-6 py-3 transition md:gap-2"
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    <p>{tHome(labelKey)}</p>
+                  </div>
+                ))}
+
+                <div className="group text-foreground bg-foreground row-span-2 flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-sm px-6 py-3 transition hover:brightness-90 md:h-[64px] md:w-[105px] md:gap-2">
+                  <KortixLogo className="text-background" />
+                </div>
+
+                {WORKFORCE_MAP_DOMAINS.slice(2, 4).map(({ icon: Icon, labelKey }) => (
+                  <div
+                    key={labelKey}
+                    className="group bg-card text-foreground border-border flex h-[46px] items-center justify-center gap-0.5 rounded-sm border px-6 py-3 transition md:gap-2"
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    <p>{tHome(labelKey)}</p>
+                  </div>
+                ))}
+
+                {/* <div className="absolute top-1/2 left-0 z-[-1] hidden h-[2px] w-full -translate-y-1/2 md:block">
+                  <div className="bg-border absolute inset-0 opacity-50" />
+                  <div className="horizontal-sweep absolute top-0 left-1/2 h-full -translate-x-1/2" />
+                </div> */}
+                <div className="bg-border absolute top-1/2 left-0 z-[-1] hidden h-[2px] w-full md:block"></div>
+              </div>
+            </section>
+          </Reveal>
         </section>
 
         <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
@@ -645,37 +1458,6 @@ export default function Home() {
                       {tHome(descriptionKey)}
                     </span>
                   </span>
-                </div>
-              ))}
-            </div>
-          </Reveal>
-        </section>
-
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
-          <Reveal>
-            <div className="grid grid-cols-2 md:grid-cols-4">
-              {[
-                ['3,000+', 'statIntegrations'],
-                ['1', 'statCommandCenter'],
-                ['24/7', 'statAlwaysOn'],
-                ['100%', 'statOpenSelfHostable'],
-              ].map(([stat, labelKey], i) => (
-                <div
-                  key={labelKey}
-                  className={cn(
-                    'hover:bg-card space-y-4 px-4 py-6 text-center sm:py-8',
-                    'border-border/60 border-r border-b',
-                    i % 2 === 1 && 'border-r-0',
-                    i >= 2 && 'border-b-0',
-                    'md:border-r md:border-b-0',
-                    i % 2 === 1 && 'md:border-r',
-                    i === 3 && 'md:border-r-0',
-                  )}
-                >
-                  <div className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl">
-                    {stat}
-                  </div>
-                  <p className="text-muted-foreground mt-2 text-sm">{tHome(labelKey)}</p>
                 </div>
               ))}
             </div>
