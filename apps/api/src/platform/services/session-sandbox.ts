@@ -40,7 +40,6 @@ import { config } from '../../config';
 import { ProvisionTimeline } from './provision-timeline';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
-import { resolveYoloTokenForMember } from '../../billing/services/yolo-tokens';
 import { getCreditAccount } from '../../billing/repositories/credit-accounts';
 import { isPerSeatAccount } from '../../billing/services/tiers';
 import { readManifest } from '../../projects/triggers';
@@ -178,7 +177,7 @@ export async function provisionSessionSandbox(opts: {
   // sandbox API key can be minted before the row lands. Previously serial
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
-  const [sandboxRows, sandboxKey, executorToken, llmApiKey] = await Promise.all([
+  const [sandboxRows, sandboxKey, executorToken, perSeatActive] = await Promise.all([
     db
       .insert(sessionSandboxes)
       .values({
@@ -219,22 +218,19 @@ export async function provisionSessionSandbox(opts: {
         return null as string | null;
       }),
     getCreditAccount(accountId)
-      .then(async (account) => {
+      .then((account) => {
         const hasActiveSub =
           !!account?.stripeSubscriptionId &&
           account.stripeSubscriptionStatus !== 'canceled' &&
           account.stripeSubscriptionStatus !== 'unpaid';
-        if (isPerSeatAccount(account?.billingModel) && hasActiveSub && userId) {
-          return resolveYoloTokenForMember(userId, accountId);
-        }
-        return null as string | null;
+        return isPerSeatAccount(account?.billingModel) && hasActiveSub && !!userId;
       })
       .catch((err) => {
         console.warn(
-          `[session-sandbox] failed to resolve LLM gateway token for ${userId}@${accountId}:`,
+          `[session-sandbox] failed to resolve billing state for ${userId}@${accountId}:`,
           err instanceof Error ? err.message : String(err),
         );
-        return null as string | null;
+        return false;
       }),
   ]);
   const [sandbox] = sandboxRows;
@@ -244,18 +240,21 @@ export async function provisionSessionSandbox(opts: {
 
   // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is
   // injected (otherwise OpenCode falls back to showing only its built-in Zen
-  // catalog). Per-seat members get a metered gateway token (llmApiKey) above.
-  // YOLO is discontinued, so when the gateway is enabled but billing is OFF
-  // (local dev / self-hosted) there is no per-member token — fall back to the
-  // sandbox's own account token, which the gateway authenticates via
-  // validateAccountToken and, with billing off, records-but-never-debits. We
-  // keep the per-seat path untouched when billing is on so prod behaviour (paid
-  // members only) is unchanged.
+  // catalog). It authenticates the gateway with the per-session executor PAT,
+  // which the gateway resolves via validateAccountToken and meters.
+  //
+  // YOLO is gone — we no longer mint/inject a per-member kyolo_ token here. That
+  // path was a single row per member, re-minted on every provision, so concurrent
+  // boots clobbered each other and left older sandboxes with a stale token the
+  // gateway rejects (401). The PAT is per-session and stable.
+  //
+  // Enablement is unchanged: paying members (per-seat + active sub) on billing-on
+  // deploys, and everyone on billing-off (local / self-hosted; the gateway
+  // records-but-never-debits there).
   const gatewayLlmKey: string | null =
-    llmApiKey ??
-    (config.LLM_GATEWAY_ENABLED && !config.KORTIX_BILLING_INTERNAL_ENABLED
+    config.LLM_GATEWAY_ENABLED && (perSeatActive || !config.KORTIX_BILLING_INTERNAL_ENABLED)
       ? executorToken
-      : null);
+      : null;
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
