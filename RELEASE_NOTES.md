@@ -1,3 +1,3 @@
-inject kortix llm router into sandbox
+fix tier fetch
 
-inject kortix llm router into sandbox
+fix tier fetch
