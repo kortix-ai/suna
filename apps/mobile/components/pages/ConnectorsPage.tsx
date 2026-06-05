@@ -321,14 +321,22 @@ function AppCard({
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
   const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const [imgFailed, setImgFailed] = useState(false);
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}>
-      {app.imgSrc ? (
-        <Image source={{ uri: app.imgSrc }} style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: iconBg }} />
+      {app.imgSrc && !imgFailed ? (
+        <Image
+          source={{ uri: app.imgSrc }}
+          resizeMode="contain"
+          onError={() => setImgFailed(true)}
+          style={{ width: 38, height: 38 }}
+        />
       ) : (
         <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
-          <Globe size={19} color={muted} />
+          <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: muted }}>
+            {(app.name || '?').charAt(0).toUpperCase()}
+          </Text>
         </View>
       )}
       <View style={{ flex: 1 }}>
