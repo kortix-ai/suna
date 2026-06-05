@@ -78,6 +78,7 @@ export class PlatinumProvider implements SandboxProvider {
     // persistent (never auto-stops); >0 → ephemeral with that idle timeout.
     const autoStop = opts.autoStopInterval ?? 15;
 
+    const _t0 = Date.now();
     const sandbox = await platinumJson<PlatinumSandbox>(
       '/v1/sandboxes?wait_for_state=running&wait_timeout_ms=60000',
       {
@@ -90,6 +91,7 @@ export class PlatinumProvider implements SandboxProvider {
         }),
       },
     );
+    const _vmMs = Date.now() - _t0;
 
     const externalId = sandbox.id;
     const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/${AGENT_PORT}`;
@@ -101,6 +103,7 @@ export class PlatinumProvider implements SandboxProvider {
     // after runtime-ready. Best-effort: a failure here just falls back to the
     // lazy expose in resolveEndpoint.
     let exposedUrl = '';
+    const _tExpose0 = Date.now();
     try {
       const exposed = await platinumJson<PlatinumExposedPort>(`/v1/sandboxes/${externalId}/expose`, {
         method: 'POST',
@@ -110,6 +113,7 @@ export class PlatinumProvider implements SandboxProvider {
     } catch (err) {
       console.warn(`[platinum] eager expose ${externalId}:${AGENT_PORT} failed (lazy fallback):`, err);
     }
+    const _exposeMs = Date.now() - _tExpose0;
 
     // Wait for the in-guest runtime to actually be READY before returning. A
     // warm claim is instant (~0.1s) but the daemon then materializes the repo
@@ -120,24 +124,35 @@ export class PlatinumProvider implements SandboxProvider {
     // box; this gives parity: the session only goes live once the sandbox serves.
     // Repo clone is usually ~2s but can transiently stall, so poll up to 75s.
     // Best-effort: on timeout we return anyway and the FE's retries cover the tail.
+    const _tReady0 = Date.now();
+    let _polls = 0; let _firstHttpMs = 0; let _lastHealth: unknown = null;
     if (exposedUrl) {
       const token = envVars.KORTIX_TOKEN;
       const deadline = Date.now() + 75_000;
       let ready = false;
       while (Date.now() < deadline) {
+        _polls++;
         try {
           const r = await fetch(`${exposedUrl}/kortix/health`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {},
             signal: AbortSignal.timeout(6000),
           });
+          if (!_firstHttpMs && r.status) _firstHttpMs = Date.now() - _tReady0; // first time the edge answered at all
           if (r.ok) {
             const h = (await r.json().catch(() => ({}))) as { runtimeReady?: boolean };
+            _lastHealth = h;
             if (h?.runtimeReady === true) { ready = true; break; }
           }
         } catch { /* keep polling through transient edge/clone hiccups */ }
         await new Promise((res) => setTimeout(res, 1000));
       }
       if (!ready) console.warn(`[platinum] ${externalId} not runtimeReady within 75s — returning anyway (FE will retry)`);
+      const _readyMs = Date.now() - _tReady0;
+      console.log(
+        `[platinum-timing] ${externalId} vm-running=${_vmMs}ms expose=${_exposeMs}ms ` +
+        `runtime-ready=${_readyMs}ms (polls=${_polls}, edge-first-answer=${_firstHttpMs}ms) ` +
+        `total=${Date.now() - _t0}ms health=${JSON.stringify(_lastHealth)}`,
+      );
     }
 
     return {
