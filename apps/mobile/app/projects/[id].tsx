@@ -80,6 +80,7 @@ import { SecretsPage } from '@/components/pages/SecretsPage';
 import { AgentsPage } from '@/components/pages/AgentsPage';
 import { SkillsPage } from '@/components/pages/SkillsPage';
 import { CommandsPage } from '@/components/pages/CommandsPage';
+import { ConnectorsPage } from '@/components/pages/ConnectorsPage';
 import { MemoryPage } from '@/components/pages/MemoryPage';
 import { LlmProvidersPage } from '@/components/pages/LlmProvidersPage';
 import { TerminalPage } from '@/components/pages/TerminalPage';
@@ -2052,6 +2053,17 @@ export default function ProjectSessionScreen() {
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
               onConfigure={handleConfigureSession}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Connectors (web sidebar CONNECT) */
+          ) : activePageId === 'page:connectors' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <ConnectorsPage
+              page={PAGE_TABS[activePageId]}
+              projectId={projectId}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
               onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
               isDrawerOpen={drawerOpen}
