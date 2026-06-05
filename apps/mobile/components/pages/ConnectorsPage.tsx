@@ -16,9 +16,12 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Image,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useQueryClient } from '@tanstack/react-query';
+import * as WebBrowser from 'expo-web-browser';
 import {
   Zap,
   Boxes,
@@ -34,8 +37,19 @@ import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { SearchListHeader } from '@/components/ui/search-list-header';
-import { useConnectors, useSyncConnectors, useDeleteConnector } from '@/lib/projects/hooks';
-import type { AdminConnector, ConnectorAction, ConnectorProvider } from '@/lib/projects/projects-client';
+import {
+  useConnectors,
+  useSyncConnectors,
+  useDeleteConnector,
+  usePipedreamApps,
+  projectKeys,
+} from '@/lib/projects/hooks';
+import {
+  createConnector,
+  pipedreamConnect,
+  pipedreamFinalize,
+} from '@/lib/projects/projects-client';
+import type { AdminConnector, ConnectorAction, ConnectorProvider, PipedreamApp } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 
 interface PageTabLike {
@@ -235,6 +249,181 @@ function ConnectorRow({
   );
 }
 
+// ─── Add connector (Pipedream catalogue + 1-click connect) ───────────────────
+
+function AppCard({
+  app,
+  connecting,
+  onConnect,
+  isDark,
+}: {
+  app: PipedreamApp;
+  connecting: boolean;
+  onConnect: () => void;
+  isDark: boolean;
+}) {
+  const fg = isDark ? '#F8F8F8' : '#121215';
+  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}>
+      {app.imgSrc ? (
+        <Image source={{ uri: app.imgSrc }} style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: iconBg }} />
+      ) : (
+        <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
+          <Globe size={19} color={muted} />
+        </View>
+      )}
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{app.name}</Text>
+        {app.description ? (
+          <Text style={{ fontSize: 13, lineHeight: 18, color: muted, marginTop: 2 }} numberOfLines={2}>{app.description}</Text>
+        ) : null}
+      </View>
+      <TouchableOpacity
+        onPress={onConnect}
+        disabled={connecting}
+        activeOpacity={0.7}
+        style={{ minWidth: 78, alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: border, opacity: connecting ? 0.6 : 1 }}
+      >
+        {connecting ? <ActivityIndicator size="small" color={muted} /> : (
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Connect</Text>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+function AddConnectorView({
+  projectId,
+  onBack,
+  onConnected,
+}: {
+  projectId: string;
+  onBack: () => void;
+  onConnected: () => void;
+}) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
+  const queryClient = useQueryClient();
+  const [appSearch, setAppSearch] = useState('');
+  const [connectingSlug, setConnectingSlug] = useState<string | null>(null);
+
+  const { data, isLoading, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    usePipedreamApps(projectId, appSearch);
+
+  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const fg = isDark ? '#F8F8F8' : '#121215';
+  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+
+  const apps = useMemo(() => (data?.pages ?? []).flatMap((p) => p.apps), [data]);
+
+  const handleConnect = useCallback(async (app: PipedreamApp) => {
+    if (connectingSlug) return;
+    setConnectingSlug(app.slug);
+    try {
+      // Register the connector, then run Pipedream's 1-click OAuth in a browser.
+      await createConnector(projectId, { slug: app.slug, provider: 'pipedream', app: app.slug });
+      const conn = await pipedreamConnect(projectId, app.slug);
+      if (!conn.connectUrl) {
+        Alert.alert('Cannot connect', 'This app could not start a connect flow on mobile.');
+        return;
+      }
+      haptics.tap();
+      await WebBrowser.openBrowserAsync(conn.connectUrl, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+      });
+      const result = await pipedreamFinalize(projectId, app.slug);
+      queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
+      onConnected();
+      Alert.alert(
+        result.connected ? 'Connected' : 'Almost there',
+        result.connected
+          ? `${app.name} is now connected.`
+          : `${app.name} was added but the connection wasn't completed — retry from its row.`,
+      );
+    } catch (err: any) {
+      Alert.alert('Connect failed', err?.message || 'Could not connect this app.');
+    } finally {
+      setConnectingSlug(null);
+    }
+  }, [projectId, connectingSlug, queryClient, onConnected]);
+
+  return (
+    <View style={{ flex: 1 }}>
+      <TouchableOpacity
+        onPress={() => { haptics.tap(); onBack(); }}
+        activeOpacity={0.6}
+        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 4 }}
+      >
+        <ChevronLeft size={18} color={muted} />
+        <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted }}>Connectors</Text>
+      </TouchableOpacity>
+
+      <SearchListHeader value={appSearch} onChangeText={setAppSearch} placeholder="Search apps to connect" />
+
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        scrollEventThrottle={200}
+        onScroll={({ nativeEvent }) => {
+          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+          if (
+            layoutMeasurement.height + contentOffset.y >= contentSize.height - 320 &&
+            hasNextPage &&
+            !isFetchingNextPage
+          ) {
+            fetchNextPage();
+          }
+        }}
+      >
+        {isLoading ? (
+          <View style={{ paddingVertical: 48, alignItems: 'center' }}>
+            <ActivityIndicator size="small" color={muted} />
+          </View>
+        ) : isError ? (
+          <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
+            <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
+              {(error as Error)?.message ?? 'Failed to load apps'}
+            </Text>
+            <TouchableOpacity onPress={() => refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : apps.length === 0 ? (
+          <View style={{ padding: 40, alignItems: 'center' }}>
+            <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>No apps found.</Text>
+          </View>
+        ) : (
+          <>
+            {apps.map((app, i) => (
+              <View key={app.slug}>
+                <AppCard
+                  app={app}
+                  connecting={connectingSlug === app.slug}
+                  onConnect={() => handleConnect(app)}
+                  isDark={isDark}
+                />
+                {i < apps.length - 1 && <View style={{ height: 1, backgroundColor: border, marginLeft: 66 }} />}
+              </View>
+            ))}
+            {isFetchingNextPage && (
+              <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                <ActivityIndicator size="small" color={muted} />
+              </View>
+            )}
+          </>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export function ConnectorsPage({
@@ -250,6 +439,7 @@ export function ConnectorsPage({
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
 
   const { data, isLoading, isError, error, refetch } = useConnectors(projectId);
   const syncMutation = useSyncConnectors(projectId);
@@ -312,7 +502,7 @@ export function ConnectorsPage({
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
-          !selected ? (
+          !selected && !adding ? (
             <TouchableOpacity onPress={handleSync} className="p-1 mr-1" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               {syncMutation.isPending ? (
                 <ActivityIndicator size="small" color={muted} />
@@ -325,7 +515,13 @@ export function ConnectorsPage({
       />
 
       <PageContent>
-        {selected ? (
+        {adding ? (
+          <AddConnectorView
+            projectId={projectId}
+            onBack={() => setAdding(false)}
+            onConnected={() => setAdding(false)}
+          />
+        ) : selected ? (
           <ConnectorDetail
             connector={selected}
             onBack={() => setSelectedSlug(null)}
@@ -334,7 +530,7 @@ export function ConnectorsPage({
           />
         ) : (
           <>
-            <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search connectors" />
+            <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search connectors" onAdd={() => { haptics.tap(); setAdding(true); }} />
 
             <ScrollView
               style={{ flex: 1 }}
