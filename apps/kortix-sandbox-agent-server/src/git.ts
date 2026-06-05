@@ -517,27 +517,49 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       filter: cfg.cloneFilter || 'none',
     })
     const baseCloneArgs = ['clone', '--branch', base, '--single-branch']
-    // Blobless partial clone keeps full history but defers file blobs, cutting
-    // the boot-time transfer from a full-history pack to roughly the working
-    // tree. This is the dominant per-session boot cost on large repos.
-    let cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [
-      ...baseCloneArgs,
-      ...(cfg.cloneFilter ? [`--filter=${cfg.cloneFilter}`] : []),
-      cfg.repoUrl,
-      tmpTarget,
-    ])
-    if (cloned.code !== 0 && cfg.cloneFilter) {
-      // Remote may not advertise uploadpack.allowFilter — fall back to a full
-      // clone so a non-supporting host still boots (just slower).
-      logger.warn('[git] partial clone failed; retrying as a full clone', {
-        stderr: cloned.stderr.slice(0, 200),
-      })
+    // Transient transport failures: the smart-HTTP pack stream is long-lived and
+    // a mid-transfer reset (proxy/tunnel hiccup, esp. when many sandboxes clone
+    // at once) kills the whole clone. git surfaces these as "early EOF" /
+    // "RPC failed" / "Connection reset" / "fetch-pack: unexpected disconnect" /
+    // "index-pack" errors. A single-shot clone turned one transient blip into a
+    // permanently dead workspace (repo_ready=false → the API's 75s runtime-ready
+    // timeout). Retry with jittered backoff — the jitter de-clusters concurrent
+    // retries so they don't re-stampede the same upstream. resolveCloneToken
+    // already does this for the credential fetch; the clone needs it just as much.
+    const isTransientGit = (s: string) =>
+      /early EOF|RPC failed|Connection reset|Recv failure|fetch-pack|unexpected disconnect|index-pack|Could not resolve host|Connection timed out|timed out|GnuTLS recv|SSL_read|TLS packet|Failed to connect|Empty reply/i.test(s)
+    const MAX_CLONE_ATTEMPTS = 4
+    let cloned = { code: -1, stdout: '', stderr: '' } as Awaited<ReturnType<typeof gitWithAuth>>
+    for (let attempt = 1; attempt <= MAX_CLONE_ATTEMPTS; attempt++) {
       await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
-      cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [...baseCloneArgs, cfg.repoUrl, tmpTarget])
+      // Blobless partial clone keeps full history but defers file blobs, cutting
+      // the boot-time transfer from a full-history pack to roughly the working
+      // tree. This is the dominant per-session boot cost on large repos.
+      cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [
+        ...baseCloneArgs,
+        ...(cfg.cloneFilter ? [`--filter=${cfg.cloneFilter}`] : []),
+        cfg.repoUrl,
+        tmpTarget,
+      ])
+      if (cloned.code !== 0 && cfg.cloneFilter && !isTransientGit(cloned.stderr)) {
+        // Remote may not advertise uploadpack.allowFilter — fall back to a full
+        // clone so a non-supporting host still boots (just slower).
+        logger.warn('[git] partial clone failed; retrying as a full clone', {
+          stderr: cloned.stderr.slice(0, 200),
+        })
+        await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
+        cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [...baseCloneArgs, cfg.repoUrl, tmpTarget])
+      }
+      if (cloned.code === 0) break
+      const transient = isTransientGit(cloned.stderr)
+      logger.warn('[git] clone attempt failed', { attempt, maxAttempts: MAX_CLONE_ATTEMPTS, transient, stderr: cloned.stderr.slice(0, 200) })
+      if (!transient || attempt === MAX_CLONE_ATTEMPTS) break
+      // Jittered backoff: base grows per attempt, jitter spreads concurrent retries.
+      await new Promise((r) => setTimeout(r, 500 * attempt + Math.floor(Math.random() * 700)))
     }
     if (cloned.code !== 0) {
       await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
-      throw new Error(`git clone failed: ${cloned.stderr}`)
+      throw new Error(`git clone failed after ${MAX_CLONE_ATTEMPTS} attempt(s): ${cloned.stderr}`)
     }
     await rm(target, { recursive: true, force: true })
     await rename(tmpTarget, target)
