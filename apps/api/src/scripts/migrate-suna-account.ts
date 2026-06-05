@@ -33,6 +33,8 @@ function arg(flag: string): string | undefined {
 const accountId = arg('--account-id');
 const buildDir = arg('--build');
 const pushDir = arg('--push-repo');
+const limit = arg('--limit');
+if (limit) process.env.KORTIX_SUNA_MIGRATION_LIMIT = limit; // caps discovery (test / huge accounts)
 const mode = pushDir ? 'push-repo' : Bun.argv.includes('--apply') ? 'apply' : buildDir ? 'build' : 'plan';
 if (!accountId) { console.error('--account-id <uuid> required'); process.exit(2); }
 if (mode === 'build' && !buildDir) { console.error('--build <dir> required'); process.exit(2); }
@@ -45,6 +47,7 @@ async function discover(account: string) {
     FROM public.projects p
     LEFT JOIN public.resources r ON r.id = p.sandbox_resource_id AND r.type = 'sandbox'
     WHERE p.account_id = ${account} ORDER BY p.created_at DESC
+    ${limit ? sql`LIMIT ${Number(limit)}` : sql``}
   `)) as unknown as SunaProject[];
   const threads = (await db.execute(sql`
     SELECT thread_id, project_id FROM public.threads WHERE account_id = ${account}
@@ -158,7 +161,20 @@ async function main() {
     return;
   }
 
-  console.error(`\n✗ --apply (project rows + provision + chat ship) is the API-side step — see suna-migration/. Use --build then --push-repo.\n`);
+  // ── APPLY: enqueue + drive the real migration inline (extract → repo → push
+  //    → db). Needs the full infra (GitHub App, Daytona, reachable KORTIX_URL).
+  //    Run against STAGING first, bounded with --limit. ──
+  if (mode === 'apply') {
+    const { startSunaMigration, driveSunaMigration, latestSunaMigration } = await import('../projects/suna-migration/suna-migration-runner');
+    console.log(`Starting migration${limit ? ` (limit ${limit})` : ''} for ${accountId} …`);
+    const { migration } = await startSunaMigration({ database: db, accountId: accountId!, autoDrive: false });
+    await driveSunaMigration(db, migration.migrationId); // drive synchronously so the script reports the outcome
+    const final = await latestSunaMigration(db, accountId!);
+    console.log(`\n  status: ${final?.status}  phase: ${final?.phase}  project_id: ${final?.projectId ?? '—'}`);
+    if (final?.status === 'failed') { console.error(`  ✗ ${final.error}`); process.exit(1); }
+    console.log(`\n✓ ${final?.status}. Open the project to confirm chats rehydrate.\n`);
+    return;
+  }
   process.exit(1);
 }
 
