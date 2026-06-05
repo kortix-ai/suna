@@ -84,6 +84,7 @@ import { ConnectorsPage } from '@/components/pages/ConnectorsPage';
 import { SecretsNavPage } from '@/components/pages/SecretsNavPage';
 import { ChannelsNavPage } from '@/components/pages/ChannelsNavPage';
 import { SchedulesPage } from '@/components/pages/SchedulesPage';
+import { WebhooksPage } from '@/components/pages/WebhooksPage';
 import { MemoryPage } from '@/components/pages/MemoryPage';
 import { LlmProvidersPage } from '@/components/pages/LlmProvidersPage';
 import { TerminalPage } from '@/components/pages/TerminalPage';
@@ -2098,6 +2099,17 @@ export default function ProjectSessionScreen() {
           /* Active page tab — Schedules (web sidebar AUTOMATE) */
           ) : activePageId === 'page:schedules' && PAGE_TABS[activePageId] && !showTabsOverview ? (
             <SchedulesPage
+              page={PAGE_TABS[activePageId]}
+              projectId={projectId}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Webhooks (web sidebar AUTOMATE) */
+          ) : activePageId === 'page:webhooks' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <WebhooksPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
