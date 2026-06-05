@@ -14,7 +14,7 @@
  * opencode so it serves the original conversations.
  */
 import { Database } from 'bun:sqlite';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { and, eq, isNotNull } from 'drizzle-orm';
@@ -128,7 +128,14 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
     writeFileSync(join(workDir, 'oc.tar.gz'), tarball);
     const untar = Bun.spawnSync(['tar', 'xzf', join(workDir, 'oc.tar.gz'), '-C', workDir]);
     if (untar.exitCode !== 0) throw new Error(`unpack failed: ${new TextDecoder().decode(untar.stderr)}`);
-    const local = new Database(join(workDir, 'opencode.db'));
+    // Legacy archives store the db as `opencode.db`; Suna-migration archives store
+    // it as `<projectId>.opencode.db`. Locate it by suffix rather than a fixed name.
+    const dbName = existsSync(join(workDir, 'opencode.db'))
+      ? 'opencode.db'
+      : readdirSync(workDir).find((f) => f.endsWith('opencode.db'));
+    if (!dbName) throw new Error(`no opencode.db in archive (got: ${readdirSync(workDir).join(', ')})`);
+    const dbPath = join(workDir, dbName);
+    const local = new Database(dbPath);
     try {
       local.exec('PRAGMA foreign_keys=OFF');
       local.prepare('UPDATE project SET id = ?').run(newProjectId);
@@ -137,7 +144,7 @@ export async function rehydrateSessionChat(input: RehydrateInput): Promise<void>
     } finally {
       local.close();
     }
-    dbBuf = readFileSync(join(workDir, 'opencode.db'));
+    dbBuf = readFileSync(dbPath);
   } finally {
     rmSync(workDir, { recursive: true, force: true });
   }
