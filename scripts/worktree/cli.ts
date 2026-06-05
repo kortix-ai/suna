@@ -35,6 +35,21 @@ const die = (s: string): never => { console.error(`\n${pc.red('✗')} ${s}`); pr
 const url = (u: string) => pc.cyan(pc.underline(u));
 const dot = (up: boolean) => (up ? pc.green('●') : pc.dim('○'));
 
+// Run a slow teardown command under an animated spinner. Async (Bun.spawn +
+// await) so the event loop stays free to render frames — a synchronous sh()
+// would block the loop and freeze the spinner. Exit code is ignored; these are
+// best-effort cleanup steps.
+async function spin(label: string, cmd: string[]): Promise<void> {
+  const s = clack.spinner();
+  s.start(label);
+  try {
+    await Bun.spawn(cmd, { stdout: 'ignore', stderr: 'ignore', stdin: 'ignore' }).exited;
+    s.stop(`${label} ${pc.green('✓')}`);
+  } catch {
+    s.stop(`${label} ${pc.dim('(skipped)')}`);
+  }
+}
+
 interface Args { cmd: string; name?: string; flags: Record<string, string | boolean>; }
 function parseArgs(argv: string[]): Args {
   const cmd = argv[0] ?? 'help';
@@ -350,13 +365,13 @@ async function cmdNuke(a: Args) {
   const pid = e!.projectId;
   step(`Nuking "${name}" ${pc.dim('(project ' + pid + ')')}`);
   for (const port of [e!.ports.web, e!.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
-  sh(['supabase', '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
-  sh(['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
-  sh(['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null || true`]);
-  sh(['bash', '-lc', `docker network rm supabase_network_${pid} 2>/dev/null || true`]);
+  // The slow part — show progress so it isn't a silent ~minute-long black hole.
+  await spin('Stopping Supabase containers', ['supabase', '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
+  await spin('Removing Docker containers', ['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
+  await spin('Removing volumes & network', ['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null; docker network rm supabase_network_${pid} 2>/dev/null || true`]);
   const root = repoRoot();
   const force = a.flags.force ? ['--force'] : [];
-  if (existsSync(e!.path)) sh(['git', '-C', root, 'worktree', 'remove', ...force, e!.path]);
+  if (existsSync(e!.path)) { sub('removing git worktree…'); sh(['git', '-C', root, 'worktree', 'remove', ...force, e!.path]); }
   sh(['git', '-C', root, 'worktree', 'prune']);
   if (e!.branch) {
     const del = sh(['git', '-C', root, 'branch', '-d', e!.branch]);
