@@ -23,9 +23,11 @@
     "stripe:listen": "stripe listen --forward-to http://localhost:8008/v1/billing/webhooks/stripe"
   },
   "devDependencies": {
+    "@clack/prompts": "^0.7.0",
     "@dotenvx/dotenvx": "^1.69.2",
     "@types/bun": "^1.3.12",
-    "agent-tunnel": "workspace:@kortix/agent-tunnel@*"
+    "agent-tunnel": "workspace:@kortix/agent-tunnel@*",
+    "picocolors": "^1.1.1"
   },
   "packageManager": "pnpm@8.11.0",
   "pnpm": {
