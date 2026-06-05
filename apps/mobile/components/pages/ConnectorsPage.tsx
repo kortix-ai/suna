@@ -902,13 +902,13 @@ function SharingEditor({
       </BottomSheetScrollView>
 
       {/* Sticky Save (primary theme color) */}
-      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: border }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: border }}>
         <TouchableOpacity
           onPress={handleSave}
           disabled={incomplete || saveMutation.isPending}
           activeOpacity={0.8}
           style={{
-            height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
+            height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
             backgroundColor: theme.primary, opacity: incomplete || saveMutation.isPending ? 0.5 : 1,
           }}
         >
@@ -1132,12 +1132,12 @@ function CustomConnectorForm({
         </Text>
       </BottomSheetScrollView>
 
-      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
         <TouchableOpacity
           onPress={handleSave}
           disabled={!canSave}
           activeOpacity={0.8}
-          style={{ height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}
+          style={{ height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}
         >
           {saving && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add connector</Text>
@@ -1213,12 +1213,12 @@ function SetCredentialView({
         <Text style={{ fontSize: 12.5, color: muted }}>It's encrypted at rest and never shown again.</Text>
       </BottomSheetScrollView>
 
-      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
         <TouchableOpacity
           onPress={handleSave}
           disabled={!value.trim() || saving}
           activeOpacity={0.8}
-          style={{ height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: value.trim() && !saving ? 1 : 0.5 }}
+          style={{ height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: value.trim() && !saving ? 1 : 0.5 }}
         >
           {saving && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save credential</Text>
@@ -1418,12 +1418,12 @@ function PoliciesView({ projectId }: { projectId: string }) {
         </TouchableOpacity>
       </ScrollView>
 
-      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
         <TouchableOpacity
           onPress={handleSave}
           disabled={!dirty || saveMutation.isPending}
           activeOpacity={0.8}
-          style={{ height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: dirty && !saveMutation.isPending ? 1 : 0.5 }}
+          style={{ height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: dirty && !saveMutation.isPending ? 1 : 0.5 }}
         >
           {saveMutation.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save policies</Text>
