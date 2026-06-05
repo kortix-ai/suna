@@ -1,0 +1,146 @@
+name: E2E (ke2e)
+
+# Black-box end-to-end suite (suna/tests). Runs against an ALREADY-DEPLOYED API
+# (we do not boot the API in the runner) with live services.
+#
+# WIP — NON-GATING. Manual/reusable only: no pull_request trigger, and nothing in
+# promote.yml / deploy-prod.yml depends on it yet, so it cannot block real CI/CD
+# while the suite is still being built out. Re-add the `pull_request:` trigger and
+# the promote `e2e_gate` once coverage is complete and the suite is trusted to gate.
+#
+# Only one suite hits a shared live env at a time (concurrency group, no cancel)
+# so parallel runs can't collide on global state.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "API base URL (incl. /v1)"
+        required: true
+        default: "https://dev-api.kortix.com/v1"
+        type: string
+      args:
+        description: "ke2e run args"
+        required: false
+        default: "run"
+        type: string
+  workflow_call:
+    inputs:
+      base_url:
+        required: true
+        type: string
+      args:
+        required: false
+        default: "run"
+        type: string
+    secrets:
+      KE2E_OWNER_EMAIL:
+        required: false
+      KE2E_OWNER_PASSWORD:
+        required: false
+      KE2E_SUPABASE_URL:
+        required: false
+      KE2E_SUPABASE_ANON_KEY:
+        required: false
+      KE2E_SUPABASE_SERVICE_ROLE_KEY:
+        required: false
+      KE2E_ADMIN_TOKEN:
+        required: false
+      KE2E_DATABASE_URL:
+        required: false
+
+concurrency:
+  group: ke2e-${{ inputs.base_url || 'dev' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  # PR-only: the suite's own type safety + the source-of-truth coverage gate.
+  # These gate the test code itself and don't need a live target or secrets.
+  static:
+    if: github.event_name == 'pull_request'
+    name: typecheck + coverage gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+        working-directory: tests
+      - name: Typecheck
+        run: bun run typecheck
+        working-directory: tests
+      - name: Coverage gate (spec ↔ flow ↔ route parity)
+        run: bun bin/ke2e.ts coverage
+        working-directory: tests
+
+  run:
+    name: run suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+        working-directory: tests
+
+      - name: Resolve target
+        id: target
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "base=https://dev-api.kortix.com/v1" >> "$GITHUB_OUTPUT"
+            echo "args=run --tag smoke" >> "$GITHUB_OUTPUT"
+          else
+            echo "base=${{ inputs.base_url }}" >> "$GITHUB_OUTPUT"
+            echo "args=${{ inputs.args }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: GC leaked resources from prior runs
+        if: github.event_name != 'pull_request'
+        continue-on-error: true
+        run: bun bin/ke2e.ts gc --older-than 2h
+        working-directory: tests
+        env:
+          KE2E_API_URL: ${{ steps.target.outputs.base }}
+          KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
+          KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
+          KE2E_SUPABASE_URL: ${{ secrets.KE2E_SUPABASE_URL }}
+          KE2E_SUPABASE_ANON_KEY: ${{ secrets.KE2E_SUPABASE_ANON_KEY }}
+          KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.KE2E_SUPABASE_SERVICE_ROLE_KEY }}
+          KE2E_DATABASE_URL: ${{ secrets.KE2E_DATABASE_URL }}
+
+      - name: Run ke2e
+        run: bun bin/ke2e.ts ${{ steps.target.outputs.args }}
+        working-directory: tests
+        env:
+          KE2E_API_URL: ${{ steps.target.outputs.base }}
+          KE2E_LIVE_CONFIRM: "ci"
+          KE2E_OWNER_EMAIL: ${{ secrets.KE2E_OWNER_EMAIL }}
+          KE2E_OWNER_PASSWORD: ${{ secrets.KE2E_OWNER_PASSWORD }}
+          KE2E_SUPABASE_URL: ${{ secrets.KE2E_SUPABASE_URL }}
+          KE2E_SUPABASE_ANON_KEY: ${{ secrets.KE2E_SUPABASE_ANON_KEY }}
+          KE2E_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.KE2E_SUPABASE_SERVICE_ROLE_KEY }}
+          KE2E_ADMIN_TOKEN: ${{ secrets.KE2E_ADMIN_TOKEN }}
+          KE2E_DATABASE_URL: ${{ secrets.KE2E_DATABASE_URL }}
+
+      - name: Secret-leak guard on artifacts
+        if: always()
+        run: |
+          if grep -rEl 'kortix_(pat|sa)_[A-Za-z0-9]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.' test-results/ 2>/dev/null; then
+            echo "::error::Unredacted secret-looking string found in test artifacts"
+            exit 1
+          fi
+          echo "no secret leaks in artifacts"
+        working-directory: tests
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ke2e-report-${{ github.run_id }}
+          path: tests/test-results/**
+          retention-days: 14

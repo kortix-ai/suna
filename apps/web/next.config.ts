@@ -6,16 +6,26 @@ import { withSentryConfig } from '@sentry/nextjs';
 import { withBetterStack } from '@logtail/next';
 
 // Unified platform version. Prefer the explicit build env (CI passes
-// NEXT_PUBLIC_KORTIX_VERSION = 0.9.0-dev.<sha> on dev, clean X.Y.Z on prod);
+// NEXT_PUBLIC_KORTIX_VERSION = X.Y.Z-dev.<sha> on dev, clean X.Y.Z on prod);
 // otherwise read the root VERSION file so Vercel builds (which don't pass the
-// build-arg) still report the version. Falls back to 'dev' locally.
+// build-arg) still report the version. On Vercel, the `prod` branch is the only
+// clean release — any other branch (dev) is a pre-release, so suffix
+// `-dev.<sha8>` so dev.kortix.com tracks the in-progress version instead of
+// showing a bare release number. Falls back to 'dev' locally.
 function resolveKortixVersion(): string {
   if (process.env.NEXT_PUBLIC_KORTIX_VERSION) return process.env.NEXT_PUBLIC_KORTIX_VERSION;
+  let base = 'dev';
   try {
-    return fs.readFileSync(path.join(__dirname, '../../VERSION'), 'utf8').trim();
+    base = fs.readFileSync(path.join(__dirname, '../../VERSION'), 'utf8').trim();
   } catch {
     return 'dev';
   }
+  const ref = process.env.VERCEL_GIT_COMMIT_REF;
+  if (ref && ref !== 'prod') {
+    const sha = (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 8);
+    return sha ? `${base}-dev.${sha}` : `${base}-dev`;
+  }
+  return base;
 }
 const KORTIX_VERSION = resolveKortixVersion();
 
@@ -98,10 +108,12 @@ const nextConfig = (): NextConfig => ({
 
   async rewrites() {
     return [
-      // Proxy API calls to backend to avoid CORS in local dev
+      // Proxy API calls to backend to avoid CORS in local dev. The target is
+      // env-driven so an isolated `pnpm worktree` instance proxies the browser
+      // to ITS api port; unset (primary `pnpm dev`) keeps the default :8008.
       {
         source: '/v1/:path*',
-        destination: 'http://localhost:8008/v1/:path*',
+        destination: `${process.env.KORTIX_API_PROXY_TARGET ?? 'http://localhost:8008'}/v1/:path*`,
       },
       {
         source: '/ingest/static/:path*',

@@ -7,7 +7,8 @@
  * Auth: All routes require Supabase JWT except /install-status (public).
  */
 
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
+import { makeOpenApiApp, json, errors, auth } from '../openapi';
 import type { AppEnv } from '../types';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
@@ -23,7 +24,7 @@ import { getSupabase } from '../shared/supabase';
  *  frontend health UI keeps reading the same `{ok, error?}` per check. */
 type HealthCheck = { ok: boolean; error?: string };
 
-export const setupApp = new Hono<AppEnv>();
+export const setupApp = makeOpenApiApp<AppEnv>();
 
 // ─── Auth ───────────────────────────────────────────────────────────────────
 // All setup routes require Supabase JWT auth EXCEPT /install-status which must
@@ -140,7 +141,18 @@ async function fetchMasterJson<T>(path: string, init: RequestInit = {}, timeoutM
  *   installed=false → show "Create Owner Account" installer form
  *   installed=true  → show "Sign In" form
  */
-setupApp.get('/install-status', async (c) => {
+setupApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/install-status',
+    tags: ['setup'],
+    summary: 'Whether the instance has been set up (an owner user exists)',
+    responses: {
+      200: json(z.object({ installed: z.boolean().nullable() }), 'Install status'),
+      503: json(z.object({ installed: z.null(), error: z.string() }), 'Database not configured'),
+    },
+  }),
+  async (c: any) => {
   try {
     if (!hasDatabase) {
       console.warn('[setup] install-status: DATABASE_URL not configured — returning 503');
@@ -161,7 +173,8 @@ setupApp.get('/install-status', async (c) => {
     console.error('[setup] install-status error:', err);
     return c.json({ installed: null, error: 'Internal error' }, 503);
   }
-});
+  },
+);
 
 /**
  * GET /v1/setup/sandbox-providers
@@ -172,7 +185,24 @@ setupApp.get('/install-status', async (c) => {
  * Response: { providers: string[], default: string, capabilities: ... }
  *   e.g. { providers: ["daytona"], default: "daytona", capabilities: {...} }
  */
-setupApp.get('/sandbox-providers', async (c) => {
+setupApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/sandbox-providers',
+    tags: ['setup'],
+    summary: 'Enabled sandbox providers and their capabilities',
+    responses: {
+      200: json(
+        z.object({
+          providers: z.array(z.string()),
+          default: z.string(),
+          capabilities: z.record(z.string(), z.object({ async: z.boolean(), events: z.boolean(), polling: z.boolean() })),
+        }),
+        'Sandbox providers',
+      ),
+    },
+  }),
+  async (c: any) => {
   const available = config.ALLOWED_SANDBOX_PROVIDERS.filter((name) =>
     config.isProviderEnabled(name),
   );
@@ -187,15 +217,33 @@ setupApp.get('/sandbox-providers', async (c) => {
     default: available.includes(config.getDefaultProvider()) ? config.getDefaultProvider() : (available[0] || 'daytona'),
     capabilities: Object.fromEntries(available.map((p) => [p, capabilities[p] || { async: false, events: false, polling: false }])),
   });
-});
+  },
+);
 
-setupApp.post('/bootstrap-owner', async (c) => {
+setupApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/bootstrap-owner',
+    tags: ['setup'],
+    summary: 'Create the initial owner account (only when none exists)',
+    request: {
+      body: { content: { 'application/json': { schema: z.object({ email: z.string().optional(), password: z.string().optional() }) } } },
+    },
+    responses: {
+      200: json(z.object({ success: z.boolean(), created: z.boolean(), email: z.string() }), 'Owner created'),
+      400: json(z.object({ success: z.boolean(), error: z.string() }), 'Bad request'),
+      409: json(z.object({ success: z.boolean(), error: z.string() }), 'Owner already exists'),
+      500: json(z.object({ success: z.boolean(), error: z.string() }), 'Server error'),
+      503: json(z.object({ success: z.boolean(), error: z.string() }), 'Database not configured'),
+    },
+  }),
+  async (c: any) => {
   if (!hasDatabase) {
     return c.json({ success: false, error: 'Database not configured' }, 503);
   }
 
   try {
-    const body = await c.req.json<{ email?: string; password?: string }>();
+    const body = await c.req.json();
     const email = body.email?.trim().toLowerCase() || '';
     const password = body.password || '';
 
@@ -246,13 +294,35 @@ setupApp.post('/bootstrap-owner', async (c) => {
     const message = err instanceof Error ? err.message : String(err);
     return c.json({ success: false, error: message }, 500);
   }
-});
+  },
+);
 
 /**
  * GET /v1/setup/status
  * System status — Docker, .env files, services
  */
-setupApp.get('/status', async (c) => {
+setupApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/status',
+    tags: ['setup'],
+    summary: 'System status — Docker, .env files, services',
+    ...auth,
+    responses: {
+      200: json(
+        z.object({
+          billingEnabled: z.boolean(),
+          dockerRunning: z.boolean(),
+          envExists: z.boolean(),
+          sandboxEnvExists: z.boolean(),
+          projectRoot: z.string(),
+        }),
+        'System status',
+      ),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
   const root = getProjectRoot();
   const envExists = existsSync(resolve(root, '.env'));
 
@@ -270,13 +340,29 @@ setupApp.get('/status', async (c) => {
     sandboxEnvExists: false,
     projectRoot: root,
   });
-});
+  },
+);
 
 /**
  * GET /v1/setup/health
  * Health check of all local services
  */
-setupApp.get('/health', async (c) => {
+setupApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/health',
+    tags: ['setup'],
+    summary: 'Health check of all local services',
+    ...auth,
+    responses: {
+      200: json(
+        z.record(z.string(), z.object({ ok: z.boolean(), error: z.string().optional() })),
+        'Per-service health checks',
+      ),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
   const checks: Record<string, HealthCheck> = {};
   // The API itself answered — by definition this check passes.
   checks.api = { ok: true };
@@ -289,7 +375,8 @@ setupApp.get('/health', async (c) => {
     ? { ok: true }
     : { ok: false, error: 'DAYTONA_API_KEY not configured' };
   return c.json(checks);
-});
+  },
+);
 
 
 
@@ -302,7 +389,20 @@ setupApp.get('/health', async (c) => {
  * GET /v1/setup/setup-status
  * Returns { complete: boolean, completedAt: string | null }
  */
-setupApp.get('/setup-status', async (c) => {
+setupApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/setup-status',
+    tags: ['setup'],
+    summary: 'Whether the setup wizard has been completed',
+    ...auth,
+    responses: {
+      200: json(z.object({ complete: z.boolean(), completedAt: z.string().nullable() }), 'Setup completion status'),
+      500: json(z.object({ complete: z.boolean(), completedAt: z.string().nullable(), error: z.string() }), 'Server error'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
   if (!hasDatabase) {
     return c.json({ complete: false, completedAt: null });
   }
@@ -320,13 +420,27 @@ setupApp.get('/setup-status', async (c) => {
     console.error('[setup] setup-complete-status failed:', e);
     return c.json({ complete: false, completedAt: null, error: e instanceof Error ? e.message : String(e) }, 500);
   }
-});
+  },
+);
 
 /**
  * POST /v1/setup/setup-complete
  * Mark the setup wizard as complete.
  */
-setupApp.post('/setup-complete', async (c) => {
+setupApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/setup-complete',
+    tags: ['setup'],
+    summary: 'Mark the setup wizard as complete',
+    ...auth,
+    responses: {
+      200: json(z.object({ ok: z.boolean() }), 'Marked complete'),
+      500: json(z.object({ ok: z.boolean(), error: z.string() }), 'Server error'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
   if (!hasDatabase) {
     return c.json({ ok: false, error: 'Database not configured' }, 500);
   }
@@ -342,14 +456,28 @@ setupApp.post('/setup-complete', async (c) => {
     console.error('[setup] setup-complete failed:', e);
     return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
-});
+  },
+);
 
 /**
  * GET /v1/setup/setup-wizard-step
  * Returns the current setup wizard step from the database.
  * { step: number } — 0 = not started / complete, 2 = provider setup, 3 = tool keys
  */
-setupApp.get('/setup-wizard-step', async (c) => {
+setupApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/setup-wizard-step',
+    tags: ['setup'],
+    summary: 'Get the current setup wizard step',
+    ...auth,
+    responses: {
+      200: json(z.object({ step: z.number() }), 'Current wizard step'),
+      500: json(z.object({ step: z.number(), error: z.string() }), 'Server error'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
   if (!hasDatabase) {
     return c.json({ step: 0 });
   }
@@ -370,14 +498,31 @@ setupApp.get('/setup-wizard-step', async (c) => {
     console.error('[setup] setup-wizard-step (get) failed:', e);
     return c.json({ step: 0, error: e instanceof Error ? e.message : String(e) }, 500);
   }
-});
+  },
+);
 
 /**
  * POST /v1/setup/setup-wizard-step
  * Update the current setup wizard step in the database.
  * Body: { step: number }
  */
-setupApp.post('/setup-wizard-step', async (c) => {
+setupApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/setup-wizard-step',
+    tags: ['setup'],
+    summary: 'Update the current setup wizard step',
+    ...auth,
+    request: {
+      body: { content: { 'application/json': { schema: z.object({ step: z.number().optional() }) } } },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean() }), 'Updated'),
+      500: json(z.object({ ok: z.boolean(), error: z.string() }), 'Server error'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
   if (!hasDatabase) {
     return c.json({ ok: false, error: 'Database not configured' }, 500);
   }
@@ -395,4 +540,5 @@ setupApp.post('/setup-wizard-step', async (c) => {
     console.error('[setup] setup-wizard-step (set) failed:', e);
     return c.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, 500);
   }
-});
+  },
+);

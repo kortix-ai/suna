@@ -32,9 +32,12 @@ for every other agent.
 3. **Decide.** Apply the rubric in the `kortix-memory` skill. Keep
    durable, team-relevant facts. Drop personal preferences, transient
    state, and anything already obvious from the repo.
-4. **CRUD.** Edit existing files first; create new sub-files only when
-   a topic deserves its own page. Always update `MEMORY.md` to match
-   the folder.
+4. **CRUD via the `memory` tool.** Use the `memory` tool for all reads
+   and writes under `.kortix/memory/` (`view` to survey, `str_replace` /
+   `insert` to edit, `create` for a new sub-file, `delete` / `rename` to
+   tidy) — not the generic `read`/`edit`/`write` tools. Edit existing
+   files first; create new sub-files only when a topic deserves its own
+   page. Always update `MEMORY.md` to match the folder.
 5. **Land via a change request.** Memory edits must go through CR —
    same as code:
 

@@ -11,15 +11,16 @@
 // The client still calls supabase.auth.signOut() in parallel to
 // invalidate the refresh token at Supabase's end.
 
-import { Hono } from 'hono';
+import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, sql } from 'drizzle-orm';
 import { accountSessionActivity } from '@kortix/db';
 import { db } from '../shared/db';
 import { supabaseAuth } from '../middleware/auth';
 import type { AppEnv } from '../types';
 import { auditLogout } from '../shared/auth-audit';
+import { makeOpenApiApp, json, errors, auth } from '../openapi';
 
-export const authRouter = new Hono<AppEnv>();
+export const authRouter = makeOpenApiApp<AppEnv>();
 
 authRouter.use('/*', supabaseAuth);
 
@@ -31,7 +32,22 @@ authRouter.use('/*', supabaseAuth);
  * to revoke — clients shouldn't have to handle "I'm not signed in"
  * errors on a logout call.
  */
-authRouter.post('/logout', async (c) => {
+authRouter.openapi(
+  createRoute({
+    method: 'post',
+    path: '/logout',
+    tags: ['auth'],
+    summary: 'Server-side logout for the calling session',
+    ...auth,
+    responses: {
+      200: json(
+        z.object({ ok: z.boolean(), revoked_session_rows: z.number() }),
+        'Logout processed (always 200)',
+      ),
+      ...errors(401),
+    },
+  }),
+  async (c) => {
   const userId = c.get('userId') as string;
   // sessionId / accountId are set by the auth middleware via untyped
   // c.set() — typed envs make these getters error-out at the strict

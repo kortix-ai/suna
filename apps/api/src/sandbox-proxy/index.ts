@@ -1,4 +1,3 @@
-import { Hono } from 'hono';
 import { config, type SandboxProviderName } from '../config';
 import { combinedAuth } from '../middleware/auth';
 import { preview } from './routes/preview';
@@ -6,8 +5,12 @@ import { getAuthToken } from './routes/auth';
 import { shareApp } from './routes/share';
 import { invalidateSandbox, loadSandbox } from './backend';
 import { createSandboxProxyRateLimitMiddleware } from '../shared/rate-limit';
+import { makeOpenApiApp } from '../openapi';
 
-const sandboxProxyApp = new Hono();
+// OpenAPIHono root: the /auth + /share sub-apps contribute typed route defs to
+// the spec; the path-based `preview` proxy stays a raw streaming Hono catch-all
+// (mounted below) — its proxied traffic is not modeled as JSON.
+const sandboxProxyApp = makeOpenApiApp();
 
 // ── Cookie auth endpoint ────────────────────────────────────────────────────
 // POST /v1/p/auth — validates JWT and sets __preview_session cookie.

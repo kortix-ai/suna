@@ -1,0 +1,3 @@
+# The worktree CLI is dense with emoji/box-drawing chars, so git's heuristic
+# flags it as binary and hides line diffs. It's plain UTF-8 — treat it as text.
+scripts/worktree/*.ts text

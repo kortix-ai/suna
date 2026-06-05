@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "NODE_OPTIONS='--max-http-header-size=32768' next dev --turbopack --port 3000",
+    "dev": "NODE_OPTIONS='--max-http-header-size=32768' dotenvx run -f .env -- next dev --turbopack --port ${WEB_PORT:-3000}",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -151,7 +151,6 @@
     "@univerjs/presets": "^0.17.0",
     "@usebasejump/shared": "^0.0.3",
     "@vercel/analytics": "^1.5.0",
-    "@vercel/edge-config": "^1.4.0",
     "@vercel/speed-insights": "^1.2.0",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",

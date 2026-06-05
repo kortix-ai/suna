@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { X, Menu, Type, Layers, Gem } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
+import { createPortal } from 'react-dom';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { useRouter, usePathname } from 'next/navigation';
@@ -151,6 +152,8 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  // Portal target only exists after mount (SSR has no document).
+  const [mounted, setMounted] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -188,10 +191,21 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
     return () => window.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
+  useEffect(() => setMounted(true), []);
+
+  // Lock background scroll while the full-screen drawer is open.
+  useEffect(() => {
+    if (!isDrawerOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = prev; };
+  }, [isDrawerOpen]);
+
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
   const handleOverlayClick = () => setIsDrawerOpen(false);
 
   return (
+    <>
     <header className={cn(
       "w-full px-5 pt-4 transition-colors duration-300",
       isAbsolute ? "" : "sticky top-0 z-50",
@@ -307,12 +321,16 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
           </Button>
         </div>
       </div>
+    </header>
 
-      {/* Mobile Drawer - Full Screen */}
+      {/* Mobile Drawer — portaled to <body> so a scrolled-header
+          backdrop-filter can't trap its `fixed` positioning, and it always
+          paints above page overlays (e.g. the landing floating CTA). */}
+      {mounted && createPortal(
       <AnimatePresence>
         {isDrawerOpen && (
           <motion.div
-            className="fixed inset-0 bg-background z-50 flex flex-col pt-4"
+            className="fixed inset-0 bg-background z-[100] flex flex-col pt-4"
             initial="hidden"
             animate="visible"
             exit="exit"
@@ -415,7 +433,9 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             </div>
           </motion.div>
         )}
-      </AnimatePresence>
-    </header>
+      </AnimatePresence>,
+        document.body,
+      )}
+    </>
   );
 }

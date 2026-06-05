@@ -2,7 +2,9 @@ name: Deploy Dev
 
 # DEV pipeline. `main` is the dev branch: every push auto-deploys the things that
 # change on most commits — API, frontend, CLI — as a DEV build versioned
-# `$(cat VERSION)-dev.<sha8>`.
+# `<next>-dev.<sha8>`, where <next> is one patch above the latest published
+# release tag (see the dev-version job). So dev tracks prod automatically and
+# `main` carries no release-version bump.
 #
 #   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest, then rolled onto
 #                   the ECS Fargate dev service (kortix-dev) via GitHub OIDC.
@@ -79,10 +81,42 @@ jobs:
             echo "- CLI: ${{ steps.filter.outputs.cli }}"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # ── Compute the dev version (single source of truth) ────────────────────────
+  # Dev builds are a pre-release of the UPCOMING version, derived from the latest
+  # published release tag (vX.Y.Z tags are created only when a release lands on
+  # `prod`). So dev always tracks prod: prod 0.9.6 → dev `0.9.7-dev.<sha8>`. No
+  # VERSION-file bump on `main` is needed (promote.yml never touches main).
+  dev-version:
+    name: Compute dev version
+    needs: detect-changes
+    if: ${{ needs.detect-changes.outputs.api == 'true' || needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.cli == 'true' }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need tags to find the latest released version
+      - name: Derive dev version from the latest release tag
+        id: v
+        run: |
+          set -euo pipefail
+          git fetch --tags --force origin >/dev/null 2>&1 || true
+          # Strict vX.Y.Z only — excludes alias/stray tags like `v1` that would
+          # otherwise sort highest and jump the dev version.
+          LATEST="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n1 | sed 's/^v//')"
+          # Fallback to the VERSION file before the first tagged release.
+          [ -n "$LATEST" ] || LATEST="$(tr -d '[:space:]' < VERSION)"
+          IFS='.' read -r MA MI PA <<< "$LATEST"
+          : "${MA:=0}"; : "${MI:=0}"; : "${PA:=0}"
+          NEXT="${MA}.${MI}.$((PA + 1))"
+          echo "version=${NEXT}-dev.${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          echo "Latest release: ${LATEST:-none} → dev ${NEXT}-dev.${GITHUB_SHA::8}"
+
   # ── Build + push the multi-arch API image ───────────────────────────────────
   build-api:
     name: Build API image (multi-arch)
-    needs: detect-changes
+    needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.api == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -97,13 +131,10 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Compute dev version
-        id: ver
-        run: echo "version=$(cat VERSION)-dev.${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
       - name: Build and push (amd64 + arm64)
-        # Bake the dev version (0.9.0-dev.<sha8>) into the image so /v1/health
-        # reports it. The immutable :dev-<sha8> tag (tag-api job below) is the
-        # artifact's real identity.
+        # Bake the dev version (e.g. 0.9.7-dev.<sha8>) into the image so
+        # /v1/health reports it. The immutable :dev-<sha8> tag (tag-api job below)
+        # is the artifact's real identity.
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -112,7 +143,7 @@ jobs:
           push: true
           build-args: |
             SERVICE=apps/api
-            KORTIX_VERSION=${{ steps.ver.outputs.version }}
+            KORTIX_VERSION=${{ needs.dev-version.outputs.version }}
           tags: |
             kortix/kortix-api:dev-latest
 
@@ -182,7 +213,7 @@ jobs:
   # for self-hosters, so there is no deploy step here.
   build-frontend:
     name: Build frontend image (multi-arch)
-    needs: detect-changes
+    needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -195,9 +226,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
         env:
           npm_config_engine_strict: "false"
-      - name: Compute dev version
-        id: ver
-        run: echo "version=$(cat VERSION)-dev.${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
       - name: Build frontend standalone output
         run: pnpm --filter ./apps/web build
         env:
@@ -205,7 +233,7 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
           NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
           NEXT_PUBLIC_BILLING_ENABLED: "false"
-          NEXT_PUBLIC_KORTIX_VERSION: ${{ steps.ver.outputs.version }}
+          NEXT_PUBLIC_KORTIX_VERSION: ${{ needs.dev-version.outputs.version }}
           NEXT_OUTPUT: standalone
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -236,7 +264,7 @@ jobs:
   # ── Build dev CLI (4 targets on one Linux runner via Bun cross-compile) ─────
   build-cli:
     name: Build dev CLI (all targets)
-    needs: detect-changes
+    needs: [detect-changes, dev-version]
     if: needs.detect-changes.outputs.cli == 'true'
     runs-on: ubuntu-22.04
     steps:
@@ -262,7 +290,7 @@ jobs:
       - name: Build every target (Bun cross-compile)
         run: |
           set -euo pipefail
-          CLI_VERSION="$(cat VERSION)-dev.${GITHUB_SHA::8}"
+          CLI_VERSION="${{ needs.dev-version.outputs.version }}"
           API_BASE="https://dev-api.kortix.com"
           mkdir -p artifacts
           for t in darwin-arm64 darwin-x64 linux-x64 linux-arm64; do
@@ -285,7 +313,7 @@ jobs:
         run: ./artifacts/kortix-linux-x64 version
 
       - name: Upload CLI artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cli-binaries
           path: |
@@ -312,7 +340,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download CLI artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cli-binaries
           path: release/

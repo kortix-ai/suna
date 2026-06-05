@@ -1,7 +1,10 @@
 name: Deploy Prod
 
-# PROD pipeline. Runs when `prod` advances (via the promote.yml workflow) or on
-# manual dispatch. The root VERSION on `prod` is the clean version `X.Y.Z`.
+# PROD pipeline. Runs when `prod` advances — i.e. when a reviewed promote PR is
+# MERGED (promote.yml opens it) — or on manual dispatch. This is the ONLY place
+# a version is published: the tag `vX.Y.Z`, the GitHub Release, the image retag,
+# the ECS roll, and the frontend all happen here, never before the prod merge.
+# The root VERSION on `prod` is the clean version `X.Y.Z`.
 #
 #   1. Retag the dev images (kortix/kortix-*:dev-latest) → :X.Y.Z + :latest
 #      (multi-arch manifest copy, zero rebuilds).
@@ -18,14 +21,10 @@ on:
   push:
     branches: [prod]
   workflow_dispatch:
-  # Auto-run after a successful Promote. The promote workflow advances `prod`
-  # with the Actions GITHUB_TOKEN, which (by design) can't trigger the `push`
-  # event above — so a promote alone would deploy the frontend (Vercel) but not
-  # the API. This makes a promote deploy everything: when Promote completes
-  # successfully, run the full prod pipeline (see the `if` on the version job).
-  workflow_run:
-    workflows: ["Promote to Production"]
-    types: [completed]
+  # Promotion is review-gated: promote.yml opens a PR into `prod`, and a human
+  # MERGES it after approval. That merge is a real `push` to `prod` (above) and
+  # triggers this pipeline normally — so no workflow_run hook is needed (and we
+  # must NOT deploy merely because Promote *opened* the PR).
 
 concurrency:
   group: deploy-prod
@@ -39,10 +38,8 @@ jobs:
   version:
     name: Resolve version
     runs-on: ubuntu-latest
-    # On push/manual dispatch, always run. When triggered by a Promote
-    # completing, only proceed if that promote actually succeeded. Every other
-    # job needs this one, so this single guard gates the whole pipeline.
-    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    # Runs on every push to `prod` (i.e. a merged, reviewed release PR) and on
+    # manual dispatch.
     outputs:
       version: ${{ steps.v.outputs.version }}
       tag: ${{ steps.v.outputs.tag }}
@@ -52,27 +49,30 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # need full tags + annotations to read the release notes
-      - name: Read VERSION + release notes from the tag annotation
+      - name: Read VERSION + release notes (committed by the promote PR)
         id: v
         run: |
           set -euo pipefail
           V="$(tr -d '[:space:]' < VERSION)"
-          TAG="v$V"
           echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Releasing $TAG"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
+          echo "Publishing v$V"
 
-          # The annotated tag carries the human release entry written at promote
-          # time (promote.yml): subject line = title, body = notes. That becomes
-          # the GitHub Release name/body — i.e. the public changelog.
-          git fetch --force --tags origin "$TAG" >/dev/null 2>&1 || true
-          TITLE="$(git tag -l --format='%(contents:subject)' "$TAG" 2>/dev/null || true)"
-          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
-          {
-            echo 'notes<<KORTIX_NOTES_EOF'
-            git tag -l --format='%(contents:body)' "$TAG" 2>/dev/null || true
-            echo 'KORTIX_NOTES_EOF'
-          } >> "$GITHUB_OUTPUT"
+          # promote.yml committed RELEASE_NOTES.md (line 1 = title, rest = notes)
+          # onto the release branch; it merged into prod with this release. The
+          # tag does NOT exist yet — the GitHub Release job creates it at this
+          # prod commit. (Nothing was published before this merge.)
+          if [ -f RELEASE_NOTES.md ]; then
+            echo "title=$(head -n1 RELEASE_NOTES.md)" >> "$GITHUB_OUTPUT"
+            {
+              echo 'notes<<KORTIX_NOTES_EOF'
+              tail -n +3 RELEASE_NOTES.md
+              echo 'KORTIX_NOTES_EOF'
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "title=" >> "$GITHUB_OUTPUT"
+            { echo 'notes<<KORTIX_NOTES_EOF'; echo 'KORTIX_NOTES_EOF'; } >> "$GITHUB_OUTPUT"
+          fi
 
   # ── Retag dev images → versioned + latest (no rebuild) ──────────────────────
   retag-images:
@@ -163,7 +163,7 @@ jobs:
         run: ./artifacts/kortix-linux-x64 version
 
       - name: Upload CLI artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cli-binaries
           path: |
@@ -339,7 +339,7 @@ jobs:
           APPLE_TEAM_ID: ${{ steps.sign.outputs.enabled == 'true' && secrets.APPLE_TEAM_ID || '' }}
 
       - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.files }}
@@ -364,7 +364,7 @@ jobs:
           fetch-depth: 0
 
       - name: Download CLI artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: cli-binaries
           path: artifacts/
@@ -403,7 +403,7 @@ jobs:
       contents: write
     steps:
       - name: Download desktop artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         continue-on-error: true
         with:
           path: desktop-artifacts/
@@ -503,3 +503,36 @@ jobs:
             echo "### Frontend → **prod** (Vercel)"
             echo "Vercel auto-deploys the \`prod\` branch (new.kortix.com → api-prod; kortix.com after apex cutover). No action needed here."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Keep main's VERSION honest (post-publish, never premature) ──────────────
+  # promote.yml does NOT bump main's VERSION (publishing is gated on the prod
+  # merge). After a release publishes, advance main's VERSION to the NEXT dev
+  # target (released patch + 1) so the single source of truth tracks prod: this
+  # is what the Vercel dev frontend, desktop builds, and the API image default
+  # read. `[skip ci]` keeps it from re-triggering the dev pipeline.
+  sync-main-version:
+    name: Sync main VERSION → next dev target
+    needs: [version, github-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Advance main's VERSION to released patch + 1
+        env:
+          RELEASED: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          IFS='.' read -r MA MI PA <<< "$RELEASED"
+          NEXT="${MA}.${MI}.$((PA + 1))"
+          cur="$(tr -d '[:space:]' < VERSION 2>/dev/null || true)"
+          if [ "$cur" = "$NEXT" ]; then echo "main already at $NEXT — nothing to do."; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          printf '%s\n' "$NEXT" > VERSION
+          git add VERSION
+          git commit -m "chore(release): main VERSION → $NEXT (dev target after $RELEASED) [skip ci]"
+          git push origin HEAD:main

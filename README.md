@@ -130,6 +130,30 @@ pnpm build          # build all packages
 pnpm nuke           # tear down the local Docker environment
 ```
 
+#### Secrets
+
+API secrets live in **`apps/api/.env`, encrypted with [dotenvx](https://dotenvx.com)** and committed to the repo — the ciphertext is safe in git; only the private decryption key is secret. To run locally you need that key, which we keep off-device in **[Dotenv Armor](https://dotenvx.com/armor)**:
+
+```bash
+curl -sfS https://dotenvx.sh/armor | sh   # one-time install
+dotenvx-armor login                        # grants this machine decryption
+pnpm dev                                   # dev-local.sh decrypts apps/api/.env on boot
+```
+
+Three encrypted environments for local dev, one file each (each with its own keypair in `apps/api/.env.keys`):
+
+| Run | Env | File | API backend |
+| --- | --- | --- | --- |
+| `pnpm dev` | local | `apps/api/.env` | 100% local stack (local Supabase, test Stripe) + web + tunnel |
+| `pnpm dev:dev-env` | dev | `apps/api/.env.dev` | dev stack — dev DB, test Stripe, dev keys |
+| `pnpm dev:prod-env` | prod | `apps/api/.env.prod` | prod stack — prod DB, **LIVE** Stripe |
+
+Verify all three decrypt + are separated: `pnpm test:envs`. Add/rotate a secret: `pnpm dlx @dotenvx/dotenvx set KEY value -f apps/api/.env[.dev|.prod]`, then commit.
+
+These files are for **local development only**. The deployed **production** infra loads its real env from **AWS Secrets Manager** at runtime — `apps/api/.env.prod` is just for running locally against the prod backend and does not affect what prod runs. `apps/web` has the **same three encrypted profiles** (`apps/web/.env` / `.env.dev` / `.env.prod`, mostly public `NEXT_PUBLIC_*`). Only `supabase/.env` (local Supabase CLI) stays a plain gitignored file.
+
+CI doesn't need any of these today (builds use placeholders, and the `secret-scan` workflow allowlists the encrypted file via `.gitleaks.toml`). If a future job needs real values, add the dotenvx private key as a single `DOTENV_PRIVATE_KEY` GitHub Actions secret and prefix the step with `dotenvx run -- …` — it decrypts `apps/api/.env` in memory, no other secrets required.
+
 Apps live under `apps/` (`web`, `api`, `cli`, `desktop`, `mobile`, `sandbox`); documentation source is in `apps/web/content/docs`. The whole platform ships under one version (root `VERSION`) — API, frontend, CLI and desktop release together as `vX.Y.Z`. Issues and pull requests are welcome.
 
 ---

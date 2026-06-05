@@ -1,14 +1,16 @@
 # Project Memory
 
-The **project brain** for `{{projectName}}`. Auto-injected into every
-agent's system prompt as a `<kortix-memory>` block. Sub-files below are
-NOT auto-loaded — open them with `read` when relevant.
+The **project brain** for `{{projectName}}` — durable, team-shared notes
+this project keeps about itself (purpose, integrations, conventions,
+decisions, gotchas). It lives in git and is curated through change
+requests.
 
-- [overview.md](overview.md) — what this project is, its purpose and shape
-- [integrations.md](integrations.md) — third parties, MCP servers, channels, executor connectors
-- [conventions.md](conventions.md) — patterns, naming, style, do / don't
-- [decisions.md](decisions.md) — architectural and business choices worth not re-debating
+This file is the **index**. It starts mostly empty — agents read it
+first with the `memory` tool and add entries here (or split a topic into
+its own sub-file) as the project grows. The **memory-reflector** agent
+keeps it tidy on a schedule.
 
-Curated by the **memory-reflector** agent
-(`.kortix/opencode/agents/memory-reflector.md`). To add or update
-memory, load the **kortix-memory** skill.
+To work with memory, load the **kortix-memory** skill.
+
+<!-- Add one line per sub-file as you create them, e.g.:
+- [integrations.md](integrations.md) — third parties, MCP servers, channels -->

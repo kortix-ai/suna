@@ -14,6 +14,15 @@ actually shipped, nothing invented, nothing missed.
 Pairs with **kortix-voice** (how the notes read). The version source of truth is the
 root **`VERSION`** file; `vX.Y.Z` tags are immutable and map 1:1 to a commit + image.
 
+## 0. Golden rule — prod ships ONLY via main → promote
+
+**The only way to change prod is: land it on `main` first, then run the Promote
+workflow (main → review-gated release PR → `prod`).** Never `git push …:prod`,
+never open a manual PR into `prod`, never cherry-pick onto `prod`. `prod` must
+always be a strict subset of `main` — a direct-to-prod change makes them diverge
+(the fix lives in prod but not the trunk). This holds even for urgent outage
+hotfixes: commit the fix to `main`, then promote.
+
 ## 1. Versioning philosophy — what bump?
 
 Semver `MAJOR.MINOR.PATCH`. **Default to patch.** When unsure, patch.

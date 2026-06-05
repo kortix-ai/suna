@@ -242,6 +242,21 @@ export async function provisionSessionSandbox(opts: {
 
   const llmBaseUrl = `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/llm`;
 
+  // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is
+  // injected (otherwise OpenCode falls back to showing only its built-in Zen
+  // catalog). Per-seat members get a metered gateway token (llmApiKey) above.
+  // YOLO is discontinued, so when the gateway is enabled but billing is OFF
+  // (local dev / self-hosted) there is no per-member token — fall back to the
+  // sandbox's own account token, which the gateway authenticates via
+  // validateAccountToken and, with billing off, records-but-never-debits. We
+  // keep the per-seat path untouched when billing is on so prod behaviour (paid
+  // members only) is unchanged.
+  const gatewayLlmKey: string | null =
+    llmApiKey ??
+    (config.LLM_GATEWAY_ENABLED && !config.KORTIX_BILLING_INTERNAL_ENABLED
+      ? executorToken
+      : null);
+
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
     userId,
@@ -260,11 +275,11 @@ export async function provisionSessionSandbox(opts: {
       ...(executorToken
         ? { KORTIX_EXECUTOR_TOKEN: executorToken, KORTIX_CLI_TOKEN: executorToken }
         : {}),
-      ...(llmApiKey
+      ...(gatewayLlmKey
         ? {
-            KORTIX_LLM_API_KEY: llmApiKey,
+            KORTIX_LLM_API_KEY: gatewayLlmKey,
             KORTIX_LLM_BASE_URL: llmBaseUrl,
-            KORTIX_YOLO_API_KEY: llmApiKey,
+            KORTIX_YOLO_API_KEY: gatewayLlmKey,
             KORTIX_YOLO_URL: llmBaseUrl,
           }
         : {}),
