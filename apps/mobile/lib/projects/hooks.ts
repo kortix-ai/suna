@@ -14,6 +14,7 @@ import {
   deletePersonalProjectSecret,
   deleteProjectSecret,
   deleteProjectTrigger,
+  disconnectConnector,
   disconnectSlack,
   fireProjectTrigger,
   getSlackInstallation,
@@ -154,6 +155,15 @@ export function useDeleteConnector(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (slug: string) => deleteConnector(projectId, slug),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) }),
+  });
+}
+
+/** Disconnect a connector — remove its credential but keep the connector. */
+export function useDisconnectConnector(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (slug: string) => disconnectConnector(projectId, slug),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) }),
   });
 }

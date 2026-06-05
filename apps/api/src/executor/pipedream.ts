@@ -201,8 +201,9 @@ export async function pipedreamConnectUrl(
   slug: string,
   app: string,
   userId: string | null,
+  redirects?: { success?: string; error?: string },
 ): Promise<{ connectUrl?: string; token: string; expiresAt: string }> {
-  return getProvider().createConnectToken(externalUserId(projectId, slug, userId), app);
+  return getProvider().createConnectToken(externalUserId(projectId, slug, userId), app, redirects);
 }
 
 /**

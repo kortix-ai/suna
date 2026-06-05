@@ -41,6 +41,7 @@ import {
   RefreshCw,
   Trash2,
   Plug,
+  Unplug,
   Share2,
   Lock,
   Users,
@@ -59,6 +60,7 @@ import {
   useConnectors,
   useSyncConnectors,
   useDeleteConnector,
+  useDisconnectConnector,
   useSetConnectorSharing,
   useProjectAccess,
   useProjectPolicies,
@@ -100,6 +102,13 @@ interface ConnectorsPageProps {
 }
 
 const MONO = 'Menlo';
+
+// App deep links so the Pipedream connect browser auto-dismisses back to the
+// app (openAuthSessionAsync returns when it sees this scheme), instead of
+// stranding the user on Pipedream's web success page.
+const CONNECT_RETURN_URL = 'kortix://connectors';
+const CONNECT_SUCCESS_URI = 'kortix://connectors/success';
+const CONNECT_ERROR_URI = 'kortix://connectors/error';
 
 function providerIcon(provider: ConnectorProvider): LucideIcon {
   if (provider === 'pipedream') return Zap;
@@ -150,6 +159,7 @@ function ConnectorDetail({
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
   const queryClient = useQueryClient();
+  const disconnectMut = useDisconnectConnector(projectId);
   const [connecting, setConnecting] = useState(false);
 
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -166,20 +176,53 @@ function ConnectorDetail({
   const needsConnect = isPipedream && !connector.secretSet;
   const needsCredential = !isPipedream && !!connector.authSecret && !connector.secretSet;
   const showTopAction = needsConnect || needsCredential;
+  // Connected = there's a credential to remove (disconnect, keeping the connector).
+  const isConnected = connector.secretSet && (isPipedream || !!connector.authSecret);
+
+  const handleDisconnect = useCallback(() => {
+    Alert.alert(
+      isPipedream ? 'Disconnect account' : 'Clear credential',
+      isPipedream
+        ? `Disconnect your ${connector.name || connector.slug} account? You can reconnect anytime.`
+        : `Clear the stored credential for ${connector.name || connector.slug}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: () => {
+            haptics.medium();
+            disconnectMut.mutate(connector.slug, {
+              onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not disconnect.'),
+            });
+          },
+        },
+      ],
+    );
+  }, [isPipedream, connector.name, connector.slug, disconnectMut]);
 
   const handleReconnect = useCallback(async () => {
     if (connecting) return;
     setConnecting(true);
     try {
-      const conn = await pipedreamConnect(projectId, connector.slug);
+      const conn = await pipedreamConnect(projectId, connector.slug, {
+        successRedirectUri: CONNECT_SUCCESS_URI,
+        errorRedirectUri: CONNECT_ERROR_URI,
+      });
       if (!conn.connectUrl) {
         Alert.alert('Cannot connect', 'This app could not start a connect flow on mobile.');
         return;
       }
       haptics.tap();
-      await WebBrowser.openBrowserAsync(conn.connectUrl, {
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-      });
+      // openAuthSessionAsync auto-dismisses when Pipedream redirects to our scheme.
+      const authResult = await WebBrowser.openAuthSessionAsync(conn.connectUrl, CONNECT_RETURN_URL);
+      if (authResult.type !== 'success') return; // cancelled / dismissed
+      if (/\/error|[?&]error=/.test(authResult.url)) {
+        haptics.warning();
+        Alert.alert('Connect failed', `Could not connect ${connector.name || connector.slug}.`);
+        return;
+      }
+      haptics.success();
       const result = await pipedreamFinalize(projectId, connector.slug);
       queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
       Alert.alert(
@@ -293,12 +336,27 @@ function ConnectorDetail({
           ))
         )}
 
+        {/* Disconnect — remove the credential but keep the connector */}
+        {isConnected && (
+          <TouchableOpacity
+            onPress={handleDisconnect}
+            disabled={disconnectMut.isPending}
+            activeOpacity={0.7}
+            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24, paddingVertical: 12, borderRadius: 9999, borderWidth: 1, borderColor: border, opacity: disconnectMut.isPending ? 0.5 : 1 }}
+          >
+            {disconnectMut.isPending ? <ActivityIndicator size="small" color={muted} /> : <Unplug size={15} color={muted} />}
+            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: muted }}>
+              {isPipedream ? 'Disconnect account' : 'Clear credential'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {/* Delete */}
         <TouchableOpacity
           onPress={onDelete}
           disabled={deleting}
           activeOpacity={0.7}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24, paddingVertical: 12, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', opacity: deleting ? 0.5 : 1 }}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: isConnected ? 10 : 24, paddingVertical: 12, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', opacity: deleting ? 0.5 : 1 }}
         >
           {deleting ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={15} color="#ef4444" />}
           <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Remove connector</Text>
@@ -462,15 +520,24 @@ function AddConnectorView({
     try {
       // Register the connector, then run Pipedream's 1-click OAuth in a browser.
       await createConnector(projectId, { slug: app.slug, provider: 'pipedream', app: app.slug });
-      const conn = await pipedreamConnect(projectId, app.slug);
+      const conn = await pipedreamConnect(projectId, app.slug, {
+        successRedirectUri: CONNECT_SUCCESS_URI,
+        errorRedirectUri: CONNECT_ERROR_URI,
+      });
       if (!conn.connectUrl) {
         Alert.alert('Cannot connect', 'This app could not start a connect flow on mobile.');
         return;
       }
       haptics.tap();
-      await WebBrowser.openBrowserAsync(conn.connectUrl, {
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-      });
+      // openAuthSessionAsync auto-dismisses when Pipedream redirects to our scheme.
+      const authResult = await WebBrowser.openAuthSessionAsync(conn.connectUrl, CONNECT_RETURN_URL);
+      if (authResult.type !== 'success') return; // cancelled / dismissed
+      if (/\/error|[?&]error=/.test(authResult.url)) {
+        haptics.warning();
+        Alert.alert('Connect failed', `Could not connect ${app.name}.`);
+        return;
+      }
+      haptics.success();
       const result = await pipedreamFinalize(projectId, app.slug);
       queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
       onClose();

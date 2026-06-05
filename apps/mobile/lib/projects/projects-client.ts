@@ -437,6 +437,14 @@ export function setConnectorCredential(projectId: string, slug: string, value: s
   );
 }
 
+/** Disconnect a connector — remove the (per-user or shared) credential, keep the connector. */
+export function disconnectConnector(projectId: string, slug: string) {
+  return apiFetch<{ ok: boolean }>(
+    `${connectorsBase(projectId)}/${encodeURIComponent(slug)}/credential`,
+    { method: 'DELETE' },
+  );
+}
+
 export function createConnector(projectId: string, draft: ConnectorDraftInput) {
   return apiFetch<{ ok: boolean; sync?: ConnectorSyncResult }>(connectorsBase(projectId), {
     method: 'POST',
@@ -444,11 +452,26 @@ export function createConnector(projectId: string, draft: ConnectorDraftInput) {
   });
 }
 
-/** Begin a Pipedream 1-click connect. Returns a `connectUrl` to open in a browser. */
-export function pipedreamConnect(projectId: string, slug: string) {
+/**
+ * Begin a Pipedream 1-click connect. Returns a `connectUrl` to open in a
+ * browser. On native, pass app deep-link redirect URIs so the in-app browser
+ * auto-dismisses back to the app once Pipedream finishes (instead of landing on
+ * a web page).
+ */
+export function pipedreamConnect(
+  projectId: string,
+  slug: string,
+  redirects?: { successRedirectUri?: string; errorRedirectUri?: string },
+) {
   return apiFetch<{ token?: string; app?: string; connectUrl?: string }>(
     `${connectorsBase(projectId)}/${encodeURIComponent(slug)}/connect`,
-    { method: 'POST', body: JSON.stringify({}) },
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        ...(redirects?.successRedirectUri ? { success_redirect_uri: redirects.successRedirectUri } : {}),
+        ...(redirects?.errorRedirectUri ? { error_redirect_uri: redirects.errorRedirectUri } : {}),
+      }),
+    },
   );
 }
 

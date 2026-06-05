@@ -26,6 +26,7 @@ import {
 } from './share';
 import {
   credentialExists,
+  deleteCredential,
   loadConnectorGrants,
   loadGrantsForMany,
   resolveCredentialValue,
@@ -324,12 +325,23 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     upsertConnectorInManifest(projectId, accountId, draft as unknown as ConnectorDraft, (draft as any)?.sharing as SharingIntent | undefined),
   deleteConnector: (projectId, slug) => deleteConnectorFromManifest(projectId, slug),
   setConnectorCredential: (projectId, slug, value) => setConnectorCredentialShared(projectId, slug, value),
+  deleteConnectorCredential: async (projectId, slug, userId) => {
+    const [row] = await db
+      .select()
+      .from(executorConnectors)
+      .where(and(eq(executorConnectors.projectId, projectId), eq(executorConnectors.slug, slug)))
+      .limit(1);
+    if (!row) return { ok: false as const, error: 'connector not found', status: 404 };
+    const mode = row.credentialMode as 'shared' | 'per_user';
+    await deleteCredential(row.connectorId, mode === 'per_user' ? userId : null);
+    return { ok: true as const };
+  },
   pipedreamConnect: pipedreamConfigured()
-    ? async (projectId, slug, userId) => {
+    ? async (projectId, slug, userId, redirects) => {
         const conn = await loadPipedreamConnector(projectId, slug);
         if (!conn) return null;
         const effectiveUser = conn.mode === 'per_user' ? userId : null;
-        const { connectUrl, token } = await pipedreamConnectUrl(projectId, slug, conn.app, effectiveUser);
+        const { connectUrl, token } = await pipedreamConnectUrl(projectId, slug, conn.app, effectiveUser, redirects);
         return { token, app: conn.app, connectUrl };
       }
     : undefined,
