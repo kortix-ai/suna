@@ -917,7 +917,7 @@ function SharingEditor({
           disabled={incomplete || saveMutation.isPending}
           activeOpacity={0.8}
           style={{
-            height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
+            height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
             backgroundColor: theme.primary, opacity: incomplete || saveMutation.isPending ? 0.5 : 1,
           }}
         >
@@ -1403,42 +1403,6 @@ function PoliciesView({ projectId }: { projectId: string }) {
   );
 }
 
-// ─── Connector detail sheet (detail ⇆ sharing ⇆ set credential) ───────────────
-
-function ConnectorDetailSheet({
-  projectId,
-  connector,
-  onClose,
-  onDelete,
-  deleting,
-}: {
-  projectId: string;
-  connector: AdminConnector;
-  onClose: () => void;
-  onDelete: () => void;
-  deleting: boolean;
-}) {
-  const [view, setView] = useState<'detail' | 'sharing' | 'credential'>('detail');
-
-  if (view === 'sharing') {
-    return <SharingEditor projectId={projectId} connector={connector} onBack={() => setView('detail')} />;
-  }
-  if (view === 'credential') {
-    return <SetCredentialView projectId={projectId} connector={connector} onBack={() => setView('detail')} />;
-  }
-  return (
-    <ConnectorDetail
-      projectId={projectId}
-      connector={connector}
-      onClose={onClose}
-      onDelete={onDelete}
-      onEditSharing={() => setView('sharing')}
-      onSetCredential={() => setView('credential')}
-      deleting={deleting}
-    />
-  );
-}
-
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export function ConnectorsPage({
@@ -1457,6 +1421,8 @@ export function ConnectorsPage({
   const [pageTab, setPageTab] = useState<'connectors' | 'policies'>('connectors');
   const addSheetRef = useRef<BottomSheetModal>(null);
   const detailSheetRef = useRef<BottomSheetModal>(null);
+  const sharingSheetRef = useRef<BottomSheetModal>(null);
+  const credentialSheetRef = useRef<BottomSheetModal>(null);
 
   const { data, isLoading, isError, error, refetch } = useConnectors(projectId);
   const syncMutation = useSyncConnectors(projectId);
@@ -1623,12 +1589,62 @@ export function ConnectorsPage({
         )}
       >
         {selected ? (
-          <ConnectorDetailSheet
+          <ConnectorDetail
             projectId={projectId}
             connector={selected}
             onClose={() => detailSheetRef.current?.dismiss()}
             onDelete={() => handleDelete(selected)}
+            onEditSharing={() => sharingSheetRef.current?.present()}
+            onSetCredential={() => credentialSheetRef.current?.present()}
             deleting={deleteMutation.isPending}
+          />
+        ) : (
+          <View style={{ height: 1 }} />
+        )}
+      </BottomSheetModal>
+
+      {/* Sharing — its own sheet, stacked over the detail sheet */}
+      <BottomSheetModal
+        ref={sharingSheetRef}
+        snapPoints={['80%']}
+        enableDynamicSizing={false}
+        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
+        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        backdropComponent={(props) => (
+          <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
+        )}
+      >
+        {selected ? (
+          <SharingEditor
+            projectId={projectId}
+            connector={selected}
+            onBack={() => sharingSheetRef.current?.dismiss()}
+          />
+        ) : (
+          <View style={{ height: 1 }} />
+        )}
+      </BottomSheetModal>
+
+      {/* Set credential — its own sheet, stacked over the detail sheet */}
+      <BottomSheetModal
+        ref={credentialSheetRef}
+        snapPoints={['70%']}
+        enableDynamicSizing={false}
+        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
+        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        backdropComponent={(props) => (
+          <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
+        )}
+      >
+        {selected ? (
+          <SetCredentialView
+            projectId={projectId}
+            connector={selected}
+            onBack={() => credentialSheetRef.current?.dismiss()}
           />
         ) : (
           <View style={{ height: 1 }} />
