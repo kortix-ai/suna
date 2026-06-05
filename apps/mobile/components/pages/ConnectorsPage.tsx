@@ -57,6 +57,7 @@ import {
   createConnector,
   pipedreamConnect,
   pipedreamFinalize,
+  setConnectorCredential,
 } from '@/lib/projects/projects-client';
 import type {
   AdminConnector,
@@ -117,17 +118,20 @@ function ConnectorDetail({
   onBack,
   onDelete,
   onEditSharing,
+  onSetCredential,
   deleting,
 }: {
   connector: AdminConnector;
   onBack: () => void;
   onDelete: () => void;
   onEditSharing: () => void;
+  onSetCredential: () => void;
   deleting: boolean;
 }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const theme = useThemeColors();
 
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
@@ -175,10 +179,17 @@ function ConnectorDetail({
         showsVerticalScrollIndicator={false}
       >
         {needsAuth && (
-          <View style={{ borderRadius: 12, borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)', backgroundColor: 'rgba(245,158,11,0.08)', padding: 12, marginBottom: 16 }}>
-            <Text style={{ fontSize: 13, color: isDark ? '#fbbf24' : '#b45309' }}>
+          <View style={{ borderRadius: 12, borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)', backgroundColor: 'rgba(245,158,11,0.08)', padding: 12, marginBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <Text style={{ flex: 1, fontSize: 13, color: isDark ? '#fbbf24' : '#b45309' }}>
               This connector needs a credential before it can run.
             </Text>
+            <TouchableOpacity
+              onPress={() => { haptics.tap(); onSetCredential(); }}
+              activeOpacity={0.8}
+              style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: theme.primary }}
+            >
+              <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Set credential</Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -910,6 +921,96 @@ function CustomConnectorForm({
   );
 }
 
+// ─── Set credential (non-Pipedream connectors) ───────────────────────────────
+
+function SetCredentialView({
+  projectId,
+  connector,
+  onBack,
+}: {
+  projectId: string;
+  connector: AdminConnector;
+  onBack: () => void;
+}) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
+  const theme = useThemeColors();
+  const queryClient = useQueryClient();
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const fg = isDark ? '#F8F8F8' : '#121215';
+  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
+  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+
+  const handleSave = async () => {
+    if (!value.trim() || saving) return;
+    setSaving(true);
+    try {
+      await setConnectorCredential(projectId, connector.slug, value);
+      queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
+      haptics.tap();
+      onBack();
+    } catch (err: any) {
+      Alert.alert('Save failed', err?.message || 'Could not save the credential.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View style={{ flex: 1 }}>
+      <TouchableOpacity
+        onPress={() => { haptics.tap(); onBack(); }}
+        activeOpacity={0.6}
+        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 4 }}
+      >
+        <ChevronLeft size={18} color={muted} />
+        <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted }}>{connector.name || connector.slug}</Text>
+      </TouchableOpacity>
+
+      <View style={{ paddingHorizontal: 16, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+        <Text style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Set credential</Text>
+      </View>
+
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {connector.authSecret ? (
+          <Text style={{ fontSize: 13, color: muted, marginBottom: 14 }}>
+            Stored as <Text style={{ fontFamily: MONO, color: fg }}>{connector.authSecret}</Text>.
+          </Text>
+        ) : null}
+        <FormField label="Credential value" isDark={isDark}>
+          <TextInput
+            value={value}
+            onChangeText={setValue}
+            placeholder="Paste the secret value…"
+            placeholderTextColor={muted}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{ minHeight: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, color: fg, fontFamily: 'Roobert' }}
+          />
+        </FormField>
+        <Text style={{ fontSize: 12.5, color: muted }}>It's encrypted at rest and never shown again.</Text>
+      </ScrollView>
+
+      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+        <TouchableOpacity
+          onPress={handleSave}
+          disabled={!value.trim() || saving}
+          activeOpacity={0.8}
+          style={{ height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: value.trim() && !saving ? 1 : 0.5 }}
+        >
+          {saving && <ActivityIndicator size="small" color={theme.primaryForeground} />}
+          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save credential</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export function ConnectorsPage({
@@ -926,6 +1027,7 @@ export function ConnectorsPage({
   const [search, setSearch] = useState('');
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [editingSharingSlug, setEditingSharingSlug] = useState<string | null>(null);
+  const [credentialSlug, setCredentialSlug] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
 
   const { data, isLoading, isError, error, refetch } = useConnectors(projectId);
@@ -940,6 +1042,7 @@ export function ConnectorsPage({
   const connectors = data?.connectors ?? [];
   const selected = connectors.find((c) => c.slug === selectedSlug) ?? null;
   const editingSharing = connectors.find((c) => c.slug === editingSharingSlug) ?? null;
+  const credentialFor = connectors.find((c) => c.slug === credentialSlug) ?? null;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1015,12 +1118,19 @@ export function ConnectorsPage({
             connector={editingSharing}
             onBack={() => setEditingSharingSlug(null)}
           />
+        ) : credentialFor ? (
+          <SetCredentialView
+            projectId={projectId}
+            connector={credentialFor}
+            onBack={() => setCredentialSlug(null)}
+          />
         ) : selected ? (
           <ConnectorDetail
             connector={selected}
             onBack={() => setSelectedSlug(null)}
             onDelete={() => handleDelete(selected)}
             onEditSharing={() => setEditingSharingSlug(selected.slug)}
+            onSetCredential={() => setCredentialSlug(selected.slug)}
             deleting={deleteMutation.isPending}
           />
         ) : (
