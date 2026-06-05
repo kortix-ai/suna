@@ -13,7 +13,6 @@ import {
   View,
   TouchableOpacity,
   ScrollView,
-  TextInput,
   ActivityIndicator,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
@@ -25,13 +24,15 @@ import {
   Check,
   ChevronRight,
   ChevronLeft,
-  Search,
+  Pencil,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
+import { SearchListHeader } from '@/components/ui/search-list-header';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { useProjectDetail, useProjectFile } from '@/lib/projects/hooks';
 import type { ProjectConfigEntry } from '@/lib/projects/projects-client';
+import { newConfigPrompt, editConfigPrompt } from '@/lib/projects/configure-prompts';
 import { haptics } from '@/lib/haptics';
 
 interface PageTabLike {
@@ -43,6 +44,8 @@ interface PageTabLike {
 interface SkillsPageProps {
   page: PageTabLike;
   projectId: string;
+  /** Start an agent-led config session seeded with `prompt` (New / Edit). */
+  onConfigure: (prompt: string) => void;
   onOpenDrawer?: () => void;
   onOpenRightDrawer?: () => void;
   isDrawerOpen?: boolean;
@@ -61,10 +64,12 @@ function SkillDetail({
   projectId,
   skill,
   onBack,
+  onConfigure,
 }: {
   projectId: string;
   skill: ProjectConfigEntry;
   onBack: () => void;
+  onConfigure: (prompt: string) => void;
 }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -120,6 +125,18 @@ function SkillDetail({
             <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted }}>
               {copied ? 'Copied' : 'Copy'}
             </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => { haptics.tap(); onConfigure(editConfigPrompt('skill', skill.name, skill.path)); }}
+            activeOpacity={0.7}
+            style={{
+              flexDirection: 'row', alignItems: 'center', gap: 5,
+              paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999,
+              borderWidth: 1, borderColor: border,
+            }}
+          >
+            <Pencil size={13} color={muted} />
+            <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted }}>Edit</Text>
           </TouchableOpacity>
         </View>
 
@@ -203,6 +220,7 @@ function SkillRow({
 export function SkillsPage({
   page,
   projectId,
+  onConfigure,
   onOpenDrawer,
   onOpenRightDrawer,
   isDrawerOpen,
@@ -220,7 +238,6 @@ export function SkillsPage({
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
 
   const skills = data?.config?.skills ?? [];
 
@@ -246,23 +263,15 @@ export function SkillsPage({
       />
 
       {selected ? (
-        <SkillDetail projectId={projectId} skill={selected} onBack={() => setSelected(null)} />
+        <SkillDetail projectId={projectId} skill={selected} onBack={() => setSelected(null)} onConfigure={onConfigure} />
       ) : (
         <>
-          <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: inputBg, borderRadius: 12, paddingHorizontal: 12, height: 40 }}>
-              <Search size={16} color={muted} />
-              <TextInput
-                value={search}
-                onChangeText={setSearch}
-                placeholder="Search skills"
-                placeholderTextColor={muted}
-                style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert', color: fg, padding: 0 }}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
-          </View>
+          <SearchListHeader
+            value={search}
+            onChangeText={setSearch}
+            placeholder="Search skills"
+            onAdd={() => onConfigure(newConfigPrompt('skill'))}
+          />
 
           <ScrollView
             style={{ flex: 1 }}

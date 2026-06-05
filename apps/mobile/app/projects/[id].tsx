@@ -1350,6 +1350,27 @@ export default function ProjectSessionScreen() {
     setConnectingProjectSessionId(ps.session_id);
   }, [navigateToSession]);
 
+  // Start an agent-led config session (New / Edit from the Agents/Skills/
+  // Commands pages). Mirrors web's useConfigureThread: create a session, stash
+  // the seed prompt (delivered by connectToProjectSession once OpenCode is up),
+  // and drop into the connecting state.
+  const handleConfigureSession = useCallback(async (prompt: string) => {
+    if (!projectId) return;
+    try {
+      haptics.tap();
+      const session = await createProjectSession.mutateAsync({});
+      pendingPromptsRef.current[session.session_id] = prompt;
+      setActiveProjectSessionId(session.session_id);
+      navigateToSession(null);
+      setConnectError(null);
+      erroredSessionRef.current = null;
+      setConnectingProjectSessionId(session.session_id);
+    } catch (err: any) {
+      log.error('❌ [Project] Failed to start config session:', err?.message || err);
+      Alert.alert('Error', err?.message || 'Failed to start session');
+    }
+  }, [projectId, createProjectSession, navigateToSession]);
+
   // Restart a session whose runtime failed to boot (web parity:
   // restartProjectSession). Tears down + re-provisions the sandbox, clears the
   // error/guard, and re-drives the connect loop.
@@ -2006,6 +2027,7 @@ export default function ProjectSessionScreen() {
             <AgentsPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
+              onConfigure={handleConfigureSession}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
               onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
               isDrawerOpen={drawerOpen}
@@ -2017,6 +2039,7 @@ export default function ProjectSessionScreen() {
             <SkillsPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
+              onConfigure={handleConfigureSession}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
               onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
               isDrawerOpen={drawerOpen}
@@ -2028,6 +2051,7 @@ export default function ProjectSessionScreen() {
             <CommandsPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
+              onConfigure={handleConfigureSession}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
               onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
               isDrawerOpen={drawerOpen}
