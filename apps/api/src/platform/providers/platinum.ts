@@ -28,30 +28,6 @@ import type {
 
 const AGENT_PORT = 8000;
 
-// Bound concurrent create()s. A restored microVM intermittently stalls its
-// virtio-net RX during the in-guest git clone (a CH-side restored-net bug);
-// when many sandboxes restore+clone at once the stalls compound and clones
-// hang/reset (the API's 75s runtime-ready timeout). Daytona (fresh VMs) is
-// immune — 5/5 concurrent clean over the same ingress vs platinum melting down
-// at 8-way. create() blocks until the box is runtime-ready (clone done), so a
-// semaphore here directly caps how many clones run simultaneously: the few
-// in-flight stay in the low-contention regime where each clone is fast and
-// clean; the rest queue for a few seconds. This keeps every spawn FAST with no
-// 75s outliers until the CH-side RX fix lands. The daemon's clone-retry
-// (kortix-sandbox-agent-server) is the residual safety net.
-const PLATINUM_CREATE_CONCURRENCY = 2;
-let _pCreateActive = 0;
-const _pCreateWaiters: Array<() => void> = [];
-async function acquirePlatinumCreateSlot(): Promise<void> {
-  if (_pCreateActive < PLATINUM_CREATE_CONCURRENCY) { _pCreateActive++; return; }
-  await new Promise<void>((resolve) => _pCreateWaiters.push(resolve));
-}
-function releasePlatinumCreateSlot(): void {
-  const next = _pCreateWaiters.shift();
-  if (next) next(); // hand the slot to the next waiter (active count unchanged)
-  else _pCreateActive--;
-}
-
 interface PlatinumSandbox {
   id: string;
   state?: string;
@@ -73,8 +49,6 @@ export class PlatinumProvider implements SandboxProvider {
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
-    await acquirePlatinumCreateSlot();
-    try {
     // Boot from the session's own per-project template if one was built
     // (opts.snapshot), else fall back to the fixed PLATINUM_TEMPLATE (e.g.
     // kortix-computer) — so Platinum works out of the box without a per-project
@@ -141,45 +115,25 @@ export class PlatinumProvider implements SandboxProvider {
     }
     const _exposeMs = Date.now() - _tExpose0;
 
-    // Wait for the in-guest runtime to actually be READY before returning. A
-    // warm claim is instant (~0.1s) but the daemon then materializes the repo
-    // (git clone) + confirms opencode; until runtimeReady the proxy 503s. If we
-    // return at 'running' (VM up), the FE immediately hits /session, /command,
-    // /global/events, prompt_async — all 503 "opencode not ready" — and the
-    // session-chat gives up after 3 retries. Daytona's create returns a usable
-    // box; this gives parity: the session only goes live once the sandbox serves.
-    // Repo clone is usually ~2s but can transiently stall, so poll up to 75s.
-    // Best-effort: on timeout we return anyway and the FE's retries cover the tail.
-    const _tReady0 = Date.now();
-    let _polls = 0; let _firstHttpMs = 0; let _lastHealth: unknown = null;
-    if (exposedUrl) {
-      const token = envVars.KORTIX_TOKEN;
-      const deadline = Date.now() + 75_000;
-      let ready = false;
-      while (Date.now() < deadline) {
-        _polls++;
-        try {
-          const r = await fetch(`${exposedUrl}/kortix/health`, {
-            headers: token ? { Authorization: `Bearer ${token}` } : {},
-            signal: AbortSignal.timeout(6000),
-          });
-          if (!_firstHttpMs && r.status) _firstHttpMs = Date.now() - _tReady0; // first time the edge answered at all
-          if (r.ok) {
-            const h = (await r.json().catch(() => ({}))) as { runtimeReady?: boolean };
-            _lastHealth = h;
-            if (h?.runtimeReady === true) { ready = true; break; }
-          }
-        } catch { /* keep polling through transient edge/clone hiccups */ }
-        await new Promise((res) => setTimeout(res, 1000));
-      }
-      if (!ready) console.warn(`[platinum] ${externalId} not runtimeReady within 75s — returning anyway (FE will retry)`);
-      const _readyMs = Date.now() - _tReady0;
-      console.log(
-        `[platinum-timing] ${externalId} vm-running=${_vmMs}ms expose=${_exposeMs}ms ` +
-        `runtime-ready=${_readyMs}ms (polls=${_polls}, edge-first-answer=${_firstHttpMs}ms) ` +
-        `total=${Date.now() - _t0}ms health=${JSON.stringify(_lastHealth)}`,
-      );
-    }
+    // Return as soon as the VM is running and the agent port is exposed — do NOT
+    // block on the in-guest runtime (repo clone + opencode). That readiness is
+    // polled by the frontend (useOpenCodeRuntimeReady + the react-query
+    // "opencode not ready" retry) EXACTLY as it is for Daytona, whose create()
+    // also returns a not-yet-usable box and defers readiness to the FE.
+    //
+    // Why this matters: the old code polled /kortix/health for runtimeReady up
+    // to 75s here. Under a restored-VM virtio-net RX stall the clone can hang,
+    // so that poll burned the full 75s and surfaced as the dreaded provision
+    // timeout. Returning at vm-running makes the 75s timeout IMPOSSIBLE (we never
+    // poll) and — since a Platinum restore resumes in ~50ms — create() returns in
+    // ~1s, FASTER than Daytona's cloud-start. The daemon's clone-retry +
+    // transfer-stall-timeout (kortix-sandbox-agent-server) recover any transient
+    // clone stall in the background while the FE waits, so the session still
+    // becomes usable without any create-path hang.
+    console.log(
+      `[platinum-timing] ${externalId} vm-running=${_vmMs}ms expose=${_exposeMs}ms ` +
+      `edge=${exposedUrl ? 'ready' : 'lazy'} total=${Date.now() - _t0}ms (runtime-ready deferred to FE poll, like daytona)`,
+    );
 
     return {
       externalId,
@@ -191,9 +145,6 @@ export class PlatinumProvider implements SandboxProvider {
         version: SANDBOX_VERSION,
       },
     };
-    } finally {
-      releasePlatinumCreateSlot();
-    }
   }
 
   async start(externalId: string): Promise<void> {
