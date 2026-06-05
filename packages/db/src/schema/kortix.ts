@@ -752,7 +752,7 @@ export const providerEvents = kortixSchema.table(
     outcome: text('outcome').notNull(),
     totalMs: integer('total_ms'),
     // Provision timeline marks: [{ label, atMs, deltaMs }]
-    marks: jsonb('marks').default([]).$type<Array<Record<string, unknown>>>(),
+    marks: jsonb('marks').default([]).$type<unknown[]>(),
     attempts: integer('attempts').default(1),
     // 'capacity' | 'other' for errors; null otherwise.
     errorClass: text('error_class'),

@@ -6,7 +6,7 @@ export type ProviderEventInput = {
   kind: 'provision' | 'migrate';
   outcome: 'ok' | 'error' | 'stopped';
   totalMs?: number | null;
-  marks?: Array<Record<string, unknown>>;
+  marks?: unknown[];
   attempts?: number;
   errorClass?: 'capacity' | 'other' | null;
   error?: string | null;
