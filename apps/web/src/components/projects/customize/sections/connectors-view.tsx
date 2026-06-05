@@ -286,7 +286,7 @@ function ConnectorsCard({ projectId, connectors }: { projectId: string; connecto
                 onShare={() => setShareFor(conn)}
                 onSetCredential={() => setCredFor(conn)}
                 onChanged={invalidate}
-                onConnected={() => { invalidate(); setShareFor({ ...conn, secretSet: true }); }}
+                onConnected={invalidate}
               />
             ))}
           </List>
@@ -365,10 +365,12 @@ function ConnectorRow({
       await pipedreamFinalize(projectId, conn.slug);
       return { connected: true };
     },
-    // After connecting (credential now exists) prompt the scoping question.
+    // Access + credential mode were already chosen when the connector was added,
+    // so there is nothing more to ask here — just refresh. (For "each member
+    // brings their own" there is no shared access question at all.)
     onSuccess: (res) => {
       if (!res.connected) return; // user closed the popup without connecting
-      toast.success('Connected — now choose who can use it');
+      toast.success('Connected');
       onConnected();
     },
     onError: (err: Error) => toast.error(err.message),
