@@ -129,15 +129,17 @@ const RISK_COLOR: Record<ConnectorAction['risk'], string> = {
 // ─── Connector detail (tools) ────────────────────────────────────────────────
 
 function ConnectorDetail({
+  projectId,
   connector,
-  onBack,
+  onClose,
   onDelete,
   onEditSharing,
   onSetCredential,
   deleting,
 }: {
+  projectId: string;
   connector: AdminConnector;
-  onBack: () => void;
+  onClose: () => void;
   onDelete: () => void;
   onEditSharing: () => void;
   onSetCredential: () => void;
@@ -147,29 +149,54 @@ function ConnectorDetail({
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
+  const queryClient = useQueryClient();
+  const [connecting, setConnecting] = useState(false);
 
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
   const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const closeBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
 
   const Icon = providerIcon(connector.provider);
   const status = STATUS_META[connector.status];
-  const needsAuth = !!connector.authSecret && !connector.secretSet;
+  const needsCredential = !!connector.authSecret && !connector.secretSet;
+  const isPipedream = connector.provider === 'pipedream';
+  const needsConnect = isPipedream && connector.status === 'needs_auth';
+  const showTopAction = needsConnect || needsCredential;
+
+  const handleReconnect = useCallback(async () => {
+    if (connecting) return;
+    setConnecting(true);
+    try {
+      const conn = await pipedreamConnect(projectId, connector.slug);
+      if (!conn.connectUrl) {
+        Alert.alert('Cannot connect', 'This app could not start a connect flow on mobile.');
+        return;
+      }
+      haptics.tap();
+      await WebBrowser.openBrowserAsync(conn.connectUrl, {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+      });
+      const result = await pipedreamFinalize(projectId, connector.slug);
+      queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
+      Alert.alert(
+        result.connected ? 'Connected' : 'Almost there',
+        result.connected
+          ? `${connector.name || connector.slug} is now connected.`
+          : "Connection wasn't completed — try again.",
+      );
+    } catch (err: any) {
+      Alert.alert('Connect failed', err?.message || 'Could not connect.');
+    } finally {
+      setConnecting(false);
+    }
+  }, [connecting, projectId, connector.slug, connector.name, queryClient]);
 
   return (
     <View style={{ flex: 1 }}>
-      <TouchableOpacity
-        onPress={() => { haptics.tap(); onBack(); }}
-        activeOpacity={0.6}
-        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 4 }}
-      >
-        <ChevronLeft size={18} color={muted} />
-        <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted }}>Connectors</Text>
-      </TouchableOpacity>
-
-      {/* Header */}
-      <View style={{ paddingHorizontal: 16, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+      {/* Sheet header: icon · name/status · close */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: border }}>
         <View style={{ width: 40, height: 40, borderRadius: 11, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
           <Icon size={20} color={muted} />
         </View>
@@ -186,28 +213,46 @@ function ConnectorDetail({
             )}
           </View>
         </View>
+        <TouchableOpacity
+          onPress={() => { haptics.tap(); onClose(); }}
+          hitSlop={8}
+          style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: closeBg, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <X size={17} color={muted} />
+        </TouchableOpacity>
       </View>
 
-      <ScrollView
+      {/* Top action — connect / set credential when the connector isn't ready */}
+      {showTopAction && (
+        <View style={{ paddingHorizontal: 16, paddingTop: 14 }}>
+          <TouchableOpacity
+            onPress={needsConnect ? handleReconnect : () => { haptics.tap(); onSetCredential(); }}
+            disabled={connecting}
+            activeOpacity={0.85}
+            style={{ height: 46, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: theme.primary, opacity: connecting ? 0.6 : 1 }}
+          >
+            {connecting ? (
+              <ActivityIndicator size="small" color={theme.primaryForeground} />
+            ) : (
+              <Plug size={16} color={theme.primaryForeground} />
+            )}
+            <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>
+              {needsConnect ? 'Connect' : 'Set credential'}
+            </Text>
+          </TouchableOpacity>
+          <Text style={{ fontSize: 12.5, color: muted, marginTop: 8, textAlign: 'center' }}>
+            {needsConnect
+              ? 'This connector needs to be authorized before it can run.'
+              : 'This connector needs a credential before it can run.'}
+          </Text>
+        </View>
+      )}
+
+      <BottomSheetScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }}
         showsVerticalScrollIndicator={false}
       >
-        {needsAuth && (
-          <View style={{ borderRadius: 12, borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)', backgroundColor: 'rgba(245,158,11,0.08)', padding: 12, marginBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-            <Text style={{ flex: 1, fontSize: 13, color: isDark ? '#fbbf24' : '#b45309' }}>
-              This connector needs a credential before it can run.
-            </Text>
-            <TouchableOpacity
-              onPress={() => { haptics.tap(); onSetCredential(); }}
-              activeOpacity={0.8}
-              style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, backgroundColor: theme.primary }}
-            >
-              <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Set credential</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
         {/* Sharing / access */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 18 }}>
           <Share2 size={15} color={muted} style={{ marginRight: 10 }} />
@@ -254,7 +299,7 @@ function ConnectorDetail({
           {deleting ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={15} color="#ef4444" />}
           <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Remove connector</Text>
         </TouchableOpacity>
-      </ScrollView>
+      </BottomSheetScrollView>
     </View>
   );
 }
@@ -667,7 +712,7 @@ function SharingEditor({
         <Text style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Who can use it?</Text>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {SHARE_OPTIONS.map((opt) => (
           <ShareOptionRow
             key={opt.mode}
@@ -684,7 +729,7 @@ function SharingEditor({
           <View style={{ marginTop: 6, borderRadius: 14, borderWidth: 1, borderColor: border, overflow: 'hidden' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 12, height: 42, borderBottomWidth: 1, borderBottomColor: border, backgroundColor: inputBg }}>
               <Search size={15} color={muted} />
-              <TextInput
+              <BottomSheetTextInput
                 value={memberSearch}
                 onChangeText={setMemberSearch}
                 placeholder="Search members…"
@@ -723,7 +768,7 @@ function SharingEditor({
             )}
           </View>
         )}
-      </ScrollView>
+      </BottomSheetScrollView>
 
       {/* Sticky Save (primary theme color) */}
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: border }}>
@@ -1025,14 +1070,14 @@ function SetCredentialView({
         <Text style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Set credential</Text>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         {connector.authSecret ? (
           <Text style={{ fontSize: 13, color: muted, marginBottom: 14 }}>
             Stored as <Text style={{ fontFamily: MONO, color: fg }}>{connector.authSecret}</Text>.
           </Text>
         ) : null}
         <FormField label="Credential value" isDark={isDark}>
-          <TextInput
+          <BottomSheetTextInput
             value={value}
             onChangeText={setValue}
             placeholder="Paste the secret value…"
@@ -1044,7 +1089,7 @@ function SetCredentialView({
           />
         </FormField>
         <Text style={{ fontSize: 12.5, color: muted }}>It's encrypted at rest and never shown again.</Text>
-      </ScrollView>
+      </BottomSheetScrollView>
 
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
         <TouchableOpacity
@@ -1218,6 +1263,42 @@ function PoliciesView({ projectId }: { projectId: string }) {
   );
 }
 
+// ─── Connector detail sheet (detail ⇆ sharing ⇆ set credential) ───────────────
+
+function ConnectorDetailSheet({
+  projectId,
+  connector,
+  onClose,
+  onDelete,
+  deleting,
+}: {
+  projectId: string;
+  connector: AdminConnector;
+  onClose: () => void;
+  onDelete: () => void;
+  deleting: boolean;
+}) {
+  const [view, setView] = useState<'detail' | 'sharing' | 'credential'>('detail');
+
+  if (view === 'sharing') {
+    return <SharingEditor projectId={projectId} connector={connector} onBack={() => setView('detail')} />;
+  }
+  if (view === 'credential') {
+    return <SetCredentialView projectId={projectId} connector={connector} onBack={() => setView('detail')} />;
+  }
+  return (
+    <ConnectorDetail
+      projectId={projectId}
+      connector={connector}
+      onClose={onClose}
+      onDelete={onDelete}
+      onEditSharing={() => setView('sharing')}
+      onSetCredential={() => setView('credential')}
+      deleting={deleting}
+    />
+  );
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export function ConnectorsPage({
@@ -1233,10 +1314,9 @@ export function ConnectorsPage({
   const insets = useSafeAreaInsets();
   const [search, setSearch] = useState('');
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
-  const [editingSharingSlug, setEditingSharingSlug] = useState<string | null>(null);
-  const [credentialSlug, setCredentialSlug] = useState<string | null>(null);
   const [pageTab, setPageTab] = useState<'connectors' | 'policies'>('connectors');
   const addSheetRef = useRef<BottomSheetModal>(null);
+  const detailSheetRef = useRef<BottomSheetModal>(null);
 
   const { data, isLoading, isError, error, refetch } = useConnectors(projectId);
   const syncMutation = useSyncConnectors(projectId);
@@ -1249,8 +1329,6 @@ export function ConnectorsPage({
 
   const connectors = data?.connectors ?? [];
   const selected = connectors.find((c) => c.slug === selectedSlug) ?? null;
-  const editingSharing = connectors.find((c) => c.slug === editingSharingSlug) ?? null;
-  const credentialFor = connectors.find((c) => c.slug === credentialSlug) ?? null;
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1283,7 +1361,7 @@ export function ConnectorsPage({
           onPress: () => {
             haptics.medium();
             deleteMutation.mutate(connector.slug, {
-              onSuccess: () => setSelectedSlug(null),
+              onSuccess: () => detailSheetRef.current?.dismiss(),
               onError: (err: any) => Alert.alert('Remove failed', err?.message || 'Could not remove connector.'),
             });
           },
@@ -1301,7 +1379,7 @@ export function ConnectorsPage({
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
-          !selected && pageTab === 'connectors' ? (
+          pageTab === 'connectors' ? (
             <TouchableOpacity onPress={handleSync} className="p-1 mr-1" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               {syncMutation.isPending ? (
                 <ActivityIndicator size="small" color={muted} />
@@ -1314,29 +1392,7 @@ export function ConnectorsPage({
       />
 
       <PageContent>
-        {editingSharing ? (
-          <SharingEditor
-            projectId={projectId}
-            connector={editingSharing}
-            onBack={() => setEditingSharingSlug(null)}
-          />
-        ) : credentialFor ? (
-          <SetCredentialView
-            projectId={projectId}
-            connector={credentialFor}
-            onBack={() => setCredentialSlug(null)}
-          />
-        ) : selected ? (
-          <ConnectorDetail
-            connector={selected}
-            onBack={() => setSelectedSlug(null)}
-            onDelete={() => handleDelete(selected)}
-            onEditSharing={() => setEditingSharingSlug(selected.slug)}
-            onSetCredential={() => setCredentialSlug(selected.slug)}
-            deleting={deleteMutation.isPending}
-          />
-        ) : (
-          <>
+        <>
             <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}>
               <Segmented
                 isDark={isDark}
@@ -1383,7 +1439,7 @@ export function ConnectorsPage({
                     <ConnectorRow
                       connector={connector}
                       isDark={isDark}
-                      onPress={() => { haptics.tap(); setSelectedSlug(connector.slug); }}
+                      onPress={() => { haptics.tap(); setSelectedSlug(connector.slug); detailSheetRef.current?.present(); }}
                     />
                     {i < filtered.length - 1 && (
                       <View style={{ height: 1, backgroundColor: border, marginLeft: 66 }} />
@@ -1394,8 +1450,7 @@ export function ConnectorsPage({
             </ScrollView>
               </>
             )}
-          </>
-        )}
+        </>
       </PageContent>
 
       <BottomSheetModal
@@ -1411,6 +1466,32 @@ export function ConnectorsPage({
         )}
       >
         <AddConnectorView projectId={projectId} onClose={() => addSheetRef.current?.dismiss()} />
+      </BottomSheetModal>
+
+      <BottomSheetModal
+        ref={detailSheetRef}
+        snapPoints={['92%']}
+        enableDynamicSizing={false}
+        onDismiss={() => setSelectedSlug(null)}
+        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
+        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        backdropComponent={(props) => (
+          <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
+        )}
+      >
+        {selected ? (
+          <ConnectorDetailSheet
+            projectId={projectId}
+            connector={selected}
+            onClose={() => detailSheetRef.current?.dismiss()}
+            onDelete={() => handleDelete(selected)}
+            deleting={deleteMutation.isPending}
+          />
+        ) : (
+          <View style={{ height: 1 }} />
+        )}
       </BottomSheetModal>
     </View>
   );
