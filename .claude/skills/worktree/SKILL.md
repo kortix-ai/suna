@@ -94,7 +94,7 @@ stack. Re-running `create` for an existing name resumes it idempotently.
 ### `start` — boot an existing worktree (FOREGROUND, BLOCKS)
 
 ```sh
-pnpm worktree start <n> [--no-tunnel]
+pnpm worktree start <n> [--stripe] [--no-tunnel]
 ```
 
 Ensures Supabase is up, applies pending migrations, then runs **api + web in the
@@ -107,6 +107,13 @@ kills stragglers, and marks the worktree stopped). Requires Docker running.
 - A Cloudflare quick tunnel starts by default so cloud Daytona sandboxes can
   call back to the local API (`KORTIX_URL` → the `*.trycloudflare.com` URL).
   `--no-tunnel` skips it; if `cloudflared` is missing it warns and continues.
+- `--stripe` turns billing **on** for the worktree and runs `stripe listen`
+  forwarding test-mode webhooks to *this* worktree's API
+  (`…:<api>/v1/billing/webhooks/stripe`), injecting the `whsec_…` signing secret
+  so signatures verify. Needs the `stripe` CLI logged in (`stripe login`) and a
+  test `STRIPE_SECRET_KEY` in the worktree's local `.env` (billing won't boot
+  without it). Lets you exercise checkout/subscription/webhook flows end-to-end
+  in isolation.
 
 ### `stop` — pause a worktree (keeps data)
 
