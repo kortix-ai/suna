@@ -18,11 +18,19 @@ import {
   Alert,
   Image,
   TextInput,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
+import {
+  BottomSheetModal,
+  BottomSheetBackdrop,
+  BottomSheetScrollView,
+  BottomSheetTextInput,
+} from '@gorhom/bottom-sheet';
 import {
   Zap,
   Boxes,
@@ -45,7 +53,7 @@ import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { SearchListHeader } from '@/components/ui/search-list-header';
-import { useThemeColors } from '@/lib/theme-colors';
+import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import {
   useConnectors,
   useSyncConnectors,
@@ -345,12 +353,10 @@ function AppCard({
 
 function AddConnectorView({
   projectId,
-  onBack,
-  onConnected,
+  onClose,
 }: {
   projectId: string;
-  onBack: () => void;
-  onConnected: () => void;
+  onClose: () => void;
 }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -366,6 +372,7 @@ function AddConnectorView({
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
   const fg = isDark ? '#F8F8F8' : '#121215';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const searchBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
 
   const apps = useMemo(() => (data?.pages ?? []).flatMap((p) => p.apps), [data]);
 
@@ -386,7 +393,7 @@ function AddConnectorView({
       });
       const result = await pipedreamFinalize(projectId, app.slug);
       queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
-      onConnected();
+      onClose();
       Alert.alert(
         result.connected ? 'Connected' : 'Almost there',
         result.connected
@@ -398,18 +405,21 @@ function AddConnectorView({
     } finally {
       setConnectingSlug(null);
     }
-  }, [projectId, connectingSlug, queryClient, onConnected]);
+  }, [projectId, connectingSlug, queryClient, onClose]);
 
   return (
     <View style={{ flex: 1 }}>
-      <TouchableOpacity
-        onPress={() => { haptics.tap(); onBack(); }}
-        activeOpacity={0.6}
-        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 4 }}
-      >
-        <ChevronLeft size={18} color={muted} />
-        <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted }}>Connectors</Text>
-      </TouchableOpacity>
+      {/* Sheet header */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 12 }}>
+        <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Add a connector</Text>
+        <TouchableOpacity
+          onPress={() => { haptics.tap(); onClose(); }}
+          hitSlop={8}
+          style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: searchBg, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <X size={17} color={muted} />
+        </TouchableOpacity>
+      </View>
 
       {/* Easy Connect (Pipedream catalogue) vs Custom (MCP / OpenAPI / GraphQL / HTTP) */}
       <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
@@ -422,66 +432,79 @@ function AddConnectorView({
       </View>
 
       {tab === 'custom' ? (
-        <CustomConnectorForm projectId={projectId} onAdded={onConnected} isDark={isDark} />
+        <CustomConnectorForm projectId={projectId} onAdded={onClose} isDark={isDark} />
       ) : (
         <>
-      <SearchListHeader value={appSearch} onChangeText={setAppSearch} placeholder="Search apps to connect" />
+          <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 14, height: 44, borderRadius: 9999, backgroundColor: searchBg }}>
+              <Search size={16} color={muted} />
+              <BottomSheetTextInput
+                value={appSearch}
+                onChangeText={setAppSearch}
+                placeholder="Search apps to connect"
+                placeholderTextColor={muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert', color: fg, padding: 0 }}
+              />
+            </View>
+          </View>
 
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        scrollEventThrottle={200}
-        onScroll={({ nativeEvent }) => {
-          const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-          if (
-            layoutMeasurement.height + contentOffset.y >= contentSize.height - 320 &&
-            hasNextPage &&
-            !isFetchingNextPage
-          ) {
-            fetchNextPage();
-          }
-        }}
-      >
-        {isLoading ? (
-          <View style={{ paddingVertical: 48, alignItems: 'center' }}>
-            <ActivityIndicator size="small" color={muted} />
-          </View>
-        ) : isError ? (
-          <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
-            <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
-              {(error as Error)?.message ?? 'Failed to load apps'}
-            </Text>
-            <TouchableOpacity onPress={() => refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-            </TouchableOpacity>
-          </View>
-        ) : apps.length === 0 ? (
-          <View style={{ padding: 40, alignItems: 'center' }}>
-            <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>No apps found.</Text>
-          </View>
-        ) : (
-          <>
-            {apps.map((app, i) => (
-              <View key={app.slug}>
-                <AppCard
-                  app={app}
-                  connecting={connectingSlug === app.slug}
-                  onConnect={() => handleConnect(app)}
-                  isDark={isDark}
-                />
-                {i < apps.length - 1 && <View style={{ height: 1, backgroundColor: border, marginLeft: 66 }} />}
-              </View>
-            ))}
-            {isFetchingNextPage && (
-              <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+          <BottomSheetScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            scrollEventThrottle={200}
+            onScroll={({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
+              const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+              if (
+                layoutMeasurement.height + contentOffset.y >= contentSize.height - 320 &&
+                hasNextPage &&
+                !isFetchingNextPage
+              ) {
+                fetchNextPage();
+              }
+            }}
+          >
+            {isLoading ? (
+              <View style={{ paddingVertical: 48, alignItems: 'center' }}>
                 <ActivityIndicator size="small" color={muted} />
               </View>
+            ) : isError ? (
+              <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
+                <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
+                  {(error as Error)?.message ?? 'Failed to load apps'}
+                </Text>
+                <TouchableOpacity onPress={() => refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+                  <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : apps.length === 0 ? (
+              <View style={{ padding: 40, alignItems: 'center' }}>
+                <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>No apps found.</Text>
+              </View>
+            ) : (
+              <>
+                {apps.map((app, i) => (
+                  <View key={app.slug}>
+                    <AppCard
+                      app={app}
+                      connecting={connectingSlug === app.slug}
+                      onConnect={() => handleConnect(app)}
+                      isDark={isDark}
+                    />
+                    {i < apps.length - 1 && <View style={{ height: 1, backgroundColor: border, marginLeft: 66 }} />}
+                  </View>
+                ))}
+                {isFetchingNextPage && (
+                  <View style={{ paddingVertical: 16, alignItems: 'center' }}>
+                    <ActivityIndicator size="small" color={muted} />
+                  </View>
+                )}
+              </>
             )}
-          </>
-        )}
-      </ScrollView>
+          </BottomSheetScrollView>
         </>
       )}
     </View>
@@ -814,9 +837,9 @@ function CustomConnectorForm({
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <FormField label="Slug" isDark={isDark}>
-          <TextInput
+          <BottomSheetTextInput
             value={slug}
             onChangeText={(t) => setSlug(t.toLowerCase().replace(/[^a-z0-9_-]/g, '-'))}
             placeholder="my-api"
@@ -843,23 +866,23 @@ function CustomConnectorForm({
 
         {provider === 'openapi' && (
           <FormField label="Spec URL or repo path" isDark={isDark}>
-            <TextInput value={spec} onChangeText={setSpec} placeholder="https://…/openapi.json" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+            <BottomSheetTextInput value={spec} onChangeText={setSpec} placeholder="https://…/openapi.json" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
           </FormField>
         )}
         {provider === 'graphql' && (
           <>
             <FormField label="Endpoint" isDark={isDark}>
-              <TextInput value={endpoint} onChangeText={setEndpoint} placeholder="https://api/graphql" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+              <BottomSheetTextInput value={endpoint} onChangeText={setEndpoint} placeholder="https://api/graphql" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
             </FormField>
             <FormField label="SDL spec" optional isDark={isDark}>
-              <TextInput value={spec} onChangeText={setSpec} placeholder=".kortix/executor/schema.graphql" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+              <BottomSheetTextInput value={spec} onChangeText={setSpec} placeholder=".kortix/executor/schema.graphql" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
             </FormField>
           </>
         )}
         {provider === 'mcp' && (
           <>
             <FormField label="URL" isDark={isDark}>
-              <TextInput value={url} onChangeText={setUrl} placeholder="https://mcp…/mcp" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+              <BottomSheetTextInput value={url} onChangeText={setUrl} placeholder="https://mcp…/mcp" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
             </FormField>
             <FormField label="Transport" isDark={isDark}>
               <Segmented isDark={isDark} value={transport} onChange={setTransport} options={[{ value: 'http', label: 'http' }, { value: 'sse', label: 'sse' }]} />
@@ -869,10 +892,10 @@ function CustomConnectorForm({
         {provider === 'http' && (
           <>
             <FormField label="Base URL" isDark={isDark}>
-              <TextInput value={baseUrl} onChangeText={setBaseUrl} placeholder="https://api.internal" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+              <BottomSheetTextInput value={baseUrl} onChangeText={setBaseUrl} placeholder="https://api.internal" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
             </FormField>
             <FormField label="Routes spec" optional isDark={isDark}>
-              <TextInput value={spec} onChangeText={setSpec} placeholder=".kortix/executor/routes.toml" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+              <BottomSheetTextInput value={spec} onChangeText={setSpec} placeholder=".kortix/executor/routes.toml" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
             </FormField>
           </>
         )}
@@ -892,7 +915,7 @@ function CustomConnectorForm({
         </FormField>
         {authType === 'custom' && (
           <FormField label="Header name" isDark={isDark}>
-            <TextInput value={authName} onChangeText={setAuthName} placeholder="X-API-Key" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+            <BottomSheetTextInput value={authName} onChangeText={setAuthName} placeholder="X-API-Key" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
           </FormField>
         )}
         {authType !== 'none' && (
@@ -910,7 +933,7 @@ function CustomConnectorForm({
         <Text style={{ fontSize: 12.5, color: muted, marginTop: 14 }}>
           Access is project-wide by default — change it from the connector's Manage screen after adding.
         </Text>
-      </ScrollView>
+      </BottomSheetScrollView>
 
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
         <TouchableOpacity
@@ -1191,8 +1214,8 @@ export function ConnectorsPage({
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [editingSharingSlug, setEditingSharingSlug] = useState<string | null>(null);
   const [credentialSlug, setCredentialSlug] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
   const [pageTab, setPageTab] = useState<'connectors' | 'policies'>('connectors');
+  const addSheetRef = useRef<BottomSheetModal>(null);
 
   const { data, isLoading, isError, error, refetch } = useConnectors(projectId);
   const syncMutation = useSyncConnectors(projectId);
@@ -1257,7 +1280,7 @@ export function ConnectorsPage({
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
-          !selected && !adding && pageTab === 'connectors' ? (
+          !selected && pageTab === 'connectors' ? (
             <TouchableOpacity onPress={handleSync} className="p-1 mr-1" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               {syncMutation.isPending ? (
                 <ActivityIndicator size="small" color={muted} />
@@ -1270,13 +1293,7 @@ export function ConnectorsPage({
       />
 
       <PageContent>
-        {adding ? (
-          <AddConnectorView
-            projectId={projectId}
-            onBack={() => setAdding(false)}
-            onConnected={() => setAdding(false)}
-          />
-        ) : editingSharing ? (
+        {editingSharing ? (
           <SharingEditor
             projectId={projectId}
             connector={editingSharing}
@@ -1311,7 +1328,7 @@ export function ConnectorsPage({
               <PoliciesView projectId={projectId} />
             ) : (
               <>
-            <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search connectors" onAdd={() => { haptics.tap(); setAdding(true); }} />
+            <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search connectors" onAdd={() => { haptics.tap(); addSheetRef.current?.present(); }} />
 
             <ScrollView
               style={{ flex: 1 }}
@@ -1359,6 +1376,21 @@ export function ConnectorsPage({
           </>
         )}
       </PageContent>
+
+      <BottomSheetModal
+        ref={addSheetRef}
+        snapPoints={['92%']}
+        enableDynamicSizing={false}
+        backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
+        handleIndicatorStyle={{ backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }}
+        keyboardBehavior="interactive"
+        keyboardBlurBehavior="restore"
+        backdropComponent={(props) => (
+          <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.5} />
+        )}
+      >
+        <AddConnectorView projectId={projectId} onClose={() => addSheetRef.current?.dismiss()} />
+      </BottomSheetModal>
     </View>
   );
 }
