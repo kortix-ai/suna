@@ -39,6 +39,21 @@ export const PAGE_TABS: Record<string, PageTab> = {
   'page:agent-browser':     { id: 'page:agent-browser',     label: 'Agent Browser',     icon: 'globe-outline' },
   'page:updates':           { id: 'page:updates',           label: 'Updates',           icon: 'arrow-down-circle-outline' },
   'page:projects':          { id: 'page:projects',          label: 'Projects',          icon: 'folder-outline' },
+  // ── Right-drawer navigation (web sidebar parity) — placeholder pages for now ──
+  'page:agents':            { id: 'page:agents',            label: 'Agents',            icon: 'hardware-chip-outline' },
+  'page:skills':            { id: 'page:skills',            label: 'Skills',            icon: 'sparkles-outline' },
+  'page:commands':          { id: 'page:commands',          label: 'Commands',          icon: 'code-slash-outline' },
+  'page:connectors':        { id: 'page:connectors',        label: 'Connectors',        icon: 'extension-puzzle-outline' },
+  'page:secrets-nav':       { id: 'page:secrets-nav',       label: 'Secrets',           icon: 'key-outline' },
+  'page:channels-nav':      { id: 'page:channels-nav',      label: 'Channels',          icon: 'chatbox-outline' },
+  'page:schedules':         { id: 'page:schedules',         label: 'Schedules',         icon: 'time-outline' },
+  'page:webhooks':          { id: 'page:webhooks',          label: 'Webhooks',          icon: 'git-network-outline' },
+  'page:changes':           { id: 'page:changes',           label: 'Changes',           icon: 'git-pull-request-outline' },
+  'page:files-nav':         { id: 'page:files-nav',         label: 'Files',             icon: 'folder-outline' },
+  'page:sandbox':           { id: 'page:sandbox',           label: 'Sandbox',           icon: 'cube-outline' },
+  'page:dev':               { id: 'page:dev',               label: 'Dev',               icon: 'terminal-outline' },
+  'page:members':           { id: 'page:members',           label: 'Members',           icon: 'people-outline' },
+  'page:settings':          { id: 'page:settings',          label: 'Settings',          icon: 'settings-outline' },
 };
 
 // ---------------------------------------------------------------------------

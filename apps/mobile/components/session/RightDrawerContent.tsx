@@ -1,7 +1,15 @@
 /**
- * RightDrawerContent — settings & services menu for the right-side drawer.
+ * RightDrawerContent — the project's right-side navigation drawer.
  *
- * Tapping an item opens it as a page tab in the main area and closes the drawer.
+ * Mirrors the web project sidebar: BUILD / CONNECT / AUTOMATE sections up top
+ * and a pinned utility group (Changes · Files · Sandbox · Dev · Members ·
+ * Settings) at the bottom. Tapping an item opens it as a page tab and closes
+ * the drawer.
+ *
+ * NOTE: these route to NEW page ids that currently render a PlaceholderPage.
+ * The legacy page components (Files/Terminal/Secrets/…) are intentionally kept
+ * in the codebase but no longer wired here — we'll point these entries at real
+ * pages incrementally.
  */
 
 import React from 'react';
@@ -10,7 +18,6 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTabStore } from '@/stores/tab-store';
-import { useGlobalSandboxUpdate } from '@/hooks/useSandboxUpdate';
 import { haptics } from '@/lib/haptics';
 
 interface MenuItem {
@@ -28,49 +35,54 @@ interface RightDrawerContentProps {
   onClose: () => void;
 }
 
-const sections: MenuSection[] = [
+// Top sections — scroll if they overflow.
+const topSections: MenuSection[] = [
   {
-    title: 'QUICK ACTIONS',
+    title: 'BUILD',
     items: [
-      { icon: 'folder-open-outline', label: 'Files', pageId: 'page:files' },
-      { icon: 'terminal-outline', label: 'Terminal', pageId: 'page:terminal' },
-      { icon: 'grid-outline', label: 'Workspace', pageId: 'page:workspace' },
+      { icon: 'hardware-chip-outline', label: 'Agents', pageId: 'page:agents' },
+      { icon: 'sparkles-outline', label: 'Skills', pageId: 'page:skills' },
+      { icon: 'code-slash-outline', label: 'Commands', pageId: 'page:commands' },
     ],
   },
   {
-    title: 'SECURITY',
+    title: 'CONNECT',
     items: [
-      { icon: 'key-outline', label: 'Secrets Manager', pageId: 'page:secrets' },
-      { icon: 'cube-outline', label: 'LLM Providers', pageId: 'page:llm-providers' },
-      { icon: 'link-outline', label: 'SSH', pageId: 'page:ssh' },
-      { icon: 'code-slash-outline', label: 'API', pageId: 'page:api' },
+      { icon: 'extension-puzzle-outline', label: 'Connectors', pageId: 'page:connectors' },
+      { icon: 'key-outline', label: 'Secrets', pageId: 'page:secrets-nav' },
+      { icon: 'chatbox-outline', label: 'Channels', pageId: 'page:channels-nav' },
     ],
   },
   {
-    title: 'SERVICES',
+    title: 'AUTOMATE',
     items: [
-      { icon: 'calendar-outline', label: 'Triggers', pageId: 'page:triggers' },
-      { icon: 'chatbox-outline', label: 'Channels', pageId: 'page:channels' },
-      { icon: 'swap-horizontal-outline', label: 'Tunnel', pageId: 'page:tunnel' },
-      { icon: 'git-branch-outline', label: 'Connectors', pageId: 'page:integrations' },
-      { icon: 'pulse-outline', label: 'Service Manager', pageId: 'page:running-services' },
-      { icon: 'compass-outline', label: 'Internal Browser', pageId: 'page:browser' },
-      { icon: 'globe-outline', label: 'Agent Browser', pageId: 'page:agent-browser' },
+      { icon: 'time-outline', label: 'Schedules', pageId: 'page:schedules' },
+      { icon: 'git-network-outline', label: 'Webhooks', pageId: 'page:webhooks' },
     ],
   },
+];
+
+// Pinned utility group at the bottom of the drawer.
+const bottomItems: MenuItem[] = [
+  { icon: 'git-pull-request-outline', label: 'Changes', pageId: 'page:changes' },
+  { icon: 'folder-outline', label: 'Files', pageId: 'page:files-nav' },
+  { icon: 'cube-outline', label: 'Sandbox', pageId: 'page:sandbox' },
+  { icon: 'terminal-outline', label: 'Dev', pageId: 'page:dev' },
+  { icon: 'people-outline', label: 'Members', pageId: 'page:members' },
+  { icon: 'settings-outline', label: 'Settings', pageId: 'page:settings' },
 ];
 
 export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const { updateAvailable } = useGlobalSandboxUpdate();
 
   // Colors aligned with the left drawer (home.tsx renderDrawerContent + global.css tokens).
   const fgColor = isDark ? '#F8F8F8' : '#121215';
   const mutedColor = isDark ? '#999999' : '#6e6e6e';
   const sectionColor = isDark ? '#666' : '#999';
   const bgColor = isDark ? '#090909' : '#F5F5F5'; // matches --chrome-background
+  const dividerColor = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
 
   const handleItemPress = (pageId: string) => {
     haptics.tap();
@@ -78,25 +90,30 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
     onClose();
   };
 
-  const handleUpdatesPress = () => {
-    haptics.tap();
-    useTabStore.getState().navigateToPage('page:updates');
-    onClose();
-  };
-
-  return (
-    <View
+  const renderItem = (item: MenuItem) => (
+    <TouchableOpacity
+      key={item.pageId}
+      onPress={() => handleItemPress(item.pageId)}
+      activeOpacity={0.6}
       style={{
-        flex: 1,
-        backgroundColor: bgColor,
-        paddingTop: insets.top,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 11,
+        gap: 12,
       }}
     >
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
-      >
-        {sections.map((section) => (
+      <Ionicons name={item.icon as any} size={18} color={mutedColor} />
+      <RNText style={{ fontSize: 15, fontFamily: 'Roobert', color: fgColor }}>
+        {item.label}
+      </RNText>
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={{ flex: 1, backgroundColor: bgColor, paddingTop: insets.top }}>
+      <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
+        {topSections.map((section) => (
           <View key={section.title} style={{ marginBottom: 8 }}>
             <RNText
               style={{
@@ -111,113 +128,22 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
             >
               {section.title}
             </RNText>
-
-            {section.items.map((item) => (
-              <TouchableOpacity
-                key={item.label}
-                onPress={() => handleItemPress(item.pageId)}
-                activeOpacity={0.6}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingHorizontal: 16,
-                  paddingVertical: 11,
-                  gap: 12,
-                }}
-              >
-                <Ionicons name={item.icon as any} size={18} color={mutedColor} />
-                <RNText
-                  style={{
-                    fontSize: 15,
-                    fontFamily: 'Roobert',
-                    color: fgColor,
-                  }}
-                >
-                  {item.label}
-                </RNText>
-              </TouchableOpacity>
-            ))}
+            {section.items.map(renderItem)}
           </View>
         ))}
-
-        {/* Updates */}
-        <View style={{ marginBottom: 8 }}>
-          <RNText
-            style={{
-              fontSize: 11,
-              fontFamily: 'Roobert-Medium',
-              color: sectionColor,
-              letterSpacing: 1,
-              paddingHorizontal: 16,
-              paddingTop: 16,
-              paddingBottom: 8,
-            }}
-          >
-            SYSTEM
-          </RNText>
-
-          <TouchableOpacity
-            onPress={handleUpdatesPress}
-            activeOpacity={0.6}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              paddingHorizontal: 16,
-              paddingVertical: 11,
-              gap: 12,
-            }}
-          >
-            <View style={{ position: 'relative' }}>
-              <Ionicons name="arrow-down-circle-outline" size={18} color={mutedColor} />
-              {updateAvailable && (
-                <View
-                  style={{
-                    position: 'absolute',
-                    top: -2,
-                    right: -2,
-                    width: 8,
-                    height: 8,
-                    borderRadius: 4,
-                    backgroundColor: '#EF4444',
-                    borderWidth: 1.5,
-                    borderColor: bgColor,
-                  }}
-                />
-              )}
-            </View>
-            <RNText
-              style={{
-                fontSize: 15,
-                fontFamily: 'Roobert',
-                color: fgColor,
-                flex: 1,
-              }}
-            >
-              Updates
-            </RNText>
-            {updateAvailable && (
-              <View
-                style={{
-                  backgroundColor: isDark ? 'rgba(239,68,68,0.15)' : 'rgba(239,68,68,0.1)',
-                  borderRadius: 10,
-                  paddingHorizontal: 6,
-                  paddingVertical: 2,
-                }}
-              >
-                <RNText
-                  style={{
-                    fontSize: 10,
-                    fontFamily: 'Roobert-Medium',
-                    color: '#EF4444',
-                  }}
-                >
-                  New
-                </RNText>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
       </ScrollView>
+
+      {/* Pinned utility group */}
+      <View
+        style={{
+          borderTopWidth: 1,
+          borderTopColor: dividerColor,
+          paddingTop: 8,
+          paddingBottom: insets.bottom + 8,
+        }}
+      >
+        {bottomItems.map(renderItem)}
+      </View>
     </View>
   );
 }
