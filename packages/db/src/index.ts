@@ -50,6 +50,7 @@ export {
   sandboxTemplates,
   sessionSandboxes,
   sessionSandboxStatusEnum,
+  providerEvents,
   sandboxes,
   sandboxMembers,
   sandboxMemberScopes,

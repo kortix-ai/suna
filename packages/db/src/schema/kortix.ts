@@ -722,6 +722,45 @@ export const sessionSandboxes = kortixSchema.table(
 );
 
 /**
+ * Provider analytics — an append-only telemetry log, one row per terminal
+ * provisioning/migration outcome. Written fire-and-forget from the provision
+ * path (the `provisionTimeline` is already computed, so capture is ~free) and
+ * survives the session_sandboxes row being deleted (e.g. on migration). Powers
+ * the admin Providers → Analytics tab: per-provider success rate, provision
+ * latency (p50/p95), and where the time goes (phase marks). Lightweight and
+ * non-intrusive — never on the request hot path, no FKs, append-only.
+ */
+export const providerEvents = kortixSchema.table(
+  'provider_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    provider: text('provider').notNull(),
+    // 'provision' (a sandbox-create attempt) | 'migrate' (a cross-provider move)
+    kind: text('kind').notNull(),
+    // 'ok' | 'error' | 'stopped'
+    outcome: text('outcome').notNull(),
+    totalMs: integer('total_ms'),
+    // Provision timeline marks: [{ label, atMs, deltaMs }]
+    marks: jsonb('marks').default([]).$type<Array<Record<string, unknown>>>(),
+    attempts: integer('attempts').default(1),
+    // 'capacity' | 'other' for errors; null otherwise.
+    errorClass: text('error_class'),
+    error: text('error'),
+    // For migrate: the source provider moved away from.
+    fromProvider: text('from_provider'),
+    sessionId: text('session_id'),
+    accountId: uuid('account_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_provider_events_provider').on(table.provider),
+    index('idx_provider_events_kind').on(table.kind),
+    index('idx_provider_events_outcome').on(table.outcome),
+    index('idx_provider_events_created').on(table.createdAt),
+  ],
+);
+
+/**
  * Sandbox templates — the durable identity for "a kind of sandbox a session
  * can boot from." One row per template; the platform default is a shared row
  * (project_id NULL, is_shared=true) reused by every project. Per-project
