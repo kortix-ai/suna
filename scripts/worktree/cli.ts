@@ -109,6 +109,11 @@ function branchConflict(root: string, branch: string): string | null {
 
 function cancelled(v: unknown): boolean { if (clack.isCancel(v)) { clack.cancel('Cancelled.'); return true; } return false; }
 
+async function confirmStripe(): Promise<boolean> {
+  const v = await clack.confirm({ message: 'Enable Stripe? (billing on + webhook forwarding to this worktree)', initialValue: false });
+  return clack.isCancel(v) ? false : v;
+}
+
 async function promptCreate(): Promise<Args | null> {
   const name = await clack.text({
     message: 'Name for the worktree',
@@ -142,7 +147,8 @@ async function promptCreate(): Promise<Args | null> {
   }
   const start = await clack.confirm({ message: 'Boot the dev servers when it’s ready?', initialValue: true });
   if (cancelled(start)) return null;
-  return { cmd: 'create', name: String(name), flags: { from: String(from), yes: true, ...(start ? {} : { 'no-start': true }) } };
+  const stripe = start ? await confirmStripe() : false;
+  return { cmd: 'create', name: String(name), flags: { from: String(from), yes: true, ...(start ? {} : { 'no-start': true }), ...(stripe ? { stripe: true } : {}) } };
 }
 
 async function pickWorktree(action: string): Promise<string | null> {
@@ -180,7 +186,9 @@ async function menu(): Promise<Args | null> {
   if (['start', 'stop', 'nuke', 'status', 'pr'].includes(cmd)) {
     const name = await pickWorktree(cmd);
     if (!name) return null;
-    return { cmd, name, flags: cmd === 'nuke' ? { force: true } : {} };
+    const flags: Record<string, string | boolean> = cmd === 'nuke' ? { force: true } : {};
+    if (cmd === 'start' && await confirmStripe()) flags.stripe = true;
+    return { cmd, name, flags };
   }
   return { cmd, name: undefined, flags: {} };
 }
@@ -484,6 +492,7 @@ try {
     const n = await pickWorktree(a.cmd);
     if (!n) process.exit(0);
     a.name = n;
+    if (a.cmd === 'start' && !a.flags.stripe && await confirmStripe()) a.flags.stripe = true;
   }
 
   switch (a.cmd) {
