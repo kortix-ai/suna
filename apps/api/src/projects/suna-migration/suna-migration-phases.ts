@@ -22,26 +22,14 @@ import { projects, projectGitConnections, projectSessions } from '@kortix/db';
 import { uploadOpencodeArchive } from '../legacy-migration-storage';
 import { extractWorkspace, slugify } from './suna-extract';
 import { normalizeAgentpressThread, type AgentpressMessageRow } from './agentpress-mapper';
-import { writeConversations, type SessionToWrite } from './opencode-db-writer';
+import { writeConversations, seedOpencodeSchema, type SessionToWrite } from './opencode-db-writer';
 import { pushBundleAsRepo } from './suna-push';
-import { Database as Sqlite } from 'bun:sqlite';
 import type { SunaMigrationContext } from './suna-migration-runner';
 
 interface SessionSpec { slug: string; title: string; opencodeSessionId: string; messageCount: number; }
 
 function bundlePath(migrationId: string): string {
   return join(tmpdir(), `suna-mig-${migrationId}`);
-}
-
-function seedOpencodeSchema(path: string) {
-  const d = new Sqlite(path);
-  d.exec(`
-    CREATE TABLE IF NOT EXISTS project (id TEXT PRIMARY KEY, time_created INTEGER, time_initialized INTEGER);
-    CREATE TABLE IF NOT EXISTS session (id TEXT PRIMARY KEY, project_id TEXT, parent_id TEXT, title TEXT, slug TEXT, time_created INTEGER, time_updated INTEGER, time_archived INTEGER);
-    CREATE TABLE IF NOT EXISTS message (id TEXT PRIMARY KEY, session_id TEXT, role TEXT, time_created INTEGER, data TEXT);
-    CREATE TABLE IF NOT EXISTS part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, type TEXT, time_created INTEGER, data TEXT);
-  `);
-  d.close();
 }
 
 /** extract: discover the account's Suna projects, pull each sandbox's files into
@@ -173,7 +161,7 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
     for (const s of specs) {
       await tx.insert(projectSessions).values({
         sessionId: crypto.randomUUID(), accountId: ctx.accountId, projectId,
-        branchName: `migrated/${s.slug}`, baseRef: defaultBranch, sandboxProvider: 'daytona',
+        branchName: s.slug, baseRef: defaultBranch, sandboxProvider: 'daytona',
         sandboxId: null, sandboxUrl: null, opencodeSessionId: s.opencodeSessionId,
         agentName: 'default', status: 'stopped', createdBy: ctx.accountId, visibility: 'project',
         metadata: {

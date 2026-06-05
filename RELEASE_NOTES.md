@@ -1,3 +1,3 @@
-suna migration fix + connector fix
+og suna migrations
 
-suna migration fix + connector fix
+og suna migrations
