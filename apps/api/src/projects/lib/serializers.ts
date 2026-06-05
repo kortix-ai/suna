@@ -56,6 +56,13 @@ export function serializeSession(
     ? row.metadata.opencode_sessions
     : [];
   const isOwner = ctx?.viewerId ? row.createdBy === ctx.viewerId : false;
+  // A user-set name (metadata.custom_name) is authoritative and ALWAYS wins
+  // over the auto title (metadata.name) that opencode mirrors via
+  // /v1/projects/sync-opencode-sessions. `name` is the resolved display value;
+  // `custom_name` is exposed separately so clients can tell an override apart
+  // from the auto title (e.g. to beat the live opencode root title).
+  const customName = typeof row.metadata?.custom_name === 'string' ? row.metadata.custom_name : null;
+  const autoName = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
   return {
     session_id: row.sessionId,
     account_id: row.accountId,
@@ -66,7 +73,8 @@ export function serializeSession(
     sandbox_id: row.sandboxId,
     sandbox_url: row.sandboxUrl,
     opencode_session_id: row.opencodeSessionId,
-    name: typeof row.metadata?.name === 'string' ? row.metadata.name : null,
+    name: customName ?? autoName,
+    custom_name: customName,
     agent_name: row.agentName,
     status: row.status,
     error: row.error,

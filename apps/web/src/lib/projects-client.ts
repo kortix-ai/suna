@@ -1728,10 +1728,17 @@ export interface ProjectSession {
   sandbox_url: string | null;
   opencode_session_id: string | null;
   /**
-   * Session title, mirrored from opencode's session.title via
-   * /v1/projects/sync-opencode-sessions. Backed by metadata.name in the DB.
+   * Resolved display name: the user-set `custom_name` if present, otherwise the
+   * auto title mirrored from opencode's session.title via
+   * /v1/projects/sync-opencode-sessions (metadata.name in the DB).
    */
   name: string | null;
+  /**
+   * The user-set name override (metadata.custom_name). Authoritative — when
+   * present it always wins over the live opencode root title. null = no
+   * override (display falls back to the auto title / branch).
+   */
+  custom_name: string | null;
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
