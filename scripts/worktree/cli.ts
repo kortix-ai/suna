@@ -87,6 +87,22 @@ function recentBranches(limit = 12): string[] {
   return sh(['git', 'for-each-ref', `--count=${limit}`, '--sort=-committerdate', '--format=%(refname:short)', 'refs/heads'])
     .stdout.split('\n').map((s) => s.trim()).filter(Boolean);
 }
+// Git stores refs hierarchically, so a name can collide with an existing
+// namespace: `billing` can't be a branch if `billing/x` exists (billing is a
+// directory), and `a/b` can't be created if `a` is already a branch. Detect
+// this up front so a bad name fails before anything is provisioned.
+function branchConflict(root: string, branch: string): string | null {
+  if (!sh(['git', '-C', root, 'check-ref-format', `refs/heads/${branch}`]).ok)
+    return `"${branch}" is not a valid git branch name`;
+  const kids = sh(['git', '-C', root, 'for-each-ref', '--format=%(refname:short)', `refs/heads/${branch}/`]).stdout.trim();
+  if (kids) return `a branch namespace "${branch}/…" already exists (e.g. "${kids.split('\n')[0]}") — git can't also have a branch literally named "${branch}"`;
+  const parts = branch.split('/');
+  for (let i = 1; i < parts.length; i++) {
+    const parent = parts.slice(0, i).join('/');
+    if (branchExists(root, parent)) return `branch "${parent}" already exists, so "${branch}" can't be created beneath it`;
+  }
+  return null;
+}
 
 // ── interactive prompts ──────────────────────────────────────────────────────
 function cancelled(v: unknown): boolean { if (clack.isCancel(v)) { clack.cancel('Cancelled.'); return true; } return false; }
@@ -184,9 +200,18 @@ async function cmdCreate(a: Args) {
   const branch = (typeof a.flags.branch === 'string' && a.flags.branch) || name;
   const from = (typeof a.flags.from === 'string' && a.flags.from) || 'HEAD';
 
+  // Fail fast on bad/colliding branch names — before allocating a slot, so a
+  // doomed create never leaves a half-provisioned worktree behind.
+  if (!branchExists(root, branch)) {
+    const conflict = branchConflict(root, branch);
+    if (conflict) die(`can't create branch "${branch}": ${conflict}.\n  Pick another name: pnpm worktree create --name ${name} --branch <branch>`);
+  }
+
+  let isNew = false;
   const entry = await withLock<SlotEntry>(() => {
     const reg = loadRegistry();
     if (reg.slots[name]) { sub(`resuming existing worktree "${name}" (slot ${reg.slots[name].slot})`); return reg.slots[name]; }
+    isNew = true;
     let slot = lowestFreeSlot(reg);
     for (let tries = 0; tries < 6; tries++) {
       const ports = computePorts(slot);
@@ -204,17 +229,24 @@ async function cmdCreate(a: Args) {
 
   step(`Slot ${entry.slot} — ${portsLine(entry.ports)}`);
 
+  // If a step fails before the worktree exists on disk, drop the slot we just
+  // reserved (only when we created it) so the registry isn't left dangling.
+  const failCreate = async (msg: string): Promise<never> => {
+    if (isNew) await withLock(() => { const r = loadRegistry(); delete r.slots[name]; saveRegistry(r); });
+    return die(msg);
+  };
+
   step(`Git worktree ${pc.dim('→')} ${wtPath}`);
   const existing = sh(['git', '-C', root, 'worktree', 'list', '--porcelain']).stdout;
   if (existing.includes(`worktree ${wtPath}`)) {
     sub('already exists — reusing');
   } else if (branchExists(root, branch)) {
     const r = sh(['git', '-C', root, 'worktree', 'add', wtPath, branch]);
-    if (!r.ok) die(`git worktree add failed: ${r.stderr}`);
+    if (!r.ok) await failCreate(`git worktree add failed: ${r.stderr}`);
     sub(`checked out existing branch "${branch}"`);
   } else {
     const r = sh(['git', '-C', root, 'worktree', 'add', '-b', branch, wtPath, from]);
-    if (!r.ok) die(`git worktree add -b failed: ${r.stderr}`);
+    if (!r.ok) await failCreate(`git worktree add -b failed: ${r.stderr}`);
     sub(`created branch "${branch}" from ${from}`);
   }
 
