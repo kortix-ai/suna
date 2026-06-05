@@ -28,6 +28,7 @@ import {
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { SearchListHeader } from '@/components/ui/search-list-header';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { useProjectDetail, useProjectFile } from '@/lib/projects/hooks';
@@ -263,9 +264,9 @@ export function CommandsPage({
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
-        paddingBottom={12}
       />
 
+      <PageContent>
       {selected ? (
         <CommandDetail projectId={projectId} command={selected} onBack={() => setSelected(null)} onConfigure={onConfigure} />
       ) : (
@@ -319,6 +320,7 @@ export function CommandsPage({
           </ScrollView>
         </>
       )}
+      </PageContent>
     </View>
   );
 }

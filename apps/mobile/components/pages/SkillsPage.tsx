@@ -28,6 +28,7 @@ import {
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { SearchListHeader } from '@/components/ui/search-list-header';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { useProjectDetail, useProjectFile } from '@/lib/projects/hooks';
@@ -261,9 +262,9 @@ export function SkillsPage({
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
-        paddingBottom={12}
       />
 
+      <PageContent>
       {selected ? (
         <SkillDetail projectId={projectId} skill={selected} onBack={() => setSelected(null)} onConfigure={onConfigure} />
       ) : (
@@ -317,6 +318,7 @@ export function SkillsPage({
           </ScrollView>
         </>
       )}
+      </PageContent>
     </View>
   );
 }

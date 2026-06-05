@@ -29,6 +29,7 @@ import {
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
+import { PageContent } from '@/components/ui/page-content';
 import { SearchListHeader } from '@/components/ui/search-list-header';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { useProjectDetail, useProjectFile } from '@/lib/projects/hooks';
@@ -300,9 +301,9 @@ export function AgentsPage({
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
-        paddingBottom={12}
       />
 
+      <PageContent>
       {selected ? (
         <AgentDetail
           projectId={projectId}
@@ -363,6 +364,7 @@ export function AgentsPage({
           </ScrollView>
         </>
       )}
+      </PageContent>
     </View>
   );
 }
