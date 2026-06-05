@@ -332,6 +332,145 @@ export function readProjectFile(projectId: string, path: string, ref?: string) {
   );
 }
 
+// ── Executor connectors (web parity: connectors-view) ────────────────────────
+// Project-scoped tool connectors: Pipedream 1-click OAuth apps, MCP servers, and
+// custom OpenAPI/GraphQL/HTTP integrations. Endpoints live under /executor.
+
+export interface ConnectorAction {
+  path: string;
+  name: string;
+  description: string;
+  risk: 'read' | 'write' | 'destructive';
+  inputSchema: Record<string, unknown> | null;
+}
+
+export type ConnectorSharing =
+  | { mode: 'project' }
+  | { mode: 'private'; ownerId: string }
+  | { mode: 'members'; memberIds?: string[]; groupIds?: string[] };
+
+export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
+
+export interface AdminConnector {
+  slug: string;
+  name: string;
+  provider: ConnectorProvider;
+  status: 'active' | 'disabled' | 'needs_auth' | 'error';
+  /** One shared project credential vs each member's own. */
+  credentialMode: 'shared' | 'per_user';
+  actions: ConnectorAction[];
+  authSecret: string | null;
+  sharing: ConnectorSharing | null;
+  secretSet: boolean;
+}
+
+export interface ConnectorsResponse {
+  connectors: AdminConnector[];
+}
+
+export interface ConnectorSyncResult {
+  synced: number;
+  errors: Array<{ slug: string; error: string }>;
+}
+
+export interface PipedreamApp {
+  slug: string;
+  name: string;
+  description: string | null;
+  imgSrc: string | null;
+  categories: string[];
+}
+
+export interface PipedreamAppsPage {
+  apps: PipedreamApp[];
+  nextCursor?: string;
+  hasMore: boolean;
+}
+
+export interface ConnectorDraftInput {
+  slug: string;
+  name?: string;
+  provider: ConnectorProvider;
+  app?: string;
+  account?: string;
+  url?: string;
+  transport?: 'http' | 'sse';
+  endpoint?: string;
+  baseUrl?: string;
+  spec?: string;
+  credential?: 'shared' | 'per_user';
+  sharing?: ConnectorSharing;
+  auth?: { type?: 'none' | 'bearer' | 'basic' | 'custom'; in?: 'header' | 'query'; name?: string; prefix?: string };
+}
+
+const connectorsBase = (projectId: string) =>
+  `/executor/projects/${encodeURIComponent(projectId)}/connectors`;
+
+export function listConnectors(projectId: string) {
+  return apiFetch<ConnectorsResponse>(connectorsBase(projectId));
+}
+
+export function syncConnectors(projectId: string) {
+  return apiFetch<ConnectorSyncResult>(`${connectorsBase(projectId)}/sync`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export function deleteConnector(projectId: string, slug: string) {
+  return apiFetch<{ ok: boolean }>(`${connectorsBase(projectId)}/${encodeURIComponent(slug)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function setConnectorSharing(projectId: string, slug: string, intent: ConnectorSharing) {
+  return apiFetch<{ ok: boolean }>(
+    `${connectorsBase(projectId)}/${encodeURIComponent(slug)}/sharing`,
+    { method: 'PUT', body: JSON.stringify(intent) },
+  );
+}
+
+export function setConnectorCredential(projectId: string, slug: string, value: string) {
+  return apiFetch<{ ok: boolean }>(
+    `${connectorsBase(projectId)}/${encodeURIComponent(slug)}/credential`,
+    { method: 'PUT', body: JSON.stringify({ value }) },
+  );
+}
+
+export function createConnector(projectId: string, draft: ConnectorDraftInput) {
+  return apiFetch<{ ok: boolean; sync?: ConnectorSyncResult }>(connectorsBase(projectId), {
+    method: 'POST',
+    body: JSON.stringify(draft),
+  });
+}
+
+/** Begin a Pipedream 1-click connect. Returns a `connectUrl` to open in a browser. */
+export function pipedreamConnect(projectId: string, slug: string) {
+  return apiFetch<{ token?: string; app?: string; connectUrl?: string }>(
+    `${connectorsBase(projectId)}/${encodeURIComponent(slug)}/connect`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
+/** Finalize a Pipedream connect once the OAuth flow returns. */
+export function pipedreamFinalize(projectId: string, slug: string) {
+  return apiFetch<{ connected: boolean; accountId?: string }>(
+    `${connectorsBase(projectId)}/${encodeURIComponent(slug)}/connect/finalize`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
+/** Searchable, paginated Pipedream app catalogue (Easy Connect). */
+export function listPipedreamApps(projectId: string, q?: string, cursor?: string) {
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  if (cursor) params.set('cursor', cursor);
+  const qs = params.toString();
+  return apiFetch<PipedreamAppsPage>(
+    `/executor/projects/${encodeURIComponent(projectId)}/pipedream/apps${qs ? `?${qs}` : ''}`,
+  );
+}
+
 export function archiveProject(projectId: string) {
   return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}`, {
     method: 'DELETE',

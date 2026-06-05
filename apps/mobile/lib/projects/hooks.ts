@@ -3,21 +3,27 @@
  * Query keys mirror the web app: ['accounts'] and ['projects', accountId].
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   archiveProject,
   createAccount,
   createProjectSession,
+  deleteConnector,
   getProject,
   getProjectDetail,
   linkRepository,
   listAccounts,
+  listConnectors,
   listGitHubInstallations,
   listGitHubRepositories,
+  listPipedreamApps,
   listProjectSessions,
   listProjectsForAccount,
   provisionProject,
   readProjectFile,
+  setConnectorSharing,
+  syncConnectors,
+  type ConnectorSharing,
   type CreateProjectSessionInput,
 } from './projects-client';
 
@@ -29,6 +35,9 @@ export const projectKeys = {
   projectFile: (projectId: string | null | undefined, path: string | null | undefined) =>
     ['project-file', projectId, path] as const,
   projectSessions: (projectId: string | null | undefined) => ['project-sessions', projectId] as const,
+  connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
+  pipedreamApps: (projectId: string | null | undefined, q: string) =>
+    ['pipedream-apps', projectId, q] as const,
   githubInstallations: (accountId: string | null | undefined) =>
     ['github-installations', accountId] as const,
   githubRepositories: (accountId: string | null | undefined, installationId: string | null | undefined) =>
@@ -89,6 +98,58 @@ export function useProjectFile(projectId: string | null, path: string | null) {
     queryFn: () => readProjectFile(projectId!, path!),
     enabled: !!projectId && !!path,
     staleTime: 30_000,
+  });
+}
+
+// ── Connectors (web parity) ──────────────────────────────────────────────────
+
+/** Connected tool connectors for a project. */
+export function useConnectors(projectId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.connectors(projectId),
+    queryFn: () => listConnectors(projectId!),
+    enabled: !!projectId,
+    staleTime: 15_000,
+  });
+}
+
+/** Re-index connector actions from their providers. */
+export function useSyncConnectors(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => syncConnectors(projectId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) }),
+  });
+}
+
+/** Remove a connector. */
+export function useDeleteConnector(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (slug: string) => deleteConnector(projectId, slug),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) }),
+  });
+}
+
+/** Change who can use a connector (project / private / members). */
+export function useSetConnectorSharing(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ slug, intent }: { slug: string; intent: ConnectorSharing }) =>
+      setConnectorSharing(projectId, slug, intent),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) }),
+  });
+}
+
+/** Searchable, paginated Pipedream app catalogue (Easy Connect). */
+export function usePipedreamApps(projectId: string | null, q: string) {
+  return useInfiniteQuery({
+    queryKey: projectKeys.pipedreamApps(projectId, q),
+    queryFn: ({ pageParam }) => listPipedreamApps(projectId!, q || undefined, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => (last.hasMore ? last.nextCursor : undefined),
+    enabled: !!projectId,
+    staleTime: 60_000,
   });
 }
 
