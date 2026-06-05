@@ -79,6 +79,67 @@ const RISK_VARIANT: Record<ConnectorAction['risk'], 'outline' | 'secondary' | 'd
   destructive: 'destructive',
 };
 
+const PIPEDREAM_IFRAME_SELECTOR = 'iframe[id^="pipedream-connect-iframe-"]';
+
+/**
+ * The Pipedream Connect SDK portals its overlay <iframe> onto <body>, outside
+ * the Customize Radix Dialog. While that modal is open it makes the iframe
+ * completely unusable in two ways, both of which we undo here for the lifetime
+ * of the connect flow:
+ *   1. `pointer-events: none` on <body> (the modal's interaction lock) — the
+ *      iframe inherits it, so no clicks land. A child can opt back in with an
+ *      explicit `pointer-events: auto`, which we set on each Pipedream iframe.
+ *   2. The dialog's FocusScope traps focus: a `focusin`/`focusout` listener on
+ *      `document` re-grabs focus the instant anything outside the dialog gains
+ *      it. We intercept those events in the capture phase (which runs before
+ *      Radix's bubble-phase listener) and stop them when the Pipedream iframe
+ *      is involved, so it can hold focus.
+ * Returns a cleanup function that fully restores the modal's behavior.
+ */
+function withPipedreamOverlayEscape(): () => void {
+  if (typeof document === 'undefined') return () => {};
+
+  const releasePointerEvents = () => {
+    document
+      .querySelectorAll<HTMLIFrameElement>(PIPEDREAM_IFRAME_SELECTOR)
+      .forEach((el) => {
+        el.style.pointerEvents = 'auto';
+      });
+  };
+  const observer = new MutationObserver(releasePointerEvents);
+  observer.observe(document.body, { childList: true });
+  releasePointerEvents();
+
+  const isPipedreamFrame = (node: EventTarget | null): boolean =>
+    node instanceof Element && node.matches(PIPEDREAM_IFRAME_SELECTOR);
+
+  const guardFocus = (event: FocusEvent) => {
+    if (isPipedreamFrame(event.target) || isPipedreamFrame(event.relatedTarget)) {
+      // Prevent Radix's FocusScope from yanking focus back into the dialog.
+      event.stopImmediatePropagation();
+    }
+  };
+  document.addEventListener('focusin', guardFocus, true);
+  document.addEventListener('focusout', guardFocus, true);
+
+  // While the Pipedream overlay is up, swallow Escape so it can't close the
+  // Customize dialog behind it (capture phase runs before Radix's handler).
+  // The popup has its own close (X / Esc when focused).
+  const guardEscape = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape') return;
+    if (document.querySelector(PIPEDREAM_IFRAME_SELECTOR)) {
+      event.stopImmediatePropagation();
+    }
+  };
+  document.addEventListener('keydown', guardEscape, true);
+
+  return () => {
+    observer.disconnect();
+    document.removeEventListener('focusin', guardFocus, true);
+    document.removeEventListener('focusout', guardFocus, true);
+    document.removeEventListener('keydown', guardEscape, true);
+  };
+}
 
 /** Connectors section — rendered inside the Customize overlay. */
 export function ConnectorsView({ projectId }: { projectId: string }) {
@@ -274,18 +335,42 @@ function ConnectorRow({
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         tokenCallback: async () => ({ token, connect_link_url: undefined, expires_at: '' }) as any,
       });
-      await new Promise<void>((resolve, reject) => {
-        pd.connectAccount({
-          app,
-          token,
-          onSuccess: () => resolve(),
-          onError: (err: unknown) => reject(new Error((err as Error)?.message || 'Connection cancelled')),
+      // The SDK appends its overlay <iframe> directly to <body>. While the
+      // Customize Radix Dialog (modal) is open it both (a) sets
+      // `pointer-events: none` on <body> and (b) traps focus — its FocusScope
+      // yanks focus back into the dialog the moment anything outside it (our
+      // iframe) is focused. Together these make the Pipedream popup completely
+      // dead: not clickable, can't keep focus. Neutralize both for the
+      // lifetime of the connect flow.
+      const release = withPipedreamOverlayEscape();
+      let connected = false;
+      try {
+        // The SDK fires `onClose` (not `onError`) when the user dismisses the
+        // popup without finishing — without handling it the promise would
+        // never settle and the button would spin forever. `onSuccess` resolves
+        // true; closing without success resolves false; real errors reject.
+        connected = await new Promise<boolean>((resolve, reject) => {
+          pd.connectAccount({
+            app,
+            token,
+            onSuccess: () => resolve(true),
+            onClose: (status: { successful: boolean }) => resolve(status.successful),
+            onError: (err: unknown) => reject(new Error((err as Error)?.message || 'Connection cancelled')),
+          });
         });
-      });
-      return pipedreamFinalize(projectId, conn.slug);
+      } finally {
+        release();
+      }
+      if (!connected) return { connected: false };
+      await pipedreamFinalize(projectId, conn.slug);
+      return { connected: true };
     },
     // After connecting (credential now exists) prompt the scoping question.
-    onSuccess: () => { toast.success('Connected — now choose who can use it'); onConnected(); },
+    onSuccess: (res) => {
+      if (!res.connected) return; // user closed the popup without connecting
+      toast.success('Connected — now choose who can use it');
+      onConnected();
+    },
     onError: (err: Error) => toast.error(err.message),
   });
 
