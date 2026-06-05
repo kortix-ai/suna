@@ -67,6 +67,19 @@ describe('actions/run configured_props', () => {
     expect(body.external_user_id).toBe('proj-x:gmail'); // shared (no user)
   });
 
+  test('a Pipedream action error (HTTP 200 with an `error`/`os` body) surfaces as ok:false — NOT empty data', async () => {
+    // Pipedream returns 200 even when the action threw; the failure is in `error`
+    // + an `os` log entry. The old code returned `exports` ({}) as fake success.
+    runResponse = { status: 200, body: JSON.stringify({
+      os: [{ ts: 1, k: 'error', err: { name: 'TypeError', message: "Cannot read properties of undefined (reading 'oauth_access_token')" } }],
+      exports: {},
+      error: { name: 'TypeError', message: "Cannot read properties of undefined (reading 'oauth_access_token')" },
+    }) };
+    const res = await runPipedreamAction('p', 'google_calendar', 'google_calendar', 'google_calendar-list-calendars', {}, 'apn_1');
+    expect(res.ok).toBe(false);
+    expect(String(res.data)).toContain('oauth_access_token'); // real cause, not {}
+  });
+
   test('upstream failure surfaces as ok:false', async () => {
     globalThis.fetch = (async (url: string) => {
       const u = String(url);

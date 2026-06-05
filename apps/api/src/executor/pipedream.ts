@@ -17,6 +17,25 @@ import type { ExecResult } from './execute';
 
 const PD_BASE = 'https://api.pipedream.com';
 
+/**
+ * Pipedream's catalogue includes internal WORKFLOW UTILITIES (schedule, http,
+ * pipedream_utils, formatting, helper_functions, data stores, …) alongside real
+ * third-party apps. They aren't connectable — they carry no auth method, so
+ * there's nothing to authorize — and only clutter the "connect an app" grid.
+ * We hide anything with no auth_type, plus an explicit slug denylist for any
+ * that ever ship with a stray auth flag.
+ */
+const UTILITY_APP_SLUGS = new Set([
+  'pipedream_utils', 'schedule', 'http', 'formatting', 'helper_functions',
+  'data_stores', 'sse', 'delay', 'filter', 'end', 'throw_error',
+  'only_continue', 'code', 'rss', 'pipedream', 'go', 'node', 'python', 'bash',
+]);
+
+function isConnectableApp(a: { slug: string; authType: string | null }): boolean {
+  if (UTILITY_APP_SLUGS.has(a.slug)) return false;
+  return !!a.authType && a.authType !== 'none';
+}
+
 export function pipedreamConfigured(): boolean {
   return !!(config.PIPEDREAM_CLIENT_ID && config.PIPEDREAM_CLIENT_SECRET && config.PIPEDREAM_PROJECT_ID);
 }
@@ -109,11 +128,15 @@ class PipedreamProvider {
       page_info: { total_count: number; count: number; end_cursor?: string };
       data: Array<{ name_slug: string; name: string; description?: string; img_src?: string; auth_type?: string; categories: string[] }>;
     }>('GET', `/v1/connect/${this.projectId}/apps?${params.toString()}`);
-    const apps = (data.data || []).map((a) => ({
-      slug: a.name_slug, name: a.name, description: a.description ?? null, imgSrc: a.img_src ?? null,
-      authType: a.auth_type ?? null, categories: a.categories || [],
-    }));
-    return { apps, nextCursor: data.page_info?.end_cursor, hasMore: apps.length >= limit };
+    const apps = (data.data || [])
+      .map((a) => ({
+        slug: a.name_slug, name: a.name, description: a.description ?? null, imgSrc: a.img_src ?? null,
+        authType: a.auth_type ?? null, categories: a.categories || [],
+      }))
+      .filter(isConnectableApp);
+    // hasMore is driven by Pipedream's cursor, NOT apps.length — filtering out
+    // utility apps would otherwise shrink a page below `limit` and stop paging early.
+    return { apps, nextCursor: data.page_info?.end_cursor, hasMore: !!data.page_info?.end_cursor };
   }
 
   async listActions(app: string, limit = 100): Promise<PipedreamActionLike[]> {
@@ -143,6 +166,18 @@ class PipedreamProvider {
       // the app slug) always wins — a stray `props[app]` can never overwrite it.
       configured_props: { ...props, [app]: { authProvisionId: providerAccountId } },
     });
+    // Pipedream returns HTTP 200 even when the action THREW: the failure is in a
+    // top-level `error` and/or an `os` log entry with k:"error". If we don't catch
+    // it, `data.exports` ({}) gets returned and the gateway reports a fake
+    // `ok:true, data:{}` — masking real errors (expired/broken connection, bad
+    // args) as "empty data". Surface it instead.
+    const osErr = Array.isArray(data.os)
+      ? (data.os as Array<{ k?: string; err?: { message?: string; name?: string } }>).find((o) => o?.k === 'error')?.err
+      : undefined;
+    const err = (data.error ?? osErr) as { message?: string; name?: string } | undefined;
+    if (err && typeof err === 'object') {
+      throw new Error(`pipedream action error: ${err.message ?? err.name ?? 'unknown error'}`);
+    }
     return data.ret ?? data.exports ?? data.os ?? data;
   }
 
