@@ -7,6 +7,7 @@ SUPABASE_DIR="$ROOT_DIR/supabase"
 FRONTEND_PID=""
 TUNNEL_PID=""
 TUNNEL_LOG=""
+STRIPE_PID=""
 
 load_local_env() {
   # pnpm --filter runs each package from its own directory, where Bun/Next may
@@ -108,6 +109,40 @@ ensure_dev_tunnel() {
 
   export KORTIX_URL="$url"
   echo "[dev] ✅ Cloud sandbox callback ready: KORTIX_URL=$KORTIX_URL"
+}
+
+# Forward Stripe webhooks to the local API so billing flows (checkout →
+# subscription → seat sync → credit grant) complete end-to-end instead of
+# stalling after the hosted-checkout redirect. Runs in the background like the
+# frontend; cleaned up on exit.
+#
+# Pinned to the API's own account via --api-key=$STRIPE_SECRET_KEY (already in
+# the shell env from load_local_env), so the listener can never drift onto a
+# different `stripe login` account than the API uses — the mismatch that makes
+# events silently not fire. The signing secret stripe prints for that account
+# must equal STRIPE_WEBHOOK_SECRET in apps/api/.env or the API rejects events.
+#
+# No-ops (with a hint) when the Stripe CLI is missing, billing is off, or no key
+# is set. Opt out explicitly with KORTIX_STRIPE_LISTEN=0.
+ensure_stripe_listen() {
+  [[ "${KORTIX_STRIPE_LISTEN:-auto}" == "0" ]] && return 0
+  [[ "${KORTIX_BILLING_INTERNAL_ENABLED:-}" == "true" ]] || return 0
+
+  if ! command -v stripe >/dev/null 2>&1; then
+    echo "[dev] ⚠️  stripe CLI not found — webhooks won't forward (brew install stripe-cli). Skipping."
+    return 0
+  fi
+  if [[ -z "${STRIPE_SECRET_KEY:-}" ]]; then
+    echo "[dev] ⚠️  STRIPE_SECRET_KEY not set — skipping Stripe webhook listener."
+    return 0
+  fi
+
+  local api_port="${PORT:-8008}"
+  echo "[dev] Starting Stripe webhook listener → localhost:${api_port}/v1/billing/webhooks/stripe"
+  stripe listen --api-key "$STRIPE_SECRET_KEY" \
+    --forward-to "http://localhost:${api_port}/v1/billing/webhooks/stripe" 2>&1 \
+    | sed 's/^/[stripe] /' &
+  STRIPE_PID=$!
 }
 
 # Cross-compile the in-sandbox daemon (kortix-agent, Linux x64) so a fresh
@@ -246,6 +281,10 @@ cleanup() {
 
   if [[ -n "${TUNNEL_PID:-}" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
     kill "$TUNNEL_PID" 2>/dev/null || true
+  fi
+
+  if [[ -n "${STRIPE_PID:-}" ]] && kill -0 "$STRIPE_PID" 2>/dev/null; then
+    kill "$STRIPE_PID" 2>/dev/null || true
   fi
   [[ -n "${TUNNEL_LOG:-}" && -f "${TUNNEL_LOG:-}" ]] && rm -f "$TUNNEL_LOG"
 
@@ -416,6 +455,7 @@ ensure_deps
 ensure_agent_binary
 ensure_cli_binary
 ensure_dev_tunnel
+ensure_stripe_listen
 
 echo "[dev] Starting frontend..."
 pnpm --filter Kortix-Computer-Frontend dev &
