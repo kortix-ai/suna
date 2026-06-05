@@ -410,7 +410,7 @@ function ConnectorDetail({
       </BottomSheetScrollView>
 
       {/* Sticky footer — always visible: disconnect (keep connector) + remove */}
-      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: border }}>
+      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: border }}>
         {isConnected && (
           <TouchableOpacity
             onPress={handleDisconnect}
@@ -902,13 +902,13 @@ function SharingEditor({
       </BottomSheetScrollView>
 
       {/* Sticky Save (primary theme color) */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: border }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: border }}>
         <TouchableOpacity
           onPress={handleSave}
           disabled={incomplete || saveMutation.isPending}
           activeOpacity={0.8}
           style={{
-            height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
+            height: 42, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8,
             backgroundColor: theme.primary, opacity: incomplete || saveMutation.isPending ? 0.5 : 1,
           }}
         >
@@ -1132,12 +1132,12 @@ function CustomConnectorForm({
         </Text>
       </BottomSheetScrollView>
 
-      <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
         <TouchableOpacity
           onPress={handleSave}
           disabled={!canSave}
           activeOpacity={0.8}
-          style={{ height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}
+          style={{ height: 42, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}
         >
           {saving && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add connector</Text>
@@ -1213,12 +1213,12 @@ function SetCredentialView({
         <Text style={{ fontSize: 12.5, color: muted }}>It's encrypted at rest and never shown again.</Text>
       </BottomSheetScrollView>
 
-      <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: insets.bottom + 8, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
         <TouchableOpacity
           onPress={handleSave}
           disabled={!value.trim() || saving}
           activeOpacity={0.8}
-          style={{ height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: value.trim() && !saving ? 1 : 0.5 }}
+          style={{ height: 42, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: value.trim() && !saving ? 1 : 0.5 }}
         >
           {saving && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save credential</Text>
@@ -1242,7 +1242,7 @@ const DEFAULT_MODE_OPTIONS: { value: PolicyDefaultMode; label: string; desc: str
   { value: 'allow_all', label: 'Run everything', desc: 'No approval prompts (legacy)', icon: Zap },
 ];
 
-/** Color-coded Allow / Ask first / Block selector for a rule. */
+/** Lightweight radio-row Allow / Ask first / Block selector for a rule. */
 function PolicyActionSelector({
   value,
   onChange,
@@ -1253,9 +1253,9 @@ function PolicyActionSelector({
   isDark: boolean;
 }) {
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const trackBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const ring = isDark ? 'rgba(255,255,255,0.28)' : 'rgba(0,0,0,0.22)';
   return (
-    <View style={{ flexDirection: 'row', backgroundColor: trackBg, borderRadius: 9999, padding: 3 }}>
+    <View style={{ flexDirection: 'row', gap: 18 }}>
       {POLICY_ACTION_ORDER.map((a) => {
         const meta = POLICY_ACTION_META[a];
         const on = value === a;
@@ -1264,10 +1264,13 @@ function PolicyActionSelector({
             key={a}
             onPress={() => { haptics.selection(); onChange(a); }}
             activeOpacity={0.7}
-            style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 9999, backgroundColor: on ? `${meta.color}22` : 'transparent' }}
+            hitSlop={6}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}
           >
-            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: meta.color, opacity: on ? 1 : 0.35 }} />
-            <Text style={{ fontSize: 12.5, fontFamily: on ? 'Roobert-Medium' : 'Roobert', color: on ? meta.color : muted }}>{meta.label}</Text>
+            <View style={{ width: 16, height: 16, borderRadius: 8, borderWidth: 1.5, borderColor: on ? meta.color : ring, alignItems: 'center', justifyContent: 'center' }}>
+              {on && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: meta.color }} />}
+            </View>
+            <Text style={{ fontSize: 13.5, fontFamily: on ? 'Roobert-Medium' : 'Roobert', color: on ? meta.color : muted }}>{meta.label}</Text>
           </TouchableOpacity>
         );
       })}
@@ -1375,18 +1378,14 @@ function PoliciesView({ projectId }: { projectId: string }) {
         </Text>
 
         {rules.length === 0 ? (
-          <View style={{ paddingVertical: 22, paddingHorizontal: 16, alignItems: 'center', borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: border, marginBottom: 10 }}>
+          <View style={{ paddingVertical: 18, alignItems: 'center' }}>
             <Text style={{ fontSize: 13, color: muted, textAlign: 'center' }}>No rules yet — tools follow the default above.</Text>
           </View>
         ) : (
-          rules.map((rule, i) => {
-            const meta = POLICY_ACTION_META[rule.action];
-            return (
-              <View key={rule.id} style={{ borderRadius: 14, borderWidth: 1, borderColor: border, padding: 12, marginBottom: 10 }}>
+          rules.map((rule, i) => (
+            <View key={rule.id}>
+              <View style={{ paddingVertical: 14 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <View style={{ width: 22, height: 22, borderRadius: 7, backgroundColor: `${meta.color}1f`, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: meta.color }}>{i + 1}</Text>
-                  </View>
                   <TextInput
                     value={rule.match}
                     onChangeText={(t) => patchRule(rule.id, { match: t })}
@@ -1396,37 +1395,38 @@ function PoliciesView({ projectId }: { projectId: string }) {
                     autoCorrect={false}
                     style={{ flex: 1, height: 40, borderRadius: 10, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, fontFamily: MONO, color: fg }}
                   />
-                  <TouchableOpacity onPress={() => { haptics.medium(); removeRule(rule.id); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' }}>
-                    <X size={16} color={muted} />
+                  <TouchableOpacity onPress={() => { haptics.medium(); removeRule(rule.id); }} hitSlop={8} style={{ padding: 4 }}>
+                    <X size={17} color={muted} />
                   </TouchableOpacity>
                 </View>
-                <View style={{ marginTop: 10 }}>
+                <View style={{ marginTop: 12, paddingLeft: 2 }}>
                   <PolicyActionSelector value={rule.action} onChange={(v) => patchRule(rule.id, { action: v })} isDark={isDark} />
                 </View>
               </View>
-            );
-          })
+              {i < rules.length - 1 && <View style={{ height: 1, backgroundColor: border }} />}
+            </View>
+          ))
         )}
 
         <TouchableOpacity
           onPress={() => { haptics.tap(); addRule(); }}
           activeOpacity={0.7}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 9999, borderWidth: 1, borderStyle: 'dashed', borderColor: border, marginTop: 2 }}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, borderRadius: 9999, borderWidth: 1, borderStyle: 'dashed', borderColor: border, marginTop: 10 }}
         >
           <Plus size={15} color={theme.primary} />
           <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: theme.primary }}>Add rule</Text>
         </TouchableOpacity>
       </ScrollView>
 
-      <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 12, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
         <TouchableOpacity
           onPress={handleSave}
           disabled={!dirty || saveMutation.isPending}
           activeOpacity={0.8}
-          style={{ height: 46, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: dirty && !saveMutation.isPending ? 1 : 0.5 }}
+          style={{ height: 44, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: dirty && !saveMutation.isPending ? 1 : 0.5 }}
         >
           {saveMutation.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save policies</Text>
+          <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save policies</Text>
         </TouchableOpacity>
       </View>
     </View>
