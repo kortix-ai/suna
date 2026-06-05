@@ -1,5 +1,7 @@
 'use client';
 
+import { useEffect, useRef } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ArrowRight, Loader2, Sparkles, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSunaMigration, useStartSunaMigration } from '@/hooks/legacy/use-suna-migration';
@@ -20,8 +22,20 @@ const PHASE_LABEL: Record<string, string> = {
 export function SunaMigrationBanner({ accountId }: { accountId?: string | null }) {
   const { data } = useSunaMigration(accountId);
   const start = useStartSunaMigration(accountId);
+  const queryClient = useQueryClient();
 
   const migration = data?.migration ?? null;
+
+  // When the migration flips to completed, refetch the projects list so the new
+  // project shows up without a manual refresh.
+  const prevStatus = useRef<string | null>(null);
+  useEffect(() => {
+    const s = migration?.status ?? null;
+    if (s === 'completed' && prevStatus.current && prevStatus.current !== 'completed') {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    }
+    prevStatus.current = s;
+  }, [migration?.status, queryClient]);
   const busy = start.isPending || migration?.status === 'running' || migration?.status === 'planned';
   const failed = migration?.status === 'failed';
 
