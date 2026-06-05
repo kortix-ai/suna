@@ -130,6 +130,21 @@ refuses if unmerged); `--force` uses `git worktree remove --force` **and**
 `git branch -D` (drops unmerged commits). Only `nuke` after the work is merged
 or pushed.
 
+### `pr` — push the branch and open a pull request
+
+```sh
+pnpm worktree pr <n> [--title "…"] [--body "…"] [--base main] [--repo owner/name] [--draft] [--web]
+```
+
+Closes the loop (create → work → `pr`). Refuses if the branch has no commits
+ahead of `--base` (default `main`); warns if the tree is dirty (uncommitted work
+won't be in the PR). Pushes `origin/<branch>` (`-u`), then runs `gh pr create`.
+Title/body come from the branch's commit messages via `gh --fill` unless
+`--title` is given. `--draft` opens a draft; `--web` finishes in the browser.
+If `gh` isn't installed it still pushes and prints a compare URL. On a fork, gh
+may ask which base repo — answer the prompt (or pass `--repo`). Requires the
+push remote (`origin`) to be authenticated for your account.
+
 ### `list` (alias `ls`) — table of all worktrees
 
 ```sh
