@@ -309,6 +309,30 @@ export async function getRepo(opts: {
   );
 }
 
+/**
+ * Whether a GitHub login is an Organization (vs a personal User). Managed-git
+ * was built assuming MANAGED_GIT_GITHUB_OWNER is an org, but a personal account
+ * (e.g. a throwaway) needs `/user/repos` not `/orgs/{owner}/repos`. Cached —
+ * an account's type doesn't change. Safe default 'org' (historical behavior).
+ */
+const accountTypeCache = new Map<string, boolean>();
+export async function isOrgAccount(
+  login: string,
+  auth?: Pick<GitHubAuthContext, 'token'>,
+): Promise<boolean> {
+  const key = login.toLowerCase();
+  const cached = accountTypeCache.get(key);
+  if (cached !== undefined) return cached;
+  try {
+    const acc = await ghFetch<{ type?: string }>(`/users/${encodeURIComponent(login)}`, undefined, auth);
+    const isOrg = (acc.type ?? 'Organization') === 'Organization';
+    accountTypeCache.set(key, isOrg);
+    return isOrg;
+  } catch {
+    return true;
+  }
+}
+
 async function resolveDefaultOwner(auth?: GitHubAuthContext): Promise<{ owner: string; isOrg: boolean }> {
   if (auth?.owner) {
     return { owner: auth.owner, isOrg: auth.ownerType !== 'User' };

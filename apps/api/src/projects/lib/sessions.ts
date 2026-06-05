@@ -16,6 +16,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { randomUUID } from 'node:crypto';
 import { resolveProjectGitAuth } from './git';
+import { selectProvider } from '../../platform/services/provider-balancer';
 import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES, ProjectRow, ProjectSessionRow, RequestAuditContext, UUID_V4_REGEX, deriveKortixApiRoot, normalizeJsonObject, normalizeString } from './serializers';
 
 export type SessionCreateError = {
@@ -176,6 +177,15 @@ export async function buildSessionSandboxEnvVars(input: {
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     KORTIX_PROJECT_AUTO_CLONE: '1',
+    // Force a FULL clone (no blobless partial clone). The blobless default
+    // (KORTIX_CLONE_FILTER=blob:none) fetches file blobs lazily during checkout
+    // through the Kortix git proxy; when the proxy's partial-clone capability
+    // isn't advertised consistently, git intermittently stalls on an on-demand
+    // blob fetch and the clone never finishes (repo_ready stuck false → the
+    // session never reaches runtimeReady). A full clone transfers one pack with
+    // no on-demand fetches — reliable. Starter/project repos are small so the
+    // size cost is negligible. Empty string = full clone (see daemon config.ts).
+    KORTIX_CLONE_FILTER: '',
     // Universal proxy origin: when enabled, the sandbox clones via the Kortix
     // git proxy with its own KORTIX_TOKEN — a real host credential never lands
     // in the sandbox. The daemon's credential helper returns KORTIX_TOKEN for
@@ -280,7 +290,7 @@ export async function createProjectSession(input: {
   const sandboxSlug =
     normalizeString(body.sandbox_slug ?? body.sandboxSlug) ?? projectDefaultSandboxSlug ?? undefined;
   const requestedProvider = normalizeString(body.provider);
-  let providerName: SandboxProviderName = config.getDefaultProvider();
+  let providerName: SandboxProviderName = await selectProvider();
   if (requestedProvider) {
     if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(requestedProvider)) {
       return { error: { status: 400, body: { error: `Unknown or disabled sandbox provider: ${requestedProvider}` } } };

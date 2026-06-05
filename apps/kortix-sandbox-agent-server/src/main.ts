@@ -56,6 +56,14 @@ async function main() {
   const staticWeb = startStaticWebServer(cfg.staticPort)
   bootMark('static-web')
 
+  // Warm-pool spare (KORTIX_WARM_POOL=1 — set only by the pool builder): boot a
+  // generic, session-less runtime, then adopt a claimant's session on claim.
+  // Opt-in early-return; the normal boot path below is byte-identical.
+  if ((process.env.KORTIX_WARM_POOL ?? '').trim() === '1') {
+    await runPoolMode(cfg, bootTime, bootState, bootMark, staticWeb)
+    return
+  }
+
   try {
     await configureGlobalGitIdentity(cfg, OPENCODE_HOME)
   } catch (err) {
@@ -173,51 +181,121 @@ async function main() {
     })
     .catch((err) => logger.warn('[boot] on_boot resolution failed', { err: (err as Error).message }))
 
-  void (async () => {
-    if (bootState.initialOpenCodeSessionRequired) {
-      await maybeCreateInitialOpencodeSession(cfg.opencodeInternalPort, bootState, bootMark).catch((err) => {
-        const message = err instanceof Error ? err.message : String(err)
-        bootState.initialOpenCodeSessionError = message
-        logger.warn('[boot] initial opencode session setup failed', err)
-      })
-      if (bootState.initialOpenCodeSessionId) {
-        opencode.markReady()
-        bootMark('opencode-ready')
-        logger.info('[boot] opencode ready via initial session', {
-          opencodePid: opencode.getPid(),
-          timeline: bootState.timeline,
-        })
-        startOpencodeEventLoop(opencode, cfg, {
-          onQuestionAsked: (req) => {
-            void relayQuestionToApi(req, cfg).catch((err) =>
-              logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
-            )
-          },
-        })
-        return
-      }
-    }
+  void startSessionRuntime(opencode, cfg, bootState, bootMark)
+}
 
-    const ready = await waitForOpencodeReady(opencode, cfg.projectTarget)
-    if (ready) {
+// Post-opencode session runtime: create the initial opencode session (when a
+// prompt/bootstrap was requested) and start the question-relay event loop.
+// Extracted verbatim from the former inline block so the warm-pool claim path
+// reuses the EXACT same logic after a pooled spare adopts a claimant's session.
+async function startSessionRuntime(
+  opencode: ReturnType<typeof createOpencodeSupervisor>,
+  cfg: Config,
+  bootState: SandboxBootState,
+  bootMark: (label: string) => void,
+): Promise<void> {
+  const onQuestionAsked = (req: QuestionRequest) => {
+    void relayQuestionToApi(req, cfg).catch((err) =>
+      logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
+    )
+  }
+  if (bootState.initialOpenCodeSessionRequired) {
+    await maybeCreateInitialOpencodeSession(cfg.opencodeInternalPort, bootState, bootMark).catch((err) => {
+      bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
+      logger.warn('[boot] initial opencode session setup failed', err)
+    })
+    if (bootState.initialOpenCodeSessionId) {
+      opencode.markReady()
       bootMark('opencode-ready')
-      logger.info('[boot] opencode ready', {
-        opencodePid: opencode.getPid(),
-        timeline: bootState.timeline,
-      })
-      startOpencodeEventLoop(opencode, cfg, {
-        onQuestionAsked: (req) => {
-          void relayQuestionToApi(req, cfg).catch((err) =>
-            logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
-          )
-        },
-      })
-    } else {
-      logger.warn('[boot] opencode did not become ready within deadline; supervisor still retrying', {
-        opencodePid: opencode.getPid(),
-      })
+      logger.info('[boot] opencode ready via initial session', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
+      startOpencodeEventLoop(opencode, cfg, { onQuestionAsked })
+      return
     }
-  })()
+  }
+  const ready = await waitForOpencodeReady(opencode, cfg.projectTarget)
+  if (ready) {
+    bootMark('opencode-ready')
+    logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
+    startOpencodeEventLoop(opencode, cfg, { onQuestionAsked })
+  } else {
+    logger.warn('[boot] opencode did not become ready within deadline; supervisor still retrying', { opencodePid: opencode.getPid() })
+  }
+}
+
+// Read KEY=VALUE lines from the per-session env file into process.env. The warm
+// pool stages the claimant's session env there on claim (proven: PUT /files →
+// writeFile lands), so a fresh loadConfig() resolves the claimant's KORTIX_*.
+function reloadSessionEnv(path = '/etc/dnah-env'): void {
+  let txt: string
+  try { txt = readFileSync(path, 'utf8') } catch { return }
+  for (const line of txt.split('\n')) {
+    const t = line.trim()
+    if (!t || t.startsWith('#')) continue
+    const eq = t.indexOf('=')
+    if (eq <= 0) continue
+    const k = t.slice(0, eq)
+    if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) process.env[k] = t.slice(eq + 1)
+  }
+}
+
+// Warm-pool spare runtime (opt-in via KORTIX_WARM_POOL=1, set only by the pool
+// builder). Boot opencode generic (no repo) + the proxy so the VM is
+// snapshottable + health-green, then idle until claimed. On claim the control
+// plane writes the claimant's env to the session-env file; we DETECT it by
+// polling (robust to a snapshot-restored process missing a signal), then reload
+// env, re-read config, clone the claimant's repo, and start the session runtime.
+async function runPoolMode(
+  cfg: Config,
+  bootTime: number,
+  bootState: SandboxBootState,
+  bootMark: (label: string) => void,
+  staticWeb: ReturnType<typeof startStaticWebServer>,
+): Promise<void> {
+  const projectEnv = createProjectEnvStore()
+  await ensureOpencodeConfigDeps(cfg.defaultOpencodeConfigDir).catch(() => {})
+  const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv)
+  await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
+  bootMark('pool-opencode-spawned')
+  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+  installShutdownHandlers(opencode, server, staticWeb)
+  bootMark('pool-ready')
+  logger.info('[pool] warm spare ready; awaiting claim', { timeline: bootState.timeline })
+
+  let claimed = false
+  const claim = (trigger: string) => {
+    if (claimed) return
+    claimed = true
+    void (async () => {
+      const t0 = Date.now()
+      reloadSessionEnv()
+      const cfg2 = loadConfig()
+      // Rebuild the proxy/control surface with the claimant's cfg — the spare
+      // booted tokenless, so the auth gate would 503 every request otherwise.
+      server.reload(cfg2)
+      bootState.initialOpenCodeSessionRequired =
+        (process.env.KORTIX_INITIAL_PROMPT ?? '').trim().length > 0 ||
+        (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+      logger.info('[pool] claim — initializing session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
+      try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
+      try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
+      if (cfg2.autoClone) {
+        await materializeRepo(cfg2).catch((err) => {
+          bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+          logger.error('[pool] repo materialization failed', err)
+        })
+        bootMark('claim-repo-materialized')
+        if (!bootState.repoMaterializationError) await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
+      }
+      await startSessionRuntime(opencode, cfg2, bootState, bootMark)
+      logger.info('[pool] claim complete', { claimMs: Date.now() - t0, timeline: bootState.timeline })
+    })()
+  }
+  process.on('SIGHUP', () => claim('sighup'))
+  const poll = setInterval(() => {
+    let txt = ''
+    try { txt = readFileSync('/etc/dnah-env', 'utf8') } catch { return }
+    if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); claim('env-poll') }
+  }, 1000)
 }
 
 async function maybeCreateInitialOpencodeSession(

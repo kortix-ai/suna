@@ -45,6 +45,7 @@ describe('sandbox init state helpers', () => {
       async remove() {},
       async getStatus() { return 'unknown' as const; },
       async resolveEndpoint() { return { url: '', headers: {} }; },
+      async resolvePreviewLink() { return { url: '', token: null }; },
       async ensureRunning() {},
       async getProvisioningStatus() { return null; },
     };
