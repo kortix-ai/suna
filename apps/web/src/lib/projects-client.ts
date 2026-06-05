@@ -904,6 +904,51 @@ export async function setConnectorSharing(
   );
 }
 
+export async function setConnectorCredentialMode(
+  projectId: string,
+  slug: string,
+  mode: 'shared' | 'per_user',
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential-mode`,
+      { mode },
+    ),
+  );
+}
+
+export type ConnectorPolicyAction = 'always_run' | 'require_approval' | 'block';
+export interface ConnectorPolicyRule {
+  match: string;
+  action: ConnectorPolicyAction;
+}
+
+export async function getConnectorPolicies(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.get<{ policies: ConnectorPolicyRule[] }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`,
+    ),
+  );
+}
+
+export async function setConnectorPolicies(projectId: string, slug: string, policies: ConnectorPolicyRule[]) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`,
+      { policies },
+    ),
+  );
+}
+
+export async function setConnectorName(projectId: string, slug: string, name: string) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/name`,
+      { name },
+    ),
+  );
+}
+
 export async function pipedreamConnect(projectId: string, slug: string) {
   return unwrap(
     await backendApi.post<{ token?: string; app?: string; connectUrl?: string }>(
