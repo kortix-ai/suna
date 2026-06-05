@@ -56,6 +56,7 @@ export {
   scopeEffectEnum,
   sandboxInvites,
   legacySandboxMigrations,
+  sunaAccountMigrations,
   deployments,
   kortixApiKeys,
   accountTokens,

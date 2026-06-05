@@ -988,6 +988,40 @@ export const legacySandboxMigrations = kortixSchema.table(
   ],
 );
 
+// Suna (agentpress) → opencode migration. One row per ACCOUNT: all of the
+// account's old Suna projects become ONE new project with N sessions (chats),
+// each chat's sandbox files archived under legacy/<slug>/. Same durable-runner
+// model as legacy_sandbox_migrations (phase/progress/heartbeat lease, resumable
+// by the worker), but keyed on account_id since the source is public.resources,
+// not kortix.sandboxes.
+export const sunaAccountMigrations = kortixSchema.table(
+  'suna_account_migrations',
+  {
+    migrationId: uuid('migration_id').defaultRandom().primaryKey(),
+    runId: text('run_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id'),
+    status: varchar('status', { length: 32 }).default('planned').notNull(),
+    mode: varchar('mode', { length: 32 }).default('dry_run').notNull(),
+    plan: jsonb('plan').default({}).$type<Record<string, unknown>>().notNull(),
+    error: text('error'),
+    phase: varchar('phase', { length: 32 }),
+    progress: jsonb('progress').default({}).$type<Record<string, unknown>>().notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    appliedAt: timestamp('applied_at', { withTimezone: true }),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_suna_account_migrations_status').on(table.status),
+    index('idx_suna_account_migrations_account').on(table.accountId),
+    index('idx_suna_account_migrations_heartbeat').on(table.status, table.heartbeatAt),
+  ],
+);
+
 // ─── Pool Resources ─────────────────────────────────────────────────────────
 
 export const poolResources = kortixSchema.table(
