@@ -9,6 +9,8 @@ import {
   createAccount,
   createProjectSession,
   deleteConnector,
+  deletePersonalProjectSecret,
+  deleteProjectSecret,
   getProject,
   getProjectDetail,
   linkRepository,
@@ -19,13 +21,16 @@ import {
   listPipedreamApps,
   listProjectAccess,
   listProjectPolicies,
+  listProjectSecrets,
   listProjectSessions,
   listProjectsForAccount,
   provisionProject,
   readProjectFile,
   setConnectorSharing,
+  setPersonalProjectSecret,
   setProjectPolicies,
   syncConnectors,
+  upsertProjectSecret,
   type ConnectorSharing,
   type CreateProjectSessionInput,
   type PolicyDefaultMode,
@@ -41,6 +46,7 @@ export const projectKeys = {
     ['project-file', projectId, path] as const,
   projectSessions: (projectId: string | null | undefined) => ['project-sessions', projectId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
+  secrets: (projectId: string | null | undefined) => ['project-secrets', projectId] as const,
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
   policies: (projectId: string | null | undefined) => ['project-policies', projectId] as const,
   pipedreamApps: (projectId: string | null | undefined, q: string) =>
@@ -265,5 +271,55 @@ export function useGitHubRepositories(
     queryFn: () => listGitHubRepositories(accountId!, installationId),
     enabled: enabled && !!accountId && !!installationId,
     staleTime: 30_000,
+  });
+}
+
+// ── Project secrets (web parity) ──────────────────────────────────────────────
+
+/** Project secrets: shared values + the caller's personal overrides + manifest. */
+export function useProjectSecrets(projectId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.secrets(projectId),
+    queryFn: () => listProjectSecrets(projectId!),
+    enabled: !!projectId,
+    staleTime: 15_000,
+  });
+}
+
+/** Create / update the shared (project-wide) value of a secret. */
+export function useUpsertProjectSecret(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name: string; value?: string; sharing?: ConnectorSharing }) =>
+      upsertProjectSecret(projectId, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.secrets(projectId) }),
+  });
+}
+
+/** Delete the shared value of a secret (members' overrides are left intact). */
+export function useDeleteProjectSecret(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => deleteProjectSecret(projectId, name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.secrets(projectId) }),
+  });
+}
+
+/** Set the caller's personal override (value and/or active flag). */
+export function useSetPersonalProjectSecret(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ name, value, active }: { name: string; value?: string; active?: boolean }) =>
+      setPersonalProjectSecret(projectId, name, { value, active }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.secrets(projectId) }),
+  });
+}
+
+/** Remove the caller's personal override. */
+export function useDeletePersonalProjectSecret(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (name: string) => deletePersonalProjectSecret(projectId, name),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.secrets(projectId) }),
   });
 }

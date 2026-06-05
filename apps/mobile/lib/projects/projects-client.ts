@@ -554,3 +554,87 @@ export function linkRepository(input: LinkRepositoryInput) {
     body: JSON.stringify(input),
   });
 }
+
+// ── Project secrets (web parity: customize/sections/secrets-view) ─────────────
+// Two layers per KEY: a shared (project) value managers control, and each
+// member's optional personal override. Values are write-only — never returned.
+
+export interface ProjectSecret {
+  name: string;
+  project_id: string;
+  secret_id: string | null;
+  created_by: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  system?: boolean;
+  readonly?: boolean;
+  purpose?: string | null;
+  can_rotate?: boolean;
+  managed_by?: string | null;
+  /** A shared/project value is set. */
+  configured: boolean;
+  share_scope?: 'project' | 'restricted';
+  sharing?: ConnectorSharing | null;
+  /** The shared value reaches me. */
+  usable_by_me: boolean;
+  /** My personal override (value never included). */
+  mine: { active: boolean; updated_at: string } | null;
+  /** What actually runs in MY sessions. */
+  effective_source: 'mine' | 'shared' | 'none';
+  /** I may edit the shared row. */
+  can_manage_shared: boolean;
+}
+
+export interface ProjectSecretsResponse {
+  items: ProjectSecret[];
+  can_manage?: boolean;
+  required: string[];
+  optional: string[];
+  manifest_status?: 'loaded' | 'missing' | 'error';
+  manifest_path?: string;
+  manifest_error?: string;
+}
+
+const secretsBase = (projectId: string) =>
+  `/projects/${encodeURIComponent(projectId)}/secrets`;
+
+export async function listProjectSecrets(projectId: string): Promise<ProjectSecretsResponse> {
+  const res = await apiFetch<ProjectSecretsResponse | ProjectSecret[]>(secretsBase(projectId));
+  // Defend against a legacy bare-array response shape.
+  if (Array.isArray(res)) return { items: res, required: [], optional: [] };
+  return { ...res, items: res.items ?? [] };
+}
+
+export function upsertProjectSecret(
+  projectId: string,
+  input: { name: string; value?: string; sharing?: ConnectorSharing },
+) {
+  return apiFetch<ProjectSecret>(secretsBase(projectId), {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteProjectSecret(projectId: string, name: string) {
+  return apiFetch<{ ok: boolean }>(`${secretsBase(projectId)}/${encodeURIComponent(name)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function setPersonalProjectSecret(
+  projectId: string,
+  name: string,
+  input: { value?: string; active?: boolean },
+) {
+  return apiFetch<ProjectSecret>(
+    `${secretsBase(projectId)}/${encodeURIComponent(name)}/personal`,
+    { method: 'PUT', body: JSON.stringify(input) },
+  );
+}
+
+export function deletePersonalProjectSecret(projectId: string, name: string) {
+  return apiFetch<{ ok: boolean }>(
+    `${secretsBase(projectId)}/${encodeURIComponent(name)}/personal`,
+    { method: 'DELETE' },
+  );
+}
