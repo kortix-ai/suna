@@ -1,0 +1,56 @@
+{
+  "skill_name": "kortix-social",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Write me a LinkedIn post announcing that our AI agent platform now runs fully in your own repo.",
+      "expected_output": "Should read /product-marketing.md for context (and internal-comms for voice/terminology) before writing, asking only for anything genuinely missing like the goal or target action. Should produce one LinkedIn post built as one hook + one idea + one action: a strong first line before the 'see more' fold, line breaks for readability, ~1,200-1,500 chars, no link in the body (link in first comment instead), and a single clear CTA. Should not pack multiple ideas into the post.",
+      "assertions": [
+        "Reads /product-marketing.md (or fallbacks) first",
+        "References internal-comms for voice/terminology",
+        "Leads with a hook before the fold",
+        "One idea, one clear CTA",
+        "Keeps links out of the post body"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "We just published a 40-minute podcast episode. Repurpose it into social content for the next two weeks.",
+      "expected_output": "Should enter Repurpose mode. Should extract 5-10 self-contained content atoms (quotable claims, mini-stories, tactical tips, contrarian takes, data callouts) and adapt each to a native format across platforms (short clips/Reels/TikTok, LinkedIn posts, an X thread, a carousel). Should write standalone captions that work without the source, spread the posts across 1-2 weeks rather than dumping them, and hand any visual/carousel/cover production to kortix-image rather than describing pixels.",
+      "assertions": [
+        "Extracts multiple content atoms from the source",
+        "Adapts each atom to a platform-native format",
+        "Writes standalone captions",
+        "Spreads distribution across 1-2 weeks",
+        "Defers visual production to kortix-image"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "script a reel hook for a feature demo, like 30 seconds",
+      "expected_output": "Should trigger on casual phrasing and enter Video mode. Should apply the 3-second rule (visual + verbal + text-overlay hook landing immediately, payoff shown first, not built up to), pick a structure (e.g. Problem-Solution or Tutorial showing the result first), and output a timestamped script (hook / body / CTA) with production notes. Should note 9:16 and on-screen captions for mute viewing, and hand any cover frame to kortix-image.",
+      "assertions": [
+        "Triggers on casual phrasing",
+        "Applies the 3-second rule with all three hook layers",
+        "Outputs a timestamped script with a CTA",
+        "Notes 9:16 and captions for mute viewing",
+        "Defers cover/thumbnail to kortix-image"
+      ],
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "what should I post this week? I'm out of ideas. We're a dev-tools startup.",
+      "expected_output": "Should enter Ideate/Plan mode rather than producing a blank-page brainstorm. Should generate ideas from content pillars (industry insight, behind-the-scenes/build-in-public, educational, personal/opinion, light promo), and for each idea name the pillar, platform, and hook. May offer a weekly grid and a batching plan. Should read existing product-marketing context first if available.",
+      "assertions": [
+        "Generates ideas from content pillars, not a blank page",
+        "Names pillar, platform, and hook per idea",
+        "Keeps promotional content light",
+        "Reads product-marketing context if available"
+      ],
+      "files": []
+    }
+  ]
+}
