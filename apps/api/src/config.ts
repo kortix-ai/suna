@@ -11,7 +11,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type SandboxProviderName = 'daytona' | 'local_docker';
+export type SandboxProviderName = 'daytona' | 'local_docker' | 'platinum';
 type InternalKortixEnv = 'dev' | 'staging' | 'prod';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
@@ -192,6 +192,16 @@ const envSchema = z.object({
   DAYTONA_SERVER_URL:          optStr,
   DAYTONA_TARGET:              optStr,
 
+  // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
+  // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
+  // pt_live_… key; PLATINUM_API_URL is the control-plane base
+  // (https://api.platinum.dev). PLATINUM_TEMPLATE is a ready Platinum template
+  // id to boot sessions from (e.g. kortix-computer) — used as the fallback when
+  // a session hasn't built its own per-project Platinum template.
+  PLATINUM_API_KEY:            optStr,
+  PLATINUM_API_URL:            optStr,
+  PLATINUM_TEMPLATE:           optStr,
+
   // ── Sandbox Platform ──────────────────────────────────────────────────────
   // Public API base URL, without a route suffix. Auto-derived from PORT in local mode.
   KORTIX_URL:                  optStr,
@@ -268,7 +278,7 @@ type EnvIssue = { var: string; message: string; level: 'error' | 'warn' };
 // Recognised provider names. Source-of-truth for what can legally appear in
 // ALLOWED_SANDBOX_PROVIDERS — adding a new provider is a one-place change
 // here plus a case in `getProvider()` in platform/providers/index.ts.
-const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'local_docker'] as const;
+const KNOWN_PROVIDERS: readonly SandboxProviderName[] = ['daytona', 'local_docker', 'platinum'] as const;
 
 /** Parse comma-separated provider list (e.g. "daytona,local_docker"). */
 function parseAllowedProviders(raw: string): SandboxProviderName[] {
@@ -308,6 +318,10 @@ function validateEnv(): z.infer<typeof envSchema> {
     if (!raw.DAYTONA_API_KEY)    issues.push({ var: 'DAYTONA_API_KEY',    message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_SERVER_URL) issues.push({ var: 'DAYTONA_SERVER_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
     if (!raw.DAYTONA_TARGET)     issues.push({ var: 'DAYTONA_TARGET',     message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "daytona"', level: 'error' });
+  }
+  if (providers.includes('platinum')) {
+    if (!raw.PLATINUM_API_KEY) issues.push({ var: 'PLATINUM_API_KEY', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
+    if (!raw.PLATINUM_API_URL) issues.push({ var: 'PLATINUM_API_URL', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "platinum"', level: 'error' });
   }
   if (providers.includes('local_docker') && !raw.DOCKER_HOST) {
     issues.push({ var: 'DOCKER_HOST', message: 'Required when ALLOWED_SANDBOX_PROVIDERS includes "local_docker"', level: 'error' });
@@ -501,6 +515,10 @@ export const config = {
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,
 
+  PLATINUM_API_KEY: env.PLATINUM_API_KEY,
+  PLATINUM_API_URL: env.PLATINUM_API_URL,
+  PLATINUM_TEMPLATE: env.PLATINUM_TEMPLATE,
+
   // ─── Sandbox Provisioning (Platform) ──────────────────────────────────────
   KORTIX_URL: env.KORTIX_URL,
   KORTIX_YOLO_URL: env.KORTIX_YOLO_URL,
@@ -604,6 +622,7 @@ export const config = {
     switch (name) {
       case 'daytona': return !!this.DAYTONA_API_KEY;
       case 'local_docker': return !!this.DOCKER_HOST;
+      case 'platinum': return !!this.PLATINUM_API_KEY;
       default: {
         const exhaustive: never = name;
         return exhaustive;
@@ -628,6 +647,10 @@ export const config = {
 
   isLocalDockerEnabled(): boolean {
     return this.ALLOWED_SANDBOX_PROVIDERS.includes('local_docker') && !!this.DOCKER_HOST;
+  },
+
+  isPlatinumEnabled(): boolean {
+    return this.ALLOWED_SANDBOX_PROVIDERS.includes('platinum') && !!this.PLATINUM_API_KEY;
   },
 
 };

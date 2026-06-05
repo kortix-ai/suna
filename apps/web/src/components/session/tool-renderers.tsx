@@ -2032,6 +2032,252 @@ ToolRegistry.register('memory-search', MemorySearchTool);
 ToolRegistry.register('oc-mem_search', MemorySearchTool);
 ToolRegistry.register('oc-mem-search', MemorySearchTool);
 
+// --- Memory (file-based `.kortix/memory` editor) ---
+//
+// The OpenCode `memory` tool is a file editor scoped to `.kortix/memory/`
+// (the project brain). It mirrors the Anthropic memory-tool command shape:
+//   view        { path }                       → dir listing or file content
+//   create      { path, file_text }            → write a new file
+//   str_replace { path, old_str, new_str }     → in-place edit (rendered as a diff)
+//   insert      { path, insert_line, insert_text }
+//   delete      { path }
+//   rename      { old_path, new_path }
+// We render each as a compact, branded card instead of dumping raw output.
+
+const MEMORY_VERBS: Record<string, string> = {
+  view: 'View',
+  create: 'Create',
+  str_replace: 'Edit',
+  insert: 'Insert',
+  delete: 'Delete',
+  rename: 'Rename',
+};
+
+/** Strip the `.kortix/memory/` prefix so paths read as `MEMORY.md`, not the
+ * full repo path. The root dir collapses to `memory`. */
+function memoryRelPath(p?: string): string {
+  if (!p) return '';
+  const rel = p.replace(/^\.kortix\/memory\/?/, '').replace(/\/$/, '');
+  return rel || 'memory';
+}
+
+interface MemoryDirEntry {
+  path: string;
+  size: string;
+  isDir: boolean;
+}
+
+/** Parse the `view` command output into either a directory listing or file
+ * content. Mirrors the two header shapes the tool emits. */
+function parseMemoryView(
+  output: string,
+  viewedPath: string,
+):
+  | { type: 'dir'; entries: MemoryDirEntry[] }
+  | { type: 'file'; content: string }
+  | null {
+  if (!output) return null;
+  const nl = output.indexOf('\n');
+  const header = nl === -1 ? output : output.slice(0, nl);
+  const body = nl === -1 ? '' : output.slice(nl + 1);
+
+  if (/content of .* with line numbers/i.test(header)) {
+    // Strip the leading "   N\t" line-number prefix the tool adds.
+    const content = body
+      .split('\n')
+      .map((line) => line.replace(/^\s*\d+\t/, ''))
+      .join('\n');
+    return { type: 'file', content };
+  }
+
+  if (/files and directories/i.test(header)) {
+    const root = viewedPath.replace(/\/$/, '');
+    const entries: MemoryDirEntry[] = [];
+    for (const line of body.split('\n')) {
+      if (!line.trim()) continue;
+      const tab = line.indexOf('\t');
+      if (tab === -1) continue;
+      const size = line.slice(0, tab).trim();
+      const path = line.slice(tab + 1).trim();
+      if (path === root) continue; // skip the directory total row
+      entries.push({ size, path, isDir: !/\.\w+$/.test(path) });
+    }
+    return { type: 'dir', entries };
+  }
+
+  return null;
+}
+
+function MemoryTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(part);
+  const streamingInput = partStreamingInput(part);
+  const output = partOutput(part);
+  const status = partStatus(part);
+  const running = useContext(ToolRunningContext);
+  const { openPreview } = useFilePreviewStore();
+
+  const command =
+    (input.command as string) || (streamingInput.command as string) || '';
+  const path =
+    (input.path as string) ||
+    (streamingInput.path as string) ||
+    (input.old_path as string) ||
+    (streamingInput.old_path as string) ||
+    '';
+  const oldPath = (input.old_path as string) || '';
+  const newPath = (input.new_path as string) || '';
+  const fileText =
+    (input.file_text as string) || (streamingInput.file_text as string) || '';
+  const oldStr =
+    (input.old_str as string) ?? (streamingInput.old_str as string) ?? '';
+  const newStr =
+    (input.new_str as string) ?? (streamingInput.new_str as string) ?? '';
+  const insertText =
+    (input.insert_text as string) ||
+    (streamingInput.insert_text as string) ||
+    '';
+  const insertLine = input.insert_line ?? streamingInput.insert_line;
+
+  const verb = MEMORY_VERBS[command] ?? 'Memory';
+  const relPath = memoryRelPath(path);
+  const ext = (relPath.split('.').pop() || 'md').toLowerCase();
+  const isFileTarget = command !== 'view' || /\.\w+$/.test(path);
+
+  // The tool reports edit failures inline (e.g. "No replacement was
+  // performed, old_str ... did not appear verbatim").
+  const failed =
+    !!output &&
+    (/^no replacement was performed/i.test(output.trim()) ||
+      /did not appear/i.test(output));
+
+  const isStreaming = (status === 'pending' && running) || status === 'running';
+
+  const view = useMemo(
+    () => (command === 'view' ? parseMemoryView(output, path) : null),
+    [command, output, path],
+  );
+
+  let body: ReactNode = null;
+  if (command === 'view') {
+    if (view?.type === 'dir') {
+      body =
+        view.entries.length > 0 ? (
+          <div
+            data-scrollable
+            className="max-h-96 space-y-0.5 overflow-auto px-3 py-2"
+          >
+            {view.entries.map((entry) => (
+              <div
+                key={entry.path}
+                className="flex items-center gap-1.5 font-mono text-xs text-muted-foreground/80"
+              >
+                {entry.isDir ? (
+                  <Folder className="size-3 flex-shrink-0 text-muted-foreground/40" />
+                ) : (
+                  <FileText className="size-3 flex-shrink-0 text-muted-foreground/40" />
+                )}
+                <span className="truncate">{memoryRelPath(entry.path)}</span>
+                <span className="ml-auto flex-shrink-0 text-muted-foreground/40">
+                  {entry.size}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <ToolEmptyState message="Memory is empty." />
+        );
+    } else if (view?.type === 'file' && view.content) {
+      body = <ToolCode code={view.content} language={ext} />;
+    } else if (output) {
+      body = <ToolOutputFallback output={output} toolName="memory" />;
+    } else {
+      body = (
+        <ToolEmptyState
+          message={isStreaming ? 'Reading memory…' : 'Nothing to show.'}
+        />
+      );
+    }
+  } else if (command === 'create') {
+    body = fileText ? (
+      <ToolCode code={fileText} language={ext} />
+    ) : (
+      <ToolEmptyState
+        message={isStreaming ? 'Writing memory…' : 'No content.'}
+      />
+    );
+  } else if (command === 'str_replace') {
+    body = failed ? (
+      <ToolError error={output} toolName="memory" />
+    ) : oldStr || newStr ? (
+      <div data-scrollable className="max-h-96 overflow-auto">
+        <InlineDiffView
+          oldValue={oldStr}
+          newValue={newStr}
+          filename={relPath}
+        />
+      </div>
+    ) : (
+      <ToolEmptyState message="No changes." />
+    );
+  } else if (command === 'insert') {
+    body = (
+      <>
+        {insertLine != null && (
+          <div className="px-3 pt-2 text-xs text-muted-foreground/70">
+            Inserted at line {String(insertLine)}
+          </div>
+        )}
+        {insertText ? <ToolCode code={insertText} language={ext} /> : null}
+        {!insertText && insertLine == null ? (
+          <ToolEmptyState message="Nothing inserted." />
+        ) : null}
+      </>
+    );
+  } else if (command === 'rename') {
+    body = (
+      <div className="flex flex-wrap items-center gap-1.5 px-3 py-2 font-mono text-xs text-muted-foreground/80">
+        <span className="truncate">{memoryRelPath(oldPath || path)}</span>
+        <ChevronRight className="size-3 flex-shrink-0 text-muted-foreground/40" />
+        <span className="truncate text-foreground/80">
+          {memoryRelPath(newPath)}
+        </span>
+      </div>
+    );
+  } else if (command === 'delete') {
+    body = (
+      <div className="flex items-center gap-1.5 px-3 py-2 text-xs text-muted-foreground/70">
+        <Trash2 className="size-3 flex-shrink-0" />
+        <span className="truncate font-mono">{relPath}</span>
+      </div>
+    );
+  } else if (output) {
+    body = <ToolOutputFallback output={output} toolName="memory" />;
+  }
+
+  return (
+    <BasicTool
+      icon={<Brain className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Memory',
+        subtitle: command === 'rename' ? memoryRelPath(newPath) : relPath,
+        args: command ? [verb] : undefined,
+      }}
+      onSubtitleClick={
+        path && isFileTarget && command !== 'delete'
+          ? () => openPreview(path)
+          : undefined
+      }
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      {body}
+    </BasicTool>
+  );
+}
+ToolRegistry.register('memory', MemoryTool);
+ToolRegistry.register('oc-memory', MemoryTool);
+
 // --- Bash ---
 
 /**
@@ -8296,6 +8542,284 @@ function parseErrorContent(error: string): {
     validationIssues: null,
   };
 }
+
+// ============================================================================
+// Kortix Executor (connectors / discover / describe / call) — meta-tools the
+// agent uses to reach every configured integration. Generic by design: these
+// views render the executor's stable envelope, NOT any specific app's data.
+// ============================================================================
+
+function parseExecutorOutput(output: string): Record<string, unknown> | null {
+  if (!output) return null;
+  try {
+    const v = JSON.parse(output);
+    return v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function ExecutorRiskBadge({ risk }: { risk?: unknown }) {
+  if (typeof risk !== 'string' || !risk) return null;
+  const tint =
+    risk === 'read'
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : risk === 'destructive'
+        ? 'text-destructive'
+        : 'text-amber-600 dark:text-amber-400';
+  return (
+    <span className={cn('text-[10px] font-semibold uppercase tracking-wide flex-shrink-0', tint)}>
+      {risk}
+    </span>
+  );
+}
+
+function ExecutorJson({ value }: { value: unknown }) {
+  if (value == null || (typeof value === 'object' && Object.keys(value as object).length === 0)) {
+    return <span className="text-xs text-muted-foreground/60 font-mono">{'{}'}</span>;
+  }
+  const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  return (
+    <pre className="max-h-72 overflow-auto rounded-2xl border border-border/50 bg-muted/40 p-2.5 font-mono text-xs leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
+      {text}
+    </pre>
+  );
+}
+
+function ExecutorSectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60 mb-1.5">
+      {children}
+    </div>
+  );
+}
+
+/** connectors — list the integrations this session can use. */
+function ExecutorConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const output = partOutput(part);
+  const status = partStatus(part);
+  const running = useContext(ToolRunningContext);
+  const parsed = useMemo(() => parseExecutorOutput(output), [output]);
+  const connectors = (Array.isArray(parsed?.connectors) ? parsed!.connectors : []) as Array<Record<string, unknown>>;
+  const isStreaming = (status === 'pending' && running) || status === 'running';
+
+  return (
+    <BasicTool
+      icon={<Plug className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Connectors',
+        args: status === 'completed' ? [`${connectors.length} available`] : undefined,
+      }}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      <div className="p-2.5">
+        {connectors.length > 0 ? (
+          <div className="space-y-0.5">
+            {connectors.map((c, i) => (
+              <div key={String(c.slug ?? i)} className="flex items-center gap-2 px-2 py-1 text-xs">
+                <Plug className="size-3 flex-shrink-0 text-muted-foreground/50" />
+                <span className="font-medium text-foreground truncate">{String(c.name || c.slug || '')}</span>
+                <span className="text-muted-foreground/60 font-mono">{String(c.provider ?? '')}</span>
+                <span className="ml-auto text-muted-foreground/50">{String(c.tools ?? 0)} tools</span>
+                <span
+                  className={cn(
+                    'text-[10px] font-semibold uppercase',
+                    c.status === 'active' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
+                  )}
+                >
+                  {String(c.status ?? '')}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : output ? (
+          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="connectors" />
+        ) : (
+          <ToolEmptyState message={isStreaming ? 'Loading connectors…' : 'No connectors.'} />
+        )}
+      </div>
+    </BasicTool>
+  );
+}
+
+/** discover — intent search across every usable tool. */
+function ExecutorDiscoverTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(part);
+  const output = partOutput(part);
+  const status = partStatus(part);
+  const running = useContext(ToolRunningContext);
+  const parsed = useMemo(() => parseExecutorOutput(output), [output]);
+  const matches = (Array.isArray(parsed?.matches) ? parsed!.matches : []) as Array<Record<string, unknown>>;
+  const query = String(input.query ?? '').trim();
+  const isStreaming = (status === 'pending' && running) || status === 'running';
+
+  return (
+    <BasicTool
+      icon={<Search className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Discover tools',
+        subtitle: query || undefined,
+        args: status === 'completed' ? [`${matches.length} ${matches.length === 1 ? 'match' : 'matches'}`] : undefined,
+      }}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      <div className="p-2.5">
+        {matches.length > 0 ? (
+          <div className="space-y-1.5">
+            {matches.map((m, i) => (
+              <div key={String(m.tool ?? i)} className="px-2 py-1 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-foreground truncate">{String(m.tool ?? '')}</span>
+                  <ExecutorRiskBadge risk={m.risk} />
+                </div>
+                {m.description ? (
+                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground line-clamp-2">{String(m.description)}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : parsed ? (
+          <ToolEmptyState message={isStreaming ? 'Searching…' : `No tools match "${query}".`} />
+        ) : output ? (
+          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="discover" />
+        ) : (
+          <ToolEmptyState message={isStreaming ? 'Searching…' : 'No results yet.'} />
+        )}
+      </div>
+    </BasicTool>
+  );
+}
+
+/** describe — one tool's full input schema + risk. */
+function ExecutorDescribeTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(part);
+  const output = partOutput(part);
+  const status = partStatus(part);
+  const running = useContext(ToolRunningContext);
+  const parsed = useMemo(() => parseExecutorOutput(output), [output]);
+  const tool = String(parsed?.tool ?? input.tool ?? '').trim();
+  const isStreaming = (status === 'pending' && running) || status === 'running';
+
+  return (
+    <BasicTool
+      icon={<Code2 className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Describe',
+        subtitle: tool || undefined,
+        args: parsed?.risk ? [String(parsed.risk)] : undefined,
+      }}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      <div className="p-2.5 space-y-2.5">
+        {parsed ? (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs text-foreground">{tool}</span>
+              <ExecutorRiskBadge risk={parsed.risk} />
+            </div>
+            {parsed.description ? (
+              <p className="text-xs leading-relaxed text-muted-foreground">{String(parsed.description)}</p>
+            ) : null}
+            <div>
+              <ExecutorSectionLabel>Input schema</ExecutorSectionLabel>
+              <ExecutorJson value={parsed.inputSchema ?? { type: 'object', properties: {} }} />
+            </div>
+          </>
+        ) : output ? (
+          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="describe" />
+        ) : (
+          <ToolEmptyState message={isStreaming ? 'Loading schema…' : 'No schema yet.'} />
+        )}
+      </div>
+    </BasicTool>
+  );
+}
+
+/** call — run a tool through the gateway. Renders request + response envelope. */
+function ExecutorCallTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(part);
+  const output = partOutput(part);
+  const status = partStatus(part);
+  const running = useContext(ToolRunningContext);
+  const parsed = useMemo(() => parseExecutorOutput(output), [output]);
+  const connector = String(input.connector ?? '').trim();
+  const action = String(input.action ?? '').trim();
+  const args = (input.args && typeof input.args === 'object' ? input.args : {}) as Record<string, unknown>;
+  const ref = connector && action ? `${connector}.${action}` : connector || action;
+  const isStreaming = (status === 'pending' && running) || status === 'running';
+
+  // Outcome from the executor envelope: { ok, data, risk, status?, reason? }.
+  const ok = parsed?.ok === true;
+  const callStatus = typeof parsed?.status === 'string' ? (parsed.status as string) : ok ? 'ok' : parsed ? 'error' : '';
+  const outcome =
+    callStatus === 'pending_approval'
+      ? { label: 'Needs approval', tint: 'text-amber-600 dark:text-amber-400' }
+      : callStatus === 'denied'
+        ? { label: 'Denied', tint: 'text-destructive' }
+        : ok
+          ? { label: 'OK', tint: 'text-emerald-600 dark:text-emerald-400' }
+          : parsed
+            ? { label: 'Error', tint: 'text-destructive' }
+            : null;
+
+  return (
+    <BasicTool
+      icon={<Terminal className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Run tool',
+        subtitle: ref || undefined,
+        args: [
+          ...(parsed?.risk ? [String(parsed.risk)] : []),
+          ...(outcome ? [outcome.label] : []),
+        ].filter(Boolean) as string[],
+      }}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      <div className="p-2.5 space-y-2.5">
+        <div className="flex items-center gap-2 text-xs">
+          <span className="font-mono text-foreground">{ref}</span>
+          <ExecutorRiskBadge risk={parsed?.risk} />
+          {outcome && <span className={cn('ml-auto text-[10px] font-semibold uppercase', outcome.tint)}>{outcome.label}</span>}
+        </div>
+
+        {Object.keys(args).length > 0 && (
+          <div>
+            <ExecutorSectionLabel>Request</ExecutorSectionLabel>
+            <ExecutorJson value={args} />
+          </div>
+        )}
+
+        {parsed ? (
+          <div>
+            <ExecutorSectionLabel>Response</ExecutorSectionLabel>
+            {parsed.reason && !ok ? (
+              <p className="text-xs text-destructive font-mono">{String(parsed.reason)}</p>
+            ) : (
+              <ExecutorJson value={'data' in parsed ? parsed.data : parsed} />
+            )}
+          </div>
+        ) : output ? (
+          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="call" />
+        ) : (
+          <ToolEmptyState message={isStreaming ? 'Running…' : 'No result yet.'} />
+        )}
+      </div>
+    </BasicTool>
+  );
+}
+
+ToolRegistry.register('kortix-executor_connectors', ExecutorConnectorsTool);
+ToolRegistry.register('kortix-executor_discover', ExecutorDiscoverTool);
+ToolRegistry.register('kortix-executor_describe', ExecutorDescribeTool);
+ToolRegistry.register('kortix-executor_call', ExecutorCallTool);
 
 export function ToolError({
   error,

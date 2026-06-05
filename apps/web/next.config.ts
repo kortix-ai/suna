@@ -103,10 +103,12 @@ const nextConfig = (): NextConfig => ({
 
   async rewrites() {
     return [
-      // Proxy API calls to backend to avoid CORS in local dev
+      // Proxy API calls to backend to avoid CORS in local dev. The target is
+      // env-driven so an isolated `pnpm worktree` instance proxies the browser
+      // to ITS api port; unset (primary `pnpm dev`) keeps the default :8008.
       {
         source: '/v1/:path*',
-        destination: 'http://localhost:8008/v1/:path*',
+        destination: `${process.env.KORTIX_API_PROXY_TARGET ?? 'http://localhost:8008'}/v1/:path*`,
       },
       {
         source: '/ingest/static/:path*',

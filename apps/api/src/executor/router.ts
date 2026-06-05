@@ -157,6 +157,14 @@ export interface ExecutorRouterDeps {
   deleteConnector?(projectId: string, slug: string): Promise<CrudOutcome>;
   /** Set a connector's credential value (stored scope='connector', never injected). */
   setConnectorCredential?(projectId: string, slug: string, value: string): Promise<CrudOutcome>;
+  /** Change a connector's credential mode (shared ↔ per_user) in kortix.toml + re-sync. */
+  setCredentialMode?(projectId: string, accountId: string, slug: string, mode: 'shared' | 'per_user'): Promise<CrudOutcome>;
+  /** Rename a connector (display label) in kortix.toml + re-sync. */
+  setConnectorName?(projectId: string, accountId: string, slug: string, name: string): Promise<CrudOutcome>;
+  /** Read a connector's [[connectors.policies]] (per-tool/per-pattern permissions). */
+  getConnectorPolicies?(projectId: string, slug: string): Promise<{ policies: Array<{ match: string; action: string }> } | null>;
+  /** Replace a connector's [[connectors.policies]] in kortix.toml + re-sync. */
+  setConnectorPolicies?(projectId: string, accountId: string, slug: string, policies: Array<{ match: string; action: string }>): Promise<CrudOutcome>;
   /** Pipedream 1-click: mint a connect token (for the frontend SDK overlay) + link. null = not pipedream. */
   pipedreamConnect?(projectId: string, slug: string, userId: string): Promise<{ token?: string; app?: string; connectUrl?: string } | null>;
   /** Pipedream 1-click: after the user finishes, persist the account binding (their own for per_user). */
@@ -338,6 +346,11 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       if (!deps.createConnector) return c.json({ error: 'not supported' }, 501);
       let body: any;
       try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      if (body?.sharing !== undefined) {
+        const intent = parseSharingIntent(body.sharing, admin.userId);
+        if (!intent) return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+        body.sharing = intent;
+      }
       const result = await deps.createConnector(projectId, admin.accountId, body);
       return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
     },
@@ -489,6 +502,130 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const ok = await deps.setSharing(projectId, slug, intent);
       if (!ok) return c.json({ error: 'connector or its credential not found' }, 404);
       return c.json({ ok: true });
+    },
+  );
+
+  // ── Admin: change a connector's credential mode (shared ↔ per_user) ───────
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/credential-mode',
+      tags: ['executor'],
+      summary: 'Change a connector\'s credential mode (shared ↔ per_user)',
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(CrudOkSchema, 'Mode updated'),
+        ...errors(400, 403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.setCredentialMode) return c.json({ error: 'not supported' }, 501);
+      let body: any;
+      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      const mode = body?.mode;
+      if (mode !== 'shared' && mode !== 'per_user') {
+        return c.json({ error: 'mode must be "shared" or "per_user"' }, 400);
+      }
+      const result = await deps.setCredentialMode(projectId, admin.accountId, slug, mode);
+      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+    },
+  );
+
+  // ── Admin: rename a connector (display label) ────────────────────────────
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/name',
+      tags: ['executor'],
+      summary: 'Rename a connector (display label)',
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(CrudOkSchema, 'Renamed'),
+        ...errors(400, 403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.setConnectorName) return c.json({ error: 'not supported' }, 501);
+      let body: any;
+      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      const name = typeof body?.name === 'string' ? body.name : '';
+      if (!name.trim()) return c.json({ error: '`name` is required' }, 400);
+      const result = await deps.setConnectorName(projectId, admin.accountId, slug, name);
+      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+    },
+  );
+
+  // ── Admin: read a connector's per-tool/per-pattern policies ──────────────
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/connectors/{slug}/policies',
+      tags: ['executor'],
+      summary: 'Read a connector\'s tool-call policies',
+      ...auth,
+      request: { params: ProjectSlugParam },
+      responses: {
+        200: json(OpaqueSchema, 'Connector policies'),
+        ...errors(403, 404),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.getConnectorPolicies) return c.json({ error: 'not supported' }, 501);
+      const result = await deps.getConnectorPolicies(projectId, slug);
+      if (!result) return c.json({ error: 'connector not found' }, 404);
+      return c.json(result);
+    },
+  );
+
+  // ── Admin: replace a connector's policies (write-through to kortix.toml) ──
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/policies',
+      tags: ['executor'],
+      summary: 'Replace a connector\'s tool-call policies',
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(CrudOkSchema, 'Policies updated'),
+        ...errors(400, 403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.setConnectorPolicies) return c.json({ error: 'not supported' }, 501);
+      let body: any;
+      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      const policies = Array.isArray(body?.policies) ? body.policies : null;
+      if (!policies) return c.json({ error: '`policies` must be an array' }, 400);
+      const result = await deps.setConnectorPolicies(projectId, admin.accountId, slug, policies);
+      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
     },
   );
 

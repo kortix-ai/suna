@@ -10,6 +10,9 @@ dist/
 build/
 *.tsbuildinfo
 
+# pnpm worktree — per-worktree marker (state lives in ~/.kortix, outside the repo)
+.kortix-worktree.json
+
 # Environment variables
 .env
 .env.local

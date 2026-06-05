@@ -615,17 +615,27 @@ projectsApp.openapi(
 
   const updates: Partial<typeof projectSessions.$inferInsert> = { updatedAt: new Date() };
 
+  // A user-set name is the AUTHORITATIVE display name. It lives in
+  // metadata.custom_name — a separate key from metadata.name (the auto title
+  // mirrored from opencode by /sync-opencode-sessions) so a rename is never
+  // clobbered by a later sync. Passing name: "" (or null) clears the override
+  // and reverts the session to its auto title.
+  const hasNameField = hasOwn(body, 'name');
   const name = normalizeString(body.name);
   const metadata = body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
     ? body.metadata as Record<string, unknown>
     : null;
 
-  if (name || metadata) {
-    updates.metadata = {
+  if (hasNameField || metadata) {
+    const nextMetadata: Record<string, unknown> = {
       ...(existing.metadata ?? {}),
       ...(metadata ?? {}),
-      ...(name ? { name } : {}),
     };
+    if (hasNameField) {
+      if (name) nextMetadata.custom_name = name;
+      else delete nextMetadata.custom_name;
+    }
+    updates.metadata = nextMetadata;
   }
 
   const [row] = await db

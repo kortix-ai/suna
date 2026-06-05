@@ -67,12 +67,21 @@ export async function ensureSandboxImage(
     slug?: string;
     accountId?: string;
     source?: SnapshotBuildSource;
+    /**
+     * The provider the SESSION will run on (its sandbox provider). Build there,
+     * not on the template row's last-built provider — otherwise a template built
+     * on one provider (e.g. Daytona) makes a session on another (e.g. Platinum)
+     * reuse a snapshot that doesn't exist there → 404 on create. Defaults to the
+     * row's provider for non-session callers (pre-build/manual/background).
+     */
+    provider?: string;
   } = {},
 ): Promise<EnsureSandboxImageResult> {
   const template = await resolveTemplateBySlug(project, opts.slug);
-  const provider = getSandboxProvider(template.provider);
+  const buildProvider = opts.provider ?? template.provider;
+  const provider = getSandboxProvider(buildProvider);
   if (!provider.isConfigured()) {
-    throw new SnapshotBuildError(`Sandbox provider ${template.provider} is not configured`);
+    throw new SnapshotBuildError(`Sandbox provider ${buildProvider} is not configured`);
   }
 
   const identity = await computeTemplateIdentity(project, template);
@@ -85,6 +94,7 @@ export async function ensureSandboxImage(
   // session-sandbox.ts (rebuild + retry once on "snapshot not found") covers the
   // rare race where the snapshot was dropped on the provider underneath us.
   if (
+    template.provider === buildProvider &&
     template.providerState === 'active' &&
     template.contentHash === identity.contentHash &&
     template.providerSnapshotName === identity.snapshotName
@@ -98,13 +108,15 @@ export async function ensureSandboxImage(
     };
   }
 
-  // Cache hit?
+  // Cache hit? (checks the ACTIVE provider — so a row built elsewhere doesn't
+  // count, and we rebuild on this provider.)
   const state = await provider.getSnapshotState(identity.snapshotName);
   if (state === 'active') {
     await recordTemplateBuilt(template.templateId, {
       snapshotName: identity.snapshotName,
       contentHash: identity.contentHash,
       builtFromCommit: identity.builtFromCommit,
+      provider: buildProvider,
     });
     return {
       snapshotName: identity.snapshotName,
@@ -165,6 +177,7 @@ export async function ensureSandboxImage(
     state,
     accountId: opts.accountId,
     source: opts.source ?? 'session-start',
+    buildProvider,
   }).finally(() => inflightBuilds.delete(identity.snapshotName));
   inflightBuilds.set(identity.snapshotName, buildPromise);
   return buildPromise;
@@ -181,9 +194,9 @@ async function runInlineBuild(
   project: GitBackedProject,
   template: ResolvedTemplate,
   identity: TemplateIdentity,
-  opts: { state: ProviderState; accountId?: string; source: SnapshotBuildSource },
+  opts: { state: ProviderState; accountId?: string; source: SnapshotBuildSource; buildProvider?: string },
 ): Promise<EnsureSandboxImageResult> {
-  const provider = getSandboxProvider(template.provider);
+  const provider = getSandboxProvider(opts.buildProvider ?? template.provider);
 
   // Reap a failed/dead snapshot under the same name so the rebuild starts fresh.
   if (opts.state === 'error' || opts.state === 'build_failed') {
@@ -220,6 +233,7 @@ async function runInlineBuild(
       snapshotName: identity.snapshotName,
       contentHash: identity.contentHash,
       builtFromCommit: identity.builtFromCommit,
+      provider: opts.buildProvider,
     });
     return {
       snapshotName: identity.snapshotName,

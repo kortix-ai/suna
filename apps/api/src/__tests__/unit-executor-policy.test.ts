@@ -6,6 +6,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
   globToRegex,
+  isRegexMatcher,
+  isValidMatcher,
   isVisible,
   isVisibleEffective,
   matchesPolicy,
@@ -36,6 +38,22 @@ describe('matchesPolicy', () => {
   });
   test('globToRegex anchors', () => {
     expect(globToRegex('a.b').test('xa.by')).toBe(false);
+  });
+  test('regex matcher /.../ — not auto-anchored, case-insensitive by default', () => {
+    expect(matchesPolicy('/^delete_/', 'delete_message')).toBe(true);
+    expect(matchesPolicy('/^delete_/', 'send_message')).toBe(false);
+    expect(matchesPolicy('/(create|update)/', 'charges.update')).toBe(true);   // unanchored
+    expect(matchesPolicy('/SEND/', 'send_email')).toBe(true);                  // default i flag
+  });
+  test('invalid regex never matches (fail-safe, never allow-all)', () => {
+    expect(matchesPolicy('/(/', 'anything')).toBe(false);
+  });
+  test('isRegexMatcher / isValidMatcher', () => {
+    expect(isRegexMatcher('/^x$/')).toBe(true);
+    expect(isRegexMatcher('send_*')).toBe(false);
+    expect(isValidMatcher('/(/')).toBe(false);
+    expect(isValidMatcher('/^ok$/')).toBe(true);
+    expect(isValidMatcher('send_*')).toBe(true);
   });
 });
 

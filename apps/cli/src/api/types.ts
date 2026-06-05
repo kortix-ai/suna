@@ -102,7 +102,10 @@ export interface ProjectSession {
   sandbox_id: string;
   sandbox_url: string | null;
   opencode_session_id: string | null;
+  /** Resolved display name: user-set custom_name, else the auto opencode title. */
   name: string | null;
+  /** User-set name override (authoritative); null when unset. */
+  custom_name: string | null;
   agent_name: string;
   status:
     | 'queued'

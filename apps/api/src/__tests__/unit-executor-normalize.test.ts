@@ -176,6 +176,29 @@ describe('dispatch + namespacing', () => {
     expect(pd[0]!.path).toBe('send_email');
   });
 
+  test('the account-selector prop (type "app", named after the slug) is stripped from the schema', () => {
+    // Pipedream returns the connection prop named after the app slug, not "app".
+    const pd = normalize({
+      provider: 'pipedream',
+      app: 'gmail',
+      actions: [{
+        key: 'gmail-find-email',
+        name: 'Find Email',
+        params: [
+          { name: 'gmail', type: 'app', required: true },          // the account selector — must NOT surface
+          { name: 'q', type: 'string', required: false },
+          { name: 'withTextPayload', type: 'boolean', required: true },
+        ],
+      }],
+    });
+    const find = pd.find((a) => a.path === 'find_email')!;
+    const props = (find.inputSchema as any).properties;
+    expect(props.gmail).toBeUndefined();                          // selector gone
+    expect(props.q).toBeDefined();
+    expect(props.withTextPayload).toBeDefined();
+    expect((find.inputSchema as any).required).toEqual(['withTextPayload']); // gmail not required either
+  });
+
   test('every pipedream connector gets a generic `request` (Connect Proxy) tool', () => {
     const pd = normalize({ provider: 'pipedream', app: 'github', actions: [{ key: 'github-create-issue', name: 'Create Issue' }] });
     const request = pd.find((a) => a.path === 'request');

@@ -275,7 +275,11 @@ export function normalizePipedream(actions: PipedreamActionLike[], app: string):
       const properties: Record<string, unknown> = {};
       const required: string[] = [];
       for (const p of a.params ?? []) {
-        if (!p?.name || p.name === 'app') continue;
+        // Skip the account-selector prop. Pipedream names it after the app slug
+        // (type "app"), not literally "app" — filter by type, not name, so it
+        // never surfaces as a fillable arg. (The catalog fetch strips it too;
+        // this is the second line of defence.)
+        if (!p?.name || p.type === 'app') continue;
         properties[p.name] = { type: pdType(p.type), ...(p.description ? { description: p.description } : {}) };
         if (p.required) required.push(p.name);
       }

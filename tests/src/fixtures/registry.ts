@@ -61,6 +61,10 @@ export class ResourceStack {
       case "supabase-user":
         // Handled by the world's service-role admin during teardownAll.
         break;
+      case "opencode-session":
+        // Lives inside the ephemeral sandbox; reclaimed when the session/sandbox
+        // is deleted. Tracked only for report context — no standalone teardown.
+        break;
       default:
         log.warn(`no teardown handler for resource kind "${r.kind}" (${r.id})`);
     }

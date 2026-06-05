@@ -48,6 +48,14 @@ export interface Env {
   adminToken: string | null;
   /** Stripe TEST secret key — to confirm PaymentIntents in the real subscribe flow. */
   stripeSecretKey: string | null;
+  /**
+   * Stripe webhook signing secret (whsec_…). Lets the suite POST a validly-signed
+   * `customer.subscription.updated` to /v1/billing/webhook/stripe so the real
+   * credit-granting handler runs even on a target whose Stripe→API webhook isn't
+   * delivered (e.g. dev-api). Only used as a fallback when credits don't land on
+   * their own after subscribe.
+   */
+  stripeWebhookSecret: string | null;
   /** Required non-empty to run destructive (data-creating) flows. */
   liveConfirm: string | null;
   target: TargetName;
@@ -115,6 +123,7 @@ export function loadEnv(): Env {
   const ownerPassword = pick("KE2E_OWNER_PASSWORD", "E2E_OWNER_PASSWORD");
   const adminToken = pick("KE2E_ADMIN_TOKEN", "E2E_ADMIN_TOKEN", "ADMIN_TOKEN");
   const stripeSecretKey = pick("KE2E_STRIPE_SECRET_KEY");
+  const stripeWebhookSecret = pick("KE2E_STRIPE_WEBHOOK_SECRET");
   const liveConfirm = pick("KE2E_LIVE_CONFIRM");
   const target = inferTarget(apiUrl);
 
@@ -139,6 +148,7 @@ export function loadEnv(): Env {
     ownerPassword,
     adminToken,
     stripeSecretKey,
+    stripeWebhookSecret,
     liveConfirm,
     target,
     capabilities,

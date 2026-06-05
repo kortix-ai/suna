@@ -43,15 +43,10 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import Cal, { getCalApi } from '@calcom/embed-react';
-
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { useAuth } from '@/components/AuthProvider';
+import { DemoQualifierDialog } from '@/components/contact/demo-qualifier-dialog';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import {
   getProjectDetail,
@@ -66,7 +61,9 @@ import { useShowPersonalContact } from '@/hooks/use-show-personal-contact';
 import { STARTER_PROMPTS, type StarterPrompt } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 
-const CAL_LINK = 'marko-kraemer/kortix-onboarding';
+// Public team demo event (cal.com/team/kortix/demo). Namespace stays unique to
+// this surface so the embed's UI config doesn't collide with other instances.
+const CAL_LINK = 'team/kortix/demo';
 const CAL_NAMESPACE = 'kortix-onboarding-wizard';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
@@ -102,6 +99,12 @@ type WizardStep = {
 
 export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   const showPersonalContact = useShowPersonalContact();
+  const { user } = useAuth();
+  const defaultName =
+    (user?.user_metadata?.full_name as string | undefined) ||
+    (user?.user_metadata?.name as string | undefined) ||
+    '';
+  const defaultEmail = user?.email ?? '';
   const onboarding = useProjectOnboarding(projectId);
   const openCustomize = useCustomizeStore((s) => s.openCustomize);
   const customizeOpen = useCustomizeStore((s) => s.open);
@@ -168,7 +171,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
     connectors.isLoading ||
     sessions.isLoading;
 
-  // Tracks whether the user just booked a call via the cal embed. Setting
+  // Tracks whether the user just booked a call via the qualifier. Setting
   // this to true flips the founder step's `done` from false → true, which
   // makes the existing auto-advance effect carry the wizard forward without
   // any special-case navigation logic.
@@ -178,26 +181,6 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   // via the prefill store; this state is purely visual feedback inside the
   // wizard — the wizard does NOT close on pick anymore.
   const [stagedPromptId, setStagedPromptId] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!showPersonalContact) return;
-    (async () => {
-      const cal = await getCalApi({ namespace: CAL_NAMESPACE });
-      cal('ui', { hideEventTypeDetails: true, layout: 'month_view' });
-      // Cal's "This meeting is scheduled" screen is a dead-end for the user
-      // unless we close ourselves. Give them ~1.5s to register the success,
-      // then dismiss and let the wizard advance.
-      cal('on', {
-        action: 'bookingSuccessful',
-        callback: () => {
-          window.setTimeout(() => {
-            setCalOpen(false);
-            setFounderBooked(true);
-          }, 1500);
-        },
-      });
-    })();
-  }, [showPersonalContact]);
 
   const openSection = useCallback(
     (section: CustomizeSection) => openCustomize(section),
@@ -432,28 +415,20 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
       </AnimatePresence>
 
       {showPersonalContact && (
-        <Dialog open={calOpen} onOpenChange={setCalOpen}>
-          <DialogContent
-            hideCloseButton
-            className={cn(
-              'max-w-[min(900px,95vw)] gap-0 overflow-hidden rounded-2xl',
-              'border-none bg-transparent p-0 shadow-none',
-            )}
-          >
-            <DialogTitle className="sr-only">Book a call with Marko</DialogTitle>
-            <div className="h-[80vh] max-h-[760px] overflow-hidden rounded-2xl">
-              <Cal
-                namespace={CAL_NAMESPACE}
-                calLink={CAL_LINK}
-                style={{ width: '100%', height: '100%' }}
-                config={{
-                  layout: 'month_view',
-                  hideEventTypeDetails: 'false',
-                }}
-              />
-            </div>
-          </DialogContent>
-        </Dialog>
+        // Same screening gate as every other booking surface: teams under 11
+        // are captured as a lead and confirmed, not put onto Marko's calendar.
+        <DemoQualifierDialog
+          open={calOpen}
+          onOpenChange={setCalOpen}
+          calLink={CAL_LINK}
+          calNamespace={CAL_NAMESPACE}
+          source="onboarding-wizard"
+          title="Book a call with Marko"
+          description="A couple of quick details so Marko can tailor the call."
+          defaultName={defaultName}
+          defaultEmail={defaultEmail}
+          onBookingSuccessful={() => setFounderBooked(true)}
+        />
       )}
     </>
   );

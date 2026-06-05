@@ -16,7 +16,8 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "db:generate": "bunx drizzle-kit generate",
-    "db:push": "bunx drizzle-kit push --force",
+    "db:migrate": "bunx drizzle-kit migrate",
+    "db:check": "bunx drizzle-kit check",
     "db:studio": "bunx drizzle-kit studio"
   },
   "dependencies": {

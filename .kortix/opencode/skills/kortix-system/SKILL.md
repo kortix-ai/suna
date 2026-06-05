@@ -99,6 +99,15 @@ Kortix cloud state — not just files in the repo. Examples:
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
 | "deploy the marketing app" | `kortix apps deploy marketing-site` (when `[[apps]]` is enabled) |
+| "add / list connectors" | `kortix connectors add <slug> --provider …`, `kortix connectors ls`, `connectors show <slug>` |
+| "connect an app / set its credential" | `kortix connectors connect <slug>` (Pipedream) / `connectors credential <slug>` |
+| "who can use a connector" | `kortix connectors share <slug> --mode project\|private\|members` |
+| "shared profile vs each-member-BYO" | `kortix connectors mode <slug> shared\|per_user` |
+| "rename a connector" | `kortix connectors rename <slug> "Gmail (work)"` |
+| "control what a connector may do (per-tool / glob / regex)" | `kortix connectors policy <slug> set <match> allow\|ask\|block` · `policy <slug> ls\|rm\|clear` |
+| "project-wide execution rules" | `kortix connectors policy ls`, `policy set --default risk\|allow_all` |
+
+> **Connectors are fully CLI-configurable** — everything the dashboard's Customize → Connectors does (add/remove, connect, credential, profile model, who-can-use, rename, and per-tool/glob/**regex** Allow/Ask/Block permissions) has a `kortix connectors …` command. `add`/`rm`/`policy set --default` edit the local `kortix.toml` (then `kortix ship`); the rest apply immediately via the cloud. Connector *management* is an admin operation — it needs a **user login** (your laptop or the dashboard), not the project-scoped sandbox token. Inside a session the agent doesn't configure connectors; it **uses** them through the `kortix-executor` MCP (`connectors`/`discover`/`describe`/`call`), and the gateway enforces these policies on every call (returning a denial or pending-approval).
 
 **Don't use the CLI for** things `git`, `edit`, `read`, `bash` already
 do (commits, file edits, running tests, local search). The CLI is the

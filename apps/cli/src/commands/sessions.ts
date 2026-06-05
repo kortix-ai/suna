@@ -27,6 +27,8 @@ Subcommands:
                                     in the session's sandbox (default 3000).
                                     Root-served (assets work). --port also works.
   restart <session-id>              Restart (re-provision) a session.
+  rename <session-id> <name>        Set a session's name. Pass "" to clear it
+                                    and revert to the automatic title.
   rm <session-id>                   Stop + delete a session.
   open <session-id>                 Open the dashboard URL for a session.
 
@@ -78,6 +80,8 @@ export async function runSessions(argv: string[]): Promise<number> {
       return sessionsPreview(rest[0], portFlag ?? rest[1], ctxOpts);
     case 'restart':
       return sessionsRestart(rest[0], ctxOpts);
+    case 'rename':
+      return sessionsRename(rest[0], rest[1], ctxOpts);
     case 'rm':
     case 'delete':
       return sessionsRm(rest[0], ctxOpts);
@@ -307,6 +311,40 @@ async function sessionsRestart(sessionId: string | undefined, opts: CtxOpts): Pr
     return surfaceApiError(err);
   }
   process.stdout.write(`${status.ok(`Restarting ${C.bold}${shortId(sessionId)}${C.reset}${C.dim} — refresh \`sessions info\` to track status${C.reset}`)}\n`);
+  return 0;
+}
+
+async function sessionsRename(
+  sessionId: string | undefined,
+  name: string | undefined,
+  opts: CtxOpts,
+): Promise<number> {
+  if (!sessionId) {
+    process.stderr.write(`${status.err('Pass a session id.')}\n`);
+    return 2;
+  }
+  if (name === undefined) {
+    process.stderr.write(`${status.err('Pass a name (use "" to clear it).')}\n`);
+    return 2;
+  }
+  const ctx = resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  let updated: ProjectSession;
+  try {
+    updated = await ctx.client.patch<ProjectSession>(
+      `/projects/${ctx.projectId}/sessions/${sessionId}`,
+      { name },
+    );
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (updated.custom_name) {
+    process.stdout.write(`${status.ok(`Renamed to ${C.bold}${updated.custom_name}${C.reset}`)}\n`);
+  } else {
+    process.stdout.write(`${status.ok(`Name cleared — using automatic title${updated.name ? ` ${C.dim}(${updated.name})${C.reset}` : ''}`)}\n`);
+  }
   return 0;
 }
 
