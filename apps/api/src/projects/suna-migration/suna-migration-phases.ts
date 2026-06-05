@@ -127,6 +127,7 @@ export async function repoStep(ctx: SunaMigrationContext): Promise<void> {
   await ctx.checkpoint({
     project_id: repo.projectId, repo_url: repo.upstreamUrl, repo_owner: repo.repoOwner,
     repo_name: repo.repoName, default_branch: repo.defaultBranch, provider: repo.provider,
+    external_repo_id: repo.externalRepoId, installation_id: repo.installationId, credential_ref: repo.credentialRef,
   });
   ctx.log('repo: pushed + opencode archive uploaded', { repo: repo.upstreamUrl });
 }
@@ -160,7 +161,14 @@ export async function dbStep(ctx: SunaMigrationContext): Promise<void> {
     await tx.insert(projectGitConnections).values({
       accountId: ctx.accountId, projectId, provider, repoUrl, upstreamUrl: repoUrl, managed: true,
       repoOwner: ctx.progress.repo_owner as string, repoName: ctx.progress.repo_name as string,
-    }).onConflictDoNothing();
+      externalRepoId: (ctx.progress.external_repo_id as string) ?? null,
+      defaultBranch,
+      authMethod: provider === 'github' ? 'github_app' : 'managed',
+      installationId: (ctx.progress.installation_id as string) ?? null,
+      credentialRef: (ctx.progress.credential_ref as string) ?? null,
+      visibility: 'private',
+      status: 'connected',
+    } as any).onConflictDoNothing({ target: projectGitConnections.projectId });
 
     for (const s of specs) {
       await tx.insert(projectSessions).values({
