@@ -51,14 +51,16 @@ export async function extractStep(ctx: SunaMigrationContext): Promise<void> {
   rmSync(out, { recursive: true, force: true });
   mkdirSync(join(out, 'legacy'), { recursive: true });
 
-  // Optional cap (testing / very large accounts): KORTIX_SUNA_MIGRATION_LIMIT.
-  const limit = Number(process.env.KORTIX_SUNA_MIGRATION_LIMIT) || 0;
+  // Window over the account's projects, newest-first: plan.{limit,offset}.
+  // Default = latest 25. offset lets a later run grab the next batch (25–50, …).
+  const limit = Number(ctx.plan.limit) > 0 ? Number(ctx.plan.limit) : 25;
+  const offset = Number(ctx.plan.offset) >= 0 ? Number(ctx.plan.offset) : 0;
   const sunaProjects = (await ctx.database.execute(sql`
     SELECT p.project_id, COALESCE(NULLIF(p.name,''),'Untitled') AS name, r.external_id
     FROM public.projects p
     LEFT JOIN public.resources r ON r.id = p.sandbox_resource_id AND r.type = 'sandbox'
     WHERE p.account_id = ${ctx.accountId} ORDER BY p.created_at DESC
-    ${limit > 0 ? sql`LIMIT ${limit}` : sql``}
+    LIMIT ${limit} OFFSET ${offset}
   `)) as unknown as Array<{ project_id: string; name: string; external_id: string | null }>;
 
   const used = new Set<string>();

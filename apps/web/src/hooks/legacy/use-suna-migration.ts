@@ -42,12 +42,15 @@ export function useSunaMigration(accountId?: string | null) {
   });
 }
 
+const DEFAULT_LIMIT = 25;
+
 export function useStartSunaMigration(accountId?: string | null) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async () =>
+    mutationFn: async (opts?: { limit?: number; offset?: number }) =>
       unwrap(await backendApi.post<{ created: boolean; migration: SunaMigration }>(
-        '/projects/suna-migration/start', { account_id: accountId ?? undefined },
+        '/projects/suna-migration/start',
+        { account_id: accountId ?? undefined, limit: opts?.limit ?? DEFAULT_LIMIT, offset: opts?.offset ?? 0 },
       )),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: KEY });

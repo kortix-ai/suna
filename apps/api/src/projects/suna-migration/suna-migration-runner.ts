@@ -1,10 +1,3 @@
-/**
- * Durable runner for the user-triggered Suna → opencode account migration.
- * Mirrors legacy-migration-runner exactly (idempotent phases, time-boxed
- * heartbeat lease, resumable by the worker), but keyed on ACCOUNT: one row →
- * one new project with N sessions. The user clicks "Migrate" once; the backend
- * owns it from there and finishes even across redeploys.
- */
 import { and, desc, eq, inArray, lt, or, sql } from 'drizzle-orm';
 import { sunaAccountMigrations, type Database } from '@kortix/db';
 import { logger as appLogger } from '../../lib/logger';
@@ -22,6 +15,7 @@ export interface SunaMigrationContext {
   migrationId: string;
   runId: string;
   accountId: string;
+  plan: Record<string, unknown>;
   progress: Record<string, unknown>;
   checkpoint: (patch: Record<string, unknown>) => Promise<void>;
   heartbeat: () => Promise<void>;
@@ -69,7 +63,7 @@ export async function driveSunaMigration(database: Database, migrationId: string
       .where(eq(sunaAccountMigrations.migrationId, migrationId));
   };
 
-  const ctx: SunaMigrationContext = { database, migrationId, runId: leased.runId, accountId: leased.accountId, progress, checkpoint, heartbeat, log };
+  const ctx: SunaMigrationContext = { database, migrationId, runId: leased.runId, accountId: leased.accountId, plan: asObject(leased.plan), progress, checkpoint, heartbeat, log };
 
   let phaseIndex = Math.max(0, PHASE_ORDER.indexOf((leased.phase as SunaPhase) ?? 'extract'));
   for (; phaseIndex < PHASE_ORDER.length; phaseIndex++) {
@@ -122,15 +116,19 @@ export async function latestSunaMigration(database: Database, accountId: string)
   return row ?? null;
 }
 
-export async function startSunaMigration(input: { database: Database; accountId: string; autoDrive?: boolean }): Promise<{ migration: MigrationRow; created: boolean }> {
+export const DEFAULT_LIMIT = 25;
+
+export async function startSunaMigration(input: { database: Database; accountId: string; limit?: number; offset?: number; autoDrive?: boolean }): Promise<{ migration: MigrationRow; created: boolean }> {
   const { database, accountId } = input;
   const existing = await findActiveSunaMigration(database, accountId);
   if (existing) return { migration: existing, created: false };
 
+  const limit = Number.isFinite(input.limit) && (input.limit as number) > 0 ? Math.min(input.limit as number, 200) : DEFAULT_LIMIT;
+  const offset = Number.isFinite(input.offset) && (input.offset as number) >= 0 ? (input.offset as number) : 0;
   const now = new Date();
   const [migration] = await database.insert(sunaAccountMigrations).values({
     runId: `suna-${accountId}`, accountId, status: 'running', mode: 'apply', phase: 'extract',
-    plan: {}, progress: {}, attempts: 0, startedAt: now, heartbeatAt: null, appliedAt: null, updatedAt: now,
+    plan: { limit, offset }, progress: {}, attempts: 0, startedAt: now, heartbeatAt: null, appliedAt: null, updatedAt: now,
   }).returning();
 
   if (input.autoDrive !== false) {
