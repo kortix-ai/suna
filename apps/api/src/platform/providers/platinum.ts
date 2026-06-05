@@ -28,6 +28,30 @@ import type {
 
 const AGENT_PORT = 8000;
 
+// Bound concurrent create()s. A restored microVM intermittently stalls its
+// virtio-net RX during the in-guest git clone (a CH-side restored-net bug);
+// when many sandboxes restore+clone at once the stalls compound and clones
+// hang/reset (the API's 75s runtime-ready timeout). Daytona (fresh VMs) is
+// immune — 5/5 concurrent clean over the same ingress vs platinum melting down
+// at 8-way. create() blocks until the box is runtime-ready (clone done), so a
+// semaphore here directly caps how many clones run simultaneously: the few
+// in-flight stay in the low-contention regime where each clone is fast and
+// clean; the rest queue for a few seconds. This keeps every spawn FAST with no
+// 75s outliers until the CH-side RX fix lands. The daemon's clone-retry
+// (kortix-sandbox-agent-server) is the residual safety net.
+const PLATINUM_CREATE_CONCURRENCY = 2;
+let _pCreateActive = 0;
+const _pCreateWaiters: Array<() => void> = [];
+async function acquirePlatinumCreateSlot(): Promise<void> {
+  if (_pCreateActive < PLATINUM_CREATE_CONCURRENCY) { _pCreateActive++; return; }
+  await new Promise<void>((resolve) => _pCreateWaiters.push(resolve));
+}
+function releasePlatinumCreateSlot(): void {
+  const next = _pCreateWaiters.shift();
+  if (next) next(); // hand the slot to the next waiter (active count unchanged)
+  else _pCreateActive--;
+}
+
 interface PlatinumSandbox {
   id: string;
   state?: string;
@@ -49,6 +73,8 @@ export class PlatinumProvider implements SandboxProvider {
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
+    await acquirePlatinumCreateSlot();
+    try {
     // Boot from the session's own per-project template if one was built
     // (opts.snapshot), else fall back to the fixed PLATINUM_TEMPLATE (e.g.
     // kortix-computer) — so Platinum works out of the box without a per-project
@@ -165,6 +191,9 @@ export class PlatinumProvider implements SandboxProvider {
         version: SANDBOX_VERSION,
       },
     };
+    } finally {
+      releasePlatinumCreateSlot();
+    }
   }
 
   async start(externalId: string): Promise<void> {

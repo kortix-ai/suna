@@ -10,7 +10,7 @@ type GitIdentityConfig = Pick<Config, 'gitUserName' | 'gitUserEmail'>
 
 function execGit(
   args: string[],
-  opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {},
 ): Promise<ExecResult> {
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, {
@@ -24,10 +24,22 @@ function execGit(
     })
     let stdout = ''
     let stderr = ''
+    // Hard wall-clock ceiling per invocation. http.lowSpeed aborts a stalled
+    // TRANSFER, but a hang during connect/TLS (before any bytes) wouldn't trip
+    // it — without this a single `git clone` could block forever and wedge the
+    // whole materialize. On timeout we SIGKILL and surface a transient-looking
+    // error so the caller's retry loop picks it up.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    if (opts.timeoutMs && opts.timeoutMs > 0) {
+      timer = setTimeout(() => {
+        stderr += `\n[execGit] killed: exceeded ${opts.timeoutMs}ms (Connection timed out)`
+        child.kill('SIGKILL')
+      }, opts.timeoutMs)
+    }
     child.stdout?.on('data', (d) => (stdout += d.toString()))
     child.stderr?.on('data', (d) => (stderr += d.toString()))
-    child.on('error', reject)
-    child.on('close', (code) => resolve({ code: code ?? 0, stdout, stderr }))
+    child.on('error', (e) => { if (timer) clearTimeout(timer); reject(e) })
+    child.on('close', (code) => { if (timer) clearTimeout(timer); resolve({ code: code ?? 0, stdout, stderr }) })
   })
 }
 
@@ -134,7 +146,7 @@ async function gitWithAuth(
   token: string | undefined,
   repoUrl: string | undefined,
   args: string[],
-  opts: { cwd?: string } = {},
+  opts: { cwd?: string; timeoutMs?: number } = {},
 ): Promise<ExecResult> {
   return execGit([...buildGitAuthArgs(repoUrl, token), ...args], opts)
 }
@@ -411,13 +423,17 @@ async function checkoutSessionBranch(
   token: string | undefined,
 ): Promise<void> {
   const refSpec = `+refs/heads/${branch}:refs/remotes/origin/${branch}`
+  // Same stall-abort + hard timeout as the clone: a restored VM's RX can hang
+  // this fetch with no reset. On failure/timeout we fall through to a local
+  // branch from the base checkout (below), so the session still boots.
   const fetched = await gitWithAuth(token, cfg.repoUrl, [
+    '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
     '-C',
     target,
     'fetch',
     'origin',
     refSpec,
-  ])
+  ], { timeoutMs: 30_000 })
 
   if (fetched.code === 0) {
     const checkout = await gitWithAuth(token, cfg.repoUrl, [
@@ -516,18 +532,27 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       target,
       filter: cfg.cloneFilter || 'none',
     })
-    const baseCloneArgs = ['clone', '--branch', base, '--single-branch']
-    // Transient transport failures: the smart-HTTP pack stream is long-lived and
-    // a mid-transfer reset (proxy/tunnel hiccup, esp. when many sandboxes clone
-    // at once) kills the whole clone. git surfaces these as "early EOF" /
-    // "RPC failed" / "Connection reset" / "fetch-pack: unexpected disconnect" /
-    // "index-pack" errors. A single-shot clone turned one transient blip into a
-    // permanently dead workspace (repo_ready=false → the API's 75s runtime-ready
-    // timeout). Retry with jittered backoff — the jitter de-clusters concurrent
-    // retries so they don't re-stampede the same upstream. resolveCloneToken
-    // already does this for the credential fetch; the clone needs it just as much.
+    // Two failure modes on a restored microVM whose virtio-net RX intermittently
+    // stalls during a large sustained transfer (worse when many sandboxes clone
+    // at once):
+    //   (a) the pack stream is RESET mid-flight → git exits non-zero with
+    //       "early EOF" / "RPC failed" / "Connection reset" / "fetch-pack:
+    //       unexpected disconnect" / "index-pack".
+    //   (b) the stream STALLS with no reset → git has NO transfer timeout by
+    //       default, so `git clone` blocks FOREVER (repo_ready never flips →
+    //       the API's 75s runtime-ready timeout). This is the nastier one.
+    // Fix BOTH: http.lowSpeedLimit/Time aborts a stalled transfer (<1 KB/s for
+    // 12 s) so a hang becomes a fast failure, then we retry with jittered
+    // backoff (jitter de-clusters concurrent retries so they don't re-stampede).
+    // 4 attempts × (≤12 s stall-abort + backoff) stays well under the 75 s ceiling
+    // while a transient blip clears in 1–2 retries. resolveCloneToken already
+    // retries the credential fetch; the clone itself needs it just as much.
+    const baseCloneArgs = [
+      '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
+      'clone', '--branch', base, '--single-branch',
+    ]
     const isTransientGit = (s: string) =>
-      /early EOF|RPC failed|Connection reset|Recv failure|fetch-pack|unexpected disconnect|index-pack|Could not resolve host|Connection timed out|timed out|GnuTLS recv|SSL_read|TLS packet|Failed to connect|Empty reply/i.test(s)
+      /early EOF|RPC failed|Connection reset|Recv failure|fetch-pack|unexpected disconnect|index-pack|Could not resolve host|Connection timed out|timed out|GnuTLS recv|SSL_read|TLS packet|Failed to connect|Empty reply|Operation too slow|transfer closed|server hung up|remote end hung up|Stream closed|HTTP 5/i.test(s)
     const MAX_CLONE_ATTEMPTS = 4
     let cloned = { code: -1, stdout: '', stderr: '' } as Awaited<ReturnType<typeof gitWithAuth>>
     for (let attempt = 1; attempt <= MAX_CLONE_ATTEMPTS; attempt++) {
@@ -540,7 +565,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
         ...(cfg.cloneFilter ? [`--filter=${cfg.cloneFilter}`] : []),
         cfg.repoUrl,
         tmpTarget,
-      ])
+      ], { timeoutMs: 35_000 })
       if (cloned.code !== 0 && cfg.cloneFilter && !isTransientGit(cloned.stderr)) {
         // Remote may not advertise uploadpack.allowFilter — fall back to a full
         // clone so a non-supporting host still boots (just slower).
@@ -548,7 +573,7 @@ export async function materializeRepo(cfg: Config): Promise<void> {
           stderr: cloned.stderr.slice(0, 200),
         })
         await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
-        cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [...baseCloneArgs, cfg.repoUrl, tmpTarget])
+        cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [...baseCloneArgs, cfg.repoUrl, tmpTarget], { timeoutMs: 35_000 })
       }
       if (cloned.code === 0) break
       const transient = isTransientGit(cloned.stderr)
