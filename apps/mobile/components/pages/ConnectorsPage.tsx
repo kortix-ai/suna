@@ -240,7 +240,7 @@ function ConnectorDetail({
           onPress={onDelete}
           disabled={deleting}
           activeOpacity={0.7}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', opacity: deleting ? 0.5 : 1 }}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24, paddingVertical: 12, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', opacity: deleting ? 0.5 : 1 }}
         >
           {deleting ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={15} color="#ef4444" />}
           <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Remove connector</Text>
@@ -718,7 +718,7 @@ function Segmented<T extends string>({
   const bg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
   const onBg = isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF';
   return (
-    <View style={{ flexDirection: 'row', backgroundColor: bg, borderRadius: 10, padding: 3 }}>
+    <View style={{ flexDirection: 'row', backgroundColor: bg, borderRadius: 9999, padding: 3 }}>
       {options.map((o) => {
         const on = o.value === value;
         return (
@@ -726,7 +726,7 @@ function Segmented<T extends string>({
             key={o.value}
             onPress={() => { haptics.selection(); onChange(o.value); }}
             activeOpacity={0.7}
-            style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: on ? onBg : 'transparent' }}
+            style={{ flex: 1, paddingVertical: 8, borderRadius: 9999, alignItems: 'center', backgroundColor: on ? onBg : 'transparent' }}
           >
             <Text style={{ fontSize: 13, fontFamily: on ? 'Roobert-Medium' : 'Roobert', color: on ? fg : muted }}>{o.label}</Text>
           </TouchableOpacity>
@@ -917,7 +917,7 @@ function CustomConnectorForm({
           onPress={handleSave}
           disabled={!canSave}
           activeOpacity={0.8}
-          style={{ height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}
+          style={{ height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}
         >
           {saving && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add connector</Text>
@@ -1007,7 +1007,7 @@ function SetCredentialView({
           onPress={handleSave}
           disabled={!value.trim() || saving}
           activeOpacity={0.8}
-          style={{ height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: value.trim() && !saving ? 1 : 0.5 }}
+          style={{ height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: value.trim() && !saving ? 1 : 0.5 }}
         >
           {saving && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save credential</Text>
@@ -1152,7 +1152,7 @@ function PoliciesView({ projectId }: { projectId: string }) {
         <TouchableOpacity
           onPress={() => { haptics.tap(); addRule(); }}
           activeOpacity={0.7}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: border, marginTop: 2 }}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 9999, borderWidth: 1, borderStyle: 'dashed', borderColor: border, marginTop: 2 }}
         >
           <Plus size={15} color={muted} />
           <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: muted }}>Add rule</Text>
@@ -1164,7 +1164,7 @@ function PoliciesView({ projectId }: { projectId: string }) {
           onPress={handleSave}
           disabled={!dirty || saveMutation.isPending}
           activeOpacity={0.8}
-          style={{ height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: dirty && !saveMutation.isPending ? 1 : 0.5 }}
+          style={{ height: 48, borderRadius: 9999, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: dirty && !saveMutation.isPending ? 1 : 0.5 }}
         >
           {saveMutation.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save policies</Text>
