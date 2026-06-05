@@ -64,6 +64,8 @@ Subcommands:
   show <slug>                       Show one connector's tools (actions).
   add <slug> --provider <p> [...]   Add a [[connectors]] block to kortix.toml.
   rm <slug>                         Remove a [[connectors]] block from kortix.toml.
+  rename <slug> <name…>             Set a connector's display name (applies now).
+  mode <slug> <shared|per_user>     Set the profile model (applies now + re-syncs).
   sync                              Reconcile the catalog from the shipped kortix.toml.
   credential <slug> [value]         Set a connector's credential (prompts if
                                     no value; reads stdin with \`-\`).
@@ -71,8 +73,13 @@ Subcommands:
   connect <slug>                    Start a Pipedream 1-click connect.
   finalize <slug>                   Confirm a Pipedream connection completed.
   apps [<query>]                    Browse the Pipedream app catalog.
-  policy ls                         Show project execution policies.
+  policy ls                         Show project-wide execution policies.
   policy set --default <risk|allow_all>   Set the default execution mode.
+  policy <slug> ls                  Show one connector's tool-call rules.
+  policy <slug> set <match> <act>   Allow|ask|block a tool/glob/regex (applies now).
+                                    <match> = tool name, glob (send_*) or /regex/.
+  policy <slug> rm <match>          Remove a connector rule.
+  policy <slug> clear               Remove all of a connector's rules.
 
 Add options (provider-specific):
   --name <label>           Human label (default: slug).
@@ -272,6 +279,25 @@ export async function runConnectors(argv: string[]): Promise<number> {
         process.stdout.write(`  ${status.warn(`${slug} not connected yet — finish the authorize step, then retry.`)}\n`);
         return 1;
       }
+      case 'rename':
+      case 'name': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const name = positional.slice(1).join(' ').trim() || f.name;
+        if (!name) return missing('a new name');
+        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/name`, { name });
+        process.stdout.write(`${status.ok(`Renamed ${C.bold}${slug}${C.reset} → ${name}`)}\n`);
+        return 0;
+      }
+      case 'mode': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const mode = positional[1] ?? f.credential;
+        if (mode !== 'shared' && mode !== 'per_user') return missing('<shared|per_user>');
+        await ctx.client.put(`${ex}/connectors/${encodeURIComponent(slug)}/credential-mode`, { mode });
+        process.stdout.write(`${status.ok(`Profile model for ${C.bold}${slug}${C.reset} → ${mode}`)}\n`);
+        return 0;
+      }
       case 'apps': {
         const q = positional[0];
         const qs = [q ? `q=${encodeURIComponent(q)}` : '', f.cursor ? `cursor=${encodeURIComponent(f.cursor)}` : '']
@@ -298,25 +324,65 @@ export async function runConnectors(argv: string[]): Promise<number> {
       }
       case 'policy':
       case 'policies': {
-        const action = positional[0] ?? 'ls';
-        if (action === 'ls' || action === 'list') {
+        const a0 = positional[0] ?? 'ls';
+        // Project-wide: `policy ls`. (`policy set --default` is handled earlier.)
+        if (a0 === 'ls' || a0 === 'list') {
           const resp = await ctx.client.get<{
             policies: { match: string; action: string }[];
             defaultMode: string;
           }>(`${ex}/policies`);
           process.stdout.write(`\n  ${C.dim}default mode: ${C.reset}${C.bold}${resp.defaultMode}${C.reset}\n`);
           if (resp.policies.length === 0) {
-            process.stdout.write(`  ${C.dim}No explicit policies.${C.reset}\n\n`);
+            process.stdout.write(`  ${C.dim}No explicit project policies.${C.reset}\n\n`);
             return 0;
           }
-          for (const p of resp.policies) {
-            process.stdout.write(`  ${C.cyan}${p.match}${C.reset} → ${p.action}\n`);
-          }
+          for (const p of resp.policies) process.stdout.write(`  ${C.cyan}${p.match}${C.reset} → ${p.action}\n`);
           process.stdout.write('\n');
           return 0;
         }
-        // `policy set` is handled earlier as a local kortix.toml edit.
-        process.stderr.write(`${status.err(`unknown policy action "${action}"`)}\n`);
+
+        // Connector-scoped: `policy <slug> <ls|set|rm|clear> …`
+        const slug = a0;
+        const cAction = positional[1] ?? 'ls';
+        const path = `${ex}/connectors/${encodeURIComponent(slug)}/policies`;
+        const load = () => ctx.client.get<{ policies: { match: string; action: string }[] }>(path);
+
+        if (cAction === 'ls' || cAction === 'list') {
+          const { policies } = await load();
+          if (policies.length === 0) {
+            process.stdout.write(`  ${C.dim}No rules for ${slug} — every tool follows global rules & risk.${C.reset}\n`);
+            return 0;
+          }
+          process.stdout.write('\n');
+          for (const p of policies) process.stdout.write(`  ${C.cyan}${p.match}${C.reset} → ${p.action}\n`);
+          process.stdout.write('\n');
+          return 0;
+        }
+        if (cAction === 'set') {
+          const match = positional[2];
+          const action = normalizePolicyAction(positional[3]);
+          if (!match) return missing('a <match> (tool name, glob, or /regex/)');
+          if (!action) return missing('an action: allow | ask | block');
+          const { policies } = await load();
+          const next = [...policies.filter((p) => p.match !== match), { match, action }];
+          await ctx.client.put(path, { policies: next });
+          process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset}: ${match} → ${action}`)}\n`);
+          return 0;
+        }
+        if (cAction === 'rm' || cAction === 'remove') {
+          const match = positional[2];
+          if (!match) return missing('the <match> to remove');
+          const { policies } = await load();
+          await ctx.client.put(path, { policies: policies.filter((p) => p.match !== match) });
+          process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset}: removed ${match}`)}\n`);
+          return 0;
+        }
+        if (cAction === 'clear') {
+          await ctx.client.put(path, { policies: [] });
+          process.stdout.write(`${status.ok(`${C.bold}${slug}${C.reset}: cleared all rules`)}\n`);
+          return 0;
+        }
+        process.stderr.write(`${status.err(`unknown policy action "${cAction}"`)}\n`);
         return 2;
       }
       default:
@@ -416,6 +482,24 @@ function sharingLabel(s: ConnectorSharing | null): string {
 function reportSync(sync?: SyncResult): void {
   if (!sync) return;
   for (const e of sync.errors) process.stderr.write(`  ${status.warn(`${e.slug}: ${e.error}`)}\n`);
+}
+
+/** Accept friendly verbs (allow|ask|block) or canonical actions → canonical, else null. */
+function normalizePolicyAction(v: string | undefined): 'always_run' | 'require_approval' | 'block' | null {
+  switch ((v ?? '').toLowerCase()) {
+    case 'allow':
+    case 'always_run':
+      return 'always_run';
+    case 'ask':
+    case 'approve':
+    case 'require_approval':
+      return 'require_approval';
+    case 'block':
+    case 'deny':
+      return 'block';
+    default:
+      return null;
+  }
 }
 
 function splitCsv(v: string | undefined): string[] {
