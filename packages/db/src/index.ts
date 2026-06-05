@@ -60,6 +60,7 @@ export {
   kortixApiKeys,
   accountTokens,
   serverEntries,
+  workerLeaderLease,
   // Relations
   projectsRelations,
   projectGitConnectionsRelations,

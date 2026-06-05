@@ -676,6 +676,17 @@ export const chatEventDedup = kortixSchema.table(
   (table) => [index('idx_chat_event_dedup_expiry').on(table.expiresAt)],
 );
 
+// Single-row-per-lock advisory lease for cross-replica leader election (the
+// scheduler / sweepers elect one leader so background work doesn't double-run
+// across ECS tasks). Previously SQL-migration-only; folded into the schema so
+// `kortix.*` is 100% Drizzle-owned and the migration engine has one source.
+export const workerLeaderLease = kortixSchema.table('worker_leader_lease', {
+  lockKey: text('lock_key').primaryKey(),
+  ownerId: text('owner_id').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
 // Per-session sandbox runtime row. Decoupled from `kortix.sandboxes` (the
 // legacy /instances table) on purpose: project sessions carry no billing
 // state, no sandbox_members roster, and no team membership semantics — their
