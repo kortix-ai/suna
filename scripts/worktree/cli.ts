@@ -17,8 +17,8 @@ import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
   lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv,
-  writeMarker, ensureDeps, checkDeps, pnpmStore, supaWorkdir, slotDir, startTunnel, WT_HOME, REGISTRY_PATH,
-  type Registry, type SlotEntry, type Ports, type Tunnel,
+  writeMarker, ensureDeps, checkDeps, pnpmStore, supaWorkdir, slotDir, startTunnel, startStripeListen, WT_HOME, REGISTRY_PATH,
+  type Registry, type SlotEntry, type Ports, type Tunnel, type StripeListen,
 } from './lib';
 import { existsSync, rmSync } from 'node:fs';
 import * as clack from '@clack/prompts';
@@ -34,6 +34,17 @@ const warn = (s: string) => console.log(`${pc.yellow('!')} ${s}`);
 const die = (s: string): never => { console.error(`\n${pc.red('✗')} ${s}`); process.exit(1); };
 const url = (u: string) => pc.cyan(pc.underline(u));
 const dot = (up: boolean) => (up ? pc.green('●') : pc.dim('○'));
+
+async function spin(label: string, cmd: string[]): Promise<void> {
+  const s = clack.spinner();
+  s.start(label);
+  try {
+    await Bun.spawn(cmd, { stdout: 'ignore', stderr: 'ignore', stdin: 'ignore' }).exited;
+    s.stop(`${label} ${pc.green('✓')}`);
+  } catch {
+    s.stop(`${label} ${pc.dim('(skipped)')}`);
+  }
+}
 
 interface Args { cmd: string; name?: string; flags: Record<string, string | boolean>; }
 function parseArgs(argv: string[]): Args {
@@ -58,7 +69,7 @@ ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev
 
   ${pc.cyan('pnpm worktree')}                 ${pc.dim('interactive menu')}
   ${pc.cyan('pnpm worktree create')}          ${pc.dim('guided wizard (or --name <n> --from <branch> [--no-tunnel])')}
-  ${pc.cyan('start')} ${pc.dim('<n>')}   ${pc.cyan('stop')} ${pc.dim('<n>')}   ${pc.cyan('nuke')} ${pc.dim('<n> [--force]')}
+  ${pc.cyan('start')} ${pc.dim('<n> [--stripe] [--no-tunnel]')}   ${pc.cyan('stop')} ${pc.dim('<n>')}   ${pc.cyan('nuke')} ${pc.dim('<n> [--force]')}
   ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base main --draft --web]')}
   ${pc.cyan('list')}        ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
 
@@ -260,7 +271,7 @@ async function cmdCreate(a: Args) {
     pc.green(`✓ worktree "${name}" ready`),
   );
   if (a.flags['no-start']) { ok(`start it:  ${pc.cyan('pnpm worktree start ' + name)}`); }
-  else { await cmdStart({ cmd: 'start', name, flags: a.flags['no-tunnel'] ? { 'no-tunnel': true } : {} }); }
+  else { await cmdStart({ cmd: 'start', name, flags: { ...(a.flags['no-tunnel'] ? { 'no-tunnel': true } : {}), ...(a.flags.stripe ? { stripe: true } : {}) } }); }
 }
 
 async function cmdStart(a: Args) {
@@ -292,18 +303,27 @@ async function cmdStart(a: Args) {
     else warn('no tunnel (cloudflared missing or timed out) — cloud sandboxes won’t be reachable; `brew install cloudflared` and restart, or pass --no-tunnel to silence');
   }
 
+  let stripe: StripeListen | null = null;
+  if (a.flags.stripe) {
+    step('Stripe webhook forwarding (billing on)');
+    stripe = await startStripeListen(e.ports.api);
+    if (stripe) sub(`stripe listen → http://localhost:${e.ports.api}/v1/billing/webhooks/stripe  ${pc.dim('(whsec injected)')}`);
+    else warn('stripe CLI missing or not logged in — billing NOT enabled. Install it and run `stripe login`, then restart with --stripe.');
+  }
+
   console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  studio http://localhost:${e.ports.sbStudio}`);
   if (tunnel) console.log(`${pc.dim('   sandbox callback')} ${url(tunnel.url)}`);
+  if (stripe) console.log(`${pc.dim('   billing')} ${pc.green('on')} ${pc.dim('· stripe webhooks → :' + e.ports.api)}`);
   console.log(pc.dim('   (Ctrl+C stops the dev servers cleanly)\n'));
 
-  const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, tunnel?.url) }, stdout: 'inherit', stderr: 'inherit' });
-  const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds) }, stdout: 'inherit', stderr: 'inherit' });
+  const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl: tunnel?.url, stripeWebhookSecret: stripe?.secret }) }, stdout: 'inherit', stderr: 'inherit' });
+  const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing: !!stripe }) }, stdout: 'inherit', stderr: 'inherit' });
   const killListeners = (sig: string) => { for (const port of [e.ports.web, e.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${sig} ${u.pid} 2>/dev/null || true`]); } };
   let stopping = false;
   const shutdown = async () => {
     if (stopping) return; stopping = true;
     console.log(`\n${pc.yellow('▸')} stopping…`);
-    try { api.kill(); } catch {} try { web.kill(); } catch {} try { tunnel?.proc.kill(); } catch {}
+    try { api.kill(); } catch {} try { web.kill(); } catch {} try { tunnel?.proc.kill(); } catch {} try { stripe?.proc.kill(); } catch {}
     killListeners('');
     await Promise.race([Promise.all([api.exited, web.exited]), Bun.sleep(6000)]);
     killListeners('-9');
@@ -337,13 +357,12 @@ async function cmdNuke(a: Args) {
   const pid = e!.projectId;
   step(`Nuking "${name}" ${pc.dim('(project ' + pid + ')')}`);
   for (const port of [e!.ports.web, e!.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
-  sh(['supabase', '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
-  sh(['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
-  sh(['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null || true`]);
-  sh(['bash', '-lc', `docker network rm supabase_network_${pid} 2>/dev/null || true`]);
+  await spin('Stopping Supabase containers', ['supabase', '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
+  await spin('Removing Docker containers', ['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
+  await spin('Removing volumes & network', ['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null; docker network rm supabase_network_${pid} 2>/dev/null || true`]);
   const root = repoRoot();
   const force = a.flags.force ? ['--force'] : [];
-  if (existsSync(e!.path)) sh(['git', '-C', root, 'worktree', 'remove', ...force, e!.path]);
+  if (existsSync(e!.path)) { sub('removing git worktree…'); sh(['git', '-C', root, 'worktree', 'remove', ...force, e!.path]); }
   sh(['git', '-C', root, 'worktree', 'prune']);
   if (e!.branch) {
     const del = sh(['git', '-C', root, 'branch', '-d', e!.branch]);

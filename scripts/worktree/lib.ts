@@ -210,6 +210,34 @@ export async function startTunnel(apiPort: number): Promise<Tunnel | null> {
   return null;
 }
 
+export interface StripeListen { secret: string; proc: ReturnType<typeof Bun.spawn>; }
+
+// Forward Stripe (test-mode) webhooks to THIS worktree's API — the shared
+// `pnpm stripe:listen` is hardcoded to :8008, so without this a worktree's
+// checkout/subscription webhooks would never reach its own API. Captures the
+// `whsec_…` signing secret `stripe listen` prints so the handler can verify
+// signatures. Returns null if the stripe CLI is missing or not logged in
+// (`stripe login`), in which case it just times out.
+export async function startStripeListen(apiPort: number): Promise<StripeListen | null> {
+  if (!which('stripe')) return null;
+  const forwardTo = `http://localhost:${apiPort}/v1/billing/webhooks/stripe`;
+  const logPath = join(tmpdir(), `kortix-wt-stripe-${apiPort}.log`);
+  writeFileSync(logPath, '');
+  const fd = openSync(logPath, 'w');
+  const proc = spawn(['stripe', 'listen', '--forward-to', forwardTo], {
+    stdout: fd, stderr: fd, stdin: 'ignore',
+  });
+  const re = /whsec_[A-Za-z0-9]+/;
+  for (let i = 0; i < 20; i++) {
+    const m = readFileSync(logPath, 'utf8').match(re);
+    if (m) return { secret: m[0], proc };
+    if (proc.exitCode !== null) break;   // not logged in / errored out
+    await Bun.sleep(1000);
+  }
+  try { proc.kill(); } catch {}
+  return null;
+}
+
 export function rewriteConfigToml(toml: string, projectId: string, ports: Ports): string {
   const sectionPort: Record<string, number> = {
     '[api]': ports.sbApi, '[db]': ports.sbDb, '[db.pooler]': ports.sbPooler,
@@ -259,11 +287,20 @@ export function slotCredsFromStatus(ports: Ports, st: Record<string, string>): S
   };
 }
 
-export function apiLaunchEnv(ports: Ports, c: SlotCreds, kortixUrl?: string): Record<string, string> {
+export interface ApiLaunchOpts {
+  /** Public origin cloud sandboxes call back to (the cloudflared tunnel URL). */
+  kortixUrl?: string;
+  /** `whsec_…` from `stripe listen`. When set, billing is turned ON for this
+   *  worktree (STRIPE_SECRET_KEY must come from the decrypted local .env). */
+  stripeWebhookSecret?: string;
+}
+
+export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {}): Record<string, string> {
+  const billing = !!opts.stripeWebhookSecret;
   return {
     ENV_MODE: 'local', KORTIX_LOCAL_DEV: '1',
     PORT: String(ports.api),
-    KORTIX_URL: kortixUrl || `http://localhost:${ports.api}`,
+    KORTIX_URL: opts.kortixUrl || `http://localhost:${ports.api}`,
     NEXT_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
     KORTIX_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
     BACKEND_URL: `http://localhost:${ports.api}/v1`,
@@ -273,12 +310,15 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, kortixUrl?: string): Re
     SUPABASE_URL: c.supabaseUrl,
     ...(c.serviceRoleKey ? { SUPABASE_SERVICE_ROLE_KEY: c.serviceRoleKey } : {}),
     SCHEDULER_ENABLED: 'false',
-    KORTIX_BILLING_INTERNAL_ENABLED: 'false',
+    // Billing off by default; --stripe flips it on and injects the webhook
+    // secret. STRIPE_SECRET_KEY (test mode) is inherited from the local .env.
+    KORTIX_BILLING_INTERNAL_ENABLED: billing ? 'true' : 'false',
+    ...(billing ? { STRIPE_WEBHOOK_SECRET: opts.stripeWebhookSecret! } : {}),
     CORS_ALLOWED_ORIGINS: `http://localhost:${ports.web}`,
   };
 }
 
-export function webLaunchEnv(ports: Ports, c: SlotCreds): Record<string, string> {
+export function webLaunchEnv(ports: Ports, c: SlotCreds, opts: { billing?: boolean } = {}): Record<string, string> {
   return {
     WEB_PORT: String(ports.web),
     KORTIX_API_PROXY_TARGET: `http://localhost:${ports.api}`,
@@ -289,7 +329,7 @@ export function webLaunchEnv(ports: Ports, c: SlotCreds): Record<string, string>
     ...(c.anonKey ? { NEXT_PUBLIC_SUPABASE_ANON_KEY: c.anonKey } : {}),
     NEXT_PUBLIC_APP_URL: `http://localhost:${ports.web}`,
     NEXT_PUBLIC_URL: `http://localhost:${ports.web}`,
-    NEXT_PUBLIC_BILLING_ENABLED: 'false',
+    NEXT_PUBLIC_BILLING_ENABLED: opts.billing ? 'true' : 'false',
   };
 }
 
