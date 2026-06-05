@@ -401,6 +401,34 @@ export function isLegacyAccount(billingModel: string | null | undefined): boolea
   return billingModel !== 'per_seat';
 }
 
+/**
+ * Whether to show the "Claim seat-based pricing" card. It must appear ONLY for a
+ * genuine legacy per-machine account that has something to migrate, so clicking
+ * actually does something. A new per-seat-era user (no machine) must NOT see it:
+ * `billing_model` is `'legacy'` for everyone who isn't explicitly `per_seat`
+ * (incl. brand-new free accounts with a null model), so gating the card on
+ * `billing_model === 'legacy'` showed it to new users — whose claim then
+ * dead-ends on "nothing to switch" while the card hides the normal top-up /
+ * subscribe path, stranding them out of credits. Mirrors the preconditions of
+ * maybeMigrateLegacyAccount (not already per-seat; has a legacy machine; not
+ * under an active yearly commitment) so the card never offers a no-op.
+ */
+export function canClaimPerSeat(args: {
+  billingModel: string | null | undefined;
+  hasLegacyMachine: boolean;
+  commitmentType?: string | null;
+  commitmentEndDate?: string | Date | null;
+  now?: Date;
+}): boolean {
+  if (isPerSeatAccount(args.billingModel)) return false;
+  if (!args.hasLegacyMachine) return false;
+  if (args.commitmentType === 'yearly_commitment' && args.commitmentEndDate) {
+    const ends = new Date(args.commitmentEndDate);
+    if (ends > (args.now ?? new Date())) return false;
+  }
+  return true;
+}
+
 /** Legacy paid tiers eligible for the "claim computer" flow. */
 export const LEGACY_PAID_TIERS = ['tier_2_20', 'tier_6_50', 'tier_12_100', 'tier_25_200', 'tier_50_400', 'tier_125_800', 'tier_200_1000', 'tier_150_1200'] as const;
 
