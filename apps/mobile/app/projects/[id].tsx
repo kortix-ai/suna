@@ -78,6 +78,7 @@ import { AgentBrowserPage } from '@/components/pages/AgentBrowserPage';
 import type { FilesPageRef } from '@/components/pages/FilesPage';
 import { SecretsPage } from '@/components/pages/SecretsPage';
 import { AgentsPage } from '@/components/pages/AgentsPage';
+import { SkillsPage } from '@/components/pages/SkillsPage';
 import { MemoryPage } from '@/components/pages/MemoryPage';
 import { LlmProvidersPage } from '@/components/pages/LlmProvidersPage';
 import { TerminalPage } from '@/components/pages/TerminalPage';
@@ -2002,6 +2003,17 @@ export default function ProjectSessionScreen() {
           /* Active page tab — Agents (web sidebar BUILD) */
           ) : activePageId === 'page:agents' && PAGE_TABS[activePageId] && !showTabsOverview ? (
             <AgentsPage
+              page={PAGE_TABS[activePageId]}
+              projectId={projectId}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Skills (web sidebar BUILD) */
+          ) : activePageId === 'page:skills' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <SkillsPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
