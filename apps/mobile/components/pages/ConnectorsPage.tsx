@@ -22,6 +22,7 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
+import { SvgUri } from 'react-native-svg';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import * as WebBrowser from 'expo-web-browser';
@@ -321,24 +322,36 @@ function AppCard({
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
   const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  const [imgFailed, setImgFailed] = useState(false);
+  // Logos may be raster (PNG/JPG) or SVG. RN's <Image> can't decode SVG, so on
+  // its error we re-render the same URL through <SvgUri>; if that also fails we
+  // fall back to a letter monogram.
+  const [stage, setStage] = useState<'img' | 'svg' | 'fallback'>('img');
+  const showMonogram = !app.imgSrc || stage === 'fallback';
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}>
-      {app.imgSrc && !imgFailed ? (
-        <Image
-          source={{ uri: app.imgSrc }}
-          resizeMode="contain"
-          onError={() => setImgFailed(true)}
-          style={{ width: 38, height: 38 }}
-        />
-      ) : (
-        <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
+      <View
+        style={{
+          width: 38, height: 38, borderRadius: 9, overflow: 'hidden',
+          alignItems: 'center', justifyContent: 'center',
+          backgroundColor: showMonogram ? iconBg : 'transparent',
+        }}
+      >
+        {showMonogram ? (
           <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: muted }}>
             {(app.name || '?').charAt(0).toUpperCase()}
           </Text>
-        </View>
-      )}
+        ) : stage === 'svg' ? (
+          <SvgUri uri={app.imgSrc} width={38} height={38} onError={() => setStage('fallback')} />
+        ) : (
+          <Image
+            source={{ uri: app.imgSrc! }}
+            resizeMode="contain"
+            onError={() => setStage('svg')}
+            style={{ width: 38, height: 38 }}
+          />
+        )}
+      </View>
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{app.name}</Text>
         {app.description ? (
