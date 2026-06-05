@@ -309,6 +309,28 @@ export async function getRepo(opts: {
   );
 }
 
+/**
+ * Resolve whether a GitHub owner is a personal `User` or an `Organization`.
+ * Managed repo creation needs this to choose `POST /user/repos` vs
+ * `POST /orgs/{org}/repos`. Defaults to `Organization` on lookup failure so
+ * the prior (org-only) behaviour is preserved when GitHub is unreachable.
+ */
+export async function getGitHubOwnerType(
+  owner: string,
+  auth?: Pick<GitHubAuthContext, 'token'>,
+): Promise<'User' | 'Organization'> {
+  try {
+    const info = await ghFetch<{ type?: string }>(
+      `/users/${encodeURIComponent(owner)}`,
+      undefined,
+      auth,
+    );
+    return info?.type === 'User' ? 'User' : 'Organization';
+  } catch {
+    return 'Organization';
+  }
+}
+
 async function resolveDefaultOwner(auth?: GitHubAuthContext): Promise<{ owner: string; isOrg: boolean }> {
   if (auth?.owner) {
     return { owner: auth.owner, isOrg: auth.ownerType !== 'User' };
