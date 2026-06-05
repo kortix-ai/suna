@@ -66,6 +66,8 @@ export const projectKeys = {
   policies: (projectId: string | null | undefined) => ['project-policies', projectId] as const,
   pipedreamApps: (projectId: string | null | undefined, q: string) =>
     ['pipedream-apps', projectId, q] as const,
+  pipedreamAppMeta: (projectId: string | null | undefined, slug: string | null | undefined) =>
+    ['pipedream-app-meta', projectId, slug] as const,
   githubInstallations: (accountId: string | null | undefined) =>
     ['github-installations', accountId] as const,
   githubRepositories: (accountId: string | null | undefined, installationId: string | null | undefined) =>
@@ -204,6 +206,20 @@ export function useProjectAccess(projectId: string | null) {
     queryFn: () => listProjectAccess(projectId!),
     enabled: !!projectId,
     staleTime: 30_000,
+  });
+}
+
+/** Resolve a single Pipedream app's display name + logo by its slug, for showing
+ *  connected connectors with their real app branding. Cached; lazy per row. */
+export function usePipedreamAppMeta(projectId: string | null, slug: string | null, enabled = true) {
+  return useQuery({
+    queryKey: projectKeys.pipedreamAppMeta(projectId, slug),
+    queryFn: async () => {
+      const page = await listPipedreamApps(projectId!, slug || undefined);
+      return page.apps.find((a) => a.slug === slug) ?? page.apps[0] ?? null;
+    },
+    enabled: enabled && !!projectId && !!slug,
+    staleTime: 5 * 60_000,
   });
 }
 

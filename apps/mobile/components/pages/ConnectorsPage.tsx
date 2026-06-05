@@ -66,6 +66,7 @@ import {
   useProjectPolicies,
   useSetProjectPolicies,
   usePipedreamApps,
+  usePipedreamAppMeta,
   projectKeys,
 } from '@/lib/projects/hooks';
 import {
@@ -135,6 +136,59 @@ const RISK_COLOR: Record<ConnectorAction['risk'], string> = {
   destructive: '#EF4444',
 };
 
+/** "google_drive" → "Google Drive" — a friendly fallback name from a slug. */
+function prettifyAppName(slug: string): string {
+  const out = slug
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+  return out || slug;
+}
+
+/**
+ * App logo with graceful fallback: raster <Image> → SVG <SvgUri> → letter
+ * monogram. Used for the Pipedream catalogue and connected connectors.
+ */
+function AppLogo({
+  imgSrc,
+  name,
+  size = 38,
+  isDark,
+}: {
+  imgSrc?: string | null;
+  name: string;
+  size?: number;
+  isDark: boolean;
+}) {
+  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+  const [stage, setStage] = useState<'img' | 'svg' | 'fallback'>('img');
+  // Reset when the source changes (logo can resolve after an async lookup).
+  useEffect(() => { setStage('img'); }, [imgSrc]);
+  const showMonogram = !imgSrc || stage === 'fallback';
+  const radius = Math.round(size * 0.24);
+  return (
+    <View
+      style={{
+        width: size, height: size, borderRadius: radius, overflow: 'hidden',
+        alignItems: 'center', justifyContent: 'center',
+        backgroundColor: showMonogram ? iconBg : 'transparent',
+      }}
+    >
+      {showMonogram ? (
+        <Text style={{ fontSize: Math.round(size * 0.42), fontFamily: 'Roobert-Medium', color: muted }}>
+          {(name || '?').charAt(0).toUpperCase()}
+        </Text>
+      ) : stage === 'svg' ? (
+        <SvgUri uri={imgSrc} width={size} height={size} onError={() => setStage('fallback')} />
+      ) : (
+        <Image source={{ uri: imgSrc! }} resizeMode="contain" onError={() => setStage('svg')} style={{ width: size, height: size }} />
+      )}
+    </View>
+  );
+}
+
 // ─── Connector detail (tools) ────────────────────────────────────────────────
 
 function ConnectorDetail({
@@ -171,6 +225,14 @@ function ConnectorDetail({
   const Icon = providerIcon(connector.provider);
   const status = STATUS_META[connector.status];
   const isPipedream = connector.provider === 'pipedream';
+  const meta = usePipedreamAppMeta(projectId, connector.slug, isPipedream);
+  const displayName =
+    meta.data?.name ||
+    (connector.name && connector.name !== connector.slug
+      ? connector.name
+      : isPipedream
+        ? prettifyAppName(connector.slug)
+        : connector.name || connector.slug);
   // Web parity: Pipedream connectors connect a per-user account whenever the
   // credential isn't set yet; custom connectors with an auth secret set a value.
   const needsConnect = isPipedream && !connector.secretSet;
@@ -242,12 +304,16 @@ function ConnectorDetail({
     <View style={{ flex: 1 }}>
       {/* Sheet header: icon · name/status · close */}
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingTop: 4, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: border }}>
-        <View style={{ width: 40, height: 40, borderRadius: 11, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
-          <Icon size={20} color={muted} />
-        </View>
+        {isPipedream ? (
+          <AppLogo imgSrc={meta.data?.imgSrc} name={displayName} size={40} isDark={isDark} />
+        ) : (
+          <View style={{ width: 40, height: 40, borderRadius: 11, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
+            <Icon size={20} color={muted} />
+          </View>
+        )}
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
-            {connector.name || connector.slug}
+            {displayName}
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
             <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted }}>{providerLabel(connector.provider)}</Text>
@@ -369,10 +435,12 @@ function ConnectorDetail({
 
 function ConnectorRow({
   connector,
+  projectId,
   onPress,
   isDark,
 }: {
   connector: AdminConnector;
+  projectId: string;
   onPress: () => void;
   isDark: boolean;
 }) {
@@ -387,20 +455,34 @@ function ConnectorRow({
   const needsCredential = !isPipedream && !!connector.authSecret && !connector.secretSet;
   const needsSetup = needsConnect || needsCredential;
 
+  // Pipedream connectors: show the real app name + logo from the catalogue.
+  const meta = usePipedreamAppMeta(projectId, connector.slug, isPipedream);
+  const displayName =
+    meta.data?.name ||
+    (connector.name && connector.name !== connector.slug
+      ? connector.name
+      : isPipedream
+        ? prettifyAppName(connector.slug)
+        : connector.name || connector.slug);
+
   return (
     <TouchableOpacity
       onPress={onPress}
       activeOpacity={0.6}
       style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}
     >
-      <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon size={19} color={muted} />
-      </View>
+      {isPipedream ? (
+        <AppLogo imgSrc={meta.data?.imgSrc} name={displayName} size={38} isDark={isDark} />
+      ) : (
+        <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: iconBg, alignItems: 'center', justifyContent: 'center' }}>
+          <Icon size={19} color={muted} />
+        </View>
+      )}
 
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
-            {connector.name || connector.slug}
+            {displayName}
           </Text>
           {showStatusDot && <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: status.color }} />}
         </View>
@@ -437,37 +519,10 @@ function AppCard({
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  // Logos may be raster (PNG/JPG) or SVG. RN's <Image> can't decode SVG, so on
-  // its error we re-render the same URL through <SvgUri>; if that also fails we
-  // fall back to a letter monogram.
-  const [stage, setStage] = useState<'img' | 'svg' | 'fallback'>('img');
-  const showMonogram = !app.imgSrc || stage === 'fallback';
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 12 }}>
-      <View
-        style={{
-          width: 38, height: 38, borderRadius: 9, overflow: 'hidden',
-          alignItems: 'center', justifyContent: 'center',
-          backgroundColor: showMonogram ? iconBg : 'transparent',
-        }}
-      >
-        {showMonogram ? (
-          <Text style={{ fontSize: 16, fontFamily: 'Roobert-Medium', color: muted }}>
-            {(app.name || '?').charAt(0).toUpperCase()}
-          </Text>
-        ) : stage === 'svg' ? (
-          <SvgUri uri={app.imgSrc} width={38} height={38} onError={() => setStage('fallback')} />
-        ) : (
-          <Image
-            source={{ uri: app.imgSrc! }}
-            resizeMode="contain"
-            onError={() => setStage('svg')}
-            style={{ width: 38, height: 38 }}
-          />
-        )}
-      </View>
+      <AppLogo imgSrc={app.imgSrc} name={app.name} size={38} isDark={isDark} />
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{app.name}</Text>
         {app.description ? (
@@ -1518,6 +1573,7 @@ export function ConnectorsPage({
                   <View key={connector.slug}>
                     <ConnectorRow
                       connector={connector}
+                      projectId={projectId}
                       isDark={isDark}
                       onPress={() => { haptics.tap(); setSelectedSlug(connector.slug); detailSheetRef.current?.present(); }}
                     />
