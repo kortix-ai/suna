@@ -14,7 +14,7 @@
  * and the uploaded opencode archive + the DB rows. A crash before `repo`
  * re-extracts (idempotent: un-archive + tar again).
  */
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
@@ -105,11 +105,15 @@ export async function repoStep(ctx: SunaMigrationContext): Promise<void> {
   const out = bundlePath(ctx.migrationId);
   const repo = await pushBundleAsRepo(ctx.accountId, out);
 
-  // opencode.db was moved aside by pushBundleAsRepo → tar it in the legacy
-  // archive format and upload keyed by projectId; on-open rehydrate downloads it.
+  // opencode.db was moved aside by pushBundleAsRepo. Tar it with the db named
+  // exactly `opencode.db` (same convention legacy archives use, which is what
+  // rehydrateSessionChat opens) and upload keyed by projectId for on-open ship.
   const dbAside = join(tmpdir(), `${repo.projectId}.opencode.db`);
-  const tar = Bun.spawnSync(['tar', 'czf', '-', '-C', tmpdir(), `${repo.projectId}.opencode.db`]);
+  const stageDir = mkdtempSync(join(tmpdir(), `suna-oc-${repo.projectId}-`));
+  copyFileSync(dbAside, join(stageDir, 'opencode.db'));
+  const tar = Bun.spawnSync(['tar', 'czf', '-', '-C', stageDir, 'opencode.db']);
   if (tar.exitCode === 0) await uploadOpencodeArchive(repo.projectId, Buffer.from(tar.stdout));
+  rmSync(stageDir, { recursive: true, force: true });
   rmSync(dbAside, { force: true });
 
   await ctx.checkpoint({

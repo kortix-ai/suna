@@ -1,3 +1,3 @@
-pat authentication
+rehydrate chat on migration
 
-pat authentication
+rehydrate chat on migration
