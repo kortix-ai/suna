@@ -16,6 +16,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { randomUUID } from 'node:crypto';
 import { resolveProjectGitAuth } from './git';
+import { selectProvider } from '../../platform/services/provider-balancer';
 import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES, ProjectRow, ProjectSessionRow, RequestAuditContext, UUID_V4_REGEX, deriveKortixApiRoot, normalizeJsonObject, normalizeString } from './serializers';
 
 export type SessionCreateError = {
@@ -289,7 +290,7 @@ export async function createProjectSession(input: {
   const sandboxSlug =
     normalizeString(body.sandbox_slug ?? body.sandboxSlug) ?? projectDefaultSandboxSlug ?? undefined;
   const requestedProvider = normalizeString(body.provider);
-  let providerName: SandboxProviderName = config.getDefaultProvider();
+  let providerName: SandboxProviderName = await selectProvider();
   if (requestedProvider) {
     if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(requestedProvider)) {
       return { error: { status: 400, body: { error: `Unknown or disabled sandbox provider: ${requestedProvider}` } } };

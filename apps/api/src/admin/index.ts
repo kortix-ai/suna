@@ -320,3 +320,121 @@ adminApp.openapi(
   }
   },
 );
+
+// ── Provider load-balancing: split weights ───────────────────────────────────
+// GET current weights + the allowed providers. Weights drive selectProvider()
+// (platform/services/provider-balancer); unset/zero -> first allowed provider.
+adminApp.openapi(
+  createRoute({
+    method: 'get', path: '/api/provider-distribution', tags: ['admin'],
+    summary: 'Get provider split weights', ...auth,
+    responses: { 200: json(z.record(z.string(), z.any()), 'weights'), ...errors(401, 403) },
+  }),
+  async (c: any) => {
+    const { config } = await import('../config');
+    const { db } = await import('../shared/db');
+    const { platformSettings } = await import('@kortix/db');
+    const { eq } = await import('drizzle-orm');
+    const { PROVIDER_DISTRIBUTION_KEY } = await import('../platform/services/provider-balancer');
+    const [row] = await db.select({ value: platformSettings.value }).from(platformSettings)
+      .where(eq(platformSettings.key, PROVIDER_DISTRIBUTION_KEY)).limit(1);
+    return c.json({ allowed: config.ALLOWED_SANDBOX_PROVIDERS, default: config.getDefaultProvider(), weights: row?.value ?? {} });
+  },
+);
+
+// PUT new weights ({ platinum: 70, daytona: 30 }). Filtered to allowed providers.
+adminApp.openapi(
+  createRoute({
+    method: 'put', path: '/api/provider-distribution', tags: ['admin'],
+    summary: 'Set provider split weights', ...auth,
+    request: { body: { content: { 'application/json': { schema: z.record(z.string(), z.number()) } } } },
+    responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(401, 403) },
+  }),
+  async (c: any) => {
+    const body = await c.req.json().catch(() => ({}));
+    const src = (body && typeof body.weights === 'object') ? body.weights : body;
+    const { config } = await import('../config');
+    const weights: Record<string, number> = {};
+    for (const p of config.ALLOWED_SANDBOX_PROVIDERS) {
+      const w = Number(src?.[p]); if (Number.isFinite(w) && w >= 0) weights[p] = w;
+    }
+    const { db } = await import('../shared/db');
+    const { platformSettings } = await import('@kortix/db');
+    const { PROVIDER_DISTRIBUTION_KEY, invalidateProviderDistributionCache } = await import('../platform/services/provider-balancer');
+    await db.insert(platformSettings).values({ key: PROVIDER_DISTRIBUTION_KEY, value: weights, updatedAt: new Date() })
+      .onConflictDoUpdate({ target: platformSettings.key, set: { value: weights, updatedAt: new Date() } });
+    invalidateProviderDistributionCache();
+    return c.json({ ok: true, weights });
+  },
+);
+
+// ── Sandboxes: list all with provider + a per-provider count ─────────────────
+adminApp.openapi(
+  createRoute({
+    method: 'get', path: '/api/sandboxes', tags: ['admin'],
+    summary: 'List sandboxes with provider type', ...auth,
+    request: { query: z.object({ limit: z.string().optional(), provider: z.string().optional(), status: z.string().optional() }) },
+    responses: { 200: json(z.record(z.string(), z.any()), 'sandboxes'), ...errors(401, 403) },
+  }),
+  async (c: any) => {
+    const { db } = await import('../shared/db');
+    const { sessionSandboxes } = await import('@kortix/db');
+    const { desc, eq, and, sql } = await import('drizzle-orm');
+    const limit = Math.min(Number(c.req.query('limit') || 200), 1000);
+    const conds: any[] = [];
+    const prov = c.req.query('provider'); const st = c.req.query('status');
+    if (prov) conds.push(eq(sessionSandboxes.provider, prov as any));
+    if (st) conds.push(eq(sessionSandboxes.status, st as any));
+    const rows = await db.select({
+      sandboxId: sessionSandboxes.sandboxId, sessionId: sessionSandboxes.sessionId,
+      accountId: sessionSandboxes.accountId, projectId: sessionSandboxes.projectId,
+      provider: sessionSandboxes.provider, externalId: sessionSandboxes.externalId,
+      status: sessionSandboxes.status, lastUsedAt: sessionSandboxes.lastUsedAt,
+    }).from(sessionSandboxes).where(conds.length ? and(...conds) : undefined)
+      .orderBy(desc(sessionSandboxes.updatedAt)).limit(limit);
+    const byProvider = await db.execute(sql`SELECT provider AS provider, count(*)::int AS count FROM kortix.session_sandboxes WHERE status <> 'archived' GROUP BY provider`);
+    return c.json({ sandboxes: rows, byProvider: (byProvider as any).rows ?? byProvider });
+  },
+);
+
+// ── Migrate a session's sandbox to another provider ──────────────────────────
+// Reprovisions on the target via the shared re-provision path (env/git/secrets
+// rebuild statelessly), then async-removes the old provider's box.
+adminApp.openapi(
+  createRoute({
+    method: 'post', path: '/api/sandboxes/{sessionId}/migrate', tags: ['admin'],
+    summary: 'Migrate sandbox to another provider', ...auth,
+    request: { params: z.object({ sessionId: z.string() }), body: { content: { 'application/json': { schema: z.object({ targetProvider: z.string() }) } } } },
+    responses: { 200: json(z.record(z.string(), z.any()), 'ok'), ...errors(400, 401, 403, 404) },
+  }),
+  async (c: any) => {
+    const sessionId = c.req.param('sessionId');
+    const body = await c.req.json().catch(() => ({}));
+    const target = String(body.targetProvider || '');
+    const { config } = await import('../config');
+    if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(target)) return c.json({ error: 'invalid targetProvider' }, 400);
+    const { db } = await import('../shared/db');
+    const { sessionSandboxes, projectSessions, projects } = await import('@kortix/db');
+    const { eq } = await import('drizzle-orm');
+    const [sb] = await db.select().from(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId)).limit(1);
+    if (!sb) return c.json({ error: 'sandbox not found' }, 404);
+    if (sb.provider === target) return c.json({ error: 'already on target provider' }, 400);
+    const [sess] = await db.select().from(projectSessions).where(eq(projectSessions.sessionId, sessionId)).limit(1);
+    if (!sess) return c.json({ error: 'session not found' }, 404);
+    const [proj] = await db.select().from(projects).where(eq(projects.projectId, sess.projectId)).limit(1);
+    if (!proj) return c.json({ error: 'project not found' }, 404);
+    const oldProvider = sb.provider; const oldExternalId = sb.externalId;
+    if (oldExternalId) {
+      const { getProvider } = await import('../platform/providers');
+      getProvider(oldProvider as any).remove(oldExternalId).catch((e: any) => console.warn('[migrate] old remove failed:', e?.message ?? e));
+    }
+    await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId));
+    const { kickProvisionOnOpen } = await import('../projects/routes/shared');
+    await kickProvisionOnOpen(
+      { row: proj as any, userId: sess.createdBy },
+      { sandboxProvider: target, baseRef: sess.baseRef, agentName: sess.agentName },
+      sess.projectId, sessionId,
+    );
+    return c.json({ ok: true, sessionId, from: oldProvider, to: target });
+  },
+);

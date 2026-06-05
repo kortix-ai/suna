@@ -37,6 +37,7 @@ import {
   type EnsureSandboxImageResult,
 } from '../../snapshots/builder';
 import { config } from '../../config';
+import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
@@ -140,7 +141,7 @@ export async function provisionSessionSandbox(opts: {
   //   1. Explicit per-request `opts.provider` (set by callers that need a
   //      specific runtime, e.g. when restarting an existing sandbox).
   //   2. `config.getDefaultProvider()` — head of ALLOWED_SANDBOX_PROVIDERS.
-  const providerName = opts.provider || config.getDefaultProvider();
+  const providerName = opts.provider || (await selectProvider());
   const provider = getProvider(providerName);
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
