@@ -63,6 +63,7 @@ import type {
   ConnectorAction,
   ConnectorProvider,
   ConnectorSharing,
+  ConnectorDraftInput,
   PipedreamApp,
 } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
@@ -340,6 +341,7 @@ function AddConnectorView({
   const queryClient = useQueryClient();
   const [appSearch, setAppSearch] = useState('');
   const [connectingSlug, setConnectingSlug] = useState<string | null>(null);
+  const [tab, setTab] = useState<'apps' | 'custom'>('apps');
 
   const { data, isLoading, isError, error, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     usePipedreamApps(projectId, appSearch);
@@ -392,6 +394,20 @@ function AddConnectorView({
         <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted }}>Connectors</Text>
       </TouchableOpacity>
 
+      {/* Easy Connect (Pipedream catalogue) vs Custom (MCP / OpenAPI / GraphQL / HTTP) */}
+      <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
+        <Segmented
+          isDark={isDark}
+          value={tab}
+          onChange={setTab}
+          options={[{ value: 'apps', label: 'Easy Connect' }, { value: 'custom', label: 'Custom' }]}
+        />
+      </View>
+
+      {tab === 'custom' ? (
+        <CustomConnectorForm projectId={projectId} onAdded={onConnected} isDark={isDark} />
+      ) : (
+        <>
       <SearchListHeader value={appSearch} onChangeText={setAppSearch} placeholder="Search apps to connect" />
 
       <ScrollView
@@ -449,6 +465,8 @@ function AddConnectorView({
           </>
         )}
       </ScrollView>
+        </>
+      )}
     </View>
   );
 }
@@ -659,6 +677,233 @@ function SharingEditor({
         >
           {saveMutation.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
           <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save sharing</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
+// ─── Custom connector form (MCP / OpenAPI / GraphQL / HTTP) ───────────────────
+
+function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  isDark,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+  isDark: boolean;
+}) {
+  const fg = isDark ? '#F8F8F8' : '#121215';
+  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const bg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  const onBg = isDark ? 'rgba(255,255,255,0.12)' : '#FFFFFF';
+  return (
+    <View style={{ flexDirection: 'row', backgroundColor: bg, borderRadius: 10, padding: 3 }}>
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <TouchableOpacity
+            key={o.value}
+            onPress={() => { haptics.selection(); onChange(o.value); }}
+            activeOpacity={0.7}
+            style={{ flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center', backgroundColor: on ? onBg : 'transparent' }}
+          >
+            <Text style={{ fontSize: 13, fontFamily: on ? 'Roobert-Medium' : 'Roobert', color: on ? fg : muted }}>{o.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </View>
+  );
+}
+
+function FormField({ label, optional, children, isDark }: { label: string; optional?: boolean; children: React.ReactNode; isDark: boolean }) {
+  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  return (
+    <View style={{ marginBottom: 14 }}>
+      <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: muted, marginBottom: 6 }}>
+        {label}{optional ? '  ·  optional' : ''}
+      </Text>
+      {children}
+    </View>
+  );
+}
+
+function CustomConnectorForm({
+  projectId,
+  onAdded,
+  isDark,
+}: {
+  projectId: string;
+  onAdded: () => void;
+  isDark: boolean;
+}) {
+  const theme = useThemeColors();
+  const queryClient = useQueryClient();
+  const insets = useSafeAreaInsets();
+
+  const [slug, setSlug] = useState('');
+  const [provider, setProvider] = useState<Exclude<ConnectorProvider, 'pipedream'>>('openapi');
+  const [spec, setSpec] = useState('');
+  const [endpoint, setEndpoint] = useState('');
+  const [url, setUrl] = useState('');
+  const [transport, setTransport] = useState<'http' | 'sse'>('http');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [authType, setAuthType] = useState<'none' | 'bearer' | 'basic' | 'custom'>('none');
+  const [authName, setAuthName] = useState('');
+  const [credential, setCredential] = useState<'shared' | 'per_user'>('shared');
+  const [saving, setSaving] = useState(false);
+
+  const fg = isDark ? '#F8F8F8' : '#121215';
+  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
+  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+  const inputStyle = { height: 44, borderRadius: 11, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 12, fontSize: 14, color: fg, fontFamily: 'Roobert' as const };
+
+  const providerValid =
+    (provider === 'openapi' && spec.trim()) ||
+    (provider === 'graphql' && endpoint.trim()) ||
+    (provider === 'mcp' && url.trim()) ||
+    (provider === 'http' && baseUrl.trim());
+  const canSave = slug.trim().length > 0 && !!providerValid && !saving;
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    try {
+      const draft: ConnectorDraftInput = {
+        slug: slug.trim(),
+        provider,
+        credential,
+        sharing: { mode: 'project' },
+        auth: { type: authType, ...(authType === 'custom' ? { name: authName.trim(), in: 'header' } : {}) },
+        ...(provider === 'openapi' ? { spec: spec.trim() } : {}),
+        ...(provider === 'graphql' ? { endpoint: endpoint.trim(), ...(spec.trim() ? { spec: spec.trim() } : {}) } : {}),
+        ...(provider === 'mcp' ? { url: url.trim(), transport } : {}),
+        ...(provider === 'http' ? { baseUrl: baseUrl.trim(), ...(spec.trim() ? { spec: spec.trim() } : {}) } : {}),
+      };
+      await createConnector(projectId, draft);
+      queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) });
+      haptics.tap();
+      onAdded();
+    } catch (err: any) {
+      Alert.alert('Failed to add', err?.message || 'Could not add connector.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <FormField label="Slug" isDark={isDark}>
+          <TextInput
+            value={slug}
+            onChangeText={(t) => setSlug(t.toLowerCase().replace(/[^a-z0-9_-]/g, '-'))}
+            placeholder="my-api"
+            placeholderTextColor={muted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={[inputStyle, { fontFamily: MONO }]}
+          />
+        </FormField>
+
+        <FormField label="Provider" isDark={isDark}>
+          <Segmented
+            isDark={isDark}
+            value={provider}
+            onChange={setProvider}
+            options={[
+              { value: 'openapi', label: 'OpenAPI' },
+              { value: 'graphql', label: 'GraphQL' },
+              { value: 'mcp', label: 'MCP' },
+              { value: 'http', label: 'HTTP' },
+            ]}
+          />
+        </FormField>
+
+        {provider === 'openapi' && (
+          <FormField label="Spec URL or repo path" isDark={isDark}>
+            <TextInput value={spec} onChangeText={setSpec} placeholder="https://…/openapi.json" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+          </FormField>
+        )}
+        {provider === 'graphql' && (
+          <>
+            <FormField label="Endpoint" isDark={isDark}>
+              <TextInput value={endpoint} onChangeText={setEndpoint} placeholder="https://api/graphql" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+            </FormField>
+            <FormField label="SDL spec" optional isDark={isDark}>
+              <TextInput value={spec} onChangeText={setSpec} placeholder=".kortix/executor/schema.graphql" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+            </FormField>
+          </>
+        )}
+        {provider === 'mcp' && (
+          <>
+            <FormField label="URL" isDark={isDark}>
+              <TextInput value={url} onChangeText={setUrl} placeholder="https://mcp…/mcp" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+            </FormField>
+            <FormField label="Transport" isDark={isDark}>
+              <Segmented isDark={isDark} value={transport} onChange={setTransport} options={[{ value: 'http', label: 'http' }, { value: 'sse', label: 'sse' }]} />
+            </FormField>
+          </>
+        )}
+        {provider === 'http' && (
+          <>
+            <FormField label="Base URL" isDark={isDark}>
+              <TextInput value={baseUrl} onChangeText={setBaseUrl} placeholder="https://api.internal" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+            </FormField>
+            <FormField label="Routes spec" optional isDark={isDark}>
+              <TextInput value={spec} onChangeText={setSpec} placeholder=".kortix/executor/routes.toml" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+            </FormField>
+          </>
+        )}
+
+        <FormField label="Auth" isDark={isDark}>
+          <Segmented
+            isDark={isDark}
+            value={authType}
+            onChange={setAuthType}
+            options={[
+              { value: 'none', label: 'None' },
+              { value: 'bearer', label: 'Bearer' },
+              { value: 'basic', label: 'Basic' },
+              { value: 'custom', label: 'Header' },
+            ]}
+          />
+        </FormField>
+        {authType === 'custom' && (
+          <FormField label="Header name" isDark={isDark}>
+            <TextInput value={authName} onChangeText={setAuthName} placeholder="X-API-Key" placeholderTextColor={muted} autoCapitalize="none" autoCorrect={false} style={inputStyle} />
+          </FormField>
+        )}
+        {authType !== 'none' && (
+          <Text style={{ fontSize: 12.5, color: muted, marginTop: -4, marginBottom: 14 }}>
+            You'll set the credential value after adding.
+          </Text>
+        )}
+
+        <FormField label="Credential" isDark={isDark}>
+          <Segmented isDark={isDark} value={credential} onChange={setCredential} options={[{ value: 'shared', label: 'Shared' }, { value: 'per_user', label: 'Per-user' }]} />
+        </FormField>
+        <Text style={{ fontSize: 12.5, color: muted, marginTop: -4 }}>
+          {credential === 'shared' ? 'One connection for the whole project.' : 'Each member links their own account.'}
+        </Text>
+        <Text style={{ fontSize: 12.5, color: muted, marginTop: 14 }}>
+          Access is project-wide by default — change it from the connector's Manage screen after adding.
+        </Text>
+      </ScrollView>
+
+      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+        <TouchableOpacity
+          onPress={handleSave}
+          disabled={!canSave}
+          activeOpacity={0.8}
+          style={{ height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: canSave ? 1 : 0.5 }}
+        >
+          {saving && <ActivityIndicator size="small" color={theme.primaryForeground} />}
+          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add connector</Text>
         </TouchableOpacity>
       </View>
     </View>
