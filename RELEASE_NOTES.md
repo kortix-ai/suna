@@ -1,3 +1,3 @@
-fix tier fetch
+show claim button only for legacy users
 
-fix tier fetch
+show claim button only for legacy users

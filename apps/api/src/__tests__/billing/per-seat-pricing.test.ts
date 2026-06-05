@@ -17,6 +17,7 @@ import {
   grantForSeats,
   isPerSeatAccount,
   isLegacyAccount,
+  canClaimPerSeat,
   llmPriceMarkup,
 } from '../../billing/services/tiers';
 
@@ -64,6 +65,55 @@ describe('billing_model guards', () => {
     expect(isLegacyAccount(null)).toBe(true);
     expect(isLegacyAccount(undefined)).toBe(true);
     expect(isLegacyAccount('per_seat')).toBe(false);
+  });
+});
+
+describe('canClaimPerSeat — the "Claim seat-based pricing" card gate', () => {
+  // The bug this guards against: a brand-new free user (billing_model null/legacy,
+  // no machine) was shown the claim card; clicking it dead-ended on "nothing to
+  // switch", and the card hid the normal top-up path — stranding them out of credits.
+
+  test('NEW free user (legacy default, no machine) → hidden (regression)', () => {
+    expect(canClaimPerSeat({ billingModel: null, hasLegacyMachine: false })).toBe(false);
+    expect(canClaimPerSeat({ billingModel: undefined, hasLegacyMachine: false })).toBe(false);
+    expect(canClaimPerSeat({ billingModel: 'legacy', hasLegacyMachine: false })).toBe(false);
+  });
+
+  test('genuine legacy account with a machine to migrate → shown', () => {
+    expect(canClaimPerSeat({ billingModel: 'legacy', hasLegacyMachine: true })).toBe(true);
+    expect(canClaimPerSeat({ billingModel: null, hasLegacyMachine: true })).toBe(true);
+  });
+
+  test('already on per-seat → hidden, even with a machine', () => {
+    expect(canClaimPerSeat({ billingModel: 'per_seat', hasLegacyMachine: true })).toBe(false);
+    expect(canClaimPerSeat({ billingModel: 'per_seat', hasLegacyMachine: false })).toBe(false);
+  });
+
+  test('active yearly commitment → hidden (migration would no-op)', () => {
+    const future = new Date('2030-01-01T00:00:00Z');
+    const now = new Date('2026-06-05T00:00:00Z');
+    expect(canClaimPerSeat({
+      billingModel: 'legacy', hasLegacyMachine: true,
+      commitmentType: 'yearly_commitment', commitmentEndDate: future, now,
+    })).toBe(false);
+  });
+
+  test('expired yearly commitment → shown again', () => {
+    const past = new Date('2025-01-01T00:00:00Z');
+    const now = new Date('2026-06-05T00:00:00Z');
+    expect(canClaimPerSeat({
+      billingModel: 'legacy', hasLegacyMachine: true,
+      commitmentType: 'yearly_commitment', commitmentEndDate: past, now,
+    })).toBe(true);
+  });
+
+  test('non-yearly commitment does not block the claim', () => {
+    const future = new Date('2030-01-01T00:00:00Z');
+    const now = new Date('2026-06-05T00:00:00Z');
+    expect(canClaimPerSeat({
+      billingModel: 'legacy', hasLegacyMachine: true,
+      commitmentType: 'monthly', commitmentEndDate: future, now,
+    })).toBe(true);
   });
 });
 
