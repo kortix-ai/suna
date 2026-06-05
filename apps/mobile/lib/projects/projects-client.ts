@@ -486,6 +486,39 @@ export function listProjectAccess(projectId: string) {
   return apiFetch<ProjectAccessResponse>(`/projects/${encodeURIComponent(projectId)}/access`);
 }
 
+// ── Executor policies (tool-approval rules) ──────────────────────────────────
+// Allow / Ask-first / Block rules matched against tool paths, plus the default
+// behaviour for unmatched tools.
+
+export type PolicyAction = 'always_run' | 'require_approval' | 'block';
+export type PolicyDefaultMode = 'risk' | 'allow_all';
+
+export interface ProjectPolicy {
+  match: string;
+  action: PolicyAction;
+}
+
+export interface ProjectPoliciesResponse {
+  policies: ProjectPolicy[];
+  defaultMode: PolicyDefaultMode;
+  errors: Array<{ path: string; error: string }>;
+}
+
+export function listProjectPolicies(projectId: string) {
+  return apiFetch<ProjectPoliciesResponse>(`/executor/projects/${encodeURIComponent(projectId)}/policies`);
+}
+
+export function setProjectPolicies(
+  projectId: string,
+  policies: ProjectPolicy[],
+  defaultMode: PolicyDefaultMode,
+) {
+  return apiFetch<{ ok: boolean }>(`/executor/projects/${encodeURIComponent(projectId)}/policies`, {
+    method: 'PUT',
+    body: JSON.stringify({ policies, defaultMode }),
+  });
+}
+
 export function archiveProject(projectId: string) {
   return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}`, {
     method: 'DELETE',

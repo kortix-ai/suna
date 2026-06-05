@@ -18,14 +18,18 @@ import {
   listGitHubRepositories,
   listPipedreamApps,
   listProjectAccess,
+  listProjectPolicies,
   listProjectSessions,
   listProjectsForAccount,
   provisionProject,
   readProjectFile,
   setConnectorSharing,
+  setProjectPolicies,
   syncConnectors,
   type ConnectorSharing,
   type CreateProjectSessionInput,
+  type PolicyDefaultMode,
+  type ProjectPolicy,
 } from './projects-client';
 
 export const projectKeys = {
@@ -38,6 +42,7 @@ export const projectKeys = {
   projectSessions: (projectId: string | null | undefined) => ['project-sessions', projectId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
+  policies: (projectId: string | null | undefined) => ['project-policies', projectId] as const,
   pipedreamApps: (projectId: string | null | undefined, q: string) =>
     ['pipedream-apps', projectId, q] as const,
   githubInstallations: (accountId: string | null | undefined) =>
@@ -140,6 +145,25 @@ export function useSetConnectorSharing(projectId: string) {
     mutationFn: ({ slug, intent }: { slug: string; intent: ConnectorSharing }) =>
       setConnectorSharing(projectId, slug, intent),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) }),
+  });
+}
+
+/** Tool-approval policies for a project. */
+export function useProjectPolicies(projectId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.policies(projectId),
+    queryFn: () => listProjectPolicies(projectId!),
+    enabled: !!projectId,
+    staleTime: 15_000,
+  });
+}
+
+export function useSetProjectPolicies(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ policies, defaultMode }: { policies: ProjectPolicy[]; defaultMode: PolicyDefaultMode }) =>
+      setProjectPolicies(projectId, policies, defaultMode),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.policies(projectId) }),
   });
 }
 

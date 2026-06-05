@@ -9,7 +9,7 @@
  * design-system typography + colors.
  */
 
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -37,6 +37,8 @@ import {
   Users,
   Check,
   Search,
+  Plus,
+  X,
   type LucideIcon,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
@@ -50,6 +52,8 @@ import {
   useDeleteConnector,
   useSetConnectorSharing,
   useProjectAccess,
+  useProjectPolicies,
+  useSetProjectPolicies,
   usePipedreamApps,
   projectKeys,
 } from '@/lib/projects/hooks';
@@ -66,6 +70,8 @@ import type {
   ConnectorSharing,
   ConnectorDraftInput,
   PipedreamApp,
+  PolicyAction,
+  PolicyDefaultMode,
 } from '@/lib/projects/projects-client';
 import { haptics } from '@/lib/haptics';
 
@@ -1011,6 +1017,163 @@ function SetCredentialView({
   );
 }
 
+// ─── Policies (tool-approval rules) ──────────────────────────────────────────
+
+const POLICY_ACTIONS: { value: PolicyAction; label: string }[] = [
+  { value: 'always_run', label: 'Allow' },
+  { value: 'require_approval', label: 'Ask first' },
+  { value: 'block', label: 'Block' },
+];
+
+const DEFAULT_MODE_OPTIONS: { value: PolicyDefaultMode; label: string; desc: string }[] = [
+  { value: 'risk', label: 'Ask before risky actions', desc: 'Write / destructive tools pause for approval' },
+  { value: 'allow_all', label: 'Run everything', desc: 'No approval prompts (legacy)' },
+];
+
+interface DraftRule { id: string; match: string; action: PolicyAction }
+let policyRuleSeq = 0;
+const nextRuleId = () => `rule-${++policyRuleSeq}`;
+
+function PoliciesView({ projectId }: { projectId: string }) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const insets = useSafeAreaInsets();
+  const theme = useThemeColors();
+
+  const query = useProjectPolicies(projectId);
+  const saveMutation = useSetProjectPolicies(projectId);
+
+  const [defaultMode, setDefaultMode] = useState<PolicyDefaultMode>('allow_all');
+  const [rules, setRules] = useState<DraftRule[]>([]);
+  const [serverSig, setServerSig] = useState('');
+  const seededRef = useRef(false);
+
+  useEffect(() => {
+    if (!query.data || seededRef.current) return;
+    seededRef.current = true;
+    setDefaultMode(query.data.defaultMode);
+    setRules(query.data.policies.map((p) => ({ id: nextRuleId(), match: p.match, action: p.action })));
+    setServerSig(JSON.stringify({ policies: query.data.policies, defaultMode: query.data.defaultMode }));
+  }, [query.data]);
+
+  const fg = isDark ? '#F8F8F8' : '#121215';
+  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const border = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.12)';
+  const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+
+  const cleaned = useMemo(
+    () => rules.map((r) => ({ match: r.match.trim(), action: r.action })).filter((p) => p.match.length > 0),
+    [rules],
+  );
+  const dirty = JSON.stringify({ policies: cleaned, defaultMode }) !== serverSig;
+
+  const addRule = () => setRules((rows) => [...rows, { id: nextRuleId(), match: '', action: 'require_approval' }]);
+  const removeRule = (id: string) => setRules((rows) => rows.filter((r) => r.id !== id));
+  const patchRule = (id: string, patch: Partial<DraftRule>) =>
+    setRules((rows) => rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+
+  const handleSave = () => {
+    if (!dirty || saveMutation.isPending) return;
+    haptics.tap();
+    saveMutation.mutate(
+      { policies: cleaned, defaultMode },
+      {
+        onSuccess: () => setServerSig(JSON.stringify({ policies: cleaned, defaultMode })),
+        onError: (err: any) => Alert.alert('Save failed', err?.message || 'Could not save policies.'),
+      },
+    );
+  };
+
+  if (query.isLoading) {
+    return <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>;
+  }
+  if (query.isError) {
+    return (
+      <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
+        <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{(query.error as Error)?.message ?? 'Failed to load policies'}</Text>
+        <TouchableOpacity onPress={() => query.refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+          <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Default behavior</Text>
+        {DEFAULT_MODE_OPTIONS.map((opt) => {
+          const on = defaultMode === opt.value;
+          return (
+            <TouchableOpacity
+              key={opt.value}
+              onPress={() => { haptics.selection(); setDefaultMode(opt.value); }}
+              activeOpacity={0.7}
+              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, borderRadius: 14, marginBottom: 8, borderWidth: 1.5, borderColor: on ? theme.primary : border, backgroundColor: on ? theme.primaryLight : 'transparent' }}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>{opt.label}</Text>
+                <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }}>{opt.desc}</Text>
+              </View>
+              <View style={{ width: 20, height: 20, borderRadius: 10, borderWidth: on ? 0 : 1.5, borderColor: border, backgroundColor: on ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                {on && <Check size={13} color="#fff" strokeWidth={3} />}
+              </View>
+            </TouchableOpacity>
+          );
+        })}
+
+        <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 18, marginBottom: 4 }}>Rules</Text>
+        <Text style={{ fontSize: 12.5, color: muted, marginBottom: 12 }}>
+          Match a tool path (e.g. <Text style={{ fontFamily: MONO, color: fg }}>gmail.*</Text>); first match wins.
+        </Text>
+
+        {rules.map((rule) => (
+          <View key={rule.id} style={{ borderRadius: 14, borderWidth: 1, borderColor: border, padding: 12, marginBottom: 10 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <TextInput
+                value={rule.match}
+                onChangeText={(t) => patchRule(rule.id, { match: t })}
+                placeholder="match (e.g. gmail.*)"
+                placeholderTextColor={muted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                style={{ flex: 1, height: 40, borderRadius: 10, borderWidth: 1, borderColor: border, backgroundColor: inputBg, paddingHorizontal: 10, fontSize: 13, fontFamily: MONO, color: fg }}
+              />
+              <TouchableOpacity onPress={() => { haptics.medium(); removeRule(rule.id); }} hitSlop={8} style={{ padding: 6 }}>
+                <X size={16} color={muted} />
+              </TouchableOpacity>
+            </View>
+            <View style={{ marginTop: 8 }}>
+              <Segmented isDark={isDark} value={rule.action} onChange={(v) => patchRule(rule.id, { action: v })} options={POLICY_ACTIONS} />
+            </View>
+          </View>
+        ))}
+
+        <TouchableOpacity
+          onPress={() => { haptics.tap(); addRule(); }}
+          activeOpacity={0.7}
+          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderStyle: 'dashed', borderColor: border, marginTop: 2 }}
+        >
+          <Plus size={15} color={muted} />
+          <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: muted }}>Add rule</Text>
+        </TouchableOpacity>
+      </ScrollView>
+
+      <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+        <TouchableOpacity
+          onPress={handleSave}
+          disabled={!dirty || saveMutation.isPending}
+          activeOpacity={0.8}
+          style={{ height: 48, borderRadius: 14, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 8, backgroundColor: theme.primary, opacity: dirty && !saveMutation.isPending ? 1 : 0.5 }}
+        >
+          {saveMutation.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
+          <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save policies</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export function ConnectorsPage({
@@ -1029,6 +1192,7 @@ export function ConnectorsPage({
   const [editingSharingSlug, setEditingSharingSlug] = useState<string | null>(null);
   const [credentialSlug, setCredentialSlug] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [pageTab, setPageTab] = useState<'connectors' | 'policies'>('connectors');
 
   const { data, isLoading, isError, error, refetch } = useConnectors(projectId);
   const syncMutation = useSyncConnectors(projectId);
@@ -1093,7 +1257,7 @@ export function ConnectorsPage({
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
-          !selected && !adding ? (
+          !selected && !adding && pageTab === 'connectors' ? (
             <TouchableOpacity onPress={handleSync} className="p-1 mr-1" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
               {syncMutation.isPending ? (
                 <ActivityIndicator size="small" color={muted} />
@@ -1135,6 +1299,18 @@ export function ConnectorsPage({
           />
         ) : (
           <>
+            <View style={{ paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}>
+              <Segmented
+                isDark={isDark}
+                value={pageTab}
+                onChange={setPageTab}
+                options={[{ value: 'connectors', label: 'Connectors' }, { value: 'policies', label: 'Policies' }]}
+              />
+            </View>
+            {pageTab === 'policies' ? (
+              <PoliciesView projectId={projectId} />
+            ) : (
+              <>
             <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search connectors" onAdd={() => { haptics.tap(); setAdding(true); }} />
 
             <ScrollView
@@ -1178,6 +1354,8 @@ export function ConnectorsPage({
                 ))
               )}
             </ScrollView>
+              </>
+            )}
           </>
         )}
       </PageContent>
