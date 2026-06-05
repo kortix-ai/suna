@@ -17,8 +17,8 @@ import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
   lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists,
   renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv,
-  writeMarker, ensureDeps, checkDeps, pnpmStore, supaWorkdir, slotDir, startTunnel, WT_HOME, REGISTRY_PATH,
-  type Registry, type SlotEntry, type Ports, type Tunnel,
+  writeMarker, ensureDeps, checkDeps, pnpmStore, supaWorkdir, slotDir, startTunnel, startStripeListen, WT_HOME, REGISTRY_PATH,
+  type Registry, type SlotEntry, type Ports, type Tunnel, type StripeListen,
 } from './lib';
 import { existsSync, rmSync } from 'node:fs';
 import * as clack from '@clack/prompts';
@@ -27,7 +27,6 @@ import pc from 'picocolors';
 const API_FILTER = 'kortix-api';
 const WEB_FILTER = 'Kortix-Computer-Frontend';
 
-// ── styled output ────────────────────────────────────────────────────────────
 const step = (s: string) => console.log(`\n${pc.cyan('▸')} ${pc.bold(s)}`);
 const sub = (s: string) => console.log(`  ${pc.dim(s)}`);
 const ok = (s: string) => console.log(`${pc.green('✓')} ${s}`);
@@ -36,7 +35,17 @@ const die = (s: string): never => { console.error(`\n${pc.red('✗')} ${s}`); pr
 const url = (u: string) => pc.cyan(pc.underline(u));
 const dot = (up: boolean) => (up ? pc.green('●') : pc.dim('○'));
 
-// ── arg parsing ──────────────────────────────────────────────────────────────
+async function spin(label: string, cmd: string[]): Promise<void> {
+  const s = clack.spinner();
+  s.start(label);
+  try {
+    await Bun.spawn(cmd, { stdout: 'ignore', stderr: 'ignore', stdin: 'ignore' }).exited;
+    s.stop(`${label} ${pc.green('✓')}`);
+  } catch {
+    s.stop(`${label} ${pc.dim('(skipped)')}`);
+  }
+}
+
 interface Args { cmd: string; name?: string; flags: Record<string, string | boolean>; }
 function parseArgs(argv: string[]): Args {
   const cmd = argv[0] ?? 'help';
@@ -60,7 +69,8 @@ ${pc.bgCyan(pc.black(' pnpm worktree '))}  ${pc.dim('isolated multi-instance dev
 
   ${pc.cyan('pnpm worktree')}                 ${pc.dim('interactive menu')}
   ${pc.cyan('pnpm worktree create')}          ${pc.dim('guided wizard (or --name <n> --from <branch> [--no-tunnel])')}
-  ${pc.cyan('start')} ${pc.dim('<n>')}   ${pc.cyan('stop')} ${pc.dim('<n>')}   ${pc.cyan('nuke')} ${pc.dim('<n> [--force]')}
+  ${pc.cyan('start')} ${pc.dim('<n> [--stripe] [--no-tunnel]')}   ${pc.cyan('stop')} ${pc.dim('<n>')}   ${pc.cyan('nuke')} ${pc.dim('<n> [--force]')}
+  ${pc.cyan('pr')} ${pc.dim('<n> [--title … --base main --draft --web]')}
   ${pc.cyan('list')}        ${pc.cyan('status')} ${pc.dim('[n]')}   ${pc.cyan('doctor')} ${pc.dim('[--yes]')}
 
 Each worktree gets a unique port block (base ${BASE.web}/${BASE.api}, +${STRIDE} per slot),
@@ -79,18 +89,11 @@ function portsLine(p: Ports): string {
     `${pc.dim('·')} db ${pc.green(String(p.sbDb))} ${pc.dim('·')} studio ${pc.green(String(p.sbStudio))} ${pc.dim('·')} inbucket ${pc.green(String(p.sbInbucket))}`;
 }
 
-// ── git helpers for the branch picker ────────────────────────────────────────
 function currentBranch(): string { return sh(['git', 'rev-parse', '--abbrev-ref', 'HEAD']).stdout.trim() || 'main'; }
-// Recent local branches, newest commit first — the picker shows what you're
-// actually working on, not an unscrollable wall of every branch in the repo.
 function recentBranches(limit = 12): string[] {
   return sh(['git', 'for-each-ref', `--count=${limit}`, '--sort=-committerdate', '--format=%(refname:short)', 'refs/heads'])
     .stdout.split('\n').map((s) => s.trim()).filter(Boolean);
 }
-// Git stores refs hierarchically, so a name can collide with an existing
-// namespace: `billing` can't be a branch if `billing/x` exists (billing is a
-// directory), and `a/b` can't be created if `a` is already a branch. Detect
-// this up front so a bad name fails before anything is provisioned.
 function branchConflict(root: string, branch: string): string | null {
   if (!sh(['git', '-C', root, 'check-ref-format', `refs/heads/${branch}`]).ok)
     return `"${branch}" is not a valid git branch name`;
@@ -104,8 +107,12 @@ function branchConflict(root: string, branch: string): string | null {
   return null;
 }
 
-// ── interactive prompts ──────────────────────────────────────────────────────
 function cancelled(v: unknown): boolean { if (clack.isCancel(v)) { clack.cancel('Cancelled.'); return true; } return false; }
+
+async function confirmStripe(): Promise<boolean> {
+  const v = await clack.confirm({ message: 'Enable Stripe? (billing on + webhook forwarding to this worktree)', initialValue: false });
+  return clack.isCancel(v) ? false : v;
+}
 
 async function promptCreate(): Promise<Args | null> {
   const name = await clack.text({
@@ -115,8 +122,6 @@ async function promptCreate(): Promise<Args | null> {
   });
   if (cancelled(name)) return null;
   const cur = currentBranch();
-  // Show recent branches (current + main first), capped to a scrollable window,
-  // plus an escape hatch to type any branch — so 100-branch repos stay usable.
   const seen = new Set<string>();
   const ordered = ['main', cur, ...recentBranches(12)].filter((b) => b && !seen.has(b) && (seen.add(b), true));
   const OTHER = ' other';
@@ -142,7 +147,8 @@ async function promptCreate(): Promise<Args | null> {
   }
   const start = await clack.confirm({ message: 'Boot the dev servers when it’s ready?', initialValue: true });
   if (cancelled(start)) return null;
-  return { cmd: 'create', name: String(name), flags: { from: String(from), yes: true, ...(start ? {} : { 'no-start': true }) } };
+  const stripe = start ? await confirmStripe() : false;
+  return { cmd: 'create', name: String(name), flags: { from: String(from), yes: true, ...(start ? {} : { 'no-start': true }), ...(stripe ? { stripe: true } : {}) } };
 }
 
 async function pickWorktree(action: string): Promise<string | null> {
@@ -169,6 +175,7 @@ async function menu(): Promise<Args | null> {
       { value: 'stop', label: `${pc.yellow('■')} stop`, hint: 'stop a worktree (keeps data)' },
       { value: 'list', label: `${pc.blue('≡')} list`, hint: 'all worktrees + ports' },
       { value: 'status', label: `${pc.magenta('◇')} status`, hint: 'live health' },
+      { value: 'pr', label: `${pc.green('⇡')} pr`, hint: 'push the branch + open a PR' },
       { value: 'nuke', label: `${pc.red('✗')} nuke`, hint: 'tear down + free the slot' },
       { value: 'doctor', label: `${pc.dim('✚')} doctor`, hint: 'check the toolchain' },
     ],
@@ -176,18 +183,19 @@ async function menu(): Promise<Args | null> {
   if (cancelled(action)) return null;
   const cmd = String(action);
   if (cmd === 'create') return promptCreate();
-  if (['start', 'stop', 'nuke', 'status'].includes(cmd)) {
+  if (['start', 'stop', 'nuke', 'status', 'pr'].includes(cmd)) {
     const name = await pickWorktree(cmd);
     if (!name) return null;
-    return { cmd, name, flags: cmd === 'nuke' ? { force: true } : {} };
+    const flags: Record<string, string | boolean> = cmd === 'nuke' ? { force: true } : {};
+    if (cmd === 'start' && await confirmStripe()) flags.stripe = true;
+    return { cmd, name, flags };
   }
   return { cmd, name: undefined, flags: {} };
 }
 
-// ── create ───────────────────────────────────────────────────────────────────
 async function cmdCreate(a: Args) {
   const name = need(a.name);
-  const tunnel = !a.flags['no-tunnel'];   // surface cloudflared (optional) unless opted out
+  const tunnel = !a.flags['no-tunnel'];
   const install = !!a.flags.yes;
 
   step('Preflight: toolchain');
@@ -200,8 +208,6 @@ async function cmdCreate(a: Args) {
   const branch = (typeof a.flags.branch === 'string' && a.flags.branch) || name;
   const from = (typeof a.flags.from === 'string' && a.flags.from) || 'HEAD';
 
-  // Fail fast on bad/colliding branch names — before allocating a slot, so a
-  // doomed create never leaves a half-provisioned worktree behind.
   if (!branchExists(root, branch)) {
     const conflict = branchConflict(root, branch);
     if (conflict) die(`can't create branch "${branch}": ${conflict}.\n  Pick another name: pnpm worktree create --name ${name} --branch <branch>`);
@@ -229,8 +235,6 @@ async function cmdCreate(a: Args) {
 
   step(`Slot ${entry.slot} — ${portsLine(entry.ports)}`);
 
-  // If a step fails before the worktree exists on disk, drop the slot we just
-  // reserved (only when we created it) so the registry isn't left dangling.
   const failCreate = async (msg: string): Promise<never> => {
     if (isNew) await withLock(() => { const r = loadRegistry(); delete r.slots[name]; saveRegistry(r); });
     return die(msg);
@@ -275,10 +279,9 @@ async function cmdCreate(a: Args) {
     pc.green(`✓ worktree "${name}" ready`),
   );
   if (a.flags['no-start']) { ok(`start it:  ${pc.cyan('pnpm worktree start ' + name)}`); }
-  else { await cmdStart({ cmd: 'start', name, flags: a.flags['no-tunnel'] ? { 'no-tunnel': true } : {} }); }
+  else { await cmdStart({ cmd: 'start', name, flags: { ...(a.flags['no-tunnel'] ? { 'no-tunnel': true } : {}), ...(a.flags.stripe ? { stripe: true } : {}) } }); }
 }
 
-// ── start ────────────────────────────────────────────────────────────────────
 async function cmdStart(a: Args) {
   const name = need(a.name);
   const reg = loadRegistry();
@@ -300,10 +303,6 @@ async function cmdStart(a: Args) {
   for (const port of [e.ports.web, e.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
   await withLock(() => { const r = loadRegistry(); if (r.slots[name]) { r.slots[name].status = 'running'; saveRegistry(r); } });
 
-  // Cloud Daytona sandboxes call back to the API (callbacks + LLM gateway) and
-  // can't reach this machine's localhost — front it with a Cloudflare quick
-  // tunnel and hand the public URL to the API as KORTIX_URL. Mirrors
-  // dev-local.sh's ensure_dev_tunnel. Opt out with --no-tunnel for offline work.
   let tunnel: Tunnel | null = null;
   if (!a.flags['no-tunnel']) {
     step('Cloudflare tunnel (cloud sandbox callback)');
@@ -312,18 +311,27 @@ async function cmdStart(a: Args) {
     else warn('no tunnel (cloudflared missing or timed out) — cloud sandboxes won’t be reachable; `brew install cloudflared` and restart, or pass --no-tunnel to silence');
   }
 
+  let stripe: StripeListen | null = null;
+  if (a.flags.stripe) {
+    step('Stripe webhook forwarding (billing on)');
+    stripe = await startStripeListen(e.ports.api);
+    if (stripe) sub(`stripe listen → http://localhost:${e.ports.api}/v1/billing/webhooks/stripe  ${pc.dim('(whsec injected)')}`);
+    else warn('stripe CLI missing or not logged in — billing NOT enabled. Install it and run `stripe login`, then restart with --stripe.');
+  }
+
   console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  studio http://localhost:${e.ports.sbStudio}`);
   if (tunnel) console.log(`${pc.dim('   sandbox callback')} ${url(tunnel.url)}`);
+  if (stripe) console.log(`${pc.dim('   billing')} ${pc.green('on')} ${pc.dim('· stripe webhooks → :' + e.ports.api)}`);
   console.log(pc.dim('   (Ctrl+C stops the dev servers cleanly)\n'));
 
-  const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, tunnel?.url) }, stdout: 'inherit', stderr: 'inherit' });
-  const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds) }, stdout: 'inherit', stderr: 'inherit' });
+  const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl: tunnel?.url, stripeWebhookSecret: stripe?.secret }) }, stdout: 'inherit', stderr: 'inherit' });
+  const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing: !!stripe }) }, stdout: 'inherit', stderr: 'inherit' });
   const killListeners = (sig: string) => { for (const port of [e.ports.web, e.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${sig} ${u.pid} 2>/dev/null || true`]); } };
   let stopping = false;
   const shutdown = async () => {
     if (stopping) return; stopping = true;
     console.log(`\n${pc.yellow('▸')} stopping…`);
-    try { api.kill(); } catch {} try { web.kill(); } catch {} try { tunnel?.proc.kill(); } catch {}
+    try { api.kill(); } catch {} try { web.kill(); } catch {} try { tunnel?.proc.kill(); } catch {} try { stripe?.proc.kill(); } catch {}
     killListeners('');
     await Promise.race([Promise.all([api.exited, web.exited]), Bun.sleep(6000)]);
     killListeners('-9');
@@ -337,7 +345,6 @@ async function cmdStart(a: Args) {
   await shutdown();
 }
 
-// ── stop ─────────────────────────────────────────────────────────────────────
 async function cmdStop(a: Args) {
   const name = need(a.name);
   const reg = loadRegistry();
@@ -350,7 +357,6 @@ async function cmdStop(a: Args) {
   ok(`stopped (data preserved). Restart with ${pc.cyan('pnpm worktree start ' + name)}.`);
 }
 
-// ── nuke ─────────────────────────────────────────────────────────────────────
 async function cmdNuke(a: Args) {
   const name = need(a.name);
   const reg = loadRegistry();
@@ -359,13 +365,12 @@ async function cmdNuke(a: Args) {
   const pid = e!.projectId;
   step(`Nuking "${name}" ${pc.dim('(project ' + pid + ')')}`);
   for (const port of [e!.ports.web, e!.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
-  sh(['supabase', '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
-  sh(['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
-  sh(['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null || true`]);
-  sh(['bash', '-lc', `docker network rm supabase_network_${pid} 2>/dev/null || true`]);
+  await spin('Stopping Supabase containers', ['supabase', '--workdir', supaWorkdir(name), 'stop', '--no-backup']);
+  await spin('Removing Docker containers', ['bash', '-lc', `docker rm -f $(docker ps -aq --filter "name=_${pid}$") 2>/dev/null || true`]);
+  await spin('Removing volumes & network', ['bash', '-lc', `docker volume rm $(docker volume ls -q --filter "name=_${pid}$") 2>/dev/null; docker network rm supabase_network_${pid} 2>/dev/null || true`]);
   const root = repoRoot();
   const force = a.flags.force ? ['--force'] : [];
-  if (existsSync(e!.path)) sh(['git', '-C', root, 'worktree', 'remove', ...force, e!.path]);
+  if (existsSync(e!.path)) { sub('removing git worktree…'); sh(['git', '-C', root, 'worktree', 'remove', ...force, e!.path]); }
   sh(['git', '-C', root, 'worktree', 'prune']);
   if (e!.branch) {
     const del = sh(['git', '-C', root, 'branch', '-d', e!.branch]);
@@ -378,7 +383,6 @@ async function cmdNuke(a: Args) {
   ok(`removed "${name}" — slot ${e!.slot} freed.`);
 }
 
-// ── list ─────────────────────────────────────────────────────────────────────
 function cmdList() {
   const reg = loadRegistry();
   const names = Object.keys(reg.slots);
@@ -395,7 +399,6 @@ function cmdList() {
   console.log('');
 }
 
-// ── status ───────────────────────────────────────────────────────────────────
 function cmdStatus(a: Args) {
   const reg = loadRegistry();
   const names = a.name ? [sanitizeName(a.name)] : Object.keys(reg.slots);
@@ -411,7 +414,6 @@ function cmdStatus(a: Args) {
   console.log('');
 }
 
-// ── doctor ───────────────────────────────────────────────────────────────────
 async function cmdDoctor(a: Args) {
   step('Toolchain');
   await ensureDeps({ tunnel: true, install: !!a.flags.yes });
@@ -429,7 +431,49 @@ async function cmdDoctor(a: Args) {
   console.log(`\n  ${pc.dim('registry: ' + REGISTRY_PATH)}`);
 }
 
-// ── main ─────────────────────────────────────────────────────────────────────
+function repoSlug(path: string, remote = 'origin'): string | null {
+  const u = sh(['git', '-C', path, 'remote', 'get-url', remote]).stdout.trim();
+  return u.match(/[:/]([^/:]+\/[^/]+?)(?:\.git)?$/)?.[1] ?? null;
+}
+
+async function cmdPr(a: Args) {
+  const name = need(a.name);
+  const reg = loadRegistry();
+  const e = reg.slots[name];
+  if (!e) die(`unknown worktree "${name}" — create it first`);
+  if (!existsSync(e.path)) die(`worktree dir missing (${e.path})`);
+  const { path, branch } = e;
+  const base = (typeof a.flags.base === 'string' && a.flags.base) || 'main';
+
+  const ahead = sh(['git', '-C', path, 'rev-list', '--count', `${base}..${branch}`]).stdout.trim();
+  if (!ahead || ahead === '0') die(`"${branch}" has no commits ahead of ${base} — commit something first`);
+  if (sh(['git', '-C', path, 'status', '--porcelain']).stdout.trim())
+    warn(`uncommitted changes in "${name}" won't be in the PR — commit them first if you want them included`);
+
+  step(`Pushing ${pc.bold(branch)} → origin ${pc.dim(`(${ahead} commit${ahead === '1' ? '' : 's'} ahead of ${base})`)}`);
+  if (await run(['git', '-C', path, 'push', '-u', 'origin', branch]) !== 0)
+    die('git push failed — check your remote auth and retry');
+
+  if (!which('gh')) {
+    const slug = repoSlug(path);
+    warn('gh CLI not found — branch pushed. Open the PR here:');
+    sub(slug ? url(`https://github.com/${slug}/compare/${base}...${branch}?expand=1`) : `compare ${base}...${branch} on GitHub`);
+    sub(`or install it (${pc.cyan('brew install gh')}) and re-run ${pc.cyan('pnpm worktree pr ' + name)}`);
+    return;
+  }
+
+  step('Opening pull request');
+  const gh = ['gh', 'pr', 'create', '--head', branch, '--base', base];
+  if (typeof a.flags.repo === 'string') gh.push('--repo', a.flags.repo);
+  if (typeof a.flags.title === 'string') gh.push('--title', a.flags.title, '--body', typeof a.flags.body === 'string' ? a.flags.body : '');
+  else gh.push('--fill');
+  if (a.flags.draft) gh.push('--draft');
+  if (a.flags.web) gh.push('--web');
+  if (await run(gh, { cwd: path }) !== 0)
+    die(`gh pr create failed — a PR may already exist, or the base repo needs selecting. Retry with ${pc.cyan('pnpm worktree pr ' + name + ' --web')}`);
+  ok(`PR opened for ${pc.bold(branch)}.`);
+}
+
 let a = parseArgs(process.argv.slice(2));
 const tty = !!process.stdin.isTTY && !!process.stdout.isTTY;
 try {
@@ -443,11 +487,12 @@ try {
     const r = await promptCreate();
     if (!r) process.exit(0);
     a = r;
-  } else if (tty && ['start', 'stop', 'nuke', 'rm', 'status'].includes(a.cmd) && !a.name) {
+  } else if (tty && ['start', 'stop', 'nuke', 'rm', 'status', 'pr'].includes(a.cmd) && !a.name) {
     clack.intro(pc.bgCyan(pc.black(` pnpm worktree · ${a.cmd} `)));
     const n = await pickWorktree(a.cmd);
     if (!n) process.exit(0);
     a.name = n;
+    if (a.cmd === 'start' && !a.flags.stripe && await confirmStripe()) a.flags.stripe = true;
   }
 
   switch (a.cmd) {
@@ -457,6 +502,7 @@ try {
     case 'nuke': case 'rm': await cmdNuke(a); break;
     case 'list': case 'ls': cmdList(); break;
     case 'status': cmdStatus(a); break;
+    case 'pr': await cmdPr(a); break;
     case 'doctor': await cmdDoctor(a); break;
     default: usage();
   }

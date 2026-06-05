@@ -1,3 +1,3 @@
-show claim button only for legacy users
+stripe webhook reconciliation 
 
-show claim button only for legacy users
+stripe webhook reconciliation 

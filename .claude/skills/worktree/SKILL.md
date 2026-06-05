@@ -94,7 +94,7 @@ stack. Re-running `create` for an existing name resumes it idempotently.
 ### `start` — boot an existing worktree (FOREGROUND, BLOCKS)
 
 ```sh
-pnpm worktree start <n> [--no-tunnel]
+pnpm worktree start <n> [--stripe] [--no-tunnel]
 ```
 
 Ensures Supabase is up, applies pending migrations, then runs **api + web in the
@@ -107,6 +107,13 @@ kills stragglers, and marks the worktree stopped). Requires Docker running.
 - A Cloudflare quick tunnel starts by default so cloud Daytona sandboxes can
   call back to the local API (`KORTIX_URL` → the `*.trycloudflare.com` URL).
   `--no-tunnel` skips it; if `cloudflared` is missing it warns and continues.
+- `--stripe` turns billing **on** for the worktree and runs `stripe listen`
+  forwarding test-mode webhooks to *this* worktree's API
+  (`…:<api>/v1/billing/webhooks/stripe`), injecting the `whsec_…` signing secret
+  so signatures verify. Needs the `stripe` CLI logged in (`stripe login`) and a
+  test `STRIPE_SECRET_KEY` in the worktree's local `.env` (billing won't boot
+  without it). Lets you exercise checkout/subscription/webhook flows end-to-end
+  in isolation.
 
 ### `stop` — pause a worktree (keeps data)
 
@@ -129,6 +136,21 @@ frees the ports. By default the branch is deleted with `git branch -d` (safe —
 refuses if unmerged); `--force` uses `git worktree remove --force` **and**
 `git branch -D` (drops unmerged commits). Only `nuke` after the work is merged
 or pushed.
+
+### `pr` — push the branch and open a pull request
+
+```sh
+pnpm worktree pr <n> [--title "…"] [--body "…"] [--base main] [--repo owner/name] [--draft] [--web]
+```
+
+Closes the loop (create → work → `pr`). Refuses if the branch has no commits
+ahead of `--base` (default `main`); warns if the tree is dirty (uncommitted work
+won't be in the PR). Pushes `origin/<branch>` (`-u`), then runs `gh pr create`.
+Title/body come from the branch's commit messages via `gh --fill` unless
+`--title` is given. `--draft` opens a draft; `--web` finishes in the browser.
+If `gh` isn't installed it still pushes and prints a compare URL. On a fork, gh
+may ask which base repo — answer the prompt (or pass `--repo`). Requires the
+push remote (`origin`) to be authenticated for your account.
 
 ### `list` (alias `ls`) — table of all worktrees
 
