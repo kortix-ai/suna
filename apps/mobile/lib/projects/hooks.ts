@@ -17,6 +17,7 @@ import {
   listGitHubInstallations,
   listGitHubRepositories,
   listPipedreamApps,
+  listProjectAccess,
   listProjectSessions,
   listProjectsForAccount,
   provisionProject,
@@ -36,6 +37,7 @@ export const projectKeys = {
     ['project-file', projectId, path] as const,
   projectSessions: (projectId: string | null | undefined) => ['project-sessions', projectId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
+  projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
   pipedreamApps: (projectId: string | null | undefined, q: string) =>
     ['pipedream-apps', projectId, q] as const,
   githubInstallations: (accountId: string | null | undefined) =>
@@ -138,6 +140,16 @@ export function useSetConnectorSharing(projectId: string) {
     mutationFn: ({ slug, intent }: { slug: string; intent: ConnectorSharing }) =>
       setConnectorSharing(projectId, slug, intent),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.connectors(projectId) }),
+  });
+}
+
+/** Project members (for the connector sharing member picker). */
+export function useProjectAccess(projectId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.projectAccess(projectId),
+    queryFn: () => listProjectAccess(projectId!),
+    enabled: !!projectId,
+    staleTime: 30_000,
   });
 }
 

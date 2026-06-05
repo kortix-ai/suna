@@ -471,6 +471,21 @@ export function listPipedreamApps(projectId: string, q?: string, cursor?: string
   );
 }
 
+// ── Project access (members) — for the connector sharing member picker ───────
+
+export interface ProjectAccessMember {
+  user_id: string;
+  email: string | null;
+}
+export interface ProjectAccessResponse {
+  viewer_user_id?: string;
+  members: ProjectAccessMember[];
+}
+
+export function listProjectAccess(projectId: string) {
+  return apiFetch<ProjectAccessResponse>(`/projects/${encodeURIComponent(projectId)}/access`);
+}
+
 export function archiveProject(projectId: string) {
   return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}`, {
     method: 'DELETE',
