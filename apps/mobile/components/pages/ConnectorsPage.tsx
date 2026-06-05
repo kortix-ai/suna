@@ -297,7 +297,7 @@ function ConnectorDetail({
 
       <BottomSheetScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: 20 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Sharing / access */}
@@ -336,32 +336,31 @@ function ConnectorDetail({
           ))
         )}
 
-        {/* Disconnect — remove the credential but keep the connector */}
+      </BottomSheetScrollView>
+
+      {/* Sticky footer — always visible: disconnect (keep connector) + remove */}
+      <View style={{ flexDirection: 'row', gap: 10, paddingHorizontal: 16, paddingTop: 10, paddingBottom: insets.bottom + 10, borderTopWidth: 1, borderTopColor: border }}>
         {isConnected && (
           <TouchableOpacity
             onPress={handleDisconnect}
             disabled={disconnectMut.isPending}
             activeOpacity={0.7}
-            style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24, paddingVertical: 12, borderRadius: 9999, borderWidth: 1, borderColor: border, opacity: disconnectMut.isPending ? 0.5 : 1 }}
+            style={{ flex: 1, height: 40, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: border, opacity: disconnectMut.isPending ? 0.5 : 1 }}
           >
-            {disconnectMut.isPending ? <ActivityIndicator size="small" color={muted} /> : <Unplug size={15} color={muted} />}
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: muted }}>
-              {isPipedream ? 'Disconnect account' : 'Clear credential'}
-            </Text>
+            {disconnectMut.isPending ? <ActivityIndicator size="small" color={muted} /> : <Unplug size={14} color={muted} />}
+            <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: muted }}>Disconnect</Text>
           </TouchableOpacity>
         )}
-
-        {/* Delete */}
         <TouchableOpacity
           onPress={onDelete}
           disabled={deleting}
           activeOpacity={0.7}
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: isConnected ? 10 : 24, paddingVertical: 12, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', opacity: deleting ? 0.5 : 1 }}
+          style={{ flex: 1, height: 40, borderRadius: 9999, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', opacity: deleting ? 0.5 : 1 }}
         >
-          {deleting ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={15} color="#ef4444" />}
-          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Remove connector</Text>
+          {deleting ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={14} color="#ef4444" />}
+          <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Remove</Text>
         </TouchableOpacity>
-      </BottomSheetScrollView>
+      </View>
     </View>
   );
 }
