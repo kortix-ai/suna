@@ -686,3 +686,107 @@ export function disconnectSlack(projectId: string) {
     method: 'DELETE',
   });
 }
+
+// ── Triggers — schedules (cron) + webhooks (web parity: triggers-view) ────────
+// Triggers live in kortix.toml [[triggers]]; runtime state (last_fired_at) is
+// in the DB. The API returns ALL triggers; each page filters by `type`.
+
+export type ProjectTriggerType = 'cron' | 'webhook';
+
+export interface ProjectTrigger {
+  slug: string;
+  path: string;
+  name: string;
+  type: ProjectTriggerType;
+  agent: string;
+  enabled: boolean;
+  prompt_template: string;
+  last_fired_at: string | null;
+  // cron-only
+  cron: string | null;
+  run_at: string | null;
+  timezone: string;
+  // webhook-only
+  secret_env: string | null;
+  webhook_url: string | null;
+}
+
+export interface ProjectTriggerParseError {
+  slug: string;
+  path: string;
+  error: string;
+}
+
+export interface ProjectTriggerListing {
+  triggers: ProjectTrigger[];
+  errors: ProjectTriggerParseError[];
+}
+
+export interface CreateProjectTriggerInput {
+  name: string;
+  slug?: string;
+  type: ProjectTriggerType;
+  prompt_template: string;
+  agent?: string;
+  enabled?: boolean;
+  cron?: string;
+  run_at?: string;
+  timezone?: string;
+  secret_env?: string;
+}
+
+export interface UpdateProjectTriggerInput {
+  name?: string;
+  prompt_template?: string;
+  agent?: string;
+  enabled?: boolean;
+  cron?: string;
+  run_at?: string;
+  timezone?: string;
+  secret_env?: string;
+}
+
+export interface FireProjectTriggerResponse {
+  status: 'fired' | 'queued' | 'failed';
+  session_id?: string | null;
+  reason?: string;
+  error?: string;
+}
+
+const triggersBase = (projectId: string) =>
+  `/projects/${encodeURIComponent(projectId)}/triggers`;
+
+export function listProjectTriggers(projectId: string) {
+  return apiFetch<ProjectTriggerListing>(triggersBase(projectId));
+}
+
+export function createProjectTrigger(projectId: string, input: CreateProjectTriggerInput) {
+  return apiFetch<ProjectTriggerListing>(triggersBase(projectId), {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateProjectTrigger(
+  projectId: string,
+  slug: string,
+  input: UpdateProjectTriggerInput,
+) {
+  return apiFetch<ProjectTriggerListing>(`${triggersBase(projectId)}/${encodeURIComponent(slug)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteProjectTrigger(projectId: string, slug: string) {
+  return apiFetch<{ ok: boolean }>(`${triggersBase(projectId)}/${encodeURIComponent(slug)}`, {
+    method: 'DELETE',
+  });
+}
+
+export function fireProjectTrigger(projectId: string, slug: string) {
+  return apiFetch<FireProjectTriggerResponse>(
+    `${triggersBase(projectId)}/${encodeURIComponent(slug)}/fire`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}

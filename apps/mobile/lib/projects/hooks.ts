@@ -9,10 +9,13 @@ import {
   createAccount,
   connectSlack,
   createProjectSession,
+  createProjectTrigger,
   deleteConnector,
   deletePersonalProjectSecret,
   deleteProjectSecret,
+  deleteProjectTrigger,
   disconnectSlack,
+  fireProjectTrigger,
   getSlackInstallation,
   getSlackMode,
   getProject,
@@ -27,6 +30,7 @@ import {
   listProjectPolicies,
   listProjectSecrets,
   listProjectSessions,
+  listProjectTriggers,
   listProjectsForAccount,
   provisionProject,
   readProjectFile,
@@ -34,11 +38,14 @@ import {
   setPersonalProjectSecret,
   setProjectPolicies,
   syncConnectors,
+  updateProjectTrigger,
   upsertProjectSecret,
   type ConnectorSharing,
   type CreateProjectSessionInput,
+  type CreateProjectTriggerInput,
   type PolicyDefaultMode,
   type ProjectPolicy,
+  type UpdateProjectTriggerInput,
 } from './projects-client';
 
 export const projectKeys = {
@@ -53,6 +60,7 @@ export const projectKeys = {
   secrets: (projectId: string | null | undefined) => ['project-secrets', projectId] as const,
   slackInstall: (projectId: string | null | undefined) => ['slack-install', projectId] as const,
   slackMode: (projectId: string | null | undefined) => ['slack-mode', projectId] as const,
+  triggers: (projectId: string | null | undefined) => ['project-triggers', projectId] as const,
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
   policies: (projectId: string | null | undefined) => ['project-policies', projectId] as const,
   pipedreamApps: (projectId: string | null | undefined, q: string) =>
@@ -367,5 +375,51 @@ export function useDisconnectSlack(projectId: string) {
   return useMutation({
     mutationFn: () => disconnectSlack(projectId),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.slackInstall(projectId) }),
+  });
+}
+
+// ── Triggers — schedules (cron) + webhooks (web parity) ───────────────────────
+
+/** All project triggers (cron + webhook). Polls while any are recently active. */
+export function useProjectTriggers(projectId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.triggers(projectId),
+    queryFn: () => listProjectTriggers(projectId!),
+    enabled: !!projectId,
+    staleTime: 5_000,
+    refetchInterval: 10_000,
+  });
+}
+
+export function useCreateProjectTrigger(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateProjectTriggerInput) => createProjectTrigger(projectId, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.triggers(projectId) }),
+  });
+}
+
+export function useUpdateProjectTrigger(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ slug, input }: { slug: string; input: UpdateProjectTriggerInput }) =>
+      updateProjectTrigger(projectId, slug, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.triggers(projectId) }),
+  });
+}
+
+export function useDeleteProjectTrigger(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (slug: string) => deleteProjectTrigger(projectId, slug),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.triggers(projectId) }),
+  });
+}
+
+export function useFireProjectTrigger(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (slug: string) => fireProjectTrigger(projectId, slug),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.triggers(projectId) }),
   });
 }
