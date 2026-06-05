@@ -1,3 +1,3 @@
-windowed migration — latest 25 by default + offset
+suna migration fix + connector fix
 
-windowed migration — latest 25 by default + offset
+suna migration fix + connector fix

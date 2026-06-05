@@ -29,6 +29,9 @@ export interface PushedRepo {
   repoOwner: string | null;
   repoName: string | null;
   defaultBranch: string;
+  externalRepoId: string | null;
+  installationId: string | null;
+  credentialRef: string | null;
 }
 
 export async function pushBundleAsRepo(accountId: string, bundleDir: string): Promise<PushedRepo> {
@@ -70,5 +73,9 @@ export async function pushBundleAsRepo(accountId: string, bundleDir: string): Pr
   git(['commit', '-m', 'Import Suna legacy projects (chats restored as sessions; files under legacy/)'], bundleDir);
   git(['push', pushUrl, `HEAD:${repo.defaultBranch}`], bundleDir, true);
 
-  return { projectId, provider: repo.provider, upstreamUrl: repo.upstreamUrl, repoOwner: repo.repoOwner, repoName: repo.repoName, defaultBranch: repo.defaultBranch };
+  return {
+    projectId, provider: repo.provider, upstreamUrl: repo.upstreamUrl,
+    repoOwner: repo.repoOwner, repoName: repo.repoName, defaultBranch: repo.defaultBranch,
+    externalRepoId: repo.externalRepoId, installationId: repo.installationId, credentialRef: repo.credentialRef,
+  };
 }

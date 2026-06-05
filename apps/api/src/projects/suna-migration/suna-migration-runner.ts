@@ -123,6 +123,21 @@ export async function startSunaMigration(input: { database: Database; accountId:
   const existing = await findActiveSunaMigration(database, accountId);
   if (existing) return { migration: existing, created: false };
 
+  // Resume a dead-lettered (failed) migration in place rather than starting a
+  // fresh one — keeps the already-created repo + extracted progress, re-driving
+  // from its last phase.
+  const last = await latestSunaMigration(database, accountId);
+  if (last && last.status === 'failed') {
+    await database.update(sunaAccountMigrations)
+      .set({ status: 'running', attempts: 0, error: null, heartbeatAt: null, updatedAt: new Date() })
+      .where(eq(sunaAccountMigrations.migrationId, last.migrationId));
+    if (input.autoDrive !== false) {
+      void driveSunaMigration(database, last.migrationId).catch((err) =>
+        appLogger.error('[suna-migration] resume drive failed', { migrationId: last.migrationId, error: err instanceof Error ? err.message : String(err) }));
+    }
+    return { migration: { ...last, status: 'running' }, created: false };
+  }
+
   const limit = Number.isFinite(input.limit) && (input.limit as number) > 0 ? Math.min(input.limit as number, 200) : DEFAULT_LIMIT;
   const offset = Number.isFinite(input.offset) && (input.offset as number) >= 0 ? (input.offset as number) : 0;
   const now = new Date();
