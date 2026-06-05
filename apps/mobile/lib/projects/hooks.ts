@@ -9,6 +9,7 @@ import {
   createAccount,
   createProjectSession,
   getProject,
+  getProjectDetail,
   linkRepository,
   listAccounts,
   listGitHubInstallations,
@@ -16,6 +17,7 @@ import {
   listProjectSessions,
   listProjectsForAccount,
   provisionProject,
+  readProjectFile,
   type CreateProjectSessionInput,
 } from './projects-client';
 
@@ -23,6 +25,9 @@ export const projectKeys = {
   accounts: ['accounts'] as const,
   projects: (accountId: string | null | undefined) => ['projects', accountId] as const,
   project: (projectId: string | null | undefined) => ['project', projectId] as const,
+  projectDetail: (projectId: string | null | undefined) => ['project-detail', projectId] as const,
+  projectFile: (projectId: string | null | undefined, path: string | null | undefined) =>
+    ['project-file', projectId, path] as const,
   projectSessions: (projectId: string | null | undefined) => ['project-sessions', projectId] as const,
   githubInstallations: (accountId: string | null | undefined) =>
     ['github-installations', accountId] as const,
@@ -64,6 +69,26 @@ export function useProject(projectId: string | null) {
     queryFn: () => getProject(projectId!),
     enabled: !!projectId,
     staleTime: 20_000,
+  });
+}
+
+/** Project config summary — agents, skills, commands (web parity). */
+export function useProjectDetail(projectId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.projectDetail(projectId),
+    queryFn: () => getProjectDetail(projectId!),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+}
+
+/** Read a repo file's content (config source views). */
+export function useProjectFile(projectId: string | null, path: string | null) {
+  return useQuery({
+    queryKey: projectKeys.projectFile(projectId, path),
+    queryFn: () => readProjectFile(projectId!, path!),
+    enabled: !!projectId && !!path,
+    staleTime: 30_000,
   });
 }
 

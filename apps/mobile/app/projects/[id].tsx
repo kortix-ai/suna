@@ -77,6 +77,7 @@ import { WorkspacePage, type WorkspacePageRef } from '@/components/pages/Workspa
 import { AgentBrowserPage } from '@/components/pages/AgentBrowserPage';
 import type { FilesPageRef } from '@/components/pages/FilesPage';
 import { SecretsPage } from '@/components/pages/SecretsPage';
+import { AgentsPage } from '@/components/pages/AgentsPage';
 import { MemoryPage } from '@/components/pages/MemoryPage';
 import { LlmProvidersPage } from '@/components/pages/LlmProvidersPage';
 import { TerminalPage } from '@/components/pages/TerminalPage';
@@ -1992,6 +1993,17 @@ export default function ProjectSessionScreen() {
             <SecretsPage
               page={PAGE_TABS[activePageId]}
               onBack={handleBack}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Agents (web sidebar BUILD) */
+          ) : activePageId === 'page:agents' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <AgentsPage
+              page={PAGE_TABS[activePageId]}
+              projectId={projectId}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
               onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
               isDrawerOpen={drawerOpen}

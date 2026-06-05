@@ -292,6 +292,46 @@ export function restartProjectSession(projectId: string, sessionId: string) {
   );
 }
 
+// ── Project config detail (agents / skills / commands) ───────────────────────
+// Web parity: GET /projects/:id/detail returns the repo's OpenCode config —
+// the agents, skills and slash-commands declared under .kortix/opencode/.
+
+export interface ProjectConfigEntry {
+  name: string;
+  path: string;
+  description: string | null;
+}
+export interface ProjectAgentEntry extends ProjectConfigEntry {
+  /** 'primary' | 'subagent' | null */
+  mode: string | null;
+}
+export interface ProjectConfigSummary {
+  is_kortix_repo: boolean;
+  open_code_default_agent: string | null;
+  agents: ProjectAgentEntry[];
+  skills: ProjectConfigEntry[];
+  commands: ProjectConfigEntry[];
+  env: { required: string[]; optional: string[] };
+}
+export interface ProjectDetail {
+  project: KortixProject;
+  config: ProjectConfigSummary;
+  file_count: number;
+}
+
+export function getProjectDetail(projectId: string) {
+  return apiFetch<ProjectDetail>(`/projects/${encodeURIComponent(projectId)}/detail`);
+}
+
+/** Read a repo file's content at the project's default ref (for config source views). */
+export function readProjectFile(projectId: string, path: string, ref?: string) {
+  const params = new URLSearchParams({ path });
+  if (ref) params.set('ref', ref);
+  return apiFetch<{ path: string; ref: string; content: string }>(
+    `/projects/${encodeURIComponent(projectId)}/files/content?${params.toString()}`,
+  );
+}
+
 export function archiveProject(projectId: string) {
   return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}`, {
     method: 'DELETE',
