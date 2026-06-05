@@ -37,7 +37,6 @@ import {
   Boxes,
   Globe,
   ChevronRight,
-  ChevronLeft,
   RefreshCw,
   Trash2,
   Plug,
@@ -839,16 +838,7 @@ function SharingEditor({
 
   return (
     <View style={{ flex: 1 }}>
-      <TouchableOpacity
-        onPress={() => { haptics.tap(); onBack(); }}
-        activeOpacity={0.6}
-        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 4 }}
-      >
-        <ChevronLeft size={18} color={muted} />
-        <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted }}>{connector.name || connector.slug}</Text>
-      </TouchableOpacity>
-
-      <View style={{ paddingHorizontal: 16, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: border }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
         <Text style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Who can use it?</Text>
       </View>
 
@@ -1197,16 +1187,7 @@ function SetCredentialView({
 
   return (
     <View style={{ flex: 1 }}>
-      <TouchableOpacity
-        onPress={() => { haptics.tap(); onBack(); }}
-        activeOpacity={0.6}
-        style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 12, gap: 4 }}
-      >
-        <ChevronLeft size={18} color={muted} />
-        <Text style={{ fontSize: 14, fontFamily: 'Roobert', color: muted }}>{connector.name || connector.slug}</Text>
-      </TouchableOpacity>
-
-      <View style={{ paddingHorizontal: 16, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
+      <View style={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }}>
         <Text style={{ fontSize: 18, fontFamily: 'Roobert-Medium', color: fg }}>Set credential</Text>
       </View>
 
