@@ -19,7 +19,7 @@ import {
   existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, rmSync,
   openSync, closeSync, statSync, symlinkSync, readdirSync,
 } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join, dirname, basename } from 'node:path';
 
 export const STRIDE = 100;
@@ -189,6 +189,27 @@ export async function runMigrate(worktreePath: string, ports: Ports): Promise<nu
   });
 }
 
+export interface Tunnel { url: string; proc: ReturnType<typeof Bun.spawn>; }
+
+export async function startTunnel(apiPort: number): Promise<Tunnel | null> {
+  if (!which('cloudflared')) return null;
+  const logPath = join(tmpdir(), `kortix-wt-tunnel-${apiPort}.log`);
+  writeFileSync(logPath, '');
+  const fd = openSync(logPath, 'w');
+  const proc = spawn(['cloudflared', 'tunnel', '--no-autoupdate', '--url', `http://localhost:${apiPort}`], {
+    stdout: fd, stderr: fd, stdin: 'ignore',
+  });
+  const re = /https:\/\/[a-z0-9.-]+\.trycloudflare\.com/;
+  for (let i = 0; i < 30; i++) {
+    const m = readFileSync(logPath, 'utf8').match(re);
+    if (m) return { url: m[0], proc };
+    if (proc.exitCode !== null) break;
+    await Bun.sleep(1000);
+  }
+  try { proc.kill(); } catch {}
+  return null;
+}
+
 export function rewriteConfigToml(toml: string, projectId: string, ports: Ports): string {
   const sectionPort: Record<string, number> = {
     '[api]': ports.sbApi, '[db]': ports.sbDb, '[db.pooler]': ports.sbPooler,
@@ -238,11 +259,11 @@ export function slotCredsFromStatus(ports: Ports, st: Record<string, string>): S
   };
 }
 
-export function apiLaunchEnv(ports: Ports, c: SlotCreds): Record<string, string> {
+export function apiLaunchEnv(ports: Ports, c: SlotCreds, kortixUrl?: string): Record<string, string> {
   return {
     ENV_MODE: 'local', KORTIX_LOCAL_DEV: '1',
     PORT: String(ports.api),
-    KORTIX_URL: `http://localhost:${ports.api}`,
+    KORTIX_URL: kortixUrl || `http://localhost:${ports.api}`,
     NEXT_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
     KORTIX_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
     BACKEND_URL: `http://localhost:${ports.api}/v1`,
@@ -260,9 +281,6 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds): Record<string, string>
 export function webLaunchEnv(ports: Ports, c: SlotCreds): Record<string, string> {
   return {
     WEB_PORT: String(ports.web),
-    // Per-slot absolute API URL (the web's runtime env-schema requires a full
-    // url()); unique per worktree so they never collide. The api whitelists this
-    // web's origin via CORS_ALLOWED_ORIGINS, so the cross-origin call passes.
     KORTIX_API_PROXY_TARGET: `http://localhost:${ports.api}`,
     NEXT_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
     KORTIX_PUBLIC_BACKEND_URL: `http://localhost:${ports.api}/v1`,
@@ -315,14 +333,16 @@ export async function ensureDeps(opts: { tunnel?: boolean; install?: boolean } =
   let allOk = true;
   for (const { dep, ok } of checkDeps(opts)) {
     if (ok) { console.log(`  ✓ ${dep.name}`); continue; }
-    console.log(`  ✗ ${dep.name} — missing`);
+    const optional = dep.needed === 'tunnel';
+    const fail = () => { if (!optional) allOk = false; };
+    console.log(`  ${optional ? '!' : '✗'} ${dep.name} — missing${optional ? ' (optional — cloud sandboxes only)' : ''}`);
     const cmd = isMac ? dep.installMac : dep.installLinux;
     if (dep.name === 'docker') { console.log(`      Docker daemon not reachable. Fix: ${cmd}`); allOk = false; continue; }
-    if (dep.installMac.startsWith('(')) { console.log(`      ${cmd}`); allOk = false; continue; }
-    if (!opts.install) { console.log(`      install with: ${cmd}`); allOk = false; continue; }
+    if (dep.installMac.startsWith('(')) { console.log(`      ${cmd}`); fail(); continue; }
+    if (!opts.install) { console.log(`      install with: ${cmd}`); fail(); continue; }
     console.log(`      installing: ${cmd}`);
     const code = await run(['bash', '-lc', cmd]);
-    if (code !== 0 || !dep.check()) { console.log(`      ✗ install failed for ${dep.name}`); allOk = false; }
+    if (code !== 0 || !dep.check()) { console.log(`      ✗ install failed for ${dep.name}`); fail(); }
     else console.log(`      ✓ ${dep.name} installed`);
   }
   return allOk;
