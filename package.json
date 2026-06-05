@@ -20,7 +20,7 @@
     "nuke": "bash scripts/nuke-local.sh",
     "nuke:start": "bash scripts/nuke-local.sh --start",
     "start": "bash scripts/start-local.sh",
-    "stripe:listen": "stripe listen --forward-to http://localhost:8008/v1/billing/webhooks/stripe"
+    "stripe:listen": "stripe listen --api-key \"$(dotenvx get STRIPE_SECRET_KEY -f apps/api/.env)\" --forward-to http://localhost:8008/v1/billing/webhooks/stripe"
   },
   "devDependencies": {
     "@clack/prompts": "^0.7.0",
