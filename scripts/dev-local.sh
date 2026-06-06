@@ -391,13 +391,18 @@ NEXT_PUBLIC_KORTIX_PERSONAL_CONTACT=false
 EDGE_CONFIG=
 EOF
 
-  # Export the web env into THIS process so the production frontend build + start
-  # see them. `next build` / `next start` (unlike the `dev` script) do NOT run
-  # dotenvx, and Next does not reliably auto-load apps/web/.env.local for the
-  # standalone/production server — so without exporting, `next start` boots with
-  # NO BACKEND_URL / Supabase vars and every SSR request 500s on the runtime-env
-  # Zod parse. Exporting makes NEXT_PUBLIC_* inline at BUILD time and puts the
-  # server-only vars (BACKEND_URL, …) in process.env for `next start`'s SSR.
+  # Export the SANDBOX-generated web env into THIS process so both the
+  # production (build + start) and the dev (`next dev`) paths see the right
+  # values: relative NEXT_PUBLIC_BACKEND_URL=/v1 and the in-sandbox Supabase
+  # trio. For build+start, `next build` / `next start` (unlike the web's `dev`
+  # npm script) do NOT run dotenvx, and Next does not reliably auto-load
+  # apps/web/.env.local for the standalone/production server — so without
+  # exporting, `next start` boots with NO BACKEND_URL / Supabase vars and every
+  # SSR request 500s on the runtime-env Zod parse. Exporting makes NEXT_PUBLIC_*
+  # inline at BUILD time and puts the server-only vars (BACKEND_URL, …) in
+  # process.env for SSR. For the dev path we invoke `next dev` DIRECTLY (not the
+  # web's `dev` script, which wraps `dotenvx run -f .env` and would inject the
+  # committed laptop `localhost` values), so it relies on this same export.
   set -a
   # shellcheck disable=SC1091
   source "$ROOT_DIR/apps/web/.env.local"
@@ -412,13 +417,25 @@ EOF
     (cd "$ROOT_DIR" && pnpm install) || echo "[dev] ⚠️  pnpm install reported issues — continuing"
   fi
 
-  echo "[dev] Building frontend (pnpm build)…"
-  if pnpm --filter Kortix-Computer-Frontend build; then
-    echo "[dev] Frontend built — serving (pnpm start) on :3000"
-    pnpm --filter Kortix-Computer-Frontend start &
-    FRONTEND_PID=$!
+  if [[ "$BUILD_MODE" == "1" ]]; then
+    # `pnpm preview` → production parity: full build then `next start`.
+    echo "[dev] Building frontend (pnpm build)…"
+    if pnpm --filter Kortix-Computer-Frontend build; then
+      echo "[dev] Frontend built — serving (pnpm start) on :3000"
+      pnpm --filter Kortix-Computer-Frontend start &
+      FRONTEND_PID=$!
+    else
+      echo "[dev] ⚠️  Frontend build failed — continuing with API only"
+    fi
   else
-    echo "[dev] ⚠️  Frontend build failed — continuing with API only"
+    # `pnpm dev` → fast hot-reload via `next dev`. No heavy `next build`.
+    # Invoke next DIRECTLY (not the web's `dev` npm script, which wraps
+    # `dotenvx run -f .env` and would inject committed laptop `localhost`
+    # values); the sandbox `.env.local` is already exported above (relative
+    # NEXT_PUBLIC_BACKEND_URL=/v1, in-sandbox Supabase).
+    echo "[dev] Starting frontend (next dev, hot reload) on :${WEB_PORT:-3000}"
+    (cd "$ROOT_DIR/apps/web" && pnpm exec next dev --turbopack --port "${WEB_PORT:-3000}") &
+    FRONTEND_PID=$!
   fi
 
   echo "[dev] Starting API (dev) on :8008"
