@@ -74,9 +74,19 @@ export class PlatinumProvider implements SandboxProvider {
       throw new Error('[platinum] create() called without KORTIX_TOKEN — sandbox cannot authenticate to the Kortix router.');
     }
 
-    // autoStopInterval maps to Platinum's auto_stop_minutes. 0 (warm-pool) →
-    // persistent (never auto-stops); >0 → ephemeral with that idle timeout.
-    const autoStop = opts.autoStopInterval ?? 15;
+    // autoStopInterval maps to Platinum's auto_stop_minutes. 0 → persistent
+    // (never auto-stops); >0 → ephemeral with that idle timeout.
+    //
+    // Default 0 (PERSISTENT) for Platinum. Unlike Daytona (cold-container
+    // restart — resumes cleanly), a Platinum stop→resume currently wedges the
+    // restored guest's virtio devices (net AND vsock dead — the CH UFFD
+    // demand-paged device-resume bug; replicated + isolated 2026-06-06,
+    // host→guest:8000 times out, in-guest exec dead). So returning to an
+    // auto-stopped session 502s/hangs (the "resume-freeze", the 27s/502
+    // catastrophe). Never auto-stop into that broken path until the CH-side
+    // resume fix lands (or reprovision-on-resume). Host RAM is the capacity
+    // bound, not disk, and it's plentiful at current scale.
+    const autoStop = opts.autoStopInterval ?? 0;
 
     const _t0 = Date.now();
     const sandbox = await platinumJson<PlatinumSandbox>(
