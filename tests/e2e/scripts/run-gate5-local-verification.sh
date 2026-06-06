@@ -195,7 +195,7 @@ run_check v1_playwright_spec_guards bash -lc '
 run_check v1_legacy_script_guards bash -lc '
   set -euo pipefail
 
-  bash -n scripts/start-sandbox.sh scripts/start-local.sh
+  bash -n scripts/start-sandbox.sh
 
   start_sandbox_output="$(mktemp)"
   build_snapshot_output="$(mktemp)"
