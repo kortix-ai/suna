@@ -1797,6 +1797,96 @@
       "line113JsxAttrPlaceholderDescriviIlTuoCompito": "Describe tu tarea..."
     },
     "appHomePage": {
+      "useCasesEyebrow": "Use cases",
+      "useCasesTitle": "An agent for every job on your plate",
+      "useCasesDescription": "One workforce, every department. Watch an agent take a real task end to end — then open the full playbook.",
+      "useCasesLearnMore": "Learn more",
+      "useCaseDemos": {
+        "triageCustomerSignals": {
+          "tabTitle": "Triage Customer Signals",
+          "tabDescription": "Route and prioritize inbound signals automatically",
+          "eyebrow": "Triage customer signals",
+          "title": "Turn customer noise into prioritized action",
+          "description": "Agents pull signals from tickets, Slack, and your CRM — then classify, deduplicate, and route each to the right team with full context. Every step runs in an isolated sandbox, and nothing reaches a customer without review.",
+          "log": [
+            "Ingesting 340 signals from 4 sources.",
+            "Classified: 12 critical, 45 high, 283 routine",
+            "Deduplicated 67 signals → 28 unique issues",
+            "Routed to 3 teams with context attached",
+            "12 critical issues escalated · avg response 4min"
+          ]
+        },
+        "shipBacklogTickets": {
+          "tabTitle": "Ship Backlog Tickets",
+          "tabDescription": "Pick up backlog tickets and open reviewed change requests",
+          "eyebrow": "Ship backlog tickets",
+          "title": "From backlog ticket to reviewed change request",
+          "description": "Point a coding agent at your backlog. It reads the issue, works in its own sandbox on its own branch, and opens a change request with a preview — so every line lands on main through review, never a black box.",
+          "log": [
+            "Picked up 8 tickets from the backlog",
+            "Spun up 8 isolated sandboxes in parallel",
+            "Wrote code + tests · 6 ready, 2 need input",
+            "Opened 6 change requests with previews",
+            "Awaiting human review before merge to main"
+          ]
+        },
+        "fillThePipeline": {
+          "tabTitle": "Fill the Pipeline",
+          "tabDescription": "Research accounts and draft outreach at scale",
+          "eyebrow": "Fill the pipeline",
+          "title": "Research every account, draft every touch",
+          "description": "Agents enrich and rank your accounts, draft personalized outreach, and keep the CRM clean — so your team walks into every call prepped, not scrambling.",
+          "log": [
+            "Enriched 1,200 accounts from 5 sources",
+            "Ranked and scored by fit and intent",
+            "Drafted 340 personalized outreach sequences",
+            "Updated 1,200 CRM records · 0 duplicates",
+            "18 call briefs ready for tomorrow"
+          ]
+        },
+        "closeTheBooks": {
+          "tabTitle": "Close the Books",
+          "tabDescription": "Reconcile, report, and close with an audit trail",
+          "eyebrow": "Close the books",
+          "title": "Reconcile and close, with a trail you can audit",
+          "description": "Agents capture invoices, tie out accounts, and flag policy exceptions — leaving a reviewable run log behind every number, so the close is fast and fully auditable.",
+          "log": [
+            "Captured 482 invoices · matched 461",
+            "Reconciled 14 accounts · 21 exceptions flagged",
+            "Drafted board report from consolidated data",
+            "Every figure linked to its source document",
+            "Ready for controller sign-off"
+          ]
+        },
+        "briefToCampaign": {
+          "tabTitle": "Brief to Campaign",
+          "tabDescription": "Turn a brief into on-brand, ready-to-ship work",
+          "eyebrow": "Brief to campaign",
+          "title": "Turn a brief into a campaign that's ready to ship",
+          "description": "Hand agents a brief and your brand. They research, draft, and interlink pages, posts, and ad variations on brand — and hand back finished work for a human to approve before anything goes live.",
+          "log": [
+            "Read brief + brand guidelines",
+            "Researched 24 keywords and 6 competitors",
+            "Drafted 12 posts, 4 pages, 30 ad variations",
+            "Checked every asset against brand voice",
+            "Queued for review · publish on approval"
+          ]
+        },
+        "runTheBackOffice": {
+          "tabTitle": "Run the Back Office",
+          "tabDescription": "Turn playbooks into workflows that run themselves",
+          "eyebrow": "Run the back office",
+          "title": "Turn playbooks into workflows that run themselves",
+          "description": "Agents track orders across suppliers, watch vendor performance, and turn your SOPs into workflows triggered on a schedule or a webhook — so the business keeps running while your team sleeps.",
+          "log": [
+            "Tracked 96 orders across 11 suppliers",
+            "Flagged 4 delayed shipments · opened actions",
+            "Ran 7 SOPs on schedule overnight",
+            "Logged every action to an audit trail",
+            "2 exceptions routed for human decision"
+          ]
+        }
+      },
       "line138JsxTextTheAiCommandCenter": "El centro de mando de IA",
       "line139JsxTextForYourCompany": "for your company",
       "line142JsxTextRunYourCompanyOnAiEveryAgentTrigger": "Dirige tu empresa con IA. Cada agente, disparador, integración y memoria que tus equipos necesitan, en un solo lugar que tú controlas.",

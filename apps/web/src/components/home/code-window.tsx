@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { cn } from '@/lib/utils';
-import { motion } from 'motion/react';
+import { motion, useReducedMotion } from 'motion/react';
 import { useState } from 'react';
 import { AiOutlineCheck } from 'react-icons/ai';
 import { HyperText } from '../ui/hyper-text';
@@ -297,25 +297,39 @@ function DeployBody() {
 
 export function CodeWindow({ className }: { className?: string }) {
   const [tab, setTab] = useState<TabId>('toml');
+  const reduceMotion = useReducedMotion();
   return (
     <div
       className={cn('border-border bg-card overflow-hidden rounded border shadow-xl', className)}
     >
       <div className="border-border bg-card flex items-center gap-1 border-b p-2">
-        {TABS.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={cn(
-              'rounded px-3 py-1.5 text-left text-sm font-medium transition-colors',
-              tab === t.id
-                ? 'bg-foreground text-background'
-                : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-            )}
-          >
-            {t.label}
-          </button>
-        ))}
+        {TABS.map((t) => {
+          const isActive = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={cn(
+                'relative rounded px-3 py-1.5 text-left text-sm font-medium transition-colors',
+                isActive
+                  ? 'text-background'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+              )}
+            >
+              {isActive && (
+                <motion.span
+                  layoutId="codeWindowActiveTab"
+                  aria-hidden
+                  className="bg-foreground pointer-events-none absolute inset-0 z-0 rounded"
+                  transition={
+                    reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32 }
+                  }
+                />
+              )}
+              <span className="relative z-10">{t.label}</span>
+            </button>
+          );
+        })}
       </div>
       <div className="min-h-[260px] px-5 py-4 font-mono text-sm">
         {tab === 'toml' && <TomlBody />}

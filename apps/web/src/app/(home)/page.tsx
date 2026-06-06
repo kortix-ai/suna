@@ -25,6 +25,7 @@ import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { cn } from '@/lib/utils';
 import {
+  Activity,
   AtSign,
   Box,
   Building2,
@@ -35,11 +36,14 @@ import {
   Plus,
   Server,
   Smile,
+  Sparkles,
+  TrendingUp,
 } from 'lucide-react';
 import {
   AnimatePresence,
   motion,
   useInView,
+  useReducedMotion,
   useScroll,
   useSpring,
   useTransform,
@@ -246,7 +250,6 @@ function LogoMarquee({ items, reverse = false }: { items: string[]; reverse?: bo
             key={`${d}-${i}`}
             className="bg-card mr-3 flex h-12 shrink-0 items-center justify-center gap-4 rounded px-4"
           >
-            {/* Dynamic Google favicon URLs are intentionally left outside next/image config. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={favicon(d)}
@@ -310,6 +313,24 @@ const WORK_LOOPS = [
     ],
   },
 ] as const;
+
+const USE_CASE_DEMOS = [
+  { id: 'triageCustomerSignals', icon: Activity, slug: 'customer-support-ticket-triage' },
+  { id: 'shipBacklogTickets', icon: GitBranch, slug: 'software-and-saas-bug-triage' },
+  { id: 'fillThePipeline', icon: TrendingUp, slug: 'sales-and-revenue-lead-research' },
+  { id: 'closeTheBooks', icon: FileText, slug: 'finance-and-accounting-reconciliation' },
+  { id: 'briefToCampaign', icon: Sparkles, slug: 'marketing-and-creative-content-engine' },
+  { id: 'runTheBackOffice', icon: Box, slug: 'operations-and-supply-chain-sop-automation' },
+] as const;
+
+type UseCaseDemoCopy = {
+  tabTitle: string;
+  tabDescription: string;
+  eyebrow: string;
+  title: string;
+  description: string;
+  log: string[];
+};
 
 const SPLIT_PATHS = [
   {
@@ -446,6 +467,9 @@ function ChatMorningBriefReply() {
 export default function Home() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [activeLoopId, setActiveLoopId] = useState<(typeof WORK_LOOPS)[number]['id']>('finance');
+  const [activeUseCaseId, setActiveUseCaseId] =
+    useState<(typeof USE_CASE_DEMOS)[number]['id']>('triageCustomerSignals');
+  const reduceMotion = useReducedMotion();
   const { user } = useAuth();
   const { formattedStars } = useGitHubStars('kortix-ai', 'kortix');
   const activeLoop = WORK_LOOPS.find((loop) => loop.id === activeLoopId) ?? WORK_LOOPS[0];
@@ -453,6 +477,10 @@ export default function Home() {
     (key: string) => tHardcodedUi.raw(`appHomePage.${key}`),
     [tHardcodedUi],
   );
+  const useCaseCopy = tHome('useCaseDemos') as Record<string, UseCaseDemoCopy>;
+  const activeUseCase =
+    USE_CASE_DEMOS.find((demo) => demo.id === activeUseCaseId) ?? USE_CASE_DEMOS[0];
+  const activeUseCaseCopy = useCaseCopy[activeUseCase.id];
 
   const handleLaunch = useCallback(() => {
     trackCtaSignup();
@@ -556,21 +584,36 @@ export default function Home() {
           <Reveal delay={0.1}>
             <div className="border-border bg-card overflow-hidden rounded-sm border">
               <div className="border-border/60 flex flex-wrap gap-2 border-b p-3">
-                {WORK_LOOPS.map((loop) => (
-                  <button
-                    key={loop.id}
-                    type="button"
-                    onClick={() => setActiveLoopId(loop.id)}
-                    className={cn(
-                      'rounded px-3 py-2 text-left text-sm font-medium transition-colors',
-                      activeLoop.id === loop.id
-                        ? 'bg-foreground text-background'
-                        : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                    )}
-                  >
-                    {tHome(loop.titleKey)}
-                  </button>
-                ))}
+                {WORK_LOOPS.map((loop) => {
+                  const isActive = activeLoop.id === loop.id;
+                  return (
+                    <button
+                      key={loop.id}
+                      type="button"
+                      onClick={() => setActiveLoopId(loop.id)}
+                      className={cn(
+                        'relative rounded px-3 py-2 text-left text-sm font-medium transition-colors',
+                        isActive
+                          ? 'text-background'
+                          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                      )}
+                    >
+                      {isActive && (
+                        <motion.span
+                          layoutId="workLoopActiveTab"
+                          aria-hidden
+                          className="bg-foreground pointer-events-none absolute inset-0 z-0 rounded"
+                          transition={
+                            reduceMotion
+                              ? { duration: 0 }
+                              : { type: 'spring', stiffness: 380, damping: 32 }
+                          }
+                        />
+                      )}
+                      <span className="relative z-10">{tHome(loop.titleKey)}</span>
+                    </button>
+                  );
+                })}
               </div>
               <div className="grid gap-0 lg:grid-cols-[0.9fr_1.4fr]">
                 <div className="border-border/60 border-b p-6 lg:border-r lg:border-b-0">
@@ -1384,10 +1427,6 @@ export default function Home() {
                   </div>
                 ))}
 
-                {/* <div className="absolute top-1/2 left-0 z-[-1] hidden h-[2px] w-full -translate-y-1/2 md:block">
-                  <div className="bg-border absolute inset-0 opacity-50" />
-                  <div className="horizontal-sweep absolute top-0 left-1/2 h-full -translate-x-1/2" />
-                </div> */}
                 <div className="bg-border absolute top-1/2 left-0 z-[-1] hidden h-[2px] w-full md:block"></div>
               </div>
             </section>
@@ -1464,6 +1503,152 @@ export default function Home() {
           </Reveal>
         </section>
 
+        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
+          <Reveal>
+            <div className="mb-2 max-w-2xl">
+              <Eyebrow>{tHome('useCasesEyebrow')}</Eyebrow>
+              <h2 className="mt-3 text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
+                {tHome('useCasesTitle')}
+              </h2>
+              <p className="text-muted-foreground mt-4 text-base text-balance">
+                {tHome('useCasesDescription')}
+              </p>
+            </div>
+          </Reveal>
+
+          <Reveal>
+            <div className="border-border bg-card grid w-full grid-cols-1 overflow-hidden rounded border shadow-xl lg:grid-cols-12">
+              <div
+                role="tablist"
+                aria-orientation="vertical"
+                className="scrollbar-hide border-border/60 col-span-12 flex gap-2 overflow-x-auto border-b p-3 lg:col-span-4 lg:flex-col lg:gap-0 lg:overflow-visible lg:border-r lg:border-b-0 lg:p-0"
+              >
+                {USE_CASE_DEMOS.map((demo) => {
+                  const copy = useCaseCopy[demo.id];
+                  const isActive = demo.id === activeUseCase.id;
+                  const Icon = demo.icon;
+                  return (
+                    <button
+                      key={demo.id}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      aria-controls={`use-case-panel-${demo.id}`}
+                      id={`use-case-tab-${demo.id}`}
+                      onClick={() => setActiveUseCaseId(demo.id)}
+                      className={cn(
+                        'group relative flex shrink-0 rounded-sm p-4 text-left transition-colors lg:rounded-none lg:border-b lg:p-5 lg:last:border-b-0',
+                        isActive ? '' : 'hover:bg-muted/30',
+                      )}
+                    >
+                      {isActive && (
+                        <motion.span
+                          layoutId="useCaseActiveTab"
+                          aria-hidden
+                          className="bg-muted/60 pointer-events-none absolute inset-0 z-0 rounded-sm lg:rounded-none"
+                          // style={{ boxShadow: 'inset 2px 0 0 0 var(--primary)' }}
+                          transition={
+                            reduceMotion
+                              ? { duration: 0 }
+                              : { type: 'spring', stiffness: 380, damping: 32 }
+                          }
+                        />
+                      )}
+                      <span className="relative z-10 flex w-full flex-col gap-1">
+                        <span className="flex items-center gap-2.5">
+                          <Icon
+                            className={cn(
+                              'size-4 shrink-0 transition-colors',
+                              isActive ? 'text-primary' : 'text-muted-foreground',
+                            )}
+                          />
+                          <span
+                            className={cn(
+                              'font-mono text-xs tracking-wider whitespace-nowrap uppercase transition-colors',
+                              isActive ? 'text-foreground' : 'text-muted-foreground',
+                            )}
+                          >
+                            {copy.tabTitle}
+                          </span>
+                        </span>
+                        <span className="text-muted-foreground hidden pl-[1.625rem] text-sm leading-snug lg:block">
+                          {copy.tabDescription}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div
+                role="tabpanel"
+                id={`use-case-panel-${activeUseCase.id}`}
+                aria-labelledby={`use-case-tab-${activeUseCase.id}`}
+                className="relative col-span-12 h-full min-h-[22rem] lg:col-span-8"
+              >
+                <div className="flex h-full flex-1 grow flex-col p-6 sm:p-8">
+                  <h3 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
+                    {activeUseCaseCopy.title}
+                  </h3>
+                  <p className="text-muted-foreground mt-4 text-base leading-relaxed">
+                    {activeUseCaseCopy.description}
+                  </p>
+                  <div className="border-border/60 bg-background/40 mt-6 overflow-hidden rounded-sm border">
+                    <div className="border-border/60 flex items-center gap-2 border-b px-4 py-2.5">
+                      <span aria-hidden className="bg-primary mt-0.5 h-2 w-1 shrink-0" />
+                      <span className="text-muted-foreground font-mono text-xs tracking-wider">
+                        kortix run
+                      </span>
+                    </div>
+                    <motion.ul
+                      key={activeUseCase.id}
+                      initial={reduceMotion ? false : 'hidden'}
+                      animate={reduceMotion ? false : 'show'}
+                      variants={{
+                        hidden: {},
+                        show: { transition: { staggerChildren: 0.07, delayChildren: 0.05 } },
+                      }}
+                      className="space-y-2 p-4 font-mono text-xs sm:text-sm"
+                    >
+                      {activeUseCaseCopy.log.map((line, i) => (
+                        <motion.li
+                          key={i}
+                          variants={{ hidden: { opacity: 0, x: -4 }, show: { opacity: 1, x: 0 } }}
+                          transition={{ duration: 0.25, ease: 'easeOut' }}
+                          className="text-muted-foreground flex gap-2 leading-relaxed"
+                        >
+                          <KortixAsterisk index={i} parentClass="mt-0" />
+                          <span>
+                            {line}
+                            {i === activeUseCaseCopy.log.length - 1 && !reduceMotion && (
+                              <motion.span
+                                aria-hidden
+                                className="bg-primary ml-1 inline-block h-3.5 w-1.5 translate-y-[2px] align-middle"
+                                animate={{ opacity: [1, 0] }}
+                                transition={{
+                                  duration: 0.8,
+                                  repeat: Infinity,
+                                  repeatType: 'reverse',
+                                }}
+                              />
+                            )}
+                          </span>
+                        </motion.li>
+                      ))}
+                    </motion.ul>
+                  </div>
+                  <Button asChild variant="ghost" className="text-primary mt-auto self-start">
+                    <Link href={`/use-cases/${activeUseCase.slug}`}>
+                      {tHome('useCasesLearnMore')}
+                      <HiArrowRight className="size-4" />
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Reveal>
+        </section>
+
         <section className="mx-auto max-w-6xl px-6 py-16 sm:py-24">
           <Reveal>
             <div className="border-border bg-card relative overflow-hidden rounded-sm border px-6 py-20 text-center sm:py-28">
@@ -1520,39 +1705,6 @@ export default function Home() {
         </section>
 
         <div className="h-24 sm:h-28" />
-
-        {/* <div
-          className={cn(
-            'border-border bg-background/95 fixed bottom-6 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-full border px-1.5 py-1.5 backdrop-blur-md transition-[transform,opacity] duration-[600ms] ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform',
-            showFloatingCta
-              ? 'translate-y-0 opacity-100'
-              : 'pointer-events-none translate-y-16 opacity-0',
-          )}
-        >
-          <Link
-            href="/technology"
-            className="text-muted-foreground hover:text-foreground hidden h-8 items-center rounded-full px-3 text-sm font-medium transition-colors sm:flex"
-          >
-            Technical
-          </Link>
-          <span className="bg-border hidden h-5 w-px sm:block" />
-          <a
-            href={GITHUB_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:bg-foreground/[0.08] flex size-8 items-center justify-center rounded-full transition-colors"
-          >
-            <Github className="size-4" />
-          </a>
-          <Button
-            size="sm"
-            className="rounded-full px-5 text-xs font-medium"
-            onClick={handleLaunch}
-          >
-            {tHardcodedUi.raw('appHomePage.line356JsxTextGetStarted')}
-            <HiArrowRight className="ml-1.5 size-3" />
-          </Button>
-        </div> */}
       </div>
     </>
   );
