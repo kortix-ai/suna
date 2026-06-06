@@ -8,6 +8,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   Activity,
+  Boxes,
   BarChart2,
   Bell,
   ChevronRight,
@@ -68,6 +69,11 @@ export function AdminSidebar() {
       href: '/admin/utils',
       label: 'Maintenance',
       icon: Wrench,
+    },
+    {
+      href: '/admin/providers',
+      label: 'Providers',
+      icon: Boxes,
     },
   ];
 

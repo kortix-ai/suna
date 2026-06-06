@@ -8543,6 +8543,284 @@ function parseErrorContent(error: string): {
   };
 }
 
+// ============================================================================
+// Kortix Executor (connectors / discover / describe / call) — meta-tools the
+// agent uses to reach every configured integration. Generic by design: these
+// views render the executor's stable envelope, NOT any specific app's data.
+// ============================================================================
+
+function parseExecutorOutput(output: string): Record<string, unknown> | null {
+  if (!output) return null;
+  try {
+    const v = JSON.parse(output);
+    return v && typeof v === 'object' ? (v as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function ExecutorRiskBadge({ risk }: { risk?: unknown }) {
+  if (typeof risk !== 'string' || !risk) return null;
+  const tint =
+    risk === 'read'
+      ? 'text-emerald-600 dark:text-emerald-400'
+      : risk === 'destructive'
+        ? 'text-destructive'
+        : 'text-amber-600 dark:text-amber-400';
+  return (
+    <span className={cn('text-[10px] font-semibold uppercase tracking-wide flex-shrink-0', tint)}>
+      {risk}
+    </span>
+  );
+}
+
+function ExecutorJson({ value }: { value: unknown }) {
+  if (value == null || (typeof value === 'object' && Object.keys(value as object).length === 0)) {
+    return <span className="text-xs text-muted-foreground/60 font-mono">{'{}'}</span>;
+  }
+  const text = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+  return (
+    <pre className="max-h-72 overflow-auto rounded-2xl border border-border/50 bg-muted/40 p-2.5 font-mono text-xs leading-relaxed text-foreground/90 whitespace-pre-wrap break-words">
+      {text}
+    </pre>
+  );
+}
+
+function ExecutorSectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/60 mb-1.5">
+      {children}
+    </div>
+  );
+}
+
+/** connectors — list the integrations this session can use. */
+function ExecutorConnectorsTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const output = partOutput(part);
+  const status = partStatus(part);
+  const running = useContext(ToolRunningContext);
+  const parsed = useMemo(() => parseExecutorOutput(output), [output]);
+  const connectors = (Array.isArray(parsed?.connectors) ? parsed!.connectors : []) as Array<Record<string, unknown>>;
+  const isStreaming = (status === 'pending' && running) || status === 'running';
+
+  return (
+    <BasicTool
+      icon={<Plug className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Connectors',
+        args: status === 'completed' ? [`${connectors.length} available`] : undefined,
+      }}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      <div className="p-2.5">
+        {connectors.length > 0 ? (
+          <div className="space-y-0.5">
+            {connectors.map((c, i) => (
+              <div key={String(c.slug ?? i)} className="flex items-center gap-2 px-2 py-1 text-xs">
+                <Plug className="size-3 flex-shrink-0 text-muted-foreground/50" />
+                <span className="font-medium text-foreground truncate">{String(c.name || c.slug || '')}</span>
+                <span className="text-muted-foreground/60 font-mono">{String(c.provider ?? '')}</span>
+                <span className="ml-auto text-muted-foreground/50">{String(c.tools ?? 0)} tools</span>
+                <span
+                  className={cn(
+                    'text-[10px] font-semibold uppercase',
+                    c.status === 'active' ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground/60',
+                  )}
+                >
+                  {String(c.status ?? '')}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : output ? (
+          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="connectors" />
+        ) : (
+          <ToolEmptyState message={isStreaming ? 'Loading connectors…' : 'No connectors.'} />
+        )}
+      </div>
+    </BasicTool>
+  );
+}
+
+/** discover — intent search across every usable tool. */
+function ExecutorDiscoverTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(part);
+  const output = partOutput(part);
+  const status = partStatus(part);
+  const running = useContext(ToolRunningContext);
+  const parsed = useMemo(() => parseExecutorOutput(output), [output]);
+  const matches = (Array.isArray(parsed?.matches) ? parsed!.matches : []) as Array<Record<string, unknown>>;
+  const query = String(input.query ?? '').trim();
+  const isStreaming = (status === 'pending' && running) || status === 'running';
+
+  return (
+    <BasicTool
+      icon={<Search className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Discover tools',
+        subtitle: query || undefined,
+        args: status === 'completed' ? [`${matches.length} ${matches.length === 1 ? 'match' : 'matches'}`] : undefined,
+      }}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      <div className="p-2.5">
+        {matches.length > 0 ? (
+          <div className="space-y-1.5">
+            {matches.map((m, i) => (
+              <div key={String(m.tool ?? i)} className="px-2 py-1 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-foreground truncate">{String(m.tool ?? '')}</span>
+                  <ExecutorRiskBadge risk={m.risk} />
+                </div>
+                {m.description ? (
+                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground line-clamp-2">{String(m.description)}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        ) : parsed ? (
+          <ToolEmptyState message={isStreaming ? 'Searching…' : `No tools match "${query}".`} />
+        ) : output ? (
+          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="discover" />
+        ) : (
+          <ToolEmptyState message={isStreaming ? 'Searching…' : 'No results yet.'} />
+        )}
+      </div>
+    </BasicTool>
+  );
+}
+
+/** describe — one tool's full input schema + risk. */
+function ExecutorDescribeTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(part);
+  const output = partOutput(part);
+  const status = partStatus(part);
+  const running = useContext(ToolRunningContext);
+  const parsed = useMemo(() => parseExecutorOutput(output), [output]);
+  const tool = String(parsed?.tool ?? input.tool ?? '').trim();
+  const isStreaming = (status === 'pending' && running) || status === 'running';
+
+  return (
+    <BasicTool
+      icon={<Code2 className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Describe',
+        subtitle: tool || undefined,
+        args: parsed?.risk ? [String(parsed.risk)] : undefined,
+      }}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      <div className="p-2.5 space-y-2.5">
+        {parsed ? (
+          <>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs text-foreground">{tool}</span>
+              <ExecutorRiskBadge risk={parsed.risk} />
+            </div>
+            {parsed.description ? (
+              <p className="text-xs leading-relaxed text-muted-foreground">{String(parsed.description)}</p>
+            ) : null}
+            <div>
+              <ExecutorSectionLabel>Input schema</ExecutorSectionLabel>
+              <ExecutorJson value={parsed.inputSchema ?? { type: 'object', properties: {} }} />
+            </div>
+          </>
+        ) : output ? (
+          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="describe" />
+        ) : (
+          <ToolEmptyState message={isStreaming ? 'Loading schema…' : 'No schema yet.'} />
+        )}
+      </div>
+    </BasicTool>
+  );
+}
+
+/** call — run a tool through the gateway. Renders request + response envelope. */
+function ExecutorCallTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
+  const input = partInput(part);
+  const output = partOutput(part);
+  const status = partStatus(part);
+  const running = useContext(ToolRunningContext);
+  const parsed = useMemo(() => parseExecutorOutput(output), [output]);
+  const connector = String(input.connector ?? '').trim();
+  const action = String(input.action ?? '').trim();
+  const args = (input.args && typeof input.args === 'object' ? input.args : {}) as Record<string, unknown>;
+  const ref = connector && action ? `${connector}.${action}` : connector || action;
+  const isStreaming = (status === 'pending' && running) || status === 'running';
+
+  // Outcome from the executor envelope: { ok, data, risk, status?, reason? }.
+  const ok = parsed?.ok === true;
+  const callStatus = typeof parsed?.status === 'string' ? (parsed.status as string) : ok ? 'ok' : parsed ? 'error' : '';
+  const outcome =
+    callStatus === 'pending_approval'
+      ? { label: 'Needs approval', tint: 'text-amber-600 dark:text-amber-400' }
+      : callStatus === 'denied'
+        ? { label: 'Denied', tint: 'text-destructive' }
+        : ok
+          ? { label: 'OK', tint: 'text-emerald-600 dark:text-emerald-400' }
+          : parsed
+            ? { label: 'Error', tint: 'text-destructive' }
+            : null;
+
+  return (
+    <BasicTool
+      icon={<Terminal className="size-3.5 flex-shrink-0" />}
+      trigger={{
+        title: 'Run tool',
+        subtitle: ref || undefined,
+        args: [
+          ...(parsed?.risk ? [String(parsed.risk)] : []),
+          ...(outcome ? [outcome.label] : []),
+        ].filter(Boolean) as string[],
+      }}
+      defaultOpen={defaultOpen}
+      forceOpen={forceOpen}
+      locked={locked}
+    >
+      <div className="p-2.5 space-y-2.5">
+        <div className="flex items-center gap-2 text-xs">
+          <span className="font-mono text-foreground">{ref}</span>
+          <ExecutorRiskBadge risk={parsed?.risk} />
+          {outcome && <span className={cn('ml-auto text-[10px] font-semibold uppercase', outcome.tint)}>{outcome.label}</span>}
+        </div>
+
+        {Object.keys(args).length > 0 && (
+          <div>
+            <ExecutorSectionLabel>Request</ExecutorSectionLabel>
+            <ExecutorJson value={args} />
+          </div>
+        )}
+
+        {parsed ? (
+          <div>
+            <ExecutorSectionLabel>Response</ExecutorSectionLabel>
+            {parsed.reason && !ok ? (
+              <p className="text-xs text-destructive font-mono">{String(parsed.reason)}</p>
+            ) : (
+              <ExecutorJson value={'data' in parsed ? parsed.data : parsed} />
+            )}
+          </div>
+        ) : output ? (
+          <ToolOutputFallback output={output} isStreaming={isStreaming} toolName="call" />
+        ) : (
+          <ToolEmptyState message={isStreaming ? 'Running…' : 'No result yet.'} />
+        )}
+      </div>
+    </BasicTool>
+  );
+}
+
+ToolRegistry.register('kortix-executor_connectors', ExecutorConnectorsTool);
+ToolRegistry.register('kortix-executor_discover', ExecutorDiscoverTool);
+ToolRegistry.register('kortix-executor_describe', ExecutorDescribeTool);
+ToolRegistry.register('kortix-executor_call', ExecutorCallTool);
+
 export function ToolError({
   error,
   toolName,

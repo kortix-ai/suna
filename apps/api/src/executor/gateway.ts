@@ -236,7 +236,9 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
     });
     return result.ok
       ? { status: 'ok', data: result.data, risk: action.risk }
-      : { status: 'error', reason: `upstream_${result.status}` };
+      // Surface a string error body (e.g. a Pipedream action error message) so the
+      // agent sees the real cause; fall back to the status code for structured bodies.
+      : { status: 'error', reason: typeof result.data === 'string' && result.data ? result.data : `upstream_${result.status}` };
   } catch (e) {
     await audit(deps, input, connector.connectorId, 'error', action.risk, { reason: (e as Error).message });
     return { status: 'error', reason: (e as Error).message };

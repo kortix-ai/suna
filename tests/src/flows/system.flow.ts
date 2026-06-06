@@ -26,6 +26,26 @@ flow("SYS-2", { domain: "system", tags: ["smoke"], routes: ["GET /v1/system/stat
   });
 });
 
+flow("SYS-6", { domain: "system", tags: ["smoke"], routes: ["GET /v1/system/maintenance"] }, async (ctx) => {
+  await ctx.step("GET /v1/system/maintenance (public read) → 200 config", async () => {
+    const r = await ctx.client.get("/v1/system/maintenance");
+    // Public — banner + maintenance page read it unauthenticated. Default config
+    // has level:"none"; either the default or a stored config is valid shape.
+    r.status(200).body().exists("$.level");
+  });
+});
+
+flow("DOCS-1", { domain: "system", tags: ["smoke"], routes: ["GET /v1/openapi.json", "GET /v1/docs"] }, async (ctx) => {
+  await ctx.step("GET /v1/openapi.json (public) → 200 OpenAPI 3.1 spec", async () => {
+    const r = await ctx.client.get("/v1/openapi.json");
+    r.status(200).body().has("$.openapi", "3.1.0").exists("$.info.title");
+  });
+  await ctx.step("GET /v1/docs (public) → 200 Scalar reference HTML", async () => {
+    const r = await ctx.client.get("/v1/docs");
+    r.status(200).headerEquals("content-type", /html/);
+  });
+});
+
 flow("SYS-4", { domain: "system", tags: ["smoke", "health"], routes: ["GET /v1/router/health"] }, async (ctx) => {
   await ctx.step("GET /v1/router/health", async () => {
     const r = await ctx.client.get("/v1/router/health");

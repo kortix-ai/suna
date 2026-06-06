@@ -175,7 +175,10 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
         }}
         className={cn(
           'flex flex-col gap-0 overflow-hidden p-0',
-          'h-[min(900px,calc(100dvh-1.5rem))] w-[calc(100vw-1.5rem)] max-w-[1320px] sm:max-w-[1320px]',
+          // Edge-to-edge full-screen page: fills the viewport with no margin,
+          // square corners, and no border — opens like a dialog but reads as a
+          // real full-screen surface over everything (X / Esc closes).
+          'h-[100dvh] w-screen max-w-none rounded-none border-0 shadow-none sm:max-w-none',
         )}
       >
         <DialogTitle className="sr-only">

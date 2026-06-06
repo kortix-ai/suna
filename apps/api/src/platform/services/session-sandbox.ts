@@ -37,7 +37,9 @@ import {
   type EnsureSandboxImageResult,
 } from '../../snapshots/builder';
 import { config } from '../../config';
+import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
+import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
 import { getCreditAccount } from '../../billing/repositories/credit-accounts';
@@ -139,7 +141,7 @@ export async function provisionSessionSandbox(opts: {
   //   1. Explicit per-request `opts.provider` (set by callers that need a
   //      specific runtime, e.g. when restarting an existing sandbox).
   //   2. `config.getDefaultProvider()` — head of ALLOWED_SANDBOX_PROVIDERS.
-  const providerName = opts.provider || config.getDefaultProvider();
+  const providerName = opts.provider || (await selectProvider());
   const provider = getProvider(providerName);
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
@@ -165,6 +167,7 @@ export async function provisionSessionSandbox(opts: {
       slug,
       accountId,
       source: 'session-start',
+      provider: providerName,
     });
     return { ...image, gitProject };
   })();
@@ -317,6 +320,7 @@ export async function provisionSessionSandbox(opts: {
           slug,
           accountId,
           source: 'session-start',
+          provider: providerName,
         });
       }
       imageInfo = {
@@ -398,6 +402,12 @@ export async function provisionSessionSandbox(opts: {
           .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
         tl.mark('row-stopped-before-active');
         tl.log({ provider: providerName, attempts, stoppedBeforeActive: true });
+        const stopTl = tl.summary();
+        recordProviderEvent({
+          provider: providerName, kind: 'provision', outcome: 'stopped',
+          totalMs: stopTl.totalMs, marks: stopTl.marks, attempts,
+          sessionId: sandbox.sandboxId, accountId,
+        });
         return;
       }
 
@@ -471,6 +481,13 @@ export async function provisionSessionSandbox(opts: {
 
       tl.mark('row-active');
       tl.log({ provider: providerName, attempts });
+
+      const okTl = tl.summary();
+      recordProviderEvent({
+        provider: providerName, kind: 'provision', outcome: 'ok',
+        totalMs: okTl.totalMs, marks: okTl.marks, attempts,
+        sessionId: sandbox.sandboxId, accountId,
+      });
 
       // Billing v2 — open a compute metering row. No-op for legacy accounts.
       // Spec is resolved from the project manifest with provider-default fallbacks.
@@ -560,6 +577,13 @@ export async function provisionSessionSandbox(opts: {
       } catch (markErr) {
         console.error(`[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`, markErr);
       }
+      const errTl = tl.summary();
+      recordProviderEvent({
+        provider: providerName, kind: 'provision', outcome: 'error',
+        totalMs: errTl.totalMs, marks: errTl.marks,
+        errorClass: isCapacity ? 'capacity' : 'other', error: bgMessage,
+        sessionId: sandbox.sandboxId, accountId,
+      });
       break provisioning;
     }
     }

@@ -1,3 +1,3 @@
-rehydrate chat on migration
+fix: session pinning
 
-rehydrate chat on migration
+fix: session pinning

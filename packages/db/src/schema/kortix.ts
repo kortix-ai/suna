@@ -31,6 +31,7 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
   'daytona',
   'local_docker',
   'justavps',
+  'platinum',
 ]);
 
 export const deploymentStatusEnum = kortixSchema.enum('deployment_status', [
@@ -728,6 +729,45 @@ export const sessionSandboxes = kortixSchema.table(
     index('idx_session_sandboxes_external_id').on(table.externalId),
     // Hot path for the atomic warm-sandbox claim (WHERE project_id, pool_state).
     index('idx_session_sandboxes_pool').on(table.projectId, table.poolState),
+  ],
+);
+
+/**
+ * Provider analytics — an append-only telemetry log, one row per terminal
+ * provisioning/migration outcome. Written fire-and-forget from the provision
+ * path (the `provisionTimeline` is already computed, so capture is ~free) and
+ * survives the session_sandboxes row being deleted (e.g. on migration). Powers
+ * the admin Providers → Analytics tab: per-provider success rate, provision
+ * latency (p50/p95), and where the time goes (phase marks). Lightweight and
+ * non-intrusive — never on the request hot path, no FKs, append-only.
+ */
+export const providerEvents = kortixSchema.table(
+  'provider_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    provider: text('provider').notNull(),
+    // 'provision' (a sandbox-create attempt) | 'migrate' (a cross-provider move)
+    kind: text('kind').notNull(),
+    // 'ok' | 'error' | 'stopped'
+    outcome: text('outcome').notNull(),
+    totalMs: integer('total_ms'),
+    // Provision timeline marks: [{ label, atMs, deltaMs }]
+    marks: jsonb('marks').default([]).$type<unknown[]>(),
+    attempts: integer('attempts').default(1),
+    // 'capacity' | 'other' for errors; null otherwise.
+    errorClass: text('error_class'),
+    error: text('error'),
+    // For migrate: the source provider moved away from.
+    fromProvider: text('from_provider'),
+    sessionId: text('session_id'),
+    accountId: uuid('account_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_provider_events_provider').on(table.provider),
+    index('idx_provider_events_kind').on(table.kind),
+    index('idx_provider_events_outcome').on(table.outcome),
+    index('idx_provider_events_created').on(table.createdAt),
   ],
 );
 
