@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/item';
 import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
+import KortixGrid from '@/components/ui/marketing/gridder';
 import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { Icon } from '@/features/icon/icon';
@@ -535,7 +536,7 @@ export default function Home() {
   return (
     <>
       <div className="bg-background relative">
-        <section className="relative overflow-hidden px-6 pt-32 pb-12 sm:pt-36">
+        <section id="hero" className="relative overflow-hidden px-6 pt-32 pb-12 sm:pt-36">
           <div className="inset-0 z-0 hidden mask-t-from-70% lg:absolute">
             <WallpaperBackground wallpaperId="brandmark" />
           </div>
@@ -569,7 +570,10 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
+        <section
+          id="work-loop"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+        >
           <Reveal>
             <div className="mb-8 max-w-2xl">
               <Eyebrow>{tHome('workLoopEyebrow')}</Eyebrow>
@@ -655,7 +659,7 @@ export default function Home() {
           </Reveal>
         </section>
 
-        <section id="different-screen-section" className="py-16 sm:py-24">
+        <section id="scroll-card" className="py-16 sm:py-24">
           <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 sm:gap-12">
             <Reveal>
               <div className="mb-12 max-w-2xl">
@@ -1191,7 +1195,10 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
+        <section
+          id="two-paths"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+        >
           <Reveal>
             <div className="mb-12 max-w-2xl">
               <Eyebrow>{tHome('splitEyebrow')}</Eyebrow>
@@ -1245,7 +1252,10 @@ export default function Home() {
           </Reveal>
         </section>
 
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
+        <section
+          id="code-window"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+        >
           <Reveal>
             <div className="mb-12 max-w-2xl">
               <Eyebrow>{tHardcodedUi.raw('appHomePage.line225JsxTextOpenCodeNative')}</Eyebrow>
@@ -1318,7 +1328,10 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
+        <section
+          id="workspace-map"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+        >
           <Reveal>
             <div className="mb-12 max-w-2xl">
               <Eyebrow>{tHome('workforceMapEyebrow')}</Eyebrow>
@@ -1433,7 +1446,10 @@ export default function Home() {
           </Reveal>
         </section>
 
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
+        <section
+          id="integrations"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+        >
           <Reveal>
             <div className="mb-14 max-w-2xl">
               <Eyebrow>{tHome('integrationsEyebrow')}</Eyebrow>
@@ -1451,7 +1467,10 @@ export default function Home() {
           <LogoMarqueeRows />
         </section>
 
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
+        <section
+          id="enterprise"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+        >
           <Reveal>
             <div className="mb-12 max-w-2xl">
               <Eyebrow>{tHome('enterpriseEyebrow')}</Eyebrow>
@@ -1503,7 +1522,10 @@ export default function Home() {
           </Reveal>
         </section>
 
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24">
+        <section
+          id="use-cases"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+        >
           <Reveal>
             <div className="mb-2 max-w-2xl">
               <Eyebrow>{tHome('useCasesEyebrow')}</Eyebrow>
@@ -1649,56 +1671,46 @@ export default function Home() {
           </Reveal>
         </section>
 
-        <section className="mx-auto max-w-6xl px-6 py-16 sm:py-24">
+        <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24">
           <Reveal>
-            <div className="border-border bg-card relative overflow-hidden rounded-sm border px-6 py-20 text-center sm:py-28">
-              <div className="absolute inset-0 z-0 mask-t-from-90% opacity-50">
-                <WallpaperBackground wallpaperId="brandmark" />
-              </div>
-              <div className="relative z-10 mx-auto max-w-lg">
-                <h2 className="text-foreground mx-auto mt-3 max-w-2xl text-3xl leading-tight font-medium tracking-tight sm:text-4xl md:text-5xl">
-                  {tHardcodedUi.raw('appHomePage.line331JsxTextGiveYourCompanyAWorkforce')}
-                </h2>
-                <p className="text-muted-foreground mx-auto mt-4 max-w-2xl text-base text-balance sm:text-lg">
-                  {tHardcodedUi.raw('appHomePage.line334JsxTextFreeToSelfHostManagedCloudFrom20')}
-                </p>
+            <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
+              <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
+                <div className="col-span-4 flex flex-col items-start justify-start p-6 *:text-left">
+                  <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
+                    {tHardcodedUi.raw('appHomePage.line331JsxTextGiveYourCompanyAWorkforce')}
+                  </h2>
 
-                <div className="mt-8 hidden flex-col items-center justify-center gap-3 sm:flex-row md:flex">
-                  <Button asChild size="lg" variant="accent">
-                    <Link href={DEMO_URL}>
-                      {tHardcodedUi.raw('appHomePage.line338JsxTextTalkToSales')}
-                    </Link>
-                  </Button>
-                  <Button size="xl" onClick={handleLaunch}>
-                    {tHardcodedUi.raw('appHomePage.line337JsxTextGetStarted')}
-                    <HiArrowRight className="size-4" />
-                  </Button>
-                  <Button asChild size="lg" variant="accent">
-                    <Link href="/pricing">
-                      {tHardcodedUi.raw('appHomePage.line339JsxTextSeePricing')}
-                    </Link>
-                  </Button>
+                  <ul className="mt-6 space-y-3 pb-8">
+                    {(
+                      tHardcodedUi.raw(
+                        'appHomePage.line334JsxTextFreeToSelfHostManagedCloudFrom20',
+                      ) as string[]
+                    ).map((line, index) => (
+                      <li
+                        key={line}
+                        className="text-muted-foreground flex items-start gap-3 text-sm leading-relaxed"
+                      >
+                        <KortixAsterisk index={index} />
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Button size="lg" className="w-full" onClick={handleLaunch}>
+                      {tHardcodedUi.raw('appHomePage.line337JsxTextGetStarted')}
+                      <HiArrowRight className="size-4" />
+                    </Button>
+                    <Button asChild size="lg" className="w-full" variant="accent">
+                      <Link href={DEMO_URL}>
+                        {tHardcodedUi.raw('appHomePage.line338JsxTextTalkToSales')}
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
-                <div className="mt-8 grid grid-cols-2 flex-col items-center justify-center gap-3 sm:flex-row md:hidden">
-                  <Button size="lg" className="col-span-2" onClick={handleLaunch}>
-                    {tHardcodedUi.raw('appHomePage.line337JsxTextGetStarted')}
-                    <HiArrowRight className="size-4" />
-                  </Button>
-                  <Button asChild size="lg" className="col-span-1" variant="accent">
-                    <Link href={DEMO_URL}>
-                      {tHardcodedUi.raw('appHomePage.line338JsxTextTalkToSales')}
-                    </Link>
-                  </Button>
-                  <Button asChild size="lg" className="col-span-1" variant="accent">
-                    <Link href="/pricing">
-                      {tHardcodedUi.raw('appHomePage.line339JsxTextSeePricing')}
-                    </Link>
-                  </Button>
+                <div className="col-span-8 mask-y-from-90% mask-x-from-90%">
+                  <KortixGrid count={58} seed={4228} />
                 </div>
-                <p className="text-muted-foreground mt-7 inline-flex items-center gap-2 text-xs">
-                  <GitBranch className="size-3.5" />{' '}
-                  {tHardcodedUi.raw('appHomePage.line342JsxTextOpenSourceSSORBACOnPremNoLock')}
-                </p>
               </div>
             </div>
           </Reveal>

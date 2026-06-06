@@ -1909,7 +1909,12 @@
       "line317JsxTextSeeHowItWorks": "See how it works",
       "line329JsxTextGetStarted": "Get started",
       "line331JsxTextGiveYourCompanyAWorkforce": "Give your company a workforce.",
-      "line334JsxTextFreeToSelfHostManagedCloudFrom20": "Free to self-host. Managed cloud from $20 / seat + usage. Spin up your first agent today — or have us map it to your workflows in a live demo.",
+      "line334JsxTextFreeToSelfHostManagedCloudFrom20": [
+        "Free to self-host.",
+        "Managed cloud from $20 / seat + usage.",
+        "Spin up your first agent today —",
+        "or have us map it to your workflows in a live demo."
+      ],
       "line337JsxTextGetStarted": "Get started",
       "line338JsxTextTalkToSales": "Talk to sales",
       "line339JsxTextSeePricing": "See pricing",

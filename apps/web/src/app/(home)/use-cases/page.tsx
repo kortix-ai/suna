@@ -149,9 +149,15 @@ export default function UseCasesPage() {
                 <h2 className="text-foreground mx-auto mt-3 max-w-2xl text-3xl leading-tight font-medium tracking-tight sm:text-4xl md:text-5xl">
                   {tHardcodedUi.raw('appHomePage.line331JsxTextGiveYourCompanyAWorkforce')}
                 </h2>
-                <p className="text-muted-foreground mx-auto mt-4 max-w-2xl text-base text-balance sm:text-lg">
-                  {tHardcodedUi.raw('appHomePage.line334JsxTextFreeToSelfHostManagedCloudFrom20')}
-                </p>
+                <div className="text-muted-foreground mx-auto mt-4 max-w-2xl space-y-1 text-base text-balance sm:text-lg">
+                  {(
+                    tHardcodedUi.raw(
+                      'appHomePage.line334JsxTextFreeToSelfHostManagedCloudFrom20',
+                    ) as string[]
+                  ).map((line) => (
+                    <p key={line}>{line}</p>
+                  ))}
+                </div>
                 <div className="mt-8 hidden flex-col items-center justify-center gap-3 sm:flex-row md:flex">
                   <Button asChild size="lg" variant="accent">
                     <Link href={DEMO_URL}>

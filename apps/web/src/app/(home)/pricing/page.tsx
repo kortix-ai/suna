@@ -1,6 +1,8 @@
 'use client';
 
+import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
+import KortixGrid from '@/components/ui/marketing/gridder';
 import { ArrowRight, Check, Minus } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -331,25 +333,48 @@ export default function PricingPage() {
           </div>
         </section>
 
-        <section className="border-border/50 border-t px-6 py-20 text-center sm:py-28">
-          <h2 className="text-foreground text-3xl leading-tight font-medium tracking-tight sm:text-4xl md:text-5xl">
-            {tHardcodedUi.raw('appHomePricingPage.line200JsxTextStartFreeToday')}
-          </h2>
-          <p className="text-muted-foreground mx-auto mt-4 max-w-xl text-base sm:text-lg">
-            {tHardcodedUi.raw('appHomePricingPage.line201JsxTextSelfHostInMinutesOrHaveUsWalk')}
-          </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Button asChild size="xl">
-              <Link href={DEMO_URL}>
-                {tHardcodedUi.raw('appHomePricingPage.line205JsxTextRequestDemo')}
-                <ArrowRight className="size-3.5" />
-              </Link>
-            </Button>
-            <Button asChild size="xl" variant="ghost">
-              <Link href={START_URL}>
-                {tHardcodedUi.raw('appHomePricingPage.line206JsxTextGetStarted')}
-              </Link>
-            </Button>
+        <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24">
+          <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
+            <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
+              <div className="col-span-4 flex flex-col items-start justify-start p-6 *:text-left">
+                <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
+                  {tHardcodedUi.raw('appHomePage.line331JsxTextGiveYourCompanyAWorkforce')}
+                </h2>
+
+                <ul className="mt-6 space-y-3 pb-8">
+                  {(
+                    tHardcodedUi.raw(
+                      'appHomePage.line334JsxTextFreeToSelfHostManagedCloudFrom20',
+                    ) as string[]
+                  ).map((line, index) => (
+                    <li
+                      key={line}
+                      className="text-muted-foreground flex items-start gap-3 text-sm leading-relaxed"
+                    >
+                      <KortixAsterisk index={index} />
+                      {line}
+                    </li>
+                  ))}
+                </ul>
+
+                <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+                  <Button size="lg" className="w-full" asChild>
+                    <Link href={DEMO_URL}>
+                      {tHardcodedUi.raw('appHomePricingPage.line205JsxTextRequestDemo')}
+                      <ArrowRight className="size-3.5" />
+                    </Link>
+                  </Button>
+                  <Button asChild size="lg" className="w-full" variant="accent">
+                    <Link href={START_URL}>
+                      {tHardcodedUi.raw('appHomePricingPage.line206JsxTextGetStarted')}
+                    </Link>
+                  </Button>
+                </div>
+              </div>
+              <div className="col-span-8 mask-y-from-90% mask-x-from-90%">
+                <KortixGrid count={45} cols={8} seed={4622} />
+              </div>
+            </div>
           </div>
         </section>
       </div>
