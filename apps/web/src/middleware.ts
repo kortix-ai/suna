@@ -37,6 +37,7 @@ const PUBLIC_ROUTES = [
   '/about', // About page should be public
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
+  '/blog', // Public blog (MDX posts under content/blog) should be public
   '/install',
   '/install.sh',
   '/design-system', // Living design system / brand guidelines should be public
