@@ -373,15 +373,19 @@ export async function provisionSessionSandbox(opts: {
         .where(eq(projectSessions.sessionId, sandbox.sandboxId))
         .limit(1);
       if (currentSession?.status === 'stopped') {
+        // The session was explicitly deleted while this box was still being
+        // created — deletion is the one case where we remove the provider box.
         await provider.remove(result.externalId).catch((err) => {
-          console.warn(`[session-sandbox] failed to remove stopped session sandbox ${result.externalId}:`, err);
+          console.warn(`[session-sandbox] failed to remove deleted session sandbox ${result.externalId}:`, err);
         });
         await db
           .update(sessionSandboxes)
           .set({
             externalId: result.externalId,
             baseUrl: result.baseUrl || null,
-            status: 'stopped',
+            // 'archived', not 'stopped': the box is gone, so GET …/sandbox must
+            // not try to resume it — it reprovisions fresh on reopen instead.
+            status: 'archived',
             metadata: {
               ...((sandbox.metadata as Record<string, unknown> | null) ?? {}),
               initStatus: 'failed',

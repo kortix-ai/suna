@@ -1,5 +1,4 @@
 import { checkBillingActive } from '../../billing/services/billing-gate';
-import { endComputeSession } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
@@ -8,14 +7,14 @@ import { db } from '../../shared/db';
 import { getCrById, getNextCrNumber, serializeChangeRequest } from '../change-requests';
 import { getBranchDiff, getDiffBetweenShas, invalidateProjectMirror, previewMerge, resolveBranchTip } from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
-import { changeRequests, kortixApiKeys, projectSessions, sessionSandboxes } from '@kortix/db';
+import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { resolveProjectGitAuth, withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
-import { kickProvisionOnOpen, refreshCrTips } from './shared';
+import { kickProvisionOnOpen, refreshCrTips, resumeStoppedSandbox } from './shared';
 
 projectsApp.openapi(
   createRoute({
@@ -95,9 +94,25 @@ projectsApp.openapi(
   }
   if (status === 'running') return c.json({ status: 'running' });
 
-  // Stopped/archived → kick the start in the background so the caller gets an
-  // instant answer and the health poll observes readiness. Don't block the
-  // request on the provider's start (~10-30s on a cold wake).
+  // Explicitly hibernated session (row status='stopped' — Stop button / idle
+  // maintenance): resume IN PLACE through the shared path so the row flips back
+  // to active, the session returns to 'running', and compute metering reopens.
+  // Without this, a stopped row would also be a candidate for delete+reprovision
+  // on the GET poll — we want resume, not a cold reboot.
+  if (row.status === 'stopped') {
+    await resumeStoppedSandbox({
+      sandboxId: row.sandboxId,
+      sessionId,
+      accountId: row.accountId,
+      provider: row.provider,
+      externalId: row.externalId,
+    });
+    return c.json({ status: 'waking' });
+  }
+
+  // Idle auto-stop by the provider (DB row still reads 'active'): just kick the
+  // start in the background so the caller gets an instant answer and the health
+  // poll observes readiness. Don't block on the provider start (~10-30s).
   void provider.start(row.externalId).catch((err) =>
     console.warn(`[wake] failed to start sandbox ${row.externalId} (session ${sessionId}):`, err),
   );
@@ -106,9 +121,10 @@ projectsApp.openapi(
 );
 
 // POST /v1/projects/:projectId/sessions/:sessionId/restart
-// Tear down the current sandbox container, revoke its sandbox-scoped api keys,
-// and re-provision a fresh one with the latest project secrets + rotated
-// LLM/GitHub tokens. The git branch is preserved.
+// Reboot the existing sandbox in place via the provider SDK (stop+start) — the
+// box and its disk (repo clone, deps, opencode) are kept, never removed. Only
+// when the session has no sandbox (deleted / never provisioned) do we provision
+// a fresh one to recover it from the preserved git branch.
 
 projectsApp.openapi(
   createRoute({
@@ -153,9 +169,58 @@ projectsApp.openapi(
     return c.json({ error: restartUnreachable, code: 'KORTIX_URL_UNREACHABLE' }, 503);
   }
 
-  // Resolve git auth fresh — installation tokens rotate.
-  const gitAuth = await resolveProjectGitAuth(loaded.row);
+  const [existingSandbox] = await db
+    .select()
+    .from(sessionSandboxes)
+    .where(eq(sessionSandboxes.sandboxId, sessionId))
+    .limit(1);
 
+  // In-place restart: reboot the EXISTING box via the provider SDK (stop+start)
+  // instead of destroying + cold-reprovisioning it. The disk — repo clone,
+  // installed deps, opencode — persists across a stop/start, so this is a fast
+  // reboot, not a cold boot, and we NEVER remove the box (removal is reserved
+  // for explicit session deletion). The same compute row and sandbox keys carry
+  // over, so there's nothing to finalize or rotate.
+  if (existingSandbox?.externalId
+      && (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(existingSandbox.provider)) {
+    const externalId = existingSandbox.externalId;
+    const provider = getProvider(existingSandbox.provider as SandboxProviderName);
+    // Flip to provisioning so the dashboard's connecting screen re-engages while
+    // the VM reboots; GET …/sandbox keeps returning the row ('provisioning' is a
+    // usable state) so no reprovision is triggered underneath us.
+    await db.update(sessionSandboxes)
+      .set({ status: 'provisioning', updatedAt: new Date() })
+      .where(eq(sessionSandboxes.sandboxId, sessionId));
+    await db.update(projectSessions)
+      .set({ status: 'provisioning', error: null, sandboxUrl: null, updatedAt: new Date() })
+      .where(eq(projectSessions.sessionId, sessionId));
+    void (async () => {
+      try {
+        await provider.stop(externalId).catch(() => {}); // best-effort clean down→up cycle
+        await provider.start(externalId);
+        await db.update(sessionSandboxes)
+          .set({ status: 'active', updatedAt: new Date() })
+          .where(eq(sessionSandboxes.sandboxId, sessionId));
+        await db.update(projectSessions)
+          .set({ status: 'running', updatedAt: new Date() })
+          .where(eq(projectSessions.sessionId, sessionId));
+      } catch (err) {
+        console.warn(`[projects] restart-in-place failed for ${sessionId}:`, err);
+        // Leave it resumable — a 'stopped' row reopens via the GET resume path.
+        await db.update(sessionSandboxes)
+          .set({ status: 'stopped', updatedAt: new Date() })
+          .where(eq(sessionSandboxes.sandboxId, sessionId)).catch(() => {});
+        await db.update(projectSessions)
+          .set({ status: 'stopped', updatedAt: new Date() })
+          .where(eq(projectSessions.sessionId, sessionId)).catch(() => {});
+      }
+    })();
+    return c.json({ ok: true, session_id: sessionId, status: 'provisioning' }, 202);
+  }
+
+  // No existing box (deleted / never provisioned) → provision a fresh one so
+  // restart still recovers a dead session from the preserved git branch.
+  const gitAuth = await resolveProjectGitAuth(loaded.row);
   const initialPrompt = typeof session.metadata?.initial_prompt === 'string'
     ? session.metadata.initial_prompt as string
     : null;
@@ -163,63 +228,9 @@ projectsApp.openapi(
     ? session.metadata.opencode_model as string
     : null;
 
-  // Best-effort tear down: remove the old external container and revoke its
-  // sandbox keys. Failures are logged but don't block restart — a stuck row
-  // is exactly what restart exists to fix.
-  const [existingSandbox] = await db
-    .select()
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sandboxId, sessionId))
-    .limit(1);
-
-  if (
-    existingSandbox?.externalId &&
-    existingSandbox.provider === 'daytona'
-  ) {
-    try {
-      const provider = getProvider('daytona');
-      await provider.remove(existingSandbox.externalId);
-    } catch (err) {
-      console.warn(`[projects] restart: failed to remove provider container for ${sessionId}:`, err);
-    }
-  }
-
-  // Billing v2 — finalize compute metering for the pre-restart sandbox.
-  // The new sandbox will open a fresh metering row when it boots.
-  if (existingSandbox) {
-    void endComputeSession(sessionId).catch((err) =>
-      console.warn(`[projects] restart: compute endComputeSession failed for ${sessionId}:`, err),
-    );
-  }
-
-  await db
-    .update(kortixApiKeys)
-    .set({ status: 'revoked' })
-    .where(and(
-      eq(kortixApiKeys.sandboxId, sessionId),
-      eq(kortixApiKeys.type, 'sandbox'),
-      eq(kortixApiKeys.status, 'active'),
-    ))
-    .catch((err) => {
-      console.warn(`[projects] restart: failed to revoke sandbox keys for ${sessionId}:`, err);
-    });
-
-  if (existingSandbox) {
-    await db
-      .delete(sessionSandboxes)
-      .where(eq(sessionSandboxes.sandboxId, sessionId));
-  }
-
-  // Flip session back to provisioning so the dashboard's connecting screen
-  // re-engages.
   await db
     .update(projectSessions)
-    .set({
-      status: 'provisioning',
-      error: null,
-      sandboxUrl: null,
-      updatedAt: new Date(),
-    })
+    .set({ status: 'provisioning', error: null, sandboxUrl: null, updatedAt: new Date() })
     .where(eq(projectSessions.sessionId, sessionId));
 
   // Fire-and-forget the actual re-provision. Same shape as session-create.
