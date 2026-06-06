@@ -1,9 +1,34 @@
 import { z } from 'zod'
 
+/**
+ * BACKEND_URL may be EITHER:
+ *  - an absolute http(s) URL (e.g. "http://localhost:8008/v1") — used server-side
+ *    where `new URL(...)` needs an absolute base, and in normal deployments; or
+ *  - a root-relative path (e.g. "/v1") — used in the sandbox preview so the
+ *    BROWSER hits the SAME origin it's served from and the preview proxy rewrites
+ *    it to the in-sandbox API (single-origin proxy, no CORS, no exposed port).
+ * Server-side callers that build a URL must resolve the absolute
+ * `process.env.BACKEND_URL` rather than this (possibly relative) public value.
+ */
+const backendUrlSchema = z
+  .string()
+  .refine(
+    (value) => {
+      if (value.startsWith('/')) return true // root-relative (same-origin proxy)
+      try {
+        const parsed = new URL(value)
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      } catch {
+        return false
+      }
+    },
+    'BACKEND_URL must be an absolute http(s) URL or a root-relative path (e.g. "/v1")',
+  )
+
 const RuntimeEnvSchema = z.object({
   SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
   SUPABASE_ANON_KEY: z.string().min(1, 'SUPABASE_ANON_KEY is required'),
-  BACKEND_URL: z.string().url('BACKEND_URL must be a valid URL'),
+  BACKEND_URL: backendUrlSchema,
   /** Whether billing/paywall UI is enabled. Mirrors the backend's
    *  KORTIX_BILLING_INTERNAL_ENABLED. Set via NEXT_PUBLIC_BILLING_ENABLED. */
   BILLING_ENABLED: z.boolean().default(false),

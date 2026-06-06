@@ -391,6 +391,18 @@ NEXT_PUBLIC_KORTIX_PERSONAL_CONTACT=false
 EDGE_CONFIG=
 EOF
 
+  # Export the web env into THIS process so the production frontend build + start
+  # see them. `next build` / `next start` (unlike the `dev` script) do NOT run
+  # dotenvx, and Next does not reliably auto-load apps/web/.env.local for the
+  # standalone/production server — so without exporting, `next start` boots with
+  # NO BACKEND_URL / Supabase vars and every SSR request 500s on the runtime-env
+  # Zod parse. Exporting makes NEXT_PUBLIC_* inline at BUILD time and puts the
+  # server-only vars (BACKEND_URL, …) in process.env for `next start`'s SSR.
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/apps/web/.env.local"
+  set +a
+
   kill_dev_ports 3000 8008 "${PORT:-8008}"
 
   # A freshly-cloned session has no node_modules — install first. (Warm volumes
