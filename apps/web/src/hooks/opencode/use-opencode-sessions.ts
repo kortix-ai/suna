@@ -233,9 +233,17 @@ export function useOpenCodeSessions() {
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
+    // Poll TIGHT during the expected opencode-ready window, then back off
+    // exponentially for the rare genuinely-stuck case. opencode's /session
+    // lags /kortix/health (runtimeReady) by ~0.4-4s while it loads the repo;
+    // the old 3-retry 1/2/4s backoff erred out at 7s and re-rounded → ~14s to
+    // notice ready (observed). Tight first (8 x 400ms = ~3.2s) catches the
+    // common case in <1s; exponential tail (cap 10s) avoids hammering a stuck
+    // session. Trivial load (a handful of light /session checks).
     retry: (failureCount, error) =>
-      !isOpenCodeConfigInvalidError(error) && failureCount < 3,
-    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
+      !isOpenCodeConfigInvalidError(error) && failureCount < 12,
+    retryDelay: (attempt) =>
+      attempt < 8 ? 400 : Math.min(400 * Math.pow(2, attempt - 8), 10000),
   });
 }
 
