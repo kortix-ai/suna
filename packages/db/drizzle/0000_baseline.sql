@@ -387,6 +387,74 @@ CREATE TABLE "kortix"."tunnel_permissions" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
+CREATE TYPE "kortix"."project_status" AS ENUM('active', 'archived');--> statement-breakpoint
+CREATE TYPE "kortix"."project_session_status" AS ENUM('queued', 'branching', 'provisioning', 'running', 'stopped', 'failed', 'completed');--> statement-breakpoint
+CREATE TYPE "kortix"."project_session_visibility" AS ENUM('private', 'project', 'restricted');--> statement-breakpoint
+CREATE TYPE "kortix"."project_snapshot_status" AS ENUM('queued', 'building', 'ready', 'failed');--> statement-breakpoint
+CREATE TABLE "kortix"."projects" (
+	"project_id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"account_id" uuid NOT NULL,
+	"name" varchar(255) NOT NULL,
+	"repo_url" text NOT NULL,
+	"default_branch" varchar(255) DEFAULT 'main' NOT NULL,
+	"manifest_path" text DEFAULT 'kortix.toml' NOT NULL,
+	"status" "kortix"."project_status" DEFAULT 'active' NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb,
+	"last_opened_at" timestamp with time zone,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "kortix"."project_sessions" (
+	"session_id" text PRIMARY KEY NOT NULL,
+	"account_id" uuid NOT NULL,
+	"project_id" uuid NOT NULL,
+	"branch_name" text NOT NULL,
+	"base_ref" text DEFAULT 'main' NOT NULL,
+	"sandbox_provider" "kortix"."sandbox_provider" DEFAULT 'daytona' NOT NULL,
+	"sandbox_id" text,
+	"sandbox_url" text,
+	"opencode_session_id" text,
+	"agent_name" text DEFAULT 'default' NOT NULL,
+	"status" "kortix"."project_session_status" DEFAULT 'queued' NOT NULL,
+	"error" text,
+	"created_by" uuid,
+	"visibility" "kortix"."project_session_visibility" DEFAULT 'private' NOT NULL,
+	"metadata" jsonb DEFAULT '{}'::jsonb,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+CREATE TABLE "kortix"."project_runtime_snapshots" (
+	"snapshot_row_id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"account_id" uuid NOT NULL,
+	"project_id" uuid NOT NULL,
+	"provider" "kortix"."sandbox_provider" DEFAULT 'daytona' NOT NULL,
+	"commit_sha" text NOT NULL,
+	"snapshot_id" text,
+	"status" "kortix"."project_snapshot_status" DEFAULT 'queued' NOT NULL,
+	"error" text,
+	"metadata" jsonb DEFAULT '{}'::jsonb,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
+ALTER TABLE "kortix"."projects" ADD CONSTRAINT "projects_account_id_accounts_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "kortix"."accounts"("account_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "kortix"."project_sessions" ADD CONSTRAINT "project_sessions_account_id_accounts_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "kortix"."accounts"("account_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "kortix"."project_sessions" ADD CONSTRAINT "project_sessions_project_id_projects_project_id_fk" FOREIGN KEY ("project_id") REFERENCES "kortix"."projects"("project_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "kortix"."project_runtime_snapshots" ADD CONSTRAINT "project_runtime_snapshots_account_id_accounts_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "kortix"."accounts"("account_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "kortix"."project_runtime_snapshots" ADD CONSTRAINT "project_runtime_snapshots_project_id_projects_project_id_fk" FOREIGN KEY ("project_id") REFERENCES "kortix"."projects"("project_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "idx_projects_account" ON "kortix"."projects" USING btree ("account_id");--> statement-breakpoint
+CREATE INDEX "idx_projects_status" ON "kortix"."projects" USING btree ("status");--> statement-breakpoint
+CREATE INDEX "idx_projects_updated" ON "kortix"."projects" USING btree ("updated_at");--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_projects_account_repo" ON "kortix"."projects" USING btree ("account_id","repo_url");--> statement-breakpoint
+CREATE INDEX "idx_project_sessions_account" ON "kortix"."project_sessions" USING btree ("account_id");--> statement-breakpoint
+CREATE INDEX "idx_project_sessions_project" ON "kortix"."project_sessions" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "idx_project_sessions_status" ON "kortix"."project_sessions" USING btree ("status");--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_project_sessions_project_branch" ON "kortix"."project_sessions" USING btree ("project_id","branch_name");--> statement-breakpoint
+CREATE INDEX "idx_project_runtime_snapshots_project" ON "kortix"."project_runtime_snapshots" USING btree ("project_id");--> statement-breakpoint
+CREATE INDEX "idx_project_runtime_snapshots_status" ON "kortix"."project_runtime_snapshots" USING btree ("status");--> statement-breakpoint
+CREATE UNIQUE INDEX "idx_project_runtime_snapshots_commit_provider" ON "kortix"."project_runtime_snapshots" USING btree ("project_id","commit_sha","provider");--> statement-breakpoint
 ALTER TABLE "kortix"."account_members" ADD CONSTRAINT "account_members_account_id_accounts_account_id_fk" FOREIGN KEY ("account_id") REFERENCES "kortix"."accounts"("account_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."deployments" ADD CONSTRAINT "deployments_sandbox_id_sandboxes_sandbox_id_fk" FOREIGN KEY ("sandbox_id") REFERENCES "kortix"."sandboxes"("sandbox_id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "kortix"."api_keys" ADD CONSTRAINT "api_keys_sandbox_id_sandboxes_sandbox_id_fk" FOREIGN KEY ("sandbox_id") REFERENCES "kortix"."sandboxes"("sandbox_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
