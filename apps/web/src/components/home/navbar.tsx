@@ -257,7 +257,7 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                     'font-medium',
                     pathname === item.href
                       ? 'text-foreground'
-                      : 'text-muted-foreground hover:text-foreground',
+                      : 'text-foreground/90 hover:text-foreground',
                   )}
                 >
                   <Link key={item.id} href={item.href}>

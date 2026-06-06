@@ -88,7 +88,7 @@ export function ProductMegaMenu() {
           <NavigationMenuTrigger
             className={cn(
               marketingButtonVariants({ variant: 'ghost', size: 'sm' }),
-              'text-muted-foreground hover:text-foreground data-[state=open]:text-foreground',
+              'text-foreground/90 hover:text-foreground data-[state=open]:text-foreground',
             )}
           >
             Product

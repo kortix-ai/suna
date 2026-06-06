@@ -10,9 +10,9 @@ const ASTERISK_ARMS = [
   { className: 'z-40 -rotate-45' },
 ] as const;
 
-export function KortixAsterisk({ index }: { index: number }) {
+export function KortixAsterisk({ index,parentClass }: { index: number,parentClass?: string }) {
   return (
-    <div className="relative mt-1 flex size-6 shrink-0 items-center justify-center">
+    <div className={cn("relative mt-1 flex size-6 shrink-0 items-center justify-center",parentClass)}>
       {ASTERISK_ARMS.map(({ className }, armIndex) => (
         <div
           key={armIndex}
