@@ -13,7 +13,7 @@
  * CR you can review + merge.
  */
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 
@@ -49,13 +49,29 @@ export function editConfigPrompt(kind: ConfigureKind, name: string, path: string
   );
 }
 
-export function useConfigureThread(projectId: string) {
+export interface ConfigureThread {
+  /** Spin up a configure session for `prompt`, then close Customize + navigate. */
+  start: (prompt: string) => void;
+  /**
+   * True while a session is being created. Creating one is a network round-trip
+   * (same as the project-home composer), so callers should show a spinner +
+   * disable their trigger — otherwise the button feels dead until we navigate.
+   */
+  pending: boolean;
+}
+
+export function useConfigureThread(projectId: string): ConfigureThread {
   const router = useRouter();
   const queryClient = useQueryClient();
   const closeCustomize = useCustomizeStore((s) => s.close);
+  const [pending, setPending] = useState(false);
 
-  return useCallback(
+  const start = useCallback(
     async (prompt: string) => {
+      // Guard re-entry: ignore extra clicks while a session is being minted so
+      // we don't fire two creates (and blow the concurrent-session limit).
+      if (pending) return;
+      setPending(true);
       try {
         const session = await createProjectSession(projectId);
         // The active-session chat reads this and auto-sends once the runtime
@@ -64,11 +80,16 @@ export function useConfigureThread(projectId: string) {
         queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
         closeCustomize();
         router.push(`/projects/${projectId}/sessions/${session.session_id}`);
+        // Leave `pending` true on success — we're navigating away and the
+        // overlay is closing; flipping it back would flash the idle button.
       } catch (err) {
+        setPending(false);
         if ((err as any)?.code === 'concurrent_session_limit') return;
         toast.error(err instanceof Error ? err.message : 'Failed to start session');
       }
     },
-    [projectId, router, queryClient, closeCustomize],
+    [projectId, router, queryClient, closeCustomize, pending],
   );
+
+  return { start, pending };
 }
