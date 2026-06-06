@@ -409,6 +409,21 @@ export function isPaidTier(tierName: string): boolean {
   return tierName !== 'free' && tierName !== 'none';
 }
 
+/**
+ * Whether a tier unlocks the full model catalog — i.e. the premium LLM gateway
+ * (Claude/GPT/Gemini/…), not just OpenCode's built-in Zen models.
+ *
+ * Driven entirely by the tier's `models` config: every paid tier — `pro`,
+ * `per_seat`, and all legacy `tier_*` plans — carries `models: ['all']`, so this
+ * is the single source of truth for premium-model entitlement. Crucially it keys
+ * off the resolved TIER, not `billing_model`: legacy paid customers are just as
+ * entitled to premium models as per-seat teams (the gateway meters every account
+ * the same way), and gating on `isPerSeatAccount` wrongly locked them out.
+ */
+export function tierGrantsAllModels(tierName: string): boolean {
+  return getTier(tierName).models.includes('all');
+}
+
 /** Returns the per-seat Stripe price ID for the current environment. */
 export function resolvePerSeatPriceId(): string | null {
   const prices = getStripePrices();

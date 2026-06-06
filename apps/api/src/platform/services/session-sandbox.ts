@@ -42,8 +42,7 @@ import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
-import { getCreditAccount } from '../../billing/repositories/credit-accounts';
-import { isPerSeatAccount } from '../../billing/services/tiers';
+import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 
 // Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
@@ -180,7 +179,7 @@ export async function provisionSessionSandbox(opts: {
   // sandbox API key can be minted before the row lands. Previously serial
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
-  const [sandboxRows, sandboxKey, executorToken, perSeatActive] = await Promise.all([
+  const [sandboxRows, sandboxKey, executorToken, gatewayEntitled] = await Promise.all([
     db
       .insert(sessionSandboxes)
       .values({
@@ -220,21 +219,13 @@ export async function provisionSessionSandbox(opts: {
         console.warn(`[session-sandbox] failed to mint executor token for ${projectId}:`, err);
         return null as string | null;
       }),
-    getCreditAccount(accountId)
-      .then((account) => {
-        const hasActiveSub =
-          !!account?.stripeSubscriptionId &&
-          account.stripeSubscriptionStatus !== 'canceled' &&
-          account.stripeSubscriptionStatus !== 'unpaid';
-        return isPerSeatAccount(account?.billingModel) && hasActiveSub && !!userId;
-      })
-      .catch((err) => {
-        console.warn(
-          `[session-sandbox] failed to resolve billing state for ${userId}@${accountId}:`,
-          err instanceof Error ? err.message : String(err),
-        );
-        return false;
-      }),
+    accountEntitledToLlmGateway(accountId).catch((err) => {
+      console.warn(
+        `[session-sandbox] failed to resolve LLM-gateway entitlement for ${userId}@${accountId}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      return false;
+    }),
   ]);
   const [sandbox] = sandboxRows;
   tl.mark('row+tokens');
@@ -251,13 +242,15 @@ export async function provisionSessionSandbox(opts: {
   // boots clobbered each other and left older sandboxes with a stale token the
   // gateway rejects (401). The PAT is per-session and stable.
   //
-  // Enablement is unchanged: paying members (per-seat + active sub) on billing-on
-  // deploys, and everyone on billing-off (local / self-hosted; the gateway
-  // records-but-never-debits there).
+  // Enablement: any account whose tier grants all models — per-seat teams AND
+  // every legacy paid tier (pro, tier_*) — on billing-on deploys, plus everyone
+  // on billing-off (local / self-hosted; the gateway records-but-never-debits
+  // there). See accountEntitledToLlmGateway: it gates on the resolved TIER, not
+  // billing_model, so legacy paying customers are no longer wrongly stripped to
+  // the Zen-only catalog. Per-request affordability stays in the gateway's own
+  // billing gate (assertBillingActive + deductForLlmUsage).
   const gatewayLlmKey: string | null =
-    config.LLM_GATEWAY_ENABLED && (perSeatActive || !config.KORTIX_BILLING_INTERNAL_ENABLED)
-      ? executorToken
-      : null;
+    config.LLM_GATEWAY_ENABLED && gatewayEntitled ? executorToken : null;
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,

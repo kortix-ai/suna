@@ -1,6 +1,6 @@
 import { config } from '../config';
 import { getSubscriptionInfo } from '../billing/repositories/credit-accounts';
-import { getTier, isPaidTier, isPerSeatAccount, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
+import { getTier, isPaidTier, isPerSeatAccount, tierGrantsAllModels, MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
 import type { RateLimitPolicy } from './rate-limit';
 
 // Free accounts may own a single project. Any paid plan (pro or the per-seat
@@ -56,6 +56,31 @@ export async function resolveAccountTier(accountId: string): Promise<string | nu
   } catch {
     return 'free';
   }
+}
+
+/**
+ * Whether to mount the premium LLM gateway (the `kortix` provider, with
+ * Claude/GPT/Gemini/…) for an account at sandbox-provision time. When false the
+ * sandbox boots with only OpenCode's built-in Zen catalog.
+ *
+ * This is purely the *entitlement* layer — "is this account allowed to SEE
+ * premium models". Per-request affordability (active seat sub / wallet balance)
+ * is enforced separately by the gateway itself (assertBillingActive +
+ * deductForLlmUsage), so we deliberately do NOT re-check credits here: a paid
+ * account that has run dry still sees the models and gets a clear "top up" 402
+ * on use, rather than silently being shown a stripped-down Zen-only list.
+ *
+ * - billing off (local / self-hosted): always entitled — the gateway
+ *   records-but-never-debits there.
+ * - billing on: entitled iff the resolved tier grants all models. This covers
+ *   per-seat teams AND every legacy paid tier (pro, tier_*), all of which carry
+ *   models:['all']. resolveAccountTier already self-heals stale per-seat rows and
+ *   falls back to 'free' on error, so the safe default is "no gateway".
+ */
+export async function accountEntitledToLlmGateway(accountId: string): Promise<boolean> {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return true;
+  const tier = await resolveAccountTier(accountId);
+  return tierGrantsAllModels(tier ?? 'free');
 }
 
 export function sessionLlmPolicyForTier(tier: string | null | undefined): RateLimitPolicy {
