@@ -5,8 +5,8 @@ import { dirname, join } from 'node:path';
 
 import { firstExistingExplicitEnvFile, requireEnvValue } from './env';
 
-function escapeSql(value: string): string {
-  return value.replace(/'/g, "''");
+export function escapeSql(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "''");
 }
 
 interface SeedSelfHostedProjectOptions {

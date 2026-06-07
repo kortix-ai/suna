@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { json } from '../helpers/http';
 import { type AuthSession, createAuthUser, installBrowserSession, signIn } from '../helpers/session-auth';
-import { runSqlWithSelfHostFallback } from '../helpers/self-host';
+import { escapeSql, runSqlWithSelfHostFallback } from '../helpers/self-host';
 
 const apiBase = process.env.E2E_API_URL || 'http://localhost:13738/v1';
 const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
@@ -12,7 +12,7 @@ const authOptions = { supabaseUrl, password, envFiles: ['apps/api/.env'] };
 async function grantPlatformAdmin(userId: string) {
   const sql = `
       INSERT INTO kortix.platform_user_roles (account_id, role, granted_by)
-      VALUES ('${userId}', 'super_admin', '${userId}')
+      VALUES ('${escapeSql(userId)}', 'super_admin', '${escapeSql(userId)}')
       ON CONFLICT (account_id) DO UPDATE SET role = excluded.role;
     `;
   runSqlWithSelfHostFallback(sql);
