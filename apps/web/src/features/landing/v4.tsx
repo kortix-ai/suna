@@ -57,7 +57,7 @@ import { FiBookmark } from 'react-icons/fi';
 import { HiOutlineDotsHorizontal } from 'react-icons/hi';
 import { HiArrowRight, HiMiniSparkles } from 'react-icons/hi2';
 import { MdShield } from 'react-icons/md';
-import { PiBellFill, PiChatCircleDotsFill, PiChatsCircleFill, PiFilesFill } from 'react-icons/pi';
+import { PiBellFill, PiChatsCircleFill, PiFilesFill } from 'react-icons/pi';
 import { TbChevronUpRight } from 'react-icons/tb';
 
 const DEMO_URL = '/contact';
@@ -73,7 +73,7 @@ const LANDING_COPY = {
       tabDescription: 'Answers from docs and order tools.',
       eyebrow: 'Internal agent',
       title: 'A support agent that closes tickets.',
-      description: 'It reads the ticket, drafts a reply from your docs, and waits for sign-off.',
+      description: 'Reads the ticket, drafts a reply from your docs, and waits for sign-off.',
       log: [
         'Pulled ticket + customer history',
         'Drafted reply from docs',
@@ -86,7 +86,7 @@ const LANDING_COPY = {
       tabDescription: 'Reviews PRs and opens fixes.',
       eyebrow: 'Internal agent',
       title: 'An engineering agent that ships fixes.',
-      description: 'It reviews the PR, opens a fix branch, and submits a change request.',
+      description: 'Reviews the PR, opens a fix branch, and submits a change request.',
       log: [
         'Reviewed diff in sandbox',
         'Reproduced the bug',
@@ -99,12 +99,12 @@ const LANDING_COPY = {
       tabDescription: 'Briefs teams from trusted sources.',
       eyebrow: 'Internal agent',
       title: 'A research agent that briefs your team.',
-      description: 'It gathers from trusted sources and posts a brief to Slack before the call.',
+      description: 'Gathers from approved sources and posts a brief before the call.',
       log: [
         'Gathered from approved sources',
         'Cross-checked the facts',
         'Wrote the brief',
-        'Posted to Slack',
+        'Posted for the team',
       ],
     },
     closeTheBooks: {
@@ -112,7 +112,7 @@ const LANDING_COPY = {
       tabDescription: 'Reconciles and flags exceptions.',
       eyebrow: 'Internal agent',
       title: 'A finance agent that closes the month.',
-      description: 'It reconciles transactions, flags exceptions, and waits for your approval.',
+      description: 'Reconciles transactions, flags exceptions, and holds for approval.',
       log: ['Matched transactions', 'Flagged 3 exceptions', 'Drafted summary', 'Held for sign-off'],
     },
     briefToCampaign: {
@@ -120,7 +120,7 @@ const LANDING_COPY = {
       tabDescription: 'Turns briefs into drafts.',
       eyebrow: 'Internal agent',
       title: 'A marketing agent that runs the brief.',
-      description: 'It turns a brief into drafts, then routes them for review.',
+      description: 'Turns a brief into drafts, then routes them for review.',
       log: ['Read the brief', 'Drafted the assets', 'Checked brand rules', 'Routed for review'],
     },
     runTheBackOffice: {
@@ -128,7 +128,7 @@ const LANDING_COPY = {
       tabDescription: 'Runs back-office SOPs.',
       eyebrow: 'Internal agent',
       title: 'An operations agent that runs the SOP.',
-      description: 'It executes the workflow step by step, pausing at each approval gate.',
+      description: 'Runs the SOP step by step, pausing at each approval gate.',
       log: [
         'Loaded the SOP',
         'Ran each step in sandbox',
@@ -137,184 +137,102 @@ const LANDING_COPY = {
       ],
     },
   },
-  line138JsxTextTheAiCommandCenter: 'The AI command center',
-  line139JsxTextForYourCompany: 'for your company',
-  line142JsxTextRunYourCompanyOnAiEveryAgentTrigger:
-    'Run your company on AI. Every agent, trigger, integration, and memory your teams need — in one place you control.',
-  line146JsxTextGetStarted: 'Get started',
   line149JsxTextTalkToSales: 'Talk to sales',
-  line163JsxTextConnectsToThe: 'Connects to the',
-  line163JsxTextText3000Apps: '3,000+ Apps',
-  line163JsxTextYourCompanyAlreadyRunsOn: 'your company already runs on',
-  line193JsxTextLiveAcrossYourCompanyInWeeks: 'Live across your company in weeks.',
-  line196JsxTextNoRipAndReplaceStandUpYourFirst:
-    'No rip-and-replace. Stand up your first agent in an afternoon, then scale department by department.',
-  line225JsxTextOpenAmpCodeNative: 'Open & code-native',
-  line227JsxTextYourWholeCompanyAsCode: 'Your whole company, as code.',
-  line230JsxTextEveryAgentSkillTriggerAndPolicyIsPlain:
-    'Every agent, skill, trigger, and policy is plain code in a git repo — diff it, review it, roll it back. Built on the open',
-  line230JsxTextAgentRuntimeSelfHostAnywhereNoBlackBox:
-    'agent runtime. Self-host anywhere. No black box, no lock-in.',
-  line267JsxTextStarsOnGithub: 'stars on GitHub',
-  line269JsxTextALeadingOpenSourceAiWorkspace: 'A leading open-source AI workspace.',
-  line284JsxTextSecureEnoughToRunTheWholeCompany: 'Secure enough to run the whole company.',
-  line287JsxTextFineGrainedControlOverWhoAndWhichAgent:
-    'Fine-grained control over who — and which agent — can do what, with hard isolation around every single run.',
-  line314JsxTextTalkToSales: 'Talk to sales',
-  line317JsxTextSeeHowItWorks: 'See how it works',
-  line329JsxTextGetStarted: 'Get started',
-  line331JsxTextGiveYourCompanyAWorkforce: 'Ship an agent your team trusts.',
-  line334JsxTextFreeToSelfHostManagedCloudFrom20: [
-    'Sandboxed by default',
-    'Human approval built in',
-    'Full audit trail',
-  ],
-  line337JsxTextGetStarted: 'Start building',
-  line338JsxTextTalkToSales: 'See GitHub',
-  line339JsxTextSeePricing: 'See pricing',
-  line342JsxTextOpenSourceSsoRbacAmpOnPremNo: 'Open source · SSO, RBAC & on-prem · No lock-in',
-  line356JsxTextGetStarted: 'Get started',
-  line59JsxTextTheAiCommandCenter: 'The AI command center',
-  line60JsxTextForYourCompany: 'for your company',
-  line63JsxTextRunYourCompanyOnAiEveryAgentTrigger:
-    'Run your company on AI. Every agent, trigger, integration, and memory your teams need — in one place you control.',
-  line67JsxTextGetStarted: 'Get started',
-  line70JsxTextTalkToSales: 'Talk to sales',
-  line84JsxTextConnectsToThe: 'Connects to the',
-  line84JsxTextText3000Tools: '3,000+ tools',
-  line84JsxTextYourCompanyAlreadyRunsOn: 'your company already runs on',
-  line127JsxTextLiveAcrossYourCompanyInWeeks: 'Live across your company in weeks.',
-  line130JsxTextNoRipAndReplaceStandUpYourFirst:
-    'No rip-and-replace. Stand up your first agent in an afternoon, then scale department by department.',
-  line159JsxTextOpenAmpCodeNative: 'Open & code-native',
-  line161JsxTextYourWholeCompanyAsCode: 'Your whole company, as code.',
-  line164JsxTextEveryAgentSkillTriggerAndPolicyIsPlain:
-    'Every agent, skill, trigger, and policy is plain code in a git repo — diff it, review it, roll it back. Built on the open',
-  line164JsxTextAgentRuntimeSelfHostAnywhereNoBlackBox:
-    'agent runtime. Self-host anywhere. No black box, no lock-in.',
-  line201JsxTextStarsOnGithub: 'stars on GitHub',
-  line203JsxTextALeadingOpenSourceAiWorkspace: 'A leading open-source AI workspace.',
-  line218JsxTextSecureEnoughToRunTheWholeCompany: 'Secure enough to run the whole company.',
-  line221JsxTextFineGrainedControlOverWhoAndWhichAgent:
-    'Fine-grained control over who — and which agent — can do what, with hard isolation around every single run.',
-  line248JsxTextTalkToSales: 'Talk to sales',
-  line251JsxTextSeeHowItWorks: 'See how it works',
-  line263JsxTextGetStarted: 'Get started',
-  line265JsxTextGiveYourCompanyAWorkforce: 'Give your company a workforce.',
-  line268JsxTextFreeToSelfHostManagedCloudFrom20:
-    'Free to self-host. Managed cloud from $20 / seat + usage. Spin up your first agent today — or have us map it to your workflows in a live demo.',
-  line271JsxTextGetStarted: 'Get started',
-  line272JsxTextTalkToSales: 'Talk to sales',
-  line273JsxTextSeePricing: 'See pricing',
-  line276JsxTextOpenSourceSsoRbacAmpOnPremNo: 'Open source · SSO, RBAC & on-prem · No lock-in',
-  line290JsxTextGetStarted: 'Get started',
-  line138JsxTextTheAICommandCenter: 'The AI command center',
-  line142JsxTextRunYourCompanyOnAIEveryAgentTrigger:
-    'Run your company on AI. Every agent, trigger, integration, and memory your teams need — in one place you control.',
-  line163JsxText3000Apps: '3,000+ Apps',
-  line225JsxTextOpenCodeNative: 'Open & code-native',
   line267JsxTextStarsOnGitHub: 'stars on GitHub',
-  line269JsxTextALeadingOpenSourceAIWorkspace: 'An open source platform for internal agents.',
+  line269JsxTextALeadingOpenSourceAIWorkspace: 'An open-source platform for company-wide AI.',
+  line331JsxTextGiveYourCompanyAWorkforce: 'Run your company on AI.',
+  line334JsxTextFreeToSelfHostManagedCloudFrom20:
+    'Free to self-host. Managed cloud from $20 / seat + usage. Spin up your first agent today — or have us map it to your workflows in a live demo.',
+  line337JsxTextGetStarted: 'Start building',
+  line338JsxTextTalkToSales: 'Talk to sales',
+  line339JsxTextSeePricing: 'See pricing',
   line342JsxTextOpenSourceSSORBACOnPremNoLock: 'Open source · SSO, RBAC & on-prem · No lock-in',
-  heroCommandCenter: 'Internal agents',
-  heroAiWorkforce: 'your team can trust.',
+  heroCommandCenter: 'The AI command center',
+  heroAiWorkforce: 'for your company',
   heroDescription:
-    'Deploy coding-agent workflows to Slack with sandbox isolation, approvals, scoped tools, and an audit trail.',
+    'Build internal agents like software. Define their skills, tools, persona, and guardrails as code, then deploy them wherever your team works.',
   startBuildingCta: 'Start building',
-  workLoopEyebrow: 'Production path',
-  workLoopTitle: 'Ship agents with guardrails.',
-  workLoopDescription:
-    'Every agent runs in an isolated runtime, uses scoped tools, and pauses when human sign-off is required.',
-  workLoopFinanceTitle: 'Support agent',
-  workLoopFinancePrompt: 'Answer this ticket from our docs and order history.',
-  workLoopEngineeringTitle: 'Engineering agent',
-  workLoopEngineeringPrompt: 'Review this PR and open a fix branch.',
-  workLoopSalesTitle: 'Research agent',
-  workLoopSalesPrompt: 'Brief the team on this account before the call.',
-  workLoopAskLabel: 'kortix init',
-  workLoopWorkLabel: 'Configure',
-  workLoopReviewLabel: 'kortix deploy',
-  workLoopDoneLabel: 'Live in Slack',
-  workLoopFinanceAsk: 'Scaffold a project from the coding agent you already use.',
-  workLoopFinanceWork: 'Set the docs, order tools, tone, approvals, and support workflow.',
-  workLoopFinanceReview: 'Push the project to a sandboxed cloud runtime.',
-  workLoopFinanceDone: 'The support agent answers in Slack with review and audit trail.',
-  workLoopEngineeringAsk: 'Start from your local coding-agent setup.',
-  workLoopEngineeringWork: 'Add repo access, review rules, tests, and branch permissions.',
-  workLoopEngineeringReview: 'Deploy the agent into an isolated runtime.',
-  workLoopEngineeringDone: 'It reviews PRs, opens fix branches, and waits for sign-off.',
-  workLoopSalesAsk: 'Create a project for account research.',
-  workLoopSalesWork: 'Wire approved sources, CRM context, and briefing format.',
-  workLoopSalesReview: 'Deploy the research agent to your team.',
-  workLoopSalesDone: 'It posts verified account briefs before calls.',
+  howItWorksEyebrow: 'From zero to running',
+  howItWorksTitle: 'Live across your company in weeks, not quarters.',
+  howItWorksDescription:
+    'No rip-and-replace. Stand up your first agent in an afternoon, then scale team by team.',
+  howItWorksStep1Label: 'Create your project',
+  howItWorksStep1Detail:
+    'Connect the tools your company runs on, and Kortix builds a shared brain from everything it sees.',
+  howItWorksStep2Label: 'Configure your agents',
+  howItWorksStep2Detail:
+    'Define agents, skills, and automations in the UI or as code. Set who can do what — and where a human signs off.',
+  howItWorksStep3Label: 'Deploy anywhere',
+  howItWorksStep3Detail:
+    'Every agent runs in its own isolated sandbox, on the surface your team already uses.',
+  howItWorksStep4Label: 'It improves over time',
+  howItWorksStep4Detail:
+    "Skills and memory accumulate with every run. Your company gets smarter — and it's all versioned.",
   splitEyebrow: 'Two ways in',
-  splitTitle: 'Builders ship. Teams review.',
-  splitCompaniesEyebrow: 'For teams',
-  splitCompaniesTitle: 'Agents with real guardrails.',
-  splitCompaniesBody:
-    'Give teams useful agents with scoped access, approvals, and a clear audit trail.',
-  splitCompaniesPointOne: 'Start agents from Slack',
-  splitCompaniesPointTwo: 'Human approval before agents act',
-  splitCompaniesPointThree: 'Data and config stay yours',
-  splitBuildersEyebrow: 'For builders',
-  splitBuildersTitle: 'Ship from the CLI.',
-  splitBuildersBody:
-    'Use the coding agent you already pay for. Run kortix init, configure, deploy.',
-  splitBuildersPointOne: 'Bring Claude Code, Codex, or opencode',
-  splitBuildersPointTwo: 'Config, skills, and tools as code',
-  splitBuildersPointThree: 'Self-host or run on cloud',
-  differentScreenEyebrow: 'Team surface',
-  differentScreenSectionTitle: 'Agents meet your team.',
-  differentScreenSectionDescription:
-    'Slack is the front door. Sandboxes, approvals, and audit trails make the work deployable.',
-  companyAsCodeEyebrow: 'Just code',
-  companyAsCodeTitle: 'Review agents like software.',
-  companyAsCodeDescription:
-    'Every skill, tool, permission, and runtime change is visible before an agent acts.',
-  companyAsCodeBulletConfig: 'Agent config in one kortix.toml',
-  companyAsCodeBulletAgents: 'Skills, persona, and tools as files',
-  companyAsCodeBulletGit: 'Every change versioned and diffable',
-  companyAsCodeBulletSelfHost: 'Self-host or run on cloud',
-  integrationsEyebrow: 'Connect',
-  integrationsTitlePrefix: 'Deploy to Slack,',
-  integrationsTitle: 'connect everything else.',
-  integrationsDescription:
-    'Agents start where your team already works, with scoped access to the tools they need.',
-  enterpriseEyebrow: 'Built to ship safely',
-  enterpriseTitle: 'Real guardrails, not a demo.',
-  enterpriseDescription:
-    'Scoped access, sandboxed sessions, and human approval let agents do real work safely.',
-  enterpriseScopedTitle: 'Scoped access',
-  enterpriseScopedDescription: 'Per-resource permissions for every agent and person.',
-  enterpriseApprovalsTitle: 'Human approval',
-  enterpriseApprovalsDescription: 'Agents pause for sign-off before they act.',
-  enterpriseIsolationTitle: 'Sandbox isolation',
-  enterpriseIsolationDescription: 'Each session runs in its own isolated machine.',
-  enterpriseDeployTitle: 'Deploy anywhere',
-  enterpriseDeployDescription: 'Cloud, self-host, VPC, or air-gapped.',
-  statIntegrations: 'Integrations, out of the box',
-  statCommandCenter: 'Command center for everything',
-  statAlwaysOn: 'Agents that never clock out',
-  statOpenSelfHostable: 'Open & self-hostable',
+  splitTitle: 'Builders configure. Teams use.',
   splitDescription:
-    'Let builders configure agents as code while operators approve the work before it reaches production.',
-  workforceMapEyebrow: 'Operational control',
-  workforceMapTitle: 'Deploy safely, then scale.',
-  workforceMapDescription:
-    'Start with one internal agent. Add tools, permissions, schedules, and review gates as trust grows.',
-  workforceMapAgentsTitle: 'Reviewable agents',
-  workforceMapAgentsDesc: 'Behavior lives in files your team can audit.',
-  workforceMapAutomationsTitle: 'Sandboxed runtime',
-  workforceMapAutomationsDesc: 'Each session runs in isolation.',
-  workforceMapIntegrationsTitle: 'Scoped tools',
-  workforceMapIntegrationsDesc: 'Agents reach only what they need.',
-  workforceMapMemoryTitle: 'Human sign-off',
-  workforceMapMemoryDesc: 'Pause before risky actions.',
-  workforceMapPillCommunication: 'kortix init',
-  workforceMapPillDocs: 'Configure',
-  workforceMapPillCode: 'kortix deploy',
-  workforceMapPillCrm: 'Slack',
-  workforceMapPillData: 'Data',
+    'Builders define agents as code with full control. Teams use them like a chat app, with guardrails working quietly underneath.',
+  splitCompaniesEyebrow: 'For teams',
+  splitCompaniesTitle: 'Use it like chat.',
+  splitCompaniesBody:
+    'Give every team agents that feel as simple as ChatGPT — with scoped access, approvals, and a full audit trail working underneath.',
+  splitCompaniesPointOne: 'As easy as a chat app',
+  splitCompaniesPointTwo: 'Approvals before agents act',
+  splitCompaniesPointThree: 'Your data and config stay yours',
+  splitBuildersEyebrow: 'For builders',
+  splitBuildersTitle: 'Configure it like software.',
+  splitBuildersBody:
+    'Define agents, skills, tools, and policies as code. Bring the models and keys you already pay for. kortix init, configure, deploy — self-host or run on our cloud.',
+  splitBuildersPointOne: 'Your stack, your models, your keys',
+  splitBuildersPointTwo: 'Skills, tools & policies as code',
+  splitBuildersPointThree: 'Self-host or managed cloud',
+  differentScreenEyebrow: 'Everywhere your team works',
+  differentScreenSectionTitle: 'Chat, Slack, Teams, or your own product.',
+  differentScreenSectionDescription:
+    'Your team talks to agents from a clean web and mobile workspace, from Slack or Microsoft Teams, or right inside your own app via the API. Same agents, same guardrails, every surface.',
+  surfaceWebWorkspace: 'Web workspace',
+  surfaceMobileApp: 'Mobile app',
+  surfaceSlack: 'Slack',
+  surfaceTeams: 'Microsoft Teams',
+  surfaceApiSdk: 'API & SDK',
+  surfaceTriggers: 'Triggers (cron & webhook)',
+  companyAsCodeEyebrow: 'Open & code-native',
+  companyAsCodeTitle: 'Your whole company, as code.',
+  companyAsCodeDescription:
+    'Every agent, skill, automation, and policy is a versioned file in a git repo you control. Diff it, review it, roll it back — like software. Run it on our cloud or self-host anywhere. No black box, no lock-in.',
+  companyAsCodeBulletConfig: 'Agents, skills, and automations as plain files',
+  companyAsCodeBulletAgents: 'Every change versioned, reviewable, reversible',
+  companyAsCodeBulletGit: 'One config, one source of truth per company',
+  companyAsCodeBulletSelfHost: 'Self-host on your cloud, VPC, or on-prem',
+  integrationsEyebrow: 'Connect everything',
+  integrationsTitle: 'One secure connection to every tool you run on.',
+  integrationsDescription:
+    '1-click connect to 3,000+ apps, plus any MCP, OpenAPI, or HTTP service. Agents get scoped, audited access through a single secure gateway — one connection, not fifty loose API keys.',
+  integrationsBulletOne: '3,000+ apps, one click',
+  integrationsBulletTwo: 'Bring any MCP, OpenAPI, or HTTP tool',
+  integrationsBulletThree: 'Scoped per person, per agent, per team',
+  integrationsBulletFour: 'Secrets stay encrypted and never leak into a session',
+  enterpriseEyebrow: 'Enterprise-ready',
+  enterpriseTitle: 'Secure enough to run the whole company.',
+  enterpriseDescription:
+    'Fine-grained control over who — and which agent — can do what, with hard isolation around every single run.',
+  enterpriseScopedTitle: 'Scoped access',
+  enterpriseScopedDescription:
+    'Per-resource permissions for every person and agent. SSO, RBAC, and groups.',
+  enterpriseApprovalsTitle: 'Human approval',
+  enterpriseApprovalsDescription:
+    'Agents pause for sign-off before they touch anything that matters.',
+  enterpriseIsolationTitle: 'Hard isolation',
+  enterpriseIsolationDescription:
+    'Every session runs in its own sandboxed machine — MicroVM-level isolation.',
+  enterpriseDataTitle: 'Own your data',
+  enterpriseDataDescription:
+    'Self-host, VPC, on-prem, or air-gapped. Your data, config, and models stay yours.',
+  ctaBadge: 'Get started',
+  statIntegrations: 'integrations out of the box',
+  statCommandCenter: 'command center for everything',
+  statAlwaysOn: 'agents that never clock out',
+  statOpenSelfHostable: 'open & self-hostable',
 } as const;
 
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
@@ -531,43 +449,11 @@ const INTEGRATIONS_ROW_1 = INTEGRATIONS.slice(0, INTEGRATIONS_MID);
 const INTEGRATIONS_ROW_2 = INTEGRATIONS.slice(INTEGRATIONS_MID, INTEGRATIONS_MID * 2);
 const INTEGRATIONS_ROW_3 = INTEGRATIONS.slice(INTEGRATIONS_MID);
 
-const WORK_LOOPS = [
-  {
-    id: 'finance',
-    titleKey: 'workLoopFinanceTitle',
-    promptKey: 'workLoopFinancePrompt',
-    agent: 'support-agent',
-    steps: [
-      ['workLoopAskLabel', 'workLoopFinanceAsk'],
-      ['workLoopWorkLabel', 'workLoopFinanceWork'],
-      ['workLoopReviewLabel', 'workLoopFinanceReview'],
-      ['workLoopDoneLabel', 'workLoopFinanceDone'],
-    ],
-  },
-  {
-    id: 'engineering',
-    titleKey: 'workLoopEngineeringTitle',
-    promptKey: 'workLoopEngineeringPrompt',
-    agent: 'engineering-agent',
-    steps: [
-      ['workLoopAskLabel', 'workLoopEngineeringAsk'],
-      ['workLoopWorkLabel', 'workLoopEngineeringWork'],
-      ['workLoopReviewLabel', 'workLoopEngineeringReview'],
-      ['workLoopDoneLabel', 'workLoopEngineeringDone'],
-    ],
-  },
-  {
-    id: 'sales',
-    titleKey: 'workLoopSalesTitle',
-    promptKey: 'workLoopSalesPrompt',
-    agent: 'research-agent',
-    steps: [
-      ['workLoopAskLabel', 'workLoopSalesAsk'],
-      ['workLoopWorkLabel', 'workLoopSalesWork'],
-      ['workLoopReviewLabel', 'workLoopSalesReview'],
-      ['workLoopDoneLabel', 'workLoopSalesDone'],
-    ],
-  },
+const HOW_IT_WORKS_STEPS = [
+  ['howItWorksStep1Label', 'howItWorksStep1Detail'],
+  ['howItWorksStep2Label', 'howItWorksStep2Detail'],
+  ['howItWorksStep3Label', 'howItWorksStep3Detail'],
+  ['howItWorksStep4Label', 'howItWorksStep4Detail'],
 ] as const;
 
 const USE_CASE_DEMOS = [
@@ -590,16 +476,6 @@ type UseCaseDemoCopy = {
 
 const SPLIT_PATHS = [
   {
-    icon: Building2,
-    eyebrowKey: 'splitCompaniesEyebrow',
-    titleKey: 'splitCompaniesTitle',
-    bodyKey: 'splitCompaniesBody',
-    points: ['splitCompaniesPointOne', 'splitCompaniesPointTwo', 'splitCompaniesPointThree'],
-    ctaKey: 'line149JsxTextTalkToSales',
-    href: DEMO_URL,
-    variant: 'secondary',
-  },
-  {
     icon: Code2,
     eyebrowKey: 'splitBuildersEyebrow',
     titleKey: 'splitBuildersTitle',
@@ -609,36 +485,16 @@ const SPLIT_PATHS = [
     href: '/auth',
     variant: 'default',
   },
-] as const;
-
-const WORKFORCE_MAP_CAPABILITIES = [
   {
-    icon: HiMiniSparkles,
-    titleKey: 'workforceMapAgentsTitle',
-    descKey: 'workforceMapAgentsDesc',
+    icon: Building2,
+    eyebrowKey: 'splitCompaniesEyebrow',
+    titleKey: 'splitCompaniesTitle',
+    bodyKey: 'splitCompaniesBody',
+    points: ['splitCompaniesPointOne', 'splitCompaniesPointTwo', 'splitCompaniesPointThree'],
+    ctaKey: 'line149JsxTextTalkToSales',
+    href: DEMO_URL,
+    variant: 'secondary',
   },
-  {
-    icon: GitBranch,
-    titleKey: 'workforceMapAutomationsTitle',
-    descKey: 'workforceMapAutomationsDesc',
-  },
-  {
-    icon: Box,
-    titleKey: 'workforceMapIntegrationsTitle',
-    descKey: 'workforceMapIntegrationsDesc',
-  },
-  {
-    icon: Server,
-    titleKey: 'workforceMapMemoryTitle',
-    descKey: 'workforceMapMemoryDesc',
-  },
-] as const;
-
-const WORKFORCE_MAP_DOMAINS = [
-  { icon: PiChatCircleDotsFill, labelKey: 'workforceMapPillCommunication' },
-  { icon: FileText, labelKey: 'workforceMapPillDocs' },
-  { icon: Code2, labelKey: 'workforceMapPillCode' },
-  { icon: Building2, labelKey: 'workforceMapPillCrm' },
 ] as const;
 
 function LogoMarqueeRows() {
@@ -721,19 +577,11 @@ function ChatMorningBriefReply() {
 }
 
 export default function LandingV4() {
-  const [activeLoopId, setActiveLoopId] = useState<(typeof WORK_LOOPS)[number]['id']>('finance');
   const [activeUseCaseId, setActiveUseCaseId] =
     useState<(typeof USE_CASE_DEMOS)[number]['id']>('triageCustomerSignals');
   const reduceMotion = useReducedMotion();
   const { user } = useAuth();
   const { formattedStars } = useGitHubStars('kortix-ai', 'kortix');
-  const activeLoop = WORK_LOOPS.find((loop) => loop.id === activeLoopId) ?? WORK_LOOPS[0];
-  const tHardcodedUi = {
-    raw: (path: string): any => {
-      const key = path.replace(/^appHomePage\./, '');
-      return LANDING_COPY[key as keyof typeof LANDING_COPY] ?? key;
-    },
-  };
   const tHome = useCallback(
     (key: string): any => LANDING_COPY[key as keyof typeof LANDING_COPY],
     [],
@@ -786,13 +634,6 @@ export default function LandingV4() {
     };
   }, [isChatDemoInView]);
 
-  const PATHS = [
-    'M0.999991 1.00002C0.999992 25.9576 458 1.00001 458 53',
-    'M326 1.00001C326 25.9575 471 1.00001 471 53',
-    'M955 1.00002C955 25.9576 498 1.00001 498 53',
-    'M630 1.00001C630 25.9575 485 1.00001 485 53',
-  ];
-
   return (
     <>
       <div className="bg-background relative">
@@ -812,14 +653,12 @@ export default function LandingV4() {
                 {tHome('heroDescription')}
               </p>
               <div className="mt-8 flex flex-wrap gap-3">
-                <Button size="xl" variant="secondary" asChild>
-                  <Link href={DEMO_URL}>
-                    {tHardcodedUi.raw('appHomePage.line149JsxTextTalkToSales')}
-                  </Link>
-                </Button>
                 <Button size="xl" onClick={handleLaunch}>
                   {tHome('startBuildingCta')}
                   <HiArrowRight className="size-4" />
+                </Button>
+                <Button size="xl" variant="secondary" asChild>
+                  <Link href={DEMO_URL}>{tHome('line149JsxTextTalkToSales')}</Link>
                 </Button>
               </div>
             </section>
@@ -831,95 +670,126 @@ export default function LandingV4() {
         </section>
 
         <section
-          id="work-loop"
+          id="company-as-code"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+        >
+          <Reveal>
+            <div className="mb-12 max-w-2xl">
+              <Eyebrow>{tHome('companyAsCodeEyebrow')}</Eyebrow>
+              <h2 className="mt-3 text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
+                {tHome('companyAsCodeTitle')}
+              </h2>
+              <p className="text-muted-foreground mt-4 text-base text-balance">
+                {tHome('companyAsCodeDescription')}
+              </p>
+            </div>
+          </Reveal>
+
+          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-14">
+            <Reveal>
+              <CodeWindow />
+            </Reveal>
+            <Reveal delay={0.1}>
+              <div className="w-full">
+                <ul className="space-y-3.5">
+                  {[
+                    'companyAsCodeBulletConfig',
+                    'companyAsCodeBulletAgents',
+                    'companyAsCodeBulletGit',
+                    'companyAsCodeBulletSelfHost',
+                  ].map((key, index) => (
+                    <li
+                      key={key}
+                      className="text-muted-foreground flex items-start gap-3 text-sm leading-relaxed"
+                    >
+                      <KortixAsterisk index={index} />
+                      {tHome(key)}
+                    </li>
+                  ))}
+                </ul>
+                <ItemGroup className="border-border mx-auto mt-8 overflow-hidden rounded border text-left">
+                  <Item
+                    asChild
+                    variant="muted"
+                    size="sm"
+                    className="group relative flex-nowrap rounded-none border-0"
+                  >
+                    <Link href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
+                      <ItemMedia variant="icon" className="rounded">
+                        <Icon.Github />
+                      </ItemMedia>
+                      <ItemContent>
+                        <ItemTitle>
+                          <span className="tabular-nums">{formattedStars}</span>{' '}
+                          {tHome('line267JsxTextStarsOnGitHub')}
+                        </ItemTitle>
+                        <ItemDescription>
+                          {tHome('line269JsxTextALeadingOpenSourceAIWorkspace')}
+                        </ItemDescription>
+                      </ItemContent>
+                      <ItemActions className="mt-auto">
+                        <span className="text-muted-foreground duration-slower absolute top-2 right-2 block shrink-0 origin-top-right translate-x-2 -translate-y-2 rotate-180 opacity-0 transition-all ease-in group-hover:translate-x-0 group-hover:translate-y-0 group-hover:-scale-100 group-hover:opacity-100 md:hidden [&>svg]:size-5">
+                          <TbChevronUpRight />
+                        </span>
+                        <span className="text-muted-foreground font-mono text-sm max-md:hidden">
+                          kortix-ai/kortix
+                        </span>
+                      </ItemActions>
+                    </Link>
+                  </Item>
+                </ItemGroup>
+              </div>
+            </Reveal>
+          </div>
+        </section>
+
+        <section
+          id="how-it-works"
           className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
         >
           <Reveal>
             <div className="mb-8 max-w-2xl">
-              <Eyebrow>{tHome('workLoopEyebrow')}</Eyebrow>
+              <Eyebrow>{tHome('howItWorksEyebrow')}</Eyebrow>
               <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {tHome('workLoopTitle')}
+                {tHome('howItWorksTitle')}
               </h2>
               <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                {tHome('workLoopDescription')}
+                {tHome('howItWorksDescription')}
               </p>
             </div>
           </Reveal>
           <Reveal delay={0.1}>
             <div className="border-border bg-card overflow-hidden rounded-sm border">
-              <div className="border-border/60 flex flex-wrap gap-2 border-b p-3">
-                {WORK_LOOPS.map((loop) => {
-                  const isActive = activeLoop.id === loop.id;
-                  return (
-                    <button
-                      key={loop.id}
-                      type="button"
-                      onClick={() => setActiveLoopId(loop.id)}
-                      className={cn(
-                        'relative rounded px-3 py-2 text-left text-sm font-medium transition-colors',
-                        isActive
-                          ? 'text-background'
-                          : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                      )}
-                    >
-                      {isActive && (
-                        <motion.span
-                          layoutId="workLoopActiveTab"
-                          aria-hidden
-                          className="bg-foreground pointer-events-none absolute inset-0 z-0 rounded"
-                          transition={
-                            reduceMotion
-                              ? { duration: 0 }
-                              : { type: 'spring', stiffness: 380, damping: 32 }
-                          }
-                        />
-                      )}
-                      <span className="relative z-10">{tHome(loop.titleKey)}</span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="grid gap-0 lg:grid-cols-[0.9fr_1.4fr]">
-                <div className="border-border/60 border-b p-6 lg:border-r lg:border-b-0">
-                  <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                    <HiMiniSparkles className="size-3.5" />
-                    {activeLoop.agent}
-                  </div>
-                  <p className="text-foreground mt-4 text-xl leading-snug font-medium">
-                    "{tHome(activeLoop.promptKey)}"
-                  </p>
-                </div>
-                <div className="grid sm:grid-cols-2">
-                  {activeLoop.steps.map(([labelKey, detailKey], index) => (
+              <div className="grid sm:grid-cols-2">
+                {HOW_IT_WORKS_STEPS.map(([labelKey, detailKey], index) => (
+                  <div
+                    key={labelKey}
+                    className={cn(
+                      'border-border/60 group p-6',
+                      index < 2 && 'border-b',
+                      index % 2 === 0 && 'sm:border-r',
+                    )}
+                  >
                     <div
-                      key={detailKey}
-                      className={cn(
-                        'border-border/60 group p-6',
-                        index < 2 && 'border-b',
-                        index % 2 === 0 && 'sm:border-r',
-                      )}
+                      className="animate-kortix-bullet-flow bg-size-[100%_300%] bg-clip-text font-mono text-xs font-semibold tracking-wider text-transparent uppercase"
+                      style={{
+                        backgroundImage: KORTIX_BULLET_GRADIENT,
+                        animationDelay: `${index * 0.3}s`,
+                      }}
                     >
-                      <div
-                        className="animate-kortix-bullet-flow bg-size-[100%_300%] bg-clip-text font-mono text-xs font-semibold tracking-wider text-transparent uppercase"
-                        style={{
-                          backgroundImage: KORTIX_BULLET_GRADIENT,
-                          animationDelay: `${index * 0.3}s`,
-                        }}
-                      >
-                        {tHome(labelKey)}
-                      </div>
-                      <p className="text-muted-foreground group-hover:text-foreground mt-3 text-sm leading-relaxed font-medium transition-colors duration-200">
-                        {tHome(detailKey)}
-                      </p>
+                      {tHome(labelKey)}
                     </div>
-                  ))}
-                </div>
+                    <p className="text-muted-foreground group-hover:text-foreground mt-3 text-sm leading-relaxed font-medium transition-colors duration-200">
+                      {tHome(detailKey)}
+                    </p>
+                  </div>
+                ))}
               </div>
             </div>
           </Reveal>
         </section>
 
-        <section id="scroll-card" className="py-16 sm:py-24">
+        <section id="surfaces" className="py-16 sm:py-24">
           <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 sm:gap-12">
             <Reveal>
               <div className="mb-12 max-w-2xl">
@@ -1458,272 +1328,21 @@ export default function LandingV4() {
         </section>
 
         <section
-          id="two-paths"
-          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
-        >
-          <Reveal>
-            <div className="mb-12 max-w-2xl">
-              <Eyebrow>{tHome('splitEyebrow')}</Eyebrow>
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {tHome('splitTitle')}
-              </h2>
-              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                {tHome('splitDescription')}
-              </p>
-            </div>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              {SPLIT_PATHS.map(
-                ({ icon: Icon, eyebrowKey, titleKey, bodyKey, points, ctaKey, href, variant }) => (
-                  <div
-                    key={titleKey}
-                    className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
-                  >
-                    <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                      <Icon className="size-4" />
-                      {tHome(eyebrowKey)}
-                    </div>
-                    <h3 className="text-foreground mt-5 text-2xl leading-tight font-medium tracking-tight">
-                      {tHome(titleKey)}
-                    </h3>
-                    <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                      {tHome(bodyKey)}
-                    </p>
-                    <ul className="mt-6 space-y-3 pb-8">
-                      {points.map((pointKey, index) => (
-                        <li
-                          key={pointKey}
-                          className="text-muted-foreground flex items-start gap-3 text-sm leading-relaxed"
-                        >
-                          <KortixAsterisk index={index} />
-                          {tHome(pointKey)}
-                        </li>
-                      ))}
-                    </ul>
-                    <Button asChild size="lg" className="mt-auto" variant={variant}>
-                      <Link href={href}>
-                        {tHome(ctaKey)}
-                        <HiArrowRight className="size-4" />
-                      </Link>
-                    </Button>
-                  </div>
-                ),
-              )}
-            </div>
-          </Reveal>
-        </section>
-
-        <section
-          id="code-window"
-          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
-        >
-          <Reveal>
-            <div className="mb-12 max-w-2xl">
-              <Eyebrow>{tHome('companyAsCodeEyebrow')}</Eyebrow>
-              <h2 className="mt-3 text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
-                {tHome('companyAsCodeTitle')}
-              </h2>
-              <p className="text-muted-foreground mt-4 text-base text-balance">
-                {tHome('companyAsCodeDescription')}
-              </p>
-            </div>
-          </Reveal>
-
-          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-14">
-            <Reveal>
-              <CodeWindow />
-            </Reveal>
-            <Reveal delay={0.1}>
-              <div className="w-full">
-                <ul className="space-y-3.5">
-                  {[
-                    'companyAsCodeBulletConfig',
-                    'companyAsCodeBulletAgents',
-                    'companyAsCodeBulletGit',
-                    'companyAsCodeBulletSelfHost',
-                  ].map((key, index) => (
-                    <li
-                      key={key}
-                      className="text-muted-foreground flex items-start gap-3 text-sm leading-relaxed"
-                    >
-                      <KortixAsterisk index={index} />
-                      {tHome(key)}
-                    </li>
-                  ))}
-                </ul>
-                <ItemGroup className="border-border mx-auto mt-8 overflow-hidden rounded border text-left">
-                  <Item
-                    asChild
-                    variant="muted"
-                    size="sm"
-                    className="group relative flex-nowrap rounded-none border-0"
-                  >
-                    <Link href={GITHUB_URL} target="_blank" rel="noopener noreferrer">
-                      <ItemMedia variant="icon" className="rounded">
-                        <Icon.Github />
-                      </ItemMedia>
-                      <ItemContent>
-                        <ItemTitle>
-                          <span className="tabular-nums">{formattedStars}</span>{' '}
-                          {tHardcodedUi.raw('appHomePage.line267JsxTextStarsOnGitHub')}
-                        </ItemTitle>
-                        <ItemDescription>
-                          {tHardcodedUi.raw(
-                            'appHomePage.line269JsxTextALeadingOpenSourceAIWorkspace',
-                          )}
-                        </ItemDescription>
-                      </ItemContent>
-                      <ItemActions className="mt-auto">
-                        <span className="text-muted-foreground duration-slower absolute top-2 right-2 block shrink-0 origin-top-right translate-x-2 -translate-y-2 rotate-180 opacity-0 transition-all ease-in group-hover:translate-x-0 group-hover:translate-y-0 group-hover:-scale-100 group-hover:opacity-100 md:hidden [&>svg]:size-5">
-                          <TbChevronUpRight />
-                        </span>
-                        <span className="text-muted-foreground font-mono text-sm max-md:hidden">
-                          kortix-ai/kortix
-                        </span>
-                      </ItemActions>
-                    </Link>
-                  </Item>
-                </ItemGroup>
-              </div>
-            </Reveal>
-          </div>
-        </section>
-
-        <section
-          id="workspace-map"
-          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
-        >
-          <Reveal>
-            <div className="mb-12 max-w-2xl">
-              <Eyebrow>{tHome('workforceMapEyebrow')}</Eyebrow>
-              <h2 className="mt-3 text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
-                {tHome('workforceMapTitle')}
-              </h2>
-              <p className="text-muted-foreground mt-4 text-base text-balance">
-                {tHome('workforceMapDescription')}
-              </p>
-            </div>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <section className="flex flex-col items-center gap-5 pb-24 md:gap-0">
-              <div className="relative grid w-full grid-cols-2 gap-5 md:grid-cols-4">
-                {WORKFORCE_MAP_CAPABILITIES.map(({ icon: Icon, titleKey, descKey }) => (
-                  <div
-                    key={titleKey}
-                    className="group border-border bg-card hover:bg-background flex w-full flex-col justify-between gap-4 rounded-sm border p-4 shadow-sm transition md:aspect-[283/200]"
-                  >
-                    <div className="bg-secondary group-hover:bg-card self-start rounded-lg p-2.5">
-                      <Icon className="text-foreground size-5 shrink-0" />
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                      <p className="text-foreground text-base transition">{tHome(titleKey)}</p>
-                      <p className="text-muted-foreground text-sm text-balance transition">
-                        {tHome(descKey)}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <svg
-                viewBox="0 0 956 54"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="text-border mx-auto hidden max-w-[956px] md:block"
-              >
-                <defs>
-                  <linearGradient id="flow" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="var(--kortix-blue)" />
-                    <stop offset="100%" stopColor="var(--background)" />
-                  </linearGradient>
-
-                  <linearGradient id="reveal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="white" stopOpacity="0" />
-                    <stop offset="45%" stopColor="white" stopOpacity="1" />
-                    <stop offset="55%" stopColor="white" stopOpacity="1" />
-                    <stop offset="100%" stopColor="white" stopOpacity="0" />
-                    <animateTransform
-                      attributeName="gradientTransform"
-                      type="translate"
-                      from="0 -1"
-                      to="0 1"
-                      dur="2.5s"
-                      repeatCount="indefinite"
-                    />
-                  </linearGradient>
-
-                  <mask id="mask">
-                    <rect width="956" height="54" fill="url(#reveal)" />
-                  </mask>
-                </defs>
-
-                {PATHS.map((d, i) => (
-                  <path
-                    key={`b${i}`}
-                    d={d}
-                    stroke="currentColor"
-                    strokeOpacity="0.5"
-                    strokeWidth="2"
-                  />
-                ))}
-
-                <g mask="url(#mask)">
-                  {PATHS.map((d, i) => (
-                    <path key={`g${i}`} d={d} stroke="url(#flow)" strokeWidth="2" />
-                  ))}
-                </g>
-              </svg>
-
-              <div className="text-body-sm relative mx-auto grid w-full max-w-[856px] grid-flow-col-dense grid-cols-3 grid-rows-2 items-center gap-2 md:mx-auto md:flex md:w-auto md:flex-row md:gap-5">
-                {WORKFORCE_MAP_DOMAINS.slice(0, 2).map(({ icon: Icon, labelKey }) => (
-                  <div
-                    key={labelKey}
-                    className="group bg-card text-foreground border-border flex h-[46px] items-center justify-center gap-0.5 rounded-sm border px-6 py-3 transition md:gap-2"
-                  >
-                    <Icon className="size-4 shrink-0" />
-                    <p>{tHome(labelKey)}</p>
-                  </div>
-                ))}
-
-                <div className="group text-foreground bg-foreground row-span-2 flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-sm px-6 py-3 transition hover:brightness-90 md:h-[64px] md:w-[105px] md:gap-2">
-                  <KortixLogo className="text-background" />
-                </div>
-
-                {WORKFORCE_MAP_DOMAINS.slice(2, 4).map(({ icon: Icon, labelKey }) => (
-                  <div
-                    key={labelKey}
-                    className="group bg-card text-foreground border-border flex h-[46px] items-center justify-center gap-0.5 rounded-sm border px-6 py-3 transition md:gap-2"
-                  >
-                    <Icon className="size-4 shrink-0" />
-                    <p>{tHome(labelKey)}</p>
-                  </div>
-                ))}
-
-                <div className="bg-border absolute top-1/2 left-0 z-[-1] hidden h-[2px] w-full md:block"></div>
-              </div>
-            </section>
-          </Reveal>
-        </section>
-
-        <section
           id="integrations"
           className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
         >
           <Reveal>
-            <div className="mb-14 max-w-2xl">
+            <div className="mb-8 max-w-2xl">
               <Eyebrow>{tHome('integrationsEyebrow')}</Eyebrow>
-              <h2 className="text-muted-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {tHome('integrationsTitlePrefix')}{' '}
-                <span className="text-foreground font-medium">
-                  {tHome('integrationsTitle')}
-                </span>{' '}
+              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+                {tHome('integrationsTitle')}
               </h2>
               <p className="text-muted-foreground mt-4 text-base leading-relaxed">
                 {tHome('integrationsDescription')}
               </p>
             </div>
           </Reveal>
+
           <LogoMarqueeRows />
         </section>
 
@@ -1762,8 +1381,8 @@ export default function LandingV4() {
                 },
                 {
                   icon: Server,
-                  titleKey: 'enterpriseDeployTitle',
-                  descriptionKey: 'enterpriseDeployDescription',
+                  titleKey: 'enterpriseDataTitle',
+                  descriptionKey: 'enterpriseDataDescription',
                 },
               ].map(({ icon: Icon, titleKey, descriptionKey }) => (
                 <div key={titleKey} className="flex flex-col space-y-6">
@@ -1778,6 +1397,72 @@ export default function LandingV4() {
                   </span>
                 </div>
               ))}
+            </div>
+          </Reveal>
+        </section>
+
+        <section
+          id="two-paths"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+        >
+          <Reveal>
+            <div className="mb-12 max-w-2xl">
+              <Eyebrow>{tHome('splitEyebrow')}</Eyebrow>
+              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+                {tHome('splitTitle')}
+              </h2>
+              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
+                {tHome('splitDescription')}
+              </p>
+            </div>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {SPLIT_PATHS.map(
+                ({
+                  icon: PathIcon,
+                  eyebrowKey,
+                  titleKey,
+                  bodyKey,
+                  points,
+                  ctaKey,
+                  href,
+                  variant,
+                }) => (
+                  <div
+                    key={titleKey}
+                    className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
+                  >
+                    <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
+                      <PathIcon className="size-4" />
+                      {tHome(eyebrowKey)}
+                    </div>
+                    <h3 className="text-foreground mt-5 text-2xl leading-tight font-medium tracking-tight">
+                      {tHome(titleKey)}
+                    </h3>
+                    <p className="text-muted-foreground mt-4 text-base leading-relaxed">
+                      {tHome(bodyKey)}
+                    </p>
+                    <ul className="mt-6 space-y-3 pb-8">
+                      {points.map((pointKey, index) => (
+                        <li
+                          key={pointKey}
+                          className="text-muted-foreground flex items-start gap-3 text-sm leading-relaxed"
+                        >
+                          <KortixAsterisk index={index} />
+                          {tHome(pointKey)}
+                        </li>
+                      ))}
+                    </ul>
+                    <Button asChild size="lg" className="mt-auto" variant={variant}>
+                      <Link href={href}>
+                        {tHome(ctaKey)}
+                        <HiArrowRight className="size-4" />
+                      </Link>
+                    </Button>
+                  </div>
+                ),
+              )}
             </div>
           </Reveal>
         </section>
@@ -1938,38 +1623,27 @@ export default function LandingV4() {
                 <div className="col-span-4 flex flex-col items-start justify-start space-y-4 p-6 *:text-left">
                   <div className="space-y-2">
                     <Badge variant="update" className="rounded">
-                      Start building
+                      {tHome('ctaBadge')}
                     </Badge>
                     <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                      {tHardcodedUi.raw('appHomePage.line331JsxTextGiveYourCompanyAWorkforce')}
+                      {tHome('line331JsxTextGiveYourCompanyAWorkforce')}
                     </h2>
-
-                    <ul className="mt-6 space-y-3 pb-8">
-                      {(
-                        tHardcodedUi.raw(
-                          'appHomePage.line334JsxTextFreeToSelfHostManagedCloudFrom20',
-                        ) as string[]
-                      ).map((line, index) => (
-                        <li
-                          key={line}
-                          className="text-muted-foreground flex items-start gap-3 text-sm leading-relaxed"
-                        >
-                          <KortixAsterisk index={index} />
-                          {line}
-                        </li>
-                      ))}
-                    </ul>
+                    <p className="text-muted-foreground mt-4 text-sm leading-relaxed">
+                      {tHome('line334JsxTextFreeToSelfHostManagedCloudFrom20')}
+                    </p>
                   </div>
+
+                  <p className="text-muted-foreground font-mono text-xs tracking-wider">
+                    {tHome('line342JsxTextOpenSourceSSORBACOnPremNoLock')}
+                  </p>
 
                   <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
                     <Button size="lg" className="w-full" onClick={handleLaunch}>
-                      {tHardcodedUi.raw('appHomePage.line337JsxTextGetStarted')}
+                      {tHome('line337JsxTextGetStarted')}
                       <HiArrowRight className="size-4" />
                     </Button>
                     <Button asChild size="lg" className="w-full" variant="accent">
-                      <Link href={DEMO_URL}>
-                        {tHardcodedUi.raw('appHomePage.line338JsxTextTalkToSales')}
-                      </Link>
+                      <Link href={DEMO_URL}>{tHome('line338JsxTextTalkToSales')}</Link>
                     </Button>
                   </div>
                 </div>
