@@ -17,6 +17,7 @@ import { featureFlags } from '@/lib/feature-flags';
 import { connection } from 'next/server';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
+import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
 import { headers } from 'next/headers';
 
@@ -298,6 +299,7 @@ export default async function RootLayout({
         >
           <BrowserNoiseGuard />
           <DesktopChrome />
+          <DesktopUrlPrompt />
           <AuthProvider>
             <I18nProvider>
               <ReactQueryProvider>

@@ -205,7 +205,7 @@ jobs:
     needs: version
     runs-on: ${{ matrix.runner }}
     env:
-      DESKTOP_URL: https://kortix.com/dashboard
+      DESKTOP_URL: https://kortix.com/projects
     strategy:
       fail-fast: false
       matrix:

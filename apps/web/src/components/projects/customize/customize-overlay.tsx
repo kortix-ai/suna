@@ -185,8 +185,10 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
           Customize {projectName || 'project'}
         </DialogTitle>
 
-        {/* Header */}
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 pl-4 pr-2">
+        {/* Header. `kx-customize-header` indents the title past the OS window
+            controls on desktop (macOS traffic lights left; Win/Linux controls
+            right) without adding vertical space. No-op on the web. */}
+        <div className="kx-customize-header flex h-12 shrink-0 items-center justify-between border-b border-border/60 pl-4 pr-2">
           <div className="flex min-w-0 items-center gap-2 text-sm">
             <SlidersHorizontal className="size-4 shrink-0 text-muted-foreground" />
             <span className="font-medium text-foreground">Customize</span>
