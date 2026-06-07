@@ -5,12 +5,9 @@
  */
 import { describe, expect, test } from 'bun:test';
 import {
-  applyAuth,
-  buildHttpRequest,
-  buildMcpRequest,
   executeCall,
   paramHintsFromSchema,
-  performRequest,
+  parseResponseBody,
   type ExecutorAuth,
   type FetchImpl,
 } from '../executor/execute';
@@ -26,36 +23,83 @@ function recordingFetch(status = 200, responseBody = '{"ok":true}') {
   return { fetchImpl, calls };
 }
 
-describe('applyAuth', () => {
-  test('bearer with default + custom prefix', () => {
-    const h: Record<string, string> = {};
-    applyAuth(h, new URLSearchParams(), BEARER, 'sk_123');
-    expect(h.Authorization).toBe('Bearer sk_123');
-    const h2: Record<string, string> = {};
-    applyAuth(h2, new URLSearchParams(), { ...BEARER, prefix: 'Token' }, 'sk_123');
-    expect(h2.Authorization).toBe('Token sk_123');
+describe('auth attachment', () => {
+  test('bearer with default + custom prefix', async () => {
+    const defaults = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'GET', path: '/users' },
+      baseUrl: 'https://api.example.com',
+      auth: BEARER,
+      secret: 'sk_123',
+      fetchImpl: defaults.fetchImpl,
+    });
+    expect(defaults.calls[0]!.headers.Authorization).toBe('Bearer sk_123');
+
+    const custom = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'GET', path: '/users' },
+      baseUrl: 'https://api.example.com',
+      auth: { ...BEARER, prefix: 'Token' },
+      secret: 'sk_123',
+      fetchImpl: custom.fetchImpl,
+    });
+    expect(custom.calls[0]!.headers.Authorization).toBe('Token sk_123');
   });
 
-  test('basic base64-encodes', () => {
-    const h: Record<string, string> = {};
-    applyAuth(h, new URLSearchParams(), { type: 'basic', in: 'header', name: null, prefix: null }, 'user:pass');
-    expect(h.Authorization).toBe(`Basic ${Buffer.from('user:pass').toString('base64')}`);
+  test('basic base64-encodes', async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'GET', path: '/users' },
+      baseUrl: 'https://api.example.com',
+      auth: { type: 'basic', in: 'header', name: null, prefix: null },
+      secret: 'user:pass',
+      fetchImpl,
+    });
+    expect(calls[0]!.headers.Authorization).toBe(`Basic ${Buffer.from('user:pass').toString('base64')}`);
   });
 
-  test('custom header + custom query + prefix', () => {
-    const h: Record<string, string> = {};
-    applyAuth(h, new URLSearchParams(), { type: 'custom', in: 'header', name: 'X-API-Key', prefix: null }, 'k');
-    expect(h['X-API-Key']).toBe('k');
-    const q = new URLSearchParams();
-    applyAuth({}, q, { type: 'custom', in: 'query', name: 'api_key', prefix: 'tok_' }, 'k');
-    expect(q.get('api_key')).toBe('tok_k');
+  test('custom header + custom query + prefix', async () => {
+    const header = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'GET', path: '/users' },
+      baseUrl: 'https://api.example.com',
+      auth: { type: 'custom', in: 'header', name: 'X-API-Key', prefix: null },
+      secret: 'k',
+      fetchImpl: header.fetchImpl,
+    });
+    expect(header.calls[0]!.headers['X-API-Key']).toBe('k');
+
+    const query = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'GET', path: '/users' },
+      baseUrl: 'https://api.example.com',
+      auth: { type: 'custom', in: 'query', name: 'api_key', prefix: 'tok_' },
+      secret: 'k',
+      fetchImpl: query.fetchImpl,
+    });
+    expect(new URL(query.calls[0]!.url).searchParams.get('api_key')).toBe('tok_k');
   });
 
-  test('none / missing secret attaches nothing', () => {
-    const h: Record<string, string> = {};
-    applyAuth(h, new URLSearchParams(), { type: 'none', in: 'header', name: null, prefix: null }, 'x');
-    applyAuth(h, new URLSearchParams(), BEARER, null);
-    expect(Object.keys(h)).toHaveLength(0);
+  test('none / missing secret attaches nothing', async () => {
+    const none = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'GET', path: '/users' },
+      baseUrl: 'https://api.example.com',
+      auth: { type: 'none', in: 'header', name: null, prefix: null },
+      secret: 'x',
+      fetchImpl: none.fetchImpl,
+    });
+    expect(Object.keys(none.calls[0]!.headers)).toHaveLength(0);
+
+    const missing = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'GET', path: '/users' },
+      baseUrl: 'https://api.example.com',
+      auth: BEARER,
+      secret: null,
+      fetchImpl: missing.fetchImpl,
+    });
+    expect(Object.keys(missing.calls[0]!.headers)).toHaveLength(0);
   });
 });
 
@@ -70,57 +114,74 @@ describe('paramHintsFromSchema', () => {
   });
 });
 
-describe('buildHttpRequest', () => {
-  test('substitutes path params, routes query, attaches bearer', () => {
-    const req = buildHttpRequest({
+describe('HTTP execution request shape', () => {
+  test('substitutes path params, routes query, attaches bearer', async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'get', path: '/pets/{petId}' },
       baseUrl: 'https://api.example.com/v1/',
-      method: 'get',
-      pathTemplate: '/pets/{petId}',
       auth: BEARER,
       secret: 'sk',
       args: { petId: 'p1', limit: 10 },
       paramHints: { petId: 'path', limit: 'query' },
+      fetchImpl,
     });
-    expect(req.method).toBe('GET');
-    expect(req.url).toBe('https://api.example.com/v1/pets/p1?limit=10');
-    expect(req.headers.Authorization).toBe('Bearer sk');
-    expect(req.body).toBeUndefined();
+    expect(calls[0]!.method).toBe('GET');
+    expect(calls[0]!.url).toBe('https://api.example.com/v1/pets/p1?limit=10');
+    expect(calls[0]!.headers.Authorization).toBe('Bearer sk');
+    expect(calls[0]!.body).toBeUndefined();
   });
 
-  test('POST puts unhinted args in JSON body; explicit body wins', () => {
-    const req = buildHttpRequest({
+  test('POST puts unhinted args in JSON body; explicit body wins', async () => {
+    const implicit = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'post', path: '/pets' },
       baseUrl: 'https://api.example.com',
-      method: 'post',
-      pathTemplate: '/pets',
       args: { name: 'Rex', tag: 'dog' },
+      fetchImpl: implicit.fetchImpl,
     });
-    expect(req.method).toBe('POST');
-    expect(req.headers['Content-Type']).toBe('application/json');
-    expect(JSON.parse(req.body!)).toEqual({ name: 'Rex', tag: 'dog' });
+    expect(implicit.calls[0]!.method).toBe('POST');
+    expect(implicit.calls[0]!.headers['Content-Type']).toBe('application/json');
+    expect(JSON.parse(implicit.calls[0]!.body!)).toEqual({ name: 'Rex', tag: 'dog' });
 
-    const req2 = buildHttpRequest({
+    const explicit = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'post', path: '/pets' },
       baseUrl: 'https://api.example.com',
-      method: 'post',
-      pathTemplate: '/pets',
       args: { body: { name: 'Rex' }, extra: 'ignored-into-body-too?' },
+      fetchImpl: explicit.fetchImpl,
     });
-    expect(JSON.parse(req2.body!)).toEqual({ name: 'Rex' }); // explicit body wins
+    expect(JSON.parse(explicit.calls[0]!.body!)).toEqual({ name: 'Rex' }); // explicit body wins
   });
 
-  test('GET routes unhinted args to query', () => {
-    const req = buildHttpRequest({ baseUrl: 'https://x', method: 'get', pathTemplate: '/s', args: { q: 'hi', n: 2 } });
-    expect(req.url).toContain('q=hi');
-    expect(req.url).toContain('n=2');
-    expect(req.body).toBeUndefined();
+  test('GET routes unhinted args to query', async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    await executeCall({
+      binding: { kind: 'http', method: 'get', path: '/s' },
+      baseUrl: 'https://x',
+      args: { q: 'hi', n: 2 },
+      fetchImpl,
+    });
+    expect(calls[0]!.url).toContain('q=hi');
+    expect(calls[0]!.url).toContain('n=2');
+    expect(calls[0]!.body).toBeUndefined();
   });
 });
 
-describe('buildMcpRequest', () => {
-  test('builds JSON-RPC tools/call with auth', () => {
-    const req = buildMcpRequest({ url: 'https://mcp.x/mcp', auth: BEARER, secret: 'tok', toolName: 'search', args: { q: 'a' } });
-    expect(req.method).toBe('POST');
-    expect(req.headers.Authorization).toBe('Bearer tok');
-    expect(JSON.parse(req.body!)).toMatchObject({
+describe('MCP execution request shape', () => {
+  test('builds JSON-RPC tools/call with auth', async () => {
+    const { fetchImpl, calls } = recordingFetch();
+    await executeCall({
+      binding: { kind: 'mcp', tool: 'search' },
+      baseUrl: 'https://mcp.x/mcp',
+      auth: BEARER,
+      secret: 'tok',
+      args: { q: 'a' },
+      fetchImpl,
+    });
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.headers.Authorization).toBe('Bearer tok');
+    expect(JSON.parse(calls[0]!.body!)).toMatchObject({
       jsonrpc: '2.0',
       method: 'tools/call',
       params: { name: 'search', arguments: { q: 'a' } },
@@ -128,18 +189,15 @@ describe('buildMcpRequest', () => {
   });
 });
 
-describe('performRequest', () => {
+describe('parseResponseBody', () => {
   test('parses JSON, falls back to text', async () => {
-    const json = recordingFetch(200, '{"a":1}');
-    expect(await performRequest({ url: 'u', method: 'GET', headers: {} }, json.fetchImpl)).toEqual({ status: 200, ok: true, data: { a: 1 } });
-    const txt = recordingFetch(500, 'boom');
-    expect(await performRequest({ url: 'u', method: 'GET', headers: {} }, txt.fetchImpl)).toEqual({ status: 500, ok: false, data: 'boom' });
+    expect(parseResponseBody('{"a":1}')).toEqual({ a: 1 });
+    expect(parseResponseBody('boom')).toBe('boom');
   });
 
-  test('parses SSE-framed JSON (MCP streamable-HTTP)', async () => {
-    const sse = recordingFetch(200, 'event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"hi"}]}}\n\n');
-    const res = await performRequest({ url: 'u', method: 'POST', headers: {} }, sse.fetchImpl);
-    expect((res.data as any).result.content[0].text).toBe('hi');
+  test('parses SSE-framed JSON (MCP streamable-HTTP)', () => {
+    const res = parseResponseBody('event: message\ndata: {"jsonrpc":"2.0","id":1,"result":{"content":[{"type":"text","text":"hi"}]}}\n\n');
+    expect((res as any).result.content[0].text).toBe('hi');
   });
 });
 
