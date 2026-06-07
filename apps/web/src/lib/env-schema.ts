@@ -55,6 +55,13 @@ const RuntimeEnvSchema = z.object({
   SUPABASE_URL: supabaseUrlSchema,
   SUPABASE_ANON_KEY: z.string().min(1, 'SUPABASE_ANON_KEY is required'),
   BACKEND_URL: backendUrlSchema,
+  /** Publicly-reachable API ORIGIN (scheme://host, no /v1) for webhooks that
+   *  EXTERNAL services (e.g. Slack) must call. BACKEND_URL can't serve this: in
+   *  local dev it's intentionally localhost so the BROWSER talks to the API
+   *  directly. This carries the same public origin sandbox callbacks use — the
+   *  dev Cloudflare tunnel locally, the real API origin in prod. Optional;
+   *  callers fall back to BACKEND_URL when unset. */
+  WEBHOOK_BASE_URL: z.string().optional(),
   /** Whether billing/paywall UI is enabled. Mirrors the backend's
    *  KORTIX_BILLING_INTERNAL_ENABLED. Set via NEXT_PUBLIC_BILLING_ENABLED. */
   BILLING_ENABLED: z.boolean().default(false),
