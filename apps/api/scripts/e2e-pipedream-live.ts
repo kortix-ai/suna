@@ -23,7 +23,6 @@
  */
 import {
   pipedreamConfigured,
-  externalUserId,
   pipedreamConnectUrl,
   pipedreamListAccounts,
   pipedreamCatalog,
@@ -35,6 +34,10 @@ const APP = (process.env.PD_APP ?? 'gmail').trim();
 const SLUG = APP;
 // A stable external-user key so re-runs reuse an existing authorization.
 const PROJECT_KEY = process.env.PD_PROJECT_KEY ?? 'e2e-pipedream-live';
+
+function externalUserId(projectId: string, slug: string): string {
+  return `${projectId}:${slug}`;
+}
 
 let passed = 0;
 let failed = 0;

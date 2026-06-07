@@ -2,7 +2,6 @@ import { reopenComputeForSandbox } from '../../billing/services/compute-metering
 import { config, type SandboxProviderName } from '../../config';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
-import { auth, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { db } from '../../shared/db';

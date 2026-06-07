@@ -121,7 +121,7 @@ type CrudOutcome =
   | { ok: true; sync?: SyncResult }
   | { ok: false; error: string; status: number };
 
-export type PolicyAction = 'always_run' | 'require_approval' | 'block';
+type PolicyAction = 'always_run' | 'require_approval' | 'block';
 export type DefaultMode = 'risk' | 'allow_all';
 
 export interface ProjectPolicyView {

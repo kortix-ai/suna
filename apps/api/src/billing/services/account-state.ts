@@ -12,7 +12,6 @@ import {
   isLegacyPaidTier,
   isPerSeatAccount,
   canClaimPerSeat,
-  MINIMUM_CREDIT_FOR_RUN,
   PER_SEAT_PRICE_USD,
   TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD,
   TYPICAL_LLM_BUDGET_PER_SEAT_USD,
@@ -23,7 +22,6 @@ import { getAutoTopupSettings } from './auto-topup';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
 import { db } from '../../shared/db';
-import { config } from '../../config';
 import type {
   AccountStateResponse,
   ScheduledChange,

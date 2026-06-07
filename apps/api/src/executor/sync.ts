@@ -7,7 +7,7 @@
  * a connector that can't be reached is stored with status='error' + 0 actions,
  * never failing the whole sweep. See docs/specs/executor.md §3, §7.
  */
-import { and, eq } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { parse as parseToml } from 'smol-toml';
 import {
   executorConnectorActions,

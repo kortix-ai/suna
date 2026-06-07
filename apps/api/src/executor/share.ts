@@ -11,7 +11,7 @@
  *
  * See docs/specs/executor.md §6.
  */
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import {
   accountGroupMembers,
   projectSecretGrants,
