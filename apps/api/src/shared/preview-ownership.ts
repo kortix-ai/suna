@@ -166,17 +166,3 @@ export async function resolvePreviewUserContext(
   const entry = await getOrCompute(previewSandboxId, userId);
   return entry.payload;
 }
-
-export function clearPreviewOwnershipCache(): void {
-  previewContextCache.clear();
-}
-
-/** Drop every cached entry for a user. */
-export function invalidatePreviewCacheForUser(userId: string): void {
-  const suffix = `:${userId}`;
-  for (const key of previewContextCache.keys()) {
-    if (key.endsWith(suffix)) {
-      previewContextCache.delete(key);
-    }
-  }
-}

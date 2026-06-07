@@ -153,7 +153,6 @@ mock.module('../shared/preview-ownership', () => ({
     userId && mockDbSandbox && mockDbMembership
       ? { userId, sandboxId: mockSandboxRows()[0]?.sandboxId ?? sandboxId, sandboxRole: 'member', scopes: ['*'] }
       : null,
-  clearPreviewOwnershipCache: () => {},
 }));
 
 // Daytona SDK mock

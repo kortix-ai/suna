@@ -79,7 +79,3 @@ export function getSandboxProvider(id: string): SandboxProviderAdapter {
   }
   return adapter;
 }
-
-export function listSandboxProviders(): SandboxProviderAdapter[] {
-  return [...ADAPTERS.values()];
-}

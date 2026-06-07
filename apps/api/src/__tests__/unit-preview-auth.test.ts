@@ -16,7 +16,6 @@ mock.module('../shared/preview-ownership', () => ({
     if (userId) return mockResolvedAccountId === mockSandboxAccountId;
     return false;
   },
-  clearPreviewOwnershipCache: () => {},
 }));
 
 mock.module('../shared/resolve-account', () => ({
