@@ -57,6 +57,10 @@ if (SENTRY_DSN) {
       'MetaMask extension not found',
       'Looks like your website URL has changed',
       'CookieYes account',
+      // Injected scripts / extensions / scanner bots monkey-patching the native
+      // (read-only) Promise prototype, e.g. `promise.then = ...`. Always external.
+      "Cannot assign to read only property 'then' of object '#<Promise>'",
+      'Cannot assign to read only property',
       // Test-only synthetic events
       'E2E FINAL:',
       'E2E test:',

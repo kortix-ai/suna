@@ -5,6 +5,13 @@ const KNOWN_BROWSER_NOISE_MESSAGES = [
   'MetaMask extension not found',
   'Looks like your website URL has changed',
   'CookieYes account',
+  // Third-party injected scripts / extensions / scanner bots that monkey-patch
+  // native Promise internals (e.g. `promise.then = ...`). The native Promise
+  // prototype is read-only, so the assignment throws a TypeError that surfaces
+  // via onunhandledrejection — it is never our code. Seen from headless
+  // tech-detection crawlers hitting the marketing site.
+  "Cannot assign to read only property 'then' of object '#<Promise>'",
+  'Cannot assign to read only property',
 ] as const;
 
 const KNOWN_TEST_NOISE_MESSAGES = [
@@ -51,12 +58,12 @@ function extractMessage(value: unknown): string {
   return '';
 }
 
-function isKnownBrowserNoiseMessage(message: unknown): boolean {
+export function isKnownBrowserNoiseMessage(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, KNOWN_BROWSER_NOISE_MESSAGES);
 }
 
-function isExtensionSource(filename: unknown): boolean {
+export function isExtensionSource(filename: unknown): boolean {
   const normalized = normalizeString(filename);
   return EXTENSION_PROTOCOL_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
@@ -101,7 +108,7 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   return isExtensionSource(input.filename) && normalizeString(message).includes('runtime.sendMessage');
 }
 
-function shouldIgnoreSentryBrowserNoise(event: {
+export function shouldIgnoreSentryBrowserNoise(event: {
   message?: unknown;
   request?: { url?: unknown };
   exception?: {
