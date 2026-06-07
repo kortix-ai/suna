@@ -7,6 +7,7 @@ import { Reveal } from '@/components/home/reveal';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
+import { Badge } from '@/components/ui/badge';
 import {
   Item,
   ItemActions,
@@ -1355,10 +1356,8 @@ export default function Home() {
                       <Icon className="text-foreground size-5 shrink-0" />
                     </div>
                     <div className="flex flex-col gap-0.5">
-                      <p className="text-body-emphasis text-foreground transition">
-                        {tHome(titleKey)}
-                      </p>
-                      <p className="text-body-sm text-muted-foreground transition">
+                      <p className="text-foreground text-base transition">{tHome(titleKey)}</p>
+                      <p className="text-muted-foreground text-sm text-balance transition">
                         {tHome(descKey)}
                       </p>
                     </div>
@@ -1675,26 +1674,31 @@ export default function Home() {
           <Reveal>
             <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
               <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
-                <div className="col-span-4 flex flex-col items-start justify-start p-6 *:text-left">
-                  <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                    {tHardcodedUi.raw('appHomePage.line331JsxTextGiveYourCompanyAWorkforce')}
-                  </h2>
+                <div className="col-span-4 flex flex-col items-start justify-start space-y-4 p-6 *:text-left">
+                  <div className="space-y-2">
+                    <Badge variant="update" className="rounded">
+                      Start building
+                    </Badge>
+                    <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
+                      {tHardcodedUi.raw('appHomePage.line331JsxTextGiveYourCompanyAWorkforce')}
+                    </h2>
 
-                  <ul className="mt-6 space-y-3 pb-8">
-                    {(
-                      tHardcodedUi.raw(
-                        'appHomePage.line334JsxTextFreeToSelfHostManagedCloudFrom20',
-                      ) as string[]
-                    ).map((line, index) => (
-                      <li
-                        key={line}
-                        className="text-muted-foreground flex items-start gap-3 text-sm leading-relaxed"
-                      >
-                        <KortixAsterisk index={index} />
-                        {line}
-                      </li>
-                    ))}
-                  </ul>
+                    <ul className="mt-6 space-y-3 pb-8">
+                      {(
+                        tHardcodedUi.raw(
+                          'appHomePage.line334JsxTextFreeToSelfHostManagedCloudFrom20',
+                        ) as string[]
+                      ).map((line, index) => (
+                        <li
+                          key={line}
+                          className="text-muted-foreground flex items-start gap-3 text-sm leading-relaxed"
+                        >
+                          <KortixAsterisk index={index} />
+                          {line}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
 
                   <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
                     <Button size="lg" className="w-full" onClick={handleLaunch}>

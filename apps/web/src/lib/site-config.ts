@@ -1,15 +1,19 @@
 export const siteConfig = {
-  url: process.env.KORTIX_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_URL || 'http://localhost:3000',
+  url:
+    process.env.KORTIX_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_URL ||
+    'http://localhost:3000',
   nav: {
     links: [
       { id: 2, name: 'Use cases', href: '/use-cases' },
       { id: 4, name: 'Enterprise', href: '/enterprise' },
-      { id: 5, name: 'Pricing', href: '/pricing' },
+      { id: 5, name: 'Developers', href: '/developers' },
+      { id: 6, name: 'Pricing', href: '/pricing' },
     ],
   },
   hero: {
-    description:
-      'Kortix – the open AI command center for your company.',
+    description: 'Kortix – the open AI command center for your company.',
   },
   footerLinks: [
     {
@@ -40,4 +44,3 @@ export const siteConfig = {
 };
 
 export type SiteConfig = typeof siteConfig;
-

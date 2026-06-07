@@ -403,17 +403,17 @@ export function TextDotsLoader({
   };
 
   return (
-    <div className={cn('inline-flex items-center', className)}>
+    <div className={cn('inline-flex items-center gap-2', className)}>
       <span className={cn('text-primary font-medium', textSizes[size])}>{text}</span>
       <span className="inline-flex">
         <span className="text-primary animate-[loading-dots_1.4s_infinite_0.2s]">
-          <div className="bg-primary size-1 mr-px" />
+          <div className="bg-primary mr-px size-1" />
         </span>
         <span className="text-primary animate-[loading-dots_1.4s_infinite_0.4s]">
-          <div className="bg-primary size-1 mr-px" />
+          <div className="bg-primary mr-px size-1" />
         </span>
         <span className="text-primary animate-[loading-dots_1.4s_infinite_0.6s]">
-          <div className="bg-primary size-1 mr-px" />
+          <div className="bg-primary mr-px size-1" />
         </span>
       </span>
     </div>

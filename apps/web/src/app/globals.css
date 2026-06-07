@@ -814,6 +814,15 @@
   animation: pulse-heartbeat 1.2s ease-in-out infinite;
 }
 
+/* Limited-iteration pulse — e.g. animate-pulse-3 runs the default pulse 3 times */
+@utility animate-pulse-* {
+  animation-name: pulse;
+  animation-duration: 2s;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  animation-iteration-count: --value(integer);
+  animation-iteration-count: --value([integer]);
+}
+
 /* CookieYes consent button - right side on desktop, left side on mobile */
 .cky-btn-revisit-wrapper {
   left: auto !important;

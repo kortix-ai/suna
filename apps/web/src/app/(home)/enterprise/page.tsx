@@ -4,6 +4,7 @@ import { LogoMarqueeRows } from '@/components/home/logo-marquee';
 import { Reveal } from '@/components/home/reveal';
 import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
+import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { EnterpriseCalModal } from '@/features/enterprise/cal-modal';
 import { cn } from '@/lib/utils';
@@ -218,13 +219,13 @@ const EnterprisePage = () => {
   const t = (key: string) => tHardcodedUi.raw(`appHomeEnterprisePage.${key}`);
   const [calOpen, setCalOpen] = useState(false);
 
-  const hasTestimonial =
-    typeof t('testimonialQuote') === 'string' && t('testimonialQuote').trim().length > 0;
-
   return (
     <>
       <div className="bg-background relative">
         <section className="relative overflow-hidden px-6 pt-32 pb-12 sm:pt-36">
+          <div className="absolute inset-0 z-0 mask-y-to-95%">
+            <KortixLetterField seed={3382} />
+          </div>
           <div className="mx-auto max-w-6xl">
             <Reveal>
               <Eyebrow>{t('heroEyebrow')}</Eyebrow>

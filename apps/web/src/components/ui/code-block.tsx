@@ -1,11 +1,11 @@
 'use client';
 
+import { SHIKI_THEMES, resolveShikiThemeName } from '@/lib/shiki-theme';
 import { cn } from '@/lib/utils';
+import { useTheme } from 'next-themes';
 import React, { useEffect, useState } from 'react';
 import { codeToHtml } from 'shiki';
-import { useTheme } from 'next-themes';
 import { MermaidRenderer } from './mermaid-renderer';
-import { SHIKI_THEMES, resolveShikiThemeName } from '@/lib/shiki-theme';
 
 export type CodeBlockProps = {
   children?: React.ReactNode;
@@ -14,10 +14,7 @@ export type CodeBlockProps = {
 
 function CodeBlock({ children, className, ...props }: CodeBlockProps) {
   return (
-    <div
-      className={cn('w-px flex-grow min-w-0 overflow-hidden flex', className)}
-      {...props}
-    >
+    <div className={cn('flex w-px min-w-0 flex-grow overflow-hidden', className)} {...props}>
       {children}
     </div>
   );
@@ -68,9 +65,10 @@ function CodeBlockCode({
           {
             pre(node) {
               if (node.properties.style) {
-                node.properties.style = (
-                  node.properties.style as string
-                ).replace(/background-color:[^;]+;?/g, '');
+                node.properties.style = (node.properties.style as string).replace(
+                  /background-color:[^;]+;?/g,
+                  '',
+                );
               }
             },
           },
@@ -94,14 +92,10 @@ function CodeBlockCode({
 
   // Regular code rendering (including failed Mermaid)
   return highlightedHtml ? (
-    <div
-      className={classNames}
-      dangerouslySetInnerHTML={{ __html: highlightedHtml }}
-      {...props}
-    />
+    <div className={classNames} dangerouslySetInnerHTML={{ __html: highlightedHtml }} {...props} />
   ) : (
     <div className={classNames} {...props}>
-      <pre className="!overflow-x-auto !w-px !flex-grow !min-w-0 !box-border">
+      <pre className="!box-border !w-px !min-w-0 !flex-grow !overflow-x-auto">
         <code>{code}</code>
       </pre>
     </div>
@@ -110,11 +104,7 @@ function CodeBlockCode({
 
 export type CodeBlockGroupProps = React.HTMLAttributes<HTMLDivElement>;
 
-function CodeBlockGroup({
-  children,
-  className,
-  ...props
-}: CodeBlockGroupProps) {
+function CodeBlockGroup({ children, className, ...props }: CodeBlockGroupProps) {
   return (
     <div className={cn('', className)} {...props}>
       {children}
@@ -122,4 +112,4 @@ function CodeBlockGroup({
   );
 }
 
-export { CodeBlockGroup, CodeBlockCode, CodeBlock };
+export { CodeBlock, CodeBlockCode, CodeBlockGroup };
