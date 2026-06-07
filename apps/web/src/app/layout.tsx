@@ -225,7 +225,7 @@ export default async function RootLayout({
               '@context': 'https://schema.org',
               '@type': 'Organization',
               name: siteMetadata.name,
-              alternateName: ['Kortix', 'Kortix AI', 'Kortix – The Autonomous Company Operating System'],
+              alternateName: ['Kortix', 'Kortix AI', 'Kortix – The AI Command Center for Your Company'],
               url: siteMetadata.url,
               logo: `${siteMetadata.url}/favicon.png`,
               description: siteMetadata.description,

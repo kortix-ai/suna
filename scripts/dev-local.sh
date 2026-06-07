@@ -5,9 +5,22 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SUPABASE_DIR="$ROOT_DIR/supabase"
 
 FRONTEND_PID=""
+API_PID=""
 TUNNEL_PID=""
 TUNNEL_LOG=""
 STRIPE_PID=""
+
+# Build mode: `dev-local.sh --build` (a.k.a. `pnpm preview`) runs the EXACT same
+# laptop diligence as `pnpm dev` — decrypt env, clear ports, Docker/Supabase,
+# deps check, daemon/CLI rebuild, tunnel, Stripe — but serves a PRODUCTION build
+# instead of the hot-reload dev servers: `next build` + `next start` for the web
+# app and `bun run` (no --hot) for the API. Prod-accurate; heavier to iterate on.
+BUILD_MODE=0
+for _arg in "$@"; do
+  case "$_arg" in
+    --build) BUILD_MODE=1 ;;
+  esac
+done
 
 load_local_env() {
   # pnpm --filter runs each package from its own directory, where Bun/Next may
@@ -279,6 +292,11 @@ cleanup() {
     wait "$FRONTEND_PID" 2>/dev/null || true
   fi
 
+  if [[ -n "${API_PID:-}" ]] && kill -0 "$API_PID" 2>/dev/null; then
+    kill "$API_PID" 2>/dev/null || true
+    wait "$API_PID" 2>/dev/null || true
+  fi
+
   if [[ -n "${TUNNEL_PID:-}" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
     kill "$TUNNEL_PID" 2>/dev/null || true
   fi
@@ -361,9 +379,19 @@ EOF
   # server-side (SSR) fetches, which talk to the in-sandbox API directly.
   # Write to apps/web/.env.LOCAL (gitignored), never apps/web/.env — that file is
   # dotenvx-encrypted + tracked, and Next loads .env.local at higher precedence.
+  # NEXT_PUBLIC_SUPABASE_URL is RELATIVE (/supabase) for the SAME reason as
+  # NEXT_PUBLIC_BACKEND_URL above: the browser loads the app through the preview
+  # proxy (a dynamic origin like p3000-<sandbox>.localhost:8008) and 127.0.0.1:54321
+  # is the sandbox loopback — unreachable from the user's browser. So the browser
+  # hits the SAME origin (/supabase) and next.config.ts's env-gated rewrite
+  # (/supabase/* -> ${SB_API_URL}/*, active via KORTIX_SUPABASE_PROXY_TARGET below)
+  # proxies it to the in-sandbox Supabase. SUPABASE_URL stays ABSOLUTE so the
+  # server-side Supabase clients (supabase/server.ts, middleware.ts) reach
+  # 127.0.0.1:54321 directly. Mirrors the /v1 BACKEND_URL split.
   cat > "$ROOT_DIR/apps/web/.env.local" <<EOF
 NEXT_PUBLIC_BILLING_ENABLED=false
-NEXT_PUBLIC_SUPABASE_URL=${SB_API_URL}
+NEXT_PUBLIC_SUPABASE_URL=/supabase
+SUPABASE_URL=${SB_API_URL}
 NEXT_PUBLIC_SUPABASE_ANON_KEY=${SB_ANON_KEY}
 NEXT_PUBLIC_BACKEND_URL=/v1
 BACKEND_URL=http://localhost:8008/v1
@@ -372,6 +400,29 @@ NEXT_PUBLIC_URL=http://localhost:3000
 NEXT_PUBLIC_KORTIX_PERSONAL_CONTACT=false
 EDGE_CONFIG=
 EOF
+
+  # Activate the same-origin Supabase proxy rewrite (next.config.ts). Env-gated
+  # so it ONLY exists in the sandbox: forwards the browser's same-origin
+  # /supabase/* to the in-sandbox Supabase. Exported (not just in .env.local) so
+  # both `next dev` and `next build`/`next start` see it.
+  export KORTIX_SUPABASE_PROXY_TARGET="${SB_API_URL}"
+
+  # Export the SANDBOX-generated web env into THIS process so both the
+  # production (build + start) and the dev (`next dev`) paths see the right
+  # values: relative NEXT_PUBLIC_BACKEND_URL=/v1 and the in-sandbox Supabase
+  # trio. For build+start, `next build` / `next start` (unlike the web's `dev`
+  # npm script) do NOT run dotenvx, and Next does not reliably auto-load
+  # apps/web/.env.local for the standalone/production server — so without
+  # exporting, `next start` boots with NO BACKEND_URL / Supabase vars and every
+  # SSR request 500s on the runtime-env Zod parse. Exporting makes NEXT_PUBLIC_*
+  # inline at BUILD time and puts the server-only vars (BACKEND_URL, …) in
+  # process.env for SSR. For the dev path we invoke `next dev` DIRECTLY (not the
+  # web's `dev` script, which wraps `dotenvx run -f .env` and would inject the
+  # committed laptop `localhost` values), so it relies on this same export.
+  set -a
+  # shellcheck disable=SC1091
+  source "$ROOT_DIR/apps/web/.env.local"
+  set +a
 
   kill_dev_ports 3000 8008 "${PORT:-8008}"
 
@@ -382,13 +433,25 @@ EOF
     (cd "$ROOT_DIR" && pnpm install) || echo "[dev] ⚠️  pnpm install reported issues — continuing"
   fi
 
-  echo "[dev] Building frontend (pnpm build)…"
-  if pnpm --filter Kortix-Computer-Frontend build; then
-    echo "[dev] Frontend built — serving (pnpm start) on :3000"
-    pnpm --filter Kortix-Computer-Frontend start &
-    FRONTEND_PID=$!
+  if [[ "$BUILD_MODE" == "1" ]]; then
+    # `pnpm preview` → production parity: full build then `next start`.
+    echo "[dev] Building frontend (pnpm build)…"
+    if pnpm --filter Kortix-Computer-Frontend build; then
+      echo "[dev] Frontend built — serving (pnpm start) on :3000"
+      pnpm --filter Kortix-Computer-Frontend start &
+      FRONTEND_PID=$!
+    else
+      echo "[dev] ⚠️  Frontend build failed — continuing with API only"
+    fi
   else
-    echo "[dev] ⚠️  Frontend build failed — continuing with API only"
+    # `pnpm dev` → fast hot-reload via `next dev`. No heavy `next build`.
+    # Invoke next DIRECTLY (not the web's `dev` npm script, which wraps
+    # `dotenvx run -f .env` and would inject committed laptop `localhost`
+    # values); the sandbox `.env.local` is already exported above (relative
+    # NEXT_PUBLIC_BACKEND_URL=/v1, in-sandbox Supabase).
+    echo "[dev] Starting frontend (next dev, hot reload) on :${WEB_PORT:-3000}"
+    (cd "$ROOT_DIR/apps/web" && pnpm exec next dev --turbopack --port "${WEB_PORT:-3000}") &
+    FRONTEND_PID=$!
   fi
 
   echo "[dev] Starting API (dev) on :8008"
@@ -457,10 +520,45 @@ ensure_cli_binary
 ensure_dev_tunnel
 ensure_stripe_listen
 
-echo "[dev] Starting frontend..."
-pnpm --filter Kortix-Computer-Frontend dev &
-FRONTEND_PID=$!
+if [[ "$BUILD_MODE" == "1" ]]; then
+  # The API needs no build step, so boot it in the BACKGROUND now and let it
+  # come up on :8008 while the (multi-minute) frontend build runs — overlapping
+  # the two instead of paying them back-to-back. cleanup() kills API_PID on exit.
+  echo "[dev] Starting API (production runtime, no --hot) on :8008…"
+  ( cd "$ROOT_DIR" && KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api start ) &
+  API_PID=$!
 
-echo "[dev] Starting API..."
-cd "$ROOT_DIR"
-KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api dev
+  # Production build of the web app on :3000. NEXT_PUBLIC_* values are inlined at
+  # BUILD time, so the build must run with the env load_local_env() exported (it
+  # has). KORTIX_PREVIEW_BUILD trims prod-only build work for speed — skips the
+  # `standalone` file-tracing pass and ESLint (see apps/web/next.config.ts); it
+  # never affects prod/CI/Vercel builds, which don't set it. `set -e` aborts here
+  # if the build fails — we never serve a broken bundle.
+  export KORTIX_PREVIEW_BUILD=1
+  if [[ "${KORTIX_PREVIEW_TURBO:-1}" != "0" ]]; then
+    # Turbopack: much faster than the webpack build (and the same engine `pnpm
+    # dev` already uses). It can differ subtly from the webpack prod build, so
+    # if a build issue ever bites, fall back with `KORTIX_PREVIEW_TURBO=0`.
+    echo "[dev] Building frontend (next build --turbopack)…"
+    pnpm --filter Kortix-Computer-Frontend exec next build --turbopack
+  else
+    echo "[dev] Building frontend (next build, webpack)…"
+    pnpm --filter Kortix-Computer-Frontend build
+  fi
+
+  # Pin the web port explicitly. `next start` honors $PORT, and load_local_env
+  # exports PORT=8008 from apps/api/.env — without --port the frontend would try
+  # to bind 8008 and collide with the API (EADDRINUSE). This mirrors `pnpm dev`,
+  # whose web command hardcodes `--port ${WEB_PORT:-3000}` for the same reason.
+  echo "[dev] Build done → serving (next start, production) on :${WEB_PORT:-3000}…"
+  cd "$ROOT_DIR"
+  pnpm --filter Kortix-Computer-Frontend exec next start --port "${WEB_PORT:-3000}"
+else
+  echo "[dev] Starting frontend..."
+  pnpm --filter Kortix-Computer-Frontend dev &
+  FRONTEND_PID=$!
+
+  echo "[dev] Starting API..."
+  cd "$ROOT_DIR"
+  KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api dev
+fi

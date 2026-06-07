@@ -121,3 +121,15 @@ flow("CONN-9", { domain: "connectors", routes: ["GET /v1/executor/projects/:proj
     r.status([200, 501]);
   });
 });
+
+flow("CONN-12", { domain: "connectors", routes: ["GET /v1/executor/projects/:projectId/connectors/:slug/config"] }, async (ctx) => {
+  const p = await ctx.fixtures.project();
+  await ctx.step("unknown connector → 404", async () => {
+    const r = await ctx.client.as(ctx.P.OWNER).get("/v1/executor/projects/:projectId/connectors/:slug/config", { params: { projectId: p.id, slug: "nope" } });
+    r.status([404, 501]);
+  });
+  await ctx.step("NONMEMBER → 403", async () => {
+    const r = await ctx.client.as(ctx.P.NONMEMBER).get("/v1/executor/projects/:projectId/connectors/:slug/config", { params: { projectId: p.id, slug: "nope" } });
+    r.status(403);
+  });
+});

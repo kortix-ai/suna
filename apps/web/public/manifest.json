@@ -1,7 +1,7 @@
 {
-  "name": "Kortix the Super Mega Giga Worker",
+  "name": "Kortix – The AI Command Center for Your Company",
   "short_name": "Kortix",
-  "description": "Kortix the Super Mega Giga Worker – A generalist AI Worker that is able to autonomously tackle complex tasks, browse the web, write and execute code, manage files, conduct research, automate workflows, and accomplish real-world objectives through natural conversation.",
+  "description": "Kortix is the open-source AI command center for your company — one place to build, run, and govern AI agents that connect 3,000+ tools and deliver real work, not just chat.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#000000",

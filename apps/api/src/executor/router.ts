@@ -163,6 +163,20 @@ export interface ExecutorRouterDeps {
   setConnectorName?(projectId: string, accountId: string, slug: string, name: string): Promise<CrudOutcome>;
   /** Read a connector's [[connectors.policies]] (per-tool/per-pattern permissions). */
   getConnectorPolicies?(projectId: string, slug: string): Promise<{ policies: Array<{ match: string; action: string }> } | null>;
+  /** Read a connector's definition (provider + connection fields) from kortix.toml for editing. */
+  getConnectorConfig?(projectId: string, slug: string): Promise<{
+    slug: string;
+    provider: string;
+    credentialMode: 'shared' | 'per_user';
+    app: string | null;
+    account: string | null;
+    url: string | null;
+    transport: 'http' | 'sse' | null;
+    endpoint: string | null;
+    baseUrl: string | null;
+    spec: string | null;
+    auth: { type: 'none' | 'bearer' | 'basic' | 'custom'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+  } | null>;
   /** Replace a connector's [[connectors.policies]] in kortix.toml + re-sync. */
   setConnectorPolicies?(projectId: string, accountId: string, slug: string, policies: Array<{ match: string; action: string }>): Promise<CrudOutcome>;
   /** Pipedream 1-click: mint a connect token (for the frontend SDK overlay) + link. null = not pipedream. */
@@ -592,6 +606,32 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.getConnectorPolicies) return c.json({ error: 'not supported' }, 501);
       const result = await deps.getConnectorPolicies(projectId, slug);
+      if (!result) return c.json({ error: 'connector not found' }, 404);
+      return c.json(result);
+    },
+  );
+
+  // ── Admin: read a connector's definition (for editing the connection) ────
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/connectors/{slug}/config',
+      tags: ['executor'],
+      summary: 'Read a connector\'s connection config (provider, url, auth, …)',
+      ...auth,
+      request: { params: ProjectSlugParam },
+      responses: {
+        200: json(OpaqueSchema, 'Connector config'),
+        ...errors(403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.getConnectorConfig) return c.json({ error: 'not supported' }, 501);
+      const result = await deps.getConnectorConfig(projectId, slug);
       if (!result) return c.json({ error: 'connector not found' }, 404);
       return c.json(result);
     },

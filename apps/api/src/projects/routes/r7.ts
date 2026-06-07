@@ -14,7 +14,7 @@ import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExp
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, isProjectRole, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
-import { kickProvisionOnOpen, syncOpencodeSessionsHandler } from './shared';
+import { kickProvisionOnOpen, resumeStoppedSandbox, syncOpencodeSessionsHandler } from './shared';
 
 projectsApp.openapi(
   createRoute({
@@ -713,7 +713,7 @@ projectsApp.openapi(
   const sandboxVisible = await loadVisibleSession(loaded, sessionId);
   if (!sandboxVisible) return c.json({ error: 'Not found' }, 404);
 
-  const [row] = await db
+  let [row] = await db
     .select()
     .from(sessionSandboxes)
     .where(and(
@@ -723,10 +723,35 @@ projectsApp.openapi(
     ))
     .limit(1);
 
+  // Hibernated sandbox (explicit Stop / idle maintenance set status='stopped'
+  // but KEPT the VM + disk via provider.stop). Resume it in place rather than
+  // deleting + cold-reprovisioning a box whose workspace is still intact — the
+  // whole point of hibernate-over-destroy. resumeStoppedSandbox flips the row
+  // back to 'active' and kicks the provider start in the background; we re-read
+  // so the response carries the fresh status and the frontend's health poll
+  // takes over (identical to the idle-wake path). Concurrent polls that lose
+  // the transition just fall through and read the now-'active' row.
+  if (row && row.status === 'stopped' && row.externalId
+      && (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) {
+    await resumeStoppedSandbox({
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      accountId: row.accountId,
+      provider: row.provider,
+      externalId: row.externalId,
+    });
+    const [resumed] = await db
+      .select()
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
+      .limit(1);
+    if (resumed) row = resumed;
+  }
+
   // (Re)provision on open when there's no usable sandbox: a dormant migrated
-  // session (no row), or a dead one whose Daytona sandbox was idle-GC'd /
-  // errored (row in error/stopped/archived). The UI polls this endpoint, so it's
-  // the natural trigger. The project_session 'provisioning' flag (set by
+  // session (no row), or a truly dead one (error / no externalId — a hibernated
+  // box would have been resumed above, not deleted). The UI polls this endpoint,
+  // so it's the natural trigger. The project_session 'provisioning' flag (set by
   // kickProvisionOnOpen) guards against re-kicking on subsequent 404 polls.
   const usable = row && (row.status === 'provisioning' || row.status === 'active');
   if (!usable) {
@@ -817,7 +842,13 @@ projectsApp.openapi(
     await db
       .update(sessionSandboxes)
       .set({
-        status: 'stopped',
+        // 'archived' — NOT 'stopped'. Explicit session deletion is the one case
+        // where we remove the provider box (below), so the disk is gone. Marking
+        // it 'archived' (vs the 'stopped' = hibernated-and-resumable state used
+        // by idle/maintenance) tells GET …/sandbox NOT to attempt a resume of a
+        // box that no longer exists; reopening a deleted session cold-reprovisions
+        // fresh from the preserved git branch instead.
+        status: 'archived',
         metadata: {
           ...(sandbox.metadata ?? {}),
           stoppedAt: new Date().toISOString(),
@@ -830,13 +861,19 @@ projectsApp.openapi(
       })
       .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId))
       .catch((err) => {
-        console.warn(`[projects] failed to mark session sandbox stopped for ${sessionId}:`, err);
+        console.warn(`[projects] failed to mark session sandbox archived for ${sessionId}:`, err);
       });
 
     if (sandbox.externalId && (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(sandbox.provider)) {
       const provider = getProvider(sandbox.provider as SandboxProviderName);
+      // Explicit user session deletion is the ONLY place we remove the provider
+      // box. Everywhere else (idle auto-stop, maintenance, restart) hibernates
+      // instead, because a stopped Daytona box auto-archives to cheap cold
+      // storage and can be resumed in place. Here the user has chosen to delete
+      // the session, so we free the compute outright — the work is safe on the
+      // git branch, which we deliberately preserve.
       void provider.remove(sandbox.externalId).catch((err) => {
-        console.warn(`[projects] failed to remove provider sandbox ${sandbox.externalId} for stopped session ${sessionId}:`, err);
+        console.warn(`[projects] failed to remove provider sandbox ${sandbox.externalId} for deleted session ${sessionId}:`, err);
       });
     }
   }

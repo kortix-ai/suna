@@ -2408,13 +2408,13 @@
       "accept": "Accept"
     },
     "appLayout": {
-      "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – The Autonomous Company Operating System",
-      "line197JsxAttrContentACloudComputerWhereAiAgentsRunYour": "A cloud computer where AI agents run your company. Connect 3,000+ tools, configure autonomous agents, set triggers — and the machine operates 24/7 with persistent memory.",
-      "line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf": "Kortix, autonomous company operating system, AI agents, self-driving company, cloud computer, AI automation, agent orchestration, goal loops, AI triggers, persistent memory, autonomous workforce, AI operations",
-      "line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – The Autonomous Company Operating System",
-      "line200JsxAttrContentACloudComputerWhereAiAgentsRunYour": "A cloud computer where AI agents run your company. Connect 3,000+ tools, configure autonomous agents, set triggers — and the machine operates 24/7 with persistent memory.",
-      "line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – The Autonomous Company Operating System",
-      "line207JsxAttrContentACloudComputerWhereAiAgentsRunYour": "A cloud computer where AI agents run your company. Connect 3,000+ tools, configure autonomous agents, set triggers — and the machine operates 24/7 with persistent memory.",
+      "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – The AI Command Center for Your Company",
+      "line197JsxAttrContentACloudComputerWhereAiAgentsRunYour": "Kortix is the open-source AI command center for your company — one place to build, run, and govern AI agents that connect 3,000+ tools and deliver real work, not just chat.",
+      "line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf": "Kortix, AI command center, AI agents, AI workforce, open source AI platform, self-hosted AI agents, AI automation, agent orchestration, AI-native company, build AI agents, connect 3000 tools, AI operations",
+      "line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – The AI Command Center for Your Company",
+      "line200JsxAttrContentACloudComputerWhereAiAgentsRunYour": "Kortix is the open-source AI command center for your company — one place to build, run, and govern AI agents that connect 3,000+ tools and deliver real work, not just chat.",
+      "line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – The AI Command Center for Your Company",
+      "line207JsxAttrContentACloudComputerWhereAiAgentsRunYour": "Kortix is the open-source AI command center for your company — one place to build, run, and govern AI agents that connect 3,000+ tools and deliver real work, not just chat.",
       "line209JsxAttrContentKortix": "@kortix",
       "line214JsxAttrContentAppId6754448524AppArgumentKortix": "app-id=6754448524, app-argument=kortix://"
     },
