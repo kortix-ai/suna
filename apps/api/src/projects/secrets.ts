@@ -169,20 +169,6 @@ export function projectSecretsRevision(env: Record<string, string>): string {
   return hash.digest('hex');
 }
 
-export async function listProjectSecretsSnapshot(projectId: string): Promise<{
-  env: Record<string, string>;
-  names: string[];
-  revision: string;
-}> {
-  const env = await listProjectSecrets(projectId);
-  const names = Object.keys(env).sort();
-  return {
-    env,
-    names,
-    revision: projectSecretsRevision(env),
-  };
-}
-
 /** Per-user snapshot — the sandbox-boot view (overrides + share-scope applied). */
 export async function listProjectSecretsSnapshotForUser(
   projectId: string,

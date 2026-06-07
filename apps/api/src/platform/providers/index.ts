@@ -130,15 +130,3 @@ export function getProvider(name: ProviderName): SandboxProvider {
   providers.set(name, provider);
   return provider;
 }
-
-export function getDefaultProviderName(): ProviderName {
-  return config.getDefaultProvider();
-}
-
-export function getAvailableProviders(): ProviderName[] {
-  const available: ProviderName[] = [];
-  if (config.isDaytonaEnabled()) available.push('daytona');
-  if (config.isLocalDockerEnabled()) available.push('local_docker');
-  if (config.isPlatinumEnabled()) available.push('platinum');
-  return available;
-}

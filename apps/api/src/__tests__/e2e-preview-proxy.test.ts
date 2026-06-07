@@ -206,7 +206,6 @@ mock.module('../projects/secrets', () => {
     revision: `rev-${projectId}`,
   });
   return {
-    listProjectSecretsSnapshot: async (projectId: string) => snapshot(projectId),
     listProjectSecretsSnapshotForUser: async (projectId: string) => snapshot(projectId),
   };
 });

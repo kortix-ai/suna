@@ -21,19 +21,6 @@ import {
   setUpdateStatus,
 } from './local-docker/status';
 
-// Re-export the public surface so `platform/providers/index.ts` (the only
-// importer) keeps working unchanged.
-export {
-  getImagePullStatus,
-  getSandboxUpdateStatus,
-} from './local-docker/status';
-export type {
-  ImagePullStatus,
-  SandboxUpdatePhase,
-  SandboxUpdateStatus,
-  SandboxInfo,
-} from './local-docker/types';
-
 /** Container name — configurable so self-hosted and dev can coexist. */
 const CONTAINER_NAME = config.SANDBOX_CONTAINER_NAME;
 

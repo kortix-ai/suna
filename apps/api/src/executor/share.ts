@@ -113,32 +113,6 @@ export async function resolveShareSubject(userId: string): Promise<ShareSubject>
   return { userId, groupIds: rows.map((r) => r.groupId) };
 }
 
-/** Load a single secret's sharing (scope + grants) by project + name. */
-export async function getSecretSharing(
-  projectId: string,
-  name: string,
-): Promise<{ secretId: string; shareScope: ShareScope; grants: SecretGrant[] } | null> {
-  const [secret] = await db
-    .select({ secretId: projectSecrets.secretId, shareScope: projectSecrets.shareScope })
-    .from(projectSecrets)
-    .where(and(eq(projectSecrets.projectId, projectId), eq(projectSecrets.name, name)))
-    .limit(1);
-  if (!secret) return null;
-  const grants = await loadGrants([secret.secretId]);
-  return { secretId: secret.secretId, shareScope: secret.shareScope as ShareScope, grants: grants.get(secret.secretId) ?? [] };
-}
-
-/** Can a user use a named secret in a project? (project-wide or in the allow-list.) */
-export async function canUseSecretName(
-  projectId: string,
-  name: string,
-  subject: ShareSubject,
-): Promise<boolean> {
-  const sharing = await getSecretSharing(projectId, name);
-  if (!sharing) return false; // secret doesn't exist → connector can't authenticate
-  return isSecretUsableBy(sharing.shareScope, sharing.grants, subject);
-}
-
 /** Persist a secret's sharing: set scope + replace its grants atomically-ish. */
 export async function setSecretSharing(secretId: string, intent: SharingIntent): Promise<void> {
   const { shareScope, grants } = intentToScope(intent);
