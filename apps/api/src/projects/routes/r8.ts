@@ -6,6 +6,7 @@ import { provisionSessionSandbox } from '../../platform/services/session-sandbox
 import { db } from '../../shared/db';
 import { getCrById, getNextCrNumber, serializeChangeRequest } from '../change-requests';
 import { getBranchDiff, getDiffBetweenShas, invalidateProjectMirror, previewMerge, resolveBranchTip } from '../git';
+import { TimeoutError, withTimeout } from '../../shared/with-timeout';
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
@@ -299,6 +300,18 @@ projectsApp.openapi(
  * when the SHAs already match or the CR is no longer open.
  */
 
+// Overall budget for the change-requests list query. The front end polls this
+// endpoint continuously (the Changes panel / CR-count badge, every ~8s) with a
+// hard 30s client-side request timeout. The handler is a single indexed DB
+// SELECT, but a contended/slow Postgres (connection-pool saturation, a stalled
+// query) can still push it past 30s — at which point the *client* aborts and
+// reports `ApiError: Request timed out after 30s: …/change-requests?status=open`
+// (Better Stack incident 61d3247c…). Bounding the DB work well under the client
+// timeout turns that unbounded hang into a fast, retryable 503: React Query
+// keeps the last successful list and simply re-polls, instead of surfacing a
+// timeout error.
+const CHANGE_REQUESTS_LIST_BUDGET_MS = 12_000;
+
 projectsApp.openapi(
   createRoute({
     method: 'get',
@@ -312,7 +325,7 @@ projectsApp.openapi(
       },
     responses: {
         200: json(z.array(ChangeRequestSchema), 'Change requests'),
-        ...errors(400, 404),
+        ...errors(400, 404, 503),
     },
   }),
   async (c: any) => {
@@ -329,11 +342,33 @@ projectsApp.openapi(
     whereClauses.push(eq(changeRequests.status, statusFilter as 'open' | 'merged' | 'closed'));
   }
 
-  const rows = await db
-    .select()
-    .from(changeRequests)
-    .where(and(...whereClauses))
-    .orderBy(desc(changeRequests.number));
+  let rows;
+  try {
+    rows = await withTimeout(
+      db
+        .select()
+        .from(changeRequests)
+        .where(and(...whereClauses))
+        .orderBy(desc(changeRequests.number)),
+      CHANGE_REQUESTS_LIST_BUDGET_MS,
+      'change-requests list query',
+    );
+  } catch (err) {
+    if (err instanceof TimeoutError) {
+      // DB too slow/contended to answer within budget. Fail fast and retryable
+      // rather than hanging the poll until the client's 30s timeout fires.
+      console.warn('[change-requests] list query exceeded budget', {
+        projectId,
+        statusFilter: statusFilter ?? 'all',
+        budgetMs: CHANGE_REQUESTS_LIST_BUDGET_MS,
+      });
+      return c.json(
+        { error: 'Change requests are temporarily unavailable, please retry.', code: 'CR_LIST_TIMEOUT', status: 503 },
+        503,
+      );
+    }
+    throw err;
+  }
 
   return c.json({
     change_requests: rows.map(serializeChangeRequest),
