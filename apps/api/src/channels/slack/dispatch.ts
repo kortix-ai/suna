@@ -5,11 +5,10 @@ import {
   chatInstalls,
   chatThreads,
   projects,
-  sessionSandboxes,
 } from '@kortix/db';
 import { db } from '../../shared/db';
-import { getDaytona } from '../../shared/daytona';
 import { createProjectSession, resolveGitTriggerActor } from '../../projects';
+import { deliverPromptToSession } from '../../projects/session-delivery';
 import {
   loadSlackBotUserIdForProject,
   loadSlackTokenForProject,
@@ -30,7 +29,6 @@ import {
 } from './streams';
 import { stripMentions } from './util';
 import type {
-  DeliveryOutcome,
   EventClass,
   ProjectResolution,
   SlackEnvelope,
@@ -309,7 +307,10 @@ export async function spawnAgentTurn(
         handle.sessionId = existing.sessionId;
         await saveStream(handle);
       }
-      const outcome = await deliverFollowUpToSandbox(existing.sessionId, envelope, event);
+      const outcome = await deliverPromptToSession({
+        sessionId: existing.sessionId,
+        text: renderFollowUpPrompt(envelope, event),
+      });
       if (outcome === 'delivered') {
         await db
           .update(chatThreads)
@@ -411,74 +412,6 @@ export async function spawnAgentTurn(
     } catch (err) {
       console.warn('[slack-webhook] failed to record chat_threads row', err);
     }
-  }
-}
-
-async function deliverFollowUpToSandbox(
-  kortixSessionId: string,
-  envelope: SlackEnvelope,
-  event: SlackEvent,
-): Promise<DeliveryOutcome> {
-  const [sandbox] = await db
-    .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      metadata: sessionSandboxes.metadata,
-      status: sessionSandboxes.status,
-    })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, kortixSessionId))
-    .limit(1);
-
-  if (!sandbox) return 'stale';
-  if (sandbox.status === 'stopped' || sandbox.status === 'archived' || sandbox.status === 'error') {
-    return 'stale';
-  }
-  if (sandbox.status !== 'active') return 'transient';
-
-  const daytonaSandboxId = (sandbox.metadata as Record<string, unknown> | null)?.[
-    'daytonaSandboxId'
-  ];
-  if (typeof daytonaSandboxId !== 'string' || !daytonaSandboxId) return 'stale';
-
-  let previewUrl: string;
-  let previewToken: string | null;
-  try {
-    const daytona = getDaytona();
-    const sb = await daytona.get(daytonaSandboxId);
-    const link = await (sb as { getPreviewLink: (port: number) => Promise<{ url?: string; token?: string }> })
-      .getPreviewLink(8000);
-    previewUrl = link.url ?? `https://8000-${daytonaSandboxId}.daytonaproxy01.net`;
-    previewToken = link.token ?? null;
-  } catch (err) {
-    console.warn('[slack-webhook] getPreviewLink failed', err);
-    return 'transient';
-  }
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Daytona-Skip-Preview-Warning': 'true',
-    'X-Daytona-Disable-CORS': 'true',
-  };
-  if (previewToken) headers['X-Daytona-Preview-Token'] = previewToken;
-
-  try {
-    const res = await fetch(`${previewUrl.replace(/\/$/, '')}/kortix/prompt`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ text: renderFollowUpPrompt(envelope, event) }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (res.ok) return 'delivered';
-    const bodyText = (await res.text()).slice(0, 300);
-    console.warn('[slack-webhook] kortix/prompt returned non-ok', {
-      status: res.status,
-      body: bodyText,
-    });
-    if (res.status === 404) return 'stale';
-    return 'transient';
-  } catch (err) {
-    console.warn('[slack-webhook] kortix/prompt fetch failed', err);
-    return 'transient';
   }
 }
 

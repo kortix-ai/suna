@@ -48,8 +48,6 @@ export type SlashResponse = { response_type: 'ephemeral' | 'in_channel'; text?: 
 
 export type EventClass = 'mention' | 'dm' | 'follow_up' | 'ignore';
 
-export type DeliveryOutcome = 'delivered' | 'transient' | 'stale';
-
 export interface HomeProjectRow { projectId: string; name: string; repoUrl: string }
 export interface HomeRecentRow { projectId: string; lastMessageAt: Date; threadId: string }
 
