@@ -44,6 +44,7 @@ jobs:
       tag: ${{ steps.v.outputs.tag }}
       title: ${{ steps.v.outputs.title }}
       notes: ${{ steps.v.outputs.notes }}
+      source_sha: ${{ steps.v.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -73,6 +74,17 @@ jobs:
             { echo 'notes<<KORTIX_NOTES_EOF'; echo 'KORTIX_NOTES_EOF'; } >> "$GITHUB_OUTPUT"
           fi
 
+          # The exact source commit this release was cut from (stamped by
+          # promote.yml). Empty for legacy releases that predate SHA stamping.
+          if [ -f RELEASE_SOURCE_SHA ]; then
+            SRC="$(tr -d '[:space:]' < RELEASE_SOURCE_SHA)"
+            echo "source_sha=$SRC" >> "$GITHUB_OUTPUT"
+            echo "Release source commit: $SRC"
+          else
+            echo "source_sha=" >> "$GITHUB_OUTPUT"
+            echo "No RELEASE_SOURCE_SHA (legacy release) — will retag :dev-latest"
+          fi
+
   # ── Retag dev images → versioned + latest (no rebuild) ──────────────────────
   retag-images:
     name: Re-tag dev → v${{ needs.version.outputs.version }}
@@ -89,14 +101,29 @@ jobs:
       - name: Re-tag release images
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
         run: |
           set -euo pipefail
+          # Pin to the dev image built from the EXACT promoted commit. If that
+          # image isn't pushed yet (dev build not finished), imagetools create
+          # fails fast — prod can NEVER ship a stale image. Fall back to the
+          # floating :dev-latest only for legacy releases with no stamped SHA.
+          if [ -n "${SOURCE_SHA:-}" ]; then
+            SRC_TAG="dev-${SOURCE_SHA:0:8}"
+          else
+            SRC_TAG="dev-latest"
+          fi
+          echo "Source image tag: $SRC_TAG"
           for IMAGE in kortix/kortix-api kortix/kortix-frontend; do
-            echo "Re-tagging $IMAGE:dev-latest → $IMAGE:${VERSION} + $IMAGE:latest"
+            if ! docker buildx imagetools inspect "$IMAGE:$SRC_TAG" >/dev/null 2>&1; then
+              echo "::error::$IMAGE:$SRC_TAG not found — the dev image for this commit isn't published. Refusing to ship a stale image."
+              exit 1
+            fi
+            echo "Re-tagging $IMAGE:$SRC_TAG → $IMAGE:${VERSION} + $IMAGE:latest"
             docker buildx imagetools create \
               --tag "$IMAGE:${VERSION}" \
               --tag "$IMAGE:latest" \
-              "$IMAGE:dev-latest"
+              "$IMAGE:$SRC_TAG"
             echo "✓ $IMAGE:${VERSION}"
           done
       - name: Summary
