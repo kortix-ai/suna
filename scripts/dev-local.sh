@@ -313,9 +313,10 @@ cleanup() {
 # When `pnpm dev` runs INSIDE a Kortix sandbox (the runtime layer lives at
 # /opt/kortix), bring the whole stack up self-contained — Supabase + API + web
 # — and skip the laptop-only steps (cloudflared tunnel + daemon/CLI snapshot
-# bake). The frontend is built once and served (`build` + `start`): `next dev`
-# compiles every route on demand and OOMs on a big app, whereas build+start has
-# a flat, light runtime and is prod-accurate. The agent just runs `pnpm dev`.
+# bake). The frontend runs as the Turbopack dev server: a production build can
+# exceed the sandbox memory ceiling during static page generation, while the dev
+# server opens :3000 quickly and compiles only the pages a fresh session probes.
+# The agent just runs `pnpm dev`.
 run_sandbox_dev() {
   echo "[dev] Kortix sandbox detected → full local stack (Supabase + API + web), self-contained."
   export PATH="/opt/supabase:/usr/local/bin:$PATH"
@@ -433,14 +434,13 @@ EOF
     (cd "$ROOT_DIR" && pnpm install) || echo "[dev] ⚠️  pnpm install reported issues — continuing"
   fi
 
-  echo "[dev] Building frontend (pnpm build)…"
-  if pnpm --filter Kortix-Computer-Frontend build; then
-    echo "[dev] Frontend built — serving (pnpm start) on :3000"
-    pnpm --filter Kortix-Computer-Frontend start &
-    FRONTEND_PID=$!
-  else
-    echo "[dev] ⚠️  Frontend build failed — continuing with API only"
-  fi
+  echo "[dev] Starting frontend (next dev --turbopack) on :3000"
+  (
+    cd "$ROOT_DIR"
+    NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--max-http-header-size=32768" \
+      pnpm --filter Kortix-Computer-Frontend exec next dev --turbopack --port 3000
+  ) &
+  FRONTEND_PID=$!
 
   echo "[dev] Starting API (dev) on :8008"
   cd "$ROOT_DIR"
