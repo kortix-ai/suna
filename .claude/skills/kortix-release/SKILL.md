@@ -112,7 +112,7 @@ Fallback (if the auto run didn't fire, or to re-run): `gh workflow run deploy-pr
 first (`gh run cancel <id>`).
 deploy-prod also: retags the image `:X.Y.Z`+`:latest`, cuts the GitHub Release
 (name = `vX.Y.Z — <title>`, body = your notes + an auto compare link), and Vercel
-auto-deploys the `prod` branch (new.kortix.com).
+auto-deploys the `prod` branch (kortix.com).
 
 ## 3. Gotchas (hard-won)
 
