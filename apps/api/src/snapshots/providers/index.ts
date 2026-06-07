@@ -11,6 +11,7 @@
  */
 
 import { daytonaProvider } from './daytona';
+import { platinumProvider } from './platinum';
 
 export interface SandboxResourceSpec {
   cpu?: number;
@@ -69,6 +70,7 @@ export interface SandboxProviderAdapter {
 
 const ADAPTERS = new Map<string, SandboxProviderAdapter>();
 ADAPTERS.set(daytonaProvider.id, daytonaProvider);
+ADAPTERS.set(platinumProvider.id, platinumProvider);
 
 export function getSandboxProvider(id: string): SandboxProviderAdapter {
   const adapter = ADAPTERS.get(id);

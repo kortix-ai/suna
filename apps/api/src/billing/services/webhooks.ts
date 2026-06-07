@@ -1,7 +1,6 @@
 import Stripe from 'stripe';
-import { stripeWebhookEventsProcessed } from '@kortix/db';
 import { getStripe } from '../../shared/stripe';
-import { db } from '../../shared/db';
+import { recordWebhookEvent, withAccountLock } from './webhook-concurrency';
 import { config } from '../../config';
 import { WebhookError } from '../../errors';
 import {
@@ -31,9 +30,6 @@ import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { resolveAccountId } from '../../shared/resolve-account';
 
-// ─── Stripe Webhook Processing ──────────────────────────────────────────────
-
-// Simple in-memory dedup for Stripe webhook events.
 export async function processStripeWebhook(rawBody: string, signature: string) {
   const stripe = getStripe();
 
@@ -44,16 +40,7 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
     throw new WebhookError(`Signature verification failed: ${(err as Error).message}`);
   }
 
-  // DB-backed dedup: insert a marker row keyed by event.id. ON CONFLICT DO
-  // NOTHING + RETURNING tells us whether we won the race. Survives restarts,
-  // works across replicas. Stripe re-deliveries (CLI replay, retried delivery,
-  // out-of-order retries) cannot double-apply state changes after this point.
-  const inserted = await db
-    .insert(stripeWebhookEventsProcessed)
-    .values({ eventId: event.id, eventType: event.type })
-    .onConflictDoNothing({ target: stripeWebhookEventsProcessed.eventId })
-    .returning({ eventId: stripeWebhookEventsProcessed.eventId });
-  if (inserted.length === 0) {
+  if (!(await recordWebhookEvent(event.id, event.type))) {
     console.log(`[Webhook] Skipping duplicate ${event.type} (${event.id})`);
     return { received: true, event_type: event.type, deduped: true };
   }
@@ -96,8 +83,6 @@ export async function processStripeWebhook(rawBody: string, signature: string) {
 
   return { received: true, event_type: event.type };
 }
-
-// ─── Checkout Completed ─────────────────────────────────────────────────────
 
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session) {
   const accountId = session.metadata?.account_id;
@@ -165,8 +150,6 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
         : null
     );
 
-  // Ensure credit account exists (for credits system — separate from instance billing).
-  // Use the latest subscription ID so account-state reflects a paid tier.
   await upsertCreditAccount(accountId, {
     tier: tierKey,
     provider: 'stripe',
@@ -175,13 +158,11 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
     planType: isYearly ? 'yearly' : 'monthly',
     commitmentType: commitmentType === 'yearly_commitment' ? commitmentType : null,
     ...(isYearly ? { nextCreditGrant: calculateNextCreditGrant(new Date()).toISOString() } : {}),
-    // Auto-topup on by default: charge $5 when balance drops below $1
     autoTopupEnabled: true,
     autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
     autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
   });
 
-  // Grant tier credits if applicable (credits system, separate from instances)
   if (tier.monthlyCredits > 0) {
     await grantCredits(
       accountId,
@@ -209,8 +190,6 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
     await cancelFreeSubscriptionForUpgrade(previousSubscriptionId, accountId);
   }
 
-  // ── Provision instance (1 subscription = 1 instance) ───────────────────
-  // The checkout metadata carries server_type + location for provisioning.
   const serverType = session.metadata?.server_type;
   const location = session.metadata?.location;
 
@@ -225,8 +204,6 @@ async function handleSubscriptionCheckout(session: Stripe.Checkout.Session, acco
       console.error(`[Webhook] Failed to grant machine bonus for ${accountId} (sub=${subscriptionId}):`, err);
     }
 
-    // Legacy auto-provision of a per-account sandbox on checkout-completed
-    // has been removed — sandboxes are now per-session under /v1/projects.
     void serverType;
     void location;
     void tierKey;
@@ -243,7 +220,7 @@ async function handleSubscriptionChange(subscription: Stripe.Subscription) {
   }
 
   await repairStripeSubscriptionAccountMetadata(subscription, accountId);
-  await syncSubscriptionState(accountId, subscription);
+  await withAccountLock(accountId, () => syncSubscriptionState(accountId, subscription));
 }
 
 async function syncSubscriptionState(accountId: string, subscription: Stripe.Subscription) {
@@ -259,11 +236,24 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       subscription.status === 'active' &&
       previousSubId === account.stripeSubscriptionId;
 
+    // A legacy/machine account migrating to per-seat: the new per-seat sub
+    // supersedes the old one but carries metadata.billing_model='per_seat' (or
+    // the per-seat price) rather than tier_key/previous_subscription_id, so
+    // isFreeUpgrade misses it. Adopt it — otherwise it's dropped as "stale" and
+    // the account is left on the now-cancelled machine sub (tier=free, capped).
+    const perSeatPriceId = resolvePerSeatPriceId();
+    const isPerSeatActivation =
+      (subscription.status === 'active' || subscription.status === 'trialing') &&
+      (subscription.metadata?.billing_model === 'per_seat' ||
+        subscription.items.data.some((item) => perSeatPriceId && item.price?.id === perSeatPriceId));
+
     if (isFreeUpgrade) {
       console.log(
         `[Webhook] syncSubscriptionState: detected free→${incomingTier} upgrade for ${accountId}, cancelling old free sub ${account.stripeSubscriptionId}`,
       );
       await cancelFreeSubscriptionForUpgrade(account.stripeSubscriptionId, accountId);
+    } else if (isPerSeatActivation) {
+      console.log(`[Webhook] syncSubscriptionState: adopting per-seat subscription ${subscription.id} superseding ${account.stripeSubscriptionId} for ${accountId}`);
     } else {
       console.log(`[Webhook] syncSubscriptionState: skipping stale subscription ${subscription.id} for ${accountId} (current: ${account.stripeSubscriptionId})`);
       return;
@@ -302,10 +292,6 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     updates.paymentStatus = 'active';
   }
 
-  // Billing v2 — if this subscription has a per-seat item, reconcile quantity
-  // and grant additional seat credits for net additions. Identified by the
-  // per-seat price ID on any item (also accepts metadata.billing_model='per_seat'
-  // as a hint during the cutover before price IDs are wired up).
   const perSeatPriceId = resolvePerSeatPriceId();
   const perSeatItem = subscription.items.data.find(
     (item) =>
@@ -348,13 +334,6 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
     }
   }
 
-  // Per-seat included credit grant. Stripe handles the dollar proration on
-  // the invoice; we mirror that in the wallet so the new seat can spend
-  // immediately rather than waiting for the next bill cycle.
-  //
-  // Wallet is fungible — $40/seat goes into one bucket. The compute-vs-LLM
-  // split is a pricing-page message, not a wallet partition. Spend
-  // attribution happens at the ledger entry level (compute_debit / llm_debit).
   if (perSeatItem && perSeatDelta > 0) {
     const seatGrant = PER_SEAT_PRICE_USD * perSeatDelta;
     await grantCredits(
@@ -368,9 +347,6 @@ async function syncSubscriptionState(accountId: string, subscription: Stripe.Sub
       console.warn(`[Webhook] per-seat grant failed for ${accountId}:`, err),
     );
 
-    // First-time transition: account just flipped from legacy/free to per_seat.
-    // Mint YOLO tokens for every existing member who doesn't have one (owner
-    // + any pre-subscription joiners). Idempotent on subsequent webhook fires.
     if (perSeatItem && !isPerSeatAccount(account?.billingModel)) {
       const { mintYoloTokensForAllMembers } = await import('./seat-management');
       void mintYoloTokensForAllMembers(accountId).catch((err) =>
@@ -384,21 +360,19 @@ async function handleSubscriptionDeleted(subscription: Stripe.Subscription) {
   const accountId = await resolveCanonicalStripeAccountId(subscription.metadata?.account_id, subscription.customer);
   if (!accountId) return;
 
-  const account = await getCreditAccount(accountId);
-  if (account?.stripeSubscriptionId && account.stripeSubscriptionId !== subscription.id) {
-    console.log(
-      `[Webhook] handleSubscriptionDeleted: skipping stale subscription ${subscription.id} for ${accountId} (current: ${account.stripeSubscriptionId})`,
-    );
-    return;
-  }
-
-  await revertToFree(accountId, subscription.id);
+  await withAccountLock(accountId, async () => {
+    const account = await getCreditAccount(accountId);
+    if (account?.stripeSubscriptionId && account.stripeSubscriptionId !== subscription.id) {
+      console.log(
+        `[Webhook] handleSubscriptionDeleted: skipping stale subscription ${subscription.id} for ${accountId} (current: ${account.stripeSubscriptionId})`,
+      );
+      return;
+    }
+    await revertToFree(accountId, subscription.id);
+  });
 }
 
 async function revertToFree(accountId: string, subscriptionId?: string) {
-  // Legacy sandbox archive/sub-coupling has been removed — session sandboxes
-  // are per-session and not tied to a Stripe subscription. We just revert
-  // the account's tier on cancellation.
   void subscriptionId;
 
   await updateCreditAccount(accountId, {
@@ -675,7 +649,6 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
     revenuecatSubscriptionId: event.original_transaction_id ?? event.subscriber_id ?? null,
     stripeSubscriptionId: null,
     stripeSubscriptionStatus: null,
-    // Auto-topup on by default: charge $5 when balance drops below $1
     autoTopupEnabled: true,
     autoTopupThreshold: String(AUTO_TOPUP_DEFAULT_THRESHOLD),
     autoTopupAmount: String(AUTO_TOPUP_DEFAULT_AMOUNT),
@@ -691,7 +664,6 @@ async function handleRevenueCatPurchase(accountId: string, event: any) {
     );
   }
 
-  // Grant one-time $5 machine credit bonus (non-expiring, idempotent per purchase)
   const { MACHINE_CREDIT_BONUS } = await import('./tiers');
   if (MACHINE_CREDIT_BONUS > 0) {
     try {
@@ -822,14 +794,11 @@ async function handleRevenueCatBillingIssue(accountId: string, event: any) {
   console.log(`[RevenueCat] Billing issue: ${accountId}`);
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-function calculateNextCreditGrant(from: Date): Date {
+export function calculateNextCreditGrant(from: Date): Date {
   const next = new Date(from);
   const targetMonth = (next.getMonth() + 1) % 12;
   const targetYear = next.getFullYear() + (next.getMonth() === 11 ? 1 : 0);
   next.setMonth(next.getMonth() + 1);
-  // Handle month boundary (e.g., Jan 31 → Feb 28): if month overflowed, set to last day of target month
   if (next.getMonth() !== targetMonth) {
     next.setDate(0);
   }

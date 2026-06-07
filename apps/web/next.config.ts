@@ -14,7 +14,7 @@ import { withBetterStack } from '@logtail/next';
 // showing a bare release number. Falls back to 'dev' locally.
 function resolveKortixVersion(): string {
   if (process.env.NEXT_PUBLIC_KORTIX_VERSION) return process.env.NEXT_PUBLIC_KORTIX_VERSION;
-  let base: string;
+  let base = 'dev';
   try {
     base = fs.readFileSync(path.join(__dirname, '../../VERSION'), 'utf8').trim();
   } catch {
@@ -29,8 +29,53 @@ function resolveKortixVersion(): string {
 }
 const KORTIX_VERSION = resolveKortixVersion();
 
+// Local `pnpm preview` (scripts/dev-local.sh --build) sets KORTIX_PREVIEW_BUILD=1
+// to trade prod-build fidelity for speed: skip the `standalone` file-tracing pass
+// (next start never reads .next/standalone) and skip ESLint. Prod/CI/Vercel builds
+// don't set this flag, so they are completely unaffected.
+const IS_PREVIEW_BUILD = process.env.KORTIX_PREVIEW_BUILD === '1';
+
+// --- Cross-origin dev / preview access -----------------------------------
+// The app is frequently reached through a proxy whose hostname differs from the
+// origin the browser sends: the Kortix platform proxy (p<port>-<id>.localhost:<port>),
+// a Daytona sandbox (<port>-<id>.daytonaproxy01.net), or a Cloudflare quick
+// tunnel (<id>.trycloudflare.com). Next's Server Action CSRF guard
+// (app-render/action-handler.ts) rejects requests where the browser `Origin`
+// doesn't match the `host`/`x-forwarded-host` it sees — surfacing as
+// "Invalid Server Actions request." — and the dev `/_next/*` guard
+// (block-cross-site.ts) blocks the same mismatch for internal assets.
+//
+// Allowlist the known proxy patterns so proxied requests are trusted. Two
+// matchers consume this list with different semantics, so we cover both:
+//   - serverActions.allowedOrigins matches `new URL(origin).host` (INCLUDES port)
+//   - allowedDevOrigins matches `parsedOrigin.hostname` (STRIPS port)
+// Hence both port-qualified (`*.localhost:8008`) and bare (`*.localhost`)
+// patterns are present. Never loosen in production, where this is a real CSRF
+// surface — there, only an explicit KORTIX_ALLOWED_DEV_ORIGINS opt-in applies.
+const EXTRA_ALLOWED_ORIGINS = (process.env.KORTIX_ALLOWED_DEV_ORIGINS ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const ALLOWED_PROXY_ORIGINS =
+  process.env.NODE_ENV === 'production'
+    ? EXTRA_ALLOWED_ORIGINS
+    : [
+        // Direct localhost + Kortix platform proxy (web:3000 exposed on api:8008)
+        '*.localhost',
+        '*.localhost:3000',
+        '*.localhost:8008',
+        // Daytona cloud sandbox proxy
+        '*.daytonaproxy01.net',
+        // Cloudflare quick tunnel (KORTIX_URL in scripts/dev-local.sh)
+        '*.trycloudflare.com',
+        ...EXTRA_ALLOWED_ORIGINS,
+      ];
+
 const nextConfig = (): NextConfig => ({
-  output: 'standalone',
+  // Standalone bundles the app for Docker/Vercel via a slow monorepo-wide
+  // file-tracing pass. `next start` (what `pnpm preview` uses) ignores it, so
+  // skip it locally for a faster build.
+  output: IS_PREVIEW_BUILD ? undefined : 'standalone',
   // Inline the resolved version so NEXT_PUBLIC_KORTIX_VERSION is available in
   // both the server (runtime-config) and client bundles, even on Vercel.
   env: {
@@ -45,21 +90,58 @@ const nextConfig = (): NextConfig => ({
   // the correct `apps/web/server.js` path structure.
   outputFileTracingRoot: path.join(__dirname, '../../'),
 
+  // Trust proxied dev/preview origins for internal `/_next/*` requests
+  // (see ALLOWED_PROXY_ORIGINS above for the rationale).
+  allowedDevOrigins: ALLOWED_PROXY_ORIGINS,
+
   // Skip type checking during build (done in CI via `pnpm typecheck`)
   typescript: {
     ignoreBuildErrors: true,
   },
 
+  // Lint runs in CI (`pnpm lint`); skip it during local preview builds for speed.
+  // Prod/CI builds (no KORTIX_PREVIEW_BUILD) keep Next's default lint-on-build.
+  eslint: {
+    ignoreDuringBuilds: IS_PREVIEW_BUILD,
+  },
+
+  // Webpack configuration to make Konva work with Next.js
+  webpack: (config) => {
+    config.externals = [...config.externals, { canvas: 'canvas' }]; // required to make Konva & react-konva work
+    return config;
+  },
+
+  // Turbopack configuration
+  turbopack: {
+    // Handle Node.js modules that shouldn't be bundled for browser builds
+    // Canvas is a Node.js native module that needs to be externalized (required for Konva & react-konva)
+    resolveAlias: {
+      canvas: {
+        browser: './src/lib/empty-module.ts', // Exclude canvas from browser builds
+      },
+    },
+  },
+
   // Performance optimizations
   experimental: {
+    // Trust proxied dev/preview origins for Server Actions so the email
+    // sign-in (and every other action) isn't rejected as a CSRF mismatch
+    // (see ALLOWED_PROXY_ORIGINS above for the rationale).
+    serverActions: {
+      allowedOrigins: ALLOWED_PROXY_ORIGINS,
+    },
     // Optimize package imports for faster builds and smaller bundles
     optimizePackageImports: [
       'lucide-react',
       'framer-motion',
+      '@radix-ui/react-icons',
+      'recharts',
       'date-fns',
       '@tanstack/react-query',
+      'react-icons',
       'cmdk',
       'next-intl',
+      '@icons-pack/react-simple-icons',
     ],
   },
 
@@ -74,12 +156,62 @@ const nextConfig = (): NextConfig => ({
     qualities: [75, 100],
   },
 
+  async redirects() {
+    return [
+      // /enterprise was renamed to /contact — keep old links alive.
+      {
+        source: '/enterprise',
+        destination: '/contact',
+        permanent: true,
+      },
+      // The desktop shell historically launched at /dashboard, which never
+      // existed and fell through to the marketing 404. The authed home is
+      // /projects (see middleware). Redirect so already-shipped desktop builds
+      // (URL baked in at compile time) recover instead of 404ing on launch.
+      {
+        source: '/dashboard',
+        destination: '/projects',
+        permanent: false,
+      },
+    ];
+  },
+
   async rewrites() {
     return [
-      // Proxy API calls to backend to avoid CORS in local dev
+      // Proxy API calls to backend to avoid CORS in local dev. The target is
+      // env-driven so an isolated `pnpm worktree` instance proxies the browser
+      // to ITS api port; unset (primary `pnpm dev`) keeps the default :8008.
       {
         source: '/v1/:path*',
-        destination: 'http://localhost:8008/v1/:path*',
+        destination: `${process.env.KORTIX_API_PROXY_TARGET ?? 'http://localhost:8008'}/v1/:path*`,
+      },
+      // Same-origin Supabase proxy for the sandbox preview. ENV-GATED: only
+      // active when KORTIX_SUPABASE_PROXY_TARGET is set (scripts/dev-local.sh
+      // run_sandbox_dev), so prod/normal deployments are untouched. The browser
+      // is served SUPABASE_URL=/supabase (same origin it loaded from, reachable
+      // through whatever preview proxy), and this rewrite forwards it to the
+      // in-sandbox Supabase (e.g. http://127.0.0.1:54321) which the browser
+      // cannot reach directly. Covers auth (/supabase/auth/v1/*) and rest
+      // (/supabase/rest/v1/*) and storage paths. Mirrors the /v1 API proxy.
+      ...(process.env.KORTIX_SUPABASE_PROXY_TARGET
+        ? [
+            {
+              source: '/supabase/:path*',
+              destination: `${process.env.KORTIX_SUPABASE_PROXY_TARGET}/:path*`,
+            },
+          ]
+        : []),
+      {
+        source: '/ingest/static/:path*',
+        destination: 'https://eu-assets.i.posthog.com/static/:path*',
+      },
+      {
+        source: '/ingest/:path*',
+        destination: 'https://eu.i.posthog.com/:path*',
+      },
+      {
+        source: '/ingest/flags',
+        destination: 'https://eu.i.posthog.com/flags',
       },
     ];
   },

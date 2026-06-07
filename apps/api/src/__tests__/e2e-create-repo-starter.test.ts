@@ -68,7 +68,6 @@ const BASE_STARTER_PATHS = [
   '.kortix/opencode/skills/kortix-system/SKILL.md',
   '.kortix/opencode/tools/image_search.ts',
   '.kortix/opencode/tools/lib/get-env.ts',
-  '.kortix/opencode/tools/lib/runtime-gate.ts',
   '.kortix/opencode/tools/memory.ts',
   '.kortix/opencode/tools/scrape_webpage.ts',
   '.kortix/opencode/tools/show.ts',
@@ -179,6 +178,7 @@ mock.module("../snapshots/builder", () => ({
 
 mock.module('../projects/github', () => ({
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  isOrgAccount: async () => false,
   verifyGitHubAppInstallState: (state: string) => state === 'valid-install-state' ? ACCOUNT_ID : null,
   verifyGitHubAppInstallStatePayload: (state: string) => state === 'valid-install-state'
     ? { accountId: ACCOUNT_ID, nonce: 'valid-install-nonce', issuedAt: Math.floor(Date.now() / 1000) }

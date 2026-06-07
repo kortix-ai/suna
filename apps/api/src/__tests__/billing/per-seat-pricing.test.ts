@@ -18,26 +18,29 @@ import {
   grantForSeats,
   isPerSeatAccount,
   isLegacyAccount,
+  canClaimPerSeat,
   llmPriceMarkup,
 } from '../../billing/services/tiers';
 
 import { calculateComputeCost } from '../../billing/services/compute-metering';
 
 describe('Per-seat pricing math', () => {
-  test('$40/seat — typical budget split is display-only guidance', () => {
+  test('$40/seat; typical compute+LLM budget split is a display figure ($20)', () => {
     expect(PER_SEAT_PRICE_USD).toBe(40);
+    // Display-only "typical" split — illustrative usage, not a wallet partition,
+    // so it doesn't have to equal the seat price.
     expect(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD + TYPICAL_LLM_BUDGET_PER_SEAT_USD).toBe(20);
   });
 
-  test('seat grant equals seat price times seat count (single fungible wallet)', () => {
-    expect(grantForSeats(1)).toBe(PER_SEAT_PRICE_USD);
-    expect(grantForSeats(5)).toBe(PER_SEAT_PRICE_USD * 5);
-    expect(grantForSeats(10)).toBe(PER_SEAT_PRICE_USD * 10);
+  test('seat grant equals $40 × seat count (single fungible wallet)', () => {
+    expect(grantForSeats(1)).toBe(40);
+    expect(grantForSeats(5)).toBe(200);
+    expect(grantForSeats(10)).toBe(400);
   });
 
   test('seat counts below 1 are clamped to 1', () => {
-    expect(grantForSeats(0)).toBe(PER_SEAT_PRICE_USD);
-    expect(grantForSeats(-3)).toBe(PER_SEAT_PRICE_USD);
+    expect(grantForSeats(0)).toBe(40);
+    expect(grantForSeats(-3)).toBe(40);
   });
 
   test('auto-topup defaults scale with seat count', () => {
@@ -65,6 +68,55 @@ describe('billing_model guards', () => {
     expect(isLegacyAccount(null)).toBe(true);
     expect(isLegacyAccount(undefined)).toBe(true);
     expect(isLegacyAccount('per_seat')).toBe(false);
+  });
+});
+
+describe('canClaimPerSeat — the "Claim seat-based pricing" card gate', () => {
+  // The bug this guards against: a brand-new free user (billing_model null/legacy,
+  // no machine) was shown the claim card; clicking it dead-ended on "nothing to
+  // switch", and the card hid the normal top-up path — stranding them out of credits.
+
+  test('NEW free user (legacy default, no machine) → hidden (regression)', () => {
+    expect(canClaimPerSeat({ billingModel: null, hasLegacyMachine: false })).toBe(false);
+    expect(canClaimPerSeat({ billingModel: undefined, hasLegacyMachine: false })).toBe(false);
+    expect(canClaimPerSeat({ billingModel: 'legacy', hasLegacyMachine: false })).toBe(false);
+  });
+
+  test('genuine legacy account with a machine to migrate → shown', () => {
+    expect(canClaimPerSeat({ billingModel: 'legacy', hasLegacyMachine: true })).toBe(true);
+    expect(canClaimPerSeat({ billingModel: null, hasLegacyMachine: true })).toBe(true);
+  });
+
+  test('already on per-seat → hidden, even with a machine', () => {
+    expect(canClaimPerSeat({ billingModel: 'per_seat', hasLegacyMachine: true })).toBe(false);
+    expect(canClaimPerSeat({ billingModel: 'per_seat', hasLegacyMachine: false })).toBe(false);
+  });
+
+  test('active yearly commitment → hidden (migration would no-op)', () => {
+    const future = new Date('2030-01-01T00:00:00Z');
+    const now = new Date('2026-06-05T00:00:00Z');
+    expect(canClaimPerSeat({
+      billingModel: 'legacy', hasLegacyMachine: true,
+      commitmentType: 'yearly_commitment', commitmentEndDate: future, now,
+    })).toBe(false);
+  });
+
+  test('expired yearly commitment → shown again', () => {
+    const past = new Date('2025-01-01T00:00:00Z');
+    const now = new Date('2026-06-05T00:00:00Z');
+    expect(canClaimPerSeat({
+      billingModel: 'legacy', hasLegacyMachine: true,
+      commitmentType: 'yearly_commitment', commitmentEndDate: past, now,
+    })).toBe(true);
+  });
+
+  test('non-yearly commitment does not block the claim', () => {
+    const future = new Date('2030-01-01T00:00:00Z');
+    const now = new Date('2026-06-05T00:00:00Z');
+    expect(canClaimPerSeat({
+      billingModel: 'legacy', hasLegacyMachine: true,
+      commitmentType: 'monthly', commitmentEndDate: future, now,
+    })).toBe(true);
   });
 });
 
@@ -108,8 +160,8 @@ describe('Compute cost calculation', () => {
   });
 
   test('monthly heavy usage exceeds typical compute budget (overage funded via topup)', () => {
-    // 8h x 22 days exceeds the display-only compute guidance, but stays within
-    // the fungible seat wallet.
+    // 8h × 22 days of compute exceeds the $12 typical compute budget per seat,
+    // funded from the fungible seat wallet.
     const monthlySeconds = 8 * 3600 * 22;
     const monthlyCost = calculateComputeCost(spec, monthlySeconds);
     expect(monthlyCost).toBeGreaterThan(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD);

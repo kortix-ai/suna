@@ -21,7 +21,7 @@ main (DEV) ──push──► dev-api.kortix.com (ECS) + dev.kortix.com (Vercel
  │
  │  "Promote to Production"  (bump VERSION · tag vX.Y.Z · fast-forward prod)
  ▼
-prod (PROD) ─push─► api-prod.kortix.com (ECS) + new.kortix.com (Vercel)
+prod (PROD) ─push─► api-prod.kortix.com (ECS) + kortix.com (Vercel)
                     + GitHub Release vX.Y.Z (CLI + desktop) + Docker :X.Y.Z/:latest
 ```
 
@@ -64,7 +64,7 @@ There is no per-component version.
 | Desktop                      | Installers     | GitHub Release (.dmg/.msi/.AppImage)       |
 
 > Our hosted sites do **not** use the frontend image — Vercel builds dev.kortix.com
-> (from `main`) and new.kortix.com (from `prod`) from source. The frontend image is
+> (from `main`) and kortix.com (from `prod`) from source. The frontend image is
 > only for self-hosters.
 
 ---
@@ -97,7 +97,7 @@ A docs-only push to main = a no-op CI run.
 
 - **Backend** (dev-api / api-prod): GitHub Actions → **ECS Fargate** roll (OIDC,
   role `kortix-gha-ecs-deploy`).
-- **Frontend** (dev.kortix.com / new.kortix.com): **Vercel git integration** —
+- **Frontend** (dev.kortix.com / kortix.com): **Vercel git integration** —
   auto-builds from the branch, *not* a workflow step.
 
 ### Desktop is decoupled from the release
@@ -121,7 +121,7 @@ best-effort. Desktop can never block or delay a release.
    - register a task-def revision stamping `KORTIX_VERSION=X.Y.Z` → roll
      `kortix-prod` ECS (api-prod reports the clean version)
    - attach desktop installers (best-effort)
-   - Vercel auto-deploys `prod` → new.kortix.com
+   - Vercel auto-deploys `prod` → kortix.com
 
 `kortix.com/install` serves `main/scripts/install.sh` (canonical, always fresh
 from GitHub raw). `kortix update` re-runs it. Stable channel → latest `vX.Y.Z`
@@ -134,7 +134,7 @@ release; `KORTIX_CHANNEL=dev` → `dev-latest` prerelease.
 | Env  | Branch | Frontend                | API (ECS Fargate)                  |
 | ---- | ------ | ----------------------- | ---------------------------------- |
 | DEV  | `main` | dev.kortix.com (Vercel) | dev-api.kortix.com → `kortix-dev`  |
-| PROD | `prod` | new.kortix.com (Vercel) | api-prod.kortix.com → `kortix-prod`|
+| PROD | `prod` | kortix.com (Vercel)     | api-prod.kortix.com → `kortix-prod`|
 
 AWS: account `935064898258`, region `us-west-2`. State in S3
 (`kortix-terraform-state` + DynamoDB locks). Terraform under `infra/terraform`

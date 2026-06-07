@@ -96,6 +96,30 @@ jobs:
           echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
           echo "Proposing v$NEW"
 
+      - name: Pre-flight — refuse to promote unless this commit is fully green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse HEAD)"
+          echo "Promote source ${{ inputs.ref }} @ $SHA"
+          # Every check-run on this commit must be completed + success (skipped /
+          # neutral OK). Crucially this INCLUDES deploy-dev, which builds the
+          # :dev-<sha8> image that deploy-prod retags — so an all-green commit
+          # guarantees that image exists. This blocks the race where prod retags a
+          # stale :dev-latest because the new dev image hadn't finished building.
+          NOT_GREEN="$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" --paginate \
+            --jq '.check_runs[]
+                  | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))
+                  | "\(.name): \(.status)/\(.conclusion)"' || true)"
+          if [ -n "$NOT_GREEN" ]; then
+            echo "::error::Refusing to promote — $SHA is not all-green (this includes the dev image build):"
+            echo "$NOT_GREEN"
+            echo "Wait for these to finish/pass on '${{ inputs.ref }}', then re-run promote." >&2
+            exit 1
+          fi
+          echo "✓ All checks green on $SHA — safe to promote."
+
       - name: Freeze release branch + open PR into prod
         env:
           GH_TOKEN: ${{ github.token }}
@@ -106,6 +130,9 @@ jobs:
           NEW="${{ steps.ver.outputs.new }}"
           TAG="${{ steps.ver.outputs.tag }}"
           RELBR="release/$TAG"
+          # The commit being promoted (the source ref's HEAD, BEFORE we branch +
+          # merge prod). deploy-prod pins the dev image to this exact SHA.
+          SRC_SHA="$(git rev-parse HEAD)"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -122,7 +149,8 @@ jobs:
           # is published here.
           printf '%s\n' "$NEW" > VERSION
           printf '%s\n\n%s\n' "$IN_TITLE" "$IN_NOTES" > RELEASE_NOTES.md
-          git add VERSION RELEASE_NOTES.md
+          printf '%s\n' "$SRC_SHA" > RELEASE_SOURCE_SHA
+          git add VERSION RELEASE_NOTES.md RELEASE_SOURCE_SHA
           git commit -m "release: $TAG"
           git push -f origin "HEAD:refs/heads/$RELBR"
 

@@ -23,7 +23,7 @@
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
-import { getDaytona } from '../shared/daytona';
+import { getProvider, type ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import {
@@ -171,7 +171,11 @@ export async function resolveServiceKey(sandboxId: string): Promise<string | nul
   }
 }
 
-// ── Preview link (Daytona getPreviewLink, cached per port) ────────────────────
+// ── Preview link (provider-resolved upstream, cached per port) ────────────────
+// Delegates to the sandbox's provider — NOT hardcoded to Daytona. The proxy is
+// provider-agnostic: a Platinum sandbox resolves to its edge URL, Daytona to a
+// preview link, local-docker to the container address. (This is the fix for the
+// 502/503 every non-Daytona sandbox hit through `/v1/p/`.)
 
 export async function resolvePreviewLink(
   sandboxRef: string | SandboxRecord,
@@ -199,11 +203,9 @@ export async function resolvePreviewLink(
   }
   previewLinkCache.delete(key);
 
-  const daytona = getDaytona();
-  const daytonaSandbox = await daytona.get(sandboxId);
-  const link = await (daytonaSandbox as any).getPreviewLink(port);
-  const url = link.url || String(link);
-  const token = link.token || null;
+  const record = typeof sandboxRef === 'string' ? await loadSandbox(sandboxRef) : sandboxRef;
+  if (!record) throw new Error(`[proxy] no sandbox row for ${sandboxId}`);
+  const { url, token } = await getProvider(record.provider as ProviderName).resolvePreviewLink(record.externalId, port);
 
   previewLinkCache.set(key, { url, token, expiresAt: Date.now() + CACHE_TTL_MS });
   return { url, token };
@@ -250,14 +252,14 @@ export async function buildSandboxUpstreamHeaders(opts: {
 
 // ── Lifecycle side-effects ─────────────────────────────────────────────────
 
-export async function wakeSandbox(sandboxId: string): Promise<void> {
+export async function wakeSandbox(externalId: string): Promise<void> {
   try {
-    const daytona = getDaytona();
-    const sandbox = await daytona.get(sandboxId);
-    await (sandbox as any).start?.();
-    console.log(`[PREVIEW] Wake-up triggered for sandbox ${sandboxId}`);
+    const record = await loadSandbox(externalId);
+    if (!record) return;
+    await getProvider(record.provider as ProviderName).ensureRunning(externalId);
+    console.log(`[PREVIEW] Wake-up triggered for sandbox ${externalId}`);
   } catch (e) {
-    console.error(`[PREVIEW] Failed to wake sandbox ${sandboxId}:`, e);
+    console.error(`[PREVIEW] Failed to wake sandbox ${externalId}:`, e);
   }
 }
 

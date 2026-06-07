@@ -18,8 +18,15 @@ function readRawEnv(): Partial<RuntimeEnv> {
     }
   }
 
+  // SERVER branch (the browser returns from the window.__*_CONFIG block above):
+  // prefer the ABSOLUTE `SUPABASE_URL` over the public values, which may be
+  // root-relative (e.g. "/supabase") in the sandbox preview. Server-side the
+  // runtime reaches Supabase directly and needs an absolute base; the relative
+  // value is only correct for the BROWSER (same-origin proxy). Mirrors how the
+  // server-side Supabase clients (supabase/server.ts, middleware.ts) prefer the
+  // absolute process.env.SUPABASE_URL.
   return {
-    SUPABASE_URL: process.env.KORTIX_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_PUBLIC_URL || process.env.SUPABASE_URL,
+    SUPABASE_URL: process.env.SUPABASE_URL || process.env.SUPABASE_PUBLIC_URL || process.env.KORTIX_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL,
     SUPABASE_ANON_KEY: process.env.KORTIX_PUBLIC_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY,
     BACKEND_URL: process.env.KORTIX_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || process.env.BACKEND_URL,
     BILLING_ENABLED: (process.env.KORTIX_PUBLIC_BILLING_ENABLED || process.env.NEXT_PUBLIC_BILLING_ENABLED) === 'true',

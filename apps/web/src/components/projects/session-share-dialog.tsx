@@ -107,18 +107,18 @@ export function SessionShareDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => { if (!save.isPending) onOpenChange(o); }}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-        <DialogHeader>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
+        <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
           <DialogTitle>Share session</DialogTitle>
           <DialogDescription>
-            Sessions are private to you by default. Share read/continue access with your team or specific members.
+            Private to you by default. Grant read &amp; continue access to your whole team or specific members.
           </DialogDescription>
         </DialogHeader>
-        <div className="py-1">
+        <div className="max-h-[60vh] overflow-y-auto px-6 py-5">
           <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} copy={SESSION_SHARING_COPY} />
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={save.isPending}>
+        <DialogFooter variant="bar">
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={save.isPending}>
             Cancel
           </Button>
           <Button

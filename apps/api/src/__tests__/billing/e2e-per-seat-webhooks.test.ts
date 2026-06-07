@@ -23,8 +23,6 @@ import {
 registerGlobalMocks();
 registerCreditsMock();
 
-const { PER_SEAT_PRICE_USD } = await import('../../billing/services/tiers');
-
 const PER_SEAT_PRICE_PLACEHOLDER = 'price_PLACEHOLDER_PER_SEAT';
 
 let grantCreditsCalls: any[][] = [];
@@ -94,7 +92,7 @@ function perSeatSubscription(quantity: number, overrides: Record<string, any> = 
 }
 
 describe('per-seat webhook reconciliation', () => {
-  test('quantity 1 → 3: seat_count updates, one seat_grant for the seat delta emitted', async () => {
+  test('quantity 1 → 3: seat_count updates, one seat_grant of $80 emitted', async () => {
     const sub = perSeatSubscription(3);
     const event = createMockStripeEvent('customer.subscription.updated', sub);
 
@@ -107,11 +105,11 @@ describe('per-seat webhook reconciliation', () => {
     expect(persistedUpdate?.data.billingModel).toBe('per_seat');
     expect(persistedUpdate?.data.seatSubscriptionItemId).toBe('si_seat_123');
 
-    // Delta = 3 - 1 = 2 seats.
+    // Delta = 3 - 1 = 2 seats → grant $80 (PER_SEAT_PRICE_USD $40 × 2)
     expect(grantCreditsCalls.length).toBe(1);
     const [accountId, amount, type, , , idempotencyKey] = grantCreditsCalls[0];
     expect(accountId).toBe('acc_test_123');
-    expect(amount).toBe(PER_SEAT_PRICE_USD * 2);
+    expect(amount).toBe(80);
     expect(type).toBe('seat_grant');
     expect(idempotencyKey).toBeDefined();
     expect(String(idempotencyKey)).toContain('seats:3');
@@ -253,14 +251,14 @@ describe('per-seat webhook reconciliation', () => {
     const seatUpdate = updateCalls.find((c) => c.data.seatCount === 4);
     expect(seatUpdate).toBeDefined();
     expect(grantCreditsCalls.length).toBe(1);
-    expect(grantCreditsCalls[0][1]).toBe(PER_SEAT_PRICE_USD * 3);
+    expect(grantCreditsCalls[0][1]).toBe(120); // delta 4-1=3 seats × $40 = $120
   });
 
   test('grant amount math is correct for various deltas', async () => {
     const cases = [
-      { from: 1, to: 2, expectedGrant: PER_SEAT_PRICE_USD },
-      { from: 1, to: 5, expectedGrant: PER_SEAT_PRICE_USD * 4 },
-      { from: 1, to: 10, expectedGrant: PER_SEAT_PRICE_USD * 9 },
+      { from: 1, to: 2, expectedGrant: 40 },
+      { from: 1, to: 5, expectedGrant: 160 },
+      { from: 1, to: 10, expectedGrant: 360 },
     ];
     for (const { from, to, expectedGrant } of cases) {
       grantCreditsCalls = [];
@@ -276,5 +274,79 @@ describe('per-seat webhook reconciliation', () => {
       expect(grantCreditsCalls.length).toBe(1);
       expect(grantCreditsCalls[0][1]).toBe(expectedGrant);
     }
+  });
+});
+
+describe('legacy → per-seat adoption (regression)', () => {
+  // A legacy/machine account migrates to per-seat. The new per-seat sub has a
+  // different id and carries metadata.billing_model='per_seat' but no tier_key /
+  // previous_subscription_id, so the stale-sub guard used to drop it — stranding
+  // the account on the (now cancelled) machine sub: tier=free, project-capped.
+  test('legacy/machine account adopts an incoming active per-seat sub instead of skipping it', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        billingModel: 'legacy',
+        tier: 'free',
+        seatCount: 0,
+        stripeSubscriptionId: 'sub_machine_legacy',
+      });
+
+    const perSeatSub = createMockStripeSubscription({
+      id: 'sub_perseat_new',
+      status: 'active',
+      items: { data: [{ id: 'si_perseat_new', quantity: 1, price: { id: 'price_arbitrary', unit_amount: 4000, currency: 'usd' } }] },
+      metadata: { account_id: 'acc_test_123', billing_model: 'per_seat' },
+    });
+    const event = createMockStripeEvent('customer.subscription.created', perSeatSub);
+
+    await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+    const adopt = [...updateCalls, ...upsertCalls].find((c) => c.data.billingModel === 'per_seat');
+    expect(adopt).toBeDefined();
+    expect(adopt?.data.stripeSubscriptionId).toBe('sub_perseat_new');
+    expect(adopt?.data.seatSubscriptionItemId).toBe('si_perseat_new');
+    expect(adopt?.data.tier).toBe('per_seat');
+  });
+
+  test('a genuinely stale non-per-seat sub is still skipped (guard intact)', async () => {
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        billingModel: 'per_seat',
+        tier: 'per_seat',
+        seatCount: 1,
+        seatSubscriptionItemId: 'si_perseat_current',
+        stripeSubscriptionId: 'sub_perseat_current',
+      });
+
+    const staleSub = createMockStripeSubscription({
+      id: 'sub_other_unrelated',
+      status: 'active',
+      items: { data: [{ id: 'si_other', quantity: 1, price: { id: 'price_legacy_unknown', unit_amount: 2000, currency: 'usd' } }] },
+      metadata: { account_id: 'acc_test_123', tier_key: 'tier_2_20' },
+    });
+    const event = createMockStripeEvent('customer.subscription.updated', staleSub);
+
+    await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+    const clobber = updateCalls.find((c) => c.data.stripeSubscriptionId === 'sub_other_unrelated');
+    expect(clobber).toBeUndefined();
+  });
+
+  test('duplicate event delivery is deduped (recordWebhookEvent gate)', async () => {
+    let calls = 0;
+    mockRegistry.recordWebhookEvent = async () => { calls++; return calls === 1; };
+    mockRegistry.getCreditAccount = async () =>
+      createMockCreditAccount({
+        billingModel: 'per_seat', tier: 'per_seat', seatCount: 1,
+        seatSubscriptionItemId: 'si_seat_123', stripeSubscriptionId: 'sub_seat_123',
+      });
+
+    const sub = perSeatSubscription(3);
+    const event = createMockStripeEvent('customer.subscription.updated', sub);
+    await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+    await processStripeWebhook(JSON.stringify(event), 'whsec_test');
+
+    // Second delivery short-circuits before any reconciliation.
+    expect(grantCreditsCalls.length).toBe(1);
   });
 });

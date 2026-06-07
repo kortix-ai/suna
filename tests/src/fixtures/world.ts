@@ -92,6 +92,7 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
       const id = await provisionProject(adminClient, {
         name,
         ...(opts?.accountId ? { account_id: opts.accountId } : {}),
+        ...(opts?.seed ? { seed_starter: true } : {}),
       });
       stack.push("project", id);
       return { id, name } as CreatedProject;

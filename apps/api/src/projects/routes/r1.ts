@@ -19,7 +19,7 @@ import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProje
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, registerGitHubLinkedProject, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, deriveProjectName, normalizeRepoUrl, normalizeString, readBody, requestAuditContext, serializeGitHubInstallation, serializeGitHubInstallations, serializeGitHubRepo, serializeProject } from '../lib/serializers';
-import { fireGitTrigger, markGitTriggerFired, renderPromptTemplate, verifyWebhookSignature, webhookPayload } from '../lib/triggers';
+import { extractWebhookToken, fireGitTrigger, markGitTriggerFired, renderPromptTemplate, verifyWebhookSignature, verifyWebhookToken, webhookPayload } from '../lib/triggers';
 
 projectsApp.use('/*', supabaseAuth);
 
@@ -56,9 +56,21 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
     return c.json({ error: 'Webhook secret is not configured' }, 409);
   }
 
+  // Primary auth: HMAC-SHA256 signature over the raw body (GitHub-compatible).
+  // Fallback, ONLY when no signature header is present: a static shared token in
+  // X-Kortix-Token or Authorization, for sources that can't HMAC-sign their body
+  // (e.g. Better Stack error webhooks — custom headers / basic auth only). Both
+  // paths require knowing the trigger's secret, so security is equivalent to a
+  // shared bearer token; signed senders are unaffected.
   const signatureHeader =
     c.req.header('x-kortix-signature') || c.req.header('x-hub-signature-256') || null;
-  if (!verifyWebhookSignature(rawBody, secret, signatureHeader)) {
+  const authed = signatureHeader
+    ? verifyWebhookSignature(rawBody, secret, signatureHeader)
+    : verifyWebhookToken(
+        extractWebhookToken(c.req.header('x-kortix-token'), c.req.header('authorization')),
+        secret,
+      );
+  if (!authed) {
     return c.json({ error: 'Invalid webhook signature' }, 401);
   }
 

@@ -1,7 +1,6 @@
 import { tool } from "@opencode-ai/plugin";
 import FirecrawlApp from "@mendable/firecrawl-js";
 import { getEnv, getKortixRouterBase } from "./lib/get-env";
-import { featureDisabled, disabledResult } from "./lib/runtime-gate";
 
 interface ScrapeResult {
   url: string;
@@ -79,7 +78,6 @@ export default tool({
       .describe("Include raw HTML alongside markdown. Default: false"),
   },
   async execute(args, _context) {
-    if (featureDisabled("web_tools")) return disabledResult("web_tools", "scrape_webpage");
     // Route through the Kortix router (derived from KORTIX_API_URL) and auth with
     // KORTIX_TOKEN; the router injects the real upstream key. Fall back to a raw
     // FIRECRAWL_API_KEY only when KORTIX_API_URL is unset (self-host/direct).

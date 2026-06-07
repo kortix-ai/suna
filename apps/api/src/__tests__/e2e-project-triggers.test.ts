@@ -150,6 +150,7 @@ mock.module("../snapshots/builder", () => ({
 
 mock.module('../projects/github', () => ({
   parseGitHubRepoUrl: () => null,
+  isOrgAccount: async () => false,
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
   createGitHubAppJwt: () => 'jwt-test',
   verifyGitHubAppInstallState: (state: string) => state,
@@ -752,5 +753,43 @@ describe('git-backed triggers — runtime fire paths', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');
+  });
+
+  test('webhook accepts a valid static token (no HMAC) and rejects a wrong one', async () => {
+    seedManifest(webhookEntry({
+      slug: 'hook',
+      name: 'Hook',
+      secretEnv: 'HOOK_SECRET',
+      prompt: 'New {{ body.action }}',
+    }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    const app = createApp();
+    const rawBody = JSON.stringify({ action: 'opened' });
+
+    // Wrong token → 401, no provision.
+    const wrong = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Kortix-Token': 'nope' },
+      body: rawBody,
+    });
+    expect(wrong.status).toBe(401);
+    expect(sandboxProvisionCalls).toBe(0);
+
+    // Correct X-Kortix-Token (no signature header) → fires.
+    const viaHeader = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Kortix-Token': 'shhh' },
+      body: rawBody,
+    });
+    expect(viaHeader.status).toBe(202);
+    expect((await viaHeader.json()).status).toBe('fired');
+
+    // Same secret via Authorization: Bearer also works.
+    const viaBearer = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer shhh' },
+      body: rawBody,
+    });
+    expect(viaBearer.status).toBe(202);
   });
 });

@@ -5,20 +5,37 @@ import { createClient } from '@/lib/supabase/server';
 import { getServerPublicEnv } from '@/lib/public-env-server';
 import { redirect } from 'next/navigation';
 
-function trustedWebOrigin(origin?: string | null): string {
-  const configured = getServerPublicEnv().APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
-  const candidate = configured
-    ? (configured.startsWith('http') ? configured : `https://${configured}`)
-    : origin;
+function normalizeTrustedOrigin(value?: string | null): string | null {
+  if (!value) return null;
+  // Reject values that are clearly not a host/URL — e.g. an undecrypted dotenvx
+  // ciphertext ("encrypted:...") leaking through a Vercel build that ran plain
+  // `next build` without DOTENV_PRIVATE_KEY. Without this guard `new URL()`
+  // throws and we silently fall back to localhost, which breaks the magic-link
+  // redirect_to on every deployed environment.
+  if (value.startsWith('encrypted:')) return null;
+  const candidate = value.startsWith('http') ? value : `https://${value}`;
   try {
-    const url = new URL(candidate || 'http://localhost:3000');
+    const url = new URL(candidate);
     if (url.protocol !== 'https:' && url.hostname !== 'localhost' && url.hostname !== '127.0.0.1') {
-      return 'http://localhost:3000';
+      return null;
     }
     return url.origin;
   } catch {
-    return 'http://localhost:3000';
+    return null;
   }
+}
+
+function trustedWebOrigin(origin?: string | null): string {
+  const configured = getServerPublicEnv().APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
+  // Prefer the configured app URL, but if it is missing or malformed fall back
+  // to the real browser origin the request came from before localhost. Supabase's
+  // redirect-URL allowlist is the authority on where the link may actually land,
+  // so trusting the request origin here cannot widen the redirect surface.
+  return (
+    normalizeTrustedOrigin(configured) ||
+    normalizeTrustedOrigin(origin) ||
+    'http://localhost:3000'
+  );
 }
 
 

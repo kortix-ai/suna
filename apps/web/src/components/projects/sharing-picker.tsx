@@ -94,9 +94,13 @@ export function ShareOption({
   return (
     <label
       className={cn(
-        'flex cursor-pointer items-center gap-3 rounded-2xl border p-2.5 transition-colors',
-        'focus-within:ring-2 focus-within:ring-primary/50',
-        selected ? 'border-primary/50 bg-primary/[0.05]' : 'border-border/60 hover:bg-muted/40',
+        'group/option flex cursor-pointer items-center gap-3 rounded-2xl border p-3 transition-all duration-150',
+        // Ring only on keyboard focus — not on every mouse click — so a picked
+        // card reads as a clean tinted card, never a heavy persistent outline.
+        'has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-primary/40 has-[:focus-visible]:ring-offset-1 has-[:focus-visible]:ring-offset-background',
+        selected
+          ? 'border-primary/60 bg-primary/[0.05]'
+          : 'border-border/60 hover:border-border hover:bg-muted/30',
       )}
     >
       {Icon ? (
@@ -105,7 +109,9 @@ export function ShareOption({
           <span
             className={cn(
               'flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors',
-              selected ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground',
+              selected
+                ? 'bg-primary/10 text-primary'
+                : 'bg-muted text-muted-foreground group-hover/option:text-foreground',
             )}
           >
             <Icon className="h-4 w-4" />
@@ -115,10 +121,19 @@ export function ShareOption({
         <RadioGroupItem value={value} className="shrink-0" />
       )}
       <div className="min-w-0 flex-1">
-        <div className="text-sm font-medium text-foreground">{label}</div>
+        <div className={cn('text-sm font-medium transition-colors', selected ? 'text-foreground' : 'text-foreground/90')}>
+          {label}
+        </div>
         <div className="text-xs text-muted-foreground">{desc}</div>
       </div>
-      {selected && Icon && <Check className="h-4 w-4 shrink-0 text-primary" />}
+      {Icon && (
+        <Check
+          className={cn(
+            'h-4 w-4 shrink-0 text-primary transition-opacity duration-150',
+            selected ? 'opacity-100' : 'opacity-0',
+          )}
+        />
+      )}
     </label>
   );
 }
@@ -145,12 +160,16 @@ export function SharingPicker({
   };
 
   return (
-    <div className="space-y-2">
-      {showHeading && <Label className="text-xs text-muted-foreground">{c.heading}</Label>}
+    <div className="space-y-3">
+      {showHeading && (
+        <Label className="text-xs font-medium uppercase tracking-wide text-muted-foreground/70">
+          {c.heading}
+        </Label>
+      )}
       <RadioGroup
         value={value.mode}
         onValueChange={(v) => onChange({ ...value, mode: v as SharingMode })}
-        className="space-y-1.5"
+        className="space-y-2"
       >
         <ShareOption value="project" label={c.project.label} desc={c.project.desc} current={value.mode} icon={Globe} />
         <ShareOption value="private" label={c.private.label} desc={c.private.desc} current={value.mode} icon={Lock} />

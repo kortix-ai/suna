@@ -701,13 +701,13 @@
       "joinAccountDescription": "Du trittst diesem Teamkonto als {roleLabel} bei."
     },
     "appLayout": {
-      "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – Das autonome Betriebssystem für Unternehmen",
-      "line197JsxAttrContentACloudComputerWhereAiAgentsRunYour": "Ein Cloud-Computer, auf dem KI-Agenten Ihr Unternehmen betreiben. Verbinden Sie über 3.000 Tools, konfigurieren Sie autonome Agenten, legen Sie Trigger fest - und die Maschine arbeitet rund um die Uhr mit persistentem Speicher.",
-      "line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf": "Kortix, autonomes Betriebssystem für Unternehmen, KI-Agenten, selbstfahrendes Unternehmen, Cloud-Computer, KI-Automatisierung, Agenten-Orchestrierung, Zielschleifen, KI-Trigger, persistenter Speicher, autonome Belegschaft, KI-Operations",
-      "line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – Das autonome Betriebssystem für Unternehmen",
-      "line200JsxAttrContentACloudComputerWhereAiAgentsRunYour": "Ein Cloud-Computer, auf dem KI-Agenten Ihr Unternehmen betreiben. Verbinden Sie über 3.000 Tools, konfigurieren Sie autonome Agenten, legen Sie Trigger fest - und die Maschine arbeitet rund um die Uhr mit persistentem Speicher.",
-      "line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – Das autonome Betriebssystem für Unternehmen",
-      "line207JsxAttrContentACloudComputerWhereAiAgentsRunYour": "Ein Cloud-Computer, auf dem KI-Agenten Ihr Unternehmen betreiben. Verbinden Sie über 3.000 Tools, konfigurieren Sie autonome Agenten, legen Sie Trigger fest - und die Maschine arbeitet rund um die Uhr mit persistentem Speicher.",
+      "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – Das KI-Kommandozentrum für Ihr Unternehmen",
+      "line197JsxAttrContentACloudComputerWhereAiAgentsRunYour": "Kortix ist das Open-Source-KI-Kommandozentrum für Ihr Unternehmen – ein Ort, um KI-Agenten zu erstellen, zu betreiben und zu steuern, die über 3.000 Tools verbinden und echte Arbeit erledigen, nicht nur chatten.",
+      "line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf": "Kortix, KI-Kommandozentrum, KI-Agenten, KI-Belegschaft, Open-Source-KI-Plattform, selbst gehostete KI-Agenten, KI-Automatisierung, Agenten-Orchestrierung, KI-natives Unternehmen, KI-Agenten erstellen, über 3.000 Tools verbinden, KI-Operations",
+      "line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – Das KI-Kommandozentrum für Ihr Unternehmen",
+      "line200JsxAttrContentACloudComputerWhereAiAgentsRunYour": "Kortix ist das Open-Source-KI-Kommandozentrum für Ihr Unternehmen – ein Ort, um KI-Agenten zu erstellen, zu betreiben und zu steuern, die über 3.000 Tools verbinden und echte Arbeit erledigen, nicht nur chatten.",
+      "line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – Das KI-Kommandozentrum für Ihr Unternehmen",
+      "line207JsxAttrContentACloudComputerWhereAiAgentsRunYour": "Kortix ist das Open-Source-KI-Kommandozentrum für Ihr Unternehmen – ein Ort, um KI-Agenten zu erstellen, zu betreiben und zu steuern, die über 3.000 Tools verbinden und echte Arbeit erledigen, nicht nur chatten.",
       "line209JsxAttrContentKortix": "@kortix",
       "line214JsxAttrContentAppId6754448524AppArgumentKortix": "app-id=6754448524, app-argument=kortix://"
     },

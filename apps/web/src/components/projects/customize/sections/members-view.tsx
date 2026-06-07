@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Clock, Loader2, Mail, RefreshCw, Shield, UserPlus, Users, X } from 'lucide-react';
 import { toast } from '@/lib/toast';
@@ -45,6 +45,7 @@ import {
   detachGroupFromProject,
   listProjectGroupGrants,
   updateProjectGroupGrant,
+  type InviteProjectMemberResult,
   type ProjectAccessMember,
   type ProjectGroupGrant,
   type ProjectRole,
@@ -147,53 +148,196 @@ function ProjectMembersBody({ projectId }: { projectId: string }) {
 function InviteMemberCard({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const [email, setEmail] = useState('');
+  const [emails, setEmails] = useState<string[]>([]);
+  const [inputValue, setInputValue] = useState('');
   const [role, setRole] = useState<ProjectRole>('editor');
+  const [inlineError, setInlineError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const inviteMutation = useMutation({
-    mutationFn: () => inviteProjectMember(projectId, email.trim(), role),
-    onSuccess: (result) => {
-      // Two cases. If the email already had a Kortix account, the
-      // backend granted them the role immediately and returned the
-      // ProjectAccessMember row. If not, the backend created an
-      // org-level invitation carrying the project grant — the user
-      // won't show up in the access list until they accept.
-      if (isInviteSent(result)) {
-        if (result.email_sent) {
-          toast.success(
-            `Invitation sent to ${result.email}. They'll land on this project as ${result.project_role} when they sign up.`,
-          );
+    mutationFn: async (list: string[]) =>
+      Promise.all(
+        list.map(async (addr) => {
+          try {
+            const res = await inviteProjectMember(projectId, addr, role);
+            return { email: addr, ok: true as const, res };
+          } catch (err) {
+            return {
+              email: addr,
+              ok: false as const,
+              message: (err as Error).message,
+            };
+          }
+        }),
+      ),
+    onSuccess: (results) => {
+      type Ok = { email: string; ok: true; res: InviteProjectMemberResult };
+      type Failed = { email: string; ok: false; message: string };
+      const succeeded = results.filter((r): r is Ok => r.ok);
+      const failed = results.filter((r): r is Failed => !r.ok);
+      // Split by which of the two backend shapes came back: an existing
+      // Kortix user is granted the role immediately (ProjectAccessMember),
+      // a new email gets an org-level invitation carrying the project grant
+      // and won't appear in the access list until they accept.
+      const invited = succeeded.filter((r) => isInviteSent(r.res));
+      const added = succeeded.filter((r) => !isInviteSent(r.res));
+      const skipped = succeeded.filter(
+        (r) => isInviteSent(r.res) && !r.res.email_sent,
+      );
+
+      if (succeeded.length === 1) {
+        const r = succeeded[0];
+        if (isInviteSent(r.res)) {
+          if (r.res.email_sent) {
+            toast.success(
+              `Invitation sent to ${r.res.email}. They'll land on this project as ${r.res.project_role} when they sign up.`,
+            );
+          } else {
+            // Email delivery was skipped (e.g. Mailtrap not configured) or
+            // failed. Surface the link so the inviter can share it manually.
+            const inviteUrl = r.res.invite_url;
+            toast.warning(
+              `Invitation created for ${r.res.email} — email skipped. Share the invite link manually.`,
+              {
+                action: { label: 'Copy link', onClick: () => copyInviteLink(inviteUrl) },
+                duration: 10_000,
+              },
+            );
+          }
         } else {
-          // Email delivery was skipped (e.g. Mailtrap not configured) or
-          // failed. Surface the link so the inviter can share it manually.
+          toast.success('Member added');
+        }
+      } else if (succeeded.length > 1) {
+        toast.success(`Invited ${succeeded.length} people`);
+        if (skipped.length > 0) {
           toast.warning(
-            `Invitation created for ${result.email} — email skipped. Share the invite link manually.`,
-            {
-              action: { label: 'Copy link', onClick: () => copyInviteLink(result.invite_url) },
-              duration: 10_000,
-            },
+            `${skipped.length} ${skipped.length === 1 ? 'email was' : 'emails were'} skipped — share their links manually.`,
           );
         }
-        // Make the new pending row visible immediately — without this
-        // the page looked unchanged after invite, which was the exact
-        // confusion that prompted this card to exist.
+      }
+
+      if (failed.length > 0) {
+        toast.error(
+          failed.length === 1
+            ? failed[0].message || 'Failed to invite member'
+            : `Failed to invite ${failed.length}: ${failed.map((f) => f.email).join(', ')}`,
+        );
+      }
+
+      // Make new pending rows visible immediately — without this the page
+      // looked unchanged after invite, which was the exact confusion that
+      // prompted this card to exist.
+      if (invited.length > 0) {
         queryClient.invalidateQueries({ queryKey: ['project-pending-invites', projectId] });
-      } else {
-        toast.success('Member added');
+      }
+      if (added.length > 0) {
         queryClient.invalidateQueries({ queryKey: ['project-access', projectId] });
         queryClient.invalidateQueries({ queryKey: ['projects'] });
         queryClient.invalidateQueries({ queryKey: ['project', projectId] });
       }
-      setEmail('');
+
+      // Keep only the genuinely-failed emails so the admin can retry them.
+      setEmails(failed.map((f) => f.email));
+      setInputValue('');
     },
     onError: (error: Error) => toast.error(error.message || 'Failed to invite member'),
   });
 
+  /**
+   * Parse free text (typed or pasted) into email chips. Splits on commas,
+   * semicolons, and whitespace. Returns true if everything parsed cleanly;
+   * leaves any invalid tokens in the input and surfaces an error otherwise.
+   */
+  function commitInput(raw: string): boolean {
+    const tokens = raw
+      .split(/[\s,;]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tokens.length === 0) {
+      setInputValue('');
+      return true;
+    }
+    const valid: string[] = [];
+    const invalid: string[] = [];
+    for (const t of tokens) {
+      if (!EMAIL_RE.test(t)) invalid.push(t);
+      else valid.push(t);
+    }
+    if (valid.length > 0) {
+      setEmails((prev) => [...prev, ...valid.filter((v) => !prev.includes(v))]);
+    }
+    if (invalid.length > 0) {
+      setInputValue(invalid.join(', '));
+      setInlineError(
+        `${invalid.length === 1 ? 'Not a valid email' : 'Not valid emails'}: ${invalid.join(', ')}`,
+      );
+      return false;
+    }
+    setInputValue('');
+    setInlineError(null);
+    return true;
+  }
+
+  function removeEmail(addr: string) {
+    setEmails((prev) => prev.filter((e) => e !== addr));
+  }
+
+  function handleInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (
+      event.key === 'Enter' ||
+      event.key === ',' ||
+      event.key === ';' ||
+      (event.key === ' ' && inputValue.trim() !== '')
+    ) {
+      event.preventDefault();
+      commitInput(inputValue);
+    } else if (
+      event.key === 'Backspace' &&
+      inputValue === '' &&
+      emails.length > 0
+    ) {
+      setEmails((prev) => prev.slice(0, -1));
+    }
+  }
+
+  function handlePaste(event: React.ClipboardEvent<HTMLInputElement>) {
+    const text = event.clipboardData.getData('text');
+    // Only intercept multi-email pastes; let a single address paste normally
+    // so the admin can still edit it before committing.
+    if (/[\s,;]/.test(text.trim())) {
+      event.preventDefault();
+      commitInput(`${inputValue} ${text}`);
+    }
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!email.trim() || inviteMutation.isPending) return;
-    inviteMutation.mutate();
+    if (inviteMutation.isPending) return;
+    setInlineError(null);
+    const tokens = inputValue
+      .split(/[\s,;]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const invalid = tokens.filter((t) => !EMAIL_RE.test(t));
+    if (invalid.length > 0) {
+      setInlineError(
+        `${invalid.length === 1 ? 'Not a valid email' : 'Not valid emails'}: ${invalid.join(', ')}`,
+      );
+      return;
+    }
+    const all = Array.from(new Set([...emails, ...tokens]));
+    if (all.length === 0) {
+      setInlineError('Add at least one email');
+      return;
+    }
+    setEmails(all);
+    setInputValue('');
+    inviteMutation.mutate(all);
   }
+
+  const pendingCount = emails.length + (inputValue.trim() ? 1 : 0);
 
   return (
     <SectionCard
@@ -209,7 +353,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
         onSubmit={handleSubmit}
         className="grid grid-cols-1 gap-x-3 gap-y-1.5 sm:grid-cols-[1fr_10rem_auto]"
       >
-        <Label htmlFor="invite-email" className="sm:col-start-1">Email</Label>
+        <Label htmlFor="invite-email" className="sm:col-start-1">Emails</Label>
         <Label htmlFor="invite-role" className="hidden sm:block sm:col-start-2">
           Role
         </Label>
@@ -217,17 +361,53 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
             grid row's intrinsic height stable without rendering text. */}
         <span aria-hidden className="hidden sm:block sm:col-start-3">&nbsp;</span>
 
-        <Input
-          id="invite-email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder={tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line151JsxAttrPlaceholderTeammateExampleCom')}
-          disabled={inviteMutation.isPending}
-          autoComplete="off"
-          className="sm:col-start-1"
-          style={{ height: 44 }}
-        />
+        {/* Multi-email chip field — mirrors the Input treatment (rounded-2xl
+            border, bg-card, accent focus ring) so it reads as one of the
+            shared form controls, just one that holds many addresses. */}
+        <div
+          className="flex w-full flex-wrap items-center gap-1.5 rounded-2xl border bg-card px-3 py-1.5 text-sm transition-[color] focus-within:outline-none focus-within:ring-2 focus-within:ring-primary/50 sm:col-start-1"
+          style={{ minHeight: 44 }}
+          onClick={() => inputRef.current?.focus()}
+        >
+          <Mail className="pointer-events-none h-4 w-4 shrink-0 text-muted-foreground" />
+          {emails.map((addr) => (
+            <Badge key={addr} variant="secondary" className="gap-1 pr-1">
+              {addr}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeEmail(addr);
+                }}
+                className="text-muted-foreground transition-colors hover:text-foreground"
+                aria-label={`Remove ${addr}`}
+                disabled={inviteMutation.isPending}
+              >
+                <X className="size-3" />
+              </button>
+            </Badge>
+          ))}
+          <input
+            ref={inputRef}
+            id="invite-email"
+            type="text"
+            value={inputValue}
+            onChange={(e) => {
+              setInputValue(e.target.value);
+              if (inlineError) setInlineError(null);
+            }}
+            onKeyDown={handleInputKeyDown}
+            onPaste={handlePaste}
+            placeholder={
+              emails.length === 0
+                ? tHardcodedUi.raw('appProjectsIdCustomizeMembersPage.line151JsxAttrPlaceholderTeammateExampleCom')
+                : 'Add another…'
+            }
+            autoComplete="off"
+            className="min-w-[8rem] flex-1 bg-transparent font-medium outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={inviteMutation.isPending}
+          />
+        </div>
 
         <Label htmlFor="invite-role-mobile" className="sm:hidden">Role</Label>
         <Select
@@ -259,7 +439,7 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
         <Button
           type="submit"
           size="lg"
-          disabled={!email.trim() || inviteMutation.isPending}
+          disabled={pendingCount === 0 || inviteMutation.isPending}
           className="shrink-0 gap-1.5 sm:col-start-3"
           style={{ height: 44 }}
         >
@@ -268,9 +448,17 @@ function InviteMemberCard({ projectId }: { projectId: string }) {
           ) : (
             <UserPlus className="h-4 w-4" />
           )}
-          Invite
+          {pendingCount > 1 ? `Invite ${pendingCount}` : 'Invite'}
         </Button>
       </form>
+
+      {inlineError ? (
+        <p className="mt-2 text-xs text-destructive">{inlineError}</p>
+      ) : (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Add several at once — separate with commas, spaces, or Enter.
+        </p>
+      )}
     </SectionCard>
   );
 }

@@ -24,11 +24,13 @@ import { useTranslations } from 'next-intl';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { openExternalRoute } from '@/lib/desktop';
 import { useQuery } from '@tanstack/react-query';
 import {
   BookOpen,
   ChevronsUpDown,
   CreditCard,
+  Download,
   Home,
   LifeBuoy,
   LogOut,
@@ -57,6 +59,7 @@ import { resetClientState } from '@/lib/utils/reset-client-state';
 import { transitionFromElement } from '@/lib/view-transition';
 import { themeOptions, type SettingsTabId } from '@/lib/menu-registry';
 import { SupportDialog } from '@/components/layout/support-dialog';
+import { DownloadAppsModal } from '@/components/layout/download-apps-modal';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { isBillingEnabled } from '@/lib/config';
@@ -94,6 +97,7 @@ export function UserMenu({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
   const [supportOpen, setSupportOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
 
   // Mounted on every authenticated page, so this menu owns the "default
   // selected account" guarantee for the whole app. The account *switcher*
@@ -251,7 +255,14 @@ export function UserMenu({
           <ActionRow
             icon={<BookOpen className="size-3.5" />}
             label="Docs"
-            onSelect={() => deferAfterClose(() => router.push('/docs'))}
+            onSelect={() => deferAfterClose(() => {
+              if (!openExternalRoute('/docs')) router.push('/docs');
+            })}
+          />
+          <ActionRow
+            icon={<Download className="size-3.5" />}
+            label="Download apps"
+            onSelect={() => deferAfterClose(() => setDownloadOpen(true))}
           />
           <ActionRow
             icon={<LifeBuoy className="size-3.5" />}
@@ -338,6 +349,7 @@ export function UserMenu({
         defaultTab={settingsTab}
       />
       <SupportDialog open={supportOpen} onOpenChange={setSupportOpen} />
+      <DownloadAppsModal open={downloadOpen} onOpenChange={setDownloadOpen} />
       <ReferralDialog open={referralOpen} onOpenChange={closeReferral} />
     </>
   );

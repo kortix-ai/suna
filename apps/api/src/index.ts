@@ -42,6 +42,8 @@ import { startProjectMaintenance, stopProjectMaintenance } from './projects/main
 import { kickStartupPreBuild } from './snapshots/builder';
 import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
 import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
+import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
+import { startSunaMigrationWorker, stopSunaMigrationWorker } from './projects/suna-migration/suna-migration-worker';
 import { accountsRouter } from './accounts';
 import { authRouter } from './auth';
 import { scimRouter } from './scim';
@@ -463,6 +465,7 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
 {
   const { createLlmGateway } = await import('./llm-gateway');
   const { attributeYoloToken } = await import('./billing/services/yolo-tokens');
+  const { validateAccountToken } = await import('./repositories/account-tokens');
   const { assertBillingActive } = await import('./billing/services/billing-gate');
   const { deductForLlmUsage } = await import('./billing/services/credits');
   const { recordUsageEvent } = await import('./shared/usage-events');
@@ -479,7 +482,19 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
         appReferer: config.KORTIX_URL,
       },
       {
-        authenticateToken: (token) => attributeYoloToken(token),
+        authenticateToken: async (token) => {
+          // Legacy per-member YOLO token (prod per-seat path) takes priority.
+          const yolo = await attributeYoloToken(token);
+          if (yolo) return yolo;
+          // YOLO is discontinued; sandboxes now present their account token
+          // (a kortix_pat_ minted at provision). Resolve it to {userId, accountId}
+          // so the managed gateway works for self-hosted / billing-off deploys.
+          const acct = await validateAccountToken(token);
+          if (acct.isValid && acct.userId && acct.accountId) {
+            return { userId: acct.userId, accountId: acct.accountId };
+          }
+          return null;
+        },
         assertBillingActive,
         recordUsage: async (event) => {
           // Always record usage_events for observability (token counts, model,
@@ -524,6 +539,7 @@ app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billin
 app.route('/v1/account', accountDeletionApp); // account deletion status/request/cancel/immediate
 app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/version
 registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
+registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
@@ -752,6 +768,7 @@ async function startSingletonWorkers() {
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
   startLegacyMigrationWorker();
+  startSunaMigrationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
   // that just transitioned to expired. Engine already filters expired rows out
   // of authorize() so correctness doesn't depend on this — it's the audit trail.
@@ -765,6 +782,7 @@ async function stopSingletonWorkers() {
   stopProjectTriggerScheduler();
   stopProjectMaintenance();
   stopLegacyMigrationWorker();
+  stopSunaMigrationWorker();
   const { stopGrantExpirySweeper } = await import('./iam/expiry-sweeper');
   stopGrantExpirySweeper();
 }

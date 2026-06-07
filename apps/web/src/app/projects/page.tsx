@@ -19,6 +19,7 @@ import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
 import { ProjectCreateModal } from '@/components/projects/project-create-modal';
 import { LegacyMachineCard } from '@/components/projects/legacy-machine-card';
+import { SunaMigrationBanner } from '@/components/projects/suna-migration-banner';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { useLegacyMachines, useStartLegacyMigration } from '@/hooks/legacy/use-legacy-machine-migration';
 import {
@@ -464,6 +465,7 @@ export default function ProjectsPage() {
       <AppHeader user={user} breadcrumb="Projects" />
       <main className="flex-1 px-4 py-10 sm:py-12">
         <div className="mx-auto w-full max-w-6xl space-y-8">
+          <SunaMigrationBanner accountId={activeAccountId} />
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div className="flex flex-col gap-1">
               <h1 className="text-3xl font-semibold tracking-tight text-foreground">

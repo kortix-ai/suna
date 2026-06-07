@@ -64,8 +64,14 @@ export interface TeamFixture {
 
 /** Fixture sugar bound to the current run (auto-tracked for teardown). */
 export interface Fixtures {
-  /** Create a fresh run-scoped project (default: OWNER's personal account). */
-  project(opts?: { name?: string; accountId?: string }): Promise<CreatedProject>;
+  /**
+   * Create a fresh run-scoped project (default: OWNER's personal account).
+   * `seed: true` seeds the starter (initial commit on the default branch) so a
+   * sandbox can materialize the repo — REQUIRED for any flow that boots a
+   * session/sandbox. Unseeded projects (the default) are an empty repo, fine for
+   * metadata/boundary flows and much cheaper.
+   */
+  project(opts?: { name?: string; accountId?: string; seed?: boolean }): Promise<CreatedProject>;
   /**
    * A single shared, READ-ONLY project provisioned once per run and reused — use
    * this in flows that only READ a project (never mutate its manifest/name/state),

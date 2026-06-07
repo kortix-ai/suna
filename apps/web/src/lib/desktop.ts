@@ -9,13 +9,74 @@
  * `@tauri-apps/api`.
  */
 
-const DESKTOP_UA_TOKEN = 'KortixDesktop';
+export const DESKTOP_UA_TOKEN = 'KortixDesktop';
+
+/**
+ * Base path for desktop installer downloads. The `/download` route resolves the
+ * latest installer for the visitor's OS (or `?platform=macos|windows|linux`)
+ * and 302s to it — same pattern as the CLI's `/install`. Override with
+ * NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL if needed.
+ */
+export const DESKTOP_DOWNLOAD_URL =
+  process.env.NEXT_PUBLIC_DESKTOP_DOWNLOAD_URL || '/download';
+
+/** Build a per-platform download URL, e.g. desktopDownloadUrl('macos'). */
+export function desktopDownloadUrl(platform?: 'macos' | 'windows' | 'linux'): string {
+  if (!platform) return DESKTOP_DOWNLOAD_URL;
+  const sep = DESKTOP_DOWNLOAD_URL.includes('?') ? '&' : '?';
+  return `${DESKTOP_DOWNLOAD_URL}${sep}platform=${platform}`;
+}
+
+/**
+ * Navigate to `href` via a transient anchor element. We deliberately avoid
+ * `window.open` because the desktop shell's window-open shim routes that
+ * through the `open_external` IPC command, which errors on older builds
+ * ("Plugin not found"). A plain same-tab navigation instead lets the Tauri
+ * navigation gate open non-product URLs in the system browser, and on the web a
+ * file download (302 → installer) doesn't navigate the page away.
+ */
+function clickAnchor(href: string, newTab = false) {
+  if (typeof document === 'undefined') return;
+  const a = document.createElement('a');
+  a.href = href;
+  if (newTab) {
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+  }
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+/** Trigger a desktop-installer download. Safe on web and in the desktop app. */
+export function startDownload(url: string = DESKTOP_DOWNLOAD_URL) {
+  clickAnchor(url, false);
+}
 
 export type DesktopPlatform = 'macos' | 'windows' | 'linux';
 
 export function isDesktop(): boolean {
   if (typeof navigator === 'undefined') return false;
   return navigator.userAgent.includes(DESKTOP_UA_TOKEN);
+}
+
+/**
+ * For routes that don't exist inside the desktop app (docs, marketing, …):
+ * on desktop open them in the user's real browser and return true; on web
+ * return false so the caller navigates normally. Client-side `router.push`
+ * to these routes otherwise just bounces to /projects via middleware, so the
+ * link appears to "do nothing". `window.open` is routed to the system browser
+ * by the Tauri shell's window-open shim.
+ */
+export function openExternalRoute(path: string): boolean {
+  if (typeof window === 'undefined' || !isDesktop()) return false;
+  const abs = /^https?:\/\//.test(path)
+    ? path
+    : `${window.location.origin}${path.startsWith('/') ? path : `/${path}`}`;
+  // Plain same-tab navigation: the Tauri nav gate cancels it and opens the URL
+  // in the system browser (no `open_external` IPC, which 404s on old builds).
+  clickAnchor(abs, false);
+  return true;
 }
 
 export function desktopPlatform(): DesktopPlatform | null {
@@ -113,6 +174,36 @@ export async function setDesktopZoom(scale: number): Promise<number> {
 export const zoomIn = () => setDesktopZoom(getDesktopZoom() * ZOOM_STEP);
 export const zoomOut = () => setDesktopZoom(getDesktopZoom() / ZOOM_STEP);
 export const zoomReset = () => setDesktopZoom(1);
+
+/* ─── Frontend URL override (self-hosting) ───────────────────────────────
+   The switcher lives in the hidden native menu (Kortix → Frontend URL). Its
+   "Custom URL…" item can't take text input natively, so it fires a
+   `kortix-open-frontend-url` DOM event that the desktop-only prompt listens
+   for; the prompt then persists the value via these commands. The override is
+   stored locally in the Tauri app config dir and reloads the window. */
+
+function tauriInvoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> | null {
+  if (typeof window === 'undefined') return null;
+  const t = (window as unknown as {
+    __TAURI__?: { core?: { invoke?: (c: string, a?: unknown) => Promise<unknown> } };
+  }).__TAURI__;
+  if (!t?.core?.invoke) return null;
+  return t.core.invoke(cmd, args) as Promise<T>;
+}
+
+/** Effective frontend URL the desktop shell is currently pointed at. */
+export async function getFrontendUrl(): Promise<string | null> {
+  try {
+    return (await tauriInvoke<string>('get_frontend_url')) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persist a custom frontend URL and reload the desktop window onto it. */
+export async function setFrontendUrl(url: string): Promise<void> {
+  await tauriInvoke('set_frontend_url', { url });
+}
 
 export const desktopWindow = {
   minimize: () => tauri()?.window.getCurrentWindow().minimize(),

@@ -701,13 +701,13 @@
       "joinAccountDescription": "このチームアカウントに {roleLabel} として参加します。"
     },
     "appLayout": {
-      "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – 自律型企業オペレーティングシステム",
-      "line197JsxAttrContentACloudComputerWhereAiAgentsRunYour": "AIエージェントが会社を運営するクラウドコンピューター。3,000以上のツールを接続し、自律型エージェントを設定し、トリガーを指定すれば、マシンが永続メモリを備えて24時間365日稼働します。",
-      "line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf": "Kortix、自律型企業オペレーティングシステム、AIエージェント、自律運営企業、クラウドコンピューター、AI自動化、エージェントオーケストレーション、目標ループ、AIトリガー、永続メモリ、自律型ワークフォース、AIオペレーション",
-      "line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – 自律型企業オペレーティングシステム",
-      "line200JsxAttrContentACloudComputerWhereAiAgentsRunYour": "AIエージェントが会社を運営するクラウドコンピューター。3,000以上のツールを接続し、自律型エージェントを設定し、トリガーを指定すれば、マシンが永続メモリを備えて24時間365日稼働します。",
-      "line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – 自律型企業オペレーティングシステム",
-      "line207JsxAttrContentACloudComputerWhereAiAgentsRunYour": "AIエージェントが会社を運営するクラウドコンピューター。3,000以上のツールを接続し、自律型エージェントを設定し、トリガーを指定すれば、マシンが永続メモリを備えて24時間365日稼働します。",
+      "line196JsxTextKortixTheAutonomousCompanyOperatingSystem": "Kortix – 会社のためのAIコマンドセンター",
+      "line197JsxAttrContentACloudComputerWhereAiAgentsRunYour": "Kortixは、会社のためのオープンソースAIコマンドセンターです。AIエージェントの構築・実行・管理を一元化し、3,000以上のツールと連携して、チャットだけでなく実際の業務を遂行します。",
+      "line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf": "Kortix、AIコマンドセンター、AIエージェント、AIワークフォース、オープンソースAIプラットフォーム、セルフホスト型AIエージェント、AI自動化、エージェントオーケストレーション、AIネイティブ企業、AIエージェント構築、3,000以上のツール連携、AIオペレーション",
+      "line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – 会社のためのAIコマンドセンター",
+      "line200JsxAttrContentACloudComputerWhereAiAgentsRunYour": "Kortixは、会社のためのオープンソースAIコマンドセンターです。AIエージェントの構築・実行・管理を一元化し、3,000以上のツールと連携して、チャットだけでなく実際の業務を遂行します。",
+      "line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem": "Kortix – 会社のためのAIコマンドセンター",
+      "line207JsxAttrContentACloudComputerWhereAiAgentsRunYour": "Kortixは、会社のためのオープンソースAIコマンドセンターです。AIエージェントの構築・実行・管理を一元化し、3,000以上のツールと連携して、チャットだけでなく実際の業務を遂行します。",
       "line209JsxAttrContentKortix": "@kortix",
       "line214JsxAttrContentAppId6754448524AppArgumentKortix": "app-id=6754448524, app-argument=kortix://"
     },

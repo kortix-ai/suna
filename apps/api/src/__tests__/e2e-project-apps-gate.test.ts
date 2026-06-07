@@ -102,6 +102,7 @@ mock.module("../snapshots/builder", () => ({
 
 mock.module('../projects/github', () => ({
   parseGitHubRepoUrl: () => null,
+  isOrgAccount: async () => false,
   buildGitHubAppInstallUrl: () => '',
   createGitHubAppJwt: () => 'jwt-test',
   verifyGitHubAppInstallState: (state: string) => state,

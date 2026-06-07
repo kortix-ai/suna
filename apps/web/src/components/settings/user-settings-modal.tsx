@@ -1297,8 +1297,10 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                     {/* Plan / wallet / spend / limits */}
                     <AccountOverviewTab accountId={billingAccountId} />
 
-                    {/* Legacy machine-billed users — claim the new seat-based plan */}
-                    {accountState?.billing_model === 'legacy' && <ClaimPerSeatCard accountState={accountState} />}
+                    {/* Legacy machine-billed users — claim the new seat-based plan.
+                        Gated on can_claim_per_seat (real migration eligibility), NOT
+                        billing_model==='legacy', which also matched new free users. */}
+                    {accountState?.can_claim_per_seat && <ClaimPerSeatCard accountState={accountState} />}
 
                     {/* Team seats — when on the per-seat plan */}
                     {subscribedToTeam && <SeatManagementCard accountState={accountState} />}

@@ -395,6 +395,7 @@ mock.module("../snapshots/builder", () => ({
 
 mock.module('../projects/github', () => ({
   parseGitHubRepoUrl: () => null,
+  isOrgAccount: async () => false,
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
   createGitHubAppJwt: () => 'jwt-test',
   verifyGitHubAppInstallState: (state: string) => state,

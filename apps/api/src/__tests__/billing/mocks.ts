@@ -25,7 +25,9 @@ export const mockRegistry = {
   getCustomerByAccountId: null as ((id: string) => Promise<any>) | null,
   getCustomerByStripeId: null as ((id: string) => Promise<any>) | null,
   upsertCustomer: null as ((data: any) => Promise<void>) | null,
+  listAccountStripeCustomerIds: null as ((id: string) => Promise<string[]>) | null,
   deleteCustomerByStripeId: null as ((id: string) => Promise<void>) | null,
+  recordWebhookEvent: null as (() => Promise<boolean>) | null,
 
   grantCredits: null as ((...args: any[]) => Promise<void>) | null,
   resetExpiringCredits: null as ((...args: any[]) => Promise<void>) | null,
@@ -40,53 +42,10 @@ export const mockRegistry = {
   getScheduledDeletions: null as (() => Promise<any[]>) | null,
 };
 
-const processedWebhookEventIds = new Set<string>();
-
-function createMockDb() {
-  return {
-    insert: () => ({
-      values: (data: any) => {
-        const row = Array.isArray(data) ? data[0] : data;
-        const chain = {
-          onConflictDoNothing: () => chain,
-          returning: async () => {
-            if (row?.eventId) {
-              if (processedWebhookEventIds.has(row.eventId)) return [];
-              processedWebhookEventIds.add(row.eventId);
-              return [{ eventId: row.eventId }];
-            }
-            return [{ id: row?.id ?? 'mock_db_row', ...row }];
-          },
-        };
-        return chain;
-      },
-    }),
-    select: () => {
-      const chain = {
-        from: () => chain,
-        where: () => chain,
-        limit: async () => [],
-        then: (resolve: (rows: any[]) => unknown) => Promise.resolve(resolve([])),
-      };
-      return chain;
-    },
-    update: () => ({
-      set: () => ({
-        where: async () => [],
-      }),
-    }),
-    delete: () => ({
-      where: async () => [],
-    }),
-    execute: async () => [],
-  };
-}
-
 export function resetMockRegistry() {
   for (const key of Object.keys(mockRegistry) as (keyof typeof mockRegistry)[]) {
     (mockRegistry as any)[key] = null;
   }
-  processedWebhookEventIds.clear();
 }
 
 // ─── Register Global Mocks (once per process) ────────────────────────────────
@@ -103,11 +62,6 @@ export function registerGlobalMocks() {
         return Promise.resolve({ data: null, error: null });
       },
     }),
-  }));
-
-  mock.module('../../shared/db', () => ({
-    db: createMockDb(),
-    hasDatabase: true,
   }));
 
   mock.module('../../shared/stripe', () => ({
@@ -167,8 +121,18 @@ export function registerGlobalMocks() {
     },
     upsertCustomer: async (data: any) =>
       mockRegistry.upsertCustomer ? mockRegistry.upsertCustomer(data) : undefined,
+    listAccountStripeCustomerIds: async (id: string) =>
+      mockRegistry.listAccountStripeCustomerIds ? mockRegistry.listAccountStripeCustomerIds(id) : [],
     deleteCustomerByStripeId: async (id: string) =>
       mockRegistry.deleteCustomerByStripeId ? mockRegistry.deleteCustomerByStripeId(id) : undefined,
+  }));
+
+  // Webhook dedup + per-account advisory lock use the raw db (no DATABASE_URL in
+  // tests). Default: every event is new; the lock is a pass-through.
+  mock.module('../../billing/services/webhook-concurrency', () => ({
+    recordWebhookEvent: async () =>
+      mockRegistry.recordWebhookEvent ? mockRegistry.recordWebhookEvent() : true,
+    withAccountLock: async (_accountId: string, fn: () => Promise<any>) => fn(),
   }));
 
   // NOTE: The credits service mock is NOT registered here.

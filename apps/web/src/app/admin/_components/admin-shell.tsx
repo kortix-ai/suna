@@ -15,7 +15,14 @@ import { AdminSidebar } from './admin-sidebar';
 
 const BREADCRUMBS: Record<string, string> = {
   '/admin': 'Overview',
+  '/admin/accounts': 'Accounts',
+  '/admin/analytics': 'Analytics',
+  '/admin/feedback': 'Feedback',
+  '/admin/notifications': 'Notifications',
   '/admin/ops': 'Operations',
+  '/admin/providers': 'Providers',
+  '/admin/sandbox-pool': 'Sandbox pool',
+  '/admin/stress-test': 'Stress test',
   '/admin/utils': 'Maintenance',
 };
 

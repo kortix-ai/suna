@@ -1,3 +1,4 @@
+use tauri::menu::{Menu, MenuItem, MenuItemKind, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Listener, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder};
 use tauri_plugin_deep_link::DeepLinkExt;
 #[allow(deprecated)]
@@ -42,8 +43,8 @@ const WINDOW_OPEN_SHIM: &str = r#"
 
   /* ─── window.open / target=_blank → open_external ─────────────────── */
   /* These ALWAYS route to the system browser — even for internal hosts.
-     The webview itself can navigate to internal URLs freely (handled by
-     `is_internal` in the Rust on_navigation callback so iframes load), but
+     The webview itself can navigate to product/preview URLs freely (handled by
+     the host/path checks in the Rust on_navigation callback so iframes load), but
      "open in a new tab/window" intent should always pop out to the user's
      real browser. Tauri can't open a real second browser tab, so the only
      sensible target is the OS default. */
@@ -94,7 +95,7 @@ const WINDOW_OPEN_SHIM: &str = r#"
   };
   /* Page-agnostic top strip: ANY mousedown in the top 32px of the window
      is a drag candidate, so users can grab the title-bar zone on pages
-     with no sidebar/tablist (e.g. /auth). */
+     with no sidebar/tablist (e.g. /instances, /auth). */
   var TOP_STRIP_PX = 32;
   document.addEventListener('mousedown', function(e) {
     if (e.button !== 0) return;
@@ -134,30 +135,161 @@ const DEFAULT_URL: &str = match option_env!("KORTIX_DESKTOP_DEFAULT_URL") {
     None => "http://localhost:3000/projects",
 };
 
+/// The compile-time / env base URL, ignoring any user override. Precedence:
+/// `KORTIX_DESKTOP_URL` env var → `KORTIX_DESKTOP_DEFAULT_URL` baked at build →
+/// localhost fallback.
 fn app_url() -> String {
     std::env::var("KORTIX_DESKTOP_URL").unwrap_or_else(|_| DEFAULT_URL.to_string())
 }
 
-/// True if a URL belongs to the app itself — internal navigation that should
-/// stay inside the webview (Supabase callbacks, page nav, sandbox previews,
-/// etc.).
+/// Path to the persisted frontend-URL override (one line, in the app config
+/// dir). Present only when the user has explicitly chosen a non-default URL.
+fn url_override_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|dir| dir.join("frontend_url"))
+}
+
+fn read_url_override(app: &AppHandle) -> Option<String> {
+    let raw = std::fs::read_to_string(url_override_path(app)?).ok()?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+fn write_url_override(app: &AppHandle, url: &str) -> Result<(), String> {
+    let path = url_override_path(app).ok_or("no config dir available")?;
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    std::fs::write(path, url).map_err(|e| e.to_string())
+}
+
+fn clear_url_override(app: &AppHandle) {
+    if let Some(path) = url_override_path(app) {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+/// The effective frontend URL the desktop window should load. A persisted user
+/// override (set via the native menu or `set_frontend_url`) wins over the
+/// env/compile-time `app_url()`.
+fn resolve_app_url(app: &AppHandle) -> String {
+    read_url_override(app).unwrap_or_else(app_url)
+}
+
+/// Navigate the main window to `url` (a full page load via `location.replace`).
+fn navigate_main_window(app: &AppHandle, url: &str) {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Ok(encoded) = serde_json::to_string(url) {
+            let _ = window.eval(&format!("window.location.replace({encoded})"));
+        }
+        let _ = window.set_focus();
+    }
+}
+
+/// Preset frontend URLs offered in the hidden, nested "Frontend URL" menu so the
+/// backend the desktop app points at can be switched without a rebuild.
+const PRESET_PROD: &str = "https://kortix.com/projects";
+const PRESET_DEV: &str = "https://dev.kortix.com/projects";
+const PRESET_LOCAL: &str = "http://localhost:3000/projects";
+
+/// Effective frontend URL (so the "Custom URL…" dialog can prefill it).
+#[tauri::command]
+fn get_frontend_url(app: AppHandle) -> String {
+    resolve_app_url(&app)
+}
+
+/// Persist a custom frontend URL (for self-hosting) and reload the window onto
+/// it. Stored locally in the app config dir so it survives relaunches. Validated
+/// as http(s) so a typo can't strand the window on an unloadable scheme.
+#[tauri::command]
+fn set_frontend_url(app: AppHandle, url: String) -> Result<(), String> {
+    let trimmed = url.trim();
+    if trimmed.is_empty() {
+        return Err("URL is empty".into());
+    }
+    // Be lenient for self-hosters who type a bare host (e.g. "kortix.acme.com"
+    // or "localhost:3000"): assume https when no scheme is given.
+    let candidate = if trimmed.contains("://") {
+        trimmed.to_string()
+    } else {
+        format!("https://{trimmed}")
+    };
+    let parsed = candidate
+        .parse::<url::Url>()
+        .map_err(|e| format!("Invalid URL: {e}"))?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return Err("URL must use http or https".into());
+    }
+    if parsed.host_str().is_none() {
+        return Err("URL is missing a host".into());
+    }
+    write_url_override(&app, &candidate)?;
+    navigate_main_window(&app, &candidate);
+    Ok(())
+}
+
+/// Hosts that serve user/sandbox content — sandbox preview subdomains and
+/// tunnels. These ALWAYS load inside the webview; they're product surfaces,
+/// not marketing.
 ///
 /// `*.localhost` is critical: sandbox preview URLs use the pattern
 /// `http://p{port}-{sandboxId}.localhost:{backendPort}/...`. Without the
-/// suffix match these would be treated as external and the iframe inside the
-/// in-app Browser tab would be punted to the user's system browser instead
-/// of loading.
-fn is_internal(url: &url::Url) -> bool {
-    if url.scheme() == "kortix" {
-        return true;
-    }
-    let host = url.host_str().unwrap_or("");
-    matches!(host, "localhost" | "127.0.0.1")
-        || host.ends_with(".localhost")
-        || host == "kortix.com"
-        || host.ends_with(".kortix.com")
+/// suffix match these would be punted to the user's system browser instead of
+/// loading in the in-app Browser tab. Note `localhost` itself (the dev app
+/// shell) does NOT match `.localhost`, so it's handled by `is_main_app_host`.
+fn is_preview_host(host: &str) -> bool {
+    host.ends_with(".localhost")
         || host == "kortix.cloud"
         || host.ends_with(".kortix.cloud")
+        || host == "justavps.com"
+        || host.ends_with(".justavps.com")
+}
+
+/// The app-shell hosts that serve BOTH the product and the marketing site.
+/// On these we only allow product/auth paths to render in-app (see
+/// `is_app_path`); everything else (marketing homepage, docs, blog, legal,
+/// help, …) is opened in the user's real browser.
+fn is_main_app_host(host: &str) -> bool {
+    matches!(host, "localhost" | "127.0.0.1" | "kortix.com") || host.ends_with(".kortix.com")
+}
+
+/// Product + auth route prefixes allowed to render inside the desktop window.
+/// The desktop app is a pure logged-in surface — anything not listed here
+/// (marketing, docs, blog, legal, help, share, …) opens in the user's browser.
+///
+/// MUST stay in sync with `DESKTOP_ALLOWED_ROUTES` in
+/// `apps/web/src/middleware.ts`, which is the server-side authority.
+fn is_app_path(path: &str) -> bool {
+    if path == "/auth" || path.starts_with("/auth/") {
+        return true;
+    }
+    const ALLOWED: &[&str] = &[
+        "/projects",
+        "/accounts",
+        "/invites",
+        "/admin",
+        "/setup",
+        "/connectors",
+        "/oauth",
+        "/checkout",
+        "/tunnel",
+        "/github",
+        "/cli",
+        "/templates",
+        "/maintenance",
+        "/countryerror",
+        "/debug",
+    ];
+    ALLOWED.iter().any(|prefix| {
+        path == *prefix
+            || (path.starts_with(prefix) && path.as_bytes().get(prefix.len()) == Some(&b'/'))
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -192,53 +324,148 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_deep_link::init())
-        .invoke_handler(tauri::generate_handler![set_zoom, open_external])
+        .invoke_handler(tauri::generate_handler![
+            set_zoom,
+            open_external,
+            get_frontend_url,
+            set_frontend_url
+        ])
         .setup(|app| {
-            let url = app_url()
+            // Honor a persisted frontend-URL override (native menu / settings)
+            // before falling back to the env/compile-time default.
+            let url = resolve_app_url(app.handle())
                 .parse::<url::Url>()
-                .expect("valid KORTIX_DESKTOP_URL");
+                .expect("valid frontend URL");
             let app_handle = app.handle().clone();
 
-            let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::External(url))
-                .title("Kortix")
-                .inner_size(1440.0, 920.0)
-                .min_inner_size(720.0, 480.0)
-                .center()
-                .resizable(true)
-                .decorations(true)
-                .visible(false)
-                // Browser-like user agent so server-side and 3rd-party libs that
-                // sniff for `Mozilla/Safari` don't treat the desktop webview as a
-                // bot/non-browser. We keep the `KortixDesktop/0.1.0` token
-                // appended so middleware/`isDesktop()` checks still match.
-                .user_agent(
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
+            // Hidden, nested "Frontend URL" menu so the backend the app points at
+            // can be switched without a rebuild — tucked INSIDE the first app menu
+            // ("Kortix" on macOS) rather than shown as a top-level menu. Built on
+            // the default menu so the standard items (copy/paste/⌘Q/…) survive.
+            {
+                let h = app.handle();
+                let menu = Menu::default(h)?;
+                let frontend_menu = Submenu::with_items(
+                    h,
+                    "Frontend URL",
+                    true,
+                    &[
+                        &MenuItem::with_id(h, "frontend_prod", "Production (kortix.com)", true, None::<&str>)?,
+                        &MenuItem::with_id(h, "frontend_dev", "Dev (dev.kortix.com)", true, None::<&str>)?,
+                        &MenuItem::with_id(h, "frontend_local", "Local (localhost:3000)", true, None::<&str>)?,
+                        &PredefinedMenuItem::separator(h)?,
+                        &MenuItem::with_id(h, "frontend_custom", "Custom URL…", true, None::<&str>)?,
+                        &MenuItem::with_id(h, "frontend_reset", "Reset to Default", true, None::<&str>)?,
+                    ],
+                )?;
+                // Nest under the first top-level submenu (the "Kortix" app menu on
+                // macOS); fall back to a top-level entry if there isn't one.
+                let nested = menu.items()?.into_iter().find_map(|item| match item {
+                    MenuItemKind::Submenu(sub) => Some(sub),
+                    _ => None,
+                });
+                match nested {
+                    Some(parent) => {
+                        parent.append(&PredefinedMenuItem::separator(h)?)?;
+                        parent.append(&frontend_menu)?;
+                    }
+                    None => menu.append(&frontend_menu)?,
+                }
+                app.set_menu(menu)?;
+                app.on_menu_event(|app, event| match event.id().0.as_str() {
+                    "frontend_prod" => {
+                        let _ = write_url_override(app, PRESET_PROD);
+                        navigate_main_window(app, PRESET_PROD);
+                    }
+                    "frontend_dev" => {
+                        let _ = write_url_override(app, PRESET_DEV);
+                        navigate_main_window(app, PRESET_DEV);
+                    }
+                    "frontend_local" => {
+                        let _ = write_url_override(app, PRESET_LOCAL);
+                        navigate_main_window(app, PRESET_LOCAL);
+                    }
+                    "frontend_custom" => {
+                        // Native menus can't take text input — ask the web layer to
+                        // pop a tiny prompt, which calls back via `set_frontend_url`.
+                        if let Some(w) = app.get_webview_window("main") {
+                            let _ = w
+                                .eval("window.dispatchEvent(new CustomEvent('kortix-open-frontend-url'))");
+                            let _ = w.set_focus();
+                        }
+                    }
+                    "frontend_reset" => {
+                        clear_url_override(app);
+                        let target = app_url();
+                        navigate_main_window(app, &target);
+                    }
+                    _ => {}
+                });
+            }
+
+            let mut builder = WebviewWindowBuilder::new(
+                app,
+                "main",
+                WebviewUrl::External(url),
+            )
+            .title("Kortix")
+            .inner_size(1440.0, 920.0)
+            .min_inner_size(720.0, 480.0)
+            .center()
+            .resizable(true)
+            .decorations(true)
+            .visible(false)
+            // Browser-like user agent so server-side and 3rd-party libs that
+            // sniff for `Mozilla/Safari` don't treat the desktop webview as a
+            // bot/non-browser. We keep the `KortixDesktop/0.1.0` token
+            // appended so middleware/`isDesktop()` checks still match.
+            .user_agent(
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
                  AppleWebKit/605.1.15 (KHTML, like Gecko) \
                  Version/17.0 Safari/605.1.15 KortixDesktop/0.1.0",
-                )
-                // Disable Tauri's native OS drag-drop interceptor so HTML5
-                // dragenter/dragover/drop events reach the webview. Without this
-                // the chat input (and any other dropzone) never sees a file drop
-                // — the OS hands the drop to Tauri's handler and the page is
-                // none the wiser.
-                .disable_drag_drop_handler()
-                // Opaque window. We previously used transparent(true) + vibrancy,
-                // but in the bundled .app (where this MUST run on macOS so the
-                // OS dispatches `kortix://` to it) the layering renders the
-                // webview as a blank white surface. Opaque + a subtle dark
-                // background (set on <body> in CSS for desktop) is reliable.
-                .initialization_script(WINDOW_OPEN_SHIM)
-                .on_navigation(move |url| {
-                    if is_internal(url) {
-                        return true;
-                    }
-                    // External — open in the user's default browser. OAuth providers
-                    // (Google in particular) reject embedded webviews, and isolating
-                    // those flows means cookies stay in the user's primary browser.
-                    #[allow(deprecated)]
-                    let _ = app_handle.shell().open(url.to_string(), None);
-                    false
-                });
+            )
+            // Disable Tauri's native OS drag-drop interceptor so HTML5
+            // dragenter/dragover/drop events reach the webview. Without this
+            // the chat input (and any other dropzone) never sees a file drop
+            // — the OS hands the drop to Tauri's handler and the page is
+            // none the wiser.
+            .disable_drag_drop_handler()
+            // Opaque window. We previously used transparent(true) + vibrancy,
+            // but in the bundled .app (where this MUST run on macOS so the
+            // OS dispatches `kortix://` to it) the layering renders the
+            // webview as a blank white surface. Opaque + a subtle dark
+            // background (set on <body> in CSS for desktop) is reliable.
+            .initialization_script(WINDOW_OPEN_SHIM)
+            .on_navigation(move |url| {
+                // Deep-link callbacks (kortix://) are translated + loaded by the
+                // deep-link handler below; allow them through.
+                if url.scheme() == "kortix" {
+                    return true;
+                }
+                let host = url.host_str().unwrap_or("");
+
+                // Sandbox previews / tunnels: user content, always in-app.
+                if is_preview_host(host) {
+                    return true;
+                }
+
+                // App-shell host: ONLY the logged-in product + auth pages render
+                // in the desktop window. Marketing (homepage, blog, pricing,
+                // careers, legal, …), docs, help and share pages open in the
+                // user's real browser — the desktop app is a pure product
+                // surface. Docs links therefore open "in a new tab".
+                if is_main_app_host(host) && is_app_path(url.path()) {
+                    return true;
+                }
+
+                // Everything else — marketing/docs on the app host, or any truly
+                // external URL (OAuth providers like Google reject embedded
+                // webviews; outbound links) — opens in the user's default
+                // browser instead of inside the app window.
+                #[allow(deprecated)]
+                let _ = app_handle.shell().open(url.to_string(), None);
+                false
+            });
 
             #[cfg(target_os = "macos")]
             {
@@ -250,7 +477,11 @@ pub fn run() {
                 builder = builder
                     .title_bar_style(TitleBarStyle::Overlay)
                     .hidden_title(true)
-                    .traffic_light_position(LogicalPosition::new(20.0, 22.0));
+                    // Center the ~52px traffic-light cluster horizontally within
+                    // the 72px collapsed sidebar rail so it lines up with the
+                    // centered sidebar logo/icon column ((72-52)/2 = 10). On the
+                    // expanded sidebar this reads as a normal left inset.
+                    .traffic_light_position(LogicalPosition::new(10.0, 22.0));
             }
 
             let window = builder.build()?;
@@ -283,17 +514,22 @@ pub fn run() {
             // origin and navigate the webview there. The web app then runs
             // its existing /auth/callback flow inside the desktop session.
             let dl_window = window.clone();
+            let dl_handle = app.handle().clone();
             app.deep_link().on_open_url(move |event| {
                 for incoming in event.urls() {
                     if incoming.scheme() != "kortix" {
                         continue;
                     }
-                    let mut target = match app_url().parse::<url::Url>() {
+                    let mut target = match resolve_app_url(&dl_handle).parse::<url::Url>() {
                         Ok(u) => u,
                         Err(_) => continue,
                     };
                     // kortix://auth/callback?code=...  →  <app_url>/auth/callback?code=...
-                    let path = format!("/{}{}", incoming.host_str().unwrap_or(""), incoming.path());
+                    let path = format!(
+                        "/{}{}",
+                        incoming.host_str().unwrap_or(""),
+                        incoming.path()
+                    );
                     let path = path.trim_end_matches('/').to_string();
                     target.set_path(if path.is_empty() { "/" } else { &path });
                     target.set_query(incoming.query());
@@ -317,9 +553,7 @@ pub fn run() {
             let close_handle = app.handle().clone();
             app.listen_any("tauri://webview-created", move |event| {
                 #[derive(serde::Deserialize)]
-                struct Payload {
-                    label: String,
-                }
+                struct Payload { label: String }
                 if let Ok(p) = serde_json::from_str::<Payload>(event.payload()) {
                     if p.label != "main" {
                         if let Some(w) = close_handle.get_webview_window(&p.label) {

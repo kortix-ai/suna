@@ -1,4 +1,4 @@
-import { and, eq, isNull, lte } from 'drizzle-orm';
+import { and, desc, eq, isNull, lte, sql } from 'drizzle-orm';
 import { sandboxComputeSessions } from '@kortix/db';
 import { db } from '../../shared/db';
 
@@ -29,6 +29,21 @@ export async function getOpenComputeSession(sandboxId: string) {
   return row ?? null;
 }
 
+/**
+ * Return the most recent metering row for a sandbox (open OR closed). Used to
+ * reuse the original spec (cpu/mem/disk) when resuming a hibernated sandbox, so
+ * the resumed run is billed at the same rate without re-resolving the manifest.
+ */
+export async function getLatestComputeSession(sandboxId: string) {
+  const [row] = await db
+    .select()
+    .from(sandboxComputeSessions)
+    .where(eq(sandboxComputeSessions.sandboxId, sandboxId))
+    .orderBy(desc(sandboxComputeSessions.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
 export async function updateComputeSession(
   id: string,
   patch: Partial<typeof sandboxComputeSessions.$inferInsert>,
@@ -55,4 +70,24 @@ export async function findStaleActiveSessions(cutoff: Date, limit = 100) {
       ),
     )
     .limit(limit);
+}
+
+/** Sum compute cost in $ for an account over a window — used by the usage UI. */
+export async function getComputeUsageSince(accountId: string, since: Date) {
+  const [row] = await db
+    .select({
+      totalCostUsd: sql<string>`COALESCE(SUM(${sandboxComputeSessions.costUsd}), 0)`,
+      sessionCount: sql<number>`COUNT(*)::int`,
+    })
+    .from(sandboxComputeSessions)
+    .where(
+      and(
+        eq(sandboxComputeSessions.accountId, accountId),
+        sql`${sandboxComputeSessions.startedAt} >= ${since.toISOString()}`,
+      ),
+    );
+  return {
+    totalCostUsd: Number(row?.totalCostUsd ?? 0),
+    sessionCount: Number(row?.sessionCount ?? 0),
+  };
 }

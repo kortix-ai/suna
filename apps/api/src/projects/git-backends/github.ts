@@ -4,6 +4,7 @@ import {
   createInstallationToken,
   createRepo as ghCreateRepo,
   deleteRepo as ghDeleteRepo,
+  isOrgAccount,
 } from '../github';
 import {
   basicAuthHeader,
@@ -74,7 +75,10 @@ async function managedAdminAuth(): Promise<GitHubAuthContext> {
   if (!owner) throw new Error('Managed GitHub git not configured (MANAGED_GIT_GITHUB_OWNER)');
   const pat = managedGithubToken();
   if (pat) {
-    return { token: pat, source: 'pat', owner, ownerType: 'Organization' };
+    // owner may be a personal account (throwaway) → createRepo must hit
+    // /user/repos, not /orgs/{owner}/repos. Resolve the real type.
+    const ownerType = (await isOrgAccount(owner, { token: pat })) ? 'Organization' : 'User';
+    return { token: pat, source: 'pat', owner, ownerType };
   }
   const installId = managedGithubInstallId();
   if (!installId) {

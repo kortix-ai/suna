@@ -174,7 +174,21 @@ mock.module('../shared/daytona', () => ({
   }),
 }));
 
+mock.module('../platform/providers', () => ({
+  getProvider: () => ({
+    resolvePreviewLink: async () => {
+      if (mockPreviewLinkError) throw mockPreviewLinkError;
+      return { url: mockPreviewUrl, token: mockPreviewToken };
+    },
+    ensureRunning: async (sandboxId: string) => {
+      if (mockDaytonaGetError) throw mockDaytonaGetError;
+      mockWakeCalls.push(sandboxId);
+    },
+  }),
+}));
+
 mock.module('../config', () => ({
+  SANDBOX_VERSION: 'test-version',
   config: {
     KORTIX_LOCAL_DOCKER_HOST: 'host.docker.internal',
     isDaytonaEnabled: () => true,
@@ -407,7 +421,11 @@ describe('Preview proxy: ownership', () => {
       });
       expect(res.status).toBe(503);
       const body = await res.json();
-      expect(body).toEqual({ error: 'sandbox not ready', status });
+      expect(body).toEqual({
+        error: `sandbox not ready (status: ${status})`,
+        port: TEST_PORT,
+        status: 503,
+      });
     },
   );
 
@@ -803,7 +821,11 @@ describe('Preview proxy: retry exhaustion', () => {
 
     expect(res.status).toBe(502);
     const body = await res.json();
-    expect(body.message).toContain('upstream unreachable');
+    expect(body).toEqual({
+      error: 'sandbox upstream unreachable',
+      port: TEST_PORT,
+      status: 502,
+    });
     // Should have made 4 attempts (0, 1, 2, 3)
     expect(callCount).toBe(4);
   });

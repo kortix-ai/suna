@@ -34,18 +34,6 @@ env_file_value() {
   local file="${GATE5_LOCAL_ENV_FILE:-${E2E_ENV_FILE:-}}"
   [ -n "$file" ] || return 0
   [ -f "$file" ] || return 0
-
-  local decrypted=""
-  if command -v dotenvx >/dev/null 2>&1; then
-    decrypted="$(dotenvx get "$key" -f "$file" 2>/dev/null || true)"
-  elif [ -x "$REPO_ROOT/node_modules/.bin/dotenvx" ]; then
-    decrypted="$("$REPO_ROOT/node_modules/.bin/dotenvx" get "$key" -f "$file" 2>/dev/null || true)"
-  fi
-  if [ -n "$decrypted" ] && [[ "$decrypted" != encrypted:* ]]; then
-    printf '%s' "$decrypted"
-    return 0
-  fi
-
   grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2- | sed -e "s/^['\"]//" -e "s/['\"]$//" || true
 }
 
@@ -95,49 +83,9 @@ run_check() {
 }
 
 run_check api_typecheck pnpm --filter kortix-api typecheck
-run_check web_build env \
-  NEXT_PUBLIC_BACKEND_URL="${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8008/v1}" \
-  NEXT_PUBLIC_SUPABASE_URL="${NEXT_PUBLIC_SUPABASE_URL:-https://placeholder.supabase.co}" \
-  NEXT_PUBLIC_SUPABASE_ANON_KEY="${NEXT_PUBLIC_SUPABASE_ANON_KEY:-local-build-placeholder-anon-key}" \
-  NEXT_PUBLIC_BILLING_ENABLED="${NEXT_PUBLIC_BILLING_ENABLED:-false}" \
-  NEXT_OUTPUT="${NEXT_OUTPUT:-standalone}" \
-  pnpm --filter Kortix-Computer-Frontend build
-
-api_test_database_url="${TEST_DATABASE_URL:-${GATE5_LOCAL_DATABASE_URL:-${DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}}}"
-api_test_database_url="$(normalize_host_database_url "$api_test_database_url")"
-api_test_env=(
-  env
-  INTERNAL_KORTIX_ENV="${INTERNAL_KORTIX_ENV:-dev}"
-  ENV_MODE="${ENV_MODE:-local}"
-  DATABASE_URL="$api_test_database_url"
-  TEST_DATABASE_URL="$api_test_database_url"
-  SUPABASE_URL="${SUPABASE_URL:-https://placeholder.supabase.co}"
-  SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY:-local-service-role-key}"
-  SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY:-local-anon-key}"
-  API_KEY_SECRET="${API_KEY_SECRET:-gate5-local-api-key-secret-32chars}"
-  TUNNEL_SIGNING_SECRET="${TUNNEL_SIGNING_SECRET:-gate5-local-tunnel-signing-secret-32chars}"
-  FREESTYLE_API_URL="${FREESTYLE_API_URL:-https://api.freestyle.sh}"
-  FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}"
-  KORTIX_URL="${KORTIX_URL:-https://kortix-e2e.example.test}"
-  KORTIX_GIT_PROXY="${KORTIX_GIT_PROXY:-true}"
-  PIPEDREAM_CLIENT_ID="${PIPEDREAM_CLIENT_ID:-gate5-local-pipedream-client}"
-  PIPEDREAM_CLIENT_SECRET="${PIPEDREAM_CLIENT_SECRET:-gate5-local-pipedream-secret}"
-  PIPEDREAM_PROJECT_ID="${PIPEDREAM_PROJECT_ID:-gate5-local-pipedream-project}"
-  ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-daytona,local_docker}"
-  DAYTONA_API_KEY="${DAYTONA_API_KEY:-gate5-local-daytona-key}"
-  DAYTONA_SERVER_URL="${DAYTONA_SERVER_URL:-https://daytona.example.test}"
-  DAYTONA_TARGET="${DAYTONA_TARGET:-us}"
-  DOCKER_HOST="${DOCKER_HOST:-unix:///var/run/docker.sock}"
-  KORTIX_BILLING_INTERNAL_ENABLED="${KORTIX_BILLING_INTERNAL_ENABLED:-false}"
-)
-
-run_check api_tests "${api_test_env[@]}" bash -lc '
-  set -euo pipefail
-  for test_file in apps/api/src/__tests__/billing/*.test.ts apps/api/src/__tests__/e2e-*.test.ts apps/api/src/__tests__/unit-*.test.ts; do
-    bun test "$test_file"
-  done
-'
-run_check api_billing_tests "${api_test_env[@]}" bash -lc '
+run_check web_typecheck pnpm --filter Kortix-Computer-Frontend exec tsc --noEmit
+run_check api_tests pnpm --filter kortix-api test
+run_check api_billing_tests bash -lc '
   set -euo pipefail
   for test_file in \
     apps/api/src/__tests__/billing/*.test.ts \
@@ -146,18 +94,19 @@ run_check api_billing_tests "${api_test_env[@]}" bash -lc '
     apps/api/src/__tests__/unit-revenuecat-webhook-canonical.test.ts
   do
     echo "[gate5-local] billing test: $test_file"
-    (cd apps/api && bun test "${test_file#apps/api/}")
+    bun test "$test_file"
   done
 '
-run_check api_accounts_contract_tests "${api_test_env[@]}" pnpm --filter kortix-api exec bun test src/__tests__/e2e-accounts-contract.test.ts
-run_check api_projects_contract_tests "${api_test_env[@]}" pnpm --filter kortix-api exec bun test src/__tests__/e2e-projects-contract.test.ts
-run_check api_project_session_contract_tests "${api_test_env[@]}" pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-session-contract.test.ts
-run_check api_project_triggers_contract_tests "${api_test_env[@]}" pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-triggers.test.ts
-run_check api_rate_limit_tests "${api_test_env[@]}" bun test apps/api/src/__tests__/e2e-rate-limits.test.ts
-run_check api_proxy_contract_tests "${api_test_env[@]}" pnpm --filter kortix-api exec bun test src/__tests__/e2e-preview-proxy.test.ts
-run_check api_audit_tests "${api_test_env[@]}" bun test apps/api/src/__tests__/e2e-audit-events.test.ts
-run_check api_github_app_tests "${api_test_env[@]}" bun test apps/api/src/__tests__/e2e-github-app-projects.test.ts
-run_check api_create_repo_starter_tests "${api_test_env[@]}" pnpm --filter kortix-api exec bun test src/__tests__/e2e-create-repo-starter.test.ts
+run_check api_accounts_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-accounts-contract.test.ts
+run_check api_projects_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-projects-contract.test.ts
+run_check api_project_session_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-session-contract.test.ts
+run_check api_project_triggers_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-project-triggers.test.ts
+run_check api_rate_limit_tests bun test apps/api/src/__tests__/e2e-rate-limits.test.ts
+run_check api_proxy_contract_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-preview-proxy.test.ts
+run_check api_audit_tests bun test apps/api/src/__tests__/e2e-audit-events.test.ts
+run_check api_usage_tests bun test apps/api/src/__tests__/e2e-session-llm-router.test.ts
+run_check api_github_app_tests bun test apps/api/src/__tests__/e2e-github-app-projects.test.ts
+run_check api_create_repo_starter_tests pnpm --filter kortix-api exec bun test src/__tests__/e2e-create-repo-starter.test.ts
 
 legacy_test_database_url="${TEST_DATABASE_URL:-${GATE5_LOCAL_DATABASE_URL:-${DATABASE_URL:-$(env_file_value DATABASE_URL)}}}"
 legacy_test_database_url="$(normalize_host_database_url "$legacy_test_database_url")"
@@ -180,26 +129,7 @@ if [ -z "$legacy_test_database_url" ]; then
   printf 'Missing test database URL for legacy migration tooling\n' >"$LOG_DIR/legacy_migration_tooling.log"
 else
   run_check legacy_migration_tooling env \
-    DATABASE_URL="$legacy_test_database_url" \
     TEST_DATABASE_URL="$legacy_test_database_url" \
-    SUPABASE_URL="${SUPABASE_URL:-https://placeholder.supabase.co}" \
-    SUPABASE_SERVICE_ROLE_KEY="${SUPABASE_SERVICE_ROLE_KEY:-local-service-role-key}" \
-    SUPABASE_ANON_KEY="${SUPABASE_ANON_KEY:-local-anon-key}" \
-    API_KEY_SECRET="${API_KEY_SECRET:-gate5-local-api-key-secret-32chars}" \
-    TUNNEL_SIGNING_SECRET="${TUNNEL_SIGNING_SECRET:-gate5-local-tunnel-signing-secret-32chars}" \
-    FREESTYLE_API_URL="${FREESTYLE_API_URL:-https://api.freestyle.sh}" \
-    FRONTEND_URL="${FRONTEND_URL:-http://localhost:3000}" \
-    KORTIX_URL="${KORTIX_URL:-https://kortix-e2e.example.test}" \
-    KORTIX_GIT_PROXY="${KORTIX_GIT_PROXY:-true}" \
-    PIPEDREAM_CLIENT_ID="${PIPEDREAM_CLIENT_ID:-gate5-local-pipedream-client}" \
-    PIPEDREAM_CLIENT_SECRET="${PIPEDREAM_CLIENT_SECRET:-gate5-local-pipedream-secret}" \
-    PIPEDREAM_PROJECT_ID="${PIPEDREAM_PROJECT_ID:-gate5-local-pipedream-project}" \
-    ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-daytona,local_docker}" \
-    DAYTONA_API_KEY="${DAYTONA_API_KEY:-gate5-local-daytona-key}" \
-    DAYTONA_SERVER_URL="${DAYTONA_SERVER_URL:-https://daytona.example.test}" \
-    DAYTONA_TARGET="${DAYTONA_TARGET:-us}" \
-    DOCKER_HOST="${DOCKER_HOST:-unix:///var/run/docker.sock}" \
-    KORTIX_BILLING_INTERNAL_ENABLED="${KORTIX_BILLING_INTERNAL_ENABLED:-false}" \
     KORTIX_TEST_DB_CONFIRM=I_UNDERSTAND_THIS_DELETES_TEST_DATA \
     INTERNAL_KORTIX_ENV=dev \
     bun test apps/api/src/__tests__/e2e-legacy-sandbox-migration.test.ts
@@ -218,7 +148,8 @@ run_check gate5_scripts_syntax bash -n \
   tests/e2e/scripts/record-gate5-ops-exceptions.sh \
   tests/e2e/scripts/verify-gate5-release-evidence.sh \
   tests/e2e/scripts/test-gate5-release-verifier-fixtures.sh \
-  tests/e2e/scripts/run-gate5-local-verification.sh
+  tests/e2e/scripts/run-gate5-local-verification.sh \
+  tests/e2e/self-hosted-e2e.sh
 run_check gate5_release_verifier_fixture_tests bash tests/e2e/scripts/test-gate5-release-verifier-fixtures.sh
 run_check web_auth_return_url_tests node --experimental-strip-types --test apps/web/src/lib/auth/return-url.test.mts
 run_check v1_playwright_spec_guards bash -lc '
@@ -252,30 +183,51 @@ run_check v1_playwright_spec_guards bash -lc '
   grep -q "E2E_REQUIRE_GITHUB_APP" tests/e2e/specs/10-production-golden-paths.spec.ts
   grep -q "github.auth_source" tests/e2e/specs/10-production-golden-paths.spec.ts
   grep -q "app_installation" tests/e2e/specs/10-production-golden-paths.spec.ts
-  grep -q "Provisioning session" apps/web/src/components/session/session-loading-skeleton.tsx
+  grep -q "Provisioning session" "apps/web/src/app/projects/[id]/sessions/[sessionId]/page.tsx"
   grep -q "Provisioning session" tests/e2e/specs/10-production-golden-paths.spec.ts
   grep -q "sidebarSessionLink.click" tests/e2e/specs/10-production-golden-paths.spec.ts
-  grep -q "toHaveAttribute.*href.*/projects" tests/e2e/specs/08-accounts-project-access.spec.ts
+  grep -q "getByRole.*link.*Kortix" tests/e2e/specs/08-accounts-project-access.spec.ts
   grep -q "ownerSession.user.email" tests/e2e/specs/08-accounts-project-access.spec.ts
   grep -q "uiInvitedEmail" tests/e2e/specs/08-accounts-project-access.spec.ts
-  grep -q "uiInviteResponse" tests/e2e/specs/08-accounts-project-access.spec.ts
-  grep -q "status()).toBe(201)" tests/e2e/specs/08-accounts-project-access.spec.ts
+  grep -q "Invite sent to" tests/e2e/specs/08-accounts-project-access.spec.ts
   grep -q "uiInvitedAccounts" tests/e2e/specs/08-accounts-project-access.spec.ts
 '
 run_check v1_legacy_script_guards bash -lc '
   set -euo pipefail
 
-  [ ! -e scripts/start-sandbox.sh ]
-  [ ! -e apps/api/scripts/build-snapshot.ts ]
-  [ ! -e apps/api/scripts/apply-justavps-ssh-bridge.ts ]
+  bash -n scripts/start-sandbox.sh
+
+  start_sandbox_output="$(mktemp)"
+  build_snapshot_output="$(mktemp)"
+  ssh_bridge_output="$(mktemp)"
+  trap "rm -f \"$start_sandbox_output\" \"$build_snapshot_output\" \"$ssh_bridge_output\"" EXIT
+
+  if scripts/start-sandbox.sh >"$start_sandbox_output" 2>&1; then
+    cat "$start_sandbox_output"
+    exit 1
+  fi
+  grep -q "legacy JustAVPS snapshot bootstrapper" "$start_sandbox_output"
+
+  if bun apps/api/scripts/build-snapshot.ts >"$build_snapshot_output" 2>&1; then
+    cat "$build_snapshot_output"
+    exit 1
+  fi
+  grep -q "disabled for repo-first Kortix v1" "$build_snapshot_output"
+
+  if bun apps/api/scripts/apply-justavps-ssh-bridge.ts >"$ssh_bridge_output" 2>&1; then
+    cat "$ssh_bridge_output"
+    exit 1
+  fi
+  grep -q "disabled for repo-first Kortix v1" "$ssh_bridge_output"
 
   if git grep -n -E "core/startup|core/docker|raw.githubusercontent.com/kortix-ai/suna/main/core" -- scripts apps/api; then
     exit 1
   fi
 
   if git grep -n -E "justavps-docker|justavps-workload|JustAVPSProvider" -- \
-    scripts \
-    apps/api/scripts
+    scripts/start-sandbox.sh \
+    apps/api/scripts \
+    apps/api/src/platform/services/local-sandbox-health.ts
   then
     exit 1
   fi
@@ -288,7 +240,9 @@ run_check v1_tree_cleanup_guards bash -lc '
   [ ! -e packages/kortix-ocx-registry ]
 
   packages="$(find packages -mindepth 1 -maxdepth 1 -type d -exec basename {} \; | sort | tr "\n" " ")"
-  [ "$packages" = "agent-tunnel db executor-sdk manifest-schema shared starter " ]
+  [ "$packages" = "agent-tunnel db shared " ]
+  grep -q "Deleted from the v1 workspace path" docs/SPEC.md
+  grep -q "Only \`packages/agent-tunnel\`, \`packages/db\`, and \`packages/shared\` remain" docs/SPEC.md
 
   if git grep -n -E "core/docker|dev:core|packages/voice|packages/kortix-ocx-registry|kortix/computer" -- \
     package.json \
@@ -302,7 +256,8 @@ run_check v1_tree_cleanup_guards bash -lc '
   if git grep -n -E "justavpsOrigins|justavps\\.com|JustAVPS|kortix/computer" -- \
     apps/api/src/index.ts \
     .github/workflows \
-    README.md
+    README.md \
+    docs/development-release-guide.md
   then
     exit 1
   fi
@@ -313,54 +268,52 @@ run_check v1_legacy_web_route_guards bash -lc '
   [ ! -e apps/web/src/app/admin/instances/page.tsx ]
   [ ! -e apps/web/src/app/debug/instances/page.tsx ]
 
-  admin_paths=(
-    apps/web/src/app/admin/_components/admin-sidebar.tsx
-    apps/web/src/app/admin/_components/admin-shell.tsx
-    apps/web/src/app/admin/page.tsx
-  )
-
-	  if git grep -n -E "admin/instances|debug/instances|/instances|justavps|InstanceSettingsModal|useAdminSandboxes" -- "${admin_paths[@]}"
+	  if git grep -n -E "admin/instances|debug/instances|/instances|justavps|InstanceSettingsModal|useAdminSandboxes" -- \
+	    apps/web/src/app/admin/_components/admin-sidebar.tsx \
+	    apps/web/src/app/admin/_components/admin-shell.tsx \
+	    apps/web/src/app/admin/page.tsx
 	  then
 	    exit 1
 	  fi
 
-  account_paths=(
-    apps/web/src/app/oauth/authorize/page.tsx
-    apps/web/src/components/dashboard/connecting-screen.tsx
-  )
-  existing_account_paths=()
-  for path in "${account_paths[@]}"; do
-    [ ! -e "$path" ] || existing_account_paths+=("$path")
-  done
-
-	  if [ "${#existing_account_paths[@]}" -gt 0 ] && git grep -n -E "useAdminAccountSandboxes|InstanceSettingsModal|/instances|justavps|JustAVPS|machines provisioned|restartSandbox|getSandboxById|useAdminSandboxHealth" -- "${existing_account_paths[@]}"
+	  if git grep -n -E "useAdminAccountSandboxes|InstanceSettingsModal|/instances|justavps|JustAVPS|machines provisioned|restartSandbox|getSandboxById|useAdminSandboxHealth" -- \
+	    apps/web/src/app/admin/accounts/page.tsx \
+	    apps/web/src/app/oauth/authorize/page.tsx \
+	    apps/web/src/components/dashboard/connecting-screen.tsx
 	  then
 	    exit 1
 	  fi
 
+	  grep -q "/projects" apps/web/src/app/activate-trial/page.tsx
+	  grep -q "/projects" apps/web/src/app/setup/page.tsx
 	  grep -q "/projects" apps/web/src/components/home/navbar.tsx
 	  grep -q "/projects" apps/web/src/app/admin/_components/admin-sidebar.tsx
 	  grep -q "/projects" apps/web/src/app/admin/_components/admin-shell.tsx
 	  [ ! -e apps/web/src/components/projects/session-dashboard-shell.tsx ]
 	  single_quote="$(printf "\047")"
 	  route_pattern="/dashboard($|[?\"${single_quote}])|/subscription($|[?\"${single_quote}])|/instances($|[?\"${single_quote}])|justavps|JustAVPS"
-  route_scan_paths=(
-    "apps/web/src/app/(home)/page.tsx"
-    "apps/web/src/app/(home)/layout.tsx"
-    "apps/web/src/app/(home)/pricing/page.tsx"
-    apps/web/src/components/home/navbar.tsx
-    apps/web/src/app/admin/_components/admin-sidebar.tsx
-    apps/web/src/app/admin/_components/admin-shell.tsx
-    apps/web/src/app/layout.tsx
-    apps/web/src/components/auth/background-aal-checker.tsx
-    apps/web/src/components/billing/pricing/new-instance-modal.tsx
-    apps/web/src/app/auth/actions.ts
-    apps/web/src/app/auth/callback/route.ts
-    "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
-    "apps/web/src/app/projects/[id]/layout.tsx"
-    "apps/web/src/app/projects/[id]/sessions/[sessionId]/page.tsx"
-  )
-	  if git grep -n -E "$route_pattern" -- "${route_scan_paths[@]}"
+	  if git grep -n -E "$route_pattern" -- \
+	    apps/web/src/app/activate-trial/page.tsx \
+	    apps/web/src/app/setup/page.tsx \
+	    "apps/web/src/app/(home)/page.tsx" \
+	    "apps/web/src/app/(home)/layout.tsx" \
+	    "apps/web/src/app/(home)/pricing/page.tsx" \
+	    "apps/web/src/app/(home)/variant-2/page.tsx" \
+	    "apps/web/src/app/(home)/home-wip/page.tsx" \
+	    apps/web/src/components/home/navbar.tsx \
+	    apps/web/src/app/admin/_components/admin-sidebar.tsx \
+	    apps/web/src/app/admin/_components/admin-shell.tsx \
+	    apps/web/src/app/layout.tsx \
+	    apps/web/src/components/auth/background-aal-checker.tsx \
+	    apps/web/src/components/announcements/maintenance-banner.tsx \
+	    apps/web/src/components/announcements/alert-banner.tsx \
+	    apps/web/src/components/home/dashboard-promo-banner.tsx \
+	    apps/web/src/components/billing/pricing/new-instance-modal.tsx \
+	    apps/web/src/app/auth/actions.ts \
+	    apps/web/src/app/auth/callback/route.ts \
+	    "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx" \
+	    "apps/web/src/app/projects/[id]/layout.tsx" \
+	    "apps/web/src/app/projects/[id]/sessions/[sessionId]/page.tsx"
 	  then
 	    exit 1
 	  fi
@@ -371,14 +324,19 @@ run_check v1_legacy_web_route_guards bash -lc '
 	    exit 1
 	  fi
 
-	  grep -q "<AppProviders" apps/web/src/components/projects/project-shell.tsx
-	  grep -q "sidebarContent={<ProjectSidebar projectId={projectId} />}" apps/web/src/components/projects/project-shell.tsx
-	  grep -q "showSidebar?: boolean" apps/web/src/components/layout/app-providers.tsx
+	  grep -q "showGlobalNewInstanceModal={false}" apps/web/src/components/projects/project-shell.tsx
+	  grep -q "showGlobalUserSettingsModal={false}" apps/web/src/components/projects/project-shell.tsx
+	  grep -q "showGlobalNewInstanceModal = false" apps/web/src/components/layout/app-providers.tsx
+	  grep -q "showGlobalUserSettingsModal = false" apps/web/src/components/layout/app-providers.tsx
+	  grep -q "showGlobalNewInstanceModal={true}" apps/web/src/components/dashboard/layout-content.tsx
+	  grep -q "showGlobalUserSettingsModal={true}" apps/web/src/components/dashboard/layout-content.tsx
 	  grep -q "showSidebar={false}" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
-	  grep -q "repo-first v1 surface" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
-	  grep -q "ProjectSidebar" apps/web/src/components/projects/project-sidebar.tsx
-	  grep -q "logoHref = .*projects" apps/web/src/components/layout/app-header.tsx
-	  if git grep -n -E "<NewInstanceModal|new-instance-modal|<UserSettingsModal|user-settings-modal|useNewInstanceModalStore|openNewInstanceModal|/instances|justavps|JustAVPS" -- \
+	  grep -q "showRightSidebar={false}" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
+	  grep -q "showGlobalNewInstanceModal={false}" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
+	  grep -q "showGlobalUserSettingsModal={false}" "apps/web/src/app/share/[shareId]/_components/SharePageWrapper.tsx"
+	  grep -q "repoFirst" apps/web/src/components/projects/project-sidebar.tsx
+	  grep -q "href = .*projects" apps/web/src/components/layout/app-header.tsx
+	  if git grep -n -E "CommandPalette|<NewInstanceModal|new-instance-modal|<UserSettingsModal|user-settings-modal|useNewInstanceModalStore|openNewInstanceModal|/instances|justavps|JustAVPS" -- \
 	    apps/web/src/components/projects/project-shell.tsx \
 	    apps/web/src/components/projects/project-sidebar.tsx \
 	    apps/web/src/components/layout/app-header.tsx

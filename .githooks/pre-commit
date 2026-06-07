@@ -1,13 +1,20 @@
 #!/bin/sh
-# Kortix secrets guard (auto-encrypt + block) — every committable .env is
+# Kortix secrets guard (auto-encrypt by default) — every committable .env is
 # dotenvx-managed, no exceptions.
 #
 # 1. Auto-encrypts EVERY staged .env that's about to be committed (any path,
 #    e.g. apps/*/.env, .env.dev, .env.prod, a brand-new service's .env), so a
-#    hand-typed plaintext value is sealed before it lands in the commit.
-#    `dotenvx encrypt` is idempotent on already-encrypted files (no churn) and
-#    mints a keypair into the adjacent .env.keys for a new file.
-# 2. Backstop: fails the commit if ANY unencrypted, non-gitignored .env remains.
+#    hand-typed plaintext value is sealed before it lands in the commit, and
+#    re-stages the encrypted version.
+# 2. Also auto-encrypts any OTHER committable .env just sitting in the working
+#    tree unstaged/untracked (e.g. you edited `apps/api/.env` but didn't stage
+#    it). Encrypted IN PLACE only — NOT added to your commit — so a stray
+#    plaintext .env elsewhere can't plaintext-leak or block this commit.
+# 3. Backstop: fails the commit only if an unencrypted, non-gitignored .env still
+#    somehow remains.
+#
+# `dotenvx encrypt` is idempotent on already-encrypted files (no churn) and mints
+# a keypair into the adjacent .env.keys for a new file.
 #
 # Excluded: .env.keys (the private keys — never committed/encrypted) and
 # .env.example (plaintext templates). Gitignored files (.env.local, supabase/.env)
@@ -21,16 +28,31 @@ if command -v dotenvx >/dev/null 2>&1; then DX="dotenvx"
 elif [ -x "node_modules/.bin/dotenvx" ]; then DX="node_modules/.bin/dotenvx"
 else DX="npx --yes @dotenvx/dotenvx"; fi
 
-# Discover every staged .env / .env.<env> being added or modified.
-staged_envs=$(git diff --cached --name-only --diff-filter=ACM \
-  | grep -E '(^|/)\.env($|\.[A-Za-z0-9_-]+$)' \
-  | grep -vE '(^|/)\.env\.keys$|(^|/)\.env\.example$' || true)
+ENV_RE='(^|/)\.env($|\.[A-Za-z0-9_-]+$)'
+SKIP_RE='(^|/)\.env\.keys$|(^|/)\.env\.example$'
 
+# (1) Staged .env being added/modified → encrypt + re-stage so the commit carries
+#     the encrypted version.
+staged_envs=$(git diff --cached --name-only --diff-filter=ACM \
+  | grep -E "$ENV_RE" | grep -vE "$SKIP_RE" || true)
 for f in $staged_envs; do
   [ -f "$f" ] || continue
   $DX encrypt -f "$f" --no-armor >/dev/null 2>&1 || true
   git add "$f"
 done
 
-# Block any remaining unencrypted, committable .env (exits non-zero on failure).
+# (2) Any OTHER committable .env present but unstaged (modified) or untracked →
+#     encrypt IN PLACE only. Not re-staged: encryption is the default, but we
+#     don't silently pull an unrelated .env edit into your commit.
+other_envs=$( {
+    git diff --name-only --diff-filter=ACM   # working-tree-modified, unstaged
+    git ls-files --others --exclude-standard  # untracked, not gitignored
+  } | grep -E "$ENV_RE" | grep -vE "$SKIP_RE" | sort -u || true)
+for f in $other_envs; do
+  [ -f "$f" ] || continue
+  printf '%s\n' "$staged_envs" | grep -qxF "$f" && continue   # already handled above
+  $DX encrypt -f "$f" --no-armor >/dev/null 2>&1 || true
+done
+
+# (3) Backstop: block any remaining unencrypted, committable .env.
 exec $DX ext precommit

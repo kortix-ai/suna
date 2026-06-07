@@ -164,21 +164,31 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
           // and would close Customize. Keep Customize open when the interaction
           // targets such an overlay — it closes itself (X / backdrop / Esc).
           const target = event.detail.originalEvent.target as Element | null;
-          if (target?.closest('[data-file-preview-overlay]')) {
+          // The Pipedream Connect SDK appends its overlay <iframe> to <body>,
+          // outside this dialog. Interacting with it must not close Customize.
+          if (
+            target?.closest('[data-file-preview-overlay]') ||
+            target?.closest('iframe[id^="pipedream-connect-iframe-"]')
+          ) {
             event.preventDefault();
           }
         }}
         className={cn(
           'flex flex-col gap-0 overflow-hidden p-0',
-          'h-[min(900px,calc(100dvh-1.5rem))] w-[calc(100vw-1.5rem)] max-w-[1320px] sm:max-w-[1320px]',
+          // Edge-to-edge full-screen page: fills the viewport with no margin,
+          // square corners, and no border — opens like a dialog but reads as a
+          // real full-screen surface over everything (X / Esc closes).
+          'h-[100dvh] w-screen max-w-none rounded-none border-0 shadow-none sm:max-w-none',
         )}
       >
         <DialogTitle className="sr-only">
           Customize {projectName || 'project'}
         </DialogTitle>
 
-        {/* Header */}
-        <div className="flex h-12 shrink-0 items-center justify-between border-b border-border/60 pl-4 pr-2">
+        {/* Header. `kx-customize-header` indents the title past the OS window
+            controls on desktop (macOS traffic lights left; Win/Linux controls
+            right) without adding vertical space. No-op on the web. */}
+        <div className="kx-customize-header flex h-12 shrink-0 items-center justify-between border-b border-border/60 pl-4 pr-2">
           <div className="flex min-w-0 items-center gap-2 text-sm">
             <SlidersHorizontal className="size-4 shrink-0 text-muted-foreground" />
             <span className="font-medium text-foreground">Customize</span>

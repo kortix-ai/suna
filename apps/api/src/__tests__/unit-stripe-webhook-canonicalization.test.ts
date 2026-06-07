@@ -89,6 +89,9 @@ mock.module('../shared/db', () => ({
         }),
       }),
     }),
+    transaction: async (fn: (tx: { execute: () => Promise<void> }) => Promise<unknown>) => fn({
+      execute: async () => {},
+    }),
   },
 }));
 

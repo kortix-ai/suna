@@ -55,6 +55,15 @@ export interface AccountState {
     };
     can_purchase_credits: boolean;
   };
+  models: Array<{
+    id: string;
+    name: string;
+    provider: string;
+    allowed: boolean;
+    context_window: number;
+    capabilities: string[];
+    priority: number;
+  }>;
   limits?: {
     concurrent_runs: {
       running_count: number;
@@ -105,6 +114,11 @@ export interface AccountState {
     created_at: string;
   }>;
   can_add_instances?: boolean;
+  can_claim_computer?: boolean;
+  // True only for genuine legacy per-machine accounts that have a machine to
+  // migrate — gates the "Claim seat-based pricing" card (new per-seat-era users
+  // must not see it, or the claim dead-ends on "nothing to switch").
+  can_claim_per_seat?: boolean;
   // Billing v2 — present for accounts on the new per-seat plan.
   billing_model?: 'legacy' | 'per_seat';
   seats?: {
@@ -131,7 +145,20 @@ export interface AccountState {
 // MUTATION REQUEST/RESPONSE TYPES
 // =============================================================================
 
-interface CreateCheckoutSessionRequest {
+export interface TokenUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  model: string;
+}
+
+export interface DeductResult {
+  success: boolean;
+  cost: number;
+  new_balance: number;
+  transaction_id?: string;
+}
+
+export interface CreateCheckoutSessionRequest {
   tier_key: string;
   success_url: string;
   cancel_url: string;
@@ -144,7 +171,7 @@ interface CreateCheckoutSessionRequest {
   location?: string;
 }
 
-interface CreateCheckoutSessionResponse {
+export interface CreateCheckoutSessionResponse {
   status:
     | 'upgraded'
     | 'downgrade_scheduled'
@@ -186,18 +213,99 @@ export interface CreatePortalSessionRequest {
   return_url: string;
 }
 
-interface CreatePortalSessionResponse {
+export interface CreatePortalSessionResponse {
   portal_url: string;
 }
 
-interface PurchaseCreditsRequest {
+export interface PurchaseCreditsRequest {
   amount: number;
   success_url: string;
   cancel_url: string;
 }
 
-interface PurchaseCreditsResponse {
+export interface PurchaseCreditsResponse {
   checkout_url: string;
+}
+
+export interface CancelSubscriptionRequest {
+  feedback?: string;
+}
+
+export interface CancelSubscriptionResponse {
+  success: boolean;
+  cancel_at: number;
+  message: string;
+}
+
+export interface ReactivateSubscriptionResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface ScheduleDowngradeRequest {
+  target_tier_key: string;
+  commitment_type?: 'monthly' | 'yearly' | 'yearly_commitment';
+}
+
+export interface ScheduleDowngradeResponse {
+  success: boolean;
+  message: string;
+  scheduled_date: string;
+  current_tier: {
+    name: string;
+    display_name: string;
+    monthly_credits: number;
+  };
+  target_tier: {
+    name: string;
+    display_name: string;
+    monthly_credits: number;
+  };
+  billing_change: boolean;
+  current_billing_period: string;
+  target_billing_period: string;
+  change_description: string;
+}
+
+export interface CancelScheduledChangeResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface Transaction {
+  id: string;
+  user_id: string;
+  type: 'credit' | 'debit';
+  amount: number;
+  description: string;
+  reference_id?: string;
+  reference_type?: string;
+  created_at: string;
+}
+
+export interface UsageHistory {
+  daily_usage: Record<string, {
+    credits: number;
+    debits: number;
+    count: number;
+  }>;
+  total_period_usage: number;
+  total_period_credits: number;
+}
+
+export interface CheckoutSessionDetails {
+  session_id: string;
+  amount_total: number;           // Final amount in cents (after discounts and tax)
+  amount_subtotal: number;        // Amount before discounts/tax in cents
+  amount_discount: number;        // Discount amount in cents
+  amount_tax: number;             // Tax amount in cents
+  currency: string;
+  coupon_id: string | null;       // Internal Stripe coupon ID
+  coupon_name: string | null;     // Coupon display name
+  promotion_code: string | null;  // Customer-facing code (e.g., "HEHE2020")
+  balance_transaction_id: string | null;  // txn_xxx for Stripe balance transaction
+  status: string;
+  payment_status: string;
 }
 
 function getDefaultAccountState(): AccountState {
@@ -232,6 +340,7 @@ function getDefaultAccountState(): AccountState {
       },
       can_purchase_credits: false,
     },
+    models: [],
     limits: {
       concurrent_runs: {
         running_count: 0,
@@ -292,6 +401,18 @@ export const billingApi = {
     if (response.error) {
       return getDefaultAccountState();
     }
+    return response.data!;
+  },
+
+  async deductUsage(params: { amount: number; description?: string }) {
+    const response = await backendApi.post<DeductResult>('/billing/deduct-usage', params, { showErrors: false });
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
+  async deductTokenUsage(usage: TokenUsage) {
+    const response = await backendApi.post<DeductResult>('/billing/deduct', usage);
+    if (response.error) throw response.error;
     return response.data!;
   },
 
@@ -361,10 +482,67 @@ export const billingApi = {
     return response.data!;
   },
 
+  async cancelSubscription(request?: CancelSubscriptionRequest, accountId?: string) {
+    const body: any = request || {};
+    if (accountId) body.account_id = accountId;
+    const response = await backendApi.post<CancelSubscriptionResponse>(
+      '/billing/cancel-subscription',
+      body,
+    );
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
+  async reactivateSubscription(accountId?: string) {
+    const response = await backendApi.post<ReactivateSubscriptionResponse>(
+      '/billing/reactivate-subscription',
+      accountId ? { account_id: accountId } : {},
+    );
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
   async purchaseCredits(request: PurchaseCreditsRequest, accountId?: string) {
     const response = await backendApi.post<PurchaseCreditsResponse>(
       '/billing/purchase-credits',
       accountId ? { ...request, account_id: accountId } : request
+    );
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
+  async getTransactions(limit = 50, offset = 0, accountId?: string) {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    if (accountId) params.set('account_id', accountId);
+    const response = await backendApi.get<{ transactions: Transaction[]; count: number }>(
+      `/billing/transactions?${params.toString()}`
+    );
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
+  async getUsageHistory(days = 30) {
+    const response = await backendApi.get<UsageHistory>(
+      `/billing/usage-history?days=${days}`
+    );
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
+
+  async scheduleDowngrade(request: ScheduleDowngradeRequest, accountId?: string) {
+    const response = await backendApi.post<ScheduleDowngradeResponse>(
+      '/billing/schedule-downgrade',
+      accountId ? { ...request, account_id: accountId } : request
+    );
+    if (response.error) throw response.error;
+    return response.data!;
+  },
+
+  async cancelScheduledChange(accountId?: string) {
+    const response = await backendApi.post<CancelScheduledChangeResponse>(
+      '/billing/cancel-scheduled-change',
+      accountId ? { account_id: accountId } : {}
     );
     if (response.error) throw response.error;
     return response.data!;
@@ -378,7 +556,116 @@ export const billingApi = {
     if (response.error) throw response.error;
     return response.data!;
   },
+
+  /**
+   * Get checkout session details from Stripe.
+   * Used to retrieve actual transaction amounts (after discounts) for analytics tracking.
+   */
+  async getCheckoutSession(sessionId: string): Promise<CheckoutSessionDetails | null> {
+    try {
+      const response = await backendApi.get<CheckoutSessionDetails>(
+        `/billing/checkout-session/${sessionId}`,
+        { showErrors: false }
+      );
+      if (response.error) {
+        console.warn('[Billing] Could not fetch checkout session:', response.error);
+        return null;
+      }
+      return response.data!;
+    } catch (error) {
+      console.warn('[Billing] Error fetching checkout session:', error);
+      return null;
+    }
+  }
 };
+
+// =============================================================================
+// CONVENIENCE EXPORTS
+// =============================================================================
+
+export const getAccountState = (skipCache?: boolean) => billingApi.getAccountState(skipCache);
+export const deductUsage = (params: { amount: number; description?: string }) =>
+  billingApi.deductUsage(params);
+export const deductTokenUsage = (usage: TokenUsage) => billingApi.deductTokenUsage(usage);
+export const createCheckoutSession = (request: CreateCheckoutSessionRequest) =>
+  billingApi.createCheckoutSession(request);
+export const createPortalSession = (request: CreatePortalSessionRequest) =>
+  billingApi.createPortalSession(request);
+export const cancelSubscription = (feedback?: string) =>
+  billingApi.cancelSubscription(feedback ? { feedback } : undefined);
+export const reactivateSubscription = () => billingApi.reactivateSubscription();
+export const purchaseCredits = (request: PurchaseCreditsRequest) =>
+  billingApi.purchaseCredits(request);
+export const getTransactions = (limit?: number, offset?: number) =>
+  billingApi.getTransactions(limit, offset);
+export const getUsageHistory = (days?: number) => billingApi.getUsageHistory(days);
+export const scheduleDowngrade = (request: ScheduleDowngradeRequest) =>
+  billingApi.scheduleDowngrade(request);
+export const cancelScheduledChange = () => billingApi.cancelScheduledChange();
+export const syncSubscription = () => billingApi.syncSubscription();
+export const getCheckoutSession = (sessionId: string) => billingApi.getCheckoutSession(sessionId);
+
+// =============================================================================
+// INLINE CHECKOUT
+// =============================================================================
+
+export interface CreateInlineCheckoutRequest {
+  tier_key: string;
+  billing_period: 'monthly' | 'yearly';
+  promo_code?: string;
+}
+
+export interface CreateInlineCheckoutResponse {
+  // For new subscriptions
+  client_secret?: string;
+  subscription_id: string;
+  tier_key: string;
+  amount?: number;
+  currency?: string;
+  // For 100% discount promo codes (no payment needed)
+  no_payment_required?: boolean;
+  // For upgrades (no payment needed - uses existing payment method)
+  upgraded?: boolean;
+  previous_tier?: string;
+  credits_granted?: number;
+  message?: string;
+}
+
+export async function createInlineCheckout(
+  request: CreateInlineCheckoutRequest,
+  accountId?: string,
+): Promise<CreateInlineCheckoutResponse> {
+  const response = await backendApi.post<CreateInlineCheckoutResponse>(
+    '/billing/create-inline-checkout',
+    accountId ? { ...request, account_id: accountId } : request
+  );
+  if (response.error) throw response.error;
+  return response.data!;
+}
+
+export interface ConfirmInlineCheckoutRequest {
+  subscription_id: string;
+  tier_key: string;
+  payment_intent_id?: string;
+}
+
+export interface ConfirmInlineCheckoutResponse {
+  success: boolean;
+  tier: string;
+  message: string;
+}
+
+export async function confirmInlineCheckout(
+  request: ConfirmInlineCheckoutRequest,
+  accountId?: string,
+): Promise<ConfirmInlineCheckoutResponse> {
+  const response = await backendApi.post<ConfirmInlineCheckoutResponse>(
+    '/billing/confirm-inline-checkout',
+    accountId ? { ...request, account_id: accountId } : request
+  );
+  if (response.error) throw response.error;
+  return response.data!;
+}
 
 // =============================================================================
 // AUTO-TOPUP
@@ -390,7 +677,7 @@ export interface AutoTopupConfig {
   amount: number;
 }
 
-interface AutoTopupSetupStatus {
+export interface AutoTopupSetupStatus {
   has_payment_method: boolean;
   has_default_payment_method: boolean;
 }
@@ -425,6 +712,78 @@ export async function getAutoTopupSetupStatus(accountId?: string): Promise<AutoT
     timeout: AUTO_TOPUP_TIMEOUT_MS,
     showErrors: false,
   });
+  if (response.error) throw response.error;
+  return response.data!;
+}
+
+// =============================================================================
+// INSTANCES (server types)
+// =============================================================================
+
+export interface ServerType {
+  name: string;
+  description: string;
+  cores: number;
+  memory: number;
+  disk: number;
+  cpuType: 'shared' | 'dedicated';
+  architecture: 'x86' | 'arm';
+  priceMonthly: number;
+  priceMonthlyMarkup: number;
+  location: string;
+}
+
+export interface ServerTypesResponse {
+  serverTypes: ServerType[];
+  location: string;
+  defaultServerType?: string;
+  defaultLocation?: string;
+}
+
+export async function getServerTypes(location?: string): Promise<ServerTypesResponse> {
+  const params = location ? `?location=${location}` : '';
+  const response = await backendApi.get<ServerTypesResponse>(
+    `/platform/sandbox/justavps/server-types${params}`
+  );
+  if (response.error) {
+    if (response.error.status === 404 && /justavps provider is not enabled/i.test(response.error.message || '')) {
+      return {
+        serverTypes: [],
+        location: location || 'hel1',
+      };
+    }
+    throw response.error;
+  }
+  return response.data!;
+}
+
+export interface CreateInstanceRequest {
+  provider: 'justavps';
+  serverType?: string;
+  location?: string;
+  name?: string;
+  backgroundProvisioning?: boolean;
+}
+
+export async function createInstance(request: CreateInstanceRequest): Promise<any> {
+  const response = await backendApi.post<any>('/platform/sandbox', request, { timeout: 180000 });
+  if (response.error) throw response.error;
+  return response.data!;
+}
+
+export async function deleteInstance(sandboxId: string): Promise<{ success: boolean }> {
+  const response = await backendApi.delete<{ success: boolean }>(`/platform/sandbox?sandbox_id=${sandboxId}`);
+  if (response.error) throw response.error;
+  return response.data!;
+}
+
+export async function markInstanceError(sandboxId: string, errorMessage: string): Promise<void> {
+  await backendApi.post('/platform/sandbox/mark-error', { sandbox_id: sandboxId, error_message: errorMessage }, { showErrors: false, timeout: 10000 });
+}
+
+/** Claim a free default computer for legacy paid users. */
+export async function claimComputer(): Promise<any> {
+  const response = await backendApi.post<any>('/platform/sandbox/claim-computer', {}, { timeout: 60000 });
   if (response.error) throw response.error;
   return response.data!;
 }

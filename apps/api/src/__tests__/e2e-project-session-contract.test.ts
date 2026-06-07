@@ -168,6 +168,7 @@ mock.module("../snapshots/builder", () => ({
 
 mock.module('../projects/github', () => ({
   parseGitHubRepoUrl: () => null,
+  isOrgAccount: async () => false,
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
   createGitHubAppJwt: () => 'jwt-test',
   verifyGitHubAppInstallState: (state: string) => state,
@@ -759,7 +760,7 @@ describe('project session API contract', () => {
     const body = await res.json();
     expect(body.name).toBe('Human name');
     expect(body.status).toBe('provisioning');
-    expect(body.metadata).toEqual({ existing: true, custom: 'ok', name: 'Human name' });
+    expect(body.metadata).toEqual({ existing: true, custom: 'ok', custom_name: 'Human name' });
   });
 
   test('rejects unknown providers before creating a git branch', async () => {

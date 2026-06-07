@@ -29,6 +29,7 @@ import {
 } from '@pierre/trees';
 import {
   ExternalLink,
+  Loader2,
   Pencil,
   Plus,
   Search,
@@ -116,7 +117,7 @@ export function SkillsView({ projectId }: { projectId: string }) {
 
   const selectedSkill = skills.find((s) => s.path === selectedSkillPath) ?? null;
   const activeFilePath = selectedFilePath ?? selectedSkill?.path ?? null;
-  const startThread = useConfigureThread(projectId);
+  const configure = useConfigureThread(projectId);
 
   // ProjectFilesProvider supplies project + ref to the shared
   // <FileContentRenderer/> in the right pane, so we get the same file
@@ -136,9 +137,14 @@ export function SkillsView({ projectId }: { projectId: string }) {
               size="sm"
               variant="outline"
               className="h-7 gap-1 px-2 text-xs"
-              onClick={() => startThread(newConfigPrompt('skill'))}
+              onClick={() => configure.start(newConfigPrompt('skill'))}
+              disabled={configure.pending}
             >
-              <Plus className="h-3 w-3" />
+              {configure.pending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Plus className="h-3 w-3" />
+              )}
               New
             </Button>
           }
@@ -170,7 +176,8 @@ export function SkillsView({ projectId }: { projectId: string }) {
             <EmptyList
               icon={Sparkles}
               label={tHardcodedUi.raw('appProjectsIdCustomizeSkillsPage.line168JsxAttrLabelNoSkillsYet')}
-              onCreate={() => startThread(newConfigPrompt('skill'))}
+              onCreate={() => configure.start(newConfigPrompt('skill'))}
+              creating={configure.pending}
             />
           ) : filtered.length === 0 ? (
             <NoMatches query={query} />
@@ -466,7 +473,7 @@ function SkillFileViewer({
   // Markdown preview, syntax-highlighted code, JSON tree, CSV table,
   // image preview, etc. — for free, kept in sync with the file viewer.
   const fileName = selectedPath.split('/').pop() ?? selectedPath;
-  const startThread = useConfigureThread(projectId);
+  const configure = useConfigureThread(projectId);
 
   return (
     <>
@@ -479,7 +486,8 @@ function SkillFileViewer({
           {selectedPath}
         </span>
         <DetailToolbarActions
-          onEdit={() => startThread(editConfigPrompt('skill', skill.name, skill.path))}
+          onEdit={() => configure.start(editConfigPrompt('skill', skill.name, skill.path))}
+          editing={configure.pending}
         />
       </header>
 
@@ -498,7 +506,13 @@ function SkillFileViewer({
   );
 }
 
-function DetailToolbarActions({ onEdit }: { onEdit: () => void }) {
+function DetailToolbarActions({
+  onEdit,
+  editing,
+}: {
+  onEdit: () => void;
+  editing: boolean;
+}) {
   return (
     <div className="flex items-center gap-1">
       <Button
@@ -506,8 +520,13 @@ function DetailToolbarActions({ onEdit }: { onEdit: () => void }) {
         size="sm"
         className="h-7 gap-1.5 px-2.5 text-xs"
         onClick={onEdit}
+        disabled={editing}
       >
-        <Pencil className="h-3.5 w-3.5" />
+        {editing ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Pencil className="h-3.5 w-3.5" />
+        )}
         Edit with agent
       </Button>
     </div>
@@ -579,10 +598,12 @@ function EmptyList({
   icon,
   label,
   onCreate,
+  creating,
 }: {
   icon: Icon;
   label: string;
   onCreate: () => void;
+  creating: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
@@ -596,8 +617,18 @@ function EmptyList({
       }
       action={
         <div className="flex flex-col items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={onCreate}>
-            <Plus className="h-3.5 w-3.5" />
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={onCreate}
+            disabled={creating}
+          >
+            {creating ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Plus className="h-3.5 w-3.5" />
+            )}
             Create a skill
           </Button>
           <Button asChild variant="ghost" size="sm" className="gap-1.5">

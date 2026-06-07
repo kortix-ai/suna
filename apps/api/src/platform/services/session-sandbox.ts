@@ -37,12 +37,12 @@ import {
   type EnsureSandboxImageResult,
 } from '../../snapshots/builder';
 import { config } from '../../config';
+import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
+import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
 import { startComputeSession } from '../../billing/services/compute-metering';
-import { resolveYoloTokenForMember } from '../../billing/services/yolo-tokens';
-import { getCreditAccount } from '../../billing/repositories/credit-accounts';
-import { isPerSeatAccount } from '../../billing/services/tiers';
+import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 
 // Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
@@ -140,7 +140,7 @@ export async function provisionSessionSandbox(opts: {
   //   1. Explicit per-request `opts.provider` (set by callers that need a
   //      specific runtime, e.g. when restarting an existing sandbox).
   //   2. `config.getDefaultProvider()` — head of ALLOWED_SANDBOX_PROVIDERS.
-  const providerName = opts.provider || config.getDefaultProvider();
+  const providerName = opts.provider || (await selectProvider());
   const provider = getProvider(providerName);
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
@@ -153,18 +153,20 @@ export async function provisionSessionSandbox(opts: {
     return { ...opts.gitProject, gitAuthToken: token };
   };
 
-  // Kick Daytona image resolution off NOW, in parallel with the token
+  // Kick provider image resolution off NOW, in parallel with the token
   // round-trip below. Local Docker boots from its configured SANDBOX_IMAGE, not
-  // from a Daytona snapshot, so self-host/local sessions must not require
-  // Daytona credentials just to start a container.
+  // from a managed-provider snapshot, so self-host/local sessions must not
+  // require snapshot-provider credentials just to start a container.
   type FirstImage = EnsureSandboxImageResult & { gitProject: GitBackedProject };
-  let firstImagePromise: Promise<FirstImage> | null = providerName === 'daytona'
+  const needsProviderImage = providerName !== 'local_docker';
+  let firstImagePromise: Promise<FirstImage> | null = needsProviderImage
     ? (async () => {
         const gitProject = await resolveGitProject();
         const image = await ensureSandboxImage(gitProject, {
           slug,
           accountId,
           source: 'session-start',
+          provider: providerName,
         });
         return { ...image, gitProject };
       })()
@@ -178,7 +180,7 @@ export async function provisionSessionSandbox(opts: {
   // sandbox API key can be minted before the row lands. Previously serial
   // (~100ms each on a warm DB), now ~one round-trip total.
   const sandboxName = `session-${sandboxId.slice(0, 8)}`;
-  const [sandboxRows, sandboxKey, executorToken, llmApiKey] = await Promise.all([
+  const [sandboxRows, sandboxKey, executorToken, gatewayEntitled] = await Promise.all([
     db
       .insert(sessionSandboxes)
       .values({
@@ -218,29 +220,38 @@ export async function provisionSessionSandbox(opts: {
         console.warn(`[session-sandbox] failed to mint executor token for ${projectId}:`, err);
         return null as string | null;
       }),
-    getCreditAccount(accountId)
-      .then(async (account) => {
-        const hasActiveSub =
-          !!account?.stripeSubscriptionId &&
-          account.stripeSubscriptionStatus !== 'canceled' &&
-          account.stripeSubscriptionStatus !== 'unpaid';
-        if (isPerSeatAccount(account?.billingModel) && hasActiveSub && userId) {
-          return resolveYoloTokenForMember(userId, accountId);
-        }
-        return null as string | null;
-      })
-      .catch((err) => {
-        console.warn(
-          `[session-sandbox] failed to resolve LLM gateway token for ${userId}@${accountId}:`,
-          err instanceof Error ? err.message : String(err),
-        );
-        return null as string | null;
-      }),
+    accountEntitledToLlmGateway(accountId).catch((err) => {
+      console.warn(
+        `[session-sandbox] failed to resolve LLM-gateway entitlement for ${userId}@${accountId}:`,
+        err instanceof Error ? err.message : String(err),
+      );
+      return false;
+    }),
   ]);
   const [sandbox] = sandboxRows;
   tl.mark('row+tokens');
 
   const llmBaseUrl = `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/llm`;
+
+  // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is
+  // injected (otherwise OpenCode falls back to showing only its built-in Zen
+  // catalog). It authenticates the gateway with the per-session executor PAT,
+  // which the gateway resolves via validateAccountToken and meters.
+  //
+  // YOLO is gone — we no longer mint/inject a per-member kyolo_ token here. That
+  // path was a single row per member, re-minted on every provision, so concurrent
+  // boots clobbered each other and left older sandboxes with a stale token the
+  // gateway rejects (401). The PAT is per-session and stable.
+  //
+  // Enablement: any account whose tier grants all models — per-seat teams AND
+  // every legacy paid tier (pro, tier_*) — on billing-on deploys, plus everyone
+  // on billing-off (local / self-hosted; the gateway records-but-never-debits
+  // there). See accountEntitledToLlmGateway: it gates on the resolved TIER, not
+  // billing_model, so legacy paying customers are no longer wrongly stripped to
+  // the Zen-only catalog. Per-request affordability stays in the gateway's own
+  // billing gate (assertBillingActive + deductForLlmUsage).
+  const gatewayLlmKey: string | null =
+    config.LLM_GATEWAY_ENABLED && gatewayEntitled ? executorToken : null;
 
   const providerCreateInput: CreateSandboxOpts = {
     accountId,
@@ -260,11 +271,11 @@ export async function provisionSessionSandbox(opts: {
       ...(executorToken
         ? { KORTIX_EXECUTOR_TOKEN: executorToken, KORTIX_CLI_TOKEN: executorToken }
         : {}),
-      ...(llmApiKey
+      ...(gatewayLlmKey
         ? {
-            KORTIX_LLM_API_KEY: llmApiKey,
+            KORTIX_LLM_API_KEY: gatewayLlmKey,
             KORTIX_LLM_BASE_URL: llmBaseUrl,
-            KORTIX_YOLO_API_KEY: llmApiKey,
+            KORTIX_YOLO_API_KEY: gatewayLlmKey,
             KORTIX_YOLO_URL: llmBaseUrl,
           }
         : {}),
@@ -287,9 +298,9 @@ export async function provisionSessionSandbox(opts: {
     try {
       const branch = opts.baseRef || opts.gitProject.defaultBranch;
 
-      if (providerName === 'daytona') {
-        // Stateless image resolution: ask Daytona if it has the image; build if
-        // not. No DB lookup, no degraded fallback — the snapshot is either
+      if (needsProviderImage) {
+        // Stateless image resolution: ask the provider if it has the image; build
+        // if not. No DB lookup, no degraded fallback — the snapshot is either
         // there or we build it inline.
         let image: EnsureSandboxImageResult;
         if (firstImagePromise) {
@@ -301,6 +312,7 @@ export async function provisionSessionSandbox(opts: {
             slug,
             accountId,
             source: 'session-start',
+            provider: providerName,
           });
         }
         imageInfo = {
@@ -368,15 +380,19 @@ export async function provisionSessionSandbox(opts: {
         .where(eq(projectSessions.sessionId, sandbox.sandboxId))
         .limit(1);
       if (currentSession?.status === 'stopped') {
+        // The session was explicitly deleted while this box was still being
+        // created — deletion is the one case where we remove the provider box.
         await provider.remove(result.externalId).catch((err) => {
-          console.warn(`[session-sandbox] failed to remove stopped session sandbox ${result.externalId}:`, err);
+          console.warn(`[session-sandbox] failed to remove deleted session sandbox ${result.externalId}:`, err);
         });
         await db
           .update(sessionSandboxes)
           .set({
             externalId: result.externalId,
             baseUrl: result.baseUrl || null,
-            status: 'stopped',
+            // 'archived', not 'stopped': the box is gone, so GET …/sandbox must
+            // not try to resume it — it reprovisions fresh on reopen instead.
+            status: 'archived',
             metadata: {
               ...((sandbox.metadata as Record<string, unknown> | null) ?? {}),
               initStatus: 'failed',
@@ -390,6 +406,12 @@ export async function provisionSessionSandbox(opts: {
           .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId));
         tl.mark('row-stopped-before-active');
         tl.log({ provider: providerName, attempts, stoppedBeforeActive: true });
+        const stopTl = tl.summary();
+        recordProviderEvent({
+          provider: providerName, kind: 'provision', outcome: 'stopped',
+          totalMs: stopTl.totalMs, marks: stopTl.marks, attempts,
+          sessionId: sandbox.sandboxId, accountId,
+        });
         return;
       }
 
@@ -419,9 +441,9 @@ export async function provisionSessionSandbox(opts: {
             provisionTimeline: timeline,
             daytonaSandboxId: result.externalId,
             runtimeArtifact: {
-              artifactType: providerName === 'daytona' ? 'daytona_snapshot' : 'local_docker_image',
-              providerArtifactRef: providerName === 'daytona' ? imageInfo!.snapshotName : config.SANDBOX_IMAGE,
-              contentHash: providerName === 'daytona' ? imageInfo!.contentHash : null,
+              artifactType: needsProviderImage ? `${providerName}_snapshot` : 'local_docker_image',
+              providerArtifactRef: imageInfo?.snapshotName ?? config.SANDBOX_IMAGE,
+              contentHash: imageInfo?.contentHash ?? null,
               sandboxSlug: imageInfo?.slug ?? slug,
               isPlatformDefault: imageInfo?.isDefault ?? slug === DEFAULT_SANDBOX_SLUG,
               branch,
@@ -463,6 +485,13 @@ export async function provisionSessionSandbox(opts: {
 
       tl.mark('row-active');
       tl.log({ provider: providerName, attempts });
+
+      const okTl = tl.summary();
+      recordProviderEvent({
+        provider: providerName, kind: 'provision', outcome: 'ok',
+        totalMs: okTl.totalMs, marks: okTl.marks, attempts,
+        sessionId: sandbox.sandboxId, accountId,
+      });
 
       // Billing v2 — open a compute metering row. No-op for legacy accounts.
       // Spec is resolved from the project manifest with provider-default fallbacks.
@@ -552,6 +581,13 @@ export async function provisionSessionSandbox(opts: {
       } catch (markErr) {
         console.error(`[session-sandbox] Failed to mark sandbox ${sandbox.sandboxId} as error:`, markErr);
       }
+      const errTl = tl.summary();
+      recordProviderEvent({
+        provider: providerName, kind: 'provision', outcome: 'error',
+        totalMs: errTl.totalMs, marks: errTl.marks,
+        errorClass: isCapacity ? 'capacity' : 'other', error: bgMessage,
+        sessionId: sandbox.sandboxId, accountId,
+      });
       break provisioning;
     }
     }

@@ -1,0 +1,334 @@
+---
+title: "Introducing Kortix: the AI command center for your company"
+description: A workforce of AI agents that do real work across your tools — defined as files in a git repo, run in isolated sandboxes, governed by review, and built enterprise-first. Here's the whole thing, A to Z.
+date: "2026-06-06"
+author: marko
+cover: "/banner.png"
+tags:
+  - Product
+  - Vision
+---
+
+Every company is being told to "adopt AI." But most AI tools stop at the
+conversation. You ask a question, you get an answer, and the moment you close the
+tab the work is gone. That's a faster way to think. It isn't a company running on
+AI.
+
+Kortix is the **command center for the AI agents that do your work** — one place to
+build a workforce of agents, connect them to your tools, run them on your terms,
+and keep every result accountable to a human.
+
+Underneath that is an idea we think is the right one for the next decade of
+software: **your company's AI operation should be files in a git repo.** Not a pile
+of settings in someone else's dashboard — actual files you own, version, review,
+and run. This post walks the whole thing, end to end.
+
+## A company is a git repo
+
+In Kortix, a **project** is one git repository. The repo *is* the project: its
+files, its history, its agents, its automations, its settings — all of it lives in
+git. Start fresh with a private repo Kortix hosts for you, or bring an existing one
+on GitHub.
+
+That single decision is what makes everything else work. When your operation is a
+repo:
+
+- **Every change is reviewable.** A new automation, a tweak to how an agent
+  behaves, a new connected tool — each one is a diff someone can read and approve
+  before it goes live.
+- **Nothing drifts.** There's no separate database of settings to fall out of sync
+  with reality. The repo is the truth.
+- **It's portable and yours.** Your whole setup is plain files. You can read it,
+  fork it, move it, and run it on your own infrastructure.
+
+A company that runs on AI shouldn't be a black box you rent. It should be a
+codebase you own.
+
+## `kortix.toml`: the single source of truth
+
+At the root of every project sits one file: `kortix.toml`. It's the one file the
+platform treats as authoritative. Any repo with a valid `kortix.toml` at its root
+*is* a Kortix project — that file defines what the project is, what it's allowed to
+do, and how it runs.
+
+Here's a real one:
+
+```toml
+# kortix.toml — the one file that defines this project.
+kortix_version = 1
+
+[project]
+name        = "acme-ops"
+description = "Acme's operations command center."
+
+# The secrets your agents need: names here, encrypted values in the vault.
+[env]
+required = ["DATABASE_URL"]
+optional = ["ANTHROPIC_API_KEY", "WEBHOOK_SLACK_SECRET"]
+
+# The sandbox every task boots into — your image, your hardware.
+[[sandbox.templates]]
+slug       = "ops"
+dockerfile = ".kortix/Dockerfile"
+cpu        = 4
+memory     = 8
+
+[sandbox]
+default = "ops"
+
+# Where your agents' behavior lives (personas, skills, tools).
+[opencode]
+config_dir = ".kortix/opencode"
+
+# Run work on a schedule — nobody has to kick it off.
+[[triggers]]
+slug     = "weekly-health-report"
+type     = "cron"
+cron     = "0 0 9 * * 1"
+timezone = "America/New_York"
+prompt   = "Draft the weekly customer health report and open it for review."
+
+# A tool the agent can use — credentials stay in the platform, never here.
+[[connectors]]
+slug       = "slack"
+provider   = "pipedream"
+app        = "slack"
+credential = "per_user"
+
+  # Per-action policy: anything that sends a message waits for a human.
+  [[connectors.policies]]
+  match  = "*message*"
+  action = "require_approval"
+```
+
+That's a company's operating setup in a few dozen lines. Each table is read by a
+different part of the platform: the scheduler reads `[[triggers]]`, the sandbox
+builder reads `[[sandbox.templates]]`, the connector layer reads `[[connectors]]`,
+the session bootstrap reads `[env]`. Edit it in the dashboard or from inside a
+session and the changes round-trip through the same file — the diff stays clean
+either way.
+
+The parser is deliberately forgiving: a bad entry never breaks the whole file. It's
+set aside with a clear error while everything valid keeps working, and a pinned
+`kortix_version` means the platform never silently misreads a manifest written for
+a newer schema.
+
+## Two clean layers
+
+A project's configuration has a strict boundary, and it's one of the most useful
+design decisions in the system.
+
+- **What the project is** lives in `kortix.toml` and your `Dockerfile`: the
+  sandbox, the secrets it expects, the automations, the connected tools.
+- **How the agent behaves** lives in its own version-controlled config directory:
+  the personas, the skills you teach it, its tools and custom commands.
+
+The platform reads the first layer to run your project. It never reaches into the
+second — that's the agent's domain. The upshot is that *how your agents think* and
+*how your company runs* evolve independently, and both are nothing more than files
+under review. Teach an agent a new skill, and it's a file; that file reaches future
+work only after it's reviewed and merged, like any other change.
+
+## What happens when you hand off a task, A to Z
+
+Day to day, you describe a task in plain language and get a finished result back.
+Here's everything that happens underneath, from the moment you hit go.
+
+```
+your company  →  a git repo (kortix.toml at its root)
+                   │
+  you hand off a task
+                   ↓
+                a session  →  isolated sandbox on branch "session-<id>"
+                                 │  the agent works, commits, pushes
+                                 ↓
+                         a change request  →  you review  →  merge to main
+```
+
+1. **A branch is cut.** The control plane opens a **session** and cuts a fresh
+   branch from your default branch, named after the session. Your main line is
+   never touched directly.
+2. **The sandbox is built — or reused.** The platform resolves a content-addressed
+   snapshot of your sandbox image (your `Dockerfile` plus the Kortix runtime
+   layer). If nothing changed, it reuses the cached image, so most sessions boot
+   fast. Change your image or its hardware spec and the next session rebuilds once.
+3. **The environment comes up.** An isolated sandbox boots, clones your repo, and
+   pulls git credentials **on demand** — there's no long-lived git token sitting
+   in the environment. Your project secrets are decrypted and injected as ordinary
+   environment variables.
+4. **The agent works.** It reads and writes files, reaches your connected tools,
+   and commits its progress to the session branch in small, pushable chunks.
+5. **It proposes the work.** When it's done, the agent opens a **change request** —
+   a summary plus the exact diff — and hands it to you. It does not merge its own
+   work.
+
+The sandbox is disposable by design. When the session ends or goes idle, the
+environment is thrown away. Only what the agent committed and pushed survives, and
+only a merged change request makes it permanent. Because each session is fully
+isolated — its own environment, its own branch — any number can run at once: yours,
+your teammates', and your automated ones, none of them stepping on each other.
+
+## Review is the only way in
+
+The change request is the heart of the trust model. It's the **only** path for a
+session's work to reach your main line — and that's true for *everything* the agent
+touched, not only the obvious output. New code, a new skill, an edited automation,
+a change to the agent's own instructions: all of it lands the same way, through a
+review you control.
+
+You see the exact diff, with a preview that flags any conflicts up front. Merge to
+keep the work — a fast-forward when the branch is clean, a merge commit
+otherwise — or send it back. Until you merge, the work is proposed, not applied.
+
+So an agent can have real autonomy inside its sandbox while having zero ability to
+change your company without a human saying yes. That's the combination that makes
+handing agents real work sane.
+
+## Tools without handing over the keys
+
+An agent is only as useful as what it can reach, so Kortix connects your agents to
+the apps your team already uses — Slack, Gmail, Notion, Salesforce, and thousands
+more. The part we're proudest of is *how* it connects.
+
+When an agent uses a connected tool, **it never holds your credentials.** Each call
+is brokered: the agent asks to run an action, the platform resolves the credential
+on the server, runs the call, records it, and returns the result. The key never
+enters the sandbox.
+
+And you govern every action with policy. In the manifest, each tool can be set to
+**run**, **require approval**, or be **blocked** — matched by name, so you can let
+an agent read freely and pause it before anything sends, posts, or pays:
+
+```toml
+[[connectors.policies]]
+match  = "*message*"
+action = "require_approval"
+```
+
+Credentials can be shared across a project or connected per person, and every call
+is audited. Connect a tool for one project and it stays scoped to that project.
+This is the difference between an agent that's useful and an agent you'd actually
+let near production.
+
+## Sealed secrets, scoped access
+
+Security here isn't a feature bolted on the side — it's the shape of the system.
+
+- **Secrets are encrypted at rest** with AES-256-GCM under a per-project key, kept
+  out of your repo entirely, and injected into a session only at boot. Rotate a
+  value any time; the new one takes effect on the next session.
+- **Git credentials are fetched fresh** for each session — no static token living
+  in the environment.
+- **Access is tightly scoped.** The token a session runs with can read and write
+  *its own* project and nothing else — it can't see other projects or touch
+  account-level settings. Every request is checked against that scope.
+- **Everything an agent does is reviewable or audited** — code through change
+  requests, tool calls through the broker's log.
+
+Isolation, review-gated merges, brokered credentials, scoped tokens, encrypted
+secrets, and a full audit trail — the things an enterprise has to ask for are how
+Kortix works by default.
+
+## Run it from anywhere, automate the routine
+
+You drive all of this however you like. The dashboard is one way; the `kortix` CLI
+does everything the dashboard can from a terminal — your laptop, a coding agent, or
+inside a session itself. `kortix init` scaffolds a new project with one command,
+and the control plane runs the agents in the cloud so your machine doesn't have to.
+
+And work doesn't have to wait for you to start it:
+
+- **Automations** run a session on a schedule or when something happens — the cron
+  trigger in the manifest above drafts that report every Monday morning, no prompt
+  needed. (Automations live in the manifest, so a new one goes live once its change
+  request merges — even your automation rules are reviewed.)
+- **Channels** let you run an agent from Slack: a message kicks off a session and
+  the agent replies right there in the thread.
+
+A triggered or Slack-spawned session is an ordinary session — same isolation, same
+review before anything lands.
+
+## It compounds
+
+Because your whole setup is version-controlled files, none of it resets tomorrow.
+Every agent you shape, every skill you teach, every tool you connect, every bit of
+memory your agents carry forward — it accumulates in the repo and gets more capable
+week over week. Early on you're teaching; before long you're reviewing. The routine
+work that used to fill calendars runs quietly in the background, 24/7, and your
+team spends its time on the decisions that need a human.
+
+It's built for teams from the start: bring people into an account, give them the
+right level of access, and everyone runs sessions and reviews work in the same
+place.
+
+## Self-hostable, open, and yours
+
+When AI becomes how your company gets work done, the system running it stops being
+a tool and becomes infrastructure. Infrastructure you don't own can be changed,
+repriced, or switched off without your say. We don't think the most important
+system in your company should be a black box you rent.
+
+So Kortix is **open and source-available**, and **you can run the entire stack on
+your own infrastructure** — one command brings up a production-style Kortix on your
+own machines, and the same CLI switches between our cloud and yours. Run it in your
+own environment, behind your own network, under your own keys.
+
+Because it's all open, you can read exactly how isolation, review, and credential
+brokering actually work — not trust a description of them. There's no lock-in: your
+projects are git repos, your config is plain files, and the platform running them
+is yours to host. Plain enough for a founder to use on day one, open all the way
+down for the people who want to look.
+
+## Everything in your command center
+
+One place, and inside it:
+
+- **Agents** — personas shaped around how your team actually works.
+- **Skills** — reusable know-how you teach once and every agent can use.
+- **Connections** — thousands of tools (Slack, Gmail, Notion, Salesforce, and
+  more), brokered server-side with per-action policies.
+- **Sessions** — isolated, disposable runs where the real work happens, any number
+  in parallel.
+- **Change requests** — the review gate every result passes through.
+- **Automations** — schedule work or run it on an event, no prompt needed.
+- **Channels** — run an agent straight from Slack.
+- **Secrets** — encrypted, per-project, never in your repo.
+- **Custom sandboxes** — your own image and hardware spec for what a task needs.
+- **Accounts and teams** — bring people in with the right level of access.
+- **A CLI and a dashboard** — drive all of it from a terminal or the browser.
+- **Self-hosting** — run the whole thing on your own infrastructure.
+
+## What we believe
+
+Everything above comes from a handful of convictions. They're worth saying plainly,
+because they're why Kortix is shaped the way it is.
+
+- **Work, not chat.** The point of AI in a company is finished work you can keep —
+  deliverables, not transcripts. We optimize for the result, not the conversation.
+- **A company should be a repo.** Your operation should be plain files you own,
+  version, and review — not settings trapped in someone's dashboard. Auditable by
+  default, portable forever.
+- **Autonomy needs a gate.** Agents should have real room to work, and zero ability
+  to change your company without a human's yes. Review isn't a feature; it's the
+  foundation.
+- **Earn trust by being inspectable.** We don't ask you to believe our guardrails
+  are sound — we make them open so you can check. Credentials are brokered, never
+  handed over; every action is governed and logged.
+- **You should own your infrastructure.** The most important system in your company
+  shouldn't be something you can be locked out of. Open, source-available,
+  self-hostable — on principle.
+- **It should compound.** Tools that forget everything tomorrow can't run a
+  business. Your agents, skills, and memory accumulate so the work gets easier over
+  time, not the same hard thing every day.
+
+We're building the command center we'd want to run our own company on. Open, so you
+can too.
+
+## Start today
+
+Open the command center, connect your first tool, and hand an agent a real task.
+Watch it come back with something you can use — review it, keep it, and build from
+there. Your company, as a repo, getting more capable every week.
+
+This is the beginning. We'll keep sharing what we're building and what we're
+learning along the way. Welcome to your command center.

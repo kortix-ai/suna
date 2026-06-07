@@ -5,7 +5,8 @@ import { locales, defaultLocale, type Locale } from '@/i18n/config';
 import { getCookieLocale, getUserLocale, LOCALE_COOKIE_MAX_AGE, LOCALE_COOKIE_NAME } from '@/i18n/locale';
 import { detectBestLocaleFromHeaders } from '@/lib/utils/geo-detection-server';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
-import { getMaintenanceConfig } from '@/lib/maintenance-store';
+import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes';
+import { getMaintenanceConfig, type MaintenanceLevel } from '@/lib/maintenance-store';
 
 // Marketing pages that support locale routing for SEO (/de, /it, etc.)
 const MARKETING_ROUTES = [
@@ -36,14 +37,54 @@ const PUBLIC_ROUTES = [
   '/about', // About page should be public
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
+  '/blog', // Public blog (MDX posts under content/blog) should be public
   '/install',
   '/install.sh',
+  '/download', // Desktop installer redirector (per-platform latest)
   '/design-system', // Living design system / brand guidelines should be public
   '/contact', // Request-a-demo / contact page should be public
   '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
   '/maintenance', // Maintenance page must be accessible without auth
+  '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
+];
+
+// Routes that require authentication but are related to billing/setup
+const BILLING_ROUTES: string[] = [];
+
+// Routes that require authentication and active subscription
+const PROTECTED_ROUTES = [
+  '/projects',
+  '/accounts',
+  '/invites',
+  '/admin',
+];
+
+// Desktop app (KortixDesktop UA) is a pure logged-in product surface. ONLY
+// these route prefixes — plus /auth/* for sign-in — are allowed to render
+// inside the desktop window. Every other route (the marketing homepage, blog,
+// pricing, careers, contact, legal, help, docs, share, design-system, … which
+// all live at root-level slugs) is bounced to /projects. Docs and external
+// links are opened in the user's real browser by the Tauri shell, never shown
+// in-app. Keep this an allowlist, not a blocklist — new marketing slugs must
+// stay blocked by default.
+const DESKTOP_ALLOWED_ROUTES = [
+  '/projects',
+  '/accounts',
+  '/invites',
+  '/admin',
+  '/setup',
+  '/connectors',
+  '/oauth',
+  '/checkout',
+  '/tunnel',
+  '/github',
+  '/cli',
+  '/templates',
+  '/maintenance',
+  '/countryerror',
+  '/debug',
 ];
 
 export async function middleware(request: NextRequest) {
@@ -54,6 +95,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/v1/') ||
+    pathname.startsWith('/supabase/') || // same-origin Supabase proxy (sandbox preview) — must reach the next.config rewrite, never the auth-gate
     pathname.includes('.') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/monitoring') ||    // Sentry error tracking tunnel (Better Stack)
@@ -101,7 +143,28 @@ export async function middleware(request: NextRequest) {
         callbackUrl.searchParams.set(key, value);
       });
 
+      console.log('🔄 Redirecting Supabase verification from root to /auth/callback');
       return NextResponse.redirect(callbackUrl);
+    }
+  }
+
+  // ── Desktop app: logged-in product surface only ─────────────────────────
+  // The desktop shell (KortixDesktop UA) must never render marketing/docs/
+  // public pages. Allow only product + auth routes; bounce everything else to
+  // /projects. Runs AFTER the Supabase-at-root handling (so OAuth callbacks
+  // still work) and BEFORE the locale/marketing logic (irrelevant for desktop).
+  // This is the authoritative gate — it catches initial loads, SSR, and
+  // Next.js client/RSC navigations alike. The Tauri shell separately opens
+  // docs/external links in the user's real browser.
+  if (request.headers.get('user-agent')?.includes('KortixDesktop')) {
+    const isAuthPath = pathname === '/auth' || pathname.startsWith('/auth/');
+    const isAllowed =
+      isAuthPath ||
+      DESKTOP_ALLOWED_ROUTES.some(
+        route => pathname === route || pathname.startsWith(route + '/'),
+      );
+    if (!isAllowed) {
+      return NextResponse.redirect(new URL('/projects', request.url));
     }
   }
 
@@ -279,6 +342,11 @@ export async function middleware(request: NextRequest) {
       const redirectTarget = `${pathname}${request.nextUrl.search || ''}`;
       url.searchParams.set('redirect', redirectTarget);
       return NextResponse.redirect(url);
+    }
+
+    // ── Billing-related routes (activate-trial, etc.) ────────────────────
+    if (BILLING_ROUTES.some(route => pathname.startsWith(route))) {
+      return supabaseResponse;
     }
 
     return supabaseResponse;

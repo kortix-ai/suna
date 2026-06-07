@@ -900,6 +900,74 @@ export async function setConnectorSharing(
   );
 }
 
+export async function setConnectorCredentialMode(
+  projectId: string,
+  slug: string,
+  mode: 'shared' | 'per_user',
+) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/credential-mode`,
+      { mode },
+    ),
+  );
+}
+
+export type ConnectorPolicyAction = 'always_run' | 'require_approval' | 'block';
+export interface ConnectorPolicyRule {
+  match: string;
+  action: ConnectorPolicyAction;
+}
+
+export async function getConnectorPolicies(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.get<{ policies: ConnectorPolicyRule[] }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`,
+    ),
+  );
+}
+
+export async function setConnectorPolicies(projectId: string, slug: string, policies: ConnectorPolicyRule[]) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/policies`,
+      { policies },
+    ),
+  );
+}
+
+/** The editable connection config for an existing connector (kortix.toml = source of truth). */
+export interface ConnectorConfig {
+  slug: string;
+  provider: AdminConnector['provider'];
+  credentialMode: 'shared' | 'per_user';
+  app: string | null;
+  account: string | null;
+  url: string | null;
+  transport: 'http' | 'sse' | null;
+  endpoint: string | null;
+  baseUrl: string | null;
+  spec: string | null;
+  auth: { type: 'none' | 'bearer' | 'basic' | 'custom'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+}
+
+export async function getConnectorConfig(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.get<ConnectorConfig>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/config`,
+    ),
+  );
+}
+
+export async function setConnectorName(projectId: string, slug: string, name: string) {
+  return unwrap(
+    await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/name`,
+      { name },
+    ),
+  );
+}
+
 export async function pipedreamConnect(projectId: string, slug: string) {
   return unwrap(
     await backendApi.post<{ token?: string; app?: string; connectUrl?: string }>(
@@ -1679,10 +1747,17 @@ export interface ProjectSession {
   sandbox_url: string | null;
   opencode_session_id: string | null;
   /**
-   * Session title, mirrored from opencode's session.title via
-   * /v1/projects/sync-opencode-sessions. Backed by metadata.name in the DB.
+   * Resolved display name: the user-set `custom_name` if present, otherwise the
+   * auto title mirrored from opencode's session.title via
+   * /v1/projects/sync-opencode-sessions (metadata.name in the DB).
    */
   name: string | null;
+  /**
+   * The user-set name override (metadata.custom_name). Authoritative — when
+   * present it always wins over the live opencode root title. null = no
+   * override (display falls back to the auto title / branch).
+   */
+  custom_name: string | null;
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
@@ -1764,6 +1839,19 @@ export async function getProjectSession(
   return unwrap(
     await backendApi.get<ProjectSession>(
       `/projects/${projectId}/sessions/${sessionId}`,
+    ),
+  );
+}
+
+export async function updateProjectSession(
+  projectId: string,
+  sessionId: string,
+  input: { name?: string | null; metadata?: Record<string, unknown> | null },
+) {
+  return unwrap(
+    await backendApi.patch<ProjectSession>(
+      `/projects/${projectId}/sessions/${sessionId}`,
+      input,
     ),
   );
 }

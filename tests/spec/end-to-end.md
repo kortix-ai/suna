@@ -4,6 +4,10 @@ Single source of truth for the e2e suite. Every flow the platform supports, star
 
 Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema), Next.js (`apps/web`), `kortix` CLI (`apps/cli`). **No RLS** — all authz is app-layer via the IAM engine, so every assertion must go through the HTTP API. Sessions run **OpenCode** inside an ephemeral per-session sandbox reached through the preview proxy.
 
+> **Audited** against source on branch `newer-kortix` (every route/gate/status below confirmed at `file:line`). Coverage/dead-code tooling for running this suite is §22.
+
+---
+
 ## 0. Conventions
 
 - `$API` = `<host>/v1` (local `http://localhost:13738/v1`, cloud `https://api.kortix.com/v1`). **Every route is `/v1`-prefixed.** Two unprefixed health routes exist (`/health`, `/v1/health`).
@@ -13,7 +17,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
   - **PAT** — `kortix_pat_…` CLI personal access token (`account_tokens`). Carries real `userId`. May be **project-scoped** (`projectId` set).
   - **APIKEY** — `kortix_` / `kortix_sb_` (`api_keys`). Account/sandbox identity; `accountId→userId` mapped. Used by sandbox→router (search/LLM/proxy).
   - **COOKIE** — `__preview_session`, scoped `/v1/p/`, 1h.
-- Auth middlewares: `supabaseAuth` (JWT or PAT) on `/v1/accounts/*`, `/v1/projects/*`, `/v1/platform/api-keys`. `combinedAuth` (JWT|token|PAT|cookie|`X-Kortix-Token`|`?token=`) on `/v1/p/*`, `/v1/servers/*`, `/v1/tunnel/*`. `apiKeyAuth` (kortix_ only) on `/v1/router/*`. `requireAdmin` (platform role) on `/v1/ops/*`. Webhooks = HMAC, no auth middleware.
+- Auth middlewares: `supabaseAuth` (JWT or PAT) on `/v1/accounts/*`, `/v1/projects/*`, `/v1/platform/api-keys`. `combinedAuth` (JWT|token|PAT|cookie|`X-Kortix-Token`|`?token=`) on `/v1/p/*`, `/v1/queue/*`, `/v1/servers/*`, `/v1/tunnel/*`. `apiKeyAuth` (kortix_ only) on `/v1/router/*`. `requireAdmin` (platform role) on `/v1/ops/*`. Webhooks = HMAC, no auth middleware.
 - Project authz gate `loadProjectForUser(c, id, level)`: `read`→`PROJECT_READ` (any project role), `write`→`PROJECT_WRITE` (editor/manager), `manage`→`PROJECT_DELETE` (manager only). Account owner/admin get implicit `manager` on every project.
 
 ### Principals (fixtures every run must provision)
@@ -37,9 +41,12 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 ### System / health (public unless noted)
 
 `SYS-1` `GET /health` · `GET /v1/health` → 200 `{status:"ok",service:"kortix-api"}`.
-`SYS-2` `GET /v1/system/maintenance` → 200 maintenance config; `PUT /v1/system/maintenance` → platform admin only (`ANON` → 401, non-platform user → 403).
+`SYS-2` `GET /v1/system/status` → maintenance/banner stub. `POST /v1/prewarm` → `{success:true}`.
 `SYS-3` `GET /v1/user-roles` (`supabaseAuth`) → `{isAdmin, role}` (platform role).
+`SYS-4` `GET /v1/router/health` → router health (no auth).
 `SYS-5` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`. Every state-changing `/v1/*` passes `auditStateChangingRequest`.
+`SYS-6` `GET /v1/system/maintenance` → public read of the maintenance config (banner + maintenance page); default `{level:"none",…}`. Write is admin-only (`ADM-6`).
+`DOCS-1` `GET /v1/openapi.json` → public OpenAPI 3.1 spec (typed via `@hono/zod-openapi`). `GET /v1/docs` → public Scalar API reference (HTML).
 
 ---
 
@@ -80,8 +87,10 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 ## 3. Access gating / signup (public)
 
+`ACC-1` `GET /access/signup-status` → 200 `{open|waitlist}`.
 `ACC-2` `POST /access/check-email {email}` → 200 allowed/blocked.
-`ACC-4` (self-hosted only, `isLocal()`) `GET /setup/install-status` → public install probe; `POST /setup/bootstrap-owner` → public first-owner bootstrap. Cloud → routes 404.
+`ACC-3` `POST /access/request-access {email,…}` → 200 waitlisted.
+`ACC-4` (self-hosted only, `isLocal()`) `GET /setup/install-status` + `GET /setup/sandbox-providers` → public; `POST /setup/bootstrap-owner` → first owner; `GET /setup/status|health|setup-status`; `GET/POST /setup/setup-wizard-step`, `POST /setup/setup-complete`. Cloud → routes 404.
 
 ---
 
@@ -92,6 +101,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `ACCT-2` `POST /accounts {name}` → 201 team account, caller = `owner` (`account_members` row).
 `ACCT-3` `GET /accounts/:id` → member → 200; `NONMEMBER` → 403.
 `ACCT-4` `PATCH /accounts/:id {name}` → `ACCOUNT_WRITE` (OWNER/ADMIN) → 200; `MEMBER` → 403.
+`ACCT-5` `GET /accounts/:id/audit` → member → 200 audit log.
 
 ### Members
 `MEM-1` `GET /accounts/:id/members` → member → 200.
@@ -114,8 +124,8 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 `TOK-4` project-scoped PAT (`projectId` set): allowed only on its own project + `/accounts/me`; **everything else → 403** (other project, `/accounts/*`, project-list, and all other surfaces — `enforceTokenProjectScope`).
 
 ### Account deletion
-`DEL-1` `GET /billing/account/deletion-status` → state.
-`DEL-2` `POST /billing/account/request-deletion` → schedules; `POST /billing/account/cancel-deletion` → cancels; `DELETE /billing/account/delete-immediately` → purges.
+`DEL-1` `GET /account/deletion-status` → state.
+`DEL-2` `POST /account/request-deletion` → schedules; `POST /account/cancel-deletion` → cancels; `DELETE /account/delete-immediately` → purges. (Mirror mount `/billing/account/*`.)
 
 ---
 
@@ -171,7 +181,7 @@ DB `project_sessions` (`status queued|branching|provisioning|running|stopped|fai
 `SESS-3` CLI client-branch optimization — `kortix sessions new`: if server can't self-create branch (not managed-freestyle, not GitHub app/pat) AND local `origin` == `project.repo_url`, CLI mints uuid, `git push origin HEAD:refs/heads/<uuid>`, then posts `session_id`+`branch_already_created:true`+`base_ref`.
 `SESS-4` `GET /projects/:id/sessions` → `read` → list (updatedAt desc).
 `SESS-5` `GET /projects/:id/sessions/:sid` → `read` → 200; non-uuid `sid` → 400.
-`SESS-6` `PATCH /projects/:id/sessions/:sid {name?,opencode_session_id?,metadata?}` → `write`; attempting `status`/`sandbox_url`/`error` → 400 (server-managed).
+`SESS-6` `PATCH /projects/:id/sessions/:sid {name?,metadata?}` → `write`; attempting `status`/`sandbox_url`/`error`/`opencode_session_id` → 400 (server-managed); any other field → 400 (not user-editable). `name` sets a sticky USER override stored in `metadata.custom_name` (NOT clobbered by `/sync-opencode-sessions`, which only writes the auto title `metadata.name`); `name:""`/null clears it. Response `name` = resolved display (`custom_name ?? metadata.name`); `custom_name` exposed separately (authoritative override or null).
 `SESS-7` `DELETE /projects/:id/sessions/:sid` → `write` → 200 soft-delete status `stopped`; **remote branch preserved**.
 `SESS-8` `GET /projects/:id/sessions/:sid/sandbox` → `read` → `session_sandboxes` row; **404 while row not yet inserted** (frontend polls); then status `provisioning`→`active` with `base_url`/`external_id`.
 `SESS-9` `POST /projects/:id/sessions/:sid/restart` → `write` → **202**; tears down container, revokes sandbox keys, re-provisions with rotated git/LLM/CLI tokens (status→`provisioning`); branch preserved.
@@ -202,7 +212,14 @@ All under `/p/:sandboxId/:port/*` (`combinedAuth` + rate-limit). `:sandboxId` = 
 `RUN-6` `GET /p/<sbx>/8000/session/<ocId>/message` (+`/message/<mid>`) → list/get messages (results).
 `RUN-7` `GET /p/<sbx>/8000/session/<ocId>/diff` → working-tree diff; agent commits land on branch `<sessionId>`.
 `RUN-8` proxy authz — request without any valid token/cookie → 401; preview-token from a `share` → scoped 200.
-`Q-4` persistent-queue drainer — boot a real session, `POST /queue/sessions/:sessionId` → 201 queued message, then poll `GET /queue/sessions/:sessionId` until the drainer forwards it to OpenCode and the queue is empty.
+
+### Persistent message queue (survives reload)
+`Q-1` `POST /queue/sessions/:sid {text,id?}` → 201 enqueue.
+`Q-2` `GET /queue/sessions/:sid` · `GET /queue/all` · `GET /queue/status` → list/status.
+`Q-3` `DELETE /queue/sessions/:sid` (clear) · `DELETE /queue/messages/:mid` (one) · `POST /queue/messages/:mid/move-up|move-down` (reorder).
+`Q-4` drainer (server, ~2s poll) — detects idle session → forwards queued msgs to OpenCode `prompt_async`; assert queued msg eventually drained.
+
+---
 
 ## 10. Files (read via git API; write via sandbox)
 
@@ -253,7 +270,7 @@ Specs in `[[triggers]]`; CRUD commits the manifest; runtime `last_fired_at` in `
 
 ---
 
-## 13. Channels (Slack)
+## 13. Channels (Slack / Telegram)
 
 Tokens stored as encrypted project secrets; webhooks public + signature-gated.
 
@@ -264,7 +281,8 @@ Tokens stored as encrypted project secrets; webhooks public + signature-gated.
 `CHN-5` Slack inbound (BYO mode) — `POST /webhooks/slack/:id` (per-project signing secret).
 `CHN-6` Slack dispatch — `app_mention`/IM/threaded `message` → existing thread session → deliver to sandbox `/kortix/prompt` (`delivered|transient|stale`); else `createProjectSession` (actor=owner, agent `default`) + record `chat_threads`.
 `CHN-7` Slack OAuth — `GET /webhooks/slack/oauth/callback` (signed `state`, 10-min TTL) → exchange code → `saveSlackInstall`.
-`CHN-9` bad sig on any channel webhook → 401. Not configured → **503 (Slack OAuth mode + OAuth callback)** but **404 (Slack BYO)**.
+`CHN-8` Telegram inbound — `POST /webhooks/telegram/:id`: verify `x-telegram-bot-api-secret-token` (missing→404, mismatch→401) → `message`/`edited_message` → spawn session (actor=owner).
+`CHN-9` bad sig on any channel webhook → 401. Not configured → **503 (Slack OAuth mode + OAuth callback)** but **404 (Slack BYO + Telegram)**.
 
 ---
 
@@ -314,15 +332,15 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 
 ## 16. Billing (gated by `KORTIX_BILLING_INTERNAL_ENABLED`; off → 404 `billing_disabled`)
 
-`BILL-1` `GET /billing/account-state` (always available; off → unlimited mock).
-`BILL-2` `POST /billing/create-checkout-session {server_type,location,...}` → Stripe checkout; `server_type`/`location` are body fields, not a separate setup route.
-`BILL-3b` `POST /billing/create-checkout-session` · `create-per-seat-checkout` · `create-portal-session`.
-`BILL-4` `POST /billing/sync-subscription`.
-`BILL-5` `POST /billing/purchase-credits`; `GET /billing/transactions`.
-`BILL-6` auto-topup: `GET …/auto-topup/settings|setup-status` · `POST …/auto-topup/configure`.
-`BILL-7` `POST /billing/claim-per-seat` → legacy → per-seat voluntary migration; non-legacy → skipped/no-op status.
-`BILL-8` `POST /billing/webhooks/stripe` — Stripe sig: missing sig → 400, misconfigured secret → 500. `POST /billing/webhooks/revenuecat` — **Bearer-token auth, bad → 401** (not an in-body sig). Both public, no auth middleware.
-`BILL-9` write ops require `billing.write` — `BILLING` ok, `MEMBER`/`AUDITOR` → 403.
+`BILL-1` `GET /billing/account-state` (always available; off → unlimited mock) · `GET …/account-state/minimal`.
+`BILL-2` `POST /billing/create-checkout-session {server_type,location,...}` → Stripe checkout for a server-type plan (the `/billing/setup/initialize` route in older drafts never shipped; `server_type`/`location` are body fields on create-checkout-session — `billing/routes/subscriptions.ts`). ANON → 401; non-member → 403.
+`BILL-3` `POST /billing/create-checkout-session` · `create-inline-checkout` · `confirm-inline-checkout` · `create-portal-session`.
+`BILL-4` `POST /billing/cancel-subscription` · `reactivate-subscription` · `schedule-downgrade` · `cancel-scheduled-change` · `sync-subscription`; `GET /billing/proration-preview`.
+`BILL-5` `POST /billing/purchase-credits`; `GET /billing/transactions[/summary]`, `credit-usage`, `tier-configurations`, `credit-breakdown`, `usage-history`; `GET /billing/checkout-session/:sessionId` · `POST /billing/confirm-checkout-session`.
+`BILL-6` auto-topup: `GET …/auto-topup/settings|setup-status` · `POST …/auto-topup/configure`. Cron: `POST /billing/cron/yearly-rotation`.
+`BILL-7` `POST /billing/deduct {prompt_tokens,completion_tokens,model}` · `POST /billing/deduct-usage {amount,description}` (agent runtime).
+`BILL-8` `POST /billing/webhooks/stripe` (also `/webhook/stripe`) — Stripe sig: missing sig → 400, misconfigured secret → 500. `POST /billing/webhooks/revenuecat` — **Bearer-token auth, bad → 401** (not an in-body sig). Both public, no auth middleware.
+`BILL-9` billing write ops (`cancel-subscription`/`reactivate-subscription`/`schedule-downgrade`) — auth boundary: ANON → 401, non-account-member → 403. **NOTE (finding 2026-06-04): there is currently NO `billing.write` IAM gate in code** — write routes resolve the account by *membership* only (`shared/resolve-account.ts`), so any member (not just BILLING/owner/admin) passes. The earlier "MEMBER/AUDITOR → 403" was aspirational; if billing writes should be admin-gated, that's an API fix, not a spec fix.
 
 ---
 
@@ -330,21 +348,22 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 
 `RTR-1` `POST /router/web-search {query}` · `POST /router/image-search` → `APIKEY` → 200; `ANON`/JWT → 401.
 `RTR-2` `POST /router/chat/completions {model,messages,stream}` (OpenAI-compat) · `GET /router/models` · `GET /router/models/:model` · `POST /router/messages` (Anthropic-style).
+`LLM-1` session-LLM: `POST /router/llm/chat/completions` (session-LLM token in Authorization) · `GET /router/llm/models`.
 `RTR-4` billed proxy passthrough `ALL /router/:service[/*]` for `tavily|serper|firecrawl|replicate|context7|anthropic|openai|xai|gemini|groq` — Kortix token → managed keys; user key + `X-Kortix-Token` → passthrough; disallowed service/route → 4xx.
-`LLM-1` session LLM router `GET /router/llm/models` · `POST /router/llm/chat/completions`; missing session LLM bearer → 401.
 
 ---
 
-## 18. Platform / OAuth2 provider / Tunnel / Servers / Deployments
+## 18. Platform / OAuth2 provider / Tunnel / Servers / Apps
 
 ### Platform API keys
+`PLT-1` `GET /platform/` → `{ok:true,message:"platform"}` (public). `GET /platform/sandbox/version[/latest|/all|/changelog]` (public).
 `PLT-2` **sandbox-scoped** API keys (`platform/routes/api-keys.ts`): `GET/POST /platform/api-keys` (sandbox_id required — query for GET, body for POST; `requireSandboxAccess`) · `PATCH /platform/api-keys/:keyId/revoke` · `DELETE /platform/api-keys/:keyId` · `POST …/:keyId/regenerate` (`type:'sandbox'` keys only) (`supabaseAuth`). ANON → 401; missing/non-UUID sandbox_id → 400; unknown sandbox → 404; unknown keyId → 404. (Not account-level keys — every route hinges on a sandbox.)
 
 ### OAuth2 provider (Kortix as IdP for CLI/MCP/tunnel)
 `OAU-1` `GET /oauth/authorize` (public) → redirect to consent.
 `OAU-2` `GET /oauth/authorize/consent/:requestId` (auth) → consent data; `POST /oauth/authorize/consent` → submit.
 `OAU-3` `POST /oauth/token` (public, **form-encoded**) — requires `grant_type` ∈ {`authorization_code`,`refresh_token`} (others → `unsupported_grant_type`) + `client_id`+`client_secret` (missing → 400, bad → 401 `invalid_client`).
-`OAU-4` `GET /oauth/userinfo` (`oauthTokenAuth`; `oauthTokenAuth` is local to `oauth/index.ts`, not a shared middleware).
+`OAU-4` `GET /oauth/userinfo` · `GET /oauth/claimable-machines` (`oauthTokenAuth`; `oauthTokenAuth` is local to `oauth/index.ts`, not a shared middleware). claimable-machines queries legacy `sandboxes` (`provider:justavps`) → empty on Daytona-only deploys.
 
 ### Tunnel (reverse tunnel to local machines)
 `TUN-1` connections `GET/POST /tunnel/connections`, `GET/PATCH /:tid`, `POST /:tid/rotate-token`, `DELETE /:tid`.
@@ -354,14 +373,22 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `TUN-5` WS `GET /tunnel/ws?tunnelId=` — auth via first message; rate-limited.
 
 ### Servers (MCP registry)
-`SRV-1` `PUT /servers/sync` · `GET/POST /servers` · `DELETE /servers/:id` (`combinedAuth`).
+`SRV-1` `PUT /servers/sync` · `GET/POST /servers` · `GET/PUT/DELETE /servers/:id` (`combinedAuth`).
 
 ### Apps (experimental `KORTIX_APPS_EXPERIMENTAL`, `[[apps]]` in manifest)
-`EXP-1` `PATCH /projects/:id/experimental {feature,enabled}` toggles per-project experimental features; unknown feature/non-bool enabled → 400; nonmember → 403/404; anon → 401.
 `APP-1` `GET /projects/:id/apps` (`read`) · `POST` (`manage`) · `PATCH/DELETE /:slug` (`manage`) · `POST /:slug/deploy|stop` (`manage`) · `GET /:slug/logs` (`read`).
 
 ### Ops (platform admin)
 `OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200; non-admin → 403.
+
+### Admin console API (platform admin)
+The `/v1/admin/api/*` surface backs `apps/web/src/app/admin/` — all guarded by `supabaseAuth` + `requireAdmin` (platform admin/super_admin): ANON → 401, authed non-admin → 403. The 200 happy paths run when a platform-admin token is provided (`KE2E_ADMIN_TOKEN`, capability `admin`).
+`ADM-1` `GET /v1/admin/api/accounts` → paged account list (search/tier/balance filters) → 200; non-admin → 403.
+`ADM-2` `GET /v1/admin/api/accounts/:id/users` → the account's member users → 200; non-admin → 403.
+`ADM-3` `GET /v1/admin/api/accounts/:id/ledger` → the account's credit ledger → 200; non-admin → 403.
+`ADM-4` `POST /v1/admin/api/accounts/:id/credits {amount,description?,isExpiring?}` → grant credits → 200 `{ok:true,balance}`; non-positive amount → 400; non-admin → 403.
+`ADM-5` `POST /v1/admin/api/accounts/:id/credits/debit {amount,description?}` → debit credits → 200 `{ok:true,balance}`; non-positive amount → 400; non-admin → 403.
+`ADM-6` `PUT /v1/system/maintenance` (`supabaseAuth`, handler does admin check) → update maintenance config → 200; non-admin → 403; ANON → 401.
 
 ---
 
@@ -374,7 +401,7 @@ Run these against representative endpoints from each domain.
 `SEC-C` `NONMEMBER` on `GET/PATCH/DELETE /accounts/:id`, `/projects/:id` → 403/404.
 `SEC-D` project-scoped PAT: allowed only on its bound project + `/accounts/me`; **every other surface → 403** (cross-project, `/accounts/*`, project-list, router/billing/channels/etc.).
 `SEC-E` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`.
-`SEC-F` webhook sig bypass — Stripe/RevenueCat/Slack/project-webhook with missing/wrong sig → 400/401.
+`SEC-F` webhook sig bypass — Stripe/RevenueCat/Slack/Telegram/project-webhook with missing/wrong sig → 400/401.
 `SEC-G` preview proxy without token/cookie → 401; cross-sandbox token reuse → 403.
 `SEC-H` audit — every state-changing `/v1/*` writes an audit row (`auditStateChangingRequest`); assert `GET /accounts/:id/audit` reflects a prior mutation.
 `SEC-I` rate limits — session create (429), invite-accept, preview proxy, tunnel WS each return their limiter response under load.
@@ -420,6 +447,49 @@ Run these against representative endpoints from each domain.
 
 ---
 
+## 22. Coverage & dead-code (how to know what every test actually hits)
+
+Goal: run the flows above and learn, per function across the whole stack, what got executed — so we can flag dead code. Two complementary signals; neither alone proves "dead".
+
+### The hard constraint
+The API and CLI run on **Bun (JavaScriptCore, not V8)**. So `NODE_V8_COVERAGE`, `c8`, `nyc`, `v8-to-istanbul` **do not work** for them. The only Bun-native coverage is `bun test --coverage` (function + line `%`, lcov reporter), and it **only instruments code loaded inside the `bun test` process** — a separately-spawned `bun src/index.ts` server hit by curl yields **zero** coverage. The browser is Chromium/V8, so frontend coverage is unaffected by this.
+
+### (A) Static dead-code — do first, highest ROI, no Bun limits
+Truly-never-imported symbols, found without running anything:
+```bash
+pnpm add -Dw knip madge
+pnpm exec knip                                   # unused files, exports, deps (pnpm-workspace aware)
+pnpm exec madge --circular --extensions ts,tsx apps/api/src
+# lighter alt: pnpm dlx ts-prune -p apps/api/tsconfig.json
+```
+`knip` needs entry points configured (`apps/api/src/index.ts` + `scripts/*.ts`; `apps/cli/src/index.ts`; web next config + `app/`; each package `exports`). Output = the real dead-code list.
+
+### (B) Runtime reachability from this suite — per app (different runtimes)
+- **API (Bun):** the working path is **in-process** — implement curl flows as a `bun test` driver that imports the *real* app and calls `app.fetch(new Request(...))`, not the stub `createTestApp()` in `apps/api/src/__tests__/helpers.ts` (it mounts only a handful of routes and bypasses the monolith). The real app is exported at `apps/api/src/index.ts` (`export default { fetch }`). Then:
+  ```bash
+  cd apps/api && bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage src/__tests__/e2e-*.test.ts
+  ```
+  `bunfig.toml` sets `isolation=true` (process-per-file) → one lcov per file; merge them. **Curl-against-a-live-server gives no coverage** — convert those flows to in-process `fetch` to capture them. (Status codes etc. are identical; only the transport changes.)
+- **CLI (Bun):** same — drive `main(argv)` / command modules in-process under `bun test --coverage`. Never spawn the built binary (uninstrumented).
+- **Web (Next 15 / SWC, no babel):** browser runs V8, so use **Playwright + `page.coverage.startJSCoverage()`**, pipe through **`monocart-coverage-reports`** (V8→Istanbul, source-map remap to TSX, lcov). No babel/SWC change needed. Higher-fidelity alt: `swc-plugin-coverage-instrument` via `next.config.ts` `experimental.swcPlugins` behind an env flag (more brittle on Next 15). Note Playwright hits the **API over HTTP**, so it does **not** cover server functions — API coverage must come from the `bun test` harness.
+
+### Merge into one report
+All three emit lcov:
+```bash
+pnpm dlx lcov-result-merger 'apps/**/coverage/lcov*.info' merged/lcov.info
+# or: pnpm dlx monocart-coverage-reports merge --inputDir apps/api/coverage apps/cli/coverage apps/web/coverage --reporter html,lcov
+```
+Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tractable function-level report.
+
+### The load-bearing caveat
+**Uncovered ≠ dead.** The e2e suite legitimately won't hit error branches, the cron scheduler, the queue drainer, webhook handlers, or rarely-used ops routes — those are live in prod. Only static analysis (A) can claim "never imported." **Dead-code candidate = flagged by knip (A) AND uncovered by the suite (B).** Uncovered-but-imported = "untested," not dead.
+
+### Smallest first step
+1. `pnpm add -Dw knip && pnpm exec knip` → the true dead-code list, today.
+2. Refactor a couple `apps/api/src/__tests__/e2e-*.test.ts` to drive the real `index.ts` export in-process, run `bun test --coverage` → prove the function-level lcov pipeline on the real app.
+3. Add Playwright+monocart for web; merge all lcov into one HTML report; diff against knip.
+
+---
 
 ## 24. Connectors (executor)
 
@@ -435,7 +505,7 @@ Run these against representative endpoints from each domain.
 
 ---
 
-## 25. Parallel-authored domains (git/platform/iam/channels/servers/audit/scim)
+## 25. Parallel-authored domains (git/platform/iam/channels/queue/servers/audit/scim)
 
 `GH-9` `GET /git/:project/info/refs` · `POST …/git-upload-pack` · `POST …/git-receive-pack` → smart-HTTP proxy, git token auth (not JWT); bad/no token → 401/502.
 `GH-10` `GET /git/:project/info/refs` → user JWT is not a git token → 401/403; NONMEMBER → 401/403/404.
@@ -444,6 +514,7 @@ Run these against representative endpoints from each domain.
 `GH-13` `GET /projects/github/repositories` → PROJECT_CREATE; no App install → 409 install_url.
 `GH-14` `POST /projects/create-repo` → PROJECT_CREATE; missing name → 400; no install → 409/503.
 `GH-15` `POST /projects/link-repository` → PROJECT_CREATE; missing repo → 400; no install → 400/409/502; bad token → 400.
+`PLT-3` `GET /platform/sandbox/version` · `…/latest` · `…/all` · `…/changelog` → 200 (public).
 `PLT-4` `GET /platform/api-keys` → 401 ANON; 400 missing/non-UUID sandbox_id; 404 unknown sandbox.
 `PLT-5` `POST /platform/api-keys` → 401 ANON; 400 missing/non-UUID sandbox_id; 404 unknown sandbox.
 `PLT-6` `DELETE /platform/api-keys/:keyId` → 401 ANON; 404 unknown keyId.
@@ -463,8 +534,10 @@ Run these against representative endpoints from each domain.
 `CHN-10` `GET /projects/:id/channels/slack/mode` → read → 200; non-member 403/404.
 `CHN-11` `POST /webhooks/slack/commands` → public, OAuth-gated → 503/401.
 `CHN-12` `POST /webhooks/slack/interactivity` → public, OAuth-gated → 503/401.
-`SRV-2` `POST /servers` 201 · `DELETE /servers/:id` cleanup.
-`SRV-3` `POST /servers` missing fields → 400 · managed id → 400 · unknown delete id → 404.
+`Q-5` `GET /queue/sessions/:sid` (unknown) → 200 empty; ANON → 401.
+`Q-6` enqueue → move-up/down + DELETE /messages/:mid → DELETE /sessions/:sid → 200.
+`SRV-2` `POST /servers` 201 · `GET/PUT/DELETE /servers/:id` CRUD → read-after-delete 404.
+`SRV-3` `POST /servers` missing fields → 400 · managed id → 400 · unknown id → 404.
 `SRV-4` `PUT /servers/sync` → 200 rows; non-array → 400; ANON → 401.
 `AUD-1` `GET /accounts/:id/audit` → 200; NONMEMBER → 403.
 `AUD-2` `GET /accounts/:id/audit/export` → 200 (CSV/JSONL); bad format → 400; NONMEMBER → 403.
@@ -481,6 +554,7 @@ Run these against representative endpoints from each domain.
 
 `CR-11` `GET/POST /projects/:id/change-requests` → NONMEMBER → 403/404.
 `CR-12` `GET /projects/:id/change-requests` → ANON → 401.
+`PROJ-9` `POST /projects/:id/manifest/validate {raw}` → 200 {valid,issues}; missing raw → 400.
 `PROJ-10` `POST /projects/:id/cli-token` → 201 project PAT; `GET` → 200; `DELETE /:tokenId` → 200; unknown → 404.
 `PROJ-11` `PATCH /projects/:id/onboarding {completed}` → 200; NONMEMBER → 403/404.
 `PROJ-12` `GET /projects/:id/version-diff?from&into` → 200; missing → 400; same ref → is_same_ref.
@@ -495,17 +569,20 @@ Run these against representative endpoints from each domain.
 `APP-4` `PATCH /projects/:id/apps-config {enabled}` → 200; non-bool → 400 (not behind apps gate; legacy alias for the `apps` experimental feature).
 `EXP-1` `PATCH /projects/:id/experimental {feature,enabled}` → 200 with `experimental`/`experimental_features` in body; unknown feature → 400; non-bool enabled → 400; `enabled:null` clears the override → 200.
 `SNAP-3` `POST /projects/:id/snapshots/fix-with-agent` → no failed build → 409; else 201.
-`SBX-3` `GET /projects/:id/sandbox-health` · `/sandbox-templates` → 200.
+`SBX-3` `GET /projects/:id/sandboxes` · `/sandbox-health` · `/sandbox-templates` → 200.
 `SBX-4` `POST /sandbox-templates` → 201; bad → 400; reserved/dup → 409; `PATCH/DELETE/build /:templateId`; unknown → 404.
 `SBX-5` `GET/PATCH /projects/:id/warm-pool` → 200 (clamped 0-25).
 `PACC-5` `POST /projects/:id/access/invite` → 201 pending; `GET/POST resend/DELETE pending-invites[/:id]` → manage; missing email → 400; unknown → 404.
 `PACC-6` `GET/POST /projects/:id/group-grants` · `PATCH/DELETE /:groupId` → manage; missing group_id → 400; unknown → 404.
-`BILL-10` per-seat: `POST /billing/claim-per-seat` → no-op/skipped on non-legacy.
+`BILL-10` per-seat: `POST /billing/sync-seat-quantity` · `claim-per-seat` → no-op/skipped on non-legacy.
 `AUTH-1` `POST /v1/auth/logout` → OWNER 200/204; ANON 200/401.
+`BILL-11` `GET /billing/checkout-session/:sessionId` · `POST /billing/confirm-checkout-session` → unknown/missing → 4xx.
 `BILL-3b` `POST /billing/create-checkout-session` · `create-per-seat-checkout` · `create-portal-session` → Stripe URL or 400/500.
-`DEL-2b` `/billing/account/*` deletion cancel lifecycle.
+`BILL-4b` `POST /billing/cancel-subscription` · `sync-seat-quantity` → NONMEMBER → 403.
+`DEL-2b` `/billing/account/*` deletion mirror — request → cancel lifecycle.
 `SESS-11` session sub-routes (commit-push/ensure-opencode/restart/wake) → unknown/non-uuid session → 4xx (happy paths need a funded session, run on dev-api).
 `SEC-5` `PUT/DELETE /projects/:id/secrets/:name/personal` → per-user secret override set/clear.
 `CONN-10` `POST /executor/projects/:id/connectors/:slug/connect[/finalize]` → pipedream; unknown connector → 404/501.
 `CONN-11` `POST /executor/webhook/pipedream` → public; bad/unsigned payload → rejected.
-`DEL-3` `DELETE /v1/billing/account/delete-immediately` → ANON → 401 (auth boundary; destructive happy path not run).
+`CONN-12` `GET /executor/projects/:id/connectors/:slug/config` → admin reads a connector's connection def for editing; unknown connector → 404/501; NONMEMBER → 403.
+`DEL-3` `DELETE /v1/account/delete-immediately` (+ /billing mirror) → ANON → 401 (auth boundary; destructive happy path not run).
