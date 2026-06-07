@@ -11,7 +11,7 @@
  * adapter (currently just Daytona) is resolved via `getSandboxProvider`.
  */
 
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
@@ -215,25 +215,6 @@ async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
     .where(and(eq(sandboxTemplates.slug, DEFAULT_SANDBOX_SLUG), eq(sandboxTemplates.isShared, true)))
     .limit(1);
   return shared ? rowToResolved(shared) : synthesizedDefault();
-}
-
-/**
- * Fetch a single template row by (project, slug) — DB-only, no synthesis.
- * Used by CRUD operations that must operate on a concrete row.
- */
-async function getTemplateRow(
-  projectId: string | null,
-  slug: string,
-): Promise<DbSandboxTemplate | null> {
-  const conds = [eq(sandboxTemplates.slug, slug)];
-  if (projectId === null) conds.push(isNull(sandboxTemplates.projectId));
-  else conds.push(eq(sandboxTemplates.projectId, projectId));
-  const [row] = await db
-    .select()
-    .from(sandboxTemplates)
-    .where(and(...conds))
-    .limit(1);
-  return row ?? null;
 }
 
 export async function getTemplateById(templateId: string): Promise<DbSandboxTemplate | null> {

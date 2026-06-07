@@ -38,8 +38,6 @@ let mockDbSandbox: any = {
 let mockDbMembership: any = { accountRole: 'member' };
 let mockPreviewUrl = 'https://preview.daytona.io/proxy-url';
 let mockPreviewToken: string | null = 'daytona-preview-token-123';
-let mockDaytonaGetError: Error | null = null;
-let mockPreviewLinkError: Error | null = null;
 let mockWakeCalls: string[] = [];
 let mockFetchResponses: Array<{ status: number; body: string; headers?: Record<string, string> }> = [];
 let mockFetchCallCount = 0;
@@ -159,10 +157,8 @@ mock.module('../shared/preview-ownership', () => ({
 mock.module('../shared/daytona', () => ({
   getDaytona: () => ({
     get: async (sandboxId: string) => {
-      if (mockDaytonaGetError) throw mockDaytonaGetError;
       return {
         getPreviewLink: async (port: number) => {
-          if (mockPreviewLinkError) throw mockPreviewLinkError;
           return { url: mockPreviewUrl, token: mockPreviewToken };
         },
         start: async () => {
@@ -176,11 +172,9 @@ mock.module('../shared/daytona', () => ({
 mock.module('../platform/providers', () => ({
   getProvider: () => ({
     resolvePreviewLink: async () => {
-      if (mockPreviewLinkError) throw mockPreviewLinkError;
       return { url: mockPreviewUrl, token: mockPreviewToken };
     },
     ensureRunning: async (sandboxId: string) => {
-      if (mockDaytonaGetError) throw mockDaytonaGetError;
       mockWakeCalls.push(sandboxId);
     },
   }),
@@ -300,8 +294,6 @@ beforeEach(() => {
   mockDbMembership = { accountRole: 'member' };
   mockPreviewUrl = 'https://preview.daytona.io/proxy-url';
   mockPreviewToken = 'daytona-preview-token-123';
-  mockDaytonaGetError = null;
-  mockPreviewLinkError = null;
   mockWakeCalls = [];
   mockFetchResponses = [{ status: 200, body: 'Hello from upstream' }];
   mockFetchCallCount = 0;
