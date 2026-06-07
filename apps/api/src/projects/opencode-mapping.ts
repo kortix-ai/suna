@@ -31,12 +31,9 @@ import {
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import { resolvePreviewLink, resolveServiceKey } from '../sandbox-proxy/backend';
 import {
-  pickCanonicalRoot,
   resolveRootSessionId,
   type OpencodeSessionLite,
 } from './opencode-session-resolver';
-
-export { pickCanonicalRoot, resolveRootSessionId, type OpencodeSessionLite };
 
 /** Workspace directory the session's OpenCode root lives under. */
 const WORKSPACE = '/workspace';
@@ -64,12 +61,12 @@ export async function sandboxOpencodeEndpoint(
   return { url: url.replace(/\/$/, ''), headers };
 }
 
-export type ListResult =
+type ListResult =
   | { ok: true; sessions: OpencodeSessionLite[] }
   | { ok: false; reason: 'no_key' | 'not_ready' | 'unreachable' };
 
 /** List the sandbox's OpenCode sessions (server-side, via the signed proxy). */
-export async function listSandboxOpencodeSessions(
+async function listSandboxOpencodeSessions(
   externalId: string,
   userId: string | undefined,
 ): Promise<ListResult> {
@@ -111,7 +108,7 @@ export async function createSandboxOpencodeSession(
   }
 }
 
-export type EnsureReason =
+type EnsureReason =
   | 'unchanged'
   | 'healed'
   | 'created'
