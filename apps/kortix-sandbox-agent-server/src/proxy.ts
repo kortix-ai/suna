@@ -6,7 +6,6 @@ import type { Opencode } from './opencode'
 import { isRepoMaterialized } from './git'
 import { createHealthRouter, type SandboxBootState } from './routes/health'
 import { createRefreshRouter } from './routes/refresh'
-import { createPromptRouter } from './routes/prompt'
 import { createAbortRouter } from './routes/abort'
 import { createEnvRouter } from './routes/env'
 import { createGitRouter } from './routes/git'
@@ -46,7 +45,6 @@ export function buildOpencodeApp(
   const kortixRouter = new Hono()
   const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort)
   const refreshRouter = createRefreshRouter(cfg, opencode)
-  const promptRouter = createPromptRouter(cfg)
   const abortRouter = createAbortRouter(cfg)
   const envRouter = projectEnv ? createEnvRouter(cfg, opencode, projectEnv) : null
   // NOTE: /kortix/git is currently unused by the product (the agent commits +
@@ -56,8 +54,6 @@ export function buildOpencodeApp(
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
   kortixRouter.route('/refresh/', refreshRouter)
-  kortixRouter.route('/prompt', promptRouter)
-  kortixRouter.route('/prompt/', promptRouter)
   kortixRouter.route('/abort', abortRouter)
   kortixRouter.route('/abort/', abortRouter)
   kortixRouter.route('/git', gitRouter)

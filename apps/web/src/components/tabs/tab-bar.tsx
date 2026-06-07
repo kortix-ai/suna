@@ -1118,7 +1118,10 @@ export function TabBar() {
         <div
           className={cn(
             'flex-shrink-0 flex items-center gap-0 pr-1 hidden md:flex',
-            needsTrafficLightSpace ? 'pl-10' : 'pl-2',
+            // Traffic lights now sit centered inside the 72px collapsed rail, so
+            // they no longer spill into the inset — only a small breathing inset
+            // is needed for the back/forward chevrons.
+            needsTrafficLightSpace ? 'pl-3' : 'pl-2',
           )}
         >
           <Tooltip>
