@@ -31,11 +31,16 @@ async function makeRequest<T = any>(
   const controller = new AbortController();
   let timeoutId: NodeJS.Timeout | null = null;
   let isAborted = false;
+  // Tracks whether *our* timer fired the abort, vs. an external abort
+  // (client navigation, tab close, dropped connection). Only the former is a
+  // real timeout; the latter must not be surfaced as one.
+  let didTimeout = false;
 
   try {
     timeoutId = setTimeout(() => {
       if (!isAborted && !controller.signal.aborted) {
         isAborted = true;
+        didTimeout = true;
         controller.abort();
       }
     }, timeout);
@@ -173,12 +178,33 @@ async function makeRequest<T = any>(
     let apiError: ApiError;
     
     if (isAbortError) {
+      // An external abort (Next.js client navigation, tab close, React Query
+      // cancelling an in-flight request, a dropped connection) is NOT a
+      // timeout — surfacing it as one produced the mysterious, URL-less
+      // "Request timeout" toasts/Sentry events. Swallow it silently.
+      if (!didTimeout) {
+        return {
+          error: Object.assign(Object.create(Error.prototype), {
+            message: 'Request aborted',
+            name: 'AbortError',
+            code: 'ABORTED',
+          }),
+          success: false,
+        };
+      }
+
+      // Genuine timeout — our timer fired. Attach the endpoint so it's clear
+      // *what* timed out (the previous error carried no URL).
+      const endpoint = url.replace(getApiUrl(), '') || url;
       apiError = Object.assign(Object.create(Error.prototype), {
-        message: 'Request timeout',
+        message: `Request timed out after ${Math.round(timeout / 1000)}s: ${endpoint}`,
         name: 'ApiError',
-        code: 'TIMEOUT'
+        code: 'TIMEOUT',
+        url,
+        endpoint,
+        timeout,
       });
-      
+
       // Only show timeout errors if showErrors is true
       // This prevents spam from multiple concurrent timeouts or React Query cancellations
       if (showErrors) {
