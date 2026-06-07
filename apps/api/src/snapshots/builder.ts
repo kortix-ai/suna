@@ -33,7 +33,7 @@ import { classifySnapshotError } from './error-classify';
 export { resolveCommitSha };
 export { DEFAULT_SANDBOX_SLUG };
 
-export class SnapshotBuildError extends Error {
+class SnapshotBuildError extends Error {
   constructor(message: string, readonly cause?: unknown) {
     super(message);
     this.name = 'SnapshotBuildError';
@@ -593,7 +593,7 @@ const PLATFORM_PROJECT_SHELL: GitBackedProject = {
   manifestPath: '',
 };
 
-export async function ensurePlatformDefaultImage(
+async function ensurePlatformDefaultImage(
   opts: { source?: SnapshotBuildSource } = {},
 ): Promise<EnsureSandboxImageResult> {
   return ensureSandboxImage(PLATFORM_PROJECT_SHELL, {
@@ -641,7 +641,7 @@ export function kickStartupPreBuild(): void {
  * instead of stalling the next session that boots the slug. Forces a TOML sync
  * so a `[[sandbox.templates]]` edit in the just-merged commit is picked up.
  */
-export async function reconcileProjectTemplates(
+async function reconcileProjectTemplates(
   project: GitBackedProject,
   opts: { accountId: string; source: SnapshotBuildSource },
 ): Promise<{ checked: number; rebuilt: number }> {

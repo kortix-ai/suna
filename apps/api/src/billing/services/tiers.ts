@@ -371,10 +371,6 @@ export function getVisibleTiers(): TierConfig[] {
   return Object.values(TIERS).filter((t) => !t.hidden && t.name !== 'none');
 }
 
-export function getAllTiers(): TierConfig[] {
-  return Object.values(TIERS);
-}
-
 export function getMonthlyCredits(tierName: string): number {
   return getTier(tierName).monthlyCredits;
 }

@@ -84,7 +84,7 @@ const FEATURE_BY_KEY: Record<ExperimentalFeatureKey, ExperimentalFeatureDef> =
     ExperimentalFeatureDef
   >;
 
-export const EXPERIMENTAL_FEATURE_KEYS: readonly ExperimentalFeatureKey[] =
+const EXPERIMENTAL_FEATURE_KEYS: readonly ExperimentalFeatureKey[] =
   FEATURES.map((f) => f.key);
 
 export function isExperimentalFeatureKey(

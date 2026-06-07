@@ -30,8 +30,6 @@ import type {
   RequestContext,
 } from './engine';
 import {
-  ACCOUNT_ROLE_PERMS,
-  PROJECT_ROLE_PERMS,
   accountRoleAllows,
   implicitProjectRoleForAccount,
   maxProjectRole,
@@ -437,7 +435,3 @@ export async function assertAuthorizedV2(
     throw err;
   }
 }
-
-// ─── Suppress unused-locals warnings ───────────────────────────────────────
-// PERMS exports are kept for future use by the policies-replacement UI.
-export const _V2_INTERNALS = { ACCOUNT_ROLE_PERMS, PROJECT_ROLE_PERMS };

@@ -20,9 +20,6 @@ import { handleCall, type GatewayDeps } from './gateway';
 import { parseSharingIntent, type SharingIntent } from './share';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 
-// Re-exported for callers that historically imported it from here.
-export { parseSharingIntent };
-
 // ── Response schemas ─────────────────────────────────────────────────────────
 // Connector catalog/admin shapes are permissive (opaque tool metadata); the
 // /call result `data` and the pipedream/policy payloads are modeled loosely

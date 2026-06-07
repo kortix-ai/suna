@@ -114,7 +114,7 @@ const nodeFetch: FetchImpl = async (url, init) => {
   return { status: res.status, ok: res.ok, text: () => res.text() };
 };
 
-export function makeDbGatewayDeps(): GatewayDeps {
+function makeDbGatewayDeps(): GatewayDeps {
   return {
     loadConnectorBySlug: async (projectId, slug) => {
       const [row] = await db

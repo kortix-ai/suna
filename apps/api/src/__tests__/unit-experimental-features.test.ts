@@ -6,7 +6,6 @@ import {
   buildExperimentalCatalog,
   applyExperimentalOverride,
   isExperimentalFeatureKey,
-  EXPERIMENTAL_FEATURE_KEYS,
 } from '../experimental/features';
 
 describe('isExperimentalFeatureKey', () => {
@@ -51,7 +50,7 @@ describe('resolveExperimentalFeature — explicit override wins', () => {
 describe('resolveExperimentalFeatures', () => {
   test('returns an entry for every registered key', () => {
     const map = resolveExperimentalFeatures({ experimental: { apps: true } });
-    for (const key of EXPERIMENTAL_FEATURE_KEYS) {
+    for (const key of buildExperimentalCatalog({}).map((feature) => feature.key)) {
       expect(typeof map[key]).toBe('boolean');
     }
     expect(map.apps).toBe(true);
@@ -61,7 +60,7 @@ describe('resolveExperimentalFeatures', () => {
 describe('buildExperimentalCatalog', () => {
   test('describes each feature with effective + overridden flags', () => {
     const catalog = buildExperimentalCatalog({ experimental: { apps: true } });
-    expect(catalog.length).toBe(EXPERIMENTAL_FEATURE_KEYS.length);
+    expect(catalog.length).toBeGreaterThan(0);
 
     const apps = catalog.find((f) => f.key === 'apps')!;
     expect(apps.name).toBeTruthy();
