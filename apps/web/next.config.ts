@@ -176,6 +176,22 @@ const nextConfig = (): NextConfig => ({
         source: '/v1/:path*',
         destination: `${process.env.KORTIX_API_PROXY_TARGET ?? 'http://localhost:8008'}/v1/:path*`,
       },
+      // Same-origin Supabase proxy for the sandbox preview. ENV-GATED: only
+      // active when KORTIX_SUPABASE_PROXY_TARGET is set (scripts/dev-local.sh
+      // run_sandbox_dev), so prod/normal deployments are untouched. The browser
+      // is served SUPABASE_URL=/supabase (same origin it loaded from, reachable
+      // through whatever preview proxy), and this rewrite forwards it to the
+      // in-sandbox Supabase (e.g. http://127.0.0.1:54321) which the browser
+      // cannot reach directly. Covers auth (/supabase/auth/v1/*) and rest
+      // (/supabase/rest/v1/*) and storage paths. Mirrors the /v1 API proxy.
+      ...(process.env.KORTIX_SUPABASE_PROXY_TARGET
+        ? [
+            {
+              source: '/supabase/:path*',
+              destination: `${process.env.KORTIX_SUPABASE_PROXY_TARGET}/:path*`,
+            },
+          ]
+        : []),
       {
         source: '/ingest/static/:path*',
         destination: 'https://eu-assets.i.posthog.com/static/:path*',
