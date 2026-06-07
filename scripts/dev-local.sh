@@ -360,6 +360,7 @@ run_sandbox_dev() {
       tag_baked_image public.ecr.aws/supabase/kong:2.8.1 kong:2.8.1
       tag_baked_image public.ecr.aws/supabase/studio:2026.01.27-sha-2a37755 supabase/studio:2026.01.27-sha-2a37755
       tag_baked_image public.ecr.aws/supabase/mailpit:v1.22.3 axllent/mailpit:v1.22.3
+      tag_baked_image public.ecr.aws/supabase/imgproxy:v3.8.0 darthsim/imgproxy:v3.8.0
     fi
   fi
 
