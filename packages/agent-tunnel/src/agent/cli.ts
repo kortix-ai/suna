@@ -1,5 +1,5 @@
 import '../node-ws-polyfill';
-import { loadConfig, type TunnelConfig } from './config';
+import { loadConfig, trustedCredential, trustedHttpUrl, type TunnelConfig } from './config';
 import { TunnelAgent } from './agent';
 import { CapabilityRegistry } from './capabilities/index';
 import { createFilesystemCapability } from './capabilities/filesystem';
@@ -171,6 +171,9 @@ const CONFIG_DIR = join(homedir(), '.agent-tunnel');
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
 function saveCredentials(tunnelId: string, token: string, apiUrl: string): void {
+  const safeTunnelId = trustedCredential(tunnelId, 'tunnelId');
+  const safeToken = trustedCredential(token, 'token');
+  const safeApiUrl = trustedHttpUrl(apiUrl);
   mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   try { chmodSync(CONFIG_DIR, 0o700); } catch {}
   let existing: Record<string, unknown> = {};
@@ -178,7 +181,11 @@ function saveCredentials(tunnelId: string, token: string, apiUrl: string): void 
     try { existing = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8')); } catch {}
   }
   const tmpFile = join(CONFIG_DIR, `config.${process.pid}.${Date.now()}.tmp`);
-  writeFileSync(tmpFile, JSON.stringify({ ...existing, tunnelId, token, apiUrl }, null, 2), { mode: 0o600, flag: 'wx' });
+  writeFileSync(
+    tmpFile,
+    JSON.stringify({ ...existing, tunnelId: safeTunnelId, token: safeToken, apiUrl: safeApiUrl }, null, 2),
+    { mode: 0o600, flag: 'wx' },
+  );
   try { chmodSync(tmpFile, 0o600); } catch {}
   renameSync(tmpFile, CONFIG_FILE);
   try { chmodSync(CONFIG_FILE, 0o600); } catch {}
@@ -197,7 +204,8 @@ async function commandConnectDeviceAuth(config: TunnelConfig): Promise<void> {
   let pollIntervalMs: number;
 
   try {
-    const res = await fetch(`${config.apiUrl}/device-auth`, {
+    const apiUrl = trustedHttpUrl(config.apiUrl);
+    const res = await fetch(`${apiUrl}/device-auth`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ machineHostname: hostname() }),
@@ -214,7 +222,7 @@ async function commandConnectDeviceAuth(config: TunnelConfig): Promise<void> {
     expiresAt = data.expiresAt;
     pollIntervalMs = data.pollIntervalMs || 2000;
   } catch (err) {
-    console.error(`  ${c.red}✗${c.reset} Failed to reach API at ${config.apiUrl}`);
+    console.error(`  ${c.red}✗${c.reset} Failed to reach API at ${trustedHttpUrl(config.apiUrl)}`);
     process.exit(1);
     return;
   }
@@ -243,8 +251,8 @@ async function commandConnectDeviceAuth(config: TunnelConfig): Promise<void> {
     process.stdout.write(`\r  ${c.dim}Waiting for approval... ${c.white}${min}:${sec.toString().padStart(2, '0')}${c.reset}  `);
 
     try {
-      const res = await fetch(`${config.apiUrl}/device-auth/${deviceCode}/status`, {
-        headers: { Authorization: `Bearer ${deviceSecret}` },
+      const res = await fetch(`${trustedHttpUrl(config.apiUrl)}/device-auth/${trustedCredential(deviceCode, 'deviceCode')}/status`, {
+        headers: { Authorization: `Bearer ${trustedCredential(deviceSecret, 'deviceSecret')}` },
       });
       if (res.ok) {
         const data = await res.json();
@@ -324,8 +332,8 @@ async function commandStatus(flags: Record<string, string>): Promise<void> {
   }
 
   try {
-    const res = await fetch(`${config.apiUrl}/connections/${config.tunnelId}`, {
-      headers: { Authorization: `Bearer ${config.token}` },
+    const res = await fetch(`${trustedHttpUrl(config.apiUrl)}/connections/${trustedCredential(config.tunnelId, 'tunnelId')}`, {
+      headers: { Authorization: `Bearer ${trustedCredential(config.token, 'token')}` },
     });
 
     if (!res.ok) {

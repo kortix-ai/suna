@@ -1,9 +1,9 @@
 import { test, expect } from '@playwright/test';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 function containerRunning(name: string): boolean {
   try {
-    const out = execSync(`docker ps --format '{{.Names}}' --filter name=${name}`, {
+    const out = execFileSync('docker', ['ps', '--format', '{{.Names}}', '--filter', `name=${name}`], {
       encoding: 'utf8',
       timeout: 10_000,
     });

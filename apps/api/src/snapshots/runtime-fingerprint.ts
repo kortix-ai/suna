@@ -1,5 +1,5 @@
 import { createHash, type Hash } from 'node:crypto';
-import { lstat, readdir, readFile, readlink } from 'node:fs/promises';
+import { lstat, open, readdir, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
 interface RuntimeArtifact {
@@ -53,9 +53,16 @@ async function hashPath(
   }
 
   if (stats.isFile()) {
-    hash.update(`file\0${logicalPath}\0${stats.size}\0`);
-    hash.update(await readFile(path));
-    hash.update('\0');
+    const file = await open(path, 'r');
+    try {
+      const fileStats = await file.stat();
+      const contents = await file.readFile();
+      hash.update(`file\0${logicalPath}\0${fileStats.size}\0`);
+      hash.update(contents);
+      hash.update('\0');
+    } finally {
+      await file.close();
+    }
     return;
   }
 

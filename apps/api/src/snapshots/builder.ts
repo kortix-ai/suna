@@ -449,7 +449,7 @@ export async function reconcileStaleBuilds(
   let closedReady = 0;
   let closedFailed = 0;
   for (const row of rows) {
-    let state: ProviderState = 'missing';
+    let state: ProviderState;
     try {
       state = await provider.getSnapshotState(row.snapshotName);
     } catch {

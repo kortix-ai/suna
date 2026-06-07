@@ -14,7 +14,7 @@ export function sanitizeAuthReturnUrl(
   if (!value) return fallback;
 
   const trimmedValue = value.trim();
-  let decodedValue = trimmedValue;
+  let decodedValue: string;
   try {
     decodedValue = decodeURIComponent(trimmedValue);
   } catch {

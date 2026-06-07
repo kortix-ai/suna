@@ -1,5 +1,4 @@
 import { config } from '../../config';
-import { TunnelErrorCode } from 'agent-tunnel';
 
 interface Bucket {
   tokens: number;

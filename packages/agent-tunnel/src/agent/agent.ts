@@ -1,5 +1,5 @@
 import { hostname, platform, arch, release } from 'os';
-import type { TunnelConfig } from './config';
+import { trustedCredential, trustedHttpUrl, type TunnelConfig } from './config';
 import { CapabilityRegistry } from './capabilities/index';
 import { PermissionGuard } from './security/permission-guard';
 import type { LocalPermission } from './security/permission-guard';
@@ -37,7 +37,8 @@ const c = {
 };
 
 function log(icon: string, msg: string) {
-  console.log(`  ${icon} ${c.dim}${msg}${c.reset}`);
+  const safeMsg = msg.replace(/[\u0000-\u001f\u007f]/g, ' ');
+  console.log(`  ${icon} ${c.dim}${safeMsg}${c.reset}`);
 }
 
 export class TunnelAgent {
@@ -119,7 +120,7 @@ export class TunnelAgent {
       this.uptimeInterval = setInterval(() => { this.uptime++; }, 1000);
 
       // Send auth handshake as first message (token never in URL)
-      this.send({ type: 'auth', token: this.config.token });
+      this.send({ type: 'auth', token: trustedCredential(this.config.token, 'token') });
     });
 
     this.ws.addEventListener('message', (event) => {
@@ -346,7 +347,7 @@ export class TunnelAgent {
   }
 
   private buildWsUrl(): string {
-    const base = this.config.apiUrl
+    const base = trustedHttpUrl(this.config.apiUrl)
       .replace(/^http:/, 'ws:')
       .replace(/^https:/, 'wss:');
 
@@ -356,7 +357,7 @@ export class TunnelAgent {
 
     const wsPath = this.config.wsPath || '/ws';
     const params = new URLSearchParams({
-      tunnelId: this.config.tunnelId,
+      tunnelId: trustedCredential(this.config.tunnelId, 'tunnelId'),
     });
 
     return `${base}${wsPath}?${params.toString()}`;

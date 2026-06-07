@@ -27,8 +27,18 @@ function envFiles(options: AuthOptions): string[] {
   return options.envFiles ?? ['apps/web/.env', 'apps/api/.env'];
 }
 
+function trustedAuthHeader(value: string, name: string): string {
+  if (!/^[A-Za-z0-9._~+/=-]+$/.test(value)) {
+    throw new Error(`${name} contains characters that are not valid in an auth header`);
+  }
+  return value;
+}
+
 export async function createAuthUser(email: string, options: AuthOptions): Promise<AuthUser> {
-  const serviceRoleKey = requireEnvValue('SUPABASE_SERVICE_ROLE_KEY', ...envFiles(options));
+  const serviceRoleKey = trustedAuthHeader(
+    requireEnvValue('SUPABASE_SERVICE_ROLE_KEY', ...envFiles(options)),
+    'SUPABASE_SERVICE_ROLE_KEY',
+  );
   const response = await fetch(`${options.supabaseUrl}/auth/v1/admin/users`, {
     method: 'POST',
     headers: {
@@ -52,20 +62,23 @@ export async function deleteAuthUser(userId: string, options: Omit<AuthOptions, 
     ...(options.envFiles ?? ['apps/web/.env', 'apps/api/.env']),
   );
   if (!serviceRoleKey) return;
+  const trustedServiceRoleKey = trustedAuthHeader(serviceRoleKey, 'SUPABASE_SERVICE_ROLE_KEY');
   await fetch(`${options.supabaseUrl}/auth/v1/admin/users/${userId}`, {
     method: 'DELETE',
     headers: {
-      apikey: serviceRoleKey,
-      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: trustedServiceRoleKey,
+      Authorization: `Bearer ${trustedServiceRoleKey}`,
     },
   }).catch(() => {});
 }
 
 export async function signIn(email: string, options: AuthOptions): Promise<AuthSession> {
   const files = envFiles(options);
-  const anonKey =
+  const anonKey = trustedAuthHeader(
     optionalEnvValue('SUPABASE_ANON_KEY', ...files) ||
-    requireEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY', ...files);
+      requireEnvValue('NEXT_PUBLIC_SUPABASE_ANON_KEY', ...files),
+    'SUPABASE_ANON_KEY',
+  );
   return json<AuthSession>(
     await fetch(`${options.supabaseUrl}/auth/v1/token?grant_type=password`, {
       method: 'POST',

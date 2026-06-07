@@ -1,5 +1,4 @@
 import { test, expect } from '@playwright/test';
-import { optionalEnvValue } from '../helpers/env';
 
 const frontendUrl = process.env.E2E_BASE_URL || 'http://localhost:13737';
 const apiUrl = process.env.E2E_API_URL || 'http://localhost:13738/v1';
@@ -17,10 +16,7 @@ test.describe('02 — Services respond on correct ports', () => {
   });
 
   test('Supabase Auth health passes on :13740', async () => {
-    const anonKey = optionalEnvValue('SUPABASE_ANON_KEY', `${process.env.HOME}/.kortix/.env`);
-    const res = await fetch(`${supabaseUrl}/auth/v1/health`, {
-      headers: anonKey ? { apikey: anonKey } : {},
-    });
+    const res = await fetch(`${supabaseUrl}/auth/v1/health`);
     expect(res.status).toBe(200);
   });
 
