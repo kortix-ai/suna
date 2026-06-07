@@ -38,7 +38,6 @@ import {
   Plus,
   Server,
   Smile,
-  Sparkles,
   TrendingUp,
 } from 'lucide-react';
 import {
@@ -282,7 +281,7 @@ const WORK_LOOPS = [
     id: 'finance',
     titleKey: 'workLoopFinanceTitle',
     promptKey: 'workLoopFinancePrompt',
-    agent: 'finance-agent',
+    agent: 'support-agent',
     steps: [
       ['workLoopAskLabel', 'workLoopFinanceAsk'],
       ['workLoopWorkLabel', 'workLoopFinanceWork'],
@@ -294,7 +293,7 @@ const WORK_LOOPS = [
     id: 'engineering',
     titleKey: 'workLoopEngineeringTitle',
     promptKey: 'workLoopEngineeringPrompt',
-    agent: 'review-agent',
+    agent: 'engineering-agent',
     steps: [
       ['workLoopAskLabel', 'workLoopEngineeringAsk'],
       ['workLoopWorkLabel', 'workLoopEngineeringWork'],
@@ -306,7 +305,7 @@ const WORK_LOOPS = [
     id: 'sales',
     titleKey: 'workLoopSalesTitle',
     promptKey: 'workLoopSalesPrompt',
-    agent: 'sdr-agent',
+    agent: 'research-agent',
     steps: [
       ['workLoopAskLabel', 'workLoopSalesAsk'],
       ['workLoopWorkLabel', 'workLoopSalesWork'],
@@ -321,7 +320,7 @@ const USE_CASE_DEMOS = [
   { id: 'shipBacklogTickets', icon: GitBranch, slug: 'software-and-saas-bug-triage' },
   { id: 'fillThePipeline', icon: TrendingUp, slug: 'sales-and-revenue-lead-research' },
   { id: 'closeTheBooks', icon: FileText, slug: 'finance-and-accounting-reconciliation' },
-  { id: 'briefToCampaign', icon: Sparkles, slug: 'marketing-and-creative-content-engine' },
+  { id: 'briefToCampaign', icon: HiMiniSparkles, slug: 'marketing-and-creative-content-engine' },
   { id: 'runTheBackOffice', icon: Box, slug: 'operations-and-supply-chain-sop-automation' },
 ] as const;
 
@@ -664,7 +663,7 @@ export default function Home() {
           <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 sm:gap-12">
             <Reveal>
               <div className="mb-12 max-w-2xl">
-                <Eyebrow>{tHardcodedUi.raw('appHomePage.line225JsxTextOpenCodeNative')}</Eyebrow>
+                <Eyebrow>{tHome('differentScreenEyebrow')}</Eyebrow>
                 <h2 className="mt-3 text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
                   {tHome('differentScreenSectionTitle')}
                 </h2>
@@ -683,7 +682,7 @@ export default function Home() {
                   className="border-muted-foreground dark:border-card relative z-3 col-span-3 flex aspect-auto h-full shrink-0 items-center justify-center overflow-hidden rounded-xl border-4 shadow-sm"
                 >
                   <img
-                    src="https://play-lh.googleusercontent.com/cOVrXDLdhhoyLso-DO_R267tBMzWEayo10WvzWin7FSxYy8P09bLmzbmAVAgv4nTBTA9hxSAq55GxVGzMHcCTA=w5120-h2880"
+                    src="https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/ai-workspace-mobile"
                     alt="Mobile"
                     className="h-full w-full object-cover"
                   />
@@ -1259,7 +1258,7 @@ export default function Home() {
         >
           <Reveal>
             <div className="mb-12 max-w-2xl">
-              <Eyebrow>{tHardcodedUi.raw('appHomePage.line225JsxTextOpenCodeNative')}</Eyebrow>
+              <Eyebrow>{tHome('companyAsCodeEyebrow')}</Eyebrow>
               <h2 className="mt-3 text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
                 {tHome('companyAsCodeTitle')}
               </h2>
@@ -1538,7 +1537,7 @@ export default function Home() {
           </Reveal>
 
           <Reveal>
-            <div className="border-border bg-card grid w-full grid-cols-1 overflow-hidden rounded border shadow-xl lg:grid-cols-12">
+            <div className="border-border bg-card grid w-full grid-cols-1 overflow-hidden rounded border lg:grid-cols-12">
               <div
                 role="tablist"
                 aria-orientation="vertical"
@@ -1566,7 +1565,7 @@ export default function Home() {
                         <motion.span
                           layoutId="useCaseActiveTab"
                           aria-hidden
-                          className="bg-muted/60 pointer-events-none absolute inset-0 z-0 rounded-sm lg:rounded-none"
+                          className="dark:bg-muted/60 bg-popover pointer-events-none absolute inset-0 z-0 rounded-sm lg:rounded-none"
                           // style={{ boxShadow: 'inset 2px 0 0 0 var(--primary)' }}
                           transition={
                             reduceMotion

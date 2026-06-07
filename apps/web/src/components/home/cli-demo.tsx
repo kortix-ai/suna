@@ -678,12 +678,12 @@ export function CliDemo() {
 
       <div
         ref={scrollRef}
-        className="text-foreground scrollbar-hide min-h-0 flex-1 space-y-3 overflow-auto px-4 py-3 font-mono text-[10px] leading-relaxed sm:text-xs"
+        className="text-foreground scrollbar-hide min-h-0 flex-1 space-y-3 overflow-auto mask-y-from-95% px-4 py-3 font-mono text-[10px] leading-relaxed sm:text-xs"
       >
         {blocks.length > 0 ? (
           blocks.map((block, i) => (
             <div key={i} className="">
-              <div className="bg-card mb-3 rounded-sm px-3 py-2 shadow-md">
+              <div className="bg-card ring-border/60 mb-3 rounded-sm px-3 py-2 ring-1">
                 <LineView line={block.cmd} />
               </div>
 

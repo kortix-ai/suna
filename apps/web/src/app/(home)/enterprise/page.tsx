@@ -1,23 +1,19 @@
 'use client';
 
-import { LogoMarqueeRows } from '@/components/home/logo-marquee';
 import { Reveal } from '@/components/home/reveal';
+import { Badge } from '@/components/ui/badge';
 import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
+import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { EnterpriseCalModal } from '@/features/enterprise/cal-modal';
 import { cn } from '@/lib/utils';
-import { Code2, GitBranch, Globe, KeyRound, Plug, Server, ShieldCheck } from 'lucide-react';
+import { GitBranch, Server } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useState } from 'react';
 import { FaUsers } from 'react-icons/fa';
-import { FaArrowTrendUp } from 'react-icons/fa6';
-import { HiArrowRight, HiCreditCard } from 'react-icons/hi2';
 import { MdShield } from 'react-icons/md';
-import { RiSettings3Fill } from 'react-icons/ri';
-import { TbHeadphonesFilled } from 'react-icons/tb';
 
 const DIFFERENTIATORS = [
   {
@@ -82,130 +78,6 @@ const DEPLOYMENT = [
   },
 ] as const;
 
-const ONBOARDING = [
-  {
-    titleKey: 'onboardingScopingTitle',
-    descriptionKey: 'onboardingScopingDescription',
-  },
-  {
-    titleKey: 'onboardingSecurityTitle',
-    descriptionKey: 'onboardingSecurityDescription',
-  },
-  {
-    titleKey: 'onboardingDeploymentTitle',
-    descriptionKey: 'onboardingDeploymentDescription',
-  },
-  {
-    titleKey: 'onboardingRolloutTitle',
-    descriptionKey: 'onboardingRolloutDescription',
-  },
-] as const;
-
-const PROOF_STATS = [
-  {
-    tabTitleKey: 'proofStatSavedTab',
-    titleKey: 'proofStatSavedTitle',
-    labelKey: 'proofStatSavedLabel',
-  },
-  {
-    tabTitleKey: 'proofStatLoggedTab',
-    titleKey: 'proofStatLoggedTitle',
-    labelKey: 'proofStatLoggedLabel',
-  },
-  {
-    tabTitleKey: 'proofStatIntegrationsTab',
-    titleKey: 'proofStatIntegrationsTitle',
-    labelKey: 'proofStatIntegrationsLabel',
-  },
-  {
-    tabTitleKey: 'proofStatAlwaysOnTab',
-    titleKey: 'proofStatAlwaysOnTitle',
-    labelKey: 'proofStatAlwaysOnLabel',
-  },
-] as const;
-
-const OUTCOMES = [
-  {
-    icon: HiCreditCard,
-    titleKey: 'outcomeFinanceTitle',
-    descriptionKey: 'outcomeFinanceDescription',
-  },
-  {
-    icon: TbHeadphonesFilled,
-    titleKey: 'outcomeSupportTitle',
-    descriptionKey: 'outcomeSupportDescription',
-  },
-  {
-    icon: FaArrowTrendUp,
-    titleKey: 'outcomeSalesTitle',
-    descriptionKey: 'outcomeSalesDescription',
-  },
-  {
-    icon: RiSettings3Fill,
-    titleKey: 'outcomeOperationsTitle',
-    descriptionKey: 'outcomeOperationsDescription',
-  },
-  {
-    icon: Code2,
-    titleKey: 'outcomeEngineeringTitle',
-    descriptionKey: 'outcomeEngineeringDescription',
-    linkHref: '/developers',
-    linkLabelKey: 'outcomeEngineeringLinkLabel',
-  },
-] as const;
-
-const ENTERPRISE_GRID = [
-  {
-    icon: KeyRound,
-    titleKey: 'gridSsoTitle',
-    descriptionKey: 'gridSsoDescription',
-  },
-  {
-    icon: Server,
-    titleKey: 'gridInfraTitle',
-    descriptionKey: 'gridInfraDescription',
-  },
-  {
-    icon: ShieldCheck,
-    titleKey: 'gridComplianceTitle',
-    descriptionKey: 'gridComplianceDescription',
-  },
-  {
-    icon: Plug,
-    titleKey: 'gridIntegrationsTitle',
-    descriptionKey: 'gridIntegrationsDescription',
-  },
-  {
-    icon: TbHeadphonesFilled,
-    titleKey: 'gridSupportTitle',
-    descriptionKey: 'gridSupportDescription',
-  },
-  {
-    icon: Globe,
-    titleKey: 'gridGlobalTitle',
-    descriptionKey: 'gridGlobalDescription',
-  },
-] as const;
-
-const TRUST_ITEMS = [
-  {
-    titleKey: 'trustSoc2Title',
-    descriptionKey: 'trustSoc2Description',
-  },
-  {
-    titleKey: 'trustGdprTitle',
-    descriptionKey: 'trustGdprDescription',
-  },
-  {
-    titleKey: 'trustEncryptedTitle',
-    descriptionKey: 'trustEncryptedDescription',
-  },
-  {
-    titleKey: 'trustResidencyTitle',
-    descriptionKey: 'trustResidencyDescription',
-  },
-] as const;
-
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
     <span className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
@@ -248,88 +120,6 @@ const EnterprisePage = () => {
               </p>
             </Reveal>
           </div>
-        </section>
-
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
-          <Reveal>
-            <div className="mb-8 max-w-2xl">
-              <Eyebrow>{t('proofEyebrow')}</Eyebrow>
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {t('proofTitle')}
-              </h2>
-            </div>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {PROOF_STATS.map(({ tabTitleKey, titleKey, labelKey }, index) => (
-                <div
-                  key={titleKey}
-                  className={cn(
-                    'border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8',
-                    index === 0 && 'sm:col-span-2',
-                    index === PROOF_STATS.length - 1 && 'sm:col-span-2',
-                  )}
-                >
-                  <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                    {t(tabTitleKey)}
-                  </div>
-                  <p className="text-muted-foreground mt-5 text-base leading-relaxed">
-                    {t(titleKey)}. {t(labelKey)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </Reveal>
-        </section>
-
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
-          <Reveal>
-            <div className="mb-12 max-w-2xl">
-              <Eyebrow>{t('outcomesEyebrow')}</Eyebrow>
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {t('outcomesTitle')}
-              </h2>
-              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                {t('outcomesDescription')}
-              </p>
-            </div>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {OUTCOMES.map((outcome, index) => {
-                const { icon: Icon, titleKey, descriptionKey } = outcome;
-                const linkHref = 'linkHref' in outcome ? outcome.linkHref : undefined;
-                const linkLabelKey = 'linkLabelKey' in outcome ? outcome.linkLabelKey : undefined;
-
-                return (
-                  <div
-                    key={titleKey}
-                    className={cn(
-                      'border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8',
-                      index === OUTCOMES.length - 1 && 'sm:col-span-2',
-                    )}
-                  >
-                    <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                      <Icon className="size-5" />
-                      {t(titleKey)}
-                    </div>
-                    <p className="text-muted-foreground mt-5 text-base leading-relaxed">
-                      {t(descriptionKey)}
-                    </p>
-                    {linkHref && linkLabelKey ? (
-                      <Link
-                        href={linkHref}
-                        className="text-foreground hover:text-primary mt-6 inline-flex items-center gap-1.5 text-sm font-medium transition-colors"
-                      >
-                        {t(linkLabelKey)}
-                        <HiArrowRight className="size-3.5" />
-                      </Link>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </Reveal>
         </section>
 
         <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
@@ -388,37 +178,6 @@ const EnterprisePage = () => {
                   </article>
                 ),
               )}
-            </div>
-          </Reveal>
-        </section>
-
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
-          <Reveal>
-            <div className="mb-12 max-w-2xl">
-              <Eyebrow>{t('builtForScaleEyebrow')}</Eyebrow>
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {t('builtForScaleTitle')}
-              </h2>
-            </div>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {ENTERPRISE_GRID.map(({ icon: Icon, titleKey, descriptionKey }) => (
-                <div
-                  key={titleKey}
-                  className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
-                >
-                  <span className="shrink-0">
-                    <Icon className="size-5" />
-                  </span>
-                  <span className="text-foreground mt-6 text-lg">
-                    <span className="font-semibold">{t(titleKey)}.</span>{' '}
-                    <span className="text-muted-foreground leading-relaxed font-medium">
-                      {t(descriptionKey)}
-                    </span>
-                  </span>
-                </div>
-              ))}
             </div>
           </Reveal>
         </section>
@@ -519,145 +278,36 @@ const EnterprisePage = () => {
           </Reveal>
         </section>
 
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
+        <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">
           <Reveal>
-            <div className="mb-14 max-w-2xl">
-              <Eyebrow>{t('integrationsEyebrow')}</Eyebrow>
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {t('integrationsTitle')}
-              </h2>
-              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                {t('integrationsDescription')}
-              </p>
-            </div>
-          </Reveal>
-          <LogoMarqueeRows />
-        </section>
+            <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
+              <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
+                <div className="col-span-4 flex flex-col items-start justify-start space-y-4 p-6 *:text-left">
+                  <div className="space-y-2">
+                    <Badge variant="update" className="rounded">
+                      Deploy internal agents
+                    </Badge>
+                    <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
+                      {t('closingTitle')}
+                    </h2>
 
-        {/* <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
-          <Reveal>
-            <div className="mb-12 max-w-2xl">
-              <Eyebrow>{t('trustEyebrow')}</Eyebrow>
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {t('trustTitle')}
-              </h2>
-              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                {t('trustDescription')}
-              </p>
-            </div>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {TRUST_ITEMS.map(({ titleKey, descriptionKey }) => (
-                <div
-                  key={titleKey}
-                  className="border-border bg-card flex flex-col rounded-sm border p-6 text-center sm:p-8"
-                >
-                  <div className="text-foreground text-base font-semibold">{t(titleKey)}</div>
-                  <p className="text-muted-foreground mt-2 text-sm leading-relaxed">
-                    {t(descriptionKey)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </Reveal>
-        </section>
-
-        {hasTestimonial ? (
-          <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
-            <Reveal>
-              <div className="mb-12 max-w-2xl">
-                <Eyebrow>{t('testimonialEyebrow')}</Eyebrow>
-                <p className="text-muted-foreground mt-3 font-mono text-xs tracking-wider uppercase">
-                  {t('testimonialTrustedByLabel')}
-                </p>
-              </div>
-            </Reveal>
-            <Reveal delay={0.1}>
-              <blockquote className="border-border bg-card rounded-sm border p-8 sm:p-12">
-                <p className="text-foreground text-xl leading-relaxed font-medium sm:text-2xl">
-                  &ldquo;{t('testimonialQuote')}&rdquo;
-                </p>
-                <footer className="text-muted-foreground mt-6 text-sm">
-                  <span className="text-foreground font-medium">{t('testimonialAuthorName')}</span>
-                  {t('testimonialAuthorTitle') ? <> - {t('testimonialAuthorTitle')}</> : null}
-                </footer>
-              </blockquote>
-            </Reveal>
-          </section>
-        ) : null}
-
-        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
-          <Reveal>
-            <div className="mb-12 max-w-2xl">
-              <Eyebrow>{t('onboardingEyebrow')}</Eyebrow>
-              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-                {t('onboardingTitle')}
-              </h2>
-              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                {t('onboardingDescription')}
-              </p>
-            </div>
-          </Reveal>
-          <Reveal delay={0.1}>
-            <div className="border-border bg-card overflow-hidden rounded-sm border">
-              <div className="grid lg:grid-cols-[0.7fr_1.3fr]">
-                <div className="border-border/60 border-b p-6 sm:p-8 lg:border-r lg:border-b-0">
-                  <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
-                    <FileClock className="size-4" />
-                    {t('onboardingProcessEyebrow')}
+                    <span className="text-muted-foreground text-sm leading-relaxed">
+                      {t('closingDescription')}
+                    </span>
                   </div>
-                  <p className="text-foreground mt-5 text-2xl leading-tight font-medium tracking-tight text-balance">
-                    {t('onboardingProcessTitle')}
-                  </p>
-                </div>
 
-                <div className="divide-border/60 divide-y">
-                  {ONBOARDING.map(({ titleKey, descriptionKey }) => (
-                    <article
-                      key={titleKey}
-                      className="group hover:bg-background/40 gap-4 p-5 transition-colors duration-200 sm:p-6"
-                    >
-                      <div>
-                        <h3 className="text-foreground text-base font-medium">{t(titleKey)}</h3>
-                        <p className="text-muted-foreground group-hover:text-foreground mt-2 text-base leading-relaxed transition-colors duration-200">
-                          {t(descriptionKey)}
-                        </p>
-                      </div>
-                    </article>
-                  ))}
+                  <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+                    <Button size="lg" className="w-full" onClick={() => setCalOpen(true)}>
+                      {t('talkToSalesCta')}
+                    </Button>
+                    <Button asChild size="lg" className="w-full" variant="accent">
+                      <Link href="/pricing">{t('comparePlansCta')}</Link>
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </div>
-          </Reveal>
-        </section> */}
-
-        <section className="mx-auto max-w-6xl px-6 py-16 sm:py-24">
-          <Reveal>
-            <div className="border-border bg-card relative overflow-hidden rounded-sm border px-6 py-20 text-center sm:py-28">
-              <div className="absolute inset-0 z-0 mask-t-from-90% opacity-50">
-                <WallpaperBackground wallpaperId="brandmark" />
-              </div>
-              <div className="relative z-10 mx-auto max-w-lg">
-                <Eyebrow>{t('closingEyebrow')}</Eyebrow>
-                <h2 className="text-foreground mx-auto mt-3 max-w-2xl text-3xl leading-tight font-medium tracking-tight sm:text-4xl md:text-5xl">
-                  {t('closingTitle')}
-                </h2>
-                <p className="text-muted-foreground mx-auto mt-4 max-w-2xl text-base text-balance sm:text-lg">
-                  {t('closingDescription')}
-                </p>
-
-                <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                  <Button size="lg" variant="accent" onClick={() => setCalOpen(true)}>
-                    {t('talkToSalesCta')}
-                  </Button>
-                  <Button size="lg" variant="accent" asChild>
-                    <Link href="/pricing">{t('comparePlansCta')}</Link>
-                  </Button>
+                <div className="col-span-8 mask-y-from-90% mask-x-from-90%">
+                  <KortixGrid count={58} seed={4228} />
                 </div>
-                <p className="text-muted-foreground mt-7 inline-flex items-center gap-2 text-xs">
-                  <GitBranch className="size-3.5" /> {t('closingFootnote')}
-                </p>
               </div>
             </div>
           </Reveal>

@@ -60,7 +60,7 @@ function CodeWindowFrame({
   className?: string;
 }) {
   return (
-    <div className="border-border bg-card overflow-hidden rounded border shadow-xl">
+    <div className="border-border bg-card overflow-hidden rounded border">
       {tab && (
         <div className="border-border bg-card flex items-center gap-1 border-b p-2">
           <span className="bg-foreground text-background rounded px-3 py-0.5 text-sm font-medium">
@@ -345,14 +345,13 @@ export default function DevelopersPage() {
         <div className="relative z-10 mx-auto max-w-6xl px-6 lg:px-0">
           <section className="w-full">
             <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
-              Your company,
+              Build internal agents
               <br />
-              <span className="text-muted-foreground">as a git repo.</span>
+              <span className="text-muted-foreground">from your coding agent.</span>
             </h1>
             <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">
-              Coding agents changed how we build software. Kortix brings the same loop to all
-              knowledge work — every agent, skill and automation is a file in one repo you own.
-              Build it locally, ship it with one command, run it as a fleet of cloud sandboxes.
+              Use Claude Code, Codex, Cursor, or opencode locally. Package the agent as code. Deploy
+              it to Slack with Kortix.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <div className="bg-card flex items-center gap-4 rounded-sm border p-3 px-5">
@@ -378,20 +377,18 @@ export default function DevelopersPage() {
           <div className="mb-8 max-w-2xl">
             <Eyebrow>The thesis</Eyebrow>
             <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-              The coding-agent paradigm, for all work
+              The coding-agent loop, for real work
             </h2>
             <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-              Claude Code, Codex and Cursor changed how we build software: describe intent, an agent
-              edits files, you review the diff. Kortix applies that exact loop to the rest of the
-              company — every agent is a coding-agent runtime in an isolated sandbox, pointed at
-              research, ops, support and finance instead of a codebase.
+              Describe intent, an agent edits files, you review the diff. Kortix runs that same loop
+              for support, ops, and research.
             </p>
           </div>
         </Reveal>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {MENTAL_MODEL.map(({ icon: Icon, title, desc }, i) => (
             <Reveal key={title} delay={i * 0.08}>
-              <div className="group border-border bg-card hover:bg-background flex h-full w-full flex-col justify-between gap-4 rounded-sm border p-4 shadow-sm transition md:aspect-[283/200]">
+              <div className="group border-border bg-card hover:bg-background flex h-full w-full flex-col justify-between gap-4 rounded-sm border p-4 transition md:aspect-[283/200]">
                 <div className="bg-secondary group-hover:bg-card self-start rounded-lg p-2.5">
                   <Icon className="text-foreground size-5 shrink-0" />
                 </div>
@@ -414,7 +411,7 @@ export default function DevelopersPage() {
                 From <span className="text-foreground font-mono">curl</span> to production
               </h2>
               <p className="text-muted-foreground mt-4 text-base leading-relaxed">
-                One repo, one config, one command. Here is the whole developer loop, top to bottom.
+                One repo, one config, one command. The whole path, top to bottom.
               </p>
             </div>
           </Reveal>
@@ -424,7 +421,7 @@ export default function DevelopersPage() {
           <Step
             n="01"
             title="Install & scaffold"
-            body="One line installs the CLI. kortix init scaffolds your project — a kortix.toml manifest and a .kortix/ runtime — wired into the coding agent you already use."
+            body="One line installs the CLI. kortix init scaffolds kortix.toml and .kortix/, wired to your coding agent."
           >
             <Terminal title="init">
               <Cmd>kortix init</Cmd>
@@ -436,7 +433,7 @@ export default function DevelopersPage() {
           <Step
             n="02"
             title="Build it locally, like code"
-            body="Open Claude Code, Codex, Cursor or opencode and build. An agent is markdown — a description, its model, and the tools it can use. Skills are folders it loads on demand. Edit them by hand, or describe what you want and let your coding agent write them."
+            body="An agent is markdown — a persona, its model, and its tools. Skills are folders it loads on demand. Edit them by hand, or describe what you want and let your coding agent write them."
             flip
           >
             <CodeFile
@@ -448,8 +445,8 @@ export default function DevelopersPage() {
 
           <Step
             n="03"
-            title="Declare the whole company in one manifest"
-            body="kortix.toml is the source of truth for everything operational: env and secrets, sandbox images, cron and webhook triggers, 3,000+ connectors, Slack channels, even deployable apps. Versioned from the first commit."
+            title="Declare the project in one manifest"
+            body="kortix.toml holds secrets, sandbox images, triggers, connectors, and channels. Versioned from the first commit."
           >
             <CodeFile name="kortix.toml" code={TOML} language="toml" />
           </Step>
@@ -457,7 +454,7 @@ export default function DevelopersPage() {
           <Step
             n="04"
             title="Ship it"
-            body="kortix ship commits, pushes, creates the cloud project, links your repo, and prompts for any missing secrets. Triggers, webhooks and channels go live immediately — no separate infra to stand up."
+            body="kortix ship commits, pushes, builds the sandbox, and prompts for missing secrets. Triggers and channels go live immediately — no separate infra to stand up."
             flip
           >
             <Terminal title="kortix ship">
@@ -473,7 +470,7 @@ export default function DevelopersPage() {
           <Step
             n="05"
             title="It runs as a fleet of sandboxes"
-            body="Every session is its own isolated VM on its own git branch, booting the runtime and your repo. Spawn thousands of agents in parallel — zero interference. Agents commit their work, and a change request is the only way it reaches main, so everything is reviewable and reversible."
+            body="Every session is its own VM on its own branch, booting the runtime and your repo. Spawn thousands in parallel — zero interference. A change request is the only way work reaches main, so everything is reviewable and reversible."
           >
             <Terminal>
               <Line>
@@ -510,7 +507,7 @@ export default function DevelopersPage() {
           <Step
             n="06"
             title="Bring your own runtime & model"
-            body="Sessions run on an open runtime, pluggable by design. Bring your own model keys — Anthropic, OpenAI, local — or use Kortix compute. Nothing about the runtime is hidden."
+            body="Sessions run on an open runtime. Bring your own keys — Anthropic, OpenAI, local — or use Kortix compute. Nothing about the runtime is hidden."
             flip
           >
             <Terminal>
@@ -543,7 +540,7 @@ export default function DevelopersPage() {
           <div className="mb-8 max-w-2xl">
             <Eyebrow>One CLI</Eyebrow>
             <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
-              The whole lifecycle, from your terminal
+              The whole lifecycle, one CLI
             </h2>
             <p className="text-muted-foreground mt-4 text-base leading-relaxed">
               Scaffold, ship, run, automate, connect and review — one CLI does it all. The same
@@ -555,7 +552,7 @@ export default function DevelopersPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {CLI_GROUPS.map(({ label, icon: Icon, cmds }, i) => (
             <Reveal key={label} delay={(i % 3) * 0.06}>
-              <div className="group border-border bg-card hover:bg-background flex h-full flex-col rounded-sm border p-5 shadow-sm transition-colors">
+              <div className="group border-border bg-card hover:bg-background flex h-full flex-col rounded-sm border p-5 transition-colors">
                 <div className="flex items-center gap-3">
                   <span className="bg-secondary group-hover:bg-card flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors">
                     <Icon className="text-foreground size-4" />
@@ -674,13 +671,13 @@ export default function DevelopersPage() {
                     Start building
                   </Badge>
                   <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                    Give your company a workforce
+                    Ship your first internal agent
                   </h2>
 
                   <span className="text-muted-foreground text-sm leading-relaxed">
                     Install the CLI, run{' '}
                     <span className="text-foreground font-mono text-sm">kortix init</span>, and
-                    build your company like a codebase.
+                    deploy the agent you already use.
                   </span>
                 </div>
 

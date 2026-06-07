@@ -299,9 +299,7 @@ export function CodeWindow({ className }: { className?: string }) {
   const [tab, setTab] = useState<TabId>('toml');
   const reduceMotion = useReducedMotion();
   return (
-    <div
-      className={cn('border-border bg-card overflow-hidden rounded border shadow-xl', className)}
-    >
+    <div className={cn('border-border bg-card overflow-hidden rounded border', className)}>
       <div className="border-border bg-card flex items-center gap-1 border-b p-2">
         {TABS.map((t) => {
           const isActive = tab === t.id;
