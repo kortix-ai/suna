@@ -823,6 +823,20 @@
   animation-iteration-count: --value([integer]);
 }
 
+/* CookieYes consent banner (injected at runtime via Google Tag Manager) is
+   only relevant on the public marketing site. Hide every CookieYes surface by
+   default so it never appears inside the authenticated app (dashboard,
+   settings, etc.); the marketing layout adds `.consent-enabled` to <html>
+   while mounted (see ConsentGate), which re-enables CookieYes's own styles. */
+html:not(.consent-enabled) .cky-consent-container,
+html:not(.consent-enabled) .cky-consent-bar,
+html:not(.consent-enabled) .cky-overlay,
+html:not(.consent-enabled) .cky-modal,
+html:not(.consent-enabled) .cky-btn-revisit-wrapper,
+html:not(.consent-enabled) #cookieyes {
+  display: none !important;
+}
+
 /* CookieYes consent button - right side on desktop, left side on mobile */
 .cky-btn-revisit-wrapper {
   left: auto !important;

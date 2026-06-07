@@ -9,7 +9,7 @@ import { and, eq } from 'drizzle-orm';
 import { executorConnectors, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { commitManifest, loadManifestForEdit } from '../projects/index';
-import { extractConnectors, type ConnectorPolicySpec, type ConnectorPolicyAction } from '../projects/connectors';
+import { extractConnectors, type ConnectorPolicySpec, type ConnectorPolicyAction, type ConnectorSpec } from '../projects/connectors';
 import { isValidMatcher } from './policy';
 import {
   extractProjectPolicies,
@@ -107,8 +107,18 @@ export async function upsertConnectorInManifest(
   const entry = draftToEntry(draft);
   const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
   const idx = current.findIndex((c) => c?.slug === draft.slug);
-  if (idx >= 0) current[idx] = entry;
-  else current.push(entry);
+  if (idx >= 0) {
+    // Updating in place: carry over fields the connection draft doesn't own —
+    // per-tool policies, the enabled flag, and the display name (when the draft
+    // omits it) — so editing the connection never clobbers permissions or rename.
+    const prev = current[idx]!;
+    if (prev.policies !== undefined) entry.policies = prev.policies;
+    if (prev.enabled !== undefined) entry.enabled = prev.enabled;
+    if (entry.name === undefined && prev.name !== undefined) entry.name = prev.name;
+    current[idx] = entry;
+  } else {
+    current.push(entry);
+  }
   manifest.raw.connectors = current;
 
   const parsed = extractConnectors(manifest);
@@ -236,6 +246,53 @@ export async function setConnectorNameInManifest(
 
   const sync = await syncProjectConnectors(projectId, accountId);
   return { ok: true, sync };
+}
+
+// ─── Connector definition (the [[connectors]] entry itself) ─────────────────
+
+/** The editable connection config — same fields the "Add connector" form sets. */
+export interface ConnectorConfigView {
+  slug: string;
+  provider: ConnectorSpec['provider'];
+  credentialMode: 'shared' | 'per_user';
+  app: string | null;
+  account: string | null;
+  url: string | null;
+  transport: 'http' | 'sse' | null;
+  endpoint: string | null;
+  baseUrl: string | null;
+  spec: string | null;
+  auth: { type: 'none' | 'bearer' | 'basic' | 'custom'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+}
+
+/**
+ * Read a single connector's definition from kortix.toml (source of truth) in the
+ * same shape the dashboard edits. Parsed via extractConnectors so it round-trips
+ * exactly with the upsert path. Returns null if the connector doesn't exist.
+ */
+export async function getConnectorConfigFromManifest(
+  projectId: string,
+  slug: string,
+): Promise<ConnectorConfigView | null> {
+  const row = await loadRow(projectId);
+  if (!row) return null;
+  const manifest = await loadManifestForEdit(row).catch(() => null);
+  if (!manifest) return null;
+  const spec = extractConnectors(manifest).specs.find((s) => s.slug === slug);
+  if (!spec) return null;
+  return {
+    slug: spec.slug,
+    provider: spec.provider,
+    credentialMode: spec.credentialMode,
+    app: spec.app,
+    account: spec.account,
+    url: spec.url,
+    transport: spec.transport,
+    endpoint: spec.endpoint,
+    baseUrl: spec.baseUrl,
+    spec: spec.spec,
+    auth: { type: spec.auth.type, in: spec.auth.in, name: spec.auth.name, prefix: spec.auth.prefix },
+  };
 }
 
 // ─── Per-connector policies ([[connectors.policies]]) ───────────────────────

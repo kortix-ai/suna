@@ -309,7 +309,7 @@ export default async function RootLayout({
               alternateName: [
                 'Kortix',
                 'Kortix AI',
-                'Kortix – The Autonomous Company Operating System',
+                'Kortix – The AI Command Center for Your Company',
               ],
               url: siteMetadata.url,
               logo: `${siteMetadata.url}/favicon.png`,

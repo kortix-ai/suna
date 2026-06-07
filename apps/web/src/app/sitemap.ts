@@ -1,6 +1,7 @@
 import { MetadataRoute } from 'next';
 import { siteConfig } from '@/lib/site-config';
 import { locales } from '@/i18n/config';
+import { getAllPosts } from '@/lib/blog';
 
 // Marketing pages that support locale routing for SEO
 const MARKETING_ROUTES = [
@@ -34,6 +35,22 @@ export default function sitemap(): MetadataRoute.Sitemap {
           ),
         },
       });
+    });
+  });
+
+  // Blog index + posts (English only — the blog isn't locale-routed).
+  sitemapEntries.push({
+    url: `${baseUrl}/blog`,
+    lastModified: new Date(),
+    changeFrequency: 'weekly',
+    priority: 0.8,
+  });
+  getAllPosts().forEach((post) => {
+    sitemapEntries.push({
+      url: `${baseUrl}${post.url}`,
+      lastModified: new Date(`${post.data.date}T00:00:00Z`),
+      changeFrequency: 'monthly',
+      priority: 0.7,
     });
   });
 

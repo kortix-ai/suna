@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 338,
+  "count": 339,
   "routes": [
     {
       "method": "GET",
@@ -521,6 +521,10 @@
     {
       "method": "DELETE",
       "path": "/v1/executor/projects/:projectId/connectors/:slug"
+    },
+    {
+      "method": "GET",
+      "path": "/v1/executor/projects/:projectId/connectors/:slug/config"
     },
     {
       "method": "POST",

@@ -32,6 +32,34 @@ same content. Edits land on `main` only via a Kortix change request —
 never by pushing directly.
 </overview>
 
+<memory-vs-capabilities>
+Memory is durable **knowledge** — what the project knows about itself.
+It is one of two ways a Kortix project persists across sessions. The
+other is durable **capability** — the OpenCode primitives under
+`.kortix/opencode/`:
+
+| Lives in… | Holds… | Examples |
+|---|---|---|
+| `.kortix/memory/` | **Knowledge** — facts, decisions, conventions, runbooks | "Auth runs through Supabase Postgres", "we ship via CRs" |
+| `.kortix/opencode/skills/<name>/SKILL.md` | A reusable **skill** — a procedure the agent loads on demand | `kortix-memory`, `kortix-system` |
+| `.kortix/opencode/agents/<name>.md` | An **agent persona** — a named worker with its own rules/tools | `memory-reflector` |
+| `.kortix/opencode/commands/<name>.md` | A **slash command** — a parameterized prompt the user invokes | `/deploy`, `/triage` |
+
+Rule of thumb: if it's a *fact* the agent should **know**, it's memory.
+If it's a *behavior* the agent should be able to **perform** — a
+repeatable procedure, a worker, an invokable command — it's a
+capability under `.kortix/opencode/`, and **authoring or editing it is
+governed by the `kortix-system` skill**, not this one. When a memory
+entry starts reading like a how-to the agent keeps repeating, that's
+the signal to promote it out of `.kortix/memory/` into a skill.
+
+Both halves are team-shared, live in the same repo, and reach `main`
+through the same Kortix change-request flow. See the `kortix-system`
+skill (`.kortix/opencode/skills/kortix-system/SKILL.md`) for how to
+author every OpenCode primitive and the full `.kortix/opencode/`
+contract.
+</memory-vs-capabilities>
+
 <when-to-load>
 Load this skill when you:
 
@@ -97,6 +125,10 @@ there's enough depth to warrant a click.
 - Facts derivable from the repo layout, file names, or `git log`.
 - One-off task state that won't matter next week.
 - Anything that's already in `kortix.toml`, `AGENTS.md`, or a SKILL.md.
+- A **capability** rather than a fact — a reusable procedure, an agent
+  persona, or a slash command. Those belong under `.kortix/opencode/`
+  (see `<memory-vs-capabilities>` above), authored per the
+  `kortix-system` skill — not as memory prose.
 - Secrets, tokens, API keys, PII — those live in the Kortix Secrets
   Manager, never in memory files.
 - Speculation about future plans. Memory describes what *is*, not

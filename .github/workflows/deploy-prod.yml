@@ -11,11 +11,10 @@ name: Deploy Prod
 #   2. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
 #      installers and cut a single GitHub Release `vX.Y.Z`.
 #   3. Roll the `kortix-prod` ECS Fargate service onto the new image (OIDC).
-#   4. Deploy the prod frontend on Vercel (the `prod` branch → new.kortix.com,
-#      and kortix.com after the apex cutover).
+#   4. Deploy the prod frontend on Vercel (the `prod` branch → kortix.com).
 #
-# The prod stack is api-prod.kortix.com (ECS) + new.kortix.com (Vercel) today;
-# after the apex DNS cutover it is api.kortix.com + kortix.com — same pipeline.
+# The prod stack is api-prod.kortix.com (ECS) + kortix.com (Vercel). The legacy
+# new.kortix.com Vercel domain was retired in the apex cutover — same pipeline.
 
 on:
   push:
@@ -489,9 +488,8 @@ jobs:
 
   # ── Prod frontend (Vercel) ──────────────────────────────────────────────────
   # No job here: the Vercel project is git-connected and auto-deploys the `prod`
-  # branch on every push (new.kortix.com today, kortix.com after the apex
-  # cutover) — the same way dev.kortix.com auto-deploys from `main`. The promote
-  # workflow's push to `prod` is what triggers it.
+  # branch on every push (→ kortix.com) — the same way dev.kortix.com
+  # auto-deploys from `main`. The promote workflow's push to `prod` triggers it.
   frontend-note:
     name: Prod frontend (Vercel auto-deploys prod)
     needs: version  # gate with the rest of the pipeline (skipped on a failed promote)
@@ -501,7 +499,7 @@ jobs:
         run: |
           {
             echo "### Frontend → **prod** (Vercel)"
-            echo "Vercel auto-deploys the \`prod\` branch (new.kortix.com → api-prod; kortix.com after apex cutover). No action needed here."
+            echo "Vercel auto-deploys the \`prod\` branch (→ kortix.com). No action needed here."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Keep main's VERSION honest (post-publish, never premature) ──────────────

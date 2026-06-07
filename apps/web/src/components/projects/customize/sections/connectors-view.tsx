@@ -48,15 +48,19 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { EmptyState } from '@/components/ui/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup } from '@/components/ui/radio-group';
+import { SectionCard } from '@/components/ui/section-card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { PoliciesPanel } from '@/components/projects/policies-panel';
 import { SharingPicker, ShareOption } from '@/components/projects/sharing-picker';
 import { toast } from '@/lib/toast';
@@ -64,6 +68,7 @@ import { cn } from '@/lib/utils';
 import {
   createConnector,
   deleteConnector,
+  getConnectorConfig,
   getConnectorPolicies,
   listConnectors,
   listPipedreamApps,
@@ -77,6 +82,7 @@ import {
   syncConnectors,
   type AdminConnector,
   type ConnectorAction,
+  type ConnectorConfig,
   type ConnectorDraftInput,
   type ConnectorPolicyAction,
   type ConnectorPolicyRule,
@@ -309,6 +315,52 @@ function statusDot(c: AdminConnector): string {
   return 'bg-emerald-500';
 }
 
+/** Forward-facing status as a calm badge (the detail header). */
+function ConnectorStatusBadge({ connector }: { connector: AdminConnector }) {
+  if (connector.status === 'error') return <Badge variant="destructive" size="sm">Error</Badge>;
+  if (!connector.authSecret) return <Badge variant="outline" size="sm">No auth needed</Badge>;
+  if (!connector.secretSet) return <Badge variant="warning" size="sm">Needs setup</Badge>;
+  return <Badge variant="success" size="sm">Connected</Badge>;
+}
+
+/**
+ * The one save affordance for an editable section — a quiet footer that only
+ * appears when there are unsaved changes, with an optional Reset. Keeps every
+ * section (Connection / Profile / Permissions) consistent and avoids the
+ * "button pops in at the bottom" layout jump being different each place.
+ */
+function SaveBar({
+  dirty,
+  saving,
+  disabled,
+  onSave,
+  onReset,
+  label = 'Save',
+}: {
+  dirty: boolean;
+  saving?: boolean;
+  disabled?: boolean;
+  onSave: () => void;
+  onReset?: () => void;
+  label?: string;
+}) {
+  if (!dirty) return null;
+  return (
+    <div className="mt-5 flex items-center justify-end gap-2 border-t border-border/60 pt-4">
+      <span className="mr-auto flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span className="size-1.5 rounded-full bg-amber-500" />
+        Unsaved changes
+      </span>
+      {onReset && (
+        <Button size="sm" variant="ghost" onClick={onReset} disabled={saving}>Reset</Button>
+      )}
+      <Button size="sm" onClick={onSave} disabled={saving || disabled} className="gap-1.5">
+        {saving && <Loader2 className="h-4 w-4 animate-spin" />}{label}
+      </Button>
+    </div>
+  );
+}
+
 function ConnectorRail({
   connectors,
   selection,
@@ -473,10 +525,12 @@ function ConnectorDetail({
     onError: (e: Error) => toast.error(e.message || 'Failed to remove'),
   });
 
+  const toolCount = connector.actions.length;
+
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-7">
       {/* Header */}
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-3.5">
         <EntityAvatar icon={Icon} size="lg" />
         <div className="min-w-0 flex-1">
           {editingName ? (
@@ -484,28 +538,33 @@ function ConnectorDetail({
               className="flex items-center gap-1.5"
               onSubmit={(e) => { e.preventDefault(); if (nameDraft.trim() && nameDraft.trim() !== displayName) rename.mutate(); else setEditingName(false); }}
             >
-              <Input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} className="h-8 max-w-xs text-lg font-semibold" autoFocus />
-              <Button type="submit" size="icon" variant="ghost" className="h-8 w-8" disabled={rename.isPending} aria-label="Save name">
+              <Input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} className="h-9 max-w-xs text-lg font-semibold" autoFocus />
+              <Button type="submit" size="icon" variant="ghost" className="h-9 w-9" disabled={rename.isPending} aria-label="Save name">
                 {rename.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               </Button>
-              <Button type="button" size="sm" variant="ghost" className="h-8" onClick={() => { setEditingName(false); setNameDraft(displayName); }} disabled={rename.isPending}>Cancel</Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => { setEditingName(false); setNameDraft(displayName); }} disabled={rename.isPending}>Cancel</Button>
             </form>
           ) : (
             <div className="group flex items-center gap-2">
               <h2 className="truncate text-lg font-semibold text-foreground">{displayName}</h2>
-              <Badge variant="outline" size="sm">{providerLabel(connector.provider)}</Badge>
-              {connector.status === 'error' && <Badge variant="destructive" size="sm">Error</Badge>}
-              <button type="button" onClick={() => setEditingName(true)} aria-label="Rename" className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100">
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button type="button" onClick={() => setEditingName(true)} aria-label="Rename" className="text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Rename</TooltipContent>
+              </Tooltip>
             </div>
           )}
-          <p className="mt-0.5 flex items-center gap-1.5 text-sm text-muted-foreground">
-            <span className={cn('size-2 rounded-full', statusDot(connector))} />
-            {connector.authSecret ? (connected ? 'Profile connected' : 'No profile yet') : 'No authentication required'}
-            <span className="text-muted-foreground/40">·</span>
-            <code className="font-mono text-xs">{connector.slug}</code>
-          </p>
+          <div className="mt-1.5 flex items-center gap-2">
+            <Badge variant="outline" size="sm">{providerLabel(connector.provider)}</Badge>
+            <ConnectorStatusBadge connector={connector} />
+            <InlineMeta>
+              <code className="font-mono">{connector.slug}</code>
+              {toolCount > 0 ? `${toolCount} ${toolCount === 1 ? 'tool' : 'tools'}` : null}
+            </InlineMeta>
+          </div>
         </div>
         {connector.authSecret && (
           isPipedream ? (
@@ -514,38 +573,41 @@ function ConnectorDetail({
               {connected ? 'Reconnect' : 'Connect'}
             </Button>
           ) : (
-            <Button size="sm" variant={connected ? 'outline' : 'default'} className="shrink-0" onClick={() => setCredOpen(true)}>
-              {connected ? 'Replace credential' : 'Set credential'}
+            <Button size="sm" variant={connected ? 'outline' : 'default'} className="shrink-0 gap-1.5" onClick={() => setCredOpen(true)}>
+              <KeyRound className="h-4 w-4" />{connected ? 'Replace credential' : 'Set credential'}
             </Button>
           )
         )}
       </div>
 
-      <div className="mt-7 space-y-8">
+      <div className="mt-7 space-y-5">
+        {!isPipedream && <ConnectionSection projectId={projectId} connector={connector} onChanged={onChanged} />}
         <ProfileSection projectId={projectId} connector={connector} onChanged={onChanged} />
         <PermissionsSection projectId={projectId} connector={connector} />
 
-        {/* Remove */}
-        <section>
-          <h3 className="text-sm font-semibold text-foreground">Remove connector</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">Deletes it from kortix.toml. Stored profiles and rules are dropped.</p>
-          <div className="mt-2">
-            {confirmDelete ? (
-              <div className="flex items-center gap-2">
-                <Button size="sm" variant="destructive" onClick={() => remove.mutate()} disabled={remove.isPending} className="gap-1.5">
-                  {remove.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}Remove {connector.slug}
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setConfirmDelete(false)} disabled={remove.isPending}>Keep</Button>
-              </div>
-            ) : (
-              <Button size="sm" variant="outline" className="gap-1.5 text-muted-foreground hover:text-destructive" onClick={() => setConfirmDelete(true)}>
-                <Trash2 className="h-3.5 w-3.5" />Remove
-              </Button>
-            )}
-          </div>
-        </section>
+        <SectionCard
+          tone="destructive"
+          title="Remove connector"
+          description="Deletes it from kortix.toml. Stored profiles and permission rules are dropped."
+          action={
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setConfirmDelete(true)}>
+              <Trash2 className="h-3.5 w-3.5" />Remove
+            </Button>
+          }
+        />
       </div>
 
+      <ConfirmDialog
+        open={confirmDelete}
+        onOpenChange={setConfirmDelete}
+        title={`Remove ${displayName}?`}
+        description={<>This removes <code className="font-mono">{connector.slug}</code> from kortix.toml and drops its stored profile and permission rules. This can’t be undone.</>}
+        confirmLabel="Remove connector"
+        confirmVariant="destructive"
+        confirmIcon={<Trash2 className="h-4 w-4" />}
+        isPending={remove.isPending}
+        onConfirm={() => remove.mutate()}
+      />
       <SetCredentialDialog projectId={projectId} connector={credOpen ? connector : null} open={credOpen} onOpenChange={setCredOpen} onSaved={onChanged} />
     </div>
   );
@@ -579,6 +641,13 @@ function ProfileSection({ projectId, connector, onChanged }: { projectId: string
   );
   const dirty = modeChanged || accessChanged;
 
+  const reset = () => {
+    setCredential(connector.credentialMode);
+    const a = sharingToAccess(connector.sharing);
+    setAccess(a.mode);
+    setMemberIds(a.memberIds);
+  };
+
   const save = useMutation({
     mutationFn: async () => {
       if (modeChanged) await setConnectorCredentialMode(projectId, connector.slug, credential);
@@ -593,19 +662,14 @@ function ProfileSection({ projectId, connector, onChanged }: { projectId: string
   });
 
   return (
-    <section className="space-y-3">
-      <div>
-        <h3 className="text-sm font-semibold text-foreground">Profile</h3>
-        <p className="mt-0.5 text-xs text-muted-foreground">The account this connector signs in with, and who may use it.</p>
-      </div>
-
+    <SectionCard title="Profile" description="The account this connector signs in with, and who may use it.">
       <RadioGroup value={credential} onValueChange={(v) => setCredential(v as 'shared' | 'per_user')} className="space-y-2">
         <ShareOption value="shared" label="One shared profile" desc="Connect the app once — every session uses that same account." current={credential} />
         <ShareOption value="per_user" label="Each member brings their own profile" desc="Every member links their own account the first time they use it (BYO)." current={credential} />
       </RadioGroup>
 
       {modeChanged && (
-        <InfoBanner tone="neutral" title="Heads up">
+        <InfoBanner tone="warning" title="This changes how members sign in" className="mt-3">
           {credential === 'per_user'
             ? 'The shared profile stops being used — each member will be asked to connect their own.'
             : 'Each member’s personal profile stops being used — connect one shared profile after saving.'}
@@ -613,7 +677,7 @@ function ProfileSection({ projectId, connector, onChanged }: { projectId: string
       )}
 
       {credential === 'shared' && (
-        <div className="space-y-1.5 pt-1">
+        <div className="mt-4 space-y-1.5">
           <Label className="text-xs text-muted-foreground">Who can use it</Label>
           <SharingPicker
             projectId={projectId}
@@ -629,14 +693,108 @@ function ProfileSection({ projectId, connector, onChanged }: { projectId: string
         </div>
       )}
 
-      {dirty && (
-        <div className="flex justify-end">
-          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending || (credential === 'shared' && access === 'members' && memberIds.length === 0)} className="gap-1.5">
-            {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}Save profile
-          </Button>
+      <SaveBar
+        dirty={dirty}
+        saving={save.isPending}
+        disabled={credential === 'shared' && access === 'members' && memberIds.length === 0}
+        onSave={() => save.mutate()}
+        onReset={reset}
+        label="Save profile"
+      />
+    </SectionCard>
+  );
+}
+
+// ─── Connection section (the connector definition: provider + url + auth) ────
+
+function configToDraft(cfg: ConnectorConfig): ConnectorDraftInput {
+  return {
+    slug: cfg.slug,
+    provider: cfg.provider,
+    url: cfg.url ?? undefined,
+    transport: cfg.transport ?? undefined,
+    endpoint: cfg.endpoint ?? undefined,
+    baseUrl: cfg.baseUrl ?? undefined,
+    spec: cfg.spec ?? undefined,
+    auth: { type: cfg.auth.type, in: cfg.auth.in, name: cfg.auth.name ?? undefined, prefix: cfg.auth.prefix ?? undefined },
+  };
+}
+
+/** Stable signature over the connection fields — drives the dirty/Save state. */
+function connectionSig(d: ConnectorDraftInput): string {
+  return JSON.stringify({
+    provider: d.provider,
+    url: d.url ?? '',
+    transport: d.transport ?? '',
+    endpoint: d.endpoint ?? '',
+    baseUrl: d.baseUrl ?? '',
+    spec: d.spec ?? '',
+    auth: { type: d.auth?.type ?? 'none', in: d.auth?.in ?? 'header', name: d.auth?.name ?? '', prefix: d.auth?.prefix ?? '' },
+  });
+}
+
+/**
+ * Edit an existing connector's definition (the same fields as "Add connector"),
+ * written back to kortix.toml via the create-or-update path. Credential mode and
+ * access are owned by Profile, so we resend the current mode to leave it intact.
+ */
+function ConnectionSection({ projectId, connector, onChanged }: { projectId: string; connector: AdminConnector; onChanged: () => void }) {
+  const queryClient = useQueryClient();
+  const configQuery = useQuery({
+    queryKey: ['connector-config', projectId, connector.slug],
+    queryFn: () => getConnectorConfig(projectId, connector.slug),
+    staleTime: 5_000,
+  });
+
+  const [draft, setDraft] = useState<ConnectorDraftInput | null>(null);
+  const [savedSig, setSavedSig] = useState('');
+  useEffect(() => {
+    if (!configQuery.data) return;
+    const d = configToDraft(configQuery.data);
+    setDraft(d);
+    setSavedSig(connectionSig(d));
+  }, [configQuery.data]);
+
+  const dirty = !!draft && connectionSig(draft) !== savedSig;
+
+  const reset = () => { if (configQuery.data) setDraft(configToDraft(configQuery.data)); };
+
+  const save = useMutation({
+    mutationFn: () => createConnector(projectId, { ...draft!, slug: connector.slug, credential: connector.credentialMode }),
+    onSuccess: () => {
+      toast.success('Connection saved');
+      queryClient.invalidateQueries({ queryKey: ['connector-config', projectId, connector.slug] });
+      onChanged();
+    },
+    onError: (e: Error) => toast.error(e.message || 'Failed to save connection'),
+  });
+
+  return (
+    <SectionCard title="Connection" description="How Kortix reaches this connector — the same settings used when it was added.">
+      {configQuery.isError ? (
+        <InfoBanner tone="destructive" title="Couldn’t load connection" action={<Button size="sm" variant="outline" onClick={() => configQuery.refetch()}>Retry</Button>}>
+          {(configQuery.error as Error)?.message ?? 'Unknown error'}
+        </InfoBanner>
+      ) : configQuery.isLoading || !draft ? (
+        <div className="space-y-3">
+          <Skeleton className="h-9 w-full rounded-2xl" />
+          <Skeleton className="h-9 w-2/3 rounded-2xl" />
+          <Skeleton className="h-9 w-full rounded-2xl" />
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <ConnectorConfigFields draft={draft} onChange={setDraft} />
+          <SaveBar
+            dirty={dirty}
+            saving={save.isPending}
+            disabled={!connectionValid(draft)}
+            onSave={() => save.mutate()}
+            onReset={reset}
+            label="Save connection"
+          />
         </div>
       )}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -817,21 +975,31 @@ function PermissionsSection({ projectId, connector }: { projectId: string; conne
     });
   };
 
-  return (
-    <section className="space-y-3">
-      <div className="flex items-end justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-foreground">Permissions</h3>
-          <p className="mt-0.5 text-xs text-muted-foreground">What the agent may do with this app — Allow, Ask first, or Block. Default follows global rules &amp; risk.</p>
-        </div>
-        {tools.length > 6 && (
-          <div className="relative w-48 shrink-0">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter tools…" className="h-8 pl-8 text-sm" />
-          </div>
-        )}
-      </div>
+  const reset = () => {
+    const pt: Record<string, ConnectorPolicyAction> = {};
+    const rl: { id: string; match: string; action: ConnectorPolicyAction }[] = [];
+    for (const p of policiesQuery.data?.policies ?? []) {
+      if (!isPatternMatch(p.match) && toolPaths.has(p.match)) pt[p.match] = p.action;
+      else rl.push({ id: ruleId(), match: p.match, action: p.action });
+    }
+    setPerTool(pt);
+    setRules(rl);
+    setShowRules(rl.length > 0);
+    setSelected(new Set());
+  };
 
+  return (
+    <SectionCard
+      title="Permissions"
+      description="What the agent may do with this app — Allow, Ask first, or Block. Default follows global rules & risk."
+      action={tools.length > 6 ? (
+        <div className="relative w-48">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filter tools…" className="h-8 pl-8 text-sm" />
+        </div>
+      ) : undefined}
+    >
+      <div className="space-y-4">
       {tools.length === 0 ? (
         <InfoBanner tone="neutral" title="No tools yet">Connect the profile, then Sync to pull this app’s tools.</InfoBanner>
       ) : (
@@ -890,7 +1058,7 @@ function PermissionsSection({ projectId, connector }: { projectId: string; conne
                       {t.description && <span className="truncate text-xs text-muted-foreground/70">{t.description}</span>}
                     </button>
                     {ruled && (
-                      <span className={cn('shrink-0 text-[11px] opacity-80', POLICY_LABEL[ruled.action].tint)} title={`From pattern rule: ${ruled.match}`}>
+                      <span className={cn('shrink-0 text-xs opacity-80', POLICY_LABEL[ruled.action].tint)} title={`From pattern rule: ${ruled.match}`}>
                         {POLICY_LABEL[ruled.action].label} · rule
                       </span>
                     )}
@@ -944,15 +1112,16 @@ function PermissionsSection({ projectId, connector }: { projectId: string; conne
           )}
         </div>
       )}
+      </div>
 
-      {dirty && (
-        <div className="flex items-center justify-end gap-2">
-          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending} className="gap-1.5">
-            {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}Save permissions
-          </Button>
-        </div>
-      )}
-    </section>
+      <SaveBar
+        dirty={dirty}
+        saving={save.isPending}
+        onSave={() => save.mutate()}
+        onReset={reset}
+        label="Save permissions"
+      />
+    </SectionCard>
   );
 }
 
@@ -961,11 +1130,11 @@ function PermissionsSection({ projectId, connector }: { projectId: string; conne
 function GlobalRulesPanel({ projectId }: { projectId: string }) {
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-7">
-      <div className="mb-5 flex items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-muted text-muted-foreground"><ShieldCheck className="h-5 w-5" /></span>
+      <div className="mb-6 flex items-start gap-3.5">
+        <EntityAvatar icon={ShieldCheck} size="lg" />
         <div>
           <h2 className="text-lg font-semibold text-foreground">Global rules</h2>
-          <p className="mt-0.5 text-sm text-muted-foreground">Permissions that apply across every connector. These override each app’s own rules.</p>
+          <p className="mt-1 text-sm text-muted-foreground">Permissions that apply across every connector. These override each app’s own rules.</p>
         </div>
       </div>
       <PoliciesPanel projectId={projectId} />
@@ -1089,19 +1258,22 @@ function AppCatalogue({ projectId, onAdded }: { projectId: string; onAdded: (slu
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {apps.map((app) => (
-                <div key={app.slug} className="flex flex-col rounded-2xl border border-border/60 bg-card p-4">
+                <button
+                  key={app.slug}
+                  type="button"
+                  onClick={() => setConfigApp({ slug: app.slug, name: app.name })}
+                  className="group flex flex-col rounded-2xl border border-border/60 bg-card p-4 text-left transition-all hover:border-primary/40 hover:bg-primary/[0.03] hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+                >
                   <div className="flex items-center gap-3">
                     {app.imgSrc ? <img src={app.imgSrc} alt="" className="h-9 w-9 shrink-0 rounded-lg object-contain" referrerPolicy="no-referrer" /> : <EntityAvatar icon={Zap} size="sm" />}
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-semibold text-foreground">{app.name}</div>
                       {app.categories?.[0] && <div className="truncate text-xs text-muted-foreground">{app.categories[0]}</div>}
                     </div>
+                    <Plus className="size-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-primary" />
                   </div>
                   <p className="mt-2 line-clamp-2 min-h-[2rem] text-xs leading-relaxed text-muted-foreground">{app.description ?? ' '}</p>
-                  <div className="mt-3 flex justify-end">
-                    <Button size="sm" variant="outline" className="h-7 gap-1.5 px-3 text-xs" onClick={() => setConfigApp({ slug: app.slug, name: app.name })}><Plus className="h-3.5 w-3.5" />Add</Button>
-                  </div>
-                </div>
+                </button>
               ))}
             </div>
             {appsQuery.hasNextPage && (
@@ -1146,23 +1318,21 @@ function ConfigureAppDialog({ projectId, app, open, onOpenChange, onAdded }: { p
   );
 }
 
-function CustomConnectorForm({ projectId, onAdded }: { projectId: string; onAdded: (slug?: string) => void }) {
-  const [draft, setDraft] = useState<ConnectorDraftInput>({ slug: '', provider: 'openapi', auth: { type: 'none' } });
-  const [setup, setSetup] = useState<ConnectorSetup>({ credential: 'shared', access: 'project', memberIds: [] });
-  const set = (patch: Partial<ConnectorDraftInput>) => setDraft((d) => ({ ...d, ...patch }));
-  const setAuth = (patch: Partial<NonNullable<ConnectorDraftInput['auth']>>) => setDraft((d) => ({ ...d, auth: { ...d.auth, ...patch } }));
-  const save = useMutation({
-    mutationFn: () => createConnector(projectId, { ...draft, credential: setup.credential, sharing: setupToSharing(setup) }),
-    onSuccess: () => { toast.success(`Added ${draft.slug}`); onAdded(draft.slug); },
-    onError: (err: Error) => toast.error(err.message || 'Failed to add connector'),
-  });
+/**
+ * The connection definition — provider + provider-specific fields + auth. Shared
+ * by the "Add connector" custom form and the per-connector "Connection" editor.
+ * The slug is the connector's identity, so it's locked once created.
+ */
+function ConnectorConfigFields({ draft, onChange, slugEditable }: { draft: ConnectorDraftInput; onChange: (d: ConnectorDraftInput) => void; slugEditable?: boolean }) {
+  const set = (patch: Partial<ConnectorDraftInput>) => onChange({ ...draft, ...patch });
+  const setAuth = (patch: Partial<NonNullable<ConnectorDraftInput['auth']>>) => onChange({ ...draft, auth: { ...draft.auth, ...patch } });
   const p = draft.provider;
   const needsAuth = p !== 'pipedream';
 
   return (
-    <form onSubmit={(e) => { e.preventDefault(); save.mutate(); }} className="max-w-xl space-y-4">
+    <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Slug"><Input value={draft.slug} onChange={(e) => set({ slug: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-') })} placeholder="my-api" className="font-mono" required /></Field>
+        <Field label="Slug"><Input value={draft.slug} onChange={(e) => set({ slug: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, '-') })} placeholder="my-api" className="font-mono" disabled={!slugEditable} required /></Field>
         <div className="space-y-1.5">
           <Label>Provider</Label>
           <Select value={p} onValueChange={(v) => set({ provider: v as ConnectorDraftInput['provider'] })}>
@@ -1214,14 +1384,43 @@ function CustomConnectorForm({ projectId, onAdded }: { projectId: string; onAdde
           {draft.auth?.type === 'custom' && <Field label="Header name"><Input value={draft.auth?.name ?? ''} onChange={(e) => setAuth({ name: e.target.value })} placeholder="X-API-Key" required /></Field>}
         </div>
       )}
-      {needsAuth && draft.auth?.type && draft.auth.type !== 'none' && <p className="text-xs text-muted-foreground">You’ll set the credential value after adding.</p>}
-      <div className="border-t border-border/60 pt-4"><ConnectorSetupFields projectId={projectId} value={setup} onChange={setSetup} /></div>
-      <div className="flex justify-end">
-        <Button type="submit" disabled={!draft.slug || save.isPending || (setup.access === 'members' && setup.memberIds.length === 0)} className="gap-1.5">
-          {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}Add connector
-        </Button>
-      </div>
-    </form>
+    </div>
+  );
+}
+
+/** Required connection fields per provider — gates the save button (server re-validates). */
+function connectionValid(d: ConnectorDraftInput): boolean {
+  if (d.auth?.type === 'custom' && !d.auth.name?.trim()) return false;
+  if (d.provider === 'mcp') return !!d.url?.trim();
+  if (d.provider === 'openapi') return !!d.spec?.trim();
+  if (d.provider === 'graphql') return !!d.endpoint?.trim();
+  if (d.provider === 'http') return !!d.baseUrl?.trim();
+  return true;
+}
+
+function CustomConnectorForm({ projectId, onAdded }: { projectId: string; onAdded: (slug?: string) => void }) {
+  const [draft, setDraft] = useState<ConnectorDraftInput>({ slug: '', provider: 'openapi', auth: { type: 'none' } });
+  const [setup, setSetup] = useState<ConnectorSetup>({ credential: 'shared', access: 'project', memberIds: [] });
+  const save = useMutation({
+    mutationFn: () => createConnector(projectId, { ...draft, credential: setup.credential, sharing: setupToSharing(setup) }),
+    onSuccess: () => { toast.success(`Added ${draft.slug}`); onAdded(draft.slug); },
+    onError: (err: Error) => toast.error(err.message || 'Failed to add connector'),
+  });
+  const authActive = !!draft.auth?.type && draft.auth.type !== 'none';
+
+  return (
+    <SectionCard title="Custom connector" description="Connect any OpenAPI, GraphQL, MCP, or HTTP service.">
+      <form onSubmit={(e) => { e.preventDefault(); save.mutate(); }} className="space-y-4">
+        <ConnectorConfigFields draft={draft} onChange={setDraft} slugEditable />
+        {authActive && <InfoBanner tone="info">You’ll set the credential value after adding, from the connector’s page.</InfoBanner>}
+        <div className="border-t border-border/60 pt-4"><ConnectorSetupFields projectId={projectId} value={setup} onChange={setSetup} /></div>
+        <div className="flex justify-end border-t border-border/60 pt-4">
+          <Button type="submit" disabled={!draft.slug || save.isPending || !connectionValid(draft) || (setup.access === 'members' && setup.memberIds.length === 0)} className="gap-1.5">
+            {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}Add connector
+          </Button>
+        </div>
+      </form>
+    </SectionCard>
   );
 }
 

@@ -940,6 +940,29 @@ export async function setConnectorPolicies(projectId: string, slug: string, poli
   );
 }
 
+/** The editable connection config for an existing connector (kortix.toml = source of truth). */
+export interface ConnectorConfig {
+  slug: string;
+  provider: AdminConnector['provider'];
+  credentialMode: 'shared' | 'per_user';
+  app: string | null;
+  account: string | null;
+  url: string | null;
+  transport: 'http' | 'sse' | null;
+  endpoint: string | null;
+  baseUrl: string | null;
+  spec: string | null;
+  auth: { type: 'none' | 'bearer' | 'basic' | 'custom'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+}
+
+export async function getConnectorConfig(projectId: string, slug: string) {
+  return unwrap(
+    await backendApi.get<ConnectorConfig>(
+      `/executor/projects/${projectId}/connectors/${encodeURIComponent(slug)}/config`,
+    ),
+  );
+}
+
 export async function setConnectorName(projectId: string, slug: string, name: string) {
   return unwrap(
     await backendApi.put<{ ok: boolean; sync?: ConnectorSyncResult }>(

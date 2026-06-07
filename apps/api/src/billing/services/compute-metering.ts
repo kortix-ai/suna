@@ -24,6 +24,7 @@ import { config } from '../../config';
 import {
   insertComputeSession,
   getOpenComputeSession,
+  getLatestComputeSession,
   updateComputeSession,
   findStaleActiveSessions,
   type SandboxSpec,
@@ -173,6 +174,28 @@ export async function pauseComputeSession(sandboxId: string): Promise<void> {
  */
 export async function resumeComputeSession(opts: StartComputeOpts): Promise<string | null> {
   return startComputeSession(opts);
+}
+
+/**
+ * Reopen metering for a hibernated sandbox being resumed in place (the
+ * stopped→active wake path). Reuses the spec from the sandbox's most recent
+ * window so the resumed compute bills exactly like the original run, without
+ * re-resolving the project manifest on the hot reopen path. No-op when billing
+ * is disabled / the account isn't per-seat / a row is already open
+ * (startComputeSession is idempotent on an open row).
+ */
+export async function reopenComputeForSandbox(
+  sandboxId: string,
+  accountId: string,
+  sessionId?: string | null,
+  actorUserId?: string | null,
+): Promise<string | null> {
+  if (!config.KORTIX_BILLING_INTERNAL_ENABLED) return null;
+  const last = await getLatestComputeSession(sandboxId);
+  const spec: SandboxSpec = last
+    ? { cpuCores: last.cpuCores, memoryGb: last.memoryGb, diskGb: last.diskGb, gpuCount: last.gpuCount }
+    : { cpuCores: 1, memoryGb: 2, diskGb: 10, gpuCount: 0 };
+  return startComputeSession({ sandboxId, accountId, sessionId, actorUserId, spec });
 }
 
 /**

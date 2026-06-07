@@ -171,10 +171,12 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
         <MobileSidebarTrigger />
       </div>
 
-      {/* Desktop back/forward */}
+      {/* Desktop back/forward + home. Back/forward are a directional pair
+          (kept tight); Home is a distinct destination, so it's set apart with
+          a little extra space — the same grouping browser chrome uses. */}
       <div
         className={cn(
-          'flex-shrink-0 items-center gap-0 pr-1 hidden md:flex',
+          'flex-shrink-0 items-center gap-0.5 pr-1 hidden md:flex',
           needsTrafficLightSpace ? 'pl-10' : 'pl-2',
         )}
       >
@@ -204,12 +206,13 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
             Forward
           </TooltipContent>
         </Tooltip>
+
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               onClick={() => router.push(`/projects/${projectId}`)}
               className={cn(
-                'flex items-center justify-center w-6 h-6 rounded transition-colors cursor-pointer',
+                'flex items-center justify-center w-6 h-6 rounded transition-colors cursor-pointer ml-1.5',
                 isProjectHome
                   ? 'text-foreground'
                   : 'text-muted-foreground/50 hover:text-muted-foreground',

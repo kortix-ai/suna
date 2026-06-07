@@ -87,8 +87,13 @@ export class DaytonaProvider implements SandboxProvider {
       {
         snapshot,
         envVars,
+        // Idle → stop (hibernate, disk kept). Stopped → archive to cold storage
+        // (disk still kept, resumable). NEVER auto-delete: a sandbox is only ever
+        // removed when a user explicitly deletes the session. -1 disables Daytona
+        // auto-delete explicitly so no account-level default can drop a box.
         autoStopInterval: opts.autoStopInterval ?? 15,
         autoArchiveInterval: 30,
+        autoDeleteInterval: -1,
         public: false,
       },
       { timeout: createTimeoutSeconds },

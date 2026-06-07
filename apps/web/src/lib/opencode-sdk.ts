@@ -21,6 +21,26 @@ let cachedClient: OpencodeClient | null = null;
 let cachedUrl: string | null = null;
 
 /**
+ * Resolve the backend base URL as an ABSOLUTE URL.
+ *
+ * `getEnv().BACKEND_URL` may be root-relative (e.g. "/v1") in the sandbox
+ * preview, where the browser deliberately hits the same origin. Server-side
+ * (SSR), prefer the absolute `process.env.BACKEND_URL` so `new URL(...)` has a
+ * valid base; in the browser, fall back to resolving the relative value against
+ * the current origin. Mirrors the pattern in platform-client.ts.
+ */
+function getAbsoluteBackendUrl(): string {
+	if (typeof process !== "undefined" && process.env?.BACKEND_URL) {
+		return process.env.BACKEND_URL;
+	}
+	const value = getEnv().BACKEND_URL;
+	if (value.startsWith("/") && typeof window !== "undefined") {
+		return new URL(value, window.location.origin).toString();
+	}
+	return value;
+}
+
+/**
  * Per-URL client cache. Unlike `getClient()` (which tracks only the single
  * active server), this keeps one client alive PER sandbox URL so we can talk to
  * several session sandboxes in parallel — every open session stays connected to
@@ -31,7 +51,7 @@ const clientsByUrl = new Map<string, OpencodeClient>();
 function shouldUsePlatformAuth(baseUrl: string): boolean {
 	try {
 		const target = new URL(baseUrl);
-		const backend = new URL(getEnv().BACKEND_URL);
+		const backend = new URL(getAbsoluteBackendUrl());
 		const backendPath = backend.pathname.replace(/\/+$/, "");
 		return target.origin === backend.origin &&
 			(target.pathname === backendPath || target.pathname.startsWith(`${backendPath}/`));

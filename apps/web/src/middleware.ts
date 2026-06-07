@@ -37,6 +37,7 @@ const PUBLIC_ROUTES = [
   '/about', // About page should be public
   '/careers', // Careers page should be public
   '/changelog', // Public release notes (sourced from GitHub Releases)
+  '/blog', // Public blog (MDX posts under content/blog) should be public
   '/install',
   '/install.sh',
   '/design-system', // Living design system / brand guidelines should be public
@@ -70,6 +71,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname.startsWith('/v1/') ||
+    pathname.startsWith('/supabase/') || // same-origin Supabase proxy (sandbox preview) — must reach the next.config rewrite, never the auth-gate
     pathname.includes('.') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/monitoring') ||    // Sentry error tracking tunnel (Better Stack)

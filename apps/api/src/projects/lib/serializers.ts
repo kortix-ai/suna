@@ -100,7 +100,7 @@ export function serializeSession(
  */
 
 export function dashboardBaseUrl(): string {
-  return (config.KORTIX_DASHBOARD_URL || config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
+  return (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
 }
 
 /** True when a GitHub repo-create error is a name collision (HTTP 422). On

@@ -1,5 +1,3 @@
-import { config } from '../config';
-
 export interface SlackManifest {
   display_information: {
     name: string;
@@ -92,8 +90,6 @@ export function generateSlackManifest(input: GenerateManifestInput): SlackManife
 
 export function resolveBaseUrl(reqUrl: URL, override?: string): string {
   if (override) return stripTrailingSlash(override);
-  const dashboard = config.KORTIX_DASHBOARD_URL;
-  if (dashboard) return stripTrailingSlash(dashboard).replace(/\/dashboard.*$/, '');
   const forwarded = reqUrl.hostname;
   const protocol = reqUrl.protocol.startsWith('https') ? 'https' : 'http';
   return `${protocol}://${forwarded}${reqUrl.port ? `:${reqUrl.port}` : ''}`;

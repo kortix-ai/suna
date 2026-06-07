@@ -38,10 +38,18 @@ function serialize(row: Row | null) {
 }
 
 async function countSunaProjects(accountId: string): Promise<number> {
-  const rows = (await db.execute(
-    sql`SELECT count(*)::int AS n FROM public.projects WHERE account_id = ${accountId}`,
-  )) as unknown as Array<{ n: number }>;
-  return rows[0]?.n ?? 0;
+  try {
+    const rows = (await db.execute(
+      sql`SELECT count(*)::int AS n FROM public.projects WHERE account_id = ${accountId}`,
+    )) as unknown as Array<{ n: number }>;
+    return rows[0]?.n ?? 0;
+  } catch (err: any) {
+    // No legacy Suna schema in this database (e.g. fresh/local deploys that
+    // never imported OG Suna data) → the account simply has nothing to
+    // migrate. Postgres 42P01 = undefined_table. Treat as "not eligible".
+    if (err?.cause?.code === '42P01' || err?.code === '42P01') return 0;
+    throw err;
+  }
 }
 
 export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
