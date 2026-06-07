@@ -3,6 +3,7 @@ import { auth, errors, json } from '../../openapi';
 import { DEFAULT_SANDBOX_SLUG, deleteSandboxImage, kickPreBuild, kickProjectTemplatePrebuilds, listSandboxTemplates, listSnapshotBuilds, reconcileStaleBuilds } from '../../snapshots/builder';
 import { classifySnapshotError, describeSnapshotError } from '../../snapshots/error-classify';
 import { getSandboxProvider } from '../../snapshots/providers';
+import { withTimeout } from '../../shared/with-timeout';
 import { createTemplate, deleteTemplate, getTemplateById, updateTemplate } from '../../snapshots/templates';
 import { commitFile, createRepo, getFileSha } from '../github';
 import { buildStarterFiles, normalizeStarterTemplateId } from '../starter';
@@ -418,6 +419,11 @@ projectsApp.openapi(
 // GET /v1/projects/:projectId/sandbox-health
 // Cheap polling endpoint for the sidebar alert. Surfaces the platform default
 // template's live state + the most recent failed build (across any template).
+//
+// Overall budget for the (potentially Daytona-bound) templates lookup. Kept
+// comfortably under the frontend's 30s request timeout so a degraded provider
+// degrades the alert to "no templates" instead of timing the poll out.
+const SANDBOX_HEALTH_BUDGET_MS = 12_000;
 
 projectsApp.openapi(
   createRoute({
@@ -442,9 +448,18 @@ projectsApp.openapi(
   const project = await loadGitProject(loaded);
   let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
   try {
-    templates = await listSandboxTemplates(project);
+    // Defense-in-depth: even though each Daytona state lookup is now bounded,
+    // cap the whole templates fetch so this frequently-polled endpoint can
+    // never hang past the frontend's request timeout. A slow lookup degrades
+    // to the same "no templates" fallback as a repo/manifest error.
+    templates = await withTimeout(
+      listSandboxTemplates(project),
+      SANDBOX_HEALTH_BUDGET_MS,
+      'sandbox-health listSandboxTemplates',
+    );
   } catch {
-    // Repo unreachable / manifest broken — render as "no templates".
+    // Repo unreachable / manifest broken / lookup too slow — render as
+    // "no templates".
   }
   const primary = templates[0] ?? null;
   const builds = await listSnapshotBuilds(projectId, { limit: 10 }).catch(() => []);
