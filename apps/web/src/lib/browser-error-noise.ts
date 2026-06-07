@@ -12,6 +12,29 @@ const KNOWN_TEST_NOISE_MESSAGES = [
   'E2E test:',
 ] as const;
 
+// Frozen-intrinsics noise: some hardened wallet / privacy browser extensions
+// (MetaMask "lockdown"/SES, Rabby, Pocket Universe, etc.) call
+// `Object.freeze(Promise.prototype)` (and other intrinsics) to harden the page
+// *before* our app's JavaScript runs. When Next.js's bundled
+// `react-server-dom-webpack/client` (the RSC Flight runtime) then initializes
+// its internal `Chunk` thenable with `Chunk.prototype.then = function () {…}`,
+// the assignment to the now read-only inherited `then` throws:
+//
+//   TypeError: Cannot assign to read only property 'then' of object '#<Promise>'
+//
+// The throwing frame is our own bundle (`app:///_next/static/chunks/…`), not an
+// `extension://` URL, so the extension-source filter below never sees it. This
+// is uncontrollable third-party-extension damage with no actionable fix on our
+// side, so we suppress it explicitly. See vercel/next.js#78823.
+//
+// The exact wording varies by engine and by which intrinsic the extension froze
+// ('then', 'push', etc.), so we match the stable, distinctive substrings rather
+// than a single full message.
+const FROZEN_INTRINSICS_NOISE_MARKERS = [
+  'Cannot assign to read only property',
+  'Attempted to assign to readonly property',
+] as const;
+
 const KNOWN_DOM_MUTATION_NOISE_MESSAGES = [
   "Failed to execute 'insertBefore' on 'Node': The node before which the new node is to be inserted is not a child of this node.",
   "Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.",
@@ -51,9 +74,25 @@ function extractMessage(value: unknown): string {
   return '';
 }
 
+// A read-only-assignment TypeError is only noise when it targets a frozen JS
+// *intrinsic* (Promise/RSC `Chunk`) rather than one of our own objects — that
+// signature is the wallet/SES extension hardening the page (see
+// FROZEN_INTRINSICS_NOISE_MARKERS above). Requiring the `'then'` target keeps
+// genuine app bugs (e.g. writing to our own `Object.freeze`'d state) reportable.
+export function isFrozenIntrinsicsNoiseMessage(message: unknown): boolean {
+  const normalized = normalizeString(message);
+  return (
+    containsKnownPattern(normalized, FROZEN_INTRINSICS_NOISE_MARKERS) &&
+    normalized.includes("'then'")
+  );
+}
+
 export function isKnownBrowserNoiseMessage(message: unknown): boolean {
   const normalized = normalizeString(message);
-  return containsKnownPattern(normalized, KNOWN_BROWSER_NOISE_MESSAGES);
+  return (
+    containsKnownPattern(normalized, KNOWN_BROWSER_NOISE_MESSAGES) ||
+    isFrozenIntrinsicsNoiseMessage(normalized)
+  );
 }
 
 export function isExtensionSource(filename: unknown): boolean {

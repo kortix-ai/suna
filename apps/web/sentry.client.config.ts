@@ -57,6 +57,11 @@ if (SENTRY_DSN) {
       'MetaMask extension not found',
       'Looks like your website URL has changed',
       'CookieYes account',
+      // Wallet/SES extensions freeze Promise.prototype before our JS runs, so
+      // React's bundled RSC Flight runtime throws when it assigns Chunk.then.
+      // Uncontrollable extension damage, not an app bug — see browser-error-noise.ts.
+      "Cannot assign to read only property 'then'",
+      "Attempted to assign to readonly property",
       // Test-only synthetic events
       'E2E FINAL:',
       'E2E test:',
