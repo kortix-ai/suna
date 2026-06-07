@@ -7,7 +7,6 @@ import { describe, expect, test } from 'bun:test';
 import {
   classifySnapshotError,
   describeSnapshotError,
-  explainSnapshotError,
 } from '../snapshots/error-classify';
 
 describe('classifySnapshotError', () => {
@@ -66,8 +65,8 @@ describe('describeSnapshotError fixability', () => {
     expect(describeSnapshotError('runtime').fixableByAgent).toBe(false);
   });
 
-  test('explainSnapshotError composes classify + describe', () => {
-    const info = explainSnapshotError('failed to solve: exit code: 1');
+  test('classify + describe compose to a full descriptor', () => {
+    const info = describeSnapshotError(classifySnapshotError('failed to solve: exit code: 1'));
     expect(info.category).toBe('dockerfile');
     expect(info.fixableByAgent).toBe(true);
     expect(info.title.length).toBeGreaterThan(0);

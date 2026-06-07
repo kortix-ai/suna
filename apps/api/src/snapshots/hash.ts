@@ -64,7 +64,7 @@ export interface SnapshotHashResult {
  * release marker. The snapshot builder overrides this with a richer
  * artifact fingerprint; tests use this default for deterministic hashing.
  */
-export function currentRuntimeFingerprint(): string {
+function currentRuntimeFingerprint(): string {
   return `kortix-runtime:${SANDBOX_VERSION}`;
 }
 
@@ -104,23 +104,4 @@ function serializeSpec(spec?: SandboxSpec): string {
   if (spec.memory !== undefined) parts.push(`memory:${spec.memory}`);
   if (spec.disk !== undefined) parts.push(`disk:${spec.disk}`);
   return parts.join(',');
-}
-
-/**
- * Format the Daytona snapshot name for a given content hash. Snapshot names
- * are *globally* content-addressed under the `kortix-snap-` namespace, so two
- * projects with byte-identical inputs share one Daytona image — a new project
- * cloned off an existing starter hits the cache instead of paying for a fresh
- * build (and instead of consuming a slot of the 100/org snapshot quota).
- *
- * Safe to share because the image carries no per-project identity: the inputs
- * (Dockerfile + git tree + runtime fingerprint + spec) are pure source bytes;
- * secrets are injected at sandbox boot, not baked into the image.
- *
- * The `_projectId` argument is retained for callers that previously needed it
- * (and may want it back if we ever re-tier the namespace), but it is currently
- * ignored.
- */
-export function formatSnapshotName(_projectId: string, contentHash: string): string {
-  return `kortix-snap-${contentHash.slice(0, 12)}`;
 }

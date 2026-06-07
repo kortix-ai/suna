@@ -91,7 +91,7 @@ export function deriveSandboxHealthStatus(
   return 'unknown';
 }
 
-export function stripSandboxInitFailureMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> {
+function stripSandboxInitFailureMetadata(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> {
   const source = metadata ?? {};
   const {
     provisioningError: _provisioningError,

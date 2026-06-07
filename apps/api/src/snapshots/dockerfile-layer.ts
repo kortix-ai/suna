@@ -293,11 +293,6 @@ export const SANDBOX_SPEC_LIMITS = {
   disk: { min: 1, max: 500 }, // GiB
 } as const;
 
-/** True when no spec field is set — i.e. boot at the platform default size. */
-export function sandboxSpecIsEmpty(spec: SandboxSpec): boolean {
-  return spec.cpu === undefined && spec.memory === undefined && spec.disk === undefined;
-}
-
 function pickResource(value: unknown, bounds: { min: number; max: number }): number | undefined {
   let n: number | undefined;
   if (typeof value === 'number') n = value;

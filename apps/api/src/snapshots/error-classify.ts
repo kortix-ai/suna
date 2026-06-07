@@ -128,8 +128,3 @@ const INFO: Record<SnapshotErrorCategory, Omit<SnapshotErrorInfo, 'category'>> =
 export function describeSnapshotError(category: SnapshotErrorCategory): SnapshotErrorInfo {
   return { category, ...INFO[category] };
 }
-
-/** Convenience: classify a raw error and return its full descriptor. */
-export function explainSnapshotError(raw: string | null | undefined): SnapshotErrorInfo {
-  return describeSnapshotError(classifySnapshotError(raw));
-}
