@@ -37,8 +37,9 @@ const c = {
 };
 
 function log(icon: string, msg: string) {
-  const safeMsg = msg.replace(/[\u0000-\u001f\u007f]/g, ' ');
-  console.log(`  ${icon} ${c.dim}${safeMsg}${c.reset}`);
+  const safeIcon = icon.replace(/[\r\n]/g, ' ');
+  const safeMsg = msg.replace(/[\r\n]/g, ' ');
+  process.stdout.write(`  ${safeIcon} ${c.dim}${safeMsg}${c.reset}\n`);
 }
 
 export class TunnelAgent {
@@ -74,7 +75,7 @@ export class TunnelAgent {
     log(`${c.cyan}◆${c.reset}`, `Connecting…`);
 
     try {
-      this.ws = new WebSocket(wsUrl);
+      this.ws = new WebSocket(new URL(wsUrl));
       this.setupWsHandlers();
     } catch (err) {
       log(`${c.red}✗${c.reset}`, `Connection failed`);

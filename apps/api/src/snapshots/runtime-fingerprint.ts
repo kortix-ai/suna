@@ -1,4 +1,5 @@
 import { createHash, type Hash } from 'node:crypto';
+import { constants } from 'node:fs';
 import { lstat, open, readdir, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -40,6 +41,8 @@ async function hashPath(
   logicalPath: string,
   excludeNames?: readonly string[],
 ): Promise<void> {
+  if (await hashFileIfRegular(hash, path, logicalPath)) return;
+
   const stats = await lstat(path);
   if (stats.isDirectory()) {
     hash.update(`dir\0${logicalPath}\0`);
@@ -52,24 +55,31 @@ async function hashPath(
     return;
   }
 
-  if (stats.isFile()) {
-    const file = await open(path, 'r');
-    try {
-      const fileStats = await file.stat();
-      const contents = await file.readFile();
-      hash.update(`file\0${logicalPath}\0${fileStats.size}\0`);
-      hash.update(contents);
-      hash.update('\0');
-    } finally {
-      await file.close();
-    }
-    return;
-  }
-
   if (stats.isSymbolicLink()) {
     hash.update(`symlink\0${logicalPath}\0${await readlink(path)}\0`);
     return;
   }
 
   hash.update(`other\0${logicalPath}\0`);
+}
+
+async function hashFileIfRegular(hash: Hash, path: string, logicalPath: string): Promise<boolean> {
+  let file;
+  try {
+    file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch {
+    return false;
+  }
+
+  try {
+    const stats = await file.stat();
+    if (!stats.isFile()) return false;
+    const contents = await file.readFile();
+    hash.update(`file\0${logicalPath}\0${stats.size}\0`);
+    hash.update(contents);
+    hash.update('\0');
+    return true;
+  } finally {
+    await file.close();
+  }
 }
