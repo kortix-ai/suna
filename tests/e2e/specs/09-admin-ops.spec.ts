@@ -9,10 +9,6 @@ const supabaseUrl = process.env.E2E_SUPABASE_URL || 'http://localhost:13740';
 const password = process.env.E2E_ADMIN_PASSWORD || 'E2eAccountAccess123!';
 const authOptions = { supabaseUrl, password, envFiles: ['apps/api/.env'] };
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
-}
-
 async function grantPlatformAdmin(userId: string) {
   const sql = `
       INSERT INTO kortix.platform_user_roles (account_id, role, granted_by)
@@ -58,7 +54,7 @@ async function assertAdminRouteClean(page: Page, path: string, expectedTexts: st
   });
 
   await page.goto(path, { waitUntil: 'domcontentloaded' });
-  await expect(page).toHaveURL(new RegExp(`${escapeRegExp(path)}$`));
+  await expect(page).toHaveURL((url) => url.pathname === path);
 
   for (const text of expectedTexts) {
     await expect(page.getByText(text).first()).toBeVisible();
