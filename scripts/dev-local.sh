@@ -341,6 +341,25 @@ run_sandbox_dev() {
         echo "[dev] docker load $(basename "$image_tar")"
         docker load -i "$image_tar"
       done
+
+      tag_baked_image() {
+        local target="$1"
+        local fallback="$2"
+        if ! docker image inspect "$target" >/dev/null 2>&1 \
+          && docker image inspect "$fallback" >/dev/null 2>&1; then
+          echo "[dev] docker tag $fallback -> $target"
+          docker tag "$fallback" "$target"
+        fi
+      }
+
+      tag_baked_image public.ecr.aws/supabase/postgres:17.6.1.075 supabase/postgres:17.6.1.075
+      tag_baked_image public.ecr.aws/supabase/gotrue:v2.186.0 supabase/gotrue:v2.186.0
+      tag_baked_image public.ecr.aws/supabase/postgrest:v14.3 postgrest/postgrest:v14.3
+      tag_baked_image public.ecr.aws/supabase/storage-api:v1.35.3 supabase/storage-api:v1.35.3
+      tag_baked_image public.ecr.aws/supabase/postgres-meta:v0.95.2 supabase/postgres-meta:v0.95.2
+      tag_baked_image public.ecr.aws/supabase/kong:2.8.1 kong:2.8.1
+      tag_baked_image public.ecr.aws/supabase/studio:2026.01.27-sha-2a37755 supabase/studio:2026.01.27-sha-2a37755
+      tag_baked_image public.ecr.aws/supabase/mailpit:v1.22.3 axllent/mailpit:v1.22.3
     fi
   fi
 
