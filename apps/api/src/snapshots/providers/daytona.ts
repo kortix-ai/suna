@@ -17,6 +17,7 @@ import { createGzip } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { Image } from '@daytonaio/sdk';
 import { getDaytona, isDaytonaConfigured } from '../../shared/daytona';
+import { TIMEOUT_SENTINEL, withTimeout } from '../../shared/timeout';
 import { buildLayeredDockerfile } from '../dockerfile-layer';
 import type {
   BuildableTemplate,
@@ -64,6 +65,20 @@ function readPositiveIntEnv(name: string, fallback: number): number {
  */
 const SNAPSHOT_STATE_CACHE_TTL_MS = 60_000;
 const snapshotStateCache = new Map<string, { state: ProviderState; expiresAt: number }>();
+
+/**
+ * Hard ceiling on a single `getSnapshotState` round-trip. The call is normally
+ * ~50-200ms, but Daytona's `snapshot.get` is an unbounded network request: if
+ * the provider stalls it hangs forever, with no way to recover. That matters
+ * because `getSnapshotState` sits on the request path of the `/sandbox-health`
+ * polling endpoint (one round-trip per template), so a single stalled provider
+ * call blocks the whole poll. The frontend aborts at 30s and reports
+ * `ApiError: Request timed out after 30s: …/sandbox-health` to Sentry. Bounding
+ * the call lets us fall back to cached/`missing` state and keep the endpoint
+ * responsive instead of hanging. Slightly above the observed p99 (~4s) so we
+ * don't trip on normal-but-slow calls.
+ */
+const SNAPSHOT_STATE_TIMEOUT_MS = 6_000;
 
 class DaytonaAdapter implements SandboxProviderAdapter {
   readonly id = 'daytona' as const;
@@ -149,7 +164,13 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     const cached = snapshotStateCache.get(snapshotName);
     if (cached && Date.now() < cached.expiresAt) return cached.state;
     try {
-      const snap = await getDaytona().snapshot.get(snapshotName);
+      // Bound the round-trip: a stalled `snapshot.get` must not hang the
+      // request that called us (e.g. the /sandbox-health poll). See
+      // SNAPSHOT_STATE_TIMEOUT_MS.
+      const snap = await withTimeout(
+        getDaytona().snapshot.get(snapshotName),
+        SNAPSHOT_STATE_TIMEOUT_MS,
+      );
       const state = (snap
         ? String((snap as { state?: string }).state ?? 'missing')
         : 'missing'
@@ -163,7 +184,12 @@ class DaytonaAdapter implements SandboxProviderAdapter {
         snapshotStateCache.delete(snapshotName);
       }
       return state;
-    } catch {
+    } catch (err) {
+      if (err === TIMEOUT_SENTINEL) {
+        console.warn(
+          `[snapshots] getSnapshotState(${snapshotName}) timed out after ${SNAPSHOT_STATE_TIMEOUT_MS}ms — treating as 'missing'`,
+        );
+      }
       snapshotStateCache.delete(snapshotName);
       return 'missing';
     }

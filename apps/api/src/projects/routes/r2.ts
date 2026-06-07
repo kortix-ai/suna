@@ -12,6 +12,16 @@ import { AnyObject, SandboxTemplateSchema, SnapshotSchema, projectsApp } from '.
 import { GitHubInstallationRequiredError, createGitHubInstallationInstallUrl, getProjectGitConnection, loadGitProject, registerGitHubLinkedProject, registerPatLinkedProject, resolveGitHubImport, resolveGitHubImportWithPat, resolveGitHubRepoAuth } from '../lib/git';
 import { deriveProjectName, isRepoNameTakenError, normalizeString, readBody, requestAuditContext, serializeBuildSummary, serializeProject, serializeProjectGitConnection, serializeTemplate } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
+import { withDeadline } from '../../shared/timeout';
+
+/**
+ * Overall latency budget for the /sandbox-health poll's template enumeration.
+ * Comfortably above the normal warm path (provider state is cached for 60s and
+ * each round-trip is itself bounded) but well under the frontend's 30s client
+ * timeout, so a slow provider degrades gracefully instead of surfacing as
+ * `ApiError: Request timed out after 30s: …/sandbox-health` in Sentry.
+ */
+const SANDBOX_HEALTH_BUDGET_MS = 12_000;
 
 projectsApp.openapi(
   createRoute({
@@ -442,9 +452,20 @@ projectsApp.openapi(
   const project = await loadGitProject(loaded);
   let templates: Awaited<ReturnType<typeof listSandboxTemplates>> = [];
   try {
-    templates = await listSandboxTemplates(project);
+    // Hard ceiling on the whole template enumeration. listSandboxTemplates
+    // resolves each template's live provider state (a per-template network
+    // round-trip); even though each call is individually bounded, this is a
+    // high-frequency polling endpoint, so cap the aggregate too. On timeout we
+    // degrade to "no templates" — the same fallback as an unreachable repo —
+    // rather than letting the request run long enough for the frontend's 30s
+    // client timeout to fire and report a Sentry error.
+    templates = await withDeadline(
+      listSandboxTemplates(project),
+      SANDBOX_HEALTH_BUDGET_MS,
+      'sandbox-health',
+    );
   } catch {
-    // Repo unreachable / manifest broken — render as "no templates".
+    // Repo unreachable / manifest broken / provider slow — render as "no templates".
   }
   const primary = templates[0] ?? null;
   const builds = await listSnapshotBuilds(projectId, { limit: 10 }).catch(() => []);
