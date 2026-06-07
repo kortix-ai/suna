@@ -259,7 +259,7 @@ export function DownloadAppsModal({
                           type="button"
                           title={p.label}
                           onClick={() => startDownload(desktopDownloadUrl(p.id))}
-                          className="inline-flex items-center gap-1.5 rounded-2xl border border-border/60 px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted"
                         >
                           <p.Mark className="size-3.5" />
                           {p.label}
