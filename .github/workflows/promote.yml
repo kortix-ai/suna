@@ -108,8 +108,13 @@ jobs:
           # :dev-<sha8> image that deploy-prod retags — so an all-green commit
           # guarantees that image exists. This blocks the race where prod retags a
           # stale :dev-latest because the new dev image hadn't finished building.
-          NOT_GREEN="$(gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" --paginate \
+          # Exclude THIS promote run's own check-runs (same github.run_id) — the
+          # workflow_dispatch run registers an in_progress check on HEAD, and a
+          # failed earlier attempt leaves a `failure` one; either would make the
+          # gate count itself and never pass.
+          NOT_GREEN="$(RID="${{ github.run_id }}" gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" --paginate \
             --jq '.check_runs[]
+                  | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)
                   | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))
                   | "\(.name): \(.status)/\(.conclusion)"' || true)"
           if [ -n "$NOT_GREEN" ]; then
