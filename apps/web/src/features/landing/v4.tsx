@@ -23,10 +23,6 @@ import KortixGrid from '@/components/ui/marketing/gridder';
 import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { Icon } from '@/features/icon/icon';
-import LandingV1 from '@/features/landing/v1';
-import LandingV2 from '@/features/landing/v2';
-import LandingV3 from '@/features/landing/v3';
-import LandingV4 from '@/features/landing/v4';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { cn } from '@/lib/utils';
@@ -53,10 +49,8 @@ import {
   useSpring,
   useTransform,
 } from 'motion/react';
-import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FaUsers } from 'react-icons/fa';
 import { FiBookmark } from 'react-icons/fi';
@@ -67,6 +61,262 @@ import { PiBellFill, PiChatCircleDotsFill, PiChatsCircleFill, PiFilesFill } from
 import { TbChevronUpRight } from 'react-icons/tb';
 
 const DEMO_URL = '/contact';
+// Generated copy variation. UI copied from apps/web/src/app/(home)/page.tsx; edit content only.
+const LANDING_COPY = {
+  useCasesEyebrow: 'Internal agents',
+  useCasesTitle: 'Start with one useful agent.',
+  useCasesDescription: 'Each is a Kortix project you can configure, deploy, and own.',
+  useCasesLearnMore: 'See how built',
+  useCaseDemos: {
+    triageCustomerSignals: {
+      tabTitle: 'Support agent',
+      tabDescription: 'Answers from docs and order tools.',
+      eyebrow: 'Internal agent',
+      title: 'A support agent that closes tickets.',
+      description: 'It reads the ticket, drafts a reply from your docs, and waits for sign-off.',
+      log: [
+        'Pulled ticket + customer history',
+        'Drafted reply from docs',
+        'Flagged refund for approval',
+        'Sent, logged to audit trail',
+      ],
+    },
+    shipBacklogTickets: {
+      tabTitle: 'Engineering agent',
+      tabDescription: 'Reviews PRs and opens fixes.',
+      eyebrow: 'Internal agent',
+      title: 'An engineering agent that ships fixes.',
+      description: 'It reviews the PR, opens a fix branch, and submits a change request.',
+      log: [
+        'Reviewed diff in sandbox',
+        'Reproduced the bug',
+        'Opened fix branch',
+        'Submitted change request',
+      ],
+    },
+    fillThePipeline: {
+      tabTitle: 'Research agent',
+      tabDescription: 'Briefs teams from trusted sources.',
+      eyebrow: 'Internal agent',
+      title: 'A research agent that briefs your team.',
+      description: 'It gathers from trusted sources and posts a brief to Slack before the call.',
+      log: [
+        'Gathered from approved sources',
+        'Cross-checked the facts',
+        'Wrote the brief',
+        'Posted to Slack',
+      ],
+    },
+    closeTheBooks: {
+      tabTitle: 'Finance agent',
+      tabDescription: 'Reconciles and flags exceptions.',
+      eyebrow: 'Internal agent',
+      title: 'A finance agent that closes the month.',
+      description: 'It reconciles transactions, flags exceptions, and waits for your approval.',
+      log: ['Matched transactions', 'Flagged 3 exceptions', 'Drafted summary', 'Held for sign-off'],
+    },
+    briefToCampaign: {
+      tabTitle: 'Marketing agent',
+      tabDescription: 'Turns briefs into drafts.',
+      eyebrow: 'Internal agent',
+      title: 'A marketing agent that runs the brief.',
+      description: 'It turns a brief into drafts, then routes them for review.',
+      log: ['Read the brief', 'Drafted the assets', 'Checked brand rules', 'Routed for review'],
+    },
+    runTheBackOffice: {
+      tabTitle: 'Operations agent',
+      tabDescription: 'Runs back-office SOPs.',
+      eyebrow: 'Internal agent',
+      title: 'An operations agent that runs the SOP.',
+      description: 'It executes the workflow step by step, pausing at each approval gate.',
+      log: [
+        'Loaded the SOP',
+        'Ran each step in sandbox',
+        'Paused at approval gate',
+        'Closed the task',
+      ],
+    },
+  },
+  line138JsxTextTheAiCommandCenter: 'The AI command center',
+  line139JsxTextForYourCompany: 'for your company',
+  line142JsxTextRunYourCompanyOnAiEveryAgentTrigger:
+    'Run your company on AI. Every agent, trigger, integration, and memory your teams need — in one place you control.',
+  line146JsxTextGetStarted: 'Get started',
+  line149JsxTextTalkToSales: 'Talk to sales',
+  line163JsxTextConnectsToThe: 'Connects to the',
+  line163JsxTextText3000Apps: '3,000+ Apps',
+  line163JsxTextYourCompanyAlreadyRunsOn: 'your company already runs on',
+  line193JsxTextLiveAcrossYourCompanyInWeeks: 'Live across your company in weeks.',
+  line196JsxTextNoRipAndReplaceStandUpYourFirst:
+    'No rip-and-replace. Stand up your first agent in an afternoon, then scale department by department.',
+  line225JsxTextOpenAmpCodeNative: 'Open & code-native',
+  line227JsxTextYourWholeCompanyAsCode: 'Your whole company, as code.',
+  line230JsxTextEveryAgentSkillTriggerAndPolicyIsPlain:
+    'Every agent, skill, trigger, and policy is plain code in a git repo — diff it, review it, roll it back. Built on the open',
+  line230JsxTextAgentRuntimeSelfHostAnywhereNoBlackBox:
+    'agent runtime. Self-host anywhere. No black box, no lock-in.',
+  line267JsxTextStarsOnGithub: 'stars on GitHub',
+  line269JsxTextALeadingOpenSourceAiWorkspace: 'A leading open-source AI workspace.',
+  line284JsxTextSecureEnoughToRunTheWholeCompany: 'Secure enough to run the whole company.',
+  line287JsxTextFineGrainedControlOverWhoAndWhichAgent:
+    'Fine-grained control over who — and which agent — can do what, with hard isolation around every single run.',
+  line314JsxTextTalkToSales: 'Talk to sales',
+  line317JsxTextSeeHowItWorks: 'See how it works',
+  line329JsxTextGetStarted: 'Get started',
+  line331JsxTextGiveYourCompanyAWorkforce: 'Ship an agent your team trusts.',
+  line334JsxTextFreeToSelfHostManagedCloudFrom20: [
+    'Sandboxed by default',
+    'Human approval built in',
+    'Full audit trail',
+  ],
+  line337JsxTextGetStarted: 'Start building',
+  line338JsxTextTalkToSales: 'See GitHub',
+  line339JsxTextSeePricing: 'See pricing',
+  line342JsxTextOpenSourceSsoRbacAmpOnPremNo: 'Open source · SSO, RBAC & on-prem · No lock-in',
+  line356JsxTextGetStarted: 'Get started',
+  line59JsxTextTheAiCommandCenter: 'The AI command center',
+  line60JsxTextForYourCompany: 'for your company',
+  line63JsxTextRunYourCompanyOnAiEveryAgentTrigger:
+    'Run your company on AI. Every agent, trigger, integration, and memory your teams need — in one place you control.',
+  line67JsxTextGetStarted: 'Get started',
+  line70JsxTextTalkToSales: 'Talk to sales',
+  line84JsxTextConnectsToThe: 'Connects to the',
+  line84JsxTextText3000Tools: '3,000+ tools',
+  line84JsxTextYourCompanyAlreadyRunsOn: 'your company already runs on',
+  line127JsxTextLiveAcrossYourCompanyInWeeks: 'Live across your company in weeks.',
+  line130JsxTextNoRipAndReplaceStandUpYourFirst:
+    'No rip-and-replace. Stand up your first agent in an afternoon, then scale department by department.',
+  line159JsxTextOpenAmpCodeNative: 'Open & code-native',
+  line161JsxTextYourWholeCompanyAsCode: 'Your whole company, as code.',
+  line164JsxTextEveryAgentSkillTriggerAndPolicyIsPlain:
+    'Every agent, skill, trigger, and policy is plain code in a git repo — diff it, review it, roll it back. Built on the open',
+  line164JsxTextAgentRuntimeSelfHostAnywhereNoBlackBox:
+    'agent runtime. Self-host anywhere. No black box, no lock-in.',
+  line201JsxTextStarsOnGithub: 'stars on GitHub',
+  line203JsxTextALeadingOpenSourceAiWorkspace: 'A leading open-source AI workspace.',
+  line218JsxTextSecureEnoughToRunTheWholeCompany: 'Secure enough to run the whole company.',
+  line221JsxTextFineGrainedControlOverWhoAndWhichAgent:
+    'Fine-grained control over who — and which agent — can do what, with hard isolation around every single run.',
+  line248JsxTextTalkToSales: 'Talk to sales',
+  line251JsxTextSeeHowItWorks: 'See how it works',
+  line263JsxTextGetStarted: 'Get started',
+  line265JsxTextGiveYourCompanyAWorkforce: 'Give your company a workforce.',
+  line268JsxTextFreeToSelfHostManagedCloudFrom20:
+    'Free to self-host. Managed cloud from $20 / seat + usage. Spin up your first agent today — or have us map it to your workflows in a live demo.',
+  line271JsxTextGetStarted: 'Get started',
+  line272JsxTextTalkToSales: 'Talk to sales',
+  line273JsxTextSeePricing: 'See pricing',
+  line276JsxTextOpenSourceSsoRbacAmpOnPremNo: 'Open source · SSO, RBAC & on-prem · No lock-in',
+  line290JsxTextGetStarted: 'Get started',
+  line138JsxTextTheAICommandCenter: 'The AI command center',
+  line142JsxTextRunYourCompanyOnAIEveryAgentTrigger:
+    'Run your company on AI. Every agent, trigger, integration, and memory your teams need — in one place you control.',
+  line163JsxText3000Apps: '3,000+ Apps',
+  line225JsxTextOpenCodeNative: 'Open & code-native',
+  line267JsxTextStarsOnGitHub: 'stars on GitHub',
+  line269JsxTextALeadingOpenSourceAIWorkspace: 'An open source platform for internal agents.',
+  line342JsxTextOpenSourceSSORBACOnPremNoLock: 'Open source · SSO, RBAC & on-prem · No lock-in',
+  heroCommandCenter: 'Internal agents',
+  heroAiWorkforce: 'your team can trust.',
+  heroDescription:
+    'Deploy coding-agent workflows to Slack with sandbox isolation, approvals, scoped tools, and an audit trail.',
+  startBuildingCta: 'Start building',
+  workLoopEyebrow: 'Production path',
+  workLoopTitle: 'Ship agents with guardrails.',
+  workLoopDescription:
+    'Every agent runs in an isolated runtime, uses scoped tools, and pauses when human sign-off is required.',
+  workLoopFinanceTitle: 'Support agent',
+  workLoopFinancePrompt: 'Answer this ticket from our docs and order history.',
+  workLoopEngineeringTitle: 'Engineering agent',
+  workLoopEngineeringPrompt: 'Review this PR and open a fix branch.',
+  workLoopSalesTitle: 'Research agent',
+  workLoopSalesPrompt: 'Brief the team on this account before the call.',
+  workLoopAskLabel: 'kortix init',
+  workLoopWorkLabel: 'Configure',
+  workLoopReviewLabel: 'kortix deploy',
+  workLoopDoneLabel: 'Live in Slack',
+  workLoopFinanceAsk: 'Scaffold a project from the coding agent you already use.',
+  workLoopFinanceWork: 'Set the docs, order tools, tone, approvals, and support workflow.',
+  workLoopFinanceReview: 'Push the project to a sandboxed cloud runtime.',
+  workLoopFinanceDone: 'The support agent answers in Slack with review and audit trail.',
+  workLoopEngineeringAsk: 'Start from your local coding-agent setup.',
+  workLoopEngineeringWork: 'Add repo access, review rules, tests, and branch permissions.',
+  workLoopEngineeringReview: 'Deploy the agent into an isolated runtime.',
+  workLoopEngineeringDone: 'It reviews PRs, opens fix branches, and waits for sign-off.',
+  workLoopSalesAsk: 'Create a project for account research.',
+  workLoopSalesWork: 'Wire approved sources, CRM context, and briefing format.',
+  workLoopSalesReview: 'Deploy the research agent to your team.',
+  workLoopSalesDone: 'It posts verified account briefs before calls.',
+  splitEyebrow: 'Two ways in',
+  splitTitle: 'Builders ship. Teams review.',
+  splitCompaniesEyebrow: 'For teams',
+  splitCompaniesTitle: 'Agents with real guardrails.',
+  splitCompaniesBody:
+    'Give teams useful agents with scoped access, approvals, and a clear audit trail.',
+  splitCompaniesPointOne: 'Start agents from Slack',
+  splitCompaniesPointTwo: 'Human approval before agents act',
+  splitCompaniesPointThree: 'Data and config stay yours',
+  splitBuildersEyebrow: 'For builders',
+  splitBuildersTitle: 'Ship from the CLI.',
+  splitBuildersBody:
+    'Use the coding agent you already pay for. Run kortix init, configure, deploy.',
+  splitBuildersPointOne: 'Bring Claude Code, Codex, or opencode',
+  splitBuildersPointTwo: 'Config, skills, and tools as code',
+  splitBuildersPointThree: 'Self-host or run on cloud',
+  differentScreenEyebrow: 'Team surface',
+  differentScreenSectionTitle: 'Agents meet your team.',
+  differentScreenSectionDescription:
+    'Slack is the front door. Sandboxes, approvals, and audit trails make the work deployable.',
+  companyAsCodeEyebrow: 'Just code',
+  companyAsCodeTitle: 'Review agents like software.',
+  companyAsCodeDescription:
+    'Every skill, tool, permission, and runtime change is visible before an agent acts.',
+  companyAsCodeBulletConfig: 'Agent config in one kortix.toml',
+  companyAsCodeBulletAgents: 'Skills, persona, and tools as files',
+  companyAsCodeBulletGit: 'Every change versioned and diffable',
+  companyAsCodeBulletSelfHost: 'Self-host or run on cloud',
+  integrationsEyebrow: 'Connect',
+  integrationsTitlePrefix: 'Deploy to Slack,',
+  integrationsTitle: 'connect everything else.',
+  integrationsDescription:
+    'Agents start where your team already works, with scoped access to the tools they need.',
+  enterpriseEyebrow: 'Built to ship safely',
+  enterpriseTitle: 'Real guardrails, not a demo.',
+  enterpriseDescription:
+    'Scoped access, sandboxed sessions, and human approval let agents do real work safely.',
+  enterpriseScopedTitle: 'Scoped access',
+  enterpriseScopedDescription: 'Per-resource permissions for every agent and person.',
+  enterpriseApprovalsTitle: 'Human approval',
+  enterpriseApprovalsDescription: 'Agents pause for sign-off before they act.',
+  enterpriseIsolationTitle: 'Sandbox isolation',
+  enterpriseIsolationDescription: 'Each session runs in its own isolated machine.',
+  enterpriseDeployTitle: 'Deploy anywhere',
+  enterpriseDeployDescription: 'Cloud, self-host, VPC, or air-gapped.',
+  statIntegrations: 'Integrations, out of the box',
+  statCommandCenter: 'Command center for everything',
+  statAlwaysOn: 'Agents that never clock out',
+  statOpenSelfHostable: 'Open & self-hostable',
+  splitDescription:
+    'Let builders configure agents as code while operators approve the work before it reaches production.',
+  workforceMapEyebrow: 'Operational control',
+  workforceMapTitle: 'Deploy safely, then scale.',
+  workforceMapDescription:
+    'Start with one internal agent. Add tools, permissions, schedules, and review gates as trust grows.',
+  workforceMapAgentsTitle: 'Reviewable agents',
+  workforceMapAgentsDesc: 'Behavior lives in files your team can audit.',
+  workforceMapAutomationsTitle: 'Sandboxed runtime',
+  workforceMapAutomationsDesc: 'Each session runs in isolation.',
+  workforceMapIntegrationsTitle: 'Scoped tools',
+  workforceMapIntegrationsDesc: 'Agents reach only what they need.',
+  workforceMapMemoryTitle: 'Human sign-off',
+  workforceMapMemoryDesc: 'Pause before risky actions.',
+  workforceMapPillCommunication: 'kortix init',
+  workforceMapPillDocs: 'Configure',
+  workforceMapPillCode: 'kortix deploy',
+  workforceMapPillCrm: 'Slack',
+  workforceMapPillData: 'Data',
+} as const;
+
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
 
 const favicon = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
@@ -470,10 +720,7 @@ function ChatMorningBriefReply() {
   );
 }
 
-export default function Home() {
-  const searchParams = useSearchParams();
-  const landingVariant = searchParams.get('variant');
-  const tHardcodedUi = useTranslations('hardcodedUi');
+export default function LandingV4() {
   const [activeLoopId, setActiveLoopId] = useState<(typeof WORK_LOOPS)[number]['id']>('finance');
   const [activeUseCaseId, setActiveUseCaseId] =
     useState<(typeof USE_CASE_DEMOS)[number]['id']>('triageCustomerSignals');
@@ -481,9 +728,15 @@ export default function Home() {
   const { user } = useAuth();
   const { formattedStars } = useGitHubStars('kortix-ai', 'kortix');
   const activeLoop = WORK_LOOPS.find((loop) => loop.id === activeLoopId) ?? WORK_LOOPS[0];
+  const tHardcodedUi = {
+    raw: (path: string): any => {
+      const key = path.replace(/^appHomePage\./, '');
+      return LANDING_COPY[key as keyof typeof LANDING_COPY] ?? key;
+    },
+  };
   const tHome = useCallback(
-    (key: string) => tHardcodedUi.raw(`appHomePage.${key}`),
-    [tHardcodedUi],
+    (key: string): any => LANDING_COPY[key as keyof typeof LANDING_COPY],
+    [],
   );
   const useCaseCopy = tHome('useCaseDemos') as Record<string, UseCaseDemoCopy>;
   const activeUseCase =
@@ -539,16 +792,6 @@ export default function Home() {
     'M955 1.00002C955 25.9576 498 1.00001 498 53',
     'M630 1.00001C630 25.9575 485 1.00001 485 53',
   ];
-
-  if (landingVariant === 'v1') {
-    return <LandingV1 />;
-  } else if (landingVariant === 'v2') {
-    return <LandingV2 />;
-  } else if (landingVariant === 'v3') {
-    return <LandingV3 />;
-  } else if (landingVariant === 'v4') {
-    return <LandingV4 />;
-  }
 
   return (
     <>
@@ -698,6 +941,7 @@ export default function Home() {
                   style={{ x: mobileCardX }}
                   className="border-muted-foreground dark:border-card relative z-3 col-span-3 flex aspect-auto h-full shrink-0 items-center justify-center overflow-hidden rounded-xl border-4 shadow-sm"
                 >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src="https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/ai-workspace-mobile"
                     alt="Mobile"
@@ -961,6 +1205,7 @@ export default function Home() {
           <div className="scrollbar-hide w-full overflow-x-auto scroll-smooth pb-12 lg:hidden">
             <div className="flex w-full gap-2 pl-6">
               <div className="border-primary dark:border-card relative aspect-9/19.5 h-[min(95vw,480px)] shrink-0 overflow-hidden rounded-xl border-4 shadow-sm">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="https://play-lh.googleusercontent.com/cOVrXDLdhhoyLso-DO_R267tBMzWEayo10WvzWin7FSxYy8P09bLmzbmAVAgv4nTBTA9hxSAq55GxVGzMHcCTA=w5120-h2880"
                   alt="Mobile"
