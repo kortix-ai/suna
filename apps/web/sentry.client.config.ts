@@ -57,6 +57,9 @@ if (SENTRY_DSN) {
       'MetaMask extension not found',
       'Looks like your website URL has changed',
       'CookieYes account',
+      // Third-party scripts / scanner bots patching a native Promise's `.then`
+      // (we never assign Promise#then); surfaces as an external unhandled rejection.
+      "read only property 'then'",
       // Test-only synthetic events
       'E2E FINAL:',
       'E2E test:',

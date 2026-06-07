@@ -5,6 +5,13 @@ const KNOWN_BROWSER_NOISE_MESSAGES = [
   'MetaMask extension not found',
   'Looks like your website URL has changed',
   'CookieYes account',
+  // Third-party scripts / extensions / scanner bots that try to patch a native
+  // (frozen) Promise by reassigning its `.then`, e.g. instrumentation injected by
+  // tech-detection crawlers. Surfaces as an unhandled rejection from code that is
+  // not ours — Kortix never assigns `Promise#then`. The wording differs slightly
+  // per JS engine ("Cannot assign to read only property 'then'" in V8), so match
+  // on the stable substring.
+  "read only property 'then'",
 ] as const;
 
 const KNOWN_TEST_NOISE_MESSAGES = [
