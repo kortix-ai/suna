@@ -177,7 +177,7 @@ export function KortixAppBanners(props: KortixAppBannersProps) {
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 5 }}
               transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-              className="bg-white dark:bg-[#2a2a2a] rounded-xl shadow-xl border border-border/60 dark:border-[#232324] p-3 cursor-pointer"
+              className="bg-white dark:bg-[#2a2a2a] rounded-2xl shadow-xl border border-border/60 dark:border-[#232324] p-3 cursor-pointer"
             >
               <div className="flex items-center gap-3">
                 <div className="flex -space-x-2">
@@ -305,7 +305,7 @@ export function KortixAppBanners(props: KortixAppBannersProps) {
 
                     {/* Illustration area */}
                     <div className="relative h-[80px] bg-muted dark:bg-[#e8e4df] flex items-center justify-center">
-                      <div className="w-[160px] h-[50px] bg-background dark:bg-white rounded-lg p-2 relative flex items-center justify-center border border-border/40 dark:border-transparent">
+                      <div className="w-[160px] h-[50px] bg-background dark:bg-white rounded-2xl p-2 relative flex items-center justify-center border border-border/40 dark:border-transparent">
                         <div className="flex gap-1 absolute bottom-1.5 left-2">
                           <div className="w-2.5 h-2.5 bg-muted-foreground/30 dark:bg-gray-300 rounded-sm" />
                           <div className="w-2.5 h-2.5 bg-muted-foreground/30 dark:bg-gray-300 rounded-sm" />

@@ -259,7 +259,7 @@ export function DownloadAppsModal({
                           type="button"
                           title={p.label}
                           onClick={() => startDownload(desktopDownloadUrl(p.id))}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-border/60 px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted"
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border/60 px-2 py-1 text-[11px] text-foreground transition-colors hover:bg-muted"
                         >
                           <p.Mark className="size-3.5" />
                           {p.label}
@@ -280,7 +280,7 @@ export function DownloadAppsModal({
                   <button
                     type="button"
                     onClick={copyCli}
-                    className="group/cmd flex w-full max-w-sm items-center justify-between gap-2 rounded-xl border border-border/60 bg-muted/50 px-3 py-2 text-left font-mono text-[11px] text-foreground transition-colors hover:bg-muted"
+                    className="group/cmd flex w-full max-w-sm items-center justify-between gap-2 rounded-2xl border border-border/60 bg-muted/50 px-3 py-2 text-left font-mono text-[11px] text-foreground transition-colors hover:bg-muted"
                     title="Click to copy"
                   >
                     <span className="truncate">{CLI_INSTALL_CMD}</span>
