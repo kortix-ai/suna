@@ -71,6 +71,98 @@ test('matches third-party Promise.then tampering noise', () => {
   )
 })
 
+// Reproduces Better Stack error 8bc2dce8...0384f8 (Kortix Frontend prod):
+// a recoverable React #418 hydration mismatch raised via onerror on a pt-PT
+// user's browser. Chrome's auto-translate (offered because the page renders in
+// English) rewrites text nodes before hydration, which React reports as a
+// server/client mismatch. It fired on the marketing 404 (`/pt`) and on the
+// post-login `/projects` landing — neither contains `/auth`, so the old
+// route-scoped guard let it through. It must now be suppressed everywhere.
+const REACT_418 =
+  'Minified React error #418; visit https://react.dev/errors/418?args[]=HTML&args[]= ' +
+  'for the full message or use the non-minified dev environment for full errors ' +
+  'and additional helpful warnings.'
+
+test('suppresses the React #418 hydration noise on the marketing site (/pt)', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/pt' },
+      exception: {
+        values: [
+          {
+            value: REACT_418,
+            stacktrace: {
+              frames: [
+                { filename: 'app:///_next/static/chunks/414c69f9-e0c657363ae93f0c.js' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('suppresses the React #418 hydration noise on the post-login /projects landing', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects?auth_event=login&auth_method=google' },
+      exception: {
+        values: [
+          {
+            value: REACT_418,
+            stacktrace: {
+              frames: [
+                { filename: 'app:///_next/static/chunks/414c69f9-e0c657363ae93f0c.js' },
+              ],
+            },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('still suppresses the generic "Hydration failed because the server rendered" message', () => {
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/' },
+      exception: {
+        values: [
+          {
+            value:
+              'Hydration failed because the server rendered HTML didn\'t match the client.',
+            stacktrace: { frames: [{ filename: 'app:///_next/static/chunks/main.js' }] },
+          },
+        ],
+      },
+    }),
+    true,
+  )
+})
+
+test('does NOT suppress a genuine, non-recoverable app hydration error', () => {
+  // React #425 ("Text content does not match server-rendered HTML") is the
+  // deterministic, app-caused hydration class and is not in the noise list, so
+  // it must still reach error tracking even on a non-/auth route.
+  assert.equal(
+    shouldIgnoreSentryBrowserNoise({
+      request: { url: 'https://kortix.com/projects' },
+      exception: {
+        values: [
+          {
+            value: 'Minified React error #425; visit https://react.dev/errors/425 for the full message',
+            stacktrace: { frames: [{ filename: 'app:///_next/static/chunks/app.js' }] },
+          },
+        ],
+      },
+    }),
+    false,
+  )
+})
+
 test('suppresses the Better Stack Promise.then incident event', () => {
   // Reproduces error c4085f6b...256290 (Kortix Frontend prod): an
   // onunhandledrejection from a scanner bot monkey-patching native Promise.then
