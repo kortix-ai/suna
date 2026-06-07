@@ -83,8 +83,6 @@ mock.module('../shared/account-limits', () => ({
   maxConcurrentSessionsForTier: () => Number.MAX_SAFE_INTEGER,
   resolveAccountTier: async () => 'free',
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
-  clearAccountLimitCache: () => {},
-  FREE_TIER_PROJECT_LIMIT: 1,
 }));
 
 mock.module('../deployments/providers/freestyle', () => ({

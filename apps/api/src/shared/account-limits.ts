@@ -6,7 +6,7 @@ import type { RateLimitPolicy } from './rate-limit';
 // Free accounts may own a single project. Any paid plan (pro or the per-seat
 // team plan) lifts the cap to MAX_PROJECTS_PER_ACCOUNT — effectively uncapped
 // for normal use. Tightening the free limit here is the one knob to turn.
-export const FREE_TIER_PROJECT_LIMIT = 1;
+const FREE_TIER_PROJECT_LIMIT = 1;
 
 const tierCache = new Map<string, { tier: string | null; expiresAt: number }>();
 
@@ -118,8 +118,4 @@ export async function maxProjectsForAccount(accountId: string): Promise<number> 
   }
   const tier = await resolveAccountTier(accountId);
   return isPaidTier(tier ?? 'free') ? MAX_PROJECTS_PER_ACCOUNT : FREE_TIER_PROJECT_LIMIT;
-}
-
-export function clearAccountLimitCache() {
-  tierCache.clear();
 }

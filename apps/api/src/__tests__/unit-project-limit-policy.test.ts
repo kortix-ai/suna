@@ -27,25 +27,21 @@ mock.module('../billing/repositories/credit-accounts', () => ({
   getSubscriptionInfo: async () => (currentTier === null ? null : { tier: currentTier }),
 }));
 
-const { maxProjectsForAccount, FREE_TIER_PROJECT_LIMIT, clearAccountLimitCache } = await import(
-  '../shared/account-limits'
-);
+const { maxProjectsForAccount } = await import('../shared/account-limits');
 
 // Distinct account id per call keeps the 60s tier cache from bleeding across
-// cases; clearAccountLimitCache() in beforeEach is belt-and-suspenders.
+// cases.
 let n = 0;
 const nextAccount = () => `00000000-0000-4000-a000-${String(++n).padStart(12, '0')}`;
 
 describe('maxProjectsForAccount — plan → project cap', () => {
   beforeEach(() => {
-    clearAccountLimitCache();
     billingEnabled = true;
     currentTier = 'free';
   });
 
   test('free tier → exactly 1 (FREE_TIER_PROJECT_LIMIT)', async () => {
     currentTier = 'free';
-    expect(FREE_TIER_PROJECT_LIMIT).toBe(1);
     expect(await maxProjectsForAccount(nextAccount())).toBe(1);
   });
 

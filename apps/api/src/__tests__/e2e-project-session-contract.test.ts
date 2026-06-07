@@ -260,12 +260,10 @@ mock.module('../repositories/account-tokens', () => ({
 // always exercises the rate-limit branch — the real implementation bypasses
 // the cap when KORTIX_BILLING_INTERNAL_ENABLED is false.
 mock.module('../shared/account-limits', () => ({
-  FREE_TIER_PROJECT_LIMIT: 1,
   resolveAccountTier: async () => 'free',
   maxProjectsForAccount: async () => 1,
   maxConcurrentSessionsForTier: () => 1,
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
-  clearAccountLimitCache: () => undefined,
 }));
 
 mock.module('../shared/supabase', () => ({
