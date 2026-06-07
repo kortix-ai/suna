@@ -379,9 +379,19 @@ EOF
   # server-side (SSR) fetches, which talk to the in-sandbox API directly.
   # Write to apps/web/.env.LOCAL (gitignored), never apps/web/.env — that file is
   # dotenvx-encrypted + tracked, and Next loads .env.local at higher precedence.
+  # NEXT_PUBLIC_SUPABASE_URL is RELATIVE (/supabase) for the SAME reason as
+  # NEXT_PUBLIC_BACKEND_URL above: the browser loads the app through the preview
+  # proxy (a dynamic origin like p3000-<sandbox>.localhost:8008) and 127.0.0.1:54321
+  # is the sandbox loopback — unreachable from the user's browser. So the browser
+  # hits the SAME origin (/supabase) and next.config.ts's env-gated rewrite
+  # (/supabase/* -> ${SB_API_URL}/*, active via KORTIX_SUPABASE_PROXY_TARGET below)
+  # proxies it to the in-sandbox Supabase. SUPABASE_URL stays ABSOLUTE so the
+  # server-side Supabase clients (supabase/server.ts, middleware.ts) reach
+  # 127.0.0.1:54321 directly. Mirrors the /v1 BACKEND_URL split.
   cat > "$ROOT_DIR/apps/web/.env.local" <<EOF
 NEXT_PUBLIC_BILLING_ENABLED=false
-NEXT_PUBLIC_SUPABASE_URL=${SB_API_URL}
+NEXT_PUBLIC_SUPABASE_URL=/supabase
+SUPABASE_URL=${SB_API_URL}
 NEXT_PUBLIC_SUPABASE_ANON_KEY=${SB_ANON_KEY}
 NEXT_PUBLIC_BACKEND_URL=/v1
 BACKEND_URL=http://localhost:8008/v1
@@ -390,6 +400,12 @@ NEXT_PUBLIC_URL=http://localhost:3000
 NEXT_PUBLIC_KORTIX_PERSONAL_CONTACT=false
 EDGE_CONFIG=
 EOF
+
+  # Activate the same-origin Supabase proxy rewrite (next.config.ts). Env-gated
+  # so it ONLY exists in the sandbox: forwards the browser's same-origin
+  # /supabase/* to the in-sandbox Supabase. Exported (not just in .env.local) so
+  # both `next dev` and `next build`/`next start` see it.
+  export KORTIX_SUPABASE_PROXY_TARGET="${SB_API_URL}"
 
   # Export the SANDBOX-generated web env into THIS process so both the
   # production (build + start) and the dev (`next dev`) paths see the right

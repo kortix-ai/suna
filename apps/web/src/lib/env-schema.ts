@@ -25,8 +25,34 @@ const backendUrlSchema = z
     'BACKEND_URL must be an absolute http(s) URL or a root-relative path (e.g. "/v1")',
   )
 
+/**
+ * SUPABASE_URL may be EITHER:
+ *  - an absolute http(s) URL (e.g. "http://127.0.0.1:54321") — used server-side
+ *    where the runtime reaches Supabase directly, and in normal deployments; or
+ *  - a root-relative path (e.g. "/supabase") — used in the sandbox preview so the
+ *    BROWSER hits the SAME origin it's served from and the preview proxy rewrites
+ *    it to the in-sandbox Supabase (single-origin proxy, no CORS, no exposed
+ *    port). The browser client resolves the relative value against
+ *    `window.location.origin` before handing it to supabase-js (which requires an
+ *    absolute URL). Mirrors BACKEND_URL above.
+ */
+const supabaseUrlSchema = z
+  .string()
+  .refine(
+    (value) => {
+      if (value.startsWith('/')) return true // root-relative (same-origin proxy)
+      try {
+        const parsed = new URL(value)
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      } catch {
+        return false
+      }
+    },
+    'SUPABASE_URL must be an absolute http(s) URL or a root-relative path (e.g. "/supabase")',
+  )
+
 const RuntimeEnvSchema = z.object({
-  SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
+  SUPABASE_URL: supabaseUrlSchema,
   SUPABASE_ANON_KEY: z.string().min(1, 'SUPABASE_ANON_KEY is required'),
   BACKEND_URL: backendUrlSchema,
   /** Whether billing/paywall UI is enabled. Mirrors the backend's
