@@ -302,7 +302,7 @@ export async function supabaseAuth(c: Context, next: Next) {
  *
  * Used for:
  *   - Preview proxy routes (/v1/p/{sandboxId}/{port}/*)
- *   - Cron, deployment, secrets, providers, servers, queue, tunnel routes
+ *   - Cron, secrets, providers, servers, and tunnel routes
  *   - SSE stream endpoints (clients use fetch() with Authorization header)
  *
  * Sets userId and userEmail in context regardless of token type.

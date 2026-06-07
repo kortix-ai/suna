@@ -6,7 +6,7 @@
  * It is the server-side mirror of what the browser does on every chat send, and
  * it is built entirely from the platform's canonical primitives so there is
  * exactly ONE implementation of each concern (no bespoke per-channel sandbox
- * plumbing, no in-sandbox `/kortix/prompt` route, no fragile tmpfs pin):
+ * plumbing, no channel-specific daemon prompt route, no fragile tmpfs pin):
  *
  *   1. WAKE the existing sandbox in place — `resumeStoppedSandbox` for a
  *      hibernated row (DB flip + compute reopen), `wakeSandbox` (ensureRunning)

@@ -476,7 +476,7 @@ pnpm dlx lcov-result-merger 'apps/**/coverage/lcov*.info' merged/lcov.info
 Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tractable function-level report.
 
 ### The load-bearing caveat
-**Uncovered ≠ dead.** The e2e suite legitimately won't hit error branches, the cron scheduler, the queue drainer, webhook handlers, or rarely-used ops routes — those are live in prod. Only static analysis (A) can claim "never imported." **Dead-code candidate = flagged by knip (A) AND uncovered by the suite (B).** Uncovered-but-imported = "untested," not dead.
+**Uncovered ≠ dead.** The e2e suite legitimately won't hit error branches, cron scheduling, webhook handlers, or rarely-used ops routes — those are live in prod. Only static analysis (A) can claim "never imported." **Dead-code candidate = flagged by knip (A) AND uncovered by the suite (B).** Uncovered-but-imported = "untested," not dead.
 
 ### Smallest first step
 1. `pnpm add -Dw knip && pnpm exec knip` → the true dead-code list, today.
@@ -499,7 +499,7 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 
 ---
 
-## 25. Parallel-authored domains (git/platform/iam/channels/queue/servers/audit/scim)
+## 25. Parallel-authored domains (git/platform/iam/channels/servers/audit/scim)
 
 `GH-9` `GET /git/:project/info/refs` · `POST …/git-upload-pack` · `POST …/git-receive-pack` → smart-HTTP proxy, git token auth (not JWT); bad/no token → 401/502.
 `GH-10` `GET /git/:project/info/refs` → user JWT is not a git token → 401/403; NONMEMBER → 401/403/404.
@@ -528,8 +528,6 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `CHN-10` `GET /projects/:id/channels/slack/mode` → read → 200; non-member 403/404.
 `CHN-11` `POST /webhooks/slack/commands` → public, OAuth-gated → 503/401.
 `CHN-12` `POST /webhooks/slack/interactivity` → public, OAuth-gated → 503/401.
-`Q-5` `GET /queue/sessions/:sid` (unknown) → 200 empty; ANON → 401.
-`Q-6` enqueue → move-up/down + DELETE /messages/:mid → DELETE /sessions/:sid → 200.
 `SRV-2` `POST /servers` 201 · `GET/PUT/DELETE /servers/:id` CRUD → read-after-delete 404.
 `SRV-3` `POST /servers` missing fields → 400 · managed id → 400 · unknown id → 404.
 `SRV-4` `PUT /servers/sync` → 200 rows; non-array → 400; ANON → 401.

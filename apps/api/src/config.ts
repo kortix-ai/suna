@@ -210,8 +210,7 @@ const envSchema = z.object({
   DOCKER_HOST:                 optStr,
   SANDBOX_NETWORK:             optStr,
   KORTIX_LOCAL_DOCKER_HOST:    optStr,
-  // Default port base for sandbox port mapping; kept for the queue drainer
-  // and deployments router which still reference it.
+  // Default port base for local Docker sandbox port mapping.
   SANDBOX_PORT_BASE:           optInt(14000),
   SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
 
