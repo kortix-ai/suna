@@ -328,6 +328,22 @@ run_sandbox_dev() {
     for _ in $(seq 1 30); do docker info >/dev/null 2>&1 && break; sleep 1; done
   fi
 
+  # The sandbox image can bake Supabase service images as Docker-loadable
+  # tarballs. Load them before `supabase start` so fresh sessions avoid the
+  # slow network pulls on first boot.
+  if [[ -d /opt/sb-images ]]; then
+    shopt -s nullglob
+    sb_image_tars=(/opt/sb-images/*.tar)
+    shopt -u nullglob
+    if (( ${#sb_image_tars[@]} > 0 )); then
+      echo "[dev] loading baked Supabase images (${#sb_image_tars[@]})…"
+      for image_tar in "${sb_image_tars[@]}"; do
+        echo "[dev] docker load $(basename "$image_tar")"
+        docker load -i "$image_tar"
+      done
+    fi
+  fi
+
   # Local Supabase (Postgres + auth + REST + storage). Stop first for a clean
   # slate — a partial/leftover start holds ports (e.g. 54324) and makes the
   # next `supabase start` fail with "address already in use".
