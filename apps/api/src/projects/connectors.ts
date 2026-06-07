@@ -44,10 +44,10 @@ const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,127}$/;
 export type ConnectorProvider = 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
 const PROVIDERS: readonly ConnectorProvider[] = ['pipedream', 'mcp', 'openapi', 'graphql', 'http'];
 
-export type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'none';
+type ConnectorAuthType = 'bearer' | 'basic' | 'custom' | 'none';
 const AUTH_TYPES: readonly ConnectorAuthType[] = ['bearer', 'basic', 'custom', 'none'];
 
-export interface ConnectorAuthSpec {
+interface ConnectorAuthSpec {
   /** How the credential is attached to outbound calls. */
   type: ConnectorAuthType;
   /** For `custom`: where the credential goes. Defaults to `header`. */
@@ -102,7 +102,7 @@ export interface ConnectorSpec {
   policies: ConnectorPolicySpec[];
 }
 
-export interface ConnectorParseError {
+interface ConnectorParseError {
   slug: string;
   path: string;
   error: string;

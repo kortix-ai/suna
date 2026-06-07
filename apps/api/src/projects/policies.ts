@@ -16,7 +16,7 @@
 import { MANIFEST_FILENAME, readManifest, type ParsedManifest } from './triggers';
 import type { GitBackedProject } from './git';
 
-export type ProjectPolicyAction = 'always_run' | 'require_approval' | 'block';
+type ProjectPolicyAction = 'always_run' | 'require_approval' | 'block';
 const POLICY_ACTIONS: readonly ProjectPolicyAction[] = ['always_run', 'require_approval', 'block'];
 
 export type DefaultMode = 'risk' | 'allow_all';
@@ -33,7 +33,7 @@ export interface ProjectPolicySettings {
   defaultMode: DefaultMode;
 }
 
-export interface ProjectPolicyParseError {
+interface ProjectPolicyParseError {
   path: string;
   error: string;
 }

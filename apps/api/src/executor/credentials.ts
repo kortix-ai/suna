@@ -117,5 +117,3 @@ export async function upsertCredential(opts: {
   // Reflect "connected" in the connector status.
   await db.update(executorConnectors).set({ status: 'active', updatedAt: new Date() }).where(eq(executorConnectors.connectorId, opts.connectorId));
 }
-
-export type { ShareScope };

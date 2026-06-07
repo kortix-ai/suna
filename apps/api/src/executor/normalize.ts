@@ -345,7 +345,7 @@ function pdType(t: string): string {
 import type { ConnectorProvider } from '../projects/connectors';
 
 /** Source material a connector needs normalized, by provider. */
-export type NormalizeInput =
+type NormalizeInput =
   | { provider: 'openapi'; doc: any }
   | { provider: 'graphql'; introspection: any }
   | { provider: 'mcp'; tools: McpToolLike[] }
@@ -373,5 +373,3 @@ export function normalize(input: NormalizeInput): NormalizedAction[] {
 export function namespacePath(slug: string, relPath: string): string {
   return `${slug}.${relPath}`;
 }
-
-export type { ConnectorProvider };

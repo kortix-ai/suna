@@ -2,7 +2,7 @@ import { createHash, type Hash } from 'node:crypto';
 import { lstat, readdir, readFile, readlink } from 'node:fs/promises';
 import { join } from 'node:path';
 
-export interface RuntimeArtifact {
+interface RuntimeArtifact {
   label: string;
   path: string;
   /**
@@ -14,7 +14,7 @@ export interface RuntimeArtifact {
   excludeNames?: readonly string[];
 }
 
-export interface RuntimeArtifactFingerprintInput {
+interface RuntimeArtifactFingerprintInput {
   sandboxVersion: string;
   opencodeVersion: string;
   artifacts: RuntimeArtifact[];

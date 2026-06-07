@@ -4,6 +4,8 @@ import {
 } from '../repositories/credit-accounts';
 import { getMonthlyCredits } from './tiers';
 import { resetExpiringCredits } from './credits';
+export { calculateNextCreditGrant } from './credit-grant-schedule';
+import { calculateNextCreditGrant } from './credit-grant-schedule';
 
 export async function processYearlyCreditRotation(): Promise<{
   processed: number;
@@ -57,15 +59,4 @@ export function isYearlyAccountDueForRotation(account: Record<string, any>): boo
 
   const nextGrant = new Date(account.nextCreditGrant);
   return nextGrant <= new Date();
-}
-
-export function calculateNextCreditGrant(from: Date): Date {
-  const next = new Date(from);
-  const targetMonth = (next.getMonth() + 1) % 12;
-  next.setMonth(next.getMonth() + 1);
-  // Handle month boundary (e.g., Jan 31 → Feb 28)
-  if (next.getMonth() !== targetMonth) {
-    next.setDate(0);
-  }
-  return next;
 }

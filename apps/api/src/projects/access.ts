@@ -44,7 +44,7 @@ export function parseProjectRole(value: unknown): ProjectRole | null {
 //
 // Pure so it's easy to test without spinning up the DB.
 
-export type AccessSourceTag = 'implicit' | 'direct' | 'group';
+type AccessSourceTag = 'implicit' | 'direct' | 'group';
 
 export interface GroupSource {
   group_id: string;

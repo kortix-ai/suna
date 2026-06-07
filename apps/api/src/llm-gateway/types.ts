@@ -1,4 +1,4 @@
-export interface AuthedPrincipal {
+interface AuthedPrincipal {
   userId: string;
   accountId: string;
 }

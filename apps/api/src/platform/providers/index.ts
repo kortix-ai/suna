@@ -13,7 +13,6 @@ import { PlatinumProvider } from './platinum';
  *   - local_docker — self-hosted/local Docker runtime
  */
 export type ProviderName = 'daytona' | 'local_docker' | 'platinum';
-export type { SandboxProviderName } from '../../config';
 
 export interface CreateSandboxOpts {
   accountId: string;
@@ -51,7 +50,7 @@ export interface ResolvedEndpoint {
   headers: Record<string, string>;
 }
 
-export interface ProvisioningStage {
+interface ProvisioningStage {
   id: string;
   progress: number;
   message: string;

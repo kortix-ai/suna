@@ -11,7 +11,7 @@ import {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type ApiKeyType = 'user' | 'sandbox';
+type ApiKeyType = 'user' | 'sandbox';
 
 export interface ApiKeyValidationResult {
   isValid: boolean;

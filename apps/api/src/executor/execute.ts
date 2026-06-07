@@ -19,7 +19,7 @@ export interface ExecutorAuth {
 
 export type ParamLoc = 'path' | 'query' | 'header';
 
-export interface BuiltRequest {
+interface BuiltRequest {
   url: string;
   method: string;
   headers: Record<string, string>;

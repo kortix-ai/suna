@@ -4,7 +4,7 @@ import { creditAccounts } from '@kortix/db';
 import { db } from '../shared/db';
 import { config } from '../config';
 
-export interface CreditBalance {
+interface CreditBalance {
   balance: number;
   expiringCredits: number;
   nonExpiringCredits: number;

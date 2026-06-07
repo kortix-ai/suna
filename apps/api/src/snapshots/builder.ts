@@ -32,7 +32,6 @@ import { classifySnapshotError } from './error-classify';
 
 export { resolveCommitSha };
 export { DEFAULT_SANDBOX_SLUG };
-export type { ResolvedTemplate };
 
 export class SnapshotBuildError extends Error {
   constructor(message: string, readonly cause?: unknown) {

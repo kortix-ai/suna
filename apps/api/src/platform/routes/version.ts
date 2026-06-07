@@ -18,7 +18,7 @@ const DOCKERHUB_REPO = 'kortix/kortix-sandbox';
 const DOCKERHUB_TAGS_URL = `https://hub.docker.com/v2/repositories/${DOCKERHUB_REPO}/tags`;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-export type VersionChannel = 'stable' | 'dev';
+type VersionChannel = 'stable' | 'dev';
 
 interface VersionEntry {
   version: string;
@@ -30,7 +30,7 @@ interface VersionEntry {
   current: boolean;
 }
 
-export interface LatestVersionResult {
+interface LatestVersionResult {
   version: string;
   channel: VersionChannel;
   date?: string;

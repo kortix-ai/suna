@@ -90,7 +90,7 @@ export interface ExecutorPrincipal {
   subject: { userId: string; groupIds: string[] };
 }
 
-export interface CatalogAction {
+interface CatalogAction {
   path: string; // connector-relative
   name: string;
   description: string;
@@ -115,12 +115,12 @@ export interface AdminConnectorView extends CatalogConnector {
   secretSet: boolean;
 }
 
-export interface SyncResult {
+interface SyncResult {
   synced: number;
   errors: Array<{ slug: string; error: string }>;
 }
 
-export type CrudOutcome =
+type CrudOutcome =
   | { ok: true; sync?: SyncResult }
   | { ok: false; error: string; status: number };
 

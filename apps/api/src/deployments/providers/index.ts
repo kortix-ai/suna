@@ -25,4 +25,4 @@ export function getProvider(name: string | null | undefined): DeploymentProvider
   return provider;
 }
 
-export type { DeploymentProvider, DeploymentRequest, DeploymentResult, AppSource, AppBuild } from './types';
+export type { DeploymentProvider, DeploymentRequest } from './types';

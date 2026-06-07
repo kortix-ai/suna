@@ -24,7 +24,7 @@ function base64urlEncode(buf: Buffer): string {
     .replace(/=+$/, '');
 }
 
-export type VerifyActorResult =
+type VerifyActorResult =
   | { ok: true; context: ActorContext }
   | { ok: false; reason: 'malformed' | 'bad_signature' | 'expired' | 'invalid_json' };
 

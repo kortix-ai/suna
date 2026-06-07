@@ -101,14 +101,14 @@ export function toProjectPolicyRows(policies: ProjectPolicySpec[]): DesiredPolic
 }
 
 /** Project settings row shape — just default_mode for now. */
-export interface DesiredProjectSettings {
+interface DesiredProjectSettings {
   defaultMode: DefaultMode;
 }
 export function toProjectSettings(settings: ProjectPolicySettings): DesiredProjectSettings {
   return { defaultMode: settings.defaultMode };
 }
 
-export interface DiffResult<T> {
+interface DiffResult<T> {
   toCreate: T[];
   toUpdate: T[];
   toDeleteSlugs: string[];

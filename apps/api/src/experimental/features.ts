@@ -27,7 +27,7 @@ import { config } from '../config';
 export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel';
 
 /** How settled a feature is — surfaced as a badge so users know what to expect. */
-export type ExperimentalStability = 'experimental' | 'beta';
+type ExperimentalStability = 'experimental' | 'beta';
 
 interface ExperimentalFeatureDef {
   key: ExperimentalFeatureKey;

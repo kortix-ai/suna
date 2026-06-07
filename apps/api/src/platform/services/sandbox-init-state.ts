@@ -1,7 +1,7 @@
 import type { CreateSandboxOpts, ProvisionResult, SandboxProvider } from '../providers';
 
 export type SandboxInitStatus = 'pending' | 'provisioning' | 'retrying' | 'ready' | 'failed';
-export type SandboxHealthStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
+type SandboxHealthStatus = 'healthy' | 'degraded' | 'offline' | 'unknown';
 
 export const SANDBOX_INIT_MAX_ATTEMPTS = 3;
 /**

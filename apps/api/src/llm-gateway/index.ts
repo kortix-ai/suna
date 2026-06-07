@@ -5,7 +5,7 @@ import type { LlmGatewayConfig, LlmGatewayHooks } from './types';
 import type { AppEnv } from '../types';
 import { makeOpenApiApp } from '../openapi';
 
-export type { LlmGatewayConfig, LlmGatewayHooks, UsageEvent, AuthedPrincipal } from './types';
+export type { LlmGatewayConfig, LlmGatewayHooks } from './types';
 
 export function createLlmGateway(
   config: LlmGatewayConfig,

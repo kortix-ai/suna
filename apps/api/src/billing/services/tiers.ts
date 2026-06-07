@@ -81,7 +81,7 @@ export const AUTO_TOPUP_DEFAULT_AMOUNT_PER_SEAT    = 20;
 export const MAX_PROJECTS_PER_ACCOUNT       = 200;
 export const MAX_SEATS_PER_ACCOUNT          = 100;
 
-export type BillingModel = 'legacy' | 'per_seat';
+type BillingModel = 'legacy' | 'per_seat';
 
 /** Default auto-topup for a per-seat account given its current seat count. */
 export function defaultAutoTopupForSeats(seatCount: number): { threshold: number; amount: number } {

@@ -27,6 +27,7 @@ import {
 import { grantCredits, resetExpiringCredits } from './credits';
 import { grantMachineBonusOnce, getStripeMachineBonusKey } from './machine-bonus';
 import { cancelFreeSubscriptionForUpgrade } from './subscriptions';
+import { calculateNextCreditGrant } from './credit-grant-schedule';
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import { resolveAccountId } from '../../shared/resolve-account';
 
@@ -792,15 +793,4 @@ async function handleRevenueCatBillingIssue(accountId: string, event: any) {
   });
 
   console.log(`[RevenueCat] Billing issue: ${accountId}`);
-}
-
-export function calculateNextCreditGrant(from: Date): Date {
-  const next = new Date(from);
-  const targetMonth = (next.getMonth() + 1) % 12;
-  const targetYear = next.getFullYear() + (next.getMonth() === 11 ? 1 : 0);
-  next.setMonth(next.getMonth() + 1);
-  if (next.getMonth() !== targetMonth) {
-    next.setDate(0);
-  }
-  return next;
 }

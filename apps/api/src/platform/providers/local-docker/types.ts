@@ -7,7 +7,7 @@ export interface ImagePullStatus {
   error?: string;
 }
 
-export type SandboxUpdatePhase =
+type SandboxUpdatePhase =
   | 'idle'
   | 'pulling'
   | 'stopping'
