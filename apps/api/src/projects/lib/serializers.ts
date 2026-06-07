@@ -99,7 +99,7 @@ export function serializeSession(
  * viewer may manage its sharing (owner or project manager).
  */
 
-export function dashboardBaseUrl(): string {
+function dashboardBaseUrl(): string {
   return (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
 }
 
@@ -196,7 +196,7 @@ export function serializeGitHubRepo(repo: GitHubRepo) {
 }
 
 
-export function clientIp(c: Context) {
+function clientIp(c: Context) {
   return c.req.header('x-forwarded-for')?.split(',')[0]?.trim()
     || c.req.header('x-real-ip')
     || null;
@@ -502,7 +502,7 @@ export function serializeDeploymentRow(row: typeof deployments.$inferSelect) {
 }
 
 
-export const PROJECT_ROLES = ['manager', 'editor', 'viewer'] as const;
+const PROJECT_ROLES = ['manager', 'editor', 'viewer'] as const;
 
 export type ProjectGroupGrantRole = typeof PROJECT_ROLES[number];
 

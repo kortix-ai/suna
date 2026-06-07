@@ -62,7 +62,7 @@ export async function countProvisioningProjectSessions(projectId: string): Promi
 }
 
 
-export async function enforceConcurrentSessionCap(accountId: string, userId: string, request?: RequestAuditContext): Promise<SessionCreateError | null> {
+async function enforceConcurrentSessionCap(accountId: string, userId: string, request?: RequestAuditContext): Promise<SessionCreateError | null> {
   const tier = await resolveAccountTier(accountId);
   const limit = maxConcurrentSessionsForTier(tier);
   const activeSessions = await countActiveProjectSessions(accountId);
@@ -103,7 +103,7 @@ export async function enforceConcurrentSessionCap(accountId: string, userId: str
 }
 
 
-export async function checkConcurrentSessionCap(accountId: string, userId: string, request?: RequestAuditContext): Promise<{
+async function checkConcurrentSessionCap(accountId: string, userId: string, request?: RequestAuditContext): Promise<{
   error?: SessionCreateError;
   headers: Record<string, string>;
 }> {
@@ -126,12 +126,12 @@ export async function checkConcurrentSessionCap(accountId: string, userId: strin
 }
 
 
-export const RESERVED_SANDBOX_ENV_NAMES = new Set([
+const RESERVED_SANDBOX_ENV_NAMES = new Set([
   'PORT', 'PATH', 'HOME', 'PWD', 'USER', 'LOGNAME', 'SHELL', 'HOSTNAME',
   'TERM', 'TMPDIR', 'NODE_ENV', 'NODE_OPTIONS', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
 ]);
 
-export function isReservedSandboxEnvName(name: string): boolean {
+function isReservedSandboxEnvName(name: string): boolean {
   return (
     RESERVED_SANDBOX_ENV_NAMES.has(name) ||
     name.startsWith('KORTIX_') ||
@@ -213,7 +213,7 @@ export async function buildSessionSandboxEnvVars(input: {
 
 /** Derive the API v1 base URL sandboxes call as `$KORTIX_API_URL`. */
 
-export function deriveKortixApiBase(): string {
+function deriveKortixApiBase(): string {
   return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1`;
 }
 
