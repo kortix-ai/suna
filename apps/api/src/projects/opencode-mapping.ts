@@ -51,7 +51,18 @@ export async function sandboxOpencodeEndpoint(
 ): Promise<{ url: string; headers: Record<string, string> } | null> {
   const serviceKey = await resolveServiceKey(externalId);
   if (!serviceKey) return null;
-  const { url, token } = await resolvePreviewLink(externalId, DAEMON_PORT);
+  // resolvePreviewLink hits the provider control plane and is now bounded by a
+  // timeout (see sandbox-proxy/backend.ts). A slow/hung provider therefore
+  // rejects fast rather than hanging past the client's 30s timeout — treat that
+  // (and any resolution error) as "unreachable" so the caller returns a quick,
+  // retryable response instead of a 500 or a wedged request.
+  let url: string;
+  let token: string | null;
+  try {
+    ({ url, token } = await resolvePreviewLink(externalId, DAEMON_PORT));
+  } catch {
+    return null;
+  }
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${serviceKey}`,

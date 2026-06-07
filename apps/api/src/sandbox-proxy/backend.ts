@@ -33,6 +33,42 @@ import {
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const SANDBOX_TOUCH_INTERVAL_MS = 60 * 1000;
 
+// Upper bound on resolving a sandbox's upstream preview link from the provider
+// control plane (Daytona SDK `get()` + `getPreviewLink()`). Those SDK calls take
+// no AbortSignal, so without this race a slow/hung provider made every caller
+// that needs a fresh (cache-missed) link hang indefinitely. The frontend gives
+// up at 30s and surfaces "Request timed out after 30s" — most visibly on
+// POST /projects/:id/sessions/:sid/ensure-opencode, whose endpoint resolution
+// runs *before* its own bounded fetch into the sandbox. Keep this well under the
+// 30s client timeout so a provider blip fails fast (and retryably) instead.
+// Read per-call (not at module load) so it stays tunable via env for ops and
+// deterministic in tests regardless of import order.
+const DEFAULT_PREVIEW_LINK_RESOLVE_TIMEOUT_MS = 12_000;
+function previewLinkResolveTimeoutMs(): number {
+  const raw = Number(process.env.PREVIEW_LINK_RESOLVE_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0
+    ? raw
+    : DEFAULT_PREVIEW_LINK_RESOLVE_TIMEOUT_MS;
+}
+
+/** Reject with a timeout error if `p` doesn't settle within `ms`. */
+async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      p,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${ms}ms`)),
+          ms,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 /** Everything the proxy needs to know about a sandbox, from one row fetch. */
 export interface SandboxRecord {
   /** Internal session-sandbox uuid. */
@@ -163,7 +199,15 @@ export async function resolvePreviewLink(
 
   const record = await loadSandbox(externalId);
   if (!record) throw new Error(`[proxy] no sandbox row for ${externalId}`);
-  const { url, token } = await getProvider(record.provider as ProviderName).resolvePreviewLink(externalId, port);
+  // Bound the provider control-plane round-trip — the Daytona SDK calls below
+  // take no AbortSignal, so a slow/hung provider would otherwise hang this
+  // (and every request waiting on a fresh preview link) past the 30s client
+  // timeout. On timeout we throw; callers degrade to a fast, retryable failure.
+  const { url, token } = await withTimeout(
+    getProvider(record.provider as ProviderName).resolvePreviewLink(externalId, port),
+    previewLinkResolveTimeoutMs(),
+    `[proxy] resolvePreviewLink(${externalId}:${port})`,
+  );
 
   previewLinkCache.set(key, { url, token, expiresAt: Date.now() + CACHE_TTL_MS });
   return { url, token };
