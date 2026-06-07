@@ -29,7 +29,7 @@ export interface CreditDeductResult {
  * Get credit balance for an account.
  * Fast single query.
  */
-export async function getCreditBalance(accountId: string): Promise<CreditBalance | null> {
+async function getCreditBalance(accountId: string): Promise<CreditBalance | null> {
   try {
     const [row] = await db
       .select({

@@ -18,7 +18,7 @@ import {
 import { STREAM_TTL_MS, WORKING_EMOJI } from './app';
 import type { SlackEvent, TurnStream } from './types';
 
-export function rowToHandle(row: typeof chatTurnStreams.$inferSelect, token: string): TurnStream {
+function rowToHandle(row: typeof chatTurnStreams.$inferSelect, token: string): TurnStream {
   return {
     channel: row.channel,
     ts: row.messageTs ?? '',

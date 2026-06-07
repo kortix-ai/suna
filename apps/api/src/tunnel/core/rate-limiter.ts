@@ -11,7 +11,7 @@ interface RateLimitConfig {
   windowMs: number;
 }
 
-export class TunnelRateLimiter {
+class TunnelRateLimiter {
   private buckets = new Map<string, Bucket>();
 
   private configs: Record<string, RateLimitConfig> = {

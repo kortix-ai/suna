@@ -123,7 +123,7 @@ const templateListCache = new Map<string, { at: number; value: ResolvedTemplate[
 
 /** Invalidate the in-memory template list cache for a project. Called from
  *  the CRUD endpoints after a create / update / delete. */
-export function invalidateTemplateCache(projectId: string): void {
+function invalidateTemplateCache(projectId: string): void {
   templateListCache.delete(projectId);
 }
 
@@ -208,7 +208,7 @@ export async function resolveTemplateBySlug(
  * needs no project, no manifest, and no git fetch. Used by the session-boot
  * fast path and the startup pre-build that mints the global default image.
  */
-export async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
+async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
   const [shared] = await db
     .select()
     .from(sandboxTemplates)
@@ -221,7 +221,7 @@ export async function resolveDefaultTemplate(): Promise<ResolvedTemplate> {
  * Fetch a single template row by (project, slug) — DB-only, no synthesis.
  * Used by CRUD operations that must operate on a concrete row.
  */
-export async function getTemplateRow(
+async function getTemplateRow(
   projectId: string | null,
   slug: string,
 ): Promise<DbSandboxTemplate | null> {
@@ -404,7 +404,7 @@ export async function computeTemplateIdentity(
   };
 }
 
-export async function resolveUserDockerfile(
+async function resolveUserDockerfile(
   project: GitBackedProject,
   template: ResolvedTemplate,
 ): Promise<{ dockerfile: string; commit: string | null }> {

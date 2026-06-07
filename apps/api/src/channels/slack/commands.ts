@@ -375,7 +375,7 @@ async function slashWhoami(ctx: { teamId: string; channelId: string }): Promise<
   };
 }
 
-export async function listWorkspaceProjects(teamId: string): Promise<Array<{ projectId: string; name: string; repoUrl: string }>> {
+async function listWorkspaceProjects(teamId: string): Promise<Array<{ projectId: string; name: string; repoUrl: string }>> {
   const installs = await db
     .select({ projectId: chatInstalls.projectId })
     .from(chatInstalls)
@@ -388,7 +388,7 @@ export async function listWorkspaceProjects(teamId: string): Promise<Array<{ pro
     .where(inArray(projects.projectId, ids));
 }
 
-export async function currentChannelProjectId(ctx: { teamId: string; channelId: string }): Promise<string | null> {
+async function currentChannelProjectId(ctx: { teamId: string; channelId: string }): Promise<string | null> {
   if (!ctx.channelId) return null;
   const [binding] = await db
     .select({ projectId: chatChannelBindings.projectId })

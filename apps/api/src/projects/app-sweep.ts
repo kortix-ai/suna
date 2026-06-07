@@ -140,7 +140,7 @@ export async function getLatestDeployment(
  * project's own repo URL so the most common case (deploy this project's
  * repo) works with zero TOML boilerplate.
  */
-export function buildDeploymentRequest(input: {
+function buildDeploymentRequest(input: {
   project: ProjectRow;
   spec: AppSpec;
 }): DeploymentRequest {

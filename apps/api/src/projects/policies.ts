@@ -13,8 +13,7 @@
  * ones. Defaults are permissive (no policies + allow_all) so existing projects
  * without a `[policy]` block keep current behavior.
  */
-import { MANIFEST_FILENAME, readManifest, type ParsedManifest } from './triggers';
-import type { GitBackedProject } from './git';
+import { MANIFEST_FILENAME, type ParsedManifest } from './triggers';
 
 type ProjectPolicyAction = 'always_run' | 'require_approval' | 'block';
 const POLICY_ACTIONS: readonly ProjectPolicyAction[] = ['always_run', 'require_approval', 'block'];
@@ -110,29 +109,6 @@ export function extractProjectPolicies(manifest: ParsedManifest): LoadedProjectP
   }
 
   return { policies, settings, errors };
-}
-
-/**
- * Read + parse a project's manifest, then extract `[[policies]]` + `[policy]`.
- * Returns empty defaults + a single top-level error when the manifest fails to
- * load — never throws.
- */
-export async function loadProjectPolicies(project: GitBackedProject): Promise<LoadedProjectPolicies> {
-  let manifest: ParsedManifest | null;
-  try {
-    manifest = await readManifest(project);
-  } catch (err) {
-    return {
-      policies: [],
-      settings: { ...DEFAULT_SETTINGS },
-      errors: [{
-        path: MANIFEST_FILENAME,
-        error: (err as Error).message || 'Failed to read manifest',
-      }],
-    };
-  }
-  if (!manifest) return { policies: [], settings: { ...DEFAULT_SETTINGS }, errors: [] };
-  return extractProjectPolicies(manifest);
 }
 
 /**

@@ -16,7 +16,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 export const KORTIX_USER_CONTEXT_HEADER = 'X-Kortix-User-Context';
 
 /** TTL for a signed context — short enough that revocations take effect quickly. */
-export const KORTIX_USER_CONTEXT_TTL_SECONDS = 60;
+const KORTIX_USER_CONTEXT_TTL_SECONDS = 60;
 
 export interface KortixUserContext {
   userId: string;

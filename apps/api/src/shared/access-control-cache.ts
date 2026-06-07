@@ -63,7 +63,7 @@ export function areSignupsEnabled(): boolean {
   return signupsEnabled;
 }
 
-export function isEmailAllowed(email: string): boolean {
+function isEmailAllowed(email: string): boolean {
   const lower = email.toLowerCase();
   if (allowedEmails.has(lower)) return true;
   const domain = lower.split('@')[1];

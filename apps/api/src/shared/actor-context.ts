@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 
-export const ACTOR_CONTEXT_HEADER = 'X-Kortix-Actor-Context';
+const ACTOR_CONTEXT_HEADER = 'X-Kortix-Actor-Context';
 
 export interface ActorContext {
   sandboxId: string;
@@ -28,7 +28,7 @@ type VerifyActorResult =
   | { ok: true; context: ActorContext }
   | { ok: false; reason: 'malformed' | 'bad_signature' | 'expired' | 'invalid_json' };
 
-export function verifyActorContext(
+function verifyActorContext(
   token: string | undefined | null,
   secret: string,
 ): VerifyActorResult {
