@@ -18,7 +18,7 @@ import type {
 /* ─── shared helpers ─────────────────────────────────────────────────────── */
 
 /** HTTP method → risk. GET/HEAD/OPTIONS read; DELETE destructive; rest write. */
-export function riskForMethod(method: string): Risk {
+function riskForMethod(method: string): Risk {
   const m = method.toLowerCase();
   if (m === 'get' || m === 'head' || m === 'options') return 'read';
   if (m === 'delete') return 'destructive';
@@ -305,7 +305,7 @@ export function normalizePipedream(actions: PipedreamActionLike[], app: string):
 }
 
 /** The synthetic catch-all `request` action backing the Connect Proxy. */
-export function pipedreamProxyAction(app: string): NormalizedAction {
+function pipedreamProxyAction(app: string): NormalizedAction {
   return {
     path: 'request',
     name: `${app} API request`,
@@ -367,9 +367,4 @@ export function normalize(input: NormalizeInput): NormalizedAction[] {
     default:
       return [];
   }
-}
-
-/** Prefix relative action paths with the connector slug → full tool path. */
-export function namespacePath(slug: string, relPath: string): string {
-  return `${slug}.${relPath}`;
 }
