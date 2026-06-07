@@ -104,19 +104,24 @@ jobs:
           SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
         run: |
           set -euo pipefail
-          # Pin to the dev image built from the EXACT promoted commit. If that
-          # image isn't pushed yet (dev build not finished), imagetools create
-          # fails fast — prod can NEVER ship a stale image. Fall back to the
-          # floating :dev-latest only for legacy releases with no stamped SHA.
-          if [ -n "${SOURCE_SHA:-}" ]; then
-            SRC_TAG="dev-${SOURCE_SHA:0:8}"
-          else
-            SRC_TAG="dev-latest"
-          fi
-          echo "Source image tag: $SRC_TAG"
+          # Per image, prefer the dev image built from the EXACT promoted commit
+          # (dev-<sha8>). deploy-dev only rebuilds the surfaces a commit touched,
+          # so that tag exists only for changed surfaces — an api-only commit has
+          # no frontend dev-<sha8>, and vice-versa. For an UNCHANGED surface,
+          # :dev-latest IS that surface's current image, and promote.yml's
+          # pre-flight green-gate already guarantees this commit's builds finished
+          # (no stale-image race). So: pin to dev-<sha8> when present, else fall
+          # back to :dev-latest. Fail only if neither exists (nothing to ship).
+          SHA8=""
+          [ -n "${SOURCE_SHA:-}" ] && SHA8="dev-${SOURCE_SHA:0:8}"
           for IMAGE in kortix/kortix-api kortix/kortix-frontend; do
-            if ! docker buildx imagetools inspect "$IMAGE:$SRC_TAG" >/dev/null 2>&1; then
-              echo "::error::$IMAGE:$SRC_TAG not found — the dev image for this commit isn't published. Refusing to ship a stale image."
+            if [ -n "$SHA8" ] && docker buildx imagetools inspect "$IMAGE:$SHA8" >/dev/null 2>&1; then
+              SRC_TAG="$SHA8"
+            elif docker buildx imagetools inspect "$IMAGE:dev-latest" >/dev/null 2>&1; then
+              SRC_TAG="dev-latest"
+              echo "::notice::$IMAGE has no $SHA8 (surface unchanged in this commit) — using :dev-latest."
+            else
+              echo "::error::$IMAGE: neither ${SHA8:-dev-<sha8>} nor :dev-latest is published — no dev image to promote."
               exit 1
             fi
             echo "Re-tagging $IMAGE:$SRC_TAG → $IMAGE:${VERSION} + $IMAGE:latest"
@@ -124,7 +129,7 @@ jobs:
               --tag "$IMAGE:${VERSION}" \
               --tag "$IMAGE:latest" \
               "$IMAGE:$SRC_TAG"
-            echo "✓ $IMAGE:${VERSION}"
+            echo "✓ $IMAGE:${VERSION} (from $SRC_TAG)"
           done
       - name: Summary
         env:

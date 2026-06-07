@@ -108,13 +108,20 @@ jobs:
           # :dev-<sha8> image that deploy-prod retags — so an all-green commit
           # guarantees that image exists. This blocks the race where prod retags a
           # stale :dev-latest because the new dev image hadn't finished building.
-          # Exclude THIS promote run's own check-runs (same github.run_id) — the
-          # workflow_dispatch run registers an in_progress check on HEAD, and a
-          # failed earlier attempt leaves a `failure` one; either would make the
-          # gate count itself and never pass.
-          NOT_GREEN="$(RID="${{ github.run_id }}" gh api "repos/${{ github.repository }}/commits/$SHA/check-runs" --paginate \
-            --jq '.check_runs[]
-                  | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)
+          # Robustly judge greenness, tolerating two GitHub quirks that would
+          # otherwise make this gate un-passable:
+          #   1. THIS promote run registers an in_progress check on HEAD (and a
+          #      failed earlier attempt leaves a `failure` one) — exclude any
+          #      check-run belonging to our own github.run_id.
+          #   2. Re-runs / concurrency leave SUPERSEDED duplicate check-runs of
+          #      the same name (e.g. a `cancelled` CodeQL "Analyze" next to a
+          #      later `success`). Keep only the latest run per name (max
+          #      started_at) so a stale cancelled/failed attempt can't block.
+          NOT_GREEN="$(RID="${{ github.run_id }}" gh api "repos/${{ github.repository }}/commits/$SHA/check-runs?per_page=100" --paginate \
+            --jq '[ .check_runs[]
+                    | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not) ]
+                  | group_by(.name) | map(max_by(.started_at // ""))
+                  | .[]
                   | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))
                   | "\(.name): \(.status)/\(.conclusion)"' || true)"
           if [ -n "$NOT_GREEN" ]; then
