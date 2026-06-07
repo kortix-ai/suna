@@ -38,6 +38,8 @@ accountsRouter.openapi(
   const userId = c.get('userId') as string;
   const userEmail = c.get('userEmail') as string;
 
+  // Best-effort, time-bounded (see AUTO_CLAIM_TIMEOUT_MS): claiming pending
+  // invites must never delay the listing below past the client request timeout.
   await autoClaimPendingInvites(userId, userEmail);
 
   try {

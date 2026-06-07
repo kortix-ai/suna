@@ -212,47 +212,84 @@ export function serializeAccount(row: typeof accounts.$inferSelect) {
   };
 }
 
+// Hard cap on how long auto-claim may run. It is best-effort housekeeping that
+// must never hold an interactive request (esp. account listing) hostage — a slow
+// DB or a caller with many pending invites must not push the response past the
+// frontend's request timeout. See `autoClaimPendingInvites`.
+export const AUTO_CLAIM_TIMEOUT_MS = 5000;
+
+// Resolve to `null` if `promise` hasn't settled within `ms`. The underlying work
+// keeps running in the background; we just stop waiting on it.
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise<T | null>((resolve) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    if (typeof timer === 'object' && timer && 'unref' in timer) {
+      (timer as { unref: () => void }).unref();
+    }
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      () => {
+        clearTimeout(timer);
+        resolve(null);
+      },
+    );
+  });
+}
+
 // Auto-claim any pending invitations matching the caller's email. Each invite
 // becomes an account_members row (skipped on duplicate) and its accepted_at is
-// stamped so subsequent calls are no-ops. Errors are swallowed — auto-claim is
-// best-effort and must never block account listing.
+// stamped so subsequent calls are no-ops. Errors are swallowed and the whole
+// thing is time-bounded — auto-claim is best-effort and must never block account
+// listing (a slow/contended DB here previously stalled GET /accounts past the
+// frontend's 30s timeout, surfacing as `ApiError: Request timed out: /accounts`).
 export async function autoClaimPendingInvites(userId: string, email: string): Promise<void> {
   if (!email) return;
   const normalized = email.trim().toLowerCase();
   if (!normalized) return;
 
+  await withTimeout(runAutoClaim(userId, normalized), AUTO_CLAIM_TIMEOUT_MS);
+}
+
+async function runAutoClaim(userId: string, normalizedEmail: string): Promise<void> {
   try {
     const pending = await db
       .select()
       .from(accountInvitations)
       .where(
         and(
-          sql`lower(${accountInvitations.email}) = ${normalized}`,
+          sql`lower(${accountInvitations.email}) = ${normalizedEmail}`,
           isNull(accountInvitations.acceptedAt),
           gt(accountInvitations.expiresAt, new Date()),
         ),
       );
 
-    for (const invite of pending) {
-      try {
-        await db
-          .insert(accountMembers)
-          .values({
-            userId,
-            accountId: invite.accountId,
-            accountRole: invite.initialRole,
-          })
-          .onConflictDoNothing({
-            target: [accountMembers.userId, accountMembers.accountId],
-          });
-        await db
-          .update(accountInvitations)
-          .set({ acceptedAt: new Date() })
-          .where(eq(accountInvitations.inviteId, invite.inviteId));
-      } catch {
-        // Skip individual invite failures; keep processing the rest.
-      }
-    }
+    // Claim invites concurrently rather than serially: serial round-trips made
+    // total latency scale with invite count, which is the path that timed out.
+    await Promise.all(
+      pending.map(async (invite) => {
+        try {
+          await db
+            .insert(accountMembers)
+            .values({
+              userId,
+              accountId: invite.accountId,
+              accountRole: invite.initialRole,
+            })
+            .onConflictDoNothing({
+              target: [accountMembers.userId, accountMembers.accountId],
+            });
+          await db
+            .update(accountInvitations)
+            .set({ acceptedAt: new Date() })
+            .where(eq(accountInvitations.inviteId, invite.inviteId));
+        } catch {
+          // Skip individual invite failures; keep processing the rest.
+        }
+      }),
+    );
   } catch {
     // Table may not exist yet — fall through.
   }
