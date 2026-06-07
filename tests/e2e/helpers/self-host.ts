@@ -9,12 +9,6 @@ function escapeSql(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "''");
 }
 
-type SqlVariables = Record<string, string>;
-
-function psqlVariables(variables: SqlVariables): string[] {
-  return Object.entries(variables).flatMap(([key, value]) => ['-v', `${key}=${value}`]);
-}
-
 interface SeedSelfHostedProjectOptions {
   accountId: string;
   userId: string;
@@ -22,7 +16,7 @@ interface SeedSelfHostedProjectOptions {
   repoUrl?: string;
 }
 
-export function runSelfHostedSql(sql: string, variables: SqlVariables = {}): boolean {
+export function runSelfHostedSql(sql: string): boolean {
   const envFile = firstExistingExplicitEnvFile();
   if (!envFile) return false;
 
@@ -49,7 +43,6 @@ export function runSelfHostedSql(sql: string, variables: SqlVariables = {}): boo
       'postgres',
       '-d',
       'postgres',
-      ...psqlVariables(variables),
     ],
     { input: sql, encoding: 'utf8' },
   );
@@ -57,11 +50,11 @@ export function runSelfHostedSql(sql: string, variables: SqlVariables = {}): boo
   return true;
 }
 
-export function runSqlWithSelfHostFallback(sql: string, variables: SqlVariables = {}): void {
-  if (runSelfHostedSql(sql, variables)) return;
+export function runSqlWithSelfHostFallback(sql: string): void {
+  if (runSelfHostedSql(sql)) return;
 
   const databaseUrl = requireEnvValue('DATABASE_URL', 'apps/api/.env');
-  execFileSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', ...psqlVariables(variables), '-c', sql]);
+  execFileSync('psql', [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-c', sql]);
 }
 
 export function seedSelfHostedProject({
