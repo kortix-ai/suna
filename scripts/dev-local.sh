@@ -405,20 +405,17 @@ ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
 OPENAI_API_KEY=${OPENAI_API_KEY:-}
 SCHEDULER_ENABLED=false
 EOF
-  # NEXT_PUBLIC_BACKEND_URL is RELATIVE (/v1) so the browser hits the SAME
-  # origin it's served from (whichever preview proxy — Daytona or Kortix
-  # subdomain) and Next's built-in rewrite (next.config.ts: /v1/* ->
-  # http://localhost:8008/v1/*) proxies it to the in-sandbox API. That makes a
-  # single preview URL function as a full proxy (frontend + API), no CORS, no
-  # exposed backend port, no token in client env. BACKEND_URL stays absolute for
-  # server-side (SSR) fetches, which talk to the in-sandbox API directly.
+  # The production `next start` path validates the public runtime config as URLs,
+  # so keep the backend values absolute. Server-side and sandbox-local fetches
+  # talk to the in-sandbox API directly.
   # Write to apps/web/.env.LOCAL (gitignored), never apps/web/.env — that file is
   # dotenvx-encrypted + tracked, and Next loads .env.local at higher precedence.
   cat > "$ROOT_DIR/apps/web/.env.local" <<EOF
 NEXT_PUBLIC_BILLING_ENABLED=false
 NEXT_PUBLIC_SUPABASE_URL=${SB_API_URL}
 NEXT_PUBLIC_SUPABASE_ANON_KEY=${SB_ANON_KEY}
-NEXT_PUBLIC_BACKEND_URL=/v1
+NEXT_PUBLIC_BACKEND_URL=http://localhost:8008/v1
+KORTIX_PUBLIC_BACKEND_URL=http://localhost:8008/v1
 BACKEND_URL=http://localhost:8008/v1
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 NEXT_PUBLIC_URL=http://localhost:3000
