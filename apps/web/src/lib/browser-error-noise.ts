@@ -22,6 +22,20 @@ const KNOWN_HYDRATION_NOISE_MESSAGES = [
   "Hydration failed because the server rendered",
 ] as const;
 
+// Environmental interference, not an app defect: some injected scripts and
+// automated scanners/crawlers (e.g. tech-stack detectors) freeze the native
+// Promise — or `Promise.prototype` — before our bundle runs. The webpack runtime
+// (`__webpack_require__.O`) and async chunk loaders then throw when they assign
+// `.then` on the now read-only promise. We can't fix the third party's frozen
+// environment, and a real app `then` bug would surface a different, code-specific
+// message, so this exact engine-emitted signature is safe to drop.
+const KNOWN_FROZEN_PROMISE_NOISE_MESSAGES = [
+  // V8 / Chromium
+  "Cannot assign to read only property 'then' of object '#<Promise>'",
+  // SpiderMonkey / Firefox
+  '"then" is read-only',
+] as const;
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -77,6 +91,11 @@ export function isLikelyDomMutationNoise(message: unknown): boolean {
     || containsKnownPattern(normalized, KNOWN_HYDRATION_NOISE_MESSAGES);
 }
 
+export function isFrozenPromiseNoise(message: unknown): boolean {
+  const normalized = normalizeString(message);
+  return containsKnownPattern(normalized, KNOWN_FROZEN_PROMISE_NOISE_MESSAGES);
+}
+
 export function shouldIgnoreBrowserRuntimeNoise(input: {
   message?: unknown;
   filename?: unknown;
@@ -91,6 +110,10 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   }
 
   if (isKnownTestNoiseMessage(message)) {
+    return true;
+  }
+
+  if (isFrozenPromiseNoise(message)) {
     return true;
   }
 
@@ -122,6 +145,10 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   }
 
   if (isKnownTestNoiseMessage(message)) {
+    return true;
+  }
+
+  if (isFrozenPromiseNoise(message)) {
     return true;
   }
 

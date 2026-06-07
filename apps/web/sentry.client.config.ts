@@ -60,6 +60,10 @@ if (SENTRY_DSN) {
       // Test-only synthetic events
       'E2E FINAL:',
       'E2E test:',
+      // Injected scripts / automated scanners that freeze the native Promise,
+      // making the webpack runtime throw when it assigns `.then` (not an app bug)
+      "Cannot assign to read only property 'then' of object '#<Promise>'",
+      '"then" is read-only',
     ],
 
     // Filter out internal/low-value errors before sending
