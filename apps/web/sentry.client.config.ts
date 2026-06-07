@@ -57,6 +57,13 @@ if (SENTRY_DSN) {
       'MetaMask extension not found',
       'Looks like your website URL has changed',
       'CookieYes account',
+      // Injected scripts/extensions that freeze the native Promise, making
+      // framework code throw while attaching then/catch/finally handlers.
+      // See @/lib/browser-error-noise (isFrozenPromiseInteropNoise) for the
+      // cross-engine matcher that also covers Firefox/Safari wordings.
+      "read only property 'then' of object '#<Promise>'",
+      "read only property 'catch' of object '#<Promise>'",
+      "read only property 'finally' of object '#<Promise>'",
       // Test-only synthetic events
       'E2E FINAL:',
       'E2E test:',

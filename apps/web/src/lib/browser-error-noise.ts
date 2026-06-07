@@ -22,6 +22,29 @@ const KNOWN_HYDRATION_NOISE_MESSAGES = [
   "Hydration failed because the server rendered",
 ] as const;
 
+// Third-party-script / browser-extension interference: an injected script (a
+// wallet/translation/ad-block extension, a tag-manager snippet, etc.) freezes
+// `Promise.prototype` or redefines `then`/`catch`/`finally` as non-writable.
+// Framework code (Next.js' RSC client / router, Sentry's event pipeline) then
+// throws while attaching one of those handlers to a *native* Promise. This is
+// not an application bug — it originates entirely outside our bundle — so it is
+// pure noise. The wording differs per JS engine, hence the multiple patterns.
+const FROZEN_PROMISE_HANDLER_PROPERTIES = ['then', 'catch', 'finally'] as const;
+
+function buildFrozenPromiseNoisePatterns(): RegExp[] {
+  const props = FROZEN_PROMISE_HANDLER_PROPERTIES.join('|');
+  return [
+    // V8 / Chrome / Node: Cannot assign to read only property 'then' of object '#<Promise>'
+    new RegExp(`read[ -]?only property '(?:${props})' of object '#<Promise>'`, 'i'),
+    // SpiderMonkey / Firefox: "then" is read-only
+    new RegExp(`"(?:${props})" is read-only`, 'i'),
+    // JavaScriptCore / Safari: Attempted to assign to readonly property 'then'.
+    new RegExp(`assign to read[ -]?only property '(?:${props})'`, 'i'),
+  ];
+}
+
+const FROZEN_PROMISE_NOISE_PATTERNS = buildFrozenPromiseNoisePatterns();
+
 const EXTENSION_PROTOCOL_PREFIXES = [
   'chrome-extension://',
   'moz-extension://',
@@ -71,6 +94,20 @@ export function isKnownTestNoiseMessage(message: unknown): boolean {
   return containsKnownPattern(normalized, KNOWN_TEST_NOISE_MESSAGES);
 }
 
+/**
+ * True when the message is the "cannot assign a Promise handler" signature that
+ * a third-party script / browser extension produces by freezing the native
+ * Promise (e.g. `Cannot assign to read only property 'then' of object
+ * '#<Promise>'`). Matched across Chrome/V8, Firefox and Safari wordings, and
+ * restricted to the `then`/`catch`/`finally` handlers so genuine read-only
+ * property bugs in app objects are not swallowed.
+ */
+export function isFrozenPromiseInteropNoise(message: unknown): boolean {
+  const normalized = normalizeString(message);
+  if (!normalized) return false;
+  return FROZEN_PROMISE_NOISE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
 export function isLikelyDomMutationNoise(message: unknown): boolean {
   const normalized = normalizeString(message);
   return containsKnownPattern(normalized, KNOWN_DOM_MUTATION_NOISE_MESSAGES)
@@ -91,6 +128,10 @@ export function shouldIgnoreBrowserRuntimeNoise(input: {
   }
 
   if (isKnownTestNoiseMessage(message)) {
+    return true;
+  }
+
+  if (isFrozenPromiseInteropNoise(message)) {
     return true;
   }
 
@@ -122,6 +163,10 @@ export function shouldIgnoreSentryBrowserNoise(event: {
   }
 
   if (isKnownTestNoiseMessage(message)) {
+    return true;
+  }
+
+  if (isFrozenPromiseInteropNoise(message)) {
     return true;
   }
 
