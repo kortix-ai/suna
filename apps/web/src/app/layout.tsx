@@ -17,7 +17,8 @@ import { featureFlags } from '@/lib/feature-flags';
 import { connection } from 'next/server';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
-import { DESKTOP_INIT_SCRIPT } from '@/lib/desktop';
+import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
+import { headers } from 'next/headers';
 
 // Lazy load non-critical analytics and global components
 const Analytics = lazy(() => import('@vercel/analytics/react').then(mod => ({ default: mod.Analytics })));
@@ -109,6 +110,13 @@ export default async function RootLayout({
   // Opt into dynamic rendering so process.env is evaluated at request time,
   // not baked at build time. Critical for Docker images with runtime env vars.
   await connection();
+
+  // Suppress marketing/visitor-tracking scripts inside the desktop app. The
+  // Tauri webview sends a `KortixDesktop` user-agent (see lib/desktop.ts); the
+  // website still loads them as normal. Keeps third-party de-anonymization
+  // pixels (Vector/Artisan via GTM, plus the hardcoded loader) out of the
+  // authenticated native client.
+  const isDesktopApp = (await headers()).get('user-agent')?.includes(DESKTOP_UA_TOKEN) ?? false;
 
   return (
     <html lang="en" translate="no" suppressHydrationWarning className={`notranslate ${roobert.variable} ${roobertMono.variable}`}>
@@ -264,11 +272,14 @@ export default async function RootLayout({
           }}
         />
 
-        {/* Domain integration — script tag verification */}
-        <script
-          src="https://d2mvefebd70kbz.cloudfront.net/scripts/019e82ba-9ec3-733e-8a8e-9ff5cc2e1d35.js"
-          async
-        />
+        {/* Domain integration — script tag verification.
+            Skipped in the desktop app (visitor de-anonymization pixel). */}
+        {!isDesktopApp && (
+          <script
+            src="https://d2mvefebd70kbz.cloudfront.net/scripts/019e82ba-9ec3-733e-8a8e-9ff5cc2e1d35.js"
+            async
+          />
+        )}
       </head>
 
       {/* suppressHydrationWarning silences Grammarly et al. injecting
@@ -305,7 +316,7 @@ export default async function RootLayout({
           <Suspense fallback={null}>
             <Analytics />
           </Suspense>
-          {process.env.NEXT_PUBLIC_GTM_ID && (
+          {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
             <Suspense fallback={null}>
               <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
             </Suspense>

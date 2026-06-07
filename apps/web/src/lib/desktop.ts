@@ -9,7 +9,7 @@
  * `@tauri-apps/api`.
  */
 
-const DESKTOP_UA_TOKEN = 'KortixDesktop';
+export const DESKTOP_UA_TOKEN = 'KortixDesktop';
 
 export type DesktopPlatform = 'macos' | 'windows' | 'linux';
 
