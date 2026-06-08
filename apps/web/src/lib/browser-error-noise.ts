@@ -5,6 +5,13 @@ const KNOWN_BROWSER_NOISE_MESSAGES = [
   'MetaMask extension not found',
   'Looks like your website URL has changed',
   'CookieYes account',
+  // Third-party injected scripts / extensions / scanner bots that monkey-patch
+  // native Promise internals (e.g. `promise.then = ...`). The native Promise
+  // prototype is read-only, so the assignment throws a TypeError that surfaces
+  // via onunhandledrejection — it is never our code. Seen from headless
+  // tech-detection crawlers hitting the marketing site.
+  "Cannot assign to read only property 'then' of object '#<Promise>'",
+  'Cannot assign to read only property',
 ] as const;
 
 const KNOWN_TEST_NOISE_MESSAGES = [
@@ -137,7 +144,25 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
-  if (isLikelyDomMutationNoise(message) && requestUrl.includes('/auth')) {
+  // Recoverable hydration noise (React #418 / "Hydration failed because the
+  // server rendered ...") is virtually always the browser mutating the DOM
+  // before/during hydration — Chrome's auto-translate (offered to users whose
+  // locale differs from the page, e.g. pt-PT visitors on our English-rendered
+  // marketing site) and content-injecting extensions rewrite text nodes, which
+  // React then reports as a server/client mismatch. It is recoverable (React
+  // regenerates the subtree on the client) and is not an app defect.
+  //
+  // This was previously scoped to `/auth` only, but the same browser behaviour
+  // fires everywhere the user navigates — the marketing site (`/`, `/pt`, ...)
+  // and the post-login `/projects` landing — so the route guard let real
+  // browser noise through to error tracking. Suppress this class globally.
+  //
+  // NOTE: this only covers the *recoverable* #418/#423 hydration-text class
+  // listed in KNOWN_HYDRATION_NOISE_MESSAGES. A genuine, deterministic app
+  // hydration bug surfaces as the non-recoverable React #419/#421/#425 ("Text
+  // content does not match" / "There was an error while hydrating") which are
+  // NOT in that list and still report normally.
+  if (isLikelyDomMutationNoise(message)) {
     return true;
   }
 

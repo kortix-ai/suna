@@ -17,7 +17,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
   - **PAT** — `kortix_pat_…` CLI personal access token (`account_tokens`). Carries real `userId`. May be **project-scoped** (`projectId` set).
   - **APIKEY** — `kortix_` / `kortix_sb_` (`api_keys`). Account/sandbox identity; `accountId→userId` mapped. Used by sandbox→router (search/LLM/proxy).
   - **COOKIE** — `__preview_session`, scoped `/v1/p/`, 1h.
-- Auth middlewares: `supabaseAuth` (JWT or PAT) on `/v1/accounts/*`, `/v1/projects/*`, `/v1/platform/api-keys`. `combinedAuth` (JWT|token|PAT|cookie|`X-Kortix-Token`|`?token=`) on `/v1/p/*`, `/v1/queue/*`, `/v1/servers/*`, `/v1/tunnel/*`, `/v1/deployments/*`. `apiKeyAuth` (kortix_ only) on `/v1/router/*`. `requireAdmin` (platform role) on `/v1/ops/*`. Webhooks = HMAC, no auth middleware.
+- Auth middlewares: `supabaseAuth` (JWT or PAT) on `/v1/accounts/*`, `/v1/projects/*`, `/v1/platform/api-keys`. `combinedAuth` (JWT|token|PAT|cookie|`X-Kortix-Token`|`?token=`) on `/v1/p/*`, `/v1/servers/*`, `/v1/tunnel/*`, `/v1/deployments/*`. `apiKeyAuth` (kortix_ only) on `/v1/router/*`. `requireAdmin` (platform role) on `/v1/ops/*`. Webhooks = HMAC, no auth middleware.
 - Project authz gate `loadProjectForUser(c, id, level)`: `read`→`PROJECT_READ` (any project role), `write`→`PROJECT_WRITE` (editor/manager), `manage`→`PROJECT_DELETE` (manager only). Account owner/admin get implicit `manager` on every project.
 
 ### Principals (fixtures every run must provision)
@@ -212,12 +212,6 @@ All under `/p/:sandboxId/:port/*` (`combinedAuth` + rate-limit). `:sandboxId` = 
 `RUN-6` `GET /p/<sbx>/8000/session/<ocId>/message` (+`/message/<mid>`) → list/get messages (results).
 `RUN-7` `GET /p/<sbx>/8000/session/<ocId>/diff` → working-tree diff; agent commits land on branch `<sessionId>`.
 `RUN-8` proxy authz — request without any valid token/cookie → 401; preview-token from a `share` → scoped 200.
-
-### Persistent message queue (survives reload)
-`Q-1` `POST /queue/sessions/:sid {text,id?}` → 201 enqueue.
-`Q-2` `GET /queue/sessions/:sid` · `GET /queue/all` · `GET /queue/status` → list/status.
-`Q-3` `DELETE /queue/sessions/:sid` (clear) · `DELETE /queue/messages/:mid` (one) · `POST /queue/messages/:mid/move-up|move-down` (reorder).
-`Q-4` drainer (server, ~2s poll) — detects idle session → forwards queued msgs to OpenCode `prompt_async`; assert queued msg eventually drained.
 
 ---
 

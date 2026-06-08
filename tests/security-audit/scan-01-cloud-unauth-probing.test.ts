@@ -117,7 +117,6 @@ describe('Cloud Scan: Unauthenticated Route Probing', () => {
   describe('Combined-auth protected endpoints return 401', () => {
     const routes = [
       '/v1/servers',
-      '/v1/queue/all',
       '/v1/tunnel/connections',
     ];
     for (const path of routes) {

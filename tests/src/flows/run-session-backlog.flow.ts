@@ -2,7 +2,7 @@
  * Agent-run + session happy-path backlog.
  *
  * Maps 1:1 to spec IDs: RUN-1..8, SESS-2, SESS-3, SESS-9, FILE-8, FILE-9,
- * GOLD-1, Q-4, CHN-6.
+ * GOLD-1, CHN-6.
  *
  * REALITY: every flow here needs a REAL booted Daytona sandbox and/or a funded
  * account, which the local target does not have. They are therefore gated at the
@@ -823,71 +823,10 @@ flow(
   },
 );
 
-// ─── Q-4: persistent-queue enqueue + drainer ─────────────────────────────────
-// We enqueue against a REAL booted session (the durable, cross-target contract)
-// and observe drain. FINDING: the drainer (apps/api/src/queue/drainer.ts)
-// resolves OpenCode via a FIXED `OPENCODE_URL||localhost:14000` — a self-hosted
-// assumption. On the managed cloud (per-session Daytona sandboxes reached via
-// the preview proxy) it cannot reach the session's OpenCode, so queued messages
-// don't drain there. So the enqueue is asserted everywhere; the drain is
-// asserted only where the drainer can actually reach the runtime, else noted.
-flow(
-  "Q-4",
-  {
-    domain: "queue",
-    requires: ["funded", "daytona"],
-    serial: true,
-    timeoutMs: 360_000,
-    routes: [
-      "POST /v1/projects/:projectId/sessions",
-      "GET /v1/projects/:projectId/sessions/:sessionId/sandbox",
-      "POST /v1/queue/sessions/:sessionId",
-      "GET /v1/queue/sessions/:sessionId",
-    ],
-  },
-  async (ctx) => {
-    const { sessionId } = await bootSandbox(ctx);
-    await ctx.step("enqueue a message for the idle session → 201", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/queue/sessions/:sessionId", { text: "ke2e: drain me into the agent" }, {
-          params: { sessionId },
-        });
-      r.status(201).body().exists("$.message");
-    });
-    await ctx.step("the queued message is readable back (queue persisted it)", async () => {
-      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/queue/sessions/:sessionId", { params: { sessionId } });
-      r.status(200).body().exists("$.messages");
-    });
-    await ctx.step("drainer forwards it → queue empties (cloud: drainer can't reach per-session OpenCode)", async () => {
-      const drained = await waitFor(
-        async () => {
-          const r = await ctx.client
-            .as(ctx.P.OWNER)
-            .get("/v1/queue/sessions/:sessionId", { params: { sessionId } });
-          return r.statusCode === 200 ? r.json<any>() : null;
-        },
-        {
-          until: (q) => Array.isArray(q?.messages) && q.messages.length === 0,
-          timeoutMs: 45_000,
-          intervalMs: 3_000,
-          description: `queued message drained for session ${sessionId}`,
-        },
-      ).catch(() => null);
-      if (!drained) {
-        ctx.skip(
-          "queued message not drained — the drainer targets a fixed OPENCODE_URL " +
-            "(self-hosted), so it can't reach a per-session cloud sandbox (real limitation)",
-        );
-      }
-    });
-  },
-);
-
 // ─── CHN-6: Slack dispatch creates/continues a session ───────────────────────
-// app_mention/IM/threaded message → existing thread session (deliver to sandbox
-// /kortix/prompt) else createProjectSession(actor=owner, agent `default`) +
-// record chat_threads.
+// app_mention/IM/threaded message → existing thread session (continue it via the
+// canonical projects/session-delivery `deliverPromptToSession`) else
+// createProjectSession(actor=owner, agent `default`) + record chat_threads.
 //
 // BOUNDARY NOTE: the dispatch is reached via the BYO per-project webhook
 // (POST /v1/webhooks/slack/:projectId). It requires a stored per-project Slack

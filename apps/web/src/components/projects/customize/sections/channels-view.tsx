@@ -378,9 +378,19 @@ function SelfInstall({ projectId }: { projectId: string }) {
 }
 
 function buildSlackManifest(projectId: string): string {
-  const backendUrl = (getEnv().BACKEND_URL ?? '').replace(/\/$/, '');
-  const requestUrl = backendUrl
-    ? `${backendUrl}/v1/webhooks/slack/${projectId}`
+  const env = getEnv();
+  // Slack must reach this webhook from the public internet. Prefer the public API
+  // origin (WEBHOOK_BASE_URL — the dev Cloudflare tunnel locally, the real API
+  // origin in prod), because BACKEND_URL in local dev is intentionally localhost
+  // so the BROWSER talks to the API directly. Normalize to the ORIGIN: strip a
+  // trailing slash AND a trailing `/v1`, so either `https://host` or
+  // `https://host/v1` yields a single `/v1/webhooks/...` (was producing
+  // `/v1/v1/webhooks/...` when the base ended in /v1).
+  const apiOrigin = (env.WEBHOOK_BASE_URL || env.BACKEND_URL || '')
+    .replace(/\/+$/, '')
+    .replace(/\/v1$/, '');
+  const requestUrl = apiOrigin
+    ? `${apiOrigin}/v1/webhooks/slack/${projectId}`
     : `<set BACKEND_URL in env>/v1/webhooks/slack/${projectId}`;
   const manifest = {
     display_information: {

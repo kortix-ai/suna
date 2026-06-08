@@ -144,9 +144,14 @@ function redirectToDashboard(
   for (const [k, v] of Object.entries(qs)) {
     if (v) params.set(k, v);
   }
+  // Channels lives in the Customize overlay (no standalone /channels route) — it's
+  // opened via /projects/:id/customize?section=channels. Redirecting to the old
+  // /projects/:id/channels 404'd after a successful install. With no project (an
+  // error before the project resolved) fall back to the dashboard home.
+  if (qs.projectId) params.set('section', 'channels');
   const target = qs.projectId
-    ? `${base}/projects/${qs.projectId}/channels?${params.toString()}`
-    : `${base}/channels?${params.toString()}`;
+    ? `${base}/projects/${qs.projectId}/customize?${params.toString()}`
+    : `${base}/?${params.toString()}`;
   return c.redirect(target, 302);
 }
 

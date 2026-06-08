@@ -84,7 +84,7 @@ import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
-import { usePermission } from '@/lib/use-permission';
+import { usePermissions } from '@/lib/use-permission';
 import {
   type AccountDetail,
   type AccountInvitation,
@@ -105,6 +105,19 @@ import {
 } from '@/lib/projects-client';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { cn } from '@/lib/utils';
+
+// Stable (module-level) probe list for the account-capabilities batch. Order
+// must match the destructure at the call site. Declared outside the component
+// so its identity is constant across renders and React Query doesn't refetch.
+const ACCOUNT_PERMISSION_PROBES = [
+  { action: 'account.write' },
+  { action: 'account.delete' },
+  { action: 'member.invite' },
+  { action: 'member.remove' },
+  { action: 'member.update' },
+  { action: 'group.create' },
+  { action: 'audit.read' },
+];
 
 const ROLE_LABEL: Record<AccountRole, string> = {
   owner: 'Owner',
@@ -191,13 +204,20 @@ export default function AccountSettingsPage() {
   // guard would change the hook count between renders.
   // usePermission internally short-circuits when accountId is falsy, so
   // it's safe to call before the account query resolves.
-  const canWriteAccount = usePermission(accountId, 'account.write').allowed;
-  const canDeleteAccount = usePermission(accountId, 'account.delete').allowed;
-  const canInviteMember = usePermission(accountId, 'member.invite').allowed;
-  const canRemoveMember = usePermission(accountId, 'member.remove').allowed;
-  const canUpdateMember = usePermission(accountId, 'member.update').allowed;
-  const canCreateGroup = usePermission(accountId, 'group.create').allowed;
-  const canReadAudit = usePermission(accountId, 'audit.read').allowed;
+  // One batched probe instead of 7 separate /effective?action=… GETs. Each
+  // singular probe was its own DB round-trip, so a single load of this page
+  // fanned out 7 concurrent queries — a meaningful contributor to DB
+  // connection-pool pressure. The :batch endpoint answers all of them in one
+  // request. Results come back in the same order as ACCOUNT_PERMISSION_PROBES.
+  const [
+    { allowed: canWriteAccount },
+    { allowed: canDeleteAccount },
+    { allowed: canInviteMember },
+    { allowed: canRemoveMember },
+    { allowed: canUpdateMember },
+    { allowed: canCreateGroup },
+    { allowed: canReadAudit },
+  ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
   if (authLoading || !user) {
     return (

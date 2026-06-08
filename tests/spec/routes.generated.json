@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 339,
+  "count": 331,
   "routes": [
     {
       "method": "GET",
@@ -1105,38 +1105,6 @@
     {
       "method": "POST",
       "path": "/v1/projects/sync-opencode-sessions"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/queue/all"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/queue/messages/:messageId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/queue/messages/:messageId/move-down"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/queue/messages/:messageId/move-up"
-    },
-    {
-      "method": "DELETE",
-      "path": "/v1/queue/sessions/:sessionId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/queue/sessions/:sessionId"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/queue/sessions/:sessionId"
-    },
-    {
-      "method": "GET",
-      "path": "/v1/queue/status"
     },
     {
       "method": "POST",

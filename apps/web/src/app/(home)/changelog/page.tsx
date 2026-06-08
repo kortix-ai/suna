@@ -6,6 +6,13 @@ import rehypeSanitize from 'rehype-sanitize';
 
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
+import { LocalTime } from '@/components/ui/local-time';
+
+const RELEASE_DATE_FORMAT: Intl.DateTimeFormatOptions = {
+  year: 'numeric',
+  month: 'long',
+  day: 'numeric',
+};
 
 export const metadata: Metadata = {
   title: 'Changelog',
@@ -64,15 +71,6 @@ async function getReleases(): Promise<GitHubRelease[]> {
   } catch {
     return [];
   }
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return '';
-  return new Date(iso).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
 }
 
 function ReleaseNotes({ body }: { body: string }) {
@@ -181,9 +179,17 @@ export default async function ChangelogPage() {
                         Pre-release
                       </Badge>
                     )}
-                    <time className="text-xs text-muted-foreground">
-                      {formatDate(release.published_at)}
-                    </time>
+                    {release.published_at && (
+                      <time
+                        dateTime={release.published_at}
+                        className="text-xs text-muted-foreground"
+                      >
+                        <LocalTime
+                          value={release.published_at}
+                          options={RELEASE_DATE_FORMAT}
+                        />
+                      </time>
+                    )}
                   </div>
 
                   {release.body?.trim() ? (
