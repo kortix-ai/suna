@@ -338,3 +338,25 @@ resource "aws_appautoscaling_policy" "memory" {
     scale_out_cooldown = 30
   }
 }
+
+# Request-count scaling — scales on load even when CPU/memory stay flat (the
+# failure mode of the 2026-06-08 incident, where the service was blocked on DB
+# connections, not CPU). Opt-in: only created when requests_per_target_target > 0.
+resource "aws_appautoscaling_policy" "requests" {
+  count              = var.requests_per_target_target > 0 ? 1 : 0
+  name               = "${local.name}-requests"
+  policy_type        = "TargetTrackingScaling"
+  resource_id        = aws_appautoscaling_target.this.resource_id
+  scalable_dimension = aws_appautoscaling_target.this.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.this.service_namespace
+
+  target_tracking_scaling_policy_configuration {
+    predefined_metric_specification {
+      predefined_metric_type = "ALBRequestCountPerTarget"
+      resource_label         = "${aws_lb.this.arn_suffix}/${aws_lb_target_group.this.arn_suffix}"
+    }
+    target_value       = var.requests_per_target_target
+    scale_in_cooldown  = 300
+    scale_out_cooldown = 30
+  }
+}

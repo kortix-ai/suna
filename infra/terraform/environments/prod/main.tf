@@ -97,7 +97,14 @@ module "api" {
   container_insights = true
   cpu_target         = 55
   memory_target      = 65
-  tags               = local.tags
+  # Load-proportional scaling. CPU/mem alone left the service flat during the
+  # 2026-06-08 DB-contention incident. ~200 req/min/target is normal and peaks
+  # ~256; 600 only scales out on a genuine sustained surge (no flapping). Tune
+  # down once steady-state per-target load is confirmed. NOTE: the incident was
+  # slow-operation-driven, not load-driven, so this is general resilience, not
+  # the primary fix (that's the DB pool + statement_timeout in app code).
+  requests_per_target_target = 600
+  tags                       = local.tags
 }
 
 # DNS for the public API hostname. Gated by manage_dns so the stack (VPC/ALB/

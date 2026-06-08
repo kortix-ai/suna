@@ -24,6 +24,7 @@ import {
   buildSlackTurnEnv,
   deleteStream,
   finalizeStream,
+  loadStream,
   saveStream,
   startTurnStream,
 } from './streams';
@@ -302,7 +303,19 @@ export async function spawnAgentTurn(
       )
       .limit(1);
     if (existing) {
-      const handle = await startTurnStream(projectId, teamId, event, 'On it');
+      // The live stream is ONE row keyed by sessionId. If a turn is already in
+      // flight for this session (the agent is mid-task, streaming steps), opening
+      // a second stream here would overwrite that row via saveStream's upsert,
+      // and a failed/late delivery below would then clobber the running turn's
+      // progress with an error. So when a turn is already streaming, don't open a
+      // competing stream — just deliver the new message as a follow-up prompt into
+      // the running session and let the in-flight stream carry it forward.
+      const inflight = await loadStream(existing.sessionId);
+      const turnInFlight = !!inflight && !inflight.finalized;
+
+      const handle = turnInFlight
+        ? null
+        : await startTurnStream(projectId, teamId, event, 'On it');
       if (handle) {
         handle.sessionId = existing.sessionId;
         await saveStream(handle);
@@ -324,9 +337,13 @@ export async function spawnAgentTurn(
           );
         return;
       }
+      // Delivery failed. Only surface the error on a stream WE opened — never
+      // finalize/clobber a stream a different in-flight turn owns.
       if (handle) {
         await deleteStream(existing.sessionId);
-        await finalizeStream(handle, { error: "I couldn't reach the sandbox — try again." });
+        await finalizeStream(handle, {
+          error: "I'm still spinning that session back up — give it a moment and try again.",
+        });
       }
       if (outcome === 'transient') return;
       revived = true;
