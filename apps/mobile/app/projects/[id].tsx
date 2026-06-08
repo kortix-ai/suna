@@ -89,6 +89,7 @@ import { ChangesPage } from '@/components/pages/ChangesPage';
 import { FilesNavPage } from '@/components/pages/FilesNavPage';
 import { SandboxPage } from '@/components/pages/SandboxPage';
 import { DevPage } from '@/components/pages/DevPage';
+import { SettingsNavPage } from '@/components/pages/SettingsNavPage';
 import { MemoryPage } from '@/components/pages/MemoryPage';
 import { LlmProvidersPage } from '@/components/pages/LlmProvidersPage';
 import { TerminalPage } from '@/components/pages/TerminalPage';
@@ -2170,6 +2171,17 @@ export default function ProjectSessionScreen() {
           /* Active page tab — Dev (local-dev guide) */
           ) : activePageId === 'page:dev' && PAGE_TABS[activePageId] && !showTabsOverview ? (
             <DevPage
+              page={PAGE_TABS[activePageId]}
+              projectId={projectId}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Settings (project settings) */
+          ) : activePageId === 'page:settings' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <SettingsNavPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}

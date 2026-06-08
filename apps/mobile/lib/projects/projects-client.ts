@@ -12,6 +12,23 @@ import { API_URL, getAuthToken } from '@/api/config';
 export type AccountRole = 'owner' | 'admin' | 'member';
 export type ProjectRole = 'manager' | 'editor' | 'viewer';
 
+/** Stable ids for experimental features (mirrors apps/api experimental/features). */
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel';
+
+/** One experimental feature as described by the API catalog. */
+export interface ExperimentalFeatureView {
+  key: ExperimentalFeatureKey;
+  name: string;
+  description: string;
+  stability: 'experimental' | 'beta';
+  /** Platform supports it (operator env). When false the UI hides the toggle. */
+  available: boolean;
+  /** Effective per-project state (the switch position). */
+  enabled: boolean;
+  /** True when this project set an explicit choice (vs inheriting the default). */
+  overridden: boolean;
+}
+
 export interface KortixProject {
   project_id: string;
   account_id: string;
@@ -28,6 +45,8 @@ export interface KortixProject {
   effective_project_role?: ProjectRole | null;
   warm_pool?: { enabled: boolean; size: number };
   warm_pool_available?: boolean;
+  /** Full experimental-feature catalog (drives Settings → Experimental). */
+  experimental_features?: ExperimentalFeatureView[];
 }
 
 export interface KortixAccount {
@@ -581,6 +600,30 @@ export function setProjectPolicies(
 export function archiveProject(projectId: string) {
   return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}`, {
     method: 'DELETE',
+  });
+}
+
+/** Patch project fields (Settings → General / Repository). */
+export function updateProject(
+  projectId: string,
+  input: { name?: string; default_branch?: string; manifest_path?: string },
+) {
+  return apiFetch<KortixProject>(`/projects/${encodeURIComponent(projectId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+/** Toggle an experimental feature for a project (Settings → Experimental).
+ *  Pass `enabled: null` to clear the override and fall back to the default. */
+export function updateExperimentalFeature(
+  projectId: string,
+  feature: ExperimentalFeatureKey,
+  enabled: boolean | null,
+) {
+  return apiFetch<KortixProject>(`/projects/${encodeURIComponent(projectId)}/experimental`, {
+    method: 'PATCH',
+    body: JSON.stringify({ feature, enabled }),
   });
 }
 

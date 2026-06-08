@@ -62,10 +62,13 @@ import {
   setPersonalProjectSecret,
   setProjectPolicies,
   syncConnectors,
+  updateExperimentalFeature,
+  updateProject,
   updateProjectTrigger,
   upsertProjectSecret,
   type ChangeRequestStatus,
   type ConnectorSharing,
+  type ExperimentalFeatureKey,
   type CreateProjectSessionInput,
   type CreateProjectTriggerInput,
   type CreateSandboxTemplateInput,
@@ -156,6 +159,35 @@ export function useProject(projectId: string | null) {
     queryFn: () => getProject(projectId!),
     enabled: !!projectId,
     staleTime: 20_000,
+  });
+}
+
+// ── Settings (web parity: customize/sections/settings-view) ───────────────────
+
+/** Patch project fields (name / default branch / manifest path). */
+export function useUpdateProject(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { name?: string; default_branch?: string; manifest_path?: string }) =>
+      updateProject(projectId, input),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectKeys.project(projectId), updated);
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    },
+  });
+}
+
+/** Toggle an experimental / WIP feature for this project. */
+export function useUpdateExperimentalFeature(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ feature, enabled }: { feature: ExperimentalFeatureKey; enabled: boolean | null }) =>
+      updateExperimentalFeature(projectId, feature, enabled),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(projectKeys.project(projectId), updated);
+      queryClient.invalidateQueries({ queryKey: projectKeys.projectDetail(projectId) });
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+    },
   });
 }
 
