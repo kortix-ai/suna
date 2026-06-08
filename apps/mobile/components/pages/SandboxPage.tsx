@@ -237,16 +237,16 @@ function TemplateRow({
             <StateBadge state={template.daytona_state} />
             {editable && (
               <>
-                <TouchableOpacity onPress={() => { haptics.tap(); onEdit(template); }} hitSlop={6} style={{ width: 30, height: 30, borderRadius: 8, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center' }}>
+                <TouchableOpacity onPress={() => { haptics.tap(); onEdit(template); }} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center' }}>
                   <SquarePen size={14} color={muted} />
                 </TouchableOpacity>
-                <TouchableOpacity onPress={() => { haptics.tap(); onDelete(template); }} disabled={deleting} hitSlop={6} style={{ width: 30, height: 30, borderRadius: 8, borderWidth: 1, borderColor: 'rgba(239,68,68,0.35)', alignItems: 'center', justifyContent: 'center' }}>
+                <TouchableOpacity onPress={() => { haptics.tap(); onDelete(template); }} disabled={deleting} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.35)', alignItems: 'center', justifyContent: 'center' }}>
                   {deleting ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={14} color="#ef4444" />}
                 </TouchableOpacity>
               </>
             )}
             {buildable && (
-              <TouchableOpacity onPress={() => { haptics.tap(); onRebuild(template); }} disabled={rebuilding} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, height: 30, borderRadius: 8, borderWidth: 1, borderColor: border }}>
+              <TouchableOpacity onPress={() => { haptics.tap(); onRebuild(template); }} disabled={rebuilding} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: border }}>
                 {rebuilding ? <ActivityIndicator size="small" color={muted} /> : <RefreshCw size={13} color={muted} />}
                 <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: fg }}>Rebuild</Text>
               </TouchableOpacity>
@@ -576,11 +576,11 @@ function WarmPoolCard({ project, projectId, canManage, isDark }: { project: Kort
               )}
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <TouchableOpacity onPress={() => { haptics.tap(); setSizeClamped(size - 1); }} disabled={!canManage || save.isPending || size <= 0} style={{ width: 34, height: 34, borderRadius: 9, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center', opacity: size <= 0 ? 0.4 : 1 }}>
+              <TouchableOpacity onPress={() => { haptics.tap(); setSizeClamped(size - 1); }} disabled={!canManage || save.isPending || size <= 0} style={{ width: 36, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center', opacity: size <= 0 ? 0.4 : 1 }}>
                 <Minus size={16} color={fg} />
               </TouchableOpacity>
               <Text style={{ width: 26, textAlign: 'center', fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }}>{size}</Text>
-              <TouchableOpacity onPress={() => { haptics.tap(); setSizeClamped(size + 1); }} disabled={!canManage || save.isPending || size >= MAX_WARM} style={{ width: 34, height: 34, borderRadius: 9, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center', opacity: size >= MAX_WARM ? 0.4 : 1 }}>
+              <TouchableOpacity onPress={() => { haptics.tap(); setSizeClamped(size + 1); }} disabled={!canManage || save.isPending || size >= MAX_WARM} style={{ width: 36, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center', opacity: size >= MAX_WARM ? 0.4 : 1 }}>
                 <Plus size={16} color={fg} />
               </TouchableOpacity>
             </View>
@@ -689,16 +689,21 @@ export function SandboxPage({
         onOpenRightDrawer={onOpenRightDrawer}
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
-        rightActions={canManage ? (
-          <TouchableOpacity onPress={openNew} hitSlop={10} style={{ width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.05)' }}>
-            <Plus size={18} color={fg} />
-          </TouchableOpacity>
-        ) : undefined}
       />
 
       <PageContent>
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
-          <Text style={{ fontSize: 12.5, color: muted, marginBottom: 16 }}>
+          {/* Header: title + New template */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+            <Text style={{ flex: 1, fontSize: 19, fontFamily: 'Roobert-Medium', color: fg }}>Sandbox templates</Text>
+            {canManage && (
+              <TouchableOpacity onPress={openNew} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 12, paddingRight: 14, height: 36, borderRadius: 9999, backgroundColor: theme.primary }}>
+                <Plus size={15} color={theme.primaryForeground} />
+                <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>New template</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <Text style={{ fontSize: 12.5, lineHeight: 18, color: muted, marginBottom: 18 }}>
             Sessions boot from a sandbox template. The platform default is shared by every project and clones your repo into{' '}
             <Text style={{ fontFamily: MONO }}>/workspace</Text> at boot. Add your own here or via{' '}
             <Text style={{ fontFamily: MONO }}>[[sandbox.templates]]</Text> in <Text style={{ fontFamily: MONO }}>kortix.toml</Text>.
@@ -725,7 +730,6 @@ export function SandboxPage({
               )}
 
               {/* Templates */}
-              <SectionLabel color={muted}>Sandbox templates</SectionLabel>
               {templates.length === 0 ? (
                 <View style={{ borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: border, paddingVertical: 28, alignItems: 'center' }}>
                   <Text style={{ fontSize: 13.5, color: muted }}>No templates resolved yet.</Text>
