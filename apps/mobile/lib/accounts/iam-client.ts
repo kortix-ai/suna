@@ -136,6 +136,35 @@ export interface CreatedAuditWebhook extends AuditWebhook {
   secret: string;
 }
 
+// ── Member IAM detail ─────────────────────────────────────────────────────────
+
+export interface MemberGroupSummary {
+  group_id: string;
+  name: string;
+  added_at: string;
+}
+export interface MemberProjectAccess {
+  project_id: string;
+  project_name: string;
+  role: 'manager' | 'editor' | 'viewer';
+  sources: Array<'implicit' | 'direct' | 'group'>;
+}
+
+export async function listMemberGroups(accountId: string, userId: string) {
+  const res = await apiFetch<{ groups: MemberGroupSummary[] }>(`${iam(accountId)}/members/${encodeURIComponent(userId)}/groups`);
+  return res.groups;
+}
+export async function listMemberProjectAccess(accountId: string, userId: string) {
+  const res = await apiFetch<{ projects: MemberProjectAccess[] }>(`${iam(accountId)}/members/${encodeURIComponent(userId)}/project-access`);
+  return res.projects;
+}
+export function setMemberSuperAdmin(accountId: string, userId: string, isSuperAdmin: boolean) {
+  return apiFetch<{ user_id: string; is_super_admin: boolean }>(`${iam(accountId)}/members/${encodeURIComponent(userId)}/super-admin`, {
+    method: 'PATCH',
+    body: JSON.stringify({ isSuperAdmin }),
+  });
+}
+
 const auditHooks = (accountId: string) => `/accounts/${encodeURIComponent(accountId)}/audit/webhooks`;
 
 export async function listAuditWebhooks(accountId: string) {
