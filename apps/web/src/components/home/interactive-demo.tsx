@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
+import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -34,7 +35,7 @@ import {
   Wrench,
   type LucideIcon,
 } from 'lucide-react';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { FaCircle } from 'react-icons/fa';
 import { GoHomeFill } from 'react-icons/go';
@@ -306,8 +307,61 @@ function HomePage() {
   );
 }
 
+/** Soft slide-up reveal used for each streamed chunk of the chat demo. */
+function Reveal({
+  children,
+  className,
+  delay = 0,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  delay?: number;
+}) {
+  const reduce = useReducedMotion();
+  return (
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 8, filter: 'blur(2px)' }}
+      animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+      transition={{ duration: 0.4, ease: 'easeOut', delay }}
+      className={className}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+// Cumulative timeline (ms between steps) for the auto-playing chat stream:
+// 1 user msg → 2 reasoning → 3 tool/SELECT → 4 FROM → 5..7 checklist → 8 review → 9 file/done
+const CHAT_SEQUENCE_MS = [400, 600, 2400, 550, 750, 650, 650, 700, 1100];
+const CHAT_STREAM_STEPS = 9;
+
 function ChatPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const reduce = useReducedMotion();
+  const [stage, setStage] = useState(reduce ? CHAT_STREAM_STEPS : 0);
+
+  useEffect(() => {
+    if (reduce) {
+      setStage(CHAT_STREAM_STEPS);
+      return;
+    }
+    setStage(0);
+    const timers: number[] = [];
+    let acc = 0;
+    CHAT_SEQUENCE_MS.forEach((d, i) => {
+      acc += d;
+      timers.push(window.setTimeout(() => setStage(i + 1), acc));
+    });
+    return () => timers.forEach((t) => window.clearTimeout(t));
+  }, [reduce]);
+
+  const steps = [
+    'Pulled Q3 metrics from the data warehouse',
+    'Drafted 12 slides from your board template',
+    'Charted revenue, burn, and pipeline',
+  ];
+  const isDone = stage >= CHAT_STREAM_STEPS;
+
   return (
     <div className="flex h-full flex-col">
       <div className="text-muted-foreground mb-4 flex items-center gap-2 font-mono text-xs">
@@ -316,85 +370,157 @@ function ChatPage() {
       </div>
 
       <div className="flex-1 space-y-4 overflow-hidden">
-        <div className="bg-foreground text-background ml-auto w-fit max-w-[82%] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm">
-          {tHardcodedUi.raw(
-            'componentsHomeInteractiveDemo.line225JsxTextBuildTheQ3BoardDeckFromOurLatest',
-          )}
-        </div>
+        {stage >= 1 && (
+          <Reveal className="bg-foreground text-background ml-auto w-fit max-w-[82%] rounded-2xl rounded-br-sm px-4 py-2.5 text-sm">
+            {tHardcodedUi.raw(
+              'componentsHomeInteractiveDemo.line225JsxTextBuildTheQ3BoardDeckFromOurLatest',
+            )}
+          </Reveal>
+        )}
 
-        <div>
-          <div className="mb-2 flex items-center gap-2">
-            <span className="text-foreground flex items-center gap-2 text-sm font-medium">
-              <RiRobot3Fill className="size-3.5" />
-              finance-agent
-            </span>
-            <Badge size="sm" variant="secondary">
-              working
-            </Badge>
-            <span className="text-muted-foreground ml-auto text-xs">14:32</span>
-          </div>
-
-          <div className="border-border/60 bg-card overflow-hidden rounded-md border">
-            <div className="border-border/60 bg-muted/40 flex items-center gap-2 border-b px-3 py-2 text-xs">
-              <Database className="text-muted-foreground size-3.5" />
-              <span className="text-foreground font-medium">query_warehouse</span>
-              <Check className="ml-auto size-3.5 text-emerald-500" />
-            </div>
-            <div className="text-muted-foreground space-y-1 px-3 py-2.5 font-mono text-xs leading-relaxed">
-              <div>
-                <span className="text-foreground">SELECT</span>
-                {tHardcodedUi.raw(
-                  'componentsHomeInteractiveDemo.line245JsxTextRevenueBurnPipeline',
-                )}
-              </div>
-              <div>
-                <span className="text-foreground">FROM</span>
-                {tHardcodedUi.raw('componentsHomeInteractiveDemo.line246JsxTextMetricsQ3')}
-                <span className="text-emerald-500">
-                  {tHardcodedUi.raw('componentsHomeInteractiveDemo.line246JsxTextText312Rows')}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-3 space-y-2 pl-1">
-            {[
-              'Pulled Q3 metrics from the data warehouse',
-              'Drafted 12 slides from your board template',
-              'Charted revenue, burn, and pipeline',
-            ].map((s) => (
-              <div key={s} className="flex items-center gap-2 text-sm">
-                <PiCheckCircleFill className="text-kortix-green size-3.5 shrink-0" />
-                <span className="text-muted-foreground">{s}</span>
-              </div>
-            ))}
-            <div className="flex items-center gap-2 text-sm">
-              <FaCircle className="text-muted-foreground size-3 shrink-0" />
-              <span className="text-foreground">
-                {tHardcodedUi.raw(
-                  'componentsHomeInteractiveDemo.line260JsxTextFormattingAmpFinalReview',
-                )}
+        {stage >= 2 && (
+          <Reveal>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-foreground flex items-center gap-2 text-sm font-medium">
+                <RiRobot3Fill className="size-3.5" />
+                finance-agent
               </span>
+              <AnimatePresence mode="wait" initial={false}>
+                {isDone ? (
+                  <motion.span
+                    key="done"
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Badge size="sm" variant="badgeSuccess">
+                      done
+                    </Badge>
+                  </motion.span>
+                ) : (
+                  <motion.span
+                    key="working"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                  >
+                    <Badge size="sm" variant="secondary">
+                      working
+                    </Badge>
+                  </motion.span>
+                )}
+              </AnimatePresence>
+              <span className="text-muted-foreground ml-auto text-xs">14:32</span>
             </div>
-          </div>
 
-          <div className="border-border/60 bg-card mt-3 flex items-center gap-3 rounded-md border p-3">
-            <span className="bg-foreground/[0.06] text-foreground flex size-9 items-center justify-center rounded-lg">
-              <FileText className="size-4" />
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="text-foreground text-sm font-medium">Q3-board-deck.pptx</div>
-              <div className="text-muted-foreground text-xs">
-                {tHardcodedUi.raw(
-                  'componentsHomeInteractiveDemo.line269JsxTextText12SlidesReadyIn4Min',
+            <AnimatePresence mode="wait">
+              {stage === 2 && (
+                <motion.div
+                  key="reasoning"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.25 }}
+                  className="flex items-center gap-1.5 py-0.5"
+                >
+                  <span className="relative flex size-2.5 shrink-0">
+                    <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
+                    <span className="bg-muted-foreground/50 relative inline-flex size-2.5 rounded-full" />
+                  </span>
+                  <AnimatedThinkingText
+                    statusText="Reading the latest financials…"
+                    className="text-muted-foreground text-xs"
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {stage >= 3 && (
+              <Reveal className="border-border/60 bg-card overflow-hidden rounded-md border">
+                <div className="border-border/60 bg-muted/40 flex items-center gap-2 border-b px-3 py-2 text-xs">
+                  <Database className="text-muted-foreground size-3.5" />
+                  <span className="text-foreground font-medium">query_warehouse</span>
+                  {stage >= 4 ? (
+                    <Check className="ml-auto size-3.5 text-emerald-500" />
+                  ) : (
+                    <span className="border-muted-foreground/40 border-t-foreground ml-auto size-3.5 animate-spin rounded-full border-[1.5px]" />
+                  )}
+                </div>
+                <div className="text-muted-foreground space-y-1 px-3 py-2.5 font-mono text-xs leading-relaxed">
+                  <div>
+                    <span className="text-foreground">SELECT</span>
+                    {tHardcodedUi.raw(
+                      'componentsHomeInteractiveDemo.line245JsxTextRevenueBurnPipeline',
+                    )}
+                  </div>
+                  {stage >= 4 && (
+                    <motion.div
+                      initial={reduce ? false : { opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      transition={{ duration: 0.3 }}
+                    >
+                      <span className="text-foreground">FROM</span>
+                      {tHardcodedUi.raw('componentsHomeInteractiveDemo.line246JsxTextMetricsQ3')}
+                      <span className="text-emerald-500">
+                        {tHardcodedUi.raw(
+                          'componentsHomeInteractiveDemo.line246JsxTextText312Rows',
+                        )}
+                      </span>
+                    </motion.div>
+                  )}
+                </div>
+              </Reveal>
+            )}
+
+            {stage >= 5 && (
+              <div className="mt-3 space-y-2 pl-1">
+                {steps.map(
+                  (s, i) =>
+                    stage >= 5 + i && (
+                      <Reveal key={s} className="flex items-center gap-2 text-sm">
+                        <PiCheckCircleFill className="text-kortix-green size-3.5 shrink-0" />
+                        <span className="text-muted-foreground">{s}</span>
+                      </Reveal>
+                    ),
+                )}
+                {stage >= 8 && (
+                  <Reveal className="flex items-center gap-2 text-sm">
+                    {isDone ? (
+                      <PiCheckCircleFill className="text-kortix-green size-3.5 shrink-0" />
+                    ) : (
+                      <FaCircle className="text-muted-foreground size-3 shrink-0 animate-pulse" />
+                    )}
+                    <span className="text-foreground">
+                      {tHardcodedUi.raw(
+                        'componentsHomeInteractiveDemo.line260JsxTextFormattingAmpFinalReview',
+                      )}
+                    </span>
+                  </Reveal>
                 )}
               </div>
-            </div>
-            <span className="text-background/90 bg-primary/90 inline-flex size-8 items-center justify-center rounded-md border">
-              <Download className="size-4" />
-            </span>
-          </div>
-        </div>
+            )}
+
+            {stage >= 9 && (
+              <Reveal className="border-border/60 bg-card mt-3 flex items-center gap-3 rounded-md border p-3">
+                <span className="bg-foreground/[0.06] text-foreground flex size-9 items-center justify-center rounded-lg">
+                  <FileText className="size-4" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-foreground text-sm font-medium">Q3-board-deck.pptx</div>
+                  <div className="text-muted-foreground text-xs">
+                    {tHardcodedUi.raw(
+                      'componentsHomeInteractiveDemo.line269JsxTextText12SlidesReadyIn4Min',
+                    )}
+                  </div>
+                </div>
+                <span className="text-background/90 bg-primary/90 inline-flex size-8 items-center justify-center rounded-md border">
+                  <Download className="size-4" />
+                </span>
+              </Reveal>
+            )}
+          </Reveal>
+        )}
       </div>
 
       <div className="border-border bg-card mt-4 flex items-center gap-2 rounded-md border p-2.5">
