@@ -144,7 +144,25 @@ export function shouldIgnoreSentryBrowserNoise(event: {
     return true;
   }
 
-  if (isLikelyDomMutationNoise(message) && requestUrl.includes('/auth')) {
+  // Recoverable hydration noise (React #418 / "Hydration failed because the
+  // server rendered ...") is virtually always the browser mutating the DOM
+  // before/during hydration — Chrome's auto-translate (offered to users whose
+  // locale differs from the page, e.g. pt-PT visitors on our English-rendered
+  // marketing site) and content-injecting extensions rewrite text nodes, which
+  // React then reports as a server/client mismatch. It is recoverable (React
+  // regenerates the subtree on the client) and is not an app defect.
+  //
+  // This was previously scoped to `/auth` only, but the same browser behaviour
+  // fires everywhere the user navigates — the marketing site (`/`, `/pt`, ...)
+  // and the post-login `/projects` landing — so the route guard let real
+  // browser noise through to error tracking. Suppress this class globally.
+  //
+  // NOTE: this only covers the *recoverable* #418/#423 hydration-text class
+  // listed in KNOWN_HYDRATION_NOISE_MESSAGES. A genuine, deterministic app
+  // hydration bug surfaces as the non-recoverable React #419/#421/#425 ("Text
+  // content does not match" / "There was an error while hydrating") which are
+  // NOT in that list and still report normally.
+  if (isLikelyDomMutationNoise(message)) {
     return true;
   }
 
