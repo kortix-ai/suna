@@ -25,6 +25,7 @@ import {
   getSlackMode,
   getProject,
   getProjectDetail,
+  getProjectFileHistory,
   getVersionDiff,
   linkRepository,
   listAccounts,
@@ -35,6 +36,7 @@ import {
   listPipedreamApps,
   listProjectAccess,
   listProjectBranches,
+  listProjectFiles,
   listProjectPolicies,
   listProjectSecrets,
   listProjectSessions,
@@ -84,6 +86,12 @@ export const projectKeys = {
   changeRequestMergePreview: (projectId: string | null | undefined, crId: string | null | undefined) =>
     ['change-request-merge-preview', projectId, crId] as const,
   branches: (projectId: string | null | undefined) => ['project-branches', projectId] as const,
+  projectFiles: (projectId: string | null | undefined, ref: string) =>
+    ['project-files', projectId, ref] as const,
+  projectFileContent: (projectId: string | null | undefined, path: string | null | undefined, ref: string) =>
+    ['project-file-content', projectId, path, ref] as const,
+  projectFileHistory: (projectId: string | null | undefined, path: string | null | undefined, ref: string) =>
+    ['project-file-history', projectId, path, ref] as const,
   versionDiff: (projectId: string | null | undefined, from: string, into: string) =>
     ['version-diff', projectId, from, into] as const,
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
@@ -598,5 +606,43 @@ export function useVersionDiff(projectId: string | null, from: string, into: str
     queryFn: () => getVersionDiff(projectId!, from, into),
     enabled: enabled && !!projectId && !!from && !!into && from !== into,
     staleTime: 10_000,
+  });
+}
+
+// ── Project files (web parity) ────────────────────────────────────────────────
+
+/** Flat, recursive file list for a ref — the browser derives the tree from it. */
+export function useProjectFiles(projectId: string | null, ref: string) {
+  return useQuery({
+    queryKey: projectKeys.projectFiles(projectId, ref),
+    queryFn: () => listProjectFiles(projectId!, { ref }),
+    enabled: !!projectId && !!ref,
+    staleTime: 20_000,
+    retry: (count, err: any) => {
+      const m = String(err?.message ?? '');
+      if (/40[34]/.test(m) || /not found|forbidden/i.test(m)) return false;
+      return count < 3;
+    },
+  });
+}
+
+/** Read a file's text content at a ref (version-aware). */
+export function useProjectFileContent(projectId: string | null, path: string | null, ref: string) {
+  return useQuery({
+    queryKey: projectKeys.projectFileContent(projectId, path, ref),
+    queryFn: () => readProjectFile(projectId!, path!, ref),
+    enabled: !!projectId && !!path && !!ref,
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+/** Commit history (checkpoints) for a file at a ref. */
+export function useProjectFileHistory(projectId: string | null, path: string | null, ref: string) {
+  return useQuery({
+    queryKey: projectKeys.projectFileHistory(projectId, path, ref),
+    queryFn: () => getProjectFileHistory(projectId!, path!, { ref, limit: 50 }),
+    enabled: !!projectId && !!path && !!ref,
+    staleTime: 30_000,
   });
 }

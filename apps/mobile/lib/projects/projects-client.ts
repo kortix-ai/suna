@@ -1000,3 +1000,70 @@ export function getVersionDiff(projectId: string, from: string, into: string) {
     `/projects/${encodeURIComponent(projectId)}/version-diff?${params.toString()}`,
   );
 }
+
+// ── Project files (web parity: features/project-files) ────────────────────────
+// A read-only git-repo browser. /files returns a FLAT recursive file list
+// (git ls-tree -r) — the folder tree is derived client-side from the paths.
+// readProjectFile (above) reads file content. No write/rename/delete.
+
+export interface ProjectFileEntry {
+  path: string;
+  type: 'file';
+  size: number | null;
+}
+
+export interface ProjectCommit {
+  hash: string;
+  short_hash: string;
+  parents: string[];
+  author_name: string | null;
+  author_email: string | null;
+  authored_at: string | null;
+  committer_name: string | null;
+  committer_email: string | null;
+  committed_at: string | null;
+  subject: string;
+  body: string;
+}
+
+export interface ProjectFileHistoryResponse {
+  path: string;
+  ref: string;
+  commits: ProjectCommit[];
+  hasMore: boolean;
+}
+
+/** Flat, recursive file list for a ref (optionally scoped to a subtree path). */
+export function listProjectFiles(projectId: string, options?: { ref?: string; path?: string }) {
+  const params = new URLSearchParams();
+  if (options?.ref) params.set('ref', options.ref);
+  if (options?.path) params.set('path', options.path);
+  const qs = params.toString();
+  return apiFetch<ProjectFileEntry[]>(
+    `/projects/${encodeURIComponent(projectId)}/files${qs ? `?${qs}` : ''}`,
+  );
+}
+
+/** Commit history that touched a file (checkpoints). */
+export function getProjectFileHistory(
+  projectId: string,
+  path: string,
+  options?: { ref?: string; limit?: number; skip?: number },
+) {
+  const params = new URLSearchParams({ path });
+  if (options?.ref) params.set('ref', options.ref);
+  if (options?.limit != null) params.set('limit', String(options.limit));
+  if (options?.skip != null) params.set('skip', String(options.skip));
+  return apiFetch<ProjectFileHistoryResponse>(
+    `/projects/${encodeURIComponent(projectId)}/files/history?${params.toString()}`,
+  );
+}
+
+/** Absolute URL for a repo (or subtree) zip archive — used with expo-file-system. */
+export function projectArchiveUrl(projectId: string, ref: string, path?: string): string {
+  const params = new URLSearchParams();
+  if (ref) params.set('ref', ref);
+  if (path) params.set('path', path);
+  const qs = params.toString();
+  return `${API_URL}/projects/${encodeURIComponent(projectId)}/files/archive${qs ? `?${qs}` : ''}`;
+}
