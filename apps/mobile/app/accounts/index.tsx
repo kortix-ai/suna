@@ -5,7 +5,7 @@
  */
 
 import * as React from 'react';
-import { View, ScrollView, TouchableOpacity, ActivityIndicator, Platform, Alert } from 'react-native';
+import { View, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Stack, useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,11 +13,11 @@ import { ChevronLeft, ChevronRight, Check, Plus } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
 import { useThemeColors } from '@/lib/theme-colors';
-import { useToast } from '@/components/ui/toast-provider';
 import { haptics } from '@/lib/haptics';
 import { useAuthContext } from '@/contexts';
-import { useAccounts, useCreateAccount } from '@/lib/projects/hooks';
+import { useAccounts } from '@/lib/projects/hooks';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { NewAccountSheet } from '@/components/accounts/NewAccountSheet';
 
 function roleLabel(account: { account_role?: string; personal_account?: boolean }): string {
   if (account.personal_account) return 'Personal';
@@ -31,11 +31,10 @@ export default function AccountsListScreen() {
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
-  const toast = useToast();
   const { user } = useAuthContext();
   const accountsQuery = useAccounts(!!user);
-  const createAccount = useCreateAccount();
   const { selectedAccountId, setSelectedAccountId } = useCurrentAccountStore();
+  const [showNewAccount, setShowNewAccount] = React.useState(false);
 
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
@@ -47,23 +46,7 @@ export default function AccountsListScreen() {
 
   const handleNewAccount = () => {
     haptics.tap();
-    if (Platform.OS !== 'ios') {
-      Alert.alert('New account', 'Creating accounts is available on iOS for now.');
-      return;
-    }
-    Alert.prompt('New account', 'Name your account', async (value) => {
-      const name = (value || '').trim();
-      if (!name) return;
-      try {
-        haptics.medium();
-        const account = await createAccount.mutateAsync(name);
-        setSelectedAccountId(account.account_id);
-        toast.success('Account created');
-        router.push(`/accounts/${account.account_id}`);
-      } catch (e: any) {
-        toast.error(e?.message || 'Failed to create account');
-      }
-    });
+    setShowNewAccount(true);
   };
 
   return (
@@ -125,6 +108,16 @@ export default function AccountsListScreen() {
           </View>
         )}
       </ScrollView>
+
+      <NewAccountSheet
+        open={showNewAccount}
+        onClose={() => setShowNewAccount(false)}
+        onCreated={(account) => {
+          setShowNewAccount(false);
+          setSelectedAccountId(account.account_id);
+          router.push(`/accounts/${account.account_id}`);
+        }}
+      />
     </View>
   );
 }

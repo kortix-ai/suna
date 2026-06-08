@@ -4,8 +4,8 @@
  * Same shared Icon/Avatar + NativeWind styling as AccountMenuSheet.
  */
 
-import React, { useCallback, useEffect, useRef } from 'react';
-import { View, Pressable, Alert, Platform, Linking } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { View, Pressable } from 'react-native';
 import { BottomSheetBackdrop, BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
@@ -15,12 +15,10 @@ import { ArrowUpRight, Check, Plus, Settings } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Avatar } from '@/components/ui/Avatar';
-import { useToast } from '@/components/ui/toast-provider';
-import { getFrontendUrl } from '@/api/config';
 import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
-import { useCreateAccount } from '@/lib/projects/hooks';
 import { haptics } from '@/lib/haptics';
 import type { KortixAccount } from '@/lib/projects/projects-client';
+import { NewAccountSheet } from '@/components/accounts/NewAccountSheet';
 
 interface AccountSwitcherSheetProps {
   open: boolean;
@@ -43,11 +41,9 @@ export function AccountSwitcherSheet({
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const theme = useThemeColors();
-  const toast = useToast();
-  const createAccount = useCreateAccount();
+  const [showNewAccount, setShowNewAccount] = useState(false);
 
   const dividerColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
-  const frontend = getFrontendUrl().replace(/\/$/, '');
 
   useEffect(() => {
     if (open) sheetRef.current?.present();
@@ -67,26 +63,11 @@ export function AccountSwitcherSheet({
   }, []);
 
   const handleNewAccount = useCallback(() => {
-    if (Platform.OS !== 'ios') {
-      go(() => Linking.openURL(`${frontend}/accounts`).catch(() => {}));
-      return;
-    }
-    Alert.prompt('New account', 'Name your account', async (value) => {
-      const name = (value || '').trim();
-      if (!name) return;
-      try {
-        haptics.medium();
-        const account = await createAccount.mutateAsync(name);
-        onSelect(account.account_id);
-        sheetRef.current?.dismiss();
-        toast.success('Account created');
-      } catch (e: any) {
-        toast.error(e?.message || 'Failed to create account');
-      }
-    });
-  }, [createAccount, onSelect, toast, go, frontend]);
+    go(() => setShowNewAccount(true));
+  }, [go]);
 
   return (
+    <>
     <BottomSheetModal
       ref={sheetRef}
       enableDynamicSizing
@@ -140,6 +121,13 @@ export function AccountSwitcherSheet({
         <ActionRow icon={Plus} label="New account" onPress={handleNewAccount} />
       </BottomSheetView>
     </BottomSheetModal>
+
+    <NewAccountSheet
+      open={showNewAccount}
+      onClose={() => setShowNewAccount(false)}
+      onCreated={(account) => { setShowNewAccount(false); onSelect(account.account_id); }}
+    />
+    </>
   );
 }
 
