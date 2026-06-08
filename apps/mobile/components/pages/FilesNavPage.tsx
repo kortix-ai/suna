@@ -17,6 +17,7 @@ import {
   ActivityIndicator,
   Alert,
   Modal,
+  Dimensions,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -58,7 +59,7 @@ import {
   useProjectCommitDiff,
 } from '@/lib/projects/hooks';
 import { projectArchiveUrl } from '@/lib/projects/projects-client';
-import type { ProjectFileEntry, ProjectBranch } from '@/lib/projects/projects-client';
+import type { ProjectFileEntry, ProjectBranch, ProjectCommit } from '@/lib/projects/projects-client';
 import type { SandboxFile } from '@/api/types';
 import { getAuthToken } from '@/api/config';
 import { haptics } from '@/lib/haptics';
@@ -218,6 +219,7 @@ function FileViewerModal({
   const insets = useSafeAreaInsets();
   const file = files[index];
   const [view, setView] = useState<'content' | 'history'>('content');
+  const [historyCommit, setHistoryCommit] = useState<ProjectCommit | null>(null);
   const [busy, setBusy] = useState(false);
 
   const content = useProjectFileContent(projectId, file?.path ?? null, ref_);
@@ -230,7 +232,7 @@ function FileViewerModal({
   const chipBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
 
   // Reset to content when navigating files.
-  useEffect(() => { setView('content'); }, [file?.path]);
+  useEffect(() => { setView('content'); setHistoryCommit(null); }, [file?.path]);
 
   if (!file) return null;
   const previewType = getFilePreviewType(file.name);
@@ -269,7 +271,7 @@ function FileViewerModal({
               </TouchableOpacity>
             </View>
           )}
-          <TouchableOpacity onPress={() => { haptics.tap(); setView(view === 'history' ? 'content' : 'history'); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: view === 'history' ? theme.primaryLight : chipBg, alignItems: 'center', justifyContent: 'center' }}>
+          <TouchableOpacity onPress={() => { haptics.tap(); setHistoryCommit(null); setView(view === 'history' ? 'content' : 'history'); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: view === 'history' ? theme.primaryLight : chipBg, alignItems: 'center', justifyContent: 'center' }}>
             <History size={16} color={view === 'history' ? theme.primary : muted} />
           </TouchableOpacity>
           <TouchableOpacity onPress={download} disabled={busy} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: chipBg, alignItems: 'center', justifyContent: 'center' }}>
@@ -279,7 +281,7 @@ function FileViewerModal({
 
         {/* Body */}
         {view === 'history' ? (
-          <FileHistoryView projectId={projectId} path={file.path} historyQuery={history} isDark={isDark} />
+          <FileHistoryView historyQuery={history} onSelectCommit={setHistoryCommit} isDark={isDark} />
         ) : content.isLoading ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
         ) : content.isError ? (
@@ -296,25 +298,51 @@ function FileViewerModal({
           </View>
         )}
 
+        {/* Checkpoint changes — bottom sheet */}
+        {historyCommit && (
+          <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'flex-end' }}>
+            <TouchableOpacity
+              activeOpacity={1}
+              onPress={() => setHistoryCommit(null)}
+              style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' }}
+            />
+            <View style={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden', paddingBottom: insets.bottom }}>
+              <View style={{ alignItems: 'center', paddingTop: 8 }}>
+                <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }} />
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Checkpoint changes</Text>
+                  <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={2}>{historyCommit.subject || '(no message)'}</Text>
+                  <Text style={{ fontSize: 12, color: muted, marginTop: 2 }} numberOfLines={1}>
+                    {historyCommit.author_name || 'Unknown'} · {relativeTime(historyCommit.committed_at || historyCommit.authored_at)} · <Text style={{ fontFamily: 'Menlo' }}>{historyCommit.short_hash}</Text>
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => { haptics.tap(); setHistoryCommit(null); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: chipBg, alignItems: 'center', justifyContent: 'center' }}>
+                  <X size={17} color={muted} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={{ maxHeight: Dimensions.get('window').height * 0.58 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+                <CommitDiff projectId={projectId} sha={historyCommit.hash} path={file.path} isDark={isDark} />
+              </ScrollView>
+            </View>
+          </View>
+        )}
       </View>
     </Modal>
   );
 }
 
 function FileHistoryView({
-  projectId,
-  path,
   historyQuery,
+  onSelectCommit,
   isDark,
 }: {
-  projectId: string;
-  path: string;
   historyQuery: ReturnType<typeof useProjectFileHistory>;
+  onSelectCommit: (c: ProjectCommit) => void;
   isDark: boolean;
 }) {
   const insets = useSafeAreaInsets();
-  const theme = useThemeColors();
-  const [expanded, setExpanded] = useState<string | null>(null);
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
@@ -335,32 +363,23 @@ function FileHistoryView({
       <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 }}>
         {commits.length} {commits.length === 1 ? 'checkpoint' : 'checkpoints'} · tap to see changes
       </Text>
-      {commits.map((c, i) => {
-        const open = expanded === c.hash;
-        return (
-          <View key={c.hash} style={{ borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}>
-            <TouchableOpacity
-              onPress={() => { haptics.tap(); setExpanded(open ? null : c.hash); }}
-              activeOpacity={0.6}
-              style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 12 }}
-            >
-              <GitCommitHorizontal size={18} color={open ? theme.primary : muted} style={{ marginTop: 1 }} />
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={2}>{c.subject || '(no message)'}</Text>
-                <Text style={{ fontSize: 12.5, color: muted, marginTop: 3 }} numberOfLines={1}>
-                  {c.author_name || 'Unknown'} · {relativeTime(c.committed_at || c.authored_at)} · <Text style={{ fontFamily: 'Menlo' }}>{c.short_hash}</Text>
-                </Text>
-              </View>
-              {open ? <ChevronDown size={18} color={muted} style={{ marginTop: 1 }} /> : <ChevronRight size={18} color={muted} style={{ marginTop: 1 }} />}
-            </TouchableOpacity>
-            {open && (
-              <View style={{ paddingHorizontal: 16, paddingBottom: 14 }}>
-                <CommitDiff projectId={projectId} sha={c.hash} path={path} isDark={isDark} />
-              </View>
-            )}
+      {commits.map((c, i) => (
+        <TouchableOpacity
+          key={c.hash}
+          onPress={() => { haptics.tap(); onSelectCommit(c); }}
+          activeOpacity={0.6}
+          style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}
+        >
+          <GitCommitHorizontal size={18} color={muted} style={{ marginTop: 1 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={2}>{c.subject || '(no message)'}</Text>
+            <Text style={{ fontSize: 12.5, color: muted, marginTop: 3 }} numberOfLines={1}>
+              {c.author_name || 'Unknown'} · {relativeTime(c.committed_at || c.authored_at)} · <Text style={{ fontFamily: 'Menlo' }}>{c.short_hash}</Text>
+            </Text>
           </View>
-        );
-      })}
+          <ChevronRight size={18} color={muted} style={{ marginTop: 1 }} />
+        </TouchableOpacity>
+      ))}
       {historyQuery.data?.hasMore && (
         <Text style={{ fontSize: 12, color: muted, textAlign: 'center', marginTop: 12 }}>Showing the most recent {commits.length} checkpoints.</Text>
       )}
