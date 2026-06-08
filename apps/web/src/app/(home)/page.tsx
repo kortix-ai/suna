@@ -678,7 +678,7 @@ export default function Home() {
                   <div className="h-full w-full">
                     <div className="hidden w-full lg:block">
                       <div className="bg-background relative grid aspect-video w-full grid-cols-12 flex-col items-center justify-center gap-24 overflow-hidden px-4">
-                        <div className="border-secondary dark:border-card relative col-span-3 aspect-9/19.5 h-[min(95vw,590px)] shrink-0 overflow-hidden rounded-xl border-4 shadow-sm">
+                        <div className="border-secondary dark:border-card relative col-span-3 aspect-9/19.5 h-[min(95vw,990px)] shrink-0 overflow-hidden rounded-xl border-4 shadow-sm">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src="https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/ai-workspace-mobile"

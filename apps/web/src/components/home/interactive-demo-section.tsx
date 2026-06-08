@@ -1115,47 +1115,49 @@ export function InteractiveDemoSection({
                 </div>
 
                 <div className="lg:hidden">
-                  <div className="bg-foreground/10 mx-auto w-full max-w-full [scrollbar-width:none] overflow-x-auto scroll-smooth [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-                    <div className="shadow-custom mx-auto flex w-max items-center gap-0.5 overflow-hidden pt-1">
-                      {ORDER.map((id, index) => {
-                        const { label, icon: Icon } = PAGES[id];
-                        const isActive = id === active;
-                        return (
-                          <button
-                            key={id}
-                            ref={(el) => {
-                              if (el) mobileTabRefs.current[id] = el;
-                              else delete mobileTabRefs.current[id];
-                            }}
-                            aria-label={label}
-                            aria-current={isActive ? 'page' : undefined}
-                            className={cn(
-                              'text-foreground hit-area-3 flex shrink-0 cursor-pointer items-center justify-center transition-colors duration-150 ease-out',
-                              !isActive ? 'gap-2 rounded-full px-3.5 py-0 [&>svg]:size-4' : '',
-                              index !== 0 && 'rounded-tl-none',
-                              index !== ORDER.length && 'rounded-tr-none',
-                            )}
-                            type="button"
-                            onClick={() => setActive(id)}
-                          >
-                            {isActive ? (
-                              <span className="relative flex items-stretch">
-                                {index !== 0 && <TabScallopEdge side="left" />}
-                                <span className="bg-background relative z-10 flex items-center gap-2 rounded-t-xl px-3.5 py-1 [&>svg]:size-4">
+                  <div className="mx-auto w-full max-w-full [scrollbar-width:none] overflow-x-auto scroll-smooth [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                    <div className="bg-border dark:bg-background w-max min-w-full  pt-1">
+                      <div className="shadow-custom flex w-max items-center gap-0.5 overflow-hidden ">
+                        {ORDER.map((id, index) => {
+                          const { label, icon: Icon } = PAGES[id];
+                          const isActive = id === active;
+                          return (
+                            <button
+                              key={id}
+                              ref={(el) => {
+                                if (el) mobileTabRefs.current[id] = el;
+                                else delete mobileTabRefs.current[id];
+                              }}
+                              aria-label={label}
+                              aria-current={isActive ? 'page' : undefined}
+                              className={cn(
+                                'text-foreground hit-area-3 flex shrink-0 cursor-pointer items-center justify-center transition-colors duration-150 ease-out',
+                                !isActive ? 'gap-2 rounded-full px-3.5 py-0 [&>svg]:size-4' : '',
+                                index !== 0 && 'rounded-tl-none',
+                                index !== ORDER.length && 'rounded-tr-none',
+                              )}
+                              type="button"
+                              onClick={() => setActive(id)}
+                            >
+                              {isActive ? (
+                                <span className="relative flex items-stretch">
+                                  {index !== 0 && <TabScallopEdge side="left" />}
+                                  <span className="bg-background dark:bg-primary/7 relative z-10 flex items-center gap-2 rounded-t-xl px-3.5 py-1 [&>svg]:size-4">
+                                    {Icon}
+                                    {label}
+                                  </span>
+                                  {index !== ORDER.length - 1 && <TabScallopEdge side="right" />}
+                                </span>
+                              ) : (
+                                <>
                                   {Icon}
                                   {label}
-                                </span>
-                                {index !== ORDER.length - 1 && <TabScallopEdge side="right" />}
-                              </span>
-                            ) : (
-                              <>
-                                {Icon}
-                                {label}
-                              </>
-                            )}
-                          </button>
-                        );
-                      })}
+                                </>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 
