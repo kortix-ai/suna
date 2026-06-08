@@ -66,3 +66,53 @@ export function revokeAccountSession(accountId: string, sessionId: string) {
     body: JSON.stringify({}),
   });
 }
+
+// ── PAT (CLI token) policy ────────────────────────────────────────────────────
+
+export interface PatPolicy {
+  max_lifetime_days: number | null;
+  require_expiry: boolean;
+  idle_revoke_days: number | null;
+}
+
+export function getPatPolicy(accountId: string) {
+  return apiFetch<PatPolicy>(`${iam(accountId)}/pat-policy`);
+}
+export function updatePatPolicy(accountId: string, patch: Partial<PatPolicy>) {
+  return apiFetch<PatPolicy>(`${iam(accountId)}/pat-policy`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+
+// ── Service accounts ──────────────────────────────────────────────────────────
+
+export interface ServiceAccount {
+  service_account_id: string;
+  name: string;
+  description: string | null;
+  public_prefix: string;
+  status: 'active' | 'disabled';
+  last_used_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+  disabled_at: string | null;
+}
+export interface CreatedServiceAccount extends ServiceAccount {
+  /** Plaintext bearer — shown ONCE at create. */
+  secret: string;
+}
+
+export async function listServiceAccounts(accountId: string) {
+  const res = await apiFetch<{ service_accounts: ServiceAccount[] }>(`${iam(accountId)}/service-accounts`);
+  return res.service_accounts;
+}
+export function createServiceAccount(accountId: string, input: { name: string; description?: string }) {
+  return apiFetch<CreatedServiceAccount>(`${iam(accountId)}/service-accounts`, { method: 'POST', body: JSON.stringify(input) });
+}
+export function disableServiceAccount(accountId: string, saId: string) {
+  return apiFetch<{ disabled: boolean }>(`${iam(accountId)}/service-accounts/${encodeURIComponent(saId)}/disable`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+export function deleteServiceAccount(accountId: string, saId: string) {
+  return apiFetch<{ deleted: boolean }>(`${iam(accountId)}/service-accounts/${encodeURIComponent(saId)}`, { method: 'DELETE' });
+}
