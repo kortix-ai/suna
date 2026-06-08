@@ -132,7 +132,10 @@ export function AccountSwitcherSheet({
         <ActionRow
           icon={ArrowUpRight}
           label="All accounts"
-          onPress={() => go(() => Linking.openURL(`${frontend}/accounts`).catch(() => {}))}
+          onPress={() => {
+            const target = selectedAccountId ?? accounts[0]?.account_id;
+            if (target) go(() => router.push(`/accounts/${target}`));
+          }}
         />
         <ActionRow icon={Plus} label="New account" onPress={handleNewAccount} />
       </BottomSheetView>
