@@ -155,7 +155,8 @@ function ServiceAccountsCard({ accountId, canManage, isDark }: { accountId: stri
   const [busyId, setBusyId] = useState<string | null>(null);
   const [sheet, setSheet] = useState<SaSheet>(null);
   const sheetRef = React.useRef<BottomSheetModal>(null);
-  const open = (s: NonNullable<SaSheet>) => { setSheet(s); sheetRef.current?.present(); };
+  const open = (s: NonNullable<SaSheet>) => setSheet(s);
+  useEffect(() => { if (sheet) sheetRef.current?.present(); }, [sheet]);
 
   const disable = useMutation({
     mutationFn: (saId: string) => disableServiceAccount(accountId, saId),

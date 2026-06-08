@@ -14,7 +14,7 @@
  * Mobile branding: PageHeader + PageContent chrome, bottom sheets, design tokens.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Alert } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -717,7 +717,8 @@ export function MembersNavPage({
 
   const [sheet, setSheet] = useState<SheetState>(null);
   const sheetRef = React.useRef<BottomSheetModal>(null);
-  const open = (s: NonNullable<SheetState>) => { setSheet(s); sheetRef.current?.present(); };
+  const open = (s: NonNullable<SheetState>) => setSheet(s);
+  useEffect(() => { if (sheet) sheetRef.current?.present(); }, [sheet]);
 
   const attachedIds = useMemo(() => new Set((grantsQuery.data?.grants ?? []).map((g) => g.group_id)), [grantsQuery.data]);
   const bgColor = isDark ? '#090909' : '#FFFFFF';

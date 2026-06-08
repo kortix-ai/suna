@@ -4,7 +4,7 @@
  * enable/disable, delete.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -63,7 +63,8 @@ export function ObservabilityCards({ accountId, canManage, isDark }: { accountId
   const [busyId, setBusyId] = useState<string | null>(null);
   const [sheet, setSheet] = useState<Sheet>(null);
   const sheetRef = React.useRef<BottomSheetModal>(null);
-  const open = (s: NonNullable<Sheet>) => { setSheet(s); sheetRef.current?.present(); };
+  const open = (s: NonNullable<Sheet>) => setSheet(s);
+  useEffect(() => { if (sheet) sheetRef.current?.present(); }, [sheet]);
 
   const toggle = useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => updateAuditWebhook(accountId, id, { enabled }),

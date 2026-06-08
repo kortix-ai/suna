@@ -5,7 +5,7 @@
  * change role, remove). Per-member actions open a bottom sheet.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Alert, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -108,7 +108,13 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
   const [busyId, setBusyId] = useState<string | null>(null);
   const [sheet, setSheet] = useState<SheetState>(null);
   const sheetRef = React.useRef<BottomSheetModal>(null);
-  const openSheet = (s: NonNullable<SheetState>) => { setSheet(s); sheetRef.current?.present(); };
+  // Set the content first, then present on the next commit. Presenting in the
+  // same tick as setState races the modal open before its content has rendered,
+  // which intermittently showed an empty sheet.
+  const openSheet = (s: NonNullable<SheetState>) => setSheet(s);
+  useEffect(() => {
+    if (sheet) sheetRef.current?.present();
+  }, [sheet]);
 
   const members = membersQuery.data ?? [];
   const sorted = useMemo(() => {
