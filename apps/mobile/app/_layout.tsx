@@ -640,6 +640,10 @@ export default function RootLayout() {
                                       }}
                                     />
                                     <Stack.Screen
+                                      name="accounts/index"
+                                      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
+                                    />
+                                    <Stack.Screen
                                       name="accounts/[id]"
                                       options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
                                     />

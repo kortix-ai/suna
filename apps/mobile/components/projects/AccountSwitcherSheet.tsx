@@ -127,15 +127,15 @@ export function AccountSwitcherSheet({
         <ActionRow
           icon={Settings}
           label="Account settings"
-          onPress={() => go(() => router.push('/(settings)'))}
-        />
-        <ActionRow
-          icon={ArrowUpRight}
-          label="All accounts"
           onPress={() => {
             const target = selectedAccountId ?? accounts[0]?.account_id;
             if (target) go(() => router.push(`/accounts/${target}`));
           }}
+        />
+        <ActionRow
+          icon={ArrowUpRight}
+          label="All accounts"
+          onPress={() => go(() => router.push('/accounts'))}
         />
         <ActionRow icon={Plus} label="New account" onPress={handleNewAccount} />
       </BottomSheetView>
