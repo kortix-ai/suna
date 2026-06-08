@@ -4,8 +4,8 @@
  * of the mobile app.
  */
 
-import React from 'react';
-import { View, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, TouchableOpacity, ActivityIndicator, Animated, Easing, type ViewStyle } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { useThemeColors } from '@/lib/theme-colors';
 import type { AccountRole } from '@/lib/projects/projects-client';
@@ -106,6 +106,57 @@ export function TabPlaceholder({ text, isDark, loading }: { text: string; isDark
   return (
     <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 12 }}>
       {loading ? <ActivityIndicator size="small" color={c.muted} /> : <Text style={{ fontSize: 14, color: c.muted, textAlign: 'center' }}>{text}</Text>}
+    </View>
+  );
+}
+
+// ─── Skeletons ────────────────────────────────────────────────────────────────
+
+function useShimmer() {
+  const v = useRef(new Animated.Value(0.45)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(v, { toValue: 1, duration: 720, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(v, { toValue: 0.45, duration: 720, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [v]);
+  return v;
+}
+
+export function Skeleton({ w, h, r = 8, isDark, style }: { w: number | string; h: number; r?: number; isDark: boolean; style?: ViewStyle }) {
+  const opacity = useShimmer();
+  const bg = isDark ? 'rgba(255,255,255,0.09)' : 'rgba(0,0,0,0.07)';
+  return <Animated.View style={[{ width: w as any, height: h, borderRadius: r, backgroundColor: bg, opacity }, style]} />;
+}
+
+/** A row of avatar + two text lines — used for member/group list loading. */
+export function SkeletonRow({ isDark, avatar = true }: { isDark: boolean; avatar?: boolean }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12 }}>
+      {avatar && <Skeleton w={36} h={36} r={18} isDark={isDark} />}
+      <View style={{ flex: 1, gap: 7 }}>
+        <Skeleton w={'55%'} h={13} isDark={isDark} />
+        <Skeleton w={'32%'} h={11} isDark={isDark} />
+      </View>
+      <Skeleton w={56} h={22} r={999} isDark={isDark} />
+    </View>
+  );
+}
+
+/** A bordered card containing N skeleton rows — matches the list cards. */
+export function SkeletonList({ count = 3, isDark, avatar = true }: { count?: number; isDark: boolean; avatar?: boolean }) {
+  const c = accountColors(isDark);
+  return (
+    <View style={{ borderRadius: 14, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, paddingHorizontal: 12 }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <View key={i} style={{ borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
+          <SkeletonRow isDark={isDark} avatar={avatar} />
+        </View>
+      ))}
     </View>
   );
 }

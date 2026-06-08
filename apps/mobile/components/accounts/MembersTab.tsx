@@ -57,6 +57,7 @@ import {
   Pill,
   RolePill,
   PrimaryButton,
+  SkeletonList,
   type AccountCaps,
 } from './account-shared';
 
@@ -216,7 +217,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
 
         {/* Members list */}
         {membersQuery.isLoading ? (
-          <View style={{ paddingVertical: 40, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
+          <SkeletonList count={5} isDark={isDark} />
         ) : membersQuery.isError ? (
           <View style={{ paddingVertical: 20, gap: 10 }}>
             <Text style={{ fontSize: 13.5, color: '#ef4444' }}>{(membersQuery.error as Error)?.message || 'Failed to load members'}</Text>

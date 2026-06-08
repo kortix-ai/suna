@@ -20,7 +20,7 @@ import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import { listGroups, createGroup, deleteGroup } from '@/lib/accounts/groups-client';
 import type { AccountDetail } from '@/lib/accounts/accounts-client';
-import { Pill, PrimaryButton, accountColors, type AccountCaps } from './account-shared';
+import { Pill, PrimaryButton, SkeletonList, accountColors, type AccountCaps } from './account-shared';
 
 export function GroupsTab({ account, can, isDark }: { account: AccountDetail; can: AccountCaps; isDark: boolean }) {
   const c = accountColors(isDark);
@@ -74,7 +74,7 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
         </View>
 
         {query.isLoading ? (
-          <View style={{ paddingVertical: 40, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
+          <SkeletonList count={3} isDark={isDark} />
         ) : query.isError ? (
           <View style={{ paddingVertical: 20, gap: 10 }}>
             <Text style={{ fontSize: 13.5, color: '#ef4444' }}>{(query.error as Error)?.message || 'Failed to load groups'}</Text>

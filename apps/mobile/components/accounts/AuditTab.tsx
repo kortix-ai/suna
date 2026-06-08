@@ -18,7 +18,7 @@ import { useAccountMembers } from '@/lib/accounts/hooks';
 import { listAuditEvents } from '@/lib/accounts/accounts-client';
 import type { AccountDetail, AuditEvent } from '@/lib/accounts/accounts-client';
 import { humanizeAuditAction, formatResourcePill, KIND_DOT_COLOR } from '@/lib/accounts/audit-display';
-import { accountColors } from './account-shared';
+import { accountColors, SkeletonList } from './account-shared';
 
 const MONO = 'Menlo';
 
@@ -130,7 +130,7 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
 
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
         {query.isLoading ? (
-          <View style={{ paddingVertical: 40, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
+          <View style={{ padding: 16 }}><SkeletonList count={6} isDark={isDark} avatar={false} /></View>
         ) : query.isError ? (
           <View style={{ padding: 20, gap: 10 }}>
             <Text style={{ fontSize: 13.5, color: '#ef4444' }}>{(query.error as Error)?.message || 'Failed to load audit events'}</Text>

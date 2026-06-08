@@ -14,7 +14,7 @@ import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import { listGitHubInstallations, deleteGitHubInstallation } from '@/lib/projects/projects-client';
 import type { AccountDetail } from '@/lib/accounts/accounts-client';
-import { accountColors, Card, type AccountCaps } from './account-shared';
+import { accountColors, Card, SkeletonRow, type AccountCaps } from './account-shared';
 
 function permissionLabel(value: unknown): string | null {
   if (typeof value !== 'string' || !value) return null;
@@ -90,7 +90,7 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
       >
         <View style={{ marginTop: 14 }}>
           {installationsQuery.isLoading ? (
-            <View style={{ paddingVertical: 24, alignItems: 'center' }}><ActivityIndicator size="small" color={c.muted} /></View>
+            <View><SkeletonRow isDark={isDark} /><SkeletonRow isDark={isDark} /></View>
           ) : installationsQuery.isError ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderRadius: 11, backgroundColor: 'rgba(217,119,6,0.08)' }}>
               <Github size={15} color="#d97706" />
