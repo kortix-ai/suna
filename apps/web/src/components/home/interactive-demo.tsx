@@ -829,6 +829,7 @@ export function InteractiveDemo({
   contentClassName,
   innerClassName,
   aside = true,
+  parentClassName,
 }: {
   gradientbg?: boolean;
   tab?: boolean;
@@ -838,6 +839,7 @@ export function InteractiveDemo({
   contentClassName?: string;
   innerClassName?: string;
   aside?: boolean;
+  parentClassName?: string;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [active, setActive] = useState<PageId>('home');
@@ -922,13 +924,13 @@ export function InteractiveDemo({
               className={cn(
                 'border-border/60 bg-muted/30 flex shrink-0 items-center gap-3 px-4',
                 embedded ? 'h-9 px-3' : 'h-12',
-                !aside ? 'bg-primary dark:bg-card' : 'border-b',
+                !aside ? 'bg-card' : 'border-b',
               )}
             >
               <div className="flex gap-1.5">
-                <span className="bg-background/30 dark:bg-muted-foreground/15 size-2.5 rounded-full" />
-                <span className="bg-background/30 dark:bg-muted-foreground/15 size-2.5 rounded-full" />
-                <span className="bg-background/30 dark:bg-muted-foreground/15 size-2.5 rounded-full" />
+                <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
+                <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
+                <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
               </div>
 
               {aside && (
@@ -951,9 +953,7 @@ export function InteractiveDemo({
                 <span
                   className={cn(
                     'hidden h-8 w-44 items-center gap-2 rounded-md border px-3 text-xs md:flex',
-                    aside
-                      ? 'bg-background border-border text-muted-foreground'
-                      : 'bg-foreground dark:bg-muted dark:text-muted-foreground text-background border-background/20',
+                    'bg-secondary text-secondary-foreground border-border',
                   )}
                 >
                   <Search className="size-3.5" /> Search
@@ -961,9 +961,7 @@ export function InteractiveDemo({
                 <span
                   className={cn(
                     'border-border text-muted-foreground flex size-8 items-center justify-center rounded-full border',
-                    aside
-                      ? 'bg-background border-border text-muted-foreground'
-                      : 'bg-foreground dark:bg-muted dark:text-muted-foreground text-background border-background/20',
+                    'bg-card text-card-foreground border-border',
                   )}
                 >
                   <Bell className="size-4" />
@@ -971,9 +969,7 @@ export function InteractiveDemo({
                 <span
                   className={cn(
                     'flex size-8 items-center justify-center rounded-md border p-1 text-sm',
-                    aside
-                      ? 'bg-background border-border text-muted-foreground'
-                      : 'bg-foreground dark:bg-muted dark:text-muted-foreground text-background border-background/20',
+                    'bg-card text-card-foreground border-border',
                   )}
                 >
                   {tHardcodedUi.raw('componentsHomeInteractiveDemo.line539JsxTextSarahAcmeAi')}
@@ -987,7 +983,8 @@ export function InteractiveDemo({
                 aside
                   ? 'lg:h-[540px] lg:grid-cols-[230px_1fr]'
                   : 'bg-background h-full rounded-t-md lg:h-full lg:grid-cols-1',
-                embedded && 'h-full flex-1',
+                embedded && 'h-full flex-1 rounded-t-md',
+                parentClassName,
               )}
             >
               {aside && (
@@ -1064,6 +1061,7 @@ export function InteractiveDemo({
               <div
                 className={cn(
                   '[&::-webkit-scrollbar-thumb]:bg-border w-full overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full',
+                  parentClassName,
                   embedded
                     ? 'h-full min-h-0 overflow-hidden p-3'
                     : 'min-h-[460px] p-5 sm:p-6 lg:h-[540px]',
