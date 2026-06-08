@@ -116,3 +116,38 @@ export function disableServiceAccount(accountId: string, saId: string) {
 export function deleteServiceAccount(accountId: string, saId: string) {
   return apiFetch<{ deleted: boolean }>(`${iam(accountId)}/service-accounts/${encodeURIComponent(saId)}`, { method: 'DELETE' });
 }
+
+// ── Audit webhooks ────────────────────────────────────────────────────────────
+
+export interface AuditWebhook {
+  webhook_id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  action_prefix: string | null;
+  last_delivered_at: string | null;
+  last_error_at: string | null;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+export interface CreatedAuditWebhook extends AuditWebhook {
+  /** Plaintext HMAC signing secret — returned ONCE on create. */
+  secret: string;
+}
+
+const auditHooks = (accountId: string) => `/accounts/${encodeURIComponent(accountId)}/audit/webhooks`;
+
+export async function listAuditWebhooks(accountId: string) {
+  const res = await apiFetch<{ webhooks: AuditWebhook[] }>(auditHooks(accountId));
+  return res.webhooks;
+}
+export function createAuditWebhook(accountId: string, input: { name: string; url: string; action_prefix?: string }) {
+  return apiFetch<CreatedAuditWebhook>(auditHooks(accountId), { method: 'POST', body: JSON.stringify(input) });
+}
+export function updateAuditWebhook(accountId: string, webhookId: string, patch: { name?: string; enabled?: boolean; action_prefix?: string | null }) {
+  return apiFetch<AuditWebhook>(`${auditHooks(accountId)}/${encodeURIComponent(webhookId)}`, { method: 'PATCH', body: JSON.stringify(patch) });
+}
+export function deleteAuditWebhook(accountId: string, webhookId: string) {
+  return apiFetch<{ deleted: boolean }>(`${auditHooks(accountId)}/${encodeURIComponent(webhookId)}`, { method: 'DELETE' });
+}
