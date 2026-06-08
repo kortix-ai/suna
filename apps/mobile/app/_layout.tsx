@@ -12,6 +12,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
 import { ToastProvider } from '@/components/ui/toast-provider';
+import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { useFonts } from 'expo-font';
 import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
 import { StatusBar, setStatusBarStyle } from 'expo-status-bar';
@@ -76,10 +77,22 @@ export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(ROOBERT_FONTS);
 
   useEffect(() => {
-    initializeI18n().then(() => {
-      log.log('✅ i18n initialized in RootLayout');
+    let settled = false;
+    const markReady = () => {
+      if (settled) return;
+      settled = true;
       setI18nInitialized(true);
-    });
+    };
+    // Never let i18n bootstrap block the whole app. It uses locally-bundled
+    // translation resources, so even if the (network-touching) locale lookup
+    // hangs or rejects — e.g. the device is offline — we still boot. The hard
+    // cap guarantees the splash never sticks on a blank screen.
+    initializeI18n()
+      .then(() => log.log('✅ i18n initialized in RootLayout'))
+      .catch((err) => log.error('❌ i18n init failed; booting with defaults:', err))
+      .finally(markReady);
+    const cap = setTimeout(markReady, 4000);
+    return () => clearTimeout(cap);
   }, []);
 
   const themeLoadedRef = useRef(false);
@@ -651,6 +664,7 @@ export default function RootLayout() {
                                 </AuthProtection>
                               </View>
                               <PortalHost />
+                              <OfflineBanner />
                             </ThemeProvider>
                           </BottomSheetModalProvider>
                         </ToastProvider>
