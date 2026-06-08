@@ -88,6 +88,7 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
+  --color-kortix-base: var(--kortix-base);
   --color-kortix-blue: var(--kortix-blue);
   --color-kortix-yellow: var(--kortix-yellow);
   --color-kortix-orange: var(--kortix-orange);
@@ -489,6 +490,7 @@
   --tracking-normal: 0em;
   --spacing: 0.23rem;
 
+  --kortix-base: var(--color-ring);
   --kortix-blue: oklch(0.652 0.177 252.624);
   --kortix-yellow: oklch(0.732 0.15 90.688);
   --kortix-orange: oklch(0.691 0.142 71.784);
@@ -593,6 +595,7 @@
   --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.04), 0px 8px 10px -1px hsl(0 0% 0% / 0.04);
   --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.1);
 
+  --kortix-base: var(--color-ring);
   --kortix-blue: oklch(0.652 0.177 252.624);
   --kortix-yellow: oklch(0.732 0.15 90.688);
   --kortix-orange: oklch(0.691 0.142 71.784);

@@ -14,7 +14,7 @@ const DropdownMenuTrigger = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Trigger
     ref={ref}
-    className={cn('focus:ring-kortix-blue focus:ring-[0.6px]', className)}
+    className={cn('focus:ring-kortix-base focus:ring-[0.6px]', className)}
     {...props}
   />
 ));

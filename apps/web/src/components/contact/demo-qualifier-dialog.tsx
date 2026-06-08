@@ -2,7 +2,9 @@
 
 import Cal, { getCalApi } from '@calcom/embed-react';
 import { ArrowRight, Check, Loader2, Mail } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+
+import { isWorkEmail } from '@/lib/personal-email';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -47,16 +49,20 @@ const CONTACT_EMAIL = 'hey@kortix.ai';
 
 type CompanySize = '1-10' | '11-50' | '51-200' | '201-1000' | '1000+';
 
-const COMPANY_SIZES: { value: CompanySize; qualifies: boolean }[] = [
-  { value: '1-10', qualifies: false },
+const QUALIFYING_COMPANY_SIZES: { value: CompanySize; qualifies: boolean }[] = [
   { value: '11-50', qualifies: true },
   { value: '51-200', qualifies: true },
   { value: '201-1000', qualifies: true },
   { value: '1000+', qualifies: true },
 ];
 
-const sizeQualifies = (s: CompanySize) =>
-  COMPANY_SIZES.find((o) => o.value === s)?.qualifies ?? false;
+const SMALL_COMPANY_SIZE = { value: '1-10' as const, qualifies: false };
+
+const companySizesForEmail = (email: string) =>
+  isWorkEmail(email) ? [SMALL_COMPANY_SIZE, ...QUALIFYING_COMPANY_SIZES] : QUALIFYING_COMPANY_SIZES;
+
+const sizeQualifies = (s: CompanySize, email: string) =>
+  companySizesForEmail(email).find((o) => o.value === s)?.qualifies ?? false;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -99,6 +105,13 @@ export function DemoQualifierDialog({
   const [size, setSize] = useState<CompanySize | null>(null);
   const [goal, setGoal] = useState('');
   const [error, setError] = useState<string | null>(null);
+
+  const companySizes = useMemo(() => companySizesForEmail(email), [email]);
+
+  // 1–10 only applies to work-email leads; drop it if they switch to personal.
+  useEffect(() => {
+    if (size === '1-10' && !isWorkEmail(email)) setSize(null);
+  }, [email, size]);
 
   // Start on the form each time the dialog opens.
   useEffect(() => {
@@ -144,7 +157,7 @@ export function DemoQualifierDialog({
       return;
     }
     setError(null);
-    const qualified = sizeQualifies(size);
+    const qualified = sizeQualifies(size, email);
 
     // Persist the lead — best-effort: capture failures must never block routing.
     setSubmitting(true);
@@ -262,7 +275,7 @@ export function DemoQualifierDialog({
                     <SelectValue placeholder="Select company size" />
                   </SelectTrigger>
                   <SelectContent>
-                    {COMPANY_SIZES.map((o) => (
+                    {companySizes.map((o) => (
                       <SelectItem key={o.value} value={o.value}>
                         {o.value} employees
                       </SelectItem>
@@ -289,7 +302,7 @@ export function DemoQualifierDialog({
               {error && <p className="text-destructive text-sm">{error}</p>}
             </div>
 
-            <DialogFooter className="justify-between pb-4 px-4">
+            <DialogFooter className="justify-between px-4 pb-4">
               <span className="text-muted-foreground text-xs">No spam — a human replies.</span>
               <Button type="submit" disabled={submitting}>
                 {submitting ? (
@@ -313,9 +326,7 @@ export function DemoQualifierDialog({
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[420px]">
           <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
             <DialogTitle>Request received</DialogTitle>
-            <DialogDescription>
-              Thanks — we&apos;ve got your details.
-            </DialogDescription>
+            <DialogDescription>Thanks — we&apos;ve got your details.</DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 px-6 py-5">
