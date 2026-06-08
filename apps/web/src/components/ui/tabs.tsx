@@ -107,7 +107,7 @@ function TabsTriggerCompact({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        'focus:ring-kortix-blue focus:border-kortix-blue focus:outline-ring focus:border-kortix-blue inline-flex h-[calc(100%-2px)] flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-sm border border-transparent px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus:ring-[0.6px] focus:outline-none',
+        'focus:ring-kortix-base focus:border-kortix-blue focus:outline-ring focus:border-kortix-blue inline-flex h-[calc(100%-2px)] flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-sm border border-transparent px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus:ring-[0.6px] focus:outline-none',
         // 'data-[state=active]:text-foreground focus-visible:border-ring focus-visible:outline-ring focus-visible:ring-ring/50 data-[state=active]:bg-background data-[state=inactive]:bg-transparent data-[state=inactive]:text-foreground/60 ',
         'data-[state=active]:bg-background hover:data-[state=inactive]:bg-secondary data-[state=inactive]:bg-transparent',
         'data-[state=active]:text-foreground data-[state=inactive]:text-foreground/60 hover:data-[state=inactive]:text-foreground',

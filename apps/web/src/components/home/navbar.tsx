@@ -1,7 +1,8 @@
 'use client';
 
 import { useAuth } from '@/components/AuthProvider';
-import { PRODUCT_ITEMS, ProductMegaMenu } from '@/components/home/product-menu';
+import { navigateToPlatformHash } from '@/components/home/platform-hash';
+import { PLATFORM_PRODUCT_ITEMS, ProductMegaMenu } from '@/components/home/product-menu';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import {
   ContextMenu,
@@ -390,13 +391,18 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                     </DisclosureTrigger>
                     <DisclosureContent>
                       <ul className="flex flex-col pt-2">
-                        {PRODUCT_ITEMS.map((item) => {
+                        {PLATFORM_PRODUCT_ITEMS.map((item) => {
                           const Icon = item.icon;
                           return (
                             <li key={item.title}>
                               <Link
                                 href={item.href}
-                                onClick={() => setIsDrawerOpen(false)}
+                                onClick={(event) => {
+                                  if (navigateToPlatformHash(item.href, pathname)) {
+                                    event.preventDefault();
+                                  }
+                                  setIsDrawerOpen(false);
+                                }}
                                 className="text-muted-foreground hover:text-foreground flex items-center gap-3 py-2.5 text-xl font-medium transition-colors"
                               >
                                 <Icon className="size-5 shrink-0" />

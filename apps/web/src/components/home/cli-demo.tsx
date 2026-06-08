@@ -667,7 +667,7 @@ export function CliDemo() {
   return (
     <div
       ref={rootRef}
-      className="bg-background flex aspect-video h-120 w-full flex-col overflow-hidden rounded-sm border lg:h-full"
+      className="border-card bg-background relative flex aspect-video h-120 w-full flex-col overflow-hidden rounded-[calc(var(--radius)+2px)] border-4 lg:h-full"
     >
       <div className="border-border/60 bg-muted/30 flex shrink-0 items-center gap-3 border-b p-4 py-2">
         <span className="text-muted-foreground/70 inline-flex items-center gap-1 text-xs">
