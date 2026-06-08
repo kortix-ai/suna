@@ -85,7 +85,7 @@ export function ObservabilityCards({ accountId, canManage, isDark }: { accountId
   ]);
 
   return (
-    <Card isDark={isDark}>
+    <Card flat isDark={isDark}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Audit webhooks</Text>

@@ -31,7 +31,7 @@ import {
   type ServiceAccount,
   type CreatedServiceAccount,
 } from '@/lib/accounts/iam-client';
-import { Card, Pill, PrimaryButton, accountColors } from '../account-shared';
+import { Card, Pill, PrimaryButton, Divider, accountColors } from '../account-shared';
 
 const MONO = 'Menlo';
 const MAX_LIFETIME = 365 * 2;
@@ -51,8 +51,9 @@ function relative(iso: string): string {
 
 export function TokensCards({ accountId, canManage, isDark }: { accountId: string; canManage: boolean; isDark: boolean }) {
   return (
-    <View style={{ gap: 14 }}>
+    <View>
       <PatPolicyCard accountId={accountId} canManage={canManage} isDark={isDark} />
+      <Divider isDark={isDark} my={16} />
       <ServiceAccountsCard accountId={accountId} canManage={canManage} isDark={isDark} />
     </View>
   );
@@ -100,10 +101,10 @@ function PatPolicyCard({ accountId, canManage, isDark }: { accountId: string; ca
     save.mutate({ max_lifetime_days: lifetime as number | null, idle_revoke_days: idle as number | null, require_expiry: requireExpiry });
   };
 
-  const input = { height: 44, borderRadius: 11, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 12, fontSize: 14, color: c.fg, fontFamily: MONO } as const;
+  const input = { height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, fontSize: 14, color: c.fg, fontFamily: MONO } as const;
 
   return (
-    <Card isDark={isDark}>
+    <Card flat isDark={isDark}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <KeyRound size={16} color={c.muted} />
         <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>CLI token lifecycle</Text>
@@ -180,7 +181,7 @@ function ServiceAccountsCard({ accountId, canManage, isDark }: { accountId: stri
   ]);
 
   return (
-    <Card isDark={isDark}>
+    <Card flat isDark={isDark}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>

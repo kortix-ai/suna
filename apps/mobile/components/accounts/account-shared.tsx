@@ -62,7 +62,7 @@ export function RolePill({ role, isDark }: { role: AccountRole; isDark: boolean 
   );
 }
 
-export function Card({ title, description, count, tone, isDark, action, children }: {
+export function Card({ title, description, count, tone, isDark, action, children, flat }: {
   title?: string;
   description?: string;
   count?: number;
@@ -70,13 +70,16 @@ export function Card({ title, description, count, tone, isDark, action, children
   isDark: boolean;
   action?: React.ReactNode;
   children?: React.ReactNode;
+  /** Transparent — no card border/background/padding. For divider-separated
+   *  sections that sit directly on the page. */
+  flat?: boolean;
 }) {
   const c = accountColors(isDark);
   const borderColor = tone === 'destructive' ? 'rgba(239,68,68,0.3)' : c.border;
   const bg = tone === 'destructive' ? 'rgba(239,68,68,0.04)' : c.cardBg;
   const titleColor = tone === 'destructive' ? '#ef4444' : c.fg;
-  return (
-    <View style={{ borderRadius: 16, borderWidth: 1, borderColor, backgroundColor: bg, padding: 16 }}>
+  const inner = (
+    <>
       {(title || action) && (
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
           <View style={{ flex: 1 }}>
@@ -96,8 +99,22 @@ export function Card({ title, description, count, tone, isDark, action, children
         </View>
       )}
       {children}
-    </View>
+    </>
   );
+  if (flat) return <View>{inner}</View>;
+  return <View style={{ borderRadius: 16, borderWidth: 1, borderColor, backgroundColor: bg, padding: 16 }}>{inner}</View>;
+}
+
+/** Hairline section separator. */
+export function Divider({ isDark, my = 22 }: { isDark: boolean; my?: number }) {
+  const c = accountColors(isDark);
+  return <View style={{ height: 1, backgroundColor: c.border, marginVertical: my }} />;
+}
+
+/** Uppercase micro group-label. */
+export function SectionLabel({ children, isDark }: { children: React.ReactNode; isDark: boolean }) {
+  const c = accountColors(isDark);
+  return <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.8 }}>{children}</Text>;
 }
 
 /** Centered placeholder for tabs not yet built / empty. */

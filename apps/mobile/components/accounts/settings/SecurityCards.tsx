@@ -23,7 +23,7 @@ import {
   revokeAccountSession,
   type ActiveSession,
 } from '@/lib/accounts/iam-client';
-import { Card, Pill, accountColors } from '../account-shared';
+import { Card, Pill, Divider, accountColors } from '../account-shared';
 
 const MONO = 'Menlo';
 const MAX_MINUTES = 10080;
@@ -37,22 +37,24 @@ export function SecurityCards({ accountId, canManage, isDark }: { accountId: str
   const c = accountColors(isDark);
 
   return (
-    <View style={{ gap: 14 }}>
+    <View>
       <MfaCard accountId={accountId} canManage={canManage} isDark={isDark} />
+
+      <Divider isDark={isDark} my={16} />
 
       <TouchableOpacity
         onPress={() => { haptics.tap(); LayoutAnimation.configureNext(LayoutAnimation.create(180, LayoutAnimation.Types.easeInEaseOut, LayoutAnimation.Properties.opacity)); setAdvanced((v) => !v); }}
         activeOpacity={0.7}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 10, borderRadius: 14, borderWidth: 1, borderStyle: 'dashed', borderColor: c.border, padding: 14 }}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
       >
         <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }}>Advanced security</Text>
-          <Text style={{ fontSize: 11.5, color: c.muted, marginTop: 2 }}>Session lifetimes, idle timeouts, and force-logout.</Text>
+          <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Advanced security</Text>
+          <Text style={{ fontSize: 12, color: c.muted, marginTop: 2 }}>Session lifetimes, idle timeouts, and force-logout.</Text>
         </View>
-        <ChevronDown size={17} color={c.muted} style={{ transform: [{ rotate: advanced ? '180deg' : '0deg' }] }} />
+        <ChevronDown size={18} color={c.muted} style={{ transform: [{ rotate: advanced ? '180deg' : '0deg' }] }} />
       </TouchableOpacity>
 
-      {advanced && <SessionControlsCard accountId={accountId} canManage={canManage} isDark={isDark} />}
+      {advanced && <View style={{ marginTop: 16 }}><SessionControlsCard accountId={accountId} canManage={canManage} isDark={isDark} /></View>}
     </View>
   );
 }
@@ -99,7 +101,7 @@ function MfaCard({ accountId, canManage, isDark }: { accountId: string; canManag
   };
 
   return (
-    <Card isDark={isDark}>
+    <Card flat isDark={isDark}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
         <KeyRound size={16} color={c.muted} />
         <View style={{ flex: 1 }}>
@@ -193,10 +195,10 @@ function SessionControlsCard({ accountId, canManage, isDark }: { accountId: stri
 
   const sessions = sessionsQuery.data ?? [];
   const live = sessions.filter((s) => !s.revoked_at);
-  const input = { height: 44, borderRadius: 11, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 12, fontSize: 14, color: c.fg, fontFamily: MONO } as const;
+  const input = { height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, fontSize: 14, color: c.fg, fontFamily: MONO } as const;
 
   return (
-    <Card isDark={isDark}>
+    <Card flat isDark={isDark}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <ShieldCheck size={16} color={c.muted} />
         <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Session controls</Text>
