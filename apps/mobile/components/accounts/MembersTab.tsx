@@ -48,7 +48,7 @@ import {
   useCancelAccountInvite,
   useAddGroupMembers,
 } from '@/lib/accounts/hooks';
-import type { AccountDetail, AccountMember } from '@/lib/accounts/accounts-client';
+import type { AccountDetail, AccountMember, AccountInvitation } from '@/lib/accounts/accounts-client';
 import type { AccountRole } from '@/lib/projects/projects-client';
 import {
   accountColors,
@@ -80,6 +80,7 @@ function formatDate(input: string | null | undefined) {
 type SheetState =
   | { kind: 'invite' }
   | { kind: 'member'; member: AccountMember }
+  | { kind: 'invite-actions'; invite: AccountInvitation }
   | { kind: 'bulkGroup' }
   | { kind: 'bulkRole' }
   | null;
@@ -189,36 +190,41 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
 
         {/* Pending invites */}
         {invites.length > 0 && (
-          <View style={{ marginBottom: 16 }}>
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Pending invites · {invites.length}</Text>
+          <View style={{ marginBottom: 18 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Pending invites · {invites.length}</Text>
             <View>
               {invites.map((inv, i) => {
                 const busy = busyId === inv.invite_id;
                 return (
-                  <View key={inv.invite_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
-                    <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(245,158,11,0.14)', alignItems: 'center', justifyContent: 'center' }}>
-                      <Mail size={16} color="#d97706" />
+                  <TouchableOpacity
+                    key={inv.invite_id}
+                    disabled={!canInvite}
+                    activeOpacity={0.6}
+                    onPress={() => { haptics.tap(); openSheet({ kind: 'invite-actions', invite: inv }); }}
+                    style={{ flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}
+                  >
+                    <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(245,158,11,0.14)', alignItems: 'center', justifyContent: 'center' }}>
+                      <Mail size={15} color="#d97706" />
                     </View>
                     <View style={{ flex: 1, minWidth: 0 }}>
-                      <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{inv.email}</Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3 }}>
+                      <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{inv.email}</Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
                         <Clock size={11} color={c.muted} />
-                        <Text style={{ fontSize: 11.5, color: c.muted }}>Expires {formatDate(inv.expires_at)}</Text>
+                        <Text style={{ fontSize: 11, color: c.muted }}>Expires {formatDate(inv.expires_at)}</Text>
                       </View>
                     </View>
                     <RolePill role={inv.initial_role} isDark={isDark} />
-                    {busy ? <ActivityIndicator size="small" color={c.muted} /> : canInvite ? (
-                      <View style={{ flexDirection: 'row', gap: 6 }}>
-                        <TouchableOpacity onPress={() => onResend(inv.invite_id)} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, backgroundColor: c.avatarBg, alignItems: 'center', justifyContent: 'center' }}><RefreshCw size={13} color={c.muted} /></TouchableOpacity>
-                        <TouchableOpacity onPress={() => copyInvite(inv.invite_url)} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, backgroundColor: c.avatarBg, alignItems: 'center', justifyContent: 'center' }}><LinkIcon size={13} color={c.muted} /></TouchableOpacity>
-                        <TouchableOpacity onPress={() => onCancelInvite(inv.invite_id, inv.email)} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, backgroundColor: 'rgba(239,68,68,0.1)', alignItems: 'center', justifyContent: 'center' }}><X size={13} color="#ef4444" /></TouchableOpacity>
-                      </View>
-                    ) : null}
-                  </View>
+                    {busy ? <ActivityIndicator size="small" color={c.muted} /> : canInvite ? <ChevronRight size={16} color={c.muted} /> : null}
+                  </TouchableOpacity>
                 );
               })}
             </View>
           </View>
+        )}
+
+        {/* Members section label (separates from pending invites above) */}
+        {invites.length > 0 && !membersQuery.isLoading && sorted.length > 0 && (
+          <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>Members · {account.member_count}</Text>
         )}
 
         {/* Members list */}
@@ -246,13 +252,13 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
                 haptics.tap(); openSheet({ kind: 'member', member: m });
               };
               return (
-                <TouchableOpacity key={m.user_id} onPress={onRow} activeOpacity={0.6} disabled={selectMode && !selectable} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
+                <TouchableOpacity key={m.user_id} onPress={onRow} activeOpacity={0.6} disabled={selectMode && !selectable} style={{ flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
                   {selectMode && (
                     <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: selectable ? (selected ? theme.primary : c.inputBorder) : 'transparent', backgroundColor: selected ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
                       {selected && <Check size={14} color={theme.primaryForeground} />}
                     </View>
                   )}
-                  <InitialsAvatar label={m.email} isDark={isDark} />
+                  <InitialsAvatar label={m.email} isDark={isDark} size={32} />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{memberLabel(m)}</Text>
@@ -289,7 +295,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
 
       <BottomSheetModal
         ref={sheetRef}
-        snapPoints={sheet?.kind === 'member' ? ['62%'] : ['52%']}
+        snapPoints={sheet?.kind === 'member' ? ['62%'] : sheet?.kind === 'invite-actions' ? ['42%'] : ['52%']}
         enableDynamicSizing={false}
         onDismiss={() => setSheet(null)}
         backgroundStyle={{ backgroundColor: getSheetBg(isDark) }}
@@ -300,6 +306,15 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
       >
         {sheet?.kind === 'invite' ? (
           <InviteSheet accountId={accountId} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
+        ) : sheet?.kind === 'invite-actions' ? (
+          <InviteActionsSheet
+            invite={sheet.invite}
+            isDark={isDark}
+            onResend={() => { sheetRef.current?.dismiss(); onResend(sheet.invite.invite_id); }}
+            onCopy={() => { sheetRef.current?.dismiss(); copyInvite(sheet.invite.invite_url); }}
+            onCancel={() => { sheetRef.current?.dismiss(); onCancelInvite(sheet.invite.invite_id, sheet.invite.email); }}
+            onClose={() => sheetRef.current?.dismiss()}
+          />
         ) : sheet?.kind === 'member' ? (
           <MemberSheet account={account} member={sheet.member} isSelf={sheet.member.user_id === currentUserId} can={can} sorted={sorted} onClose={() => sheetRef.current?.dismiss()} isDark={isDark} />
         ) : sheet?.kind === 'bulkGroup' ? (
@@ -405,6 +420,39 @@ function InviteSheet({ accountId, onClose, isDark }: { accountId: string; onClos
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
         <PrimaryButton label="Invite" onPress={submit} disabled={!email.trim() || invite.isPending} pending={invite.isPending} icon={<UserPlus size={15} color={theme.primaryForeground} />} />
       </View>
+    </View>
+  );
+}
+
+// ─── pending-invite action sheet ──────────────────────────────────────────────
+
+function InviteActionsSheet({ invite, onResend, onCopy, onCancel, onClose, isDark }: { invite: AccountInvitation; onResend: () => void; onCopy: () => void; onCancel: () => void; onClose: () => void; isDark: boolean }) {
+  const c = accountColors(isDark);
+  const insets = useSafeAreaInsets();
+
+  const row = (key: string, icon: React.ReactNode, label: string, sub: string | null, onPress: () => void, destructive: boolean, first: boolean) => (
+    <TouchableOpacity key={key} onPress={onPress} activeOpacity={0.6} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 14, borderTopWidth: first ? 0 : 1, borderTopColor: c.border }}>
+      <View style={{ width: 34, height: 34, borderRadius: 9999, backgroundColor: destructive ? 'rgba(239,68,68,0.1)' : c.avatarBg, alignItems: 'center', justifyContent: 'center' }}>{icon}</View>
+      <View style={{ flex: 1 }}>
+        <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: destructive ? '#ef4444' : c.fg }}>{label}</Text>
+        {sub && <Text style={{ fontSize: 12, color: c.muted, marginTop: 1 }}>{sub}</Text>}
+      </View>
+    </TouchableOpacity>
+  );
+
+  return (
+    <View style={{ flex: 1 }}>
+      <SheetHeader
+        title={invite.email}
+        onClose={onClose}
+        isDark={isDark}
+        leading={<View style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: 'rgba(245,158,11,0.14)', alignItems: 'center', justifyContent: 'center' }}><Mail size={16} color="#d97706" /></View>}
+      />
+      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: insets.bottom + 16 }} showsVerticalScrollIndicator={false}>
+        {row('resend', <RefreshCw size={16} color={c.muted} />, 'Resend invite', 'Send the email again and extend the link', onResend, false, true)}
+        {row('copy', <LinkIcon size={16} color={c.muted} />, 'Copy invite link', 'Share it manually', onCopy, false, false)}
+        {row('cancel', <X size={16} color="#ef4444" />, 'Cancel invite', "Revoke it — they'll need a new one", onCancel, true, false)}
+      </BottomSheetScrollView>
     </View>
   );
 }
