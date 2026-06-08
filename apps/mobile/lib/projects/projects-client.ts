@@ -26,6 +26,8 @@ export interface KortixProject {
   updated_at: string;
   project_role?: ProjectRole | null;
   effective_project_role?: ProjectRole | null;
+  warm_pool?: { enabled: boolean; size: number };
+  warm_pool_available?: boolean;
 }
 
 export interface KortixAccount {
@@ -1083,4 +1085,146 @@ export function projectArchiveUrl(projectId: string, ref: string, path?: string)
   if (path) params.set('path', path);
   const qs = params.toString();
   return `${API_URL}/projects/${encodeURIComponent(projectId)}/files/archive${qs ? `?${qs}` : ''}`;
+}
+
+// ── Sandbox (web parity: customize/sections/sandbox-view) ─────────────────────
+// The project's runtime image: per-commit snapshots that sessions boot from,
+// sandbox templates (build/edit/delete), build history, recovery, and the warm
+// pool of pre-booted sandboxes.
+
+export type ProjectSnapshotStatus = 'building' | 'ready' | 'failed';
+export type SnapshotErrorCategory =
+  | 'dockerfile' | 'tunnel' | 'provider' | 'timeout' | 'runtime' | 'git' | 'unknown';
+
+export interface SandboxTemplate {
+  template_id: string | null;
+  slug: string;
+  name: string;
+  is_default: boolean;
+  source: 'platform' | 'toml' | 'ui';
+  provider: string;
+  has_dockerfile: boolean;
+  has_image: boolean;
+  image: string | null;
+  dockerfile_path: string | null;
+  entrypoint: string | null;
+  cpu: number;
+  memory_gb: number;
+  disk_gb: number;
+  snapshot_name: string;
+  content_hash: string;
+  built_from_commit: string | null;
+  daytona_state: string;
+  provider_state: string;
+  ready: boolean;
+}
+
+export interface ProjectSnapshotBuild {
+  build_id: string;
+  slug: string;
+  snapshot_name: string;
+  content_hash: string;
+  status: ProjectSnapshotStatus;
+  error: string | null;
+  error_category: SnapshotErrorCategory | null;
+  source: 'session-start' | 'project-create' | 'cr-merge' | 'manual' | 'background' | 'startup' | null;
+  started_at: string;
+  finished_at: string | null;
+}
+
+export interface ProjectSnapshotsResponse {
+  templates: SandboxTemplate[];
+  templates_error: string | null;
+  builds: ProjectSnapshotBuild[];
+}
+
+export interface WarmPoolStatus {
+  available: boolean;
+  enabled: boolean;
+  size: number;
+  ready: number;
+  warming: number;
+}
+
+export interface CreateSandboxTemplateInput {
+  slug: string;
+  name?: string;
+  image?: string;
+  dockerfile_path?: string;
+  entrypoint?: string;
+  cpu?: number;
+  memory_gb?: number;
+  disk_gb?: number;
+}
+
+export interface UpdateSandboxTemplateInput {
+  name?: string;
+  image?: string | null;
+  dockerfile_path?: string | null;
+  entrypoint?: string | null;
+  cpu?: number | null;
+  memory_gb?: number | null;
+  disk_gb?: number | null;
+}
+
+const projectBase = (projectId: string) => `/projects/${encodeURIComponent(projectId)}`;
+
+/** Sandbox templates + recent build history. */
+export function listProjectSnapshots(projectId: string) {
+  return apiFetch<ProjectSnapshotsResponse>(`${projectBase(projectId)}/snapshots`);
+}
+
+export function createSandboxTemplate(projectId: string, input: CreateSandboxTemplateInput) {
+  return apiFetch<{ template_id: string; slug: string }>(`${projectBase(projectId)}/sandbox-templates`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function updateSandboxTemplate(projectId: string, templateId: string, input: UpdateSandboxTemplateInput) {
+  return apiFetch<{ template_id: string; slug: string }>(
+    `${projectBase(projectId)}/sandbox-templates/${encodeURIComponent(templateId)}`,
+    { method: 'PATCH', body: JSON.stringify(input) },
+  );
+}
+
+export function buildSandboxTemplate(projectId: string, templateId: string) {
+  return apiFetch<{ status: string; template_id: string; slug: string }>(
+    `${projectBase(projectId)}/sandbox-templates/${encodeURIComponent(templateId)}/build`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
+export function deleteSandboxTemplate(projectId: string, templateId: string) {
+  return apiFetch<void>(
+    `${projectBase(projectId)}/sandbox-templates/${encodeURIComponent(templateId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+/** Rebuild the project's snapshot (optionally a specific slug). */
+export function rebuildProjectSnapshot(projectId: string, slug?: string) {
+  return apiFetch<{ status: string; slug: string }>(`${projectBase(projectId)}/snapshots/rebuild`, {
+    method: 'POST',
+    body: JSON.stringify(slug ? { slug } : {}),
+  });
+}
+
+/** Spin up a session to diagnose & fix the latest failed build. */
+export function fixSandboxWithAgent(projectId: string) {
+  return apiFetch<{ session_id: string }>(`${projectBase(projectId)}/snapshots/fix-with-agent`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export function getWarmPoolStatus(projectId: string) {
+  return apiFetch<WarmPoolStatus>(`${projectBase(projectId)}/warm-pool`);
+}
+
+export function updateWarmPool(projectId: string, input: { enabled?: boolean; size?: number }) {
+  return apiFetch<KortixProject>(`${projectBase(projectId)}/warm-pool`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
 }

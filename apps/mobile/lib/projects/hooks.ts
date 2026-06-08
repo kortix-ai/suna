@@ -6,12 +6,21 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   archiveProject,
+  buildSandboxTemplate,
   closeChangeRequest,
   createAccount,
   connectSlack,
   createProjectSession,
   createProjectTrigger,
+  createSandboxTemplate,
   deleteConnector,
+  deleteSandboxTemplate,
+  fixSandboxWithAgent,
+  getWarmPoolStatus,
+  listProjectSnapshots,
+  rebuildProjectSnapshot,
+  updateSandboxTemplate,
+  updateWarmPool,
   deletePersonalProjectSecret,
   deleteProjectSecret,
   deleteProjectTrigger,
@@ -59,10 +68,12 @@ import {
   type ConnectorSharing,
   type CreateProjectSessionInput,
   type CreateProjectTriggerInput,
+  type CreateSandboxTemplateInput,
   type OpenChangeRequestInput,
   type PolicyDefaultMode,
   type ProjectPolicy,
   type UpdateProjectTriggerInput,
+  type UpdateSandboxTemplateInput,
 } from './projects-client';
 
 export const projectKeys = {
@@ -95,6 +106,8 @@ export const projectKeys = {
     ['project-file-history', projectId, path, ref] as const,
   projectCommitDiff: (projectId: string | null | undefined, sha: string | null | undefined, path: string) =>
     ['project-commit-diff', projectId, sha, path] as const,
+  snapshots: (projectId: string | null | undefined) => ['project-snapshots', projectId] as const,
+  warmPool: (projectId: string | null | undefined) => ['warm-pool-status', projectId] as const,
   versionDiff: (projectId: string | null | undefined, from: string, into: string) =>
     ['version-diff', projectId, from, into] as const,
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
@@ -657,5 +670,96 @@ export function useProjectCommitDiff(projectId: string | null, sha: string | nul
     queryFn: () => getProjectCommitDiff(projectId!, sha!, path),
     enabled: !!projectId && !!sha && !!path,
     staleTime: 5 * 60_000,
+  });
+}
+
+// ── Sandbox (web parity) ──────────────────────────────────────────────────────
+
+/** Sandbox templates + recent builds. Polls while anything is building. */
+export function useProjectSnapshots(projectId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.snapshots(projectId),
+    queryFn: () => listProjectSnapshots(projectId!),
+    enabled: !!projectId,
+    staleTime: 10_000,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      const anyBuilding =
+        (data.builds ?? []).some((b) => b.status === 'building') ||
+        (data.templates ?? []).some((t) => ['pulling', 'building'].includes((t.daytona_state || '').toLowerCase()));
+      return anyBuilding ? 5_000 : false;
+    },
+  });
+}
+
+export function useCreateSandboxTemplate(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: CreateSandboxTemplateInput) => createSandboxTemplate(projectId, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.snapshots(projectId) }),
+  });
+}
+
+export function useUpdateSandboxTemplate(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ templateId, input }: { templateId: string; input: UpdateSandboxTemplateInput }) =>
+      updateSandboxTemplate(projectId, templateId, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.snapshots(projectId) }),
+  });
+}
+
+export function useBuildSandboxTemplate(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (templateId: string) => buildSandboxTemplate(projectId, templateId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.snapshots(projectId) }),
+  });
+}
+
+export function useDeleteSandboxTemplate(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (templateId: string) => deleteSandboxTemplate(projectId, templateId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.snapshots(projectId) }),
+  });
+}
+
+export function useRebuildSnapshot(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (slug?: string) => rebuildProjectSnapshot(projectId, slug),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.snapshots(projectId) }),
+  });
+}
+
+export function useFixSandboxWithAgent(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => fixSandboxWithAgent(projectId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.snapshots(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+    },
+  });
+}
+
+/** Live warm-pool status (ready / warming), polled while enabled. */
+export function useWarmPoolStatus(projectId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: projectKeys.warmPool(projectId),
+    queryFn: () => getWarmPoolStatus(projectId!),
+    enabled: enabled && !!projectId,
+    refetchInterval: 4_000,
+    staleTime: 0,
+  });
+}
+
+export function useUpdateWarmPool(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: { enabled?: boolean; size?: number }) => updateWarmPool(projectId, input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) }),
   });
 }
