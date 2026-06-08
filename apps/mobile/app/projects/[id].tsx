@@ -87,6 +87,7 @@ import { SchedulesPage } from '@/components/pages/SchedulesPage';
 import { WebhooksPage } from '@/components/pages/WebhooksPage';
 import { ChangesPage } from '@/components/pages/ChangesPage';
 import { FilesNavPage } from '@/components/pages/FilesNavPage';
+import { SandboxPage } from '@/components/pages/SandboxPage';
 import { MemoryPage } from '@/components/pages/MemoryPage';
 import { LlmProvidersPage } from '@/components/pages/LlmProvidersPage';
 import { TerminalPage } from '@/components/pages/TerminalPage';
@@ -1357,6 +1358,17 @@ export default function ProjectSessionScreen() {
     setConnectingProjectSessionId(ps.session_id);
   }, [navigateToSession]);
 
+  // Open a session by raw id (e.g. Fix-with-agent returns a new session). Same
+  // connecting flow as handleOpenProjectSession, minus the ProjectSession shell.
+  const handleOpenSessionById = useCallback((sessionId: string) => {
+    setActiveProjectSessionId(sessionId);
+    setDrawerOpen(false);
+    navigateToSession(null);
+    setConnectError(null);
+    erroredSessionRef.current = null;
+    setConnectingProjectSessionId(sessionId);
+  }, [navigateToSession]);
+
   // Start an agent-led config session (New / Edit from the Agents/Skills/
   // Commands pages). Mirrors web's useConfigureThread: create a session, stash
   // the seed prompt (delivered by connectToProjectSession once OpenCode is up),
@@ -2140,6 +2152,18 @@ export default function ProjectSessionScreen() {
               onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
               isDrawerOpen={drawerOpen}
               isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Sandbox (project runtime image) */
+          ) : activePageId === 'page:sandbox' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <SandboxPage
+              page={PAGE_TABS[activePageId]}
+              projectId={projectId}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+              onOpenSession={handleOpenSessionById}
             />
 
           /* Active page tab — Terminal */
