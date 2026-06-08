@@ -6,6 +6,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   archiveProject,
+  closeChangeRequest,
   createAccount,
   connectSlack,
   createProjectSession,
@@ -17,33 +18,45 @@ import {
   disconnectConnector,
   disconnectSlack,
   fireProjectTrigger,
+  getChangeRequest,
+  getChangeRequestDiff,
+  getChangeRequestMergePreview,
   getSlackInstallation,
   getSlackMode,
   getProject,
   getProjectDetail,
+  getVersionDiff,
   linkRepository,
   listAccounts,
+  listChangeRequests,
   listConnectors,
   listGitHubInstallations,
   listGitHubRepositories,
   listPipedreamApps,
   listProjectAccess,
+  listProjectBranches,
   listProjectPolicies,
   listProjectSecrets,
   listProjectSessions,
   listProjectTriggers,
   listProjectsForAccount,
+  mergeChangeRequest,
+  openChangeRequest,
+  patchChangeRequest,
   provisionProject,
   readProjectFile,
+  reopenChangeRequest,
   setConnectorSharing,
   setPersonalProjectSecret,
   setProjectPolicies,
   syncConnectors,
   updateProjectTrigger,
   upsertProjectSecret,
+  type ChangeRequestStatus,
   type ConnectorSharing,
   type CreateProjectSessionInput,
   type CreateProjectTriggerInput,
+  type OpenChangeRequestInput,
   type PolicyDefaultMode,
   type ProjectPolicy,
   type UpdateProjectTriggerInput,
@@ -62,6 +75,17 @@ export const projectKeys = {
   slackInstall: (projectId: string | null | undefined) => ['slack-install', projectId] as const,
   slackMode: (projectId: string | null | undefined) => ['slack-mode', projectId] as const,
   triggers: (projectId: string | null | undefined) => ['project-triggers', projectId] as const,
+  changeRequests: (projectId: string | null | undefined, status: string) =>
+    ['change-requests', projectId, status] as const,
+  changeRequest: (projectId: string | null | undefined, crId: string | null | undefined) =>
+    ['change-request', projectId, crId] as const,
+  changeRequestDiff: (projectId: string | null | undefined, crId: string | null | undefined) =>
+    ['change-request-diff', projectId, crId] as const,
+  changeRequestMergePreview: (projectId: string | null | undefined, crId: string | null | undefined) =>
+    ['change-request-merge-preview', projectId, crId] as const,
+  branches: (projectId: string | null | undefined) => ['project-branches', projectId] as const,
+  versionDiff: (projectId: string | null | undefined, from: string, into: string) =>
+    ['version-diff', projectId, from, into] as const,
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
   policies: (projectId: string | null | undefined) => ['project-policies', projectId] as const,
   pipedreamApps: (projectId: string | null | undefined, q: string) =>
@@ -447,5 +471,132 @@ export function useFireProjectTrigger(projectId: string) {
   return useMutation({
     mutationFn: (slug: string) => fireProjectTrigger(projectId, slug),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.triggers(projectId) }),
+  });
+}
+
+// ── Change requests (web parity) ──────────────────────────────────────────────
+
+/** Invalidate everything that the open-CR count / merge state depends on. */
+function invalidateChangeWorld(queryClient: ReturnType<typeof useQueryClient>, projectId: string) {
+  queryClient.invalidateQueries({ queryKey: ['change-requests', projectId] });
+  queryClient.invalidateQueries({ queryKey: projectKeys.branches(projectId) });
+  queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+}
+
+/** CR list, filtered by status. Polls so merged/closed transitions clear live. */
+export function useChangeRequests(projectId: string | null, status: ChangeRequestStatus | 'all') {
+  return useQuery({
+    queryKey: projectKeys.changeRequests(projectId, status),
+    queryFn: () => listChangeRequests(projectId!, status),
+    enabled: !!projectId,
+    staleTime: 8_000,
+    refetchInterval: 8_000,
+  });
+}
+
+export function useChangeRequest(projectId: string | null, crId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.changeRequest(projectId, crId),
+    queryFn: () => getChangeRequest(projectId!, crId!).then((r) => r.change_request),
+    enabled: !!projectId && !!crId,
+    staleTime: 8_000,
+    refetchInterval: 8_000,
+  });
+}
+
+export function useChangeRequestDiff(projectId: string | null, crId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.changeRequestDiff(projectId, crId),
+    queryFn: () => getChangeRequestDiff(projectId!, crId!),
+    enabled: !!projectId && !!crId,
+    staleTime: 15_000,
+  });
+}
+
+/** Merge preview (clean / conflict / up-to-date) — only meaningful for open CRs. */
+export function useChangeRequestMergePreview(
+  projectId: string | null,
+  crId: string | null,
+  enabled: boolean,
+) {
+  return useQuery({
+    queryKey: projectKeys.changeRequestMergePreview(projectId, crId),
+    queryFn: () => getChangeRequestMergePreview(projectId!, crId!),
+    enabled: enabled && !!projectId && !!crId,
+    staleTime: 8_000,
+  });
+}
+
+export function useOpenChangeRequest(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: OpenChangeRequestInput) => openChangeRequest(projectId, input),
+    onSuccess: () => invalidateChangeWorld(queryClient, projectId),
+  });
+}
+
+export function useMergeChangeRequest(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ crId, message }: { crId: string; message?: string }) =>
+      mergeChangeRequest(projectId, crId, message),
+    onSuccess: (_d, { crId }) => {
+      invalidateChangeWorld(queryClient, projectId);
+      queryClient.invalidateQueries({ queryKey: projectKeys.changeRequest(projectId, crId) });
+    },
+  });
+}
+
+export function useCloseChangeRequest(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (crId: string) => closeChangeRequest(projectId, crId),
+    onSuccess: (_d, crId) => {
+      invalidateChangeWorld(queryClient, projectId);
+      queryClient.invalidateQueries({ queryKey: projectKeys.changeRequest(projectId, crId) });
+    },
+  });
+}
+
+export function useReopenChangeRequest(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (crId: string) => reopenChangeRequest(projectId, crId),
+    onSuccess: (_d, crId) => {
+      invalidateChangeWorld(queryClient, projectId);
+      queryClient.invalidateQueries({ queryKey: projectKeys.changeRequest(projectId, crId) });
+    },
+  });
+}
+
+export function usePatchChangeRequest(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ crId, title, description }: { crId: string; title?: string; description?: string }) =>
+      patchChangeRequest(projectId, crId, { title, description }),
+    onSuccess: (_d, { crId }) => {
+      invalidateChangeWorld(queryClient, projectId);
+      queryClient.invalidateQueries({ queryKey: projectKeys.changeRequest(projectId, crId) });
+    },
+  });
+}
+
+/** Project branches (Versions tab + Open-CR picker). */
+export function useProjectBranches(projectId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: projectKeys.branches(projectId),
+    queryFn: () => listProjectBranches(projectId!),
+    enabled: enabled && !!projectId,
+    staleTime: 15_000,
+  });
+}
+
+/** Cheap version-diff preview — gates the Open-CR submit button (no CR created). */
+export function useVersionDiff(projectId: string | null, from: string, into: string, enabled: boolean) {
+  return useQuery({
+    queryKey: projectKeys.versionDiff(projectId, from, into),
+    queryFn: () => getVersionDiff(projectId!, from, into),
+    enabled: enabled && !!projectId && !!from && !!into && from !== into,
+    staleTime: 10_000,
   });
 }

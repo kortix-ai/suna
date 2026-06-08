@@ -813,3 +813,190 @@ export function fireProjectTrigger(projectId: string, slug: string) {
     { method: 'POST', body: JSON.stringify({}) },
   );
 }
+
+// ── Change requests (web parity: customize/sections/changes-view) ─────────────
+// A CR proposes merging head_ref → base_ref. v1 statuses: open | merged | closed.
+// The diff is a raw unified `git diff` string the client parses itself.
+
+export type ChangeRequestStatus = 'open' | 'merged' | 'closed';
+
+export interface ChangeRequest {
+  cr_id: string;
+  account_id: string;
+  project_id: string;
+  number: number;
+  title: string;
+  description: string;
+  base_ref: string;
+  head_ref: string;
+  status: ChangeRequestStatus;
+  head_commit_sha: string | null;
+  base_commit_sha: string | null;
+  origin_session_id: string | null;
+  created_by: string;
+  merged_at: string | null;
+  merged_by: string | null;
+  merge_commit_sha: string | null;
+  closed_at: string | null;
+  closed_by: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectCommitFile {
+  path: string;
+  old_path: string | null;
+  status: 'added' | 'modified' | 'deleted' | 'renamed' | 'copied' | 'typechange';
+  additions: number;
+  deletions: number;
+}
+
+export interface ChangeRequestDiff {
+  cr_id: string;
+  base_ref: string;
+  head_ref: string;
+  base_sha: string;
+  head_sha: string;
+  merge_base: string | null;
+  files: ProjectCommitFile[];
+  files_changed: number;
+  additions: number;
+  deletions: number;
+  patch: string;
+}
+
+export interface ChangeRequestMergePreview {
+  base_sha: string;
+  head_sha: string;
+  merge_base: string | null;
+  can_fast_forward: boolean;
+  can_merge: boolean;
+  conflicts: string[];
+  is_up_to_date: boolean;
+}
+
+export interface ChangeRequestMergeResult {
+  change_request: ChangeRequest;
+  merge: {
+    merge_commit_sha: string;
+    fast_forward: boolean;
+    base_sha_before: string;
+    base_sha_after: string;
+  };
+}
+
+export interface OpenChangeRequestInput {
+  title: string;
+  description?: string;
+  head_ref: string;
+  base_ref?: string;
+  session_id?: string;
+}
+
+export interface ProjectBranch {
+  name: string;
+  is_default: boolean;
+  tip: string;
+  tip_short: string;
+  subject: string | null;
+  committer_name: string | null;
+  committer_email: string | null;
+  committed_at: string | null;
+  ahead: number | null;
+  behind: number | null;
+}
+
+export interface ProjectBranchesResponse {
+  default_branch: string;
+  branches: ProjectBranch[];
+}
+
+export interface VersionDiffPreview {
+  from: string;
+  into: string;
+  from_sha: string;
+  into_sha: string;
+  merge_base: string | null;
+  files_changed: number;
+  additions: number;
+  deletions: number;
+  is_up_to_date: boolean;
+  is_same_ref: boolean;
+}
+
+const crBase = (projectId: string) =>
+  `/projects/${encodeURIComponent(projectId)}/change-requests`;
+
+export function listChangeRequests(projectId: string, status?: ChangeRequestStatus | 'all') {
+  const qs = status && status !== 'all' ? `?status=${status}` : '';
+  return apiFetch<{ change_requests: ChangeRequest[] }>(`${crBase(projectId)}${qs}`);
+}
+
+export function getChangeRequest(projectId: string, crId: string) {
+  return apiFetch<{ change_request: ChangeRequest }>(
+    `${crBase(projectId)}/${encodeURIComponent(crId)}`,
+  );
+}
+
+export function getChangeRequestDiff(projectId: string, crId: string) {
+  return apiFetch<ChangeRequestDiff>(`${crBase(projectId)}/${encodeURIComponent(crId)}/diff`);
+}
+
+export function getChangeRequestMergePreview(projectId: string, crId: string) {
+  return apiFetch<ChangeRequestMergePreview>(
+    `${crBase(projectId)}/${encodeURIComponent(crId)}/merge-preview`,
+  );
+}
+
+export function openChangeRequest(projectId: string, input: OpenChangeRequestInput) {
+  return apiFetch<ChangeRequest>(crBase(projectId), {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function mergeChangeRequest(projectId: string, crId: string, message?: string) {
+  return apiFetch<ChangeRequestMergeResult>(
+    `${crBase(projectId)}/${encodeURIComponent(crId)}/merge`,
+    { method: 'POST', body: JSON.stringify(message ? { message } : {}) },
+  );
+}
+
+export function closeChangeRequest(projectId: string, crId: string) {
+  return apiFetch<ChangeRequest>(`${crBase(projectId)}/${encodeURIComponent(crId)}/close`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export function reopenChangeRequest(projectId: string, crId: string) {
+  return apiFetch<ChangeRequest>(`${crBase(projectId)}/${encodeURIComponent(crId)}/reopen`, {
+    method: 'POST',
+    body: JSON.stringify({}),
+  });
+}
+
+export function patchChangeRequest(
+  projectId: string,
+  crId: string,
+  input: { title?: string; description?: string },
+) {
+  return apiFetch<ChangeRequest>(`${crBase(projectId)}/${encodeURIComponent(crId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input),
+  });
+}
+
+export function listProjectBranches(projectId: string) {
+  return apiFetch<ProjectBranchesResponse>(
+    `/projects/${encodeURIComponent(projectId)}/branches`,
+  );
+}
+
+export function getVersionDiff(projectId: string, from: string, into: string) {
+  const params = new URLSearchParams({ from, into });
+  return apiFetch<VersionDiffPreview>(
+    `/projects/${encodeURIComponent(projectId)}/version-diff?${params.toString()}`,
+  );
+}
