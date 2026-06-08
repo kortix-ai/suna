@@ -413,6 +413,7 @@ export default function ProjectsScreen() {
         name={(user?.user_metadata?.full_name as string | undefined) ?? undefined}
         email={user?.email}
         accountName={activeAccount?.name}
+        accountId={activeAccountId}
         isSigningOut={isSigningOut}
         onSignOut={handleSignOut}
         onClose={() => setAccountMenuOpen(false)}

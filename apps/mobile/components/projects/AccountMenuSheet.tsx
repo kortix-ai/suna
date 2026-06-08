@@ -34,6 +34,7 @@ interface AccountMenuSheetProps {
   name?: string | null;
   email?: string | null;
   accountName?: string | null;
+  accountId?: string | null;
   isSigningOut?: boolean;
   onSignOut: () => void;
   onClose: () => void;
@@ -44,6 +45,7 @@ export function AccountMenuSheet({
   name,
   email,
   accountName,
+  accountId,
   isSigningOut,
   onSignOut,
   onClose,
@@ -119,7 +121,7 @@ export function AccountMenuSheet({
             <Pressable
               onPress={() => {
                 haptics.tap();
-                go(() => router.push('/(settings)'));
+                go(() => router.push(accountId ? `/accounts/${accountId}` : '/(settings)'));
               }}
               className="active:opacity-80"
             >
