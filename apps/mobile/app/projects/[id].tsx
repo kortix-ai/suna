@@ -86,6 +86,7 @@ import { ChannelsNavPage } from '@/components/pages/ChannelsNavPage';
 import { SchedulesPage } from '@/components/pages/SchedulesPage';
 import { WebhooksPage } from '@/components/pages/WebhooksPage';
 import { ChangesPage } from '@/components/pages/ChangesPage';
+import { FilesNavPage } from '@/components/pages/FilesNavPage';
 import { MemoryPage } from '@/components/pages/MemoryPage';
 import { LlmProvidersPage } from '@/components/pages/LlmProvidersPage';
 import { TerminalPage } from '@/components/pages/TerminalPage';
@@ -2122,6 +2123,17 @@ export default function ProjectSessionScreen() {
           /* Active page tab — Changes (change requests) */
           ) : activePageId === 'page:changes' && PAGE_TABS[activePageId] && !showTabsOverview ? (
             <ChangesPage
+              page={PAGE_TABS[activePageId]}
+              projectId={projectId}
+              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
+              isDrawerOpen={drawerOpen}
+              isRightDrawerOpen={rightDrawerOpen}
+            />
+
+          /* Active page tab — Files (project repo browser) */
+          ) : activePageId === 'page:files-nav' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+            <FilesNavPage
               page={PAGE_TABS[activePageId]}
               projectId={projectId}
               onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
