@@ -96,7 +96,6 @@ export default function ProjectsScreen() {
   const fg = isDark ? '#F8F8F8' : '#121215';
   const subtle = isDark ? '#a1a1aa' : '#71717a';
   const faint = isDark ? '#52525b' : '#a1a1aa';
-  const cardBg = isDark ? 'rgba(255,255,255,0.04)' : '#FFFFFF';
   const cardBorder = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)';
   const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.035)';
   const skeletonBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.055)';
@@ -258,8 +257,8 @@ export default function ProjectsScreen() {
         {/* Search — only once there's enough to search */}
         {showSearch && (
           <View
-            className="mt-4 flex-row items-center rounded-2xl"
-            style={{ height: 44, paddingHorizontal: 14, backgroundColor: inputBg, borderWidth: 1, borderColor: cardBorder }}
+            className="mt-4 flex-row items-center rounded-full"
+            style={{ height: 44, paddingHorizontal: 16, backgroundColor: inputBg, borderWidth: 1, borderColor: cardBorder }}
           >
             <Icon as={Search} size={16} className="text-muted-foreground" strokeWidth={2.2} />
             <TextInput
@@ -284,12 +283,12 @@ export default function ProjectsScreen() {
         <View className="mt-5">
           {/* Loading skeletons */}
           {loading && (
-            <View className="overflow-hidden rounded-2xl border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+            <View>
               {[0, 1, 2, 3].map((i) => (
                 <View
                   key={i}
                   className="flex-row items-center"
-                  style={{ paddingHorizontal: 14, paddingVertical: 14, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: cardBorder }}
+                  style={{ paddingVertical: 14, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: cardBorder }}
                 >
                   <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: skeletonBg }} />
                   <View className="ml-3 flex-1">
@@ -364,17 +363,17 @@ export default function ProjectsScreen() {
             </View>
           )}
 
-          {/* Cards — flat grouped list (no shadows) */}
+          {/* Cards — borderless list, hairline dividers between rows */}
           {filtered.length > 0 && (
-            <View className="overflow-hidden rounded-2xl border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+            <View>
               {filtered.map((project, i) => (
                 <Pressable
                   key={project.project_id}
                   onPress={() => openProject(project)}
                   onLongPress={() => onCardLongPress(project)}
                   delayLongPress={300}
-                  className="flex-row items-center active:bg-black/[0.03] dark:active:bg-white/[0.03]"
-                  style={{ paddingHorizontal: 14, paddingVertical: 13, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: cardBorder }}
+                  className="flex-row items-center active:opacity-60"
+                  style={{ paddingVertical: 14, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: cardBorder }}
                 >
                   <Avatar variant="custom" size={38} fallbackText={project.name} />
                   <View className="ml-3 flex-1">
