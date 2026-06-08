@@ -48,12 +48,14 @@ import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
 import { getFileIconComponent } from '@/components/files/FileItem';
 import { FilePreview, getFilePreviewType } from '@/components/files/FilePreviewRenderers';
+import { PatchDiffView } from '@/components/diff/PatchDiffView';
 import { relativeTime } from '@/lib/projects/triggers-format';
 import {
   useProjectBranches,
   useProjectFiles,
   useProjectFileContent,
   useProjectFileHistory,
+  useProjectCommitDiff,
 } from '@/lib/projects/hooks';
 import { projectArchiveUrl } from '@/lib/projects/projects-client';
 import type { ProjectFileEntry, ProjectBranch } from '@/lib/projects/projects-client';
@@ -311,6 +313,8 @@ function FileHistoryView({
   isDark: boolean;
 }) {
   const insets = useSafeAreaInsets();
+  const theme = useThemeColors();
+  const [expanded, setExpanded] = useState<string | null>(null);
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
   const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
@@ -329,24 +333,51 @@ function FileHistoryView({
   return (
     <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 20 }} showsVerticalScrollIndicator={false}>
       <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: 16, paddingTop: 14, paddingBottom: 8 }}>
-        {commits.length} {commits.length === 1 ? 'checkpoint' : 'checkpoints'}
+        {commits.length} {commits.length === 1 ? 'checkpoint' : 'checkpoints'} · tap to see changes
       </Text>
-      {commits.map((c, i) => (
-        <View key={c.hash} style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}>
-          <GitCommitHorizontal size={18} color={muted} style={{ marginTop: 1 }} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={2}>{c.subject || '(no message)'}</Text>
-            <Text style={{ fontSize: 12.5, color: muted, marginTop: 3 }} numberOfLines={1}>
-              {c.author_name || 'Unknown'} · {relativeTime(c.committed_at || c.authored_at)} · <Text style={{ fontFamily: 'Menlo' }}>{c.short_hash}</Text>
-            </Text>
+      {commits.map((c, i) => {
+        const open = expanded === c.hash;
+        return (
+          <View key={c.hash} style={{ borderTopWidth: i === 0 ? 0 : 1, borderTopColor: border }}>
+            <TouchableOpacity
+              onPress={() => { haptics.tap(); setExpanded(open ? null : c.hash); }}
+              activeOpacity={0.6}
+              style={{ flexDirection: 'row', gap: 12, paddingHorizontal: 16, paddingVertical: 12 }}
+            >
+              <GitCommitHorizontal size={18} color={open ? theme.primary : muted} style={{ marginTop: 1 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={2}>{c.subject || '(no message)'}</Text>
+                <Text style={{ fontSize: 12.5, color: muted, marginTop: 3 }} numberOfLines={1}>
+                  {c.author_name || 'Unknown'} · {relativeTime(c.committed_at || c.authored_at)} · <Text style={{ fontFamily: 'Menlo' }}>{c.short_hash}</Text>
+                </Text>
+              </View>
+              {open ? <ChevronDown size={18} color={muted} style={{ marginTop: 1 }} /> : <ChevronRight size={18} color={muted} style={{ marginTop: 1 }} />}
+            </TouchableOpacity>
+            {open && (
+              <View style={{ paddingHorizontal: 16, paddingBottom: 14 }}>
+                <CommitDiff projectId={projectId} sha={c.hash} path={path} isDark={isDark} />
+              </View>
+            )}
           </View>
-        </View>
-      ))}
+        );
+      })}
       {historyQuery.data?.hasMore && (
         <Text style={{ fontSize: 12, color: muted, textAlign: 'center', marginTop: 12 }}>Showing the most recent {commits.length} checkpoints.</Text>
       )}
     </ScrollView>
   );
+}
+
+function CommitDiff({ projectId, sha, path, isDark }: { projectId: string; sha: string; path: string; isDark: boolean }) {
+  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const diff = useProjectCommitDiff(projectId, sha, path);
+  if (diff.isLoading) {
+    return <View style={{ paddingVertical: 18, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>;
+  }
+  if (diff.isError || !diff.data) {
+    return <Text style={{ fontSize: 13, color: muted, paddingVertical: 8 }}>Couldn't load this checkpoint's diff.</Text>;
+  }
+  return <PatchDiffView patch={diff.data.patch} isDark={isDark} />;
 }
 
 // ─── File row ─────────────────────────────────────────────────────────────────

@@ -25,6 +25,7 @@ import {
   getSlackMode,
   getProject,
   getProjectDetail,
+  getProjectCommitDiff,
   getProjectFileHistory,
   getVersionDiff,
   linkRepository,
@@ -92,6 +93,8 @@ export const projectKeys = {
     ['project-file-content', projectId, path, ref] as const,
   projectFileHistory: (projectId: string | null | undefined, path: string | null | undefined, ref: string) =>
     ['project-file-history', projectId, path, ref] as const,
+  projectCommitDiff: (projectId: string | null | undefined, sha: string | null | undefined, path: string) =>
+    ['project-commit-diff', projectId, sha, path] as const,
   versionDiff: (projectId: string | null | undefined, from: string, into: string) =>
     ['version-diff', projectId, from, into] as const,
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
@@ -644,5 +647,15 @@ export function useProjectFileHistory(projectId: string | null, path: string | n
     queryFn: () => getProjectFileHistory(projectId!, path!, { ref, limit: 50 }),
     enabled: !!projectId && !!path && !!ref,
     staleTime: 30_000,
+  });
+}
+
+/** The diff a checkpoint (commit) introduced for a file. */
+export function useProjectCommitDiff(projectId: string | null, sha: string | null, path: string) {
+  return useQuery({
+    queryKey: projectKeys.projectCommitDiff(projectId, sha, path),
+    queryFn: () => getProjectCommitDiff(projectId!, sha!, path),
+    enabled: !!projectId && !!sha && !!path,
+    staleTime: 5 * 60_000,
   });
 }

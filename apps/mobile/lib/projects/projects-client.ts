@@ -1059,6 +1059,23 @@ export function getProjectFileHistory(
   );
 }
 
+export interface ProjectCommitDiffResponse {
+  hash: string;
+  parent: string | null;
+  path: string | null;
+  patch: string;
+}
+
+/** The diff a commit introduced (optionally scoped to a single file). */
+export function getProjectCommitDiff(projectId: string, sha: string, path?: string) {
+  const params = new URLSearchParams();
+  if (path) params.set('path', path);
+  const qs = params.toString();
+  return apiFetch<ProjectCommitDiffResponse>(
+    `/projects/${encodeURIComponent(projectId)}/commits/${encodeURIComponent(sha)}/diff${qs ? `?${qs}` : ''}`,
+  );
+}
+
 /** Absolute URL for a repo (or subtree) zip archive — used with expo-file-system. */
 export function projectArchiveUrl(projectId: string, ref: string, path?: string): string {
   const params = new URLSearchParams();
