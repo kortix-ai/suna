@@ -31,7 +31,7 @@ jobs:
     env:
       DESKTOP_PRODUCT_NAME: Kortix Dev
       DESKTOP_IDENTIFIER: com.kortix.desktop.dev
-      DESKTOP_URL: https://dev.kortix.com/dashboard
+      DESKTOP_URL: https://dev.kortix.com/projects
     strategy:
       fail-fast: false
       matrix:

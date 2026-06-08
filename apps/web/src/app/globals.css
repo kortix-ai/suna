@@ -1127,14 +1127,38 @@ html[data-desktop-platform='macos'] {
   --kx-titlebar-inset: 40px;
 }
 
-/* AppHeader (the breadcrumb bar on non-project pages): clear the OS window
-   controls on desktop. macOS draws traffic lights top-left (~80px); Windows
-   and Linux draw min/max/close top-right. */
-html[data-desktop-platform='macos'] .kx-app-header {
-  padding-left: 88px;
+/* AppHeader (the breadcrumb bar on standalone pages like /projects, /accounts):
+   clear the OS window controls on desktop by reserving space ABOVE the header
+   (a blank strip that holds the macOS traffic lights / Win-Linux control
+   cluster), instead of indenting the header sideways. Keeps the breadcrumb
+   left-aligned and the page content at full width. `py-4` (1rem) is preserved
+   on top of the title-bar inset. */
+html[data-desktop="true"] .kx-app-header {
+  padding-top: calc(var(--kx-titlebar-inset) + 1rem);
 }
-html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-app-header {
-  padding-right: 120px;
+
+/* Reusable title-bar spacer: a blank, draggable strip the height of the OS
+   window-control zone. Used by full-screen surfaces (e.g. the Customize modal)
+   whose own header has a fixed height and so can't just grow its top padding.
+   Collapses to nothing on the web. */
+.kx-titlebar-spacer {
+  display: none;
+}
+html[data-desktop="true"] .kx-titlebar-spacer {
+  display: block;
+  height: var(--kx-titlebar-inset);
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+/* Customize overlay header: indent the title past the OS window controls on
+   desktop (macOS traffic lights on the left; Win/Linux min/max/close on the
+   right) WITHOUT adding any vertical space — keeps the bar flush like the web. */
+html[data-desktop-platform="macos"] .kx-customize-header {
+  padding-left: 96px;
+}
+html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-header {
+  padding-right: 124px;
 }
 
 /* Full-screen / top-reaching modals (e.g. the File Preview modal) start

@@ -33,6 +33,45 @@ export function verifyWebhookSignature(rawBody: string, secret: string, signatur
   return timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
+// Pull a static shared-secret token from a webhook request's headers, for
+// sources that can't HMAC-sign the body (e.g. Better Stack error webhooks, which
+// only allow custom headers / basic auth). Order: X-Kortix-Token, then
+// Authorization (Bearer <token> or Basic <base64(user:token)> → password).
+export function extractWebhookToken(
+  kortixToken: string | null | undefined,
+  authorization: string | null | undefined,
+): string | null {
+  if (kortixToken && kortixToken.trim()) return kortixToken.trim();
+  if (authorization && authorization.trim()) {
+    const trimmed = authorization.trim();
+    const sep = trimmed.indexOf(' ');
+    const scheme = (sep === -1 ? trimmed : trimmed.slice(0, sep)).toLowerCase();
+    const value = sep === -1 ? '' : trimmed.slice(sep + 1).trim();
+    if (scheme === 'bearer' && value) return value;
+    if (scheme === 'basic' && value) {
+      try {
+        const decoded = Buffer.from(value, 'base64').toString('utf8');
+        const colon = decoded.indexOf(':');
+        const password = colon >= 0 ? decoded.slice(colon + 1) : decoded;
+        return password || null;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
+// Static-token fallback auth (only consulted when no HMAC signature header is
+// present). The token must equal the trigger's secret; constant-time compared.
+export function verifyWebhookToken(token: string | null, secret: string): boolean {
+  if (!token) return false;
+  const actual = Buffer.from(token);
+  const expected = Buffer.from(secret);
+  if (actual.length !== expected.length) return false;
+  return timingSafeEqual(actual, expected);
+}
+
 
 export function parseWebhookJsonBody(rawBody: string): unknown {
   if (!rawBody.trim()) return {};

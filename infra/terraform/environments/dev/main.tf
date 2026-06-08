@@ -93,7 +93,10 @@ module "api" {
   min_capacity     = 1
   max_capacity     = 3
   use_fargate_spot = true
-  tags             = local.tags
+  # Validate the request-count scaling policy here before prod. Low traffic, so
+  # this rarely triggers; primarily exercises the Terraform path.
+  requests_per_target_target = 600
+  tags                       = local.tags
 }
 
 # ── DNS: dev-api.kortix.com → the ALB (Cloudflare-proxied) ─────────────────────

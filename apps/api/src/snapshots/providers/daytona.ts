@@ -17,6 +17,7 @@ import { createGzip } from 'node:zlib';
 import { tmpdir } from 'node:os';
 import { Image } from '@daytonaio/sdk';
 import { getDaytona, isDaytonaConfigured } from '../../shared/daytona';
+import { withTimeout } from '../../shared/with-timeout';
 import { buildLayeredDockerfile } from '../dockerfile-layer';
 import type {
   BuildableTemplate,
@@ -63,6 +64,13 @@ function readPositiveIntEnv(name: string, fallback: number): number {
  * Daytona dashboard surfaces in under a minute.
  */
 const SNAPSHOT_STATE_CACHE_TTL_MS = 60_000;
+/**
+ * Per-call wall-clock budget for the (timeout-less) Daytona `snapshot.get`.
+ * A healthy call is ~50-200ms; 8s is generous headroom for a slow-but-alive
+ * upstream while keeping us well under the frontend's 30s request timeout even
+ * if several templates are checked back-to-back.
+ */
+const SNAPSHOT_STATE_TIMEOUT_MS = 8_000;
 const snapshotStateCache = new Map<string, { state: ProviderState; expiresAt: number }>();
 
 class DaytonaAdapter implements SandboxProviderAdapter {
@@ -149,7 +157,17 @@ class DaytonaAdapter implements SandboxProviderAdapter {
     const cached = snapshotStateCache.get(snapshotName);
     if (cached && Date.now() < cached.expiresAt) return cached.state;
     try {
-      const snap = await getDaytona().snapshot.get(snapshotName);
+      // The Daytona SDK takes no per-call timeout, so a degraded upstream can
+      // leave `snapshot.get` pending indefinitely. This runs on the warm boot
+      // path and behind the `/sandbox-health` polling endpoint, where an
+      // unbounded hang stalls the request until the *client* gives up (the
+      // frontend's 30s timeout → "Request timed out after 30s"). Bound it so a
+      // slow Daytona degrades to the same safe `missing` fallback as an error.
+      const snap = await withTimeout(
+        getDaytona().snapshot.get(snapshotName),
+        SNAPSHOT_STATE_TIMEOUT_MS,
+        `Daytona snapshot.get(${snapshotName})`,
+      );
       const state = (snap
         ? String((snap as { state?: string }).state ?? 'missing')
         : 'missing'
@@ -164,6 +182,9 @@ class DaytonaAdapter implements SandboxProviderAdapter {
       }
       return state;
     } catch {
+      // Error *or* timeout (TimeoutError) → treat as unknown/missing. We never
+      // poison the positive cache here, so the next poll re-checks once Daytona
+      // recovers.
       snapshotStateCache.delete(snapshotName);
       return 'missing';
     }

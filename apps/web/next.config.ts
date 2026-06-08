@@ -159,6 +159,15 @@ const nextConfig = (): NextConfig => ({
         protocol: 'https',
         hostname: 'ke4pydspzeg0nm0o.public.blob.vercel-storage.com',
       },
+      // The desktop shell historically launched at /dashboard, which never
+      // existed and fell through to the marketing 404. The authed home is
+      // /projects (see middleware). Redirect so already-shipped desktop builds
+      // (URL baked in at compile time) recover instead of 404ing on launch.
+      // {
+      //   source: '/dashboard',
+      //   destination: '/projects',
+      //   permanent: false,
+      // },
     ],
   },
 

@@ -5,11 +5,10 @@ import {
   chatInstalls,
   chatThreads,
   projects,
-  sessionSandboxes,
 } from '@kortix/db';
 import { db } from '../../shared/db';
-import { getDaytona } from '../../shared/daytona';
 import { createProjectSession, resolveGitTriggerActor } from '../../projects';
+import { deliverPromptToSession } from '../../projects/session-delivery';
 import {
   loadSlackBotUserIdForProject,
   loadSlackTokenForProject,
@@ -25,12 +24,12 @@ import {
   buildSlackTurnEnv,
   deleteStream,
   finalizeStream,
+  loadStream,
   saveStream,
   startTurnStream,
 } from './streams';
 import { stripMentions } from './util';
 import type {
-  DeliveryOutcome,
   EventClass,
   ProjectResolution,
   SlackEnvelope,
@@ -304,12 +303,27 @@ export async function spawnAgentTurn(
       )
       .limit(1);
     if (existing) {
-      const handle = await startTurnStream(projectId, teamId, event, 'On it');
+      // The live stream is ONE row keyed by sessionId. If a turn is already in
+      // flight for this session (the agent is mid-task, streaming steps), opening
+      // a second stream here would overwrite that row via saveStream's upsert,
+      // and a failed/late delivery below would then clobber the running turn's
+      // progress with an error. So when a turn is already streaming, don't open a
+      // competing stream — just deliver the new message as a follow-up prompt into
+      // the running session and let the in-flight stream carry it forward.
+      const inflight = await loadStream(existing.sessionId);
+      const turnInFlight = !!inflight && !inflight.finalized;
+
+      const handle = turnInFlight
+        ? null
+        : await startTurnStream(projectId, teamId, event, 'On it');
       if (handle) {
         handle.sessionId = existing.sessionId;
         await saveStream(handle);
       }
-      const outcome = await deliverFollowUpToSandbox(existing.sessionId, envelope, event);
+      const outcome = await deliverPromptToSession({
+        sessionId: existing.sessionId,
+        text: renderFollowUpPrompt(envelope, event),
+      });
       if (outcome === 'delivered') {
         await db
           .update(chatThreads)
@@ -323,9 +337,13 @@ export async function spawnAgentTurn(
           );
         return;
       }
+      // Delivery failed. Only surface the error on a stream WE opened — never
+      // finalize/clobber a stream a different in-flight turn owns.
       if (handle) {
         await deleteStream(existing.sessionId);
-        await finalizeStream(handle, { error: "I couldn't reach the sandbox — try again." });
+        await finalizeStream(handle, {
+          error: "I'm still spinning that session back up — give it a moment and try again.",
+        });
       }
       if (outcome === 'transient') return;
       revived = true;
@@ -411,74 +429,6 @@ export async function spawnAgentTurn(
     } catch (err) {
       console.warn('[slack-webhook] failed to record chat_threads row', err);
     }
-  }
-}
-
-async function deliverFollowUpToSandbox(
-  kortixSessionId: string,
-  envelope: SlackEnvelope,
-  event: SlackEvent,
-): Promise<DeliveryOutcome> {
-  const [sandbox] = await db
-    .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      metadata: sessionSandboxes.metadata,
-      status: sessionSandboxes.status,
-    })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, kortixSessionId))
-    .limit(1);
-
-  if (!sandbox) return 'stale';
-  if (sandbox.status === 'stopped' || sandbox.status === 'archived' || sandbox.status === 'error') {
-    return 'stale';
-  }
-  if (sandbox.status !== 'active') return 'transient';
-
-  const daytonaSandboxId = (sandbox.metadata as Record<string, unknown> | null)?.[
-    'daytonaSandboxId'
-  ];
-  if (typeof daytonaSandboxId !== 'string' || !daytonaSandboxId) return 'stale';
-
-  let previewUrl: string;
-  let previewToken: string | null;
-  try {
-    const daytona = getDaytona();
-    const sb = await daytona.get(daytonaSandboxId);
-    const link = await (sb as { getPreviewLink: (port: number) => Promise<{ url?: string; token?: string }> })
-      .getPreviewLink(8000);
-    previewUrl = link.url ?? `https://8000-${daytonaSandboxId}.daytonaproxy01.net`;
-    previewToken = link.token ?? null;
-  } catch (err) {
-    console.warn('[slack-webhook] getPreviewLink failed', err);
-    return 'transient';
-  }
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'X-Daytona-Skip-Preview-Warning': 'true',
-    'X-Daytona-Disable-CORS': 'true',
-  };
-  if (previewToken) headers['X-Daytona-Preview-Token'] = previewToken;
-
-  try {
-    const res = await fetch(`${previewUrl.replace(/\/$/, '')}/kortix/prompt`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({ text: renderFollowUpPrompt(envelope, event) }),
-      signal: AbortSignal.timeout(15_000),
-    });
-    if (res.ok) return 'delivered';
-    const bodyText = (await res.text()).slice(0, 300);
-    console.warn('[slack-webhook] kortix/prompt returned non-ok', {
-      status: res.status,
-      body: bodyText,
-    });
-    if (res.status === 404) return 'stale';
-    return 'transient';
-  } catch (err) {
-    console.warn('[slack-webhook] kortix/prompt fetch failed', err);
-    return 'transient';
   }
 }
 

@@ -40,6 +40,7 @@ const PUBLIC_ROUTES = [
   '/blog', // Public blog (MDX posts under content/blog) should be public
   '/install',
   '/install.sh',
+  '/download', // Desktop installer redirector (per-platform latest)
   '/design-system', // Living design system / brand guidelines should be public
   '/contact', // Request-a-demo / contact page should be public
   '/developers', // Developer walkthrough landing page should be public
@@ -61,6 +62,32 @@ const PROTECTED_ROUTES = [
   '/accounts',
   '/invites',
   '/admin',
+];
+
+// Desktop app (KortixDesktop UA) is a pure logged-in product surface. ONLY
+// these route prefixes — plus /auth/* for sign-in — are allowed to render
+// inside the desktop window. Every other route (the marketing homepage, blog,
+// pricing, careers, contact, legal, help, docs, share, design-system, … which
+// all live at root-level slugs) is bounced to /projects. Docs and external
+// links are opened in the user's real browser by the Tauri shell, never shown
+// in-app. Keep this an allowlist, not a blocklist — new marketing slugs must
+// stay blocked by default.
+const DESKTOP_ALLOWED_ROUTES = [
+  '/projects',
+  '/accounts',
+  '/invites',
+  '/admin',
+  '/setup',
+  '/connectors',
+  '/oauth',
+  '/checkout',
+  '/tunnel',
+  '/github',
+  '/cli',
+  '/templates',
+  '/maintenance',
+  '/countryerror',
+  '/debug',
 ];
 
 export async function middleware(request: NextRequest) {
@@ -121,6 +148,26 @@ export async function middleware(request: NextRequest) {
 
       console.log('🔄 Redirecting Supabase verification from root to /auth/callback');
       return NextResponse.redirect(callbackUrl);
+    }
+  }
+
+  // ── Desktop app: logged-in product surface only ─────────────────────────
+  // The desktop shell (KortixDesktop UA) must never render marketing/docs/
+  // public pages. Allow only product + auth routes; bounce everything else to
+  // /projects. Runs AFTER the Supabase-at-root handling (so OAuth callbacks
+  // still work) and BEFORE the locale/marketing logic (irrelevant for desktop).
+  // This is the authoritative gate — it catches initial loads, SSR, and
+  // Next.js client/RSC navigations alike. The Tauri shell separately opens
+  // docs/external links in the user's real browser.
+  if (request.headers.get('user-agent')?.includes('KortixDesktop')) {
+    const isAuthPath = pathname === '/auth' || pathname.startsWith('/auth/');
+    const isAllowed =
+      isAuthPath ||
+      DESKTOP_ALLOWED_ROUTES.some(
+        route => pathname === route || pathname.startsWith(route + '/'),
+      );
+    if (!isAllowed) {
+      return NextResponse.redirect(new URL('/projects', request.url));
     }
   }
 
