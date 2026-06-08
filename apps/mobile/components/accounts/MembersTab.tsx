@@ -415,7 +415,7 @@ function InviteSheet({ accountId, onClose, isDark }: { accountId: string; onClos
       <SheetHeader title="Invite member" onClose={onClose} isDark={isDark} leading={<UserPlus size={18} color={c.fg} />} />
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginBottom: 6 }}>Email</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 11, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 12 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16 }}>
           <Mail size={15} color={c.muted} />
           <BottomSheetTextInput value={email} onChangeText={(t) => { setEmail(t); if (err) setErr(null); }} placeholder="teammate@company.com" placeholderTextColor={c.muted} autoCapitalize="none" autoCorrect={false} keyboardType="email-address" style={{ flex: 1, fontSize: 14, color: c.fg, fontFamily: 'Roobert', padding: 0 }} />
         </View>
