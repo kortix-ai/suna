@@ -153,6 +153,40 @@ export function getProject(projectId: string) {
   return apiFetch<KortixProject>(`/projects/${encodeURIComponent(projectId)}`);
 }
 
+// ── Dev (web parity: customize/sections/dev-view) ─────────────────────────────
+// "Work on this project from your own machine": invite a collaborator to a
+// managed repo + detect whether the repo is Kortix-managed (so we know to show
+// the access step first).
+
+export interface RepoCollaboratorInvite {
+  username: string;
+  permission: string;
+  /** Pending-invitation URL to accept on GitHub, or null if already a collaborator. */
+  invitationUrl: string | null;
+  alreadyCollaborator: boolean;
+}
+
+/**
+ * Invite a GitHub user as a collaborator on a MANAGED repo — lets the project
+ * creator pull "their" Kortix-managed repo into their own GitHub account.
+ */
+export function inviteRepoCollaborator(
+  projectId: string,
+  githubUsername: string,
+  permission: 'read' | 'write' = 'write',
+) {
+  return apiFetch<RepoCollaboratorInvite>(`/projects/${encodeURIComponent(projectId)}/git/collaborators`, {
+    method: 'POST',
+    body: JSON.stringify({ github_username: githubUsername, permission }),
+  });
+}
+
+/** True when this project's repo is a Kortix-managed GitHub repo (invitable). */
+export function isManagedGithubProject(project: { metadata?: Record<string, unknown> | null }): boolean {
+  const git = (project.metadata as { git?: { provider?: string; managed?: boolean } } | undefined)?.git;
+  return git?.provider === 'github' && git?.managed === true;
+}
+
 // ── Project sessions (one branch + sandbox per row; web-aligned) ────────────
 
 export type ProjectSessionStatus =
