@@ -14,6 +14,7 @@ import { Download, ChevronDown, ChevronRight } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { haptics } from '@/lib/haptics';
 import { API_URL, getAuthToken } from '@/api/config';
+import { useAuthContext } from '@/contexts';
 import { useAccountMembers } from '@/lib/accounts/hooks';
 import { listAuditEvents } from '@/lib/accounts/accounts-client';
 import type { AccountDetail, AuditEvent } from '@/lib/accounts/accounts-client';
@@ -50,6 +51,7 @@ function relative(d: Date): string {
 export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: boolean }) {
   const c = accountColors(isDark);
   const insets = useSafeAreaInsets();
+  const { user } = useAuthContext();
   const accountId = account.account_id;
   const [filterIndex, setFilterIndex] = useState(0);
   const [exporting, setExporting] = useState(false);
@@ -149,7 +151,7 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
         ) : (
           <>
             {events.map((e) => (
-              <AuditRow key={e.event_id} event={e} actorEmail={e.actor_user_id ? emailByUserId.get(e.actor_user_id) ?? null : null} isDark={isDark} border={c.border} />
+              <AuditRow key={e.event_id} event={e} actorEmail={e.actor_user_id ? emailByUserId.get(e.actor_user_id) ?? null : null} isSelf={!!user?.id && e.actor_user_id === user.id} isDark={isDark} border={c.border} />
             ))}
             {query.hasNextPage && (
               <View style={{ alignItems: 'center', paddingVertical: 14 }}>
@@ -166,14 +168,15 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
   );
 }
 
-function AuditRow({ event, actorEmail, isDark, border }: { event: AuditEvent; actorEmail: string | null; isDark: boolean; border: string }) {
+function AuditRow({ event, actorEmail, isSelf, isDark, border }: { event: AuditEvent; actorEmail: string | null; isSelf: boolean; isDark: boolean; border: string }) {
   const c = accountColors(isDark);
   const [expanded, setExpanded] = useState(false);
   const hasDiff = event.before !== null || event.after !== null;
   const human = humanizeAuditAction(event.action);
   const occurred = new Date(event.occurred_at);
   const resourcePill = formatResourcePill(event.resource_type, event.resource_id);
-  const actorLabel = actorEmail ?? event.actor_user_id ?? 'system';
+  // Prefer a name (email), then "you", then a short friendly id — never the raw UUID.
+  const actorLabel = actorEmail ?? (isSelf ? 'you' : event.actor_user_id ? `user ${event.actor_user_id.slice(0, 8)}` : 'system');
   const canExpand = hasDiff || event.action !== human.title;
 
   return (
