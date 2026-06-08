@@ -12,7 +12,6 @@ import {
   type PlatformTabId,
   readPlatformTabFromLocation,
   scrollToPlatformSection,
-  setPlatformHash,
   subscribePlatformHash,
 } from '@/components/home/platform-hash';
 import { Reveal } from '@/components/home/reveal';
@@ -502,8 +501,6 @@ export default function Home() {
 
   const handlePlatformTabChange = useCallback((tab: PlatformTabId) => {
     setActiveTab(tab);
-    shouldScrollToPlatformRef.current = true;
-    setPlatformHash(tab, { scroll: false });
   }, []);
 
   useLayoutEffect(() => {
@@ -649,9 +646,8 @@ export default function Home() {
             >
               {PLATFORM_TABS.map(({ id, label, hash, icon: TabIcon }) => {
                 return (
-                  <a
+                  <button
                     key={id}
-                    href={`/#${hash}`}
                     role="tab"
                     aria-selected={activeTab === id}
                     data-sliding-tab={id}
@@ -670,7 +666,7 @@ export default function Home() {
                       <TabIcon className="size-4 shrink-0" aria-hidden />
                       {label}
                     </span>
-                  </a>
+                  </button>
                 );
               })}
             </SlidingTabIndicator>
