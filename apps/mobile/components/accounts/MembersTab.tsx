@@ -86,6 +86,7 @@ type SheetState =
 export function MembersTab({ account, currentUserId, can, isDark }: { account: AccountDetail; currentUserId: string; can: AccountCaps; isDark: boolean }) {
   const c = accountColors(isDark);
   const insets = useSafeAreaInsets();
+  const theme = useThemeColors();
   const accountId = account.account_id;
 
   const membersQuery = useAccountMembers(accountId);
@@ -165,9 +166,9 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
             </TouchableOpacity>
           )}
           {canInvite && !selectMode && (
-            <TouchableOpacity onPress={() => openSheet({ kind: 'invite' })} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 34, borderRadius: 9999, backgroundColor: useThemeColors().primary }}>
-              <UserPlus size={14} color={useThemeColors().primaryForeground} />
-              <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: useThemeColors().primaryForeground }}>Invite</Text>
+            <TouchableOpacity onPress={() => openSheet({ kind: 'invite' })} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 34, borderRadius: 9999, backgroundColor: theme.primary }}>
+              <UserPlus size={14} color={theme.primaryForeground} />
+              <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Invite</Text>
             </TouchableOpacity>
           )}
         </View>
@@ -237,8 +238,8 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
               return (
                 <TouchableOpacity key={m.user_id} onPress={onRow} activeOpacity={0.6} disabled={selectMode && !selectable} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
                   {selectMode && (
-                    <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: selectable ? (selected ? useThemeColors().primary : c.inputBorder) : 'transparent', backgroundColor: selected ? useThemeColors().primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
-                      {selected && <Check size={14} color={useThemeColors().primaryForeground} />}
+                    <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: selectable ? (selected ? theme.primary : c.inputBorder) : 'transparent', backgroundColor: selected ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
+                      {selected && <Check size={14} color={theme.primaryForeground} />}
                     </View>
                   )}
                   <InitialsAvatar label={m.email} isDark={isDark} />
@@ -357,6 +358,7 @@ function RolePicker({ value, onChange, roles, isDark }: { value: AccountRole; on
 function InviteSheet({ accountId, onClose, isDark }: { accountId: string; onClose: () => void; isDark: boolean }) {
   const c = accountColors(isDark);
   const insets = useSafeAreaInsets();
+  const theme = useThemeColors();
   const invite = useInviteAccountMember(accountId);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<AccountRole>('member');
@@ -391,7 +393,7 @@ function InviteSheet({ accountId, onClose, isDark }: { accountId: string; onClos
         {err && <View style={{ marginTop: 14, padding: 12, borderRadius: 11, backgroundColor: 'rgba(239,68,68,0.08)', borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' }}><Text style={{ fontSize: 13, color: '#ef4444' }}>{err}</Text></View>}
       </BottomSheetScrollView>
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
-        <PrimaryButton label="Invite" onPress={submit} disabled={!email.trim() || invite.isPending} pending={invite.isPending} icon={<UserPlus size={15} color={useThemeColors().primaryForeground} />} />
+        <PrimaryButton label="Invite" onPress={submit} disabled={!email.trim() || invite.isPending} pending={invite.isPending} icon={<UserPlus size={15} color={theme.primaryForeground} />} />
       </View>
     </View>
   );
