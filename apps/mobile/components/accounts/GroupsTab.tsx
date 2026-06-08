@@ -145,7 +145,7 @@ function CreateGroupSheet({ accountId, onCreated, onClose, isDark }: { accountId
     onSuccess: (g) => { haptics.success(); onCreated(g.group_id); },
     onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to create group.'),
   });
-  const input = { height: 44, borderRadius: 11, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 12, fontSize: 14, color: c.fg, fontFamily: 'Roobert' as const };
+  const input = { height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, fontSize: 14, color: c.fg, fontFamily: 'Roobert' as const };
 
   return (
     <View style={{ flex: 1 }}>

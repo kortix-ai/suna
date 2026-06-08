@@ -94,7 +94,7 @@ export default function GroupDetailScreen() {
 
   const dirty = !!group && (name.trim() !== group.name || (description.trim() || '') !== (group.description ?? ''));
   const bg = isDark ? '#0D0D0D' : '#FFFFFF';
-  const input = { height: 44, borderRadius: 11, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 12, fontSize: 14, color: c.fg, fontFamily: 'Roobert' as const };
+  const input = { height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, fontSize: 14, color: c.fg, fontFamily: 'Roobert' as const };
 
   const confirmDelete = () => Alert.alert('Delete group', `Delete "${group?.name}"? Any permission policies attached to this group will be removed.`, [
     { text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { haptics.medium(); del.mutate(); } },

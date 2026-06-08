@@ -177,7 +177,7 @@ function CreateSheet({ accountId, onCreated, onClose, isDark }: { accountId: str
     onSuccess: (h) => { haptics.success(); onCreated(h); },
     onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to create webhook.'),
   });
-  const input = { height: 44, borderRadius: 11, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 12, fontSize: 14, color: c.fg, fontFamily: 'Roobert' as const };
+  const input = { height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, fontSize: 14, color: c.fg, fontFamily: 'Roobert' as const };
   const valid = name.trim().length > 0 && /^https?:\/\//.test(url.trim());
 
   return (

@@ -261,7 +261,7 @@ function CreateSaSheet({ accountId, onCreated, onClose, isDark }: { accountId: s
     onSuccess: (sa) => { haptics.success(); onCreated(sa); },
     onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to create service account.'),
   });
-  const input = { height: 44, borderRadius: 11, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 12, fontSize: 14, color: c.fg, fontFamily: 'Roobert' as const };
+  const input = { height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, fontSize: 14, color: c.fg, fontFamily: 'Roobert' as const };
 
   return (
     <View style={{ flex: 1 }}>
