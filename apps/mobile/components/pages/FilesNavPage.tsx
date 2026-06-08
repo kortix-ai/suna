@@ -9,7 +9,7 @@
  * renderers, with PageHeader + PageContent chrome.
  */
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -18,6 +18,8 @@ import {
   Alert,
   Modal,
   Dimensions,
+  Animated,
+  Easing,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -298,38 +300,82 @@ function FileViewerModal({
           </View>
         )}
 
-        {/* Checkpoint changes — bottom sheet */}
-        {historyCommit && (
-          <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'flex-end' }}>
-            <TouchableOpacity
-              activeOpacity={1}
-              onPress={() => setHistoryCommit(null)}
-              style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)' }}
-            />
-            <View style={{ backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden', paddingBottom: insets.bottom }}>
-              <View style={{ alignItems: 'center', paddingTop: 8 }}>
-                <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }} />
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Checkpoint changes</Text>
-                  <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={2}>{historyCommit.subject || '(no message)'}</Text>
-                  <Text style={{ fontSize: 12, color: muted, marginTop: 2 }} numberOfLines={1}>
-                    {historyCommit.author_name || 'Unknown'} · {relativeTime(historyCommit.committed_at || historyCommit.authored_at)} · <Text style={{ fontFamily: 'Menlo' }}>{historyCommit.short_hash}</Text>
-                  </Text>
-                </View>
-                <TouchableOpacity onPress={() => { haptics.tap(); setHistoryCommit(null); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: chipBg, alignItems: 'center', justifyContent: 'center' }}>
-                  <X size={17} color={muted} />
-                </TouchableOpacity>
-              </View>
-              <ScrollView style={{ maxHeight: Dimensions.get('window').height * 0.58 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-                <CommitDiff projectId={projectId} sha={historyCommit.hash} path={file.path} isDark={isDark} />
-              </ScrollView>
-            </View>
-          </View>
-        )}
+        {/* Checkpoint changes — animated bottom sheet */}
+        <CheckpointSheet commit={historyCommit} projectId={projectId} path={file.path} isDark={isDark} onClose={() => setHistoryCommit(null)} />
       </View>
     </Modal>
+  );
+}
+
+function CheckpointSheet({
+  commit,
+  projectId,
+  path,
+  isDark,
+  onClose,
+}: {
+  commit: ProjectCommit | null;
+  projectId: string;
+  path: string;
+  isDark: boolean;
+  onClose: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+  const H = Dimensions.get('window').height;
+  const fg = isDark ? '#F8F8F8' : '#121215';
+  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const border = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+  const chipBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
+
+  // Keep the last commit rendered while the close animation plays out.
+  const [rendered, setRendered] = useState<ProjectCommit | null>(commit);
+  const translateY = useRef(new Animated.Value(H)).current;
+  const backdrop = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (commit) {
+      setRendered(commit);
+      Animated.parallel([
+        Animated.spring(translateY, { toValue: 0, useNativeDriver: true, damping: 24, stiffness: 260, mass: 0.9 }),
+        Animated.timing(backdrop, { toValue: 1, duration: 200, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(translateY, { toValue: H, duration: 220, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+        Animated.timing(backdrop, { toValue: 0, duration: 180, useNativeDriver: true }),
+      ]).start(({ finished }) => { if (finished) setRendered(null); });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commit]);
+
+  if (!rendered) return null;
+
+  return (
+    <View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, justifyContent: 'flex-end' }} pointerEvents="box-none">
+      <Animated.View style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', opacity: backdrop }}>
+        <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={onClose} />
+      </Animated.View>
+      <Animated.View style={{ transform: [{ translateY }], backgroundColor: getSheetBg(isDark), borderTopLeftRadius: 20, borderTopRightRadius: 20, overflow: 'hidden', paddingBottom: insets.bottom }}>
+        <View style={{ alignItems: 'center', paddingTop: 8 }}>
+          <View style={{ width: 36, height: 4, borderRadius: 2, backgroundColor: isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.2)' }} />
+        </View>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: border }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 3 }}>Checkpoint changes</Text>
+            <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={2}>{rendered.subject || '(no message)'}</Text>
+            <Text style={{ fontSize: 12, color: muted, marginTop: 2 }} numberOfLines={1}>
+              {rendered.author_name || 'Unknown'} · {relativeTime(rendered.committed_at || rendered.authored_at)} · <Text style={{ fontFamily: 'Menlo' }}>{rendered.short_hash}</Text>
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => { haptics.tap(); onClose(); }} hitSlop={8} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: chipBg, alignItems: 'center', justifyContent: 'center' }}>
+            <X size={17} color={muted} />
+          </TouchableOpacity>
+        </View>
+        <ScrollView style={{ maxHeight: H * 0.58 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+          <CommitDiff projectId={projectId} sha={rendered.hash} path={path} isDark={isDark} />
+        </ScrollView>
+      </Animated.View>
+    </View>
   );
 }
 
