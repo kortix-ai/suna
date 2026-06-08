@@ -388,7 +388,7 @@ export default function DevelopersPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           {MENTAL_MODEL.map(({ icon: Icon, title, desc }, i) => (
             <Reveal key={title} delay={i * 0.08}>
-              <div className="group border-border bg-card hover:bg-background flex h-full w-full flex-col justify-between gap-4 rounded-sm border p-4 transition md:aspect-[283/200]">
+              <div className="group border-border bg-card hover:bg-background flex h-full w-full flex-col justify-between space-y-8 rounded-sm border p-4 transition">
                 <div className="bg-secondary group-hover:bg-card self-start rounded-lg p-2.5">
                   <Icon className="text-foreground size-5 shrink-0" />
                 </div>

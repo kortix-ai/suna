@@ -289,7 +289,7 @@ export function DemoQualifierDialog({
               {error && <p className="text-destructive text-sm">{error}</p>}
             </div>
 
-            <DialogFooter className="justify-between">
+            <DialogFooter className="justify-between pb-4 px-4">
               <span className="text-muted-foreground text-xs">No spam — a human replies.</span>
               <Button type="submit" disabled={submitting}>
                 {submitting ? (

@@ -325,7 +325,7 @@ export function CodeWindow({ className }: { className?: string }) {
           );
         })}
       </SlidingTabIndicator>
-      <div className="min-h-[260px] px-5 py-4 font-mono text-sm">
+      <div className="min-h-[260px] px-5 py-4 font-mono text-sm lg:min-h-96">
         {tab === 'toml' && <TomlBody />}
         {tab === 'agent' && <AgentBody />}
         {tab === 'deploy' && <DeployBody />}

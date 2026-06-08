@@ -1,12 +1,12 @@
 'use client';
 
+import { DemoQualifierDialog } from '@/components/contact/demo-qualifier-dialog';
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
 import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
-import { EnterpriseCalModal } from '@/features/enterprise/cal-modal';
 import { cn } from '@/lib/utils';
 import { GitBranch, Server } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -77,6 +77,9 @@ const DEPLOYMENT = [
     detailKey: 'deploymentOnPremDescription',
   },
 ] as const;
+
+const CAL_LINK = 'team/kortix/demo';
+const CAL_NAMESPACE = 'kortix-enterprise-demo';
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
@@ -316,7 +319,13 @@ const EnterprisePage = () => {
         <div className="h-24 sm:h-28" />
       </div>
 
-      <EnterpriseCalModal open={calOpen} onOpenChange={setCalOpen} />
+      <DemoQualifierDialog
+        open={calOpen}
+        onOpenChange={setCalOpen}
+        calLink={CAL_LINK}
+        calNamespace={CAL_NAMESPACE}
+        source="contact"
+      />
     </>
   );
 };

@@ -1795,7 +1795,7 @@ export default function Home() {
             </div>
           </Reveal>
           <Reveal delay={0.1}>
-            <div className="grid grid-cols-1 gap-10 sm:grid-cols-2 md:gap-16 lg:grid-cols-4">
+            <div className="grid grid-cols-1  sm:grid-cols-2 gap-4 lg:grid-cols-4">
               {[
                 {
                   icon: FaUsers,
@@ -1818,17 +1818,28 @@ export default function Home() {
                   descriptionKey: 'enterpriseDataDescription',
                 },
               ].map(({ icon: Icon, titleKey, descriptionKey }) => (
-                <div key={titleKey} className="flex flex-col space-y-6">
-                  <span className="shrink-0">
-                    <Icon className="size-5" />
-                  </span>
-                  <span className="text-foreground text-lg">
-                    <span className="font-semibold">{tHome(titleKey)}.</span>{' '}
-                    <span className="text-muted-foreground leading-relaxed font-medium">
-                      {tHome(descriptionKey)}
-                    </span>
-                  </span>
+                // <div key={titleKey} className="flex flex-col space-y-6">
+                //   <span className="shrink-0">
+                //     <Icon className="size-5" />
+                //   </span>
+                //   <span className="text-foreground text-lg">
+                //     <span className="font-semibold">{tHome(titleKey)}.</span>{' '}
+                //     <span className="text-muted-foreground leading-relaxed font-medium">
+                //       {tHome(descriptionKey)}
+                //     </span>
+                //   </span>
+                // </div>
+                <div className="group border-border bg-card hover:bg-background flex h-full w-full flex-col justify-between gap-4 rounded-sm border p-4 transition md:aspect-[283/200]">
+                <div className="bg-secondary group-hover:bg-card self-start rounded-lg p-2.5">
+                  <Icon className="text-foreground size-5 shrink-0" />
                 </div>
+                <div className="flex flex-col gap-0.5">
+                     <span className="font-semibold">{tHome(titleKey)}.</span>{' '}
+                     <span className="text-muted-foreground leading-relaxed font-medium">
+                       {tHome(descriptionKey)}
+                     </span>
+                </div>
+              </div>
               ))}
             </div>
           </Reveal>
