@@ -256,7 +256,17 @@ function FileViewerModal({
             <ChevronLeft size={22} color={fg} />
           </TouchableOpacity>
           <Text style={{ flex: 1, fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{file.name}</Text>
-          {files.length > 1 && <Text style={{ fontSize: 12, color: muted }}>{index + 1}/{files.length}</Text>}
+          {files.length > 1 && view === 'content' && (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <TouchableOpacity disabled={index === 0} onPress={() => onNavigate(index - 1)} hitSlop={6} style={{ padding: 4, opacity: index === 0 ? 0.35 : 1 }}>
+                <ChevronLeft size={18} color={fg} />
+              </TouchableOpacity>
+              <Text style={{ fontSize: 12, color: muted, minWidth: 30, textAlign: 'center' }}>{index + 1}/{files.length}</Text>
+              <TouchableOpacity disabled={index === files.length - 1} onPress={() => onNavigate(index + 1)} hitSlop={6} style={{ padding: 4, opacity: index === files.length - 1 ? 0.35 : 1 }}>
+                <ChevronRight size={18} color={fg} />
+              </TouchableOpacity>
+            </View>
+          )}
           <TouchableOpacity onPress={() => { haptics.tap(); setView(view === 'history' ? 'content' : 'history'); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: view === 'history' ? theme.primaryLight : chipBg, alignItems: 'center', justifyContent: 'center' }}>
             <History size={16} color={view === 'history' ? theme.primary : muted} />
           </TouchableOpacity>
@@ -284,18 +294,6 @@ function FileViewerModal({
           </View>
         )}
 
-        {/* Prev / next */}
-        {view === 'content' && files.length > 1 && (
-          <View style={{ flexDirection: 'row', borderTopWidth: 1, borderTopColor: border, paddingBottom: insets.bottom }}>
-            <TouchableOpacity disabled={index === 0} onPress={() => onNavigate(index - 1)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, opacity: index === 0 ? 0.4 : 1 }}>
-              <ChevronLeft size={18} color={fg} /><Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: fg }}>Previous</Text>
-            </TouchableOpacity>
-            <View style={{ width: 1, backgroundColor: border }} />
-            <TouchableOpacity disabled={index === files.length - 1} onPress={() => onNavigate(index + 1)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 12, opacity: index === files.length - 1 ? 0.4 : 1 }}>
-              <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: fg }}>Next</Text><ChevronRight size={18} color={fg} />
-            </TouchableOpacity>
-          </View>
-        )}
       </View>
     </Modal>
   );
