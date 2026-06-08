@@ -24,6 +24,7 @@ import { sandboxProxyApp } from './sandbox-proxy';
 import { setupApp } from './setup';
 import { serversApp } from './servers';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
+import { requestDeadline } from './middleware/request-deadline';
 import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
@@ -231,6 +232,11 @@ if (config.INTERNAL_KORTIX_ENV === 'dev') {
 }
 
 app.use('/v1/*', auditStateChangingRequest);
+
+// Wall-clock deadline for non-streaming requests — returns 503 before the 30s
+// client abort instead of hanging. Streaming/proxy/WS surfaces are exempted
+// inside the middleware; disable entirely with REQUEST_DEADLINE_MS=0.
+app.use('/v1/*', requestDeadline);
 
 // === Top-Level Health Check (no auth) ===
 
