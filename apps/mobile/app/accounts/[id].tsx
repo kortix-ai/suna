@@ -68,24 +68,31 @@ export default function AccountSettingsScreen() {
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* Header */}
-      <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 16, paddingBottom: 8 }}>
+      <View style={{ paddingTop: insets.top + 6, paddingHorizontal: 16, paddingBottom: 12 }}>
         <TouchableOpacity
           onPress={() => { haptics.tap(); router.back(); }}
           hitSlop={10}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 8 }}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 2, alignSelf: 'flex-start', marginBottom: 10 }}
         >
           <ChevronLeft size={18} color={muted} />
-          <Text style={{ fontSize: 13.5, color: muted }}>Back</Text>
+          <Text style={{ fontSize: 13.5, color: muted }}>Accounts</Text>
         </TouchableOpacity>
-        <Text style={{ fontSize: 24, fontFamily: 'Roobert-Semibold', color: fg }} numberOfLines={1}>
-          {account?.name ?? 'Account'}
-        </Text>
-        <Text style={{ fontSize: 13, color: muted, marginTop: 2 }}>Manage account settings, members, and access.</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <View style={{ width: 44, height: 44, borderRadius: 13, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 19, fontFamily: 'Roobert-Semibold', color: fg }}>{(account?.name?.trim()?.[0] ?? 'A').toUpperCase()}</Text>
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: 21, fontFamily: 'Roobert-Semibold', color: fg }} numberOfLines={1}>{account?.name ?? 'Account'}</Text>
+            <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }}>
+              {account ? `${account.member_count} member${account.member_count === 1 ? '' : 's'} · ${account.project_count} project${account.project_count === 1 ? '' : 's'}` : 'Account settings'}
+            </Text>
+          </View>
+        </View>
       </View>
 
       {/* Tab bar */}
       <View style={{ borderBottomWidth: 1, borderBottomColor: border }}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 12 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 10 }}>
           {tabs.map((t) => {
             const on = tab === t.key;
             return (
@@ -93,10 +100,10 @@ export default function AccountSettingsScreen() {
                 key={t.key}
                 onPress={() => { haptics.selection(); setTab(t.key); }}
                 activeOpacity={0.7}
-                style={{ paddingHorizontal: 12, paddingVertical: 12, marginRight: 2 }}
+                style={{ paddingHorizontal: 14, paddingVertical: 13, position: 'relative' }}
               >
                 <Text style={{ fontSize: 14.5, fontFamily: on ? 'Roobert-Medium' : 'Roobert', color: on ? fg : muted }}>{t.label}</Text>
-                {on && <View style={{ height: 2, borderRadius: 2, backgroundColor: theme.primary, marginTop: 8, marginHorizontal: -2 }} />}
+                {on && <View style={{ position: 'absolute', left: 14, right: 14, bottom: -1, height: 2.5, borderTopLeftRadius: 2, borderTopRightRadius: 2, backgroundColor: theme.primary }} />}
               </TouchableOpacity>
             );
           })}
