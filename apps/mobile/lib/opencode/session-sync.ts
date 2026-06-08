@@ -42,30 +42,46 @@ export function useSessionSync(
 
     let cancelled = false;
 
-    async function fetchMessages() {
-      try {
-        log.log('📥 [SessionSync] Fetching messages for:', sessionId);
-        const res = await fetch(`${sandboxUrl}/session/${sessionId}/message`, {
-          headers: await authHeaders(),
-        });
+    // Retry the initial hydration with backoff. The sandbox runtime is often
+    // still warming when an existing session is reopened, so the very first
+    // /message request can fail (5xx / connection refused). Without a retry,
+    // `hydratedRef` never advances and the effect won't re-run (deps unchanged),
+    // so the thread stays permanently blank — and an empty store reads as a
+    // "fresh session", showing the Good-morning hero. Mirrors the web's
+    // use-session-sync retry. (We only retry on *failure*, not on an empty —
+    // an empty array is a genuinely new/empty session.)
+    const BACKOFF_MS = [0, 500, 1_000, 2_000, 3_000, 3_000];
 
-        if (!res.ok) {
-          throw new Error(`Failed to fetch messages: ${res.status}`);
+    async function hydrateWithRetry() {
+      for (let attempt = 0; attempt < BACKOFF_MS.length; attempt++) {
+        if (cancelled) return;
+        if (BACKOFF_MS[attempt] > 0) {
+          await new Promise((r) => setTimeout(r, BACKOFF_MS[attempt]));
+          if (cancelled) return;
         }
-
-        const messages: MessageWithParts[] = await res.json();
-
-        if (!cancelled) {
+        try {
+          log.log('📥 [SessionSync] Fetching messages for:', sessionId, attempt > 0 ? `(retry ${attempt})` : '');
+          const res = await fetch(`${sandboxUrl}/session/${sessionId}/message`, {
+            headers: await authHeaders(),
+          });
+          if (!res.ok) throw new Error(`Failed to fetch messages: ${res.status}`);
+          const messages: MessageWithParts[] = await res.json();
+          if (cancelled) return;
           useSyncStore.getState().hydrate(sessionId!, messages);
-          hydratedRef.current = sessionId!;
-          log.log('✅ [SessionSync] Hydrated', messages.length, 'messages');
+          // Only "finalize" when we actually got messages. Leaving the guard
+          // unset on an empty result lets a later sandboxUrl change (the runtime
+          // finished switching / warming) re-fetch instead of locking in a blank
+          // thread — without retry-looping on a genuinely empty new session.
+          if (messages.length > 0) hydratedRef.current = sessionId!;
+          log.log('✅ [SessionSync] Hydrated', messages.length, 'messages', attempt > 0 ? `(attempt ${attempt + 1})` : '');
+          return;
+        } catch (error) {
+          log.error(`❌ [SessionSync] Fetch failed (attempt ${attempt + 1}/${BACKOFF_MS.length}):`, error);
         }
-      } catch (error) {
-        log.error('❌ [SessionSync] Failed to fetch messages:', error);
       }
     }
 
-    fetchMessages();
+    hydrateWithRetry();
 
     return () => {
       cancelled = true;
