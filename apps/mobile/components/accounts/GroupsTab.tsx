@@ -12,10 +12,10 @@ import {
   BottomSheetModal,
   BottomSheetBackdrop,
   BottomSheetScrollView,
-  BottomSheetTextInput,
 } from '@gorhom/bottom-sheet';
 import { Search, X, Plus, Users, Trash2, ChevronRight } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
+import { SheetTextInput } from '@/components/ui/SheetInput';
 import { getSheetBg, useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
 import { listGroups, createGroup, deleteGroup } from '@/lib/accounts/groups-client';
@@ -145,7 +145,6 @@ function CreateGroupSheet({ accountId, onCreated, onClose, isDark }: { accountId
     onSuccess: (g) => { haptics.success(); onCreated(g.group_id); },
     onError: (e: any) => Alert.alert('Failed', e?.message || 'Failed to create group.'),
   });
-  const input = { height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, fontSize: 14, color: c.fg, fontFamily: 'Roobert' as const };
 
   return (
     <View style={{ flex: 1 }}>
@@ -157,9 +156,9 @@ function CreateGroupSheet({ accountId, onCreated, onClose, isDark }: { accountId
       <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
         <Text style={{ fontSize: 12.5, color: c.muted, marginBottom: 16 }}>Groups bundle members together. Attach the group to projects with a role.</Text>
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginBottom: 6 }}>Group name</Text>
-        <BottomSheetTextInput value={name} onChangeText={setName} placeholder="Engineering" placeholderTextColor={c.muted} style={input} />
+        <SheetTextInput value={name} onChangeText={setName} placeholder="Engineering" />
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginTop: 14, marginBottom: 6 }}>Description (optional)</Text>
-        <BottomSheetTextInput value={description} onChangeText={setDescription} placeholder="Engineers shipping the platform" placeholderTextColor={c.muted} style={input} />
+        <SheetTextInput value={description} onChangeText={setDescription} placeholder="Engineers shipping the platform" />
       </BottomSheetScrollView>
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
         <PrimaryButton label="Create group" onPress={() => create.mutate()} disabled={!name.trim() || create.isPending} pending={create.isPending} />

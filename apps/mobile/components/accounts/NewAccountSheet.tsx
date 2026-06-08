@@ -12,13 +12,13 @@ import {
   BottomSheetModal,
   BottomSheetBackdrop,
   BottomSheetView,
-  BottomSheetTextInput,
 } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
+import { SheetTextInput } from '@/components/ui/SheetInput';
 import { useToast } from '@/components/ui/toast-provider';
 import { getSheetBg } from '@/lib/theme-colors';
 import { useCreateAccount } from '@/lib/projects/hooks';
@@ -109,16 +109,14 @@ export function NewAccountSheet({ open, onClose, onCreated }: NewAccountSheetPro
         </View>
 
         <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginBottom: 6 }}>Account name</Text>
-        <BottomSheetTextInput
+        <SheetTextInput
           value={name}
           onChangeText={setName}
           placeholder="Acme Inc."
-          placeholderTextColor={c.muted}
           autoFocus
           autoCapitalize="words"
           returnKeyType="done"
           onSubmitEditing={submit}
-          style={{ height: 48, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 18, fontSize: 15, color: c.fg, fontFamily: 'Roobert' }}
         />
 
         <View style={{ marginTop: 18 }}>
