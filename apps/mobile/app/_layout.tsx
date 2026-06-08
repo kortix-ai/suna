@@ -626,6 +626,18 @@ export default function RootLayout() {
                                         gestureEnabled: true,
                                       }}
                                     />
+                                    <Stack.Screen
+                                      name="accounts/[id]"
+                                      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
+                                    />
+                                    <Stack.Screen
+                                      name="accounts/[id]/groups/[groupId]"
+                                      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
+                                    />
+                                    <Stack.Screen
+                                      name="accounts/[id]/members/[userId]"
+                                      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
+                                    />
                                     <Stack.Screen name="trigger-detail" />
                                     <Stack.Screen name="worker-config" />
                                     <Stack.Screen

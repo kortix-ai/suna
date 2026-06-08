@@ -39,6 +39,20 @@ export default function AccountSettingsScreen() {
   const { can } = useAccountCapabilities(accountId ?? null, user?.id ?? null);
   const account = accountQuery.data;
 
+  // Merge the IAM probe with the account role so owners/admins keep full access
+  // even if the probe is slow or unavailable (it can't *remove* a granted cap).
+  const isAdmin = account?.role === 'owner' || account?.role === 'admin';
+  const isOwner = account?.role === 'owner';
+  const effectiveCan = React.useMemo(() => ({
+    'account.write': can['account.write'] || isAdmin,
+    'account.delete': can['account.delete'] || isOwner,
+    'member.invite': can['member.invite'] || isAdmin,
+    'member.remove': can['member.remove'] || isAdmin,
+    'member.update': can['member.update'] || isAdmin,
+    'group.create': can['group.create'] || isAdmin,
+    'audit.read': can['audit.read'] || isAdmin,
+  }), [can, isAdmin, isOwner]);
+
   const [tab, setTab] = React.useState<TabKey>('members');
 
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -51,12 +65,12 @@ export default function AccountSettingsScreen() {
     const list: { key: TabKey; label: string; show: boolean }[] = [
       { key: 'members', label: 'Members', show: true },
       { key: 'groups', label: 'Groups', show: true },
-      { key: 'git', label: 'Git', show: can['account.write'] },
-      { key: 'audit', label: 'Audit', show: can['audit.read'] },
-      { key: 'settings', label: 'Settings', show: can['account.write'] },
+      { key: 'git', label: 'Git', show: effectiveCan['account.write'] },
+      { key: 'audit', label: 'Audit', show: effectiveCan['audit.read'] },
+      { key: 'settings', label: 'Settings', show: effectiveCan['account.write'] },
     ];
     return list.filter((t) => t.show);
-  }, [can]);
+  }, [effectiveCan]);
 
   // If the active tab becomes hidden (caps resolve), fall back to members.
   React.useEffect(() => {
@@ -125,15 +139,15 @@ export default function AccountSettingsScreen() {
       ) : (
         <View style={{ flex: 1 }}>
           {tab === 'members' ? (
-            <MembersTab account={account} currentUserId={user?.id ?? ''} can={can} isDark={isDark} />
+            <MembersTab account={account} currentUserId={user?.id ?? ''} can={effectiveCan} isDark={isDark} />
           ) : tab === 'groups' ? (
-            <GroupsTab account={account} can={can} isDark={isDark} />
+            <GroupsTab account={account} can={effectiveCan} isDark={isDark} />
           ) : tab === 'git' ? (
-            <GitTab account={account} can={can} isDark={isDark} />
+            <GitTab account={account} can={effectiveCan} isDark={isDark} />
           ) : tab === 'audit' ? (
             <AuditTab account={account} isDark={isDark} />
           ) : (
-            <AccountSettingsTab account={account} can={can} isDark={isDark} />
+            <AccountSettingsTab account={account} can={effectiveCan} isDark={isDark} />
           )}
         </View>
       )}
