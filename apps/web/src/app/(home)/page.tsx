@@ -677,18 +677,18 @@ export default function Home() {
                 {activeTab === 'Web-Mobile' && (
                   <div className="h-full w-full">
                     <div className="hidden w-full lg:block">
-                      <div className="bg-background relative grid aspect-video w-full grid-cols-12 flex-col items-center justify-center gap-24 overflow-hidden px-4">
-                        <div className="border-secondary dark:border-card relative col-span-3 aspect-9/19.5 h-[min(95vw,990px)] shrink-0 overflow-hidden rounded-xl border-4 shadow-sm">
+                      <div className="bg-background relative grid w-full grid-cols-12 items-center gap-2">
+                        <div className="border-border dark:border-card relative col-span-3 mx-auto aspect-9/18 h-[min(72vh,520px)] w-auto shrink-0 overflow-hidden rounded-xl border-4 shadow-sm">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src="https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/ai-workspace-mobile"
                             alt="Mobile"
                             className="h-full w-full object-cover"
                           />
-                          <div className="bg-muted-foreground absolute bottom-3.5 left-1/2 h-1 w-[30%] -translate-x-1/2 rounded-full" />
+                          <div className="bg-muted-foreground absolute bottom-3.5 left-1/2 h-1.5 w-[30%] -translate-x-1/2 rounded-full" />
                         </div>
 
-                        <div className="border-card relative col-span-9 aspect-video h-[calc(100%-2rem)] w-full min-w-0 flex-1 shrink-0 overflow-hidden rounded-lg border-4">
+                        <div className="border-card relative col-span-9 aspect-video h-[min(72vh,520px)] w-full min-w-0 overflow-hidden rounded-lg border-4">
                           <InteractiveDemo
                             gradientbg={false}
                             tab={false}
@@ -1013,7 +1013,7 @@ export default function Home() {
                   ].map((key, index) => (
                     <li
                       key={key}
-                      className="text-muted-foreground flex items-start gap-3 text-sm leading-relaxed"
+                      className="text-muted-foreground flex items-start gap-3 text-base leading-relaxed"
                     >
                       <KortixAsterisk index={index} />
                       {tHome(key)}
@@ -1092,7 +1092,7 @@ export default function Home() {
                     >
                       {tHome(labelKey)}
                     </div>
-                    <p className="text-muted-foreground group-hover:text-foreground mt-3 text-sm leading-relaxed font-medium transition-colors duration-200">
+                    <p className="text-muted-foreground group-hover:text-foreground mt-3 text-base leading-relaxed font-medium transition-colors duration-200">
                       {tHome(detailKey)}
                     </p>
                   </div>

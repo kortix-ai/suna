@@ -6,9 +6,7 @@ export const siteConfig = {
     'http://localhost:3000',
   nav: {
     links: [
-      { id: 2, name: 'Use cases', href: '/use-cases' },
       { id: 4, name: 'Enterprise', href: '/enterprise' },
-      { id: 5, name: 'Developers', href: '/developers' },
       { id: 6, name: 'Pricing', href: '/pricing' },
     ],
   },
