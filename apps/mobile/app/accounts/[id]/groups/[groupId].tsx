@@ -29,7 +29,7 @@ import {
 } from '@/lib/accounts/groups-client';
 import { listAccountMembers, addGroupMembers } from '@/lib/accounts/accounts-client';
 import { detachGroupFromProject, removeGroupMember } from '@/lib/projects/projects-client';
-import { accountColors, Card, InitialsAvatar, Pill, PrimaryButton } from '@/components/accounts/account-shared';
+import { accountColors, InitialsAvatar, Pill, PrimaryButton } from '@/components/accounts/account-shared';
 
 function formatDate(input: string | null | undefined) {
   if (!input) return '—';
@@ -95,6 +95,10 @@ export default function GroupDetailScreen() {
   const dirty = !!group && (name.trim() !== group.name || (description.trim() || '') !== (group.description ?? ''));
   const bg = isDark ? '#0D0D0D' : '#FFFFFF';
   const input = { height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, fontSize: 14, color: c.fg, fontFamily: 'Roobert' as const };
+  const sectionTitle = { fontSize: 15.5, fontFamily: 'Roobert-Medium' as const, color: c.fg };
+  const divider = { height: 1, backgroundColor: c.border, marginVertical: 22 } as const;
+  const countBadge = { minWidth: 20, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 999, backgroundColor: c.avatarBg, alignItems: 'center' as const };
+  const countText = { fontSize: 11, fontFamily: 'Roobert-Medium' as const, color: c.muted };
 
   const confirmDelete = () => Alert.alert('Delete group', `Delete "${group?.name}"? Any permission policies attached to this group will be removed.`, [
     { text: 'Cancel', style: 'cancel' }, { text: 'Delete', style: 'destructive', onPress: () => { haptics.medium(); del.mutate(); } },
@@ -128,81 +132,82 @@ export default function GroupDetailScreen() {
           <TouchableOpacity onPress={() => groupQuery.refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
         </View>
       ) : (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 48, gap: 16 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {/* Settings */}
-          <Card title="Group details" isDark={isDark}>
-            <View style={{ marginTop: 14 }}>
-              <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginBottom: 6 }}>Name</Text>
-              <TextInput value={name} onChangeText={setName} maxLength={128} placeholderTextColor={c.muted} style={input} />
-              <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginTop: 12, marginBottom: 6 }}>Description</Text>
-              <TextInput value={description} onChangeText={setDescription} maxLength={256} placeholder="Optional" placeholderTextColor={c.muted} style={input} />
-              <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
-                <Text style={{ flex: 1, fontSize: 11.5, color: c.muted }}>Created {formatDate(group?.created_at)}</Text>
-                <TouchableOpacity onPress={() => dirty && update.mutate()} disabled={!dirty || update.isPending} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, height: 40, borderRadius: 9999, backgroundColor: theme.primary, opacity: dirty && !update.isPending ? 1 : 0.5 }}>
-                  {update.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
-                  <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Card>
-
-          {/* Members */}
-          <Card isDark={isDark}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Users size={16} color={c.muted} />
-              <Text style={{ flex: 1, fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Members {members.length}</Text>
-              <TouchableOpacity onPress={() => { haptics.tap(); addRef.current?.present(); }} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: theme.primary }}>
-                <UserPlus size={13} color={theme.primary} />
-                <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primary }}>Add</Text>
-              </TouchableOpacity>
-            </View>
-            <View style={{ marginTop: 12 }}>
-              {membersQuery.isLoading ? (
-                <ActivityIndicator size="small" color={c.muted} />
-              ) : members.length === 0 ? (
-                <Text style={{ fontSize: 12.5, color: c.muted }}>No members yet.</Text>
-              ) : members.map((m, i) => (
-                <View key={m.user_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
-                  <InitialsAvatar label={emailByUserId.get(m.user_id) ?? m.user_id} isDark={isDark} size={32} />
-                  <Text style={{ flex: 1, fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{emailByUserId.get(m.user_id) ?? m.user_id}</Text>
-                  <TouchableOpacity onPress={() => confirmRemove(m.user_id)} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} color="#ef4444" /></TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          </Card>
-
-          {/* Project access */}
-          <Card isDark={isDark}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <FolderGit2 size={16} color={c.muted} />
-              <Text style={{ fontSize: 14.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Project access {grants.length}</Text>
-            </View>
-            <Text style={{ fontSize: 12, color: c.muted, marginTop: 3 }}>Projects this group can access and at what role.</Text>
-            <View style={{ marginTop: 12 }}>
-              {grantsQuery.isLoading ? (
-                <ActivityIndicator size="small" color={c.muted} />
-              ) : grants.length === 0 ? (
-                <Text style={{ fontSize: 12.5, color: c.muted }}>Not attached to any project yet.</Text>
-              ) : grants.map((g, i) => (
-                <View key={g.project_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
-                  <View style={{ flex: 1, minWidth: 0 }}>
-                    <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{g.project_name}</Text>
-                    <Text style={{ fontSize: 11, color: c.muted, marginTop: 1 }}>Attached {formatDate(g.created_at)}</Text>
-                  </View>
-                  <Pill label={g.role.charAt(0).toUpperCase() + g.role.slice(1)} isDark={isDark} />
-                  <TouchableOpacity onPress={() => confirmDetach(g.project_id, g.project_name)} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><X size={15} color="#ef4444" /></TouchableOpacity>
-                </View>
-              ))}
-            </View>
-          </Card>
-
-          {/* Danger */}
-          <Card title="Delete group" description="Removes the group and any policies attached to it." tone="destructive" isDark={isDark}>
-            <TouchableOpacity onPress={confirmDelete} disabled={del.isPending} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 44, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)', marginTop: 12 }}>
-              {del.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={15} color="#ef4444" />}
-              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Delete group</Text>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          {/* ── Group details ── */}
+          <Text style={sectionTitle}>Group details</Text>
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginTop: 14, marginBottom: 6 }}>Name</Text>
+          <TextInput value={name} onChangeText={setName} maxLength={128} placeholderTextColor={c.muted} style={input} />
+          <Text style={{ fontSize: 12, fontFamily: 'Roobert-Medium', color: c.muted, marginTop: 12, marginBottom: 6 }}>Description</Text>
+          <TextInput value={description} onChangeText={setDescription} maxLength={256} placeholder="Optional" placeholderTextColor={c.muted} style={input} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
+            <Text style={{ flex: 1, fontSize: 11.5, color: c.muted }}>Created {formatDate(group?.created_at)}</Text>
+            <TouchableOpacity onPress={() => dirty && update.mutate()} disabled={!dirty || update.isPending} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, height: 40, borderRadius: 9999, backgroundColor: theme.primary, opacity: dirty && !update.isPending ? 1 : 0.5 }}>
+              {update.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
+              <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save</Text>
             </TouchableOpacity>
-          </Card>
+          </View>
+
+          <View style={divider} />
+
+          {/* ── Members ── */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Users size={16} color={c.muted} />
+            <Text style={sectionTitle}>Members</Text>
+            <View style={countBadge}><Text style={countText}>{members.length}</Text></View>
+            <View style={{ flex: 1 }} />
+            <TouchableOpacity onPress={() => { haptics.tap(); addRef.current?.present(); }} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 11, paddingRight: 13, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: theme.primary }}>
+              <UserPlus size={13} color={theme.primary} />
+              <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primary }}>Add</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={{ marginTop: 6 }}>
+            {membersQuery.isLoading ? (
+              <View style={{ paddingVertical: 14 }}><ActivityIndicator size="small" color={c.muted} /></View>
+            ) : members.length === 0 ? (
+              <Text style={{ fontSize: 12.5, color: c.muted, paddingVertical: 12 }}>No members yet.</Text>
+            ) : members.map((m, i) => (
+              <View key={m.user_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
+                <InitialsAvatar label={emailByUserId.get(m.user_id) ?? m.user_id} isDark={isDark} size={32} />
+                <Text style={{ flex: 1, fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{emailByUserId.get(m.user_id) ?? m.user_id}</Text>
+                <TouchableOpacity onPress={() => confirmRemove(m.user_id)} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} color="#ef4444" /></TouchableOpacity>
+              </View>
+            ))}
+          </View>
+
+          <View style={divider} />
+
+          {/* ── Project access ── */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <FolderGit2 size={16} color={c.muted} />
+            <Text style={sectionTitle}>Project access</Text>
+            <View style={countBadge}><Text style={countText}>{grants.length}</Text></View>
+          </View>
+          <Text style={{ fontSize: 12, color: c.muted, marginTop: 4 }}>Projects this group can access and at what role.</Text>
+          <View style={{ marginTop: 6 }}>
+            {grantsQuery.isLoading ? (
+              <View style={{ paddingVertical: 14 }}><ActivityIndicator size="small" color={c.muted} /></View>
+            ) : grants.length === 0 ? (
+              <Text style={{ fontSize: 12.5, color: c.muted, paddingVertical: 12 }}>Not attached to any project yet.</Text>
+            ) : grants.map((g, i) => (
+              <View key={g.project_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{g.project_name}</Text>
+                  <Text style={{ fontSize: 11, color: c.muted, marginTop: 1 }}>Attached {formatDate(g.created_at)}</Text>
+                </View>
+                <Pill label={g.role.charAt(0).toUpperCase() + g.role.slice(1)} isDark={isDark} />
+                <TouchableOpacity onPress={() => confirmDetach(g.project_id, g.project_name)} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><X size={15} color="#ef4444" /></TouchableOpacity>
+              </View>
+            ))}
+          </View>
+
+          <View style={divider} />
+
+          {/* ── Danger ── */}
+          <TouchableOpacity onPress={confirmDelete} disabled={del.isPending} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}>
+            {del.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={15} color="#ef4444" />}
+            <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Delete group</Text>
+          </TouchableOpacity>
+          <Text style={{ fontSize: 11.5, color: c.muted, textAlign: 'center', marginTop: 8 }}>Removes the group and any policies attached to it.</Text>
         </ScrollView>
       )}
 
