@@ -1,9 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Globe, Loader2, Lock, Users } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
+import {
+  SharingPicker,
+  intentToSelection,
+  isSharingComplete,
+  selectionToIntent,
+  type SharingSelection,
+} from '@/components/projects/sharing-picker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -15,15 +22,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { toast } from '@/lib/toast';
 import { setProjectSessionSharing, type ProjectSession } from '@/lib/projects-client';
-import {
-  SharingPicker,
-  intentToSelection,
-  isSharingComplete,
-  selectionToIntent,
-  type SharingSelection,
-} from '@/components/projects/sharing-picker';
+import { toast } from '@/lib/toast';
 
 const SESSION_SHARING_COPY = {
   heading: 'Who can access this session',
@@ -53,7 +53,8 @@ export function SessionVisibilityBadge({ session }: { session: ProjectSession })
   const Icon = meta.icon;
   // Private + mine = the default; no badge needed.
   if (session.visibility === 'private' && session.is_owner !== false) return null;
-  const sharedBy = !session.is_owner && session.owner_email ? `Shared by ${session.owner_email}` : null;
+  const sharedBy =
+    !session.is_owner && session.owner_email ? `Shared by ${session.owner_email}` : null;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -106,18 +107,29 @@ export function SessionShareDialog({
   });
 
   return (
-    <Dialog open={open} onOpenChange={(o) => { if (!save.isPending) onOpenChange(o); }}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!save.isPending) onOpenChange(o);
+      }}
+    >
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
+        <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
           <DialogTitle>Share session</DialogTitle>
           <DialogDescription>
-            Private to you by default. Grant read &amp; continue access to your whole team or specific members.
+            Private to you by default. Grant read &amp; continue access to your whole team or
+            specific members.
           </DialogDescription>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto px-6 py-5">
-          <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} copy={SESSION_SHARING_COPY} />
+          <SharingPicker
+            projectId={projectId}
+            value={sharing}
+            onChange={setSharing}
+            copy={SESSION_SHARING_COPY}
+          />
         </div>
-        <DialogFooter variant="bar">
+        <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={save.isPending}>
             Cancel
           </Button>

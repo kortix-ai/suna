@@ -803,7 +803,7 @@ function TabScallopEdge({ side }: { side: 'left' | 'right' }) {
       preserveAspectRatio="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden
-      className="text-background mt-auto h-full w-3.5 shrink-0 translate-y-px self-stretch overflow-visible"
+      className="text-background dark:text-primary/7 mt-auto h-full w-3.5 shrink-0 self-stretch overflow-visible"
     >
       <path d={path} fill="currentColor" />
     </svg>
@@ -821,7 +821,7 @@ const ORDER: PageId[] = [
   'security',
 ];
 
-export function InteractiveDemo({
+export function InteractiveDemoSection({
   gradientbg = true,
   tab = true,
   embedded = false,
@@ -830,7 +830,6 @@ export function InteractiveDemo({
   innerClassName,
   aside = true,
   parentClassName,
-  activePage,
 }: {
   gradientbg?: boolean;
   tab?: boolean;
@@ -841,10 +840,9 @@ export function InteractiveDemo({
   innerClassName?: string;
   aside?: boolean;
   parentClassName?: string;
-  activePage?: PageId;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [active, setActive] = useState<PageId>(activePage || 'home');
+  const [active, setActive] = useState<PageId>('home');
   const page = PAGES[active];
   const tabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
   const mobileTabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
@@ -916,295 +914,429 @@ export function InteractiveDemo({
         <div className={cn('relative z-10', embedded && 'h-full')}>
           <div
             className={cn(
-              'border-border bg-background overflow-hidden',
+              'border-border bg-background overflow-hidden lg:border-none lg:bg-transparent',
               embedded && 'flex h-full flex-col',
               innerClassName,
               aside && 'rounded sm:rounded-sm',
             )}
           >
-            <div
-              className={cn(
-                'border-border/60 bg-muted/30 flex shrink-0 items-center gap-3 px-4',
-                embedded ? 'h-9 px-3' : 'h-12',
-                !aside ? 'bg-card' : 'border-b',
-              )}
-            >
-              <div className="flex gap-1.5">
-                <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
-                <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
-                <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
-              </div>
+            {tab && (
+              <>
+                <div className="hidden w-full lg:block">
+                  <div className="mx-auto w-full max-w-full [scrollbar-width:none] overflow-x-auto scroll-smooth [-ms-overflow-style:none] lg:w-auto lg:overflow-visible [&::-webkit-scrollbar]:hidden">
+                    <div className="bg-border dark:bg-background mx-auto w-full rounded-xl p-1">
+                      <div className="shadow-custom flex w-full items-center gap-0.5 rounded-full">
+                        {ORDER.map((id, index) => {
+                          const { label, icon: Icon } = PAGES[id];
+                          const isActive = id === active;
+                          return (
+                            <button
+                              key={id}
+                              ref={(el) => {
+                                if (el) tabRefs.current[id] = el;
+                                else delete tabRefs.current[id];
+                              }}
+                              aria-label={label}
+                              aria-current={isActive ? 'page' : undefined}
+                              className={cn(
+                                'text-foreground hit-area-3 flex shrink-0 cursor-pointer items-center justify-center transition-colors duration-150 ease-out',
+                                !isActive ? 'gap-2 rounded-full px-3.5 py-0 [&>svg]:size-4' : '',
+                                index !== 0 && 'rounded-tl-none',
+                                index !== ORDER.length && 'rounded-tr-none',
+                              )}
+                              type="button"
+                              onClick={() => setActive(id)}
+                            >
+                              {isActive ? (
+                                <span className="relative flex items-stretch">
+                                  {index !== 0 && <TabScallopEdge side="left" />}
+                                  <span className="bg-background dark:bg-primary/7 relative z-10 flex items-center gap-2 rounded-t-xl px-3.5 py-1 [&>svg]:size-4">
+                                    {Icon}
+                                    {label}
+                                  </span>
+                                  {index !== ORDER.length - 1 && <TabScallopEdge side="right" />}
+                                </span>
+                              ) : (
+                                <>
+                                  {Icon}
+                                  {label}
+                                </>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
 
-              {aside && (
-                <div className="ml-2 flex min-w-0 items-center gap-1.5 text-xs">
-                  <EntityAvatar
-                    label={tHardcodedUi.raw(
-                      'componentsHomeInteractiveDemo.line528JsxAttrLabelAcmeAgi',
-                    )}
-                    size="xs"
-                  />
-                  <span className="text-foreground font-medium">
-                    {tHardcodedUi.raw('componentsHomeInteractiveDemo.line529JsxTextAcmeAgi')}
-                  </span>
-                  <ChevronRight className="text-muted-foreground/40 size-3" />
-                  <span className="text-muted-foreground truncate">{page.label}</span>
-                </div>
-              )}
-
-              <div className="ml-auto flex items-center gap-2">
-                <span
-                  className={cn(
-                    'hidden h-8 w-44 items-center gap-2 rounded-md border px-3 text-xs md:flex',
-                    'bg-secondary text-secondary-foreground border-border',
-                  )}
-                >
-                  <Search className="size-3.5" /> Search
-                </span>
-                <span
-                  className={cn(
-                    'border-border text-muted-foreground flex size-8 items-center justify-center rounded-full border',
-                    'bg-card text-card-foreground border-border',
-                  )}
-                >
-                  <Bell className="size-4" />
-                </span>
-                <span
-                  className={cn(
-                    'flex size-8 items-center justify-center rounded-md border p-1 text-sm',
-                    'bg-card text-card-foreground border-border',
-                  )}
-                >
-                  {tHardcodedUi.raw('componentsHomeInteractiveDemo.line539JsxTextSarahAcmeAi')}
-                </span>
-              </div>
-            </div>
-
-            <div
-              className={cn(
-                'grid min-h-0 w-full grid-cols-1',
-                aside
-                  ? 'lg:h-[540px] lg:grid-cols-[230px_1fr]'
-                  : 'bg-background h-full rounded-t-md lg:h-full lg:grid-cols-1',
-                embedded && 'h-full flex-1 rounded-t-md',
-                parentClassName,
-              )}
-            >
-              {aside && (
-                <aside className="border-border/60 bg-muted/20 hidden flex-col border-r p-3 lg:flex">
-                  <button className="hover:bg-foreground/[0.04] mb-3 flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors">
-                    <EntityAvatar
-                      label={tHardcodedUi.raw(
-                        'componentsHomeInteractiveDemo.line547JsxAttrLabelAcmeAgi',
-                      )}
-                      size="md"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="text-foreground block truncate text-xs font-semibold">
-                        {tHardcodedUi.raw('componentsHomeInteractiveDemo.line549JsxTextAcmeAgi')}
-                      </span>
-                      <span className="text-muted-foreground block truncate text-xs">
-                        {tHardcodedUi.raw(
-                          'componentsHomeInteractiveDemo.line550JsxTextEnterprise24Seats',
+                      <div
+                        className={cn(
+                          'bg-background h-full w-full overflow-hidden rounded-b-[calc(var(--radius-xl)-4px)]',
                         )}
-                      </span>
-                    </span>
-                  </button>
-
-                  <div className="bg-foreground text-background border-border mb-1 flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm font-medium">
-                    <Plus className="size-4" />
-                    {tHardcodedUi.raw('componentsHomeInteractiveDemo.line556JsxTextNewSession')}
-                  </div>
-                  <div className="text-muted-foreground mb-3 flex items-center gap-2.5 rounded-md p-1.5 px-2.5 text-sm">
-                    <Search className="size-4" /> Search
-                    <span className="text-muted-foreground/50 ml-auto font-mono text-xs">
-                      {tHardcodedUi.raw('componentsHomeInteractiveDemo.line560JsxTextK')}
-                    </span>
-                  </div>
-
-                  <nav className="flex flex-col gap-0.5">
-                    {ORDER.map((id) => {
-                      const { label, icon: Icon } = PAGES[id];
-                      return (
-                        <button
-                          key={id}
-                          onClick={() => setActive(id)}
+                      >
+                        <div
                           className={cn(
-                            'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
-                            id === active
-                              ? 'bg-foreground/[0.07] text-foreground font-medium'
-                              : 'text-muted-foreground hover:text-foreground',
+                            'border-border/60 bg-background dark:bg-primary/7 flex shrink-0 items-center gap-3 px-4',
+                            embedded ? 'h-9 px-3' : 'h-12',
+                            !aside ? 'bg-card' : 'border-b',
                           )}
                         >
-                          {Icon}
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </nav>
+                          <div className="flex gap-1.5">
+                            <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
+                            <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
+                            <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
+                          </div>
 
-                  <div className="hover:bg-foreground/[0.07] mt-auto flex items-center gap-2.5 rounded-md p-1.5 px-2.5">
-                    <UserAvatar
-                      email={tHardcodedUi.raw(
-                        'componentsHomeInteractiveDemo.line583JsxAttrEmailSarahAcmeAi',
-                      )}
-                      name="Sarah Chen"
-                      size="md"
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="text-foreground block truncate text-xs font-medium">
-                        {tHardcodedUi.raw('componentsHomeInteractiveDemo.line585JsxTextSarahChen')}
-                      </span>
-                      <span className="text-muted-foreground block truncate text-xs">Owner</span>
-                    </span>
+                          <div className="ml-auto flex items-center gap-2">
+                            <span
+                              className={cn(
+                                'hidden h-8 w-44 items-center gap-2 rounded-md border px-3 text-xs md:flex',
+                                'bg-secondary text-secondary-foreground border-border',
+                              )}
+                            >
+                              <Search className="size-3.5" /> Search
+                            </span>
+                            <span
+                              className={cn(
+                                'border-border text-muted-foreground flex size-8 items-center justify-center rounded-full border',
+                                'bg-card text-card-foreground border-border',
+                              )}
+                            >
+                              <Bell className="size-4" />
+                            </span>
+                            <span
+                              className={cn(
+                                'flex size-8 items-center justify-center rounded-md border p-1 text-sm',
+                                'bg-card text-card-foreground border-border',
+                              )}
+                            >
+                              {tHardcodedUi.raw(
+                                'componentsHomeInteractiveDemo.line539JsxTextSarahAcmeAi',
+                              )}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div
+                          className={cn(
+                            'grid min-h-0 w-full grid-cols-1',
+                            aside
+                              ? 'lg:h-[540px] lg:grid-cols-[230px_1fr]'
+                              : 'bg-background h-full rounded-t-md lg:h-full lg:grid-cols-1',
+                            embedded && 'h-full flex-1 rounded-t-md',
+                            parentClassName,
+                          )}
+                        >
+                          {aside && (
+                            <aside className="border-border/60 bg-muted/20 hidden flex-col border-r p-3 lg:flex">
+                              <div className="bg-foreground text-background border-border mb-1 flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm font-medium">
+                                <Plus className="size-4" />
+                                {tHardcodedUi.raw(
+                                  'componentsHomeInteractiveDemo.line556JsxTextNewSession',
+                                )}
+                              </div>
+                              <div className="text-muted-foreground mb-3 flex items-center gap-2.5 rounded-md p-1.5 px-2.5 text-sm">
+                                <Search className="size-4" /> Search
+                                <span className="text-muted-foreground/50 ml-auto font-mono text-xs">
+                                  {tHardcodedUi.raw(
+                                    'componentsHomeInteractiveDemo.line560JsxTextK',
+                                  )}
+                                </span>
+                              </div>
+
+                              <nav className="flex flex-col gap-0.5">
+                                {ORDER.map((id) => {
+                                  const { label, icon: Icon } = PAGES[id];
+                                  return (
+                                    <button
+                                      key={id}
+                                      onClick={() => setActive(id)}
+                                      className={cn(
+                                        'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
+                                        id === active
+                                          ? 'bg-foreground/[0.07] text-foreground font-medium'
+                                          : 'text-muted-foreground hover:text-foreground',
+                                      )}
+                                    >
+                                      {Icon}
+                                      {label}
+                                    </button>
+                                  );
+                                })}
+                              </nav>
+
+                              <div className="hover:bg-foreground/[0.07] mt-auto flex items-center gap-2.5 rounded-md p-1.5 px-2.5">
+                                <UserAvatar
+                                  email={tHardcodedUi.raw(
+                                    'componentsHomeInteractiveDemo.line583JsxAttrEmailSarahAcmeAi',
+                                  )}
+                                  name="Sarah Chen"
+                                  size="md"
+                                />
+                                <span className="min-w-0 flex-1">
+                                  <span className="text-foreground block truncate text-xs font-medium">
+                                    {tHardcodedUi.raw(
+                                      'componentsHomeInteractiveDemo.line585JsxTextSarahChen',
+                                    )}
+                                  </span>
+                                  <span className="text-muted-foreground block truncate text-xs">
+                                    Owner
+                                  </span>
+                                </span>
+                              </div>
+                            </aside>
+                          )}
+
+                          <div
+                            className={cn(
+                              '[&::-webkit-scrollbar-thumb]:bg-border w-full overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full',
+                              parentClassName,
+                              embedded
+                                ? 'h-full min-h-0 overflow-hidden p-3'
+                                : 'min-h-[460px] p-5 sm:p-6 lg:h-[540px]',
+                              !aside && 'h-full p-5 sm:p-6 lg:h-full',
+                            )}
+                          >
+                            <AnimatePresence mode="wait">
+                              <motion.div
+                                key={active}
+                                initial={{ opacity: 0, y: 8 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -8 }}
+                                transition={{ duration: 0.25, ease: 'easeInOut' }}
+                                className="h-full w-full"
+                              >
+                                {page.render()}
+                              </motion.div>
+                            </AnimatePresence>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </aside>
-              )}
+                </div>
 
-              <div
-                className={cn(
-                  '[&::-webkit-scrollbar-thumb]:bg-border w-full overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full',
-                  parentClassName,
-                  embedded
-                    ? 'h-full min-h-0 overflow-hidden p-3'
-                    : 'min-h-[460px] p-5 sm:p-6 lg:h-[540px]',
-                  !aside && 'h-full p-5 sm:p-6 lg:h-full',
-                )}
-              >
-                <AnimatePresence mode="wait">
-                  <motion.div
-                    key={active}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -8 }}
-                    transition={{ duration: 0.25, ease: 'easeInOut' }}
-                    className="h-full w-full"
+                <div className="lg:hidden">
+                  <div className="bg-foreground/10 mx-auto w-full max-w-full [scrollbar-width:none] overflow-x-auto scroll-smooth [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                    <div className="shadow-custom mx-auto flex w-max items-center gap-0.5 overflow-hidden pt-1">
+                      {ORDER.map((id, index) => {
+                        const { label, icon: Icon } = PAGES[id];
+                        const isActive = id === active;
+                        return (
+                          <button
+                            key={id}
+                            ref={(el) => {
+                              if (el) mobileTabRefs.current[id] = el;
+                              else delete mobileTabRefs.current[id];
+                            }}
+                            aria-label={label}
+                            aria-current={isActive ? 'page' : undefined}
+                            className={cn(
+                              'text-foreground hit-area-3 flex shrink-0 cursor-pointer items-center justify-center transition-colors duration-150 ease-out',
+                              !isActive ? 'gap-2 rounded-full px-3.5 py-0 [&>svg]:size-4' : '',
+                              index !== 0 && 'rounded-tl-none',
+                              index !== ORDER.length && 'rounded-tr-none',
+                            )}
+                            type="button"
+                            onClick={() => setActive(id)}
+                          >
+                            {isActive ? (
+                              <span className="relative flex items-stretch">
+                                {index !== 0 && <TabScallopEdge side="left" />}
+                                <span className="bg-background relative z-10 flex items-center gap-2 rounded-t-xl px-3.5 py-1 [&>svg]:size-4">
+                                  {Icon}
+                                  {label}
+                                </span>
+                                {index !== ORDER.length - 1 && <TabScallopEdge side="right" />}
+                              </span>
+                            ) : (
+                              <>
+                                {Icon}
+                                {label}
+                              </>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div
+                    className={cn(
+                      'border-border/60 bg-background dark:bg-primary/7 flex shrink-0 items-center gap-3 px-4',
+                      embedded ? 'h-9 px-3' : 'h-12',
+                      !aside ? 'bg-card' : 'border-b',
+                    )}
                   >
-                    {page.render()}
-                  </motion.div>
-                </AnimatePresence>
-              </div>
-            </div>
+                    <div className="flex gap-1.5">
+                      <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
+                      <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
+                      <span className="bg-muted-foreground/15 size-2.5 rounded-full" />
+                    </div>
+
+                    {aside && (
+                      <div className="ml-2 flex min-w-0 items-center gap-1.5 text-xs">
+                        <EntityAvatar
+                          label={tHardcodedUi.raw(
+                            'componentsHomeInteractiveDemo.line528JsxAttrLabelAcmeAgi',
+                          )}
+                          size="xs"
+                        />
+                        <span className="text-foreground font-medium">
+                          {tHardcodedUi.raw('componentsHomeInteractiveDemo.line529JsxTextAcmeAgi')}
+                        </span>
+                        <ChevronRight className="text-muted-foreground/40 size-3" />
+                        <span className="text-muted-foreground truncate">{page.label}</span>
+                      </div>
+                    )}
+
+                    <div className="ml-auto flex items-center gap-2">
+                      <span
+                        className={cn(
+                          'hidden h-8 w-44 items-center gap-2 rounded-md border px-3 text-xs md:flex',
+                          'bg-secondary text-secondary-foreground border-border',
+                        )}
+                      >
+                        <Search className="size-3.5" /> Search
+                      </span>
+                      <span
+                        className={cn(
+                          'border-border text-muted-foreground flex size-8 items-center justify-center rounded-full border',
+                          'bg-card text-card-foreground border-border',
+                        )}
+                      >
+                        <Bell className="size-4" />
+                      </span>
+                      <span
+                        className={cn(
+                          'flex size-8 items-center justify-center rounded-md border p-1 text-sm',
+                          'bg-card text-card-foreground border-border',
+                        )}
+                      >
+                        {tHardcodedUi.raw(
+                          'componentsHomeInteractiveDemo.line539JsxTextSarahAcmeAi',
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div
+                    className={cn(
+                      'grid min-h-0 w-full grid-cols-1',
+                      aside
+                        ? 'lg:h-[540px] lg:grid-cols-[230px_1fr]'
+                        : 'bg-background h-full rounded-t-md lg:h-full lg:grid-cols-1',
+                      embedded && 'h-full flex-1 rounded-t-md',
+                      parentClassName,
+                    )}
+                  >
+                    {aside && (
+                      <aside className="border-border/60 bg-muted/20 hidden flex-col border-r p-3 lg:flex">
+                        <button className="hover:bg-foreground/[0.04] mb-3 flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors">
+                          <EntityAvatar
+                            label={tHardcodedUi.raw(
+                              'componentsHomeInteractiveDemo.line547JsxAttrLabelAcmeAgi',
+                            )}
+                            size="md"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="text-foreground block truncate text-xs font-semibold">
+                              {tHardcodedUi.raw(
+                                'componentsHomeInteractiveDemo.line549JsxTextAcmeAgi',
+                              )}
+                            </span>
+                            <span className="text-muted-foreground block truncate text-xs">
+                              {tHardcodedUi.raw(
+                                'componentsHomeInteractiveDemo.line550JsxTextEnterprise24Seats',
+                              )}
+                            </span>
+                          </span>
+                        </button>
+
+                        <div className="bg-foreground text-background border-border mb-1 flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm font-medium">
+                          <Plus className="size-4" />
+                          {tHardcodedUi.raw(
+                            'componentsHomeInteractiveDemo.line556JsxTextNewSession',
+                          )}
+                        </div>
+                        <div className="text-muted-foreground mb-3 flex items-center gap-2.5 rounded-md p-1.5 px-2.5 text-sm">
+                          <Search className="size-4" /> Search
+                          <span className="text-muted-foreground/50 ml-auto font-mono text-xs">
+                            {tHardcodedUi.raw('componentsHomeInteractiveDemo.line560JsxTextK')}
+                          </span>
+                        </div>
+
+                        <nav className="flex flex-col gap-0.5">
+                          {ORDER.map((id) => {
+                            const { label, icon: Icon } = PAGES[id];
+                            return (
+                              <button
+                                key={id}
+                                onClick={() => setActive(id)}
+                                className={cn(
+                                  'flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors',
+                                  id === active
+                                    ? 'bg-foreground/[0.07] text-foreground font-medium'
+                                    : 'text-muted-foreground hover:text-foreground',
+                                )}
+                              >
+                                {Icon}
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </nav>
+
+                        <div className="hover:bg-foreground/[0.07] mt-auto flex items-center gap-2.5 rounded-md p-1.5 px-2.5">
+                          <UserAvatar
+                            email={tHardcodedUi.raw(
+                              'componentsHomeInteractiveDemo.line583JsxAttrEmailSarahAcmeAi',
+                            )}
+                            name="Sarah Chen"
+                            size="md"
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="text-foreground block truncate text-xs font-medium">
+                              {tHardcodedUi.raw(
+                                'componentsHomeInteractiveDemo.line585JsxTextSarahChen',
+                              )}
+                            </span>
+                            <span className="text-muted-foreground block truncate text-xs">
+                              Owner
+                            </span>
+                          </span>
+                        </div>
+                      </aside>
+                    )}
+
+                    <div
+                      className={cn(
+                        '[&::-webkit-scrollbar-thumb]:bg-border w-full overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full',
+                        parentClassName,
+                        embedded
+                          ? 'h-full min-h-0 overflow-hidden p-3'
+                          : 'min-h-[460px] p-5 sm:p-6 lg:h-[540px]',
+                        !aside && 'h-full p-5 sm:p-6 lg:h-full',
+                      )}
+                    >
+                      <AnimatePresence mode="wait">
+                        <motion.div
+                          key={active}
+                          initial={{ opacity: 0, y: 8 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: -8 }}
+                          transition={{ duration: 0.25, ease: 'easeInOut' }}
+                          className="h-full w-full"
+                        >
+                          {page.render()}
+                        </motion.div>
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>
-
-      {tab && (
-        <>
-          <div className="hidden lg:block">
-            <div className="mx-auto w-full max-w-full [scrollbar-width:none] overflow-x-auto scroll-smooth [-ms-overflow-style:none] lg:w-auto lg:overflow-visible [&::-webkit-scrollbar]:hidden">
-              <div className="bg-border dark:bg-card mx-auto w-max rounded-xl p-1">
-                <div className="shadow-custom flex w-max items-center gap-0.5 rounded-full">
-                  {ORDER.map((id, index) => {
-                    const { label, icon: Icon } = PAGES[id];
-                    const isActive = id === active;
-                    return (
-                      <button
-                        key={id}
-                        ref={(el) => {
-                          if (el) tabRefs.current[id] = el;
-                          else delete tabRefs.current[id];
-                        }}
-                        aria-label={label}
-                        aria-current={isActive ? 'page' : undefined}
-                        className={cn(
-                          'text-foreground hit-area-3 flex shrink-0 cursor-pointer items-center justify-center transition-colors duration-150 ease-out',
-                          !isActive ? 'gap-2 rounded-full px-3.5 py-0 [&>svg]:size-4' : '',
-                          index !== 0 && 'rounded-tl-none',
-                          index !== ORDER.length - 1 && 'rounded-tr-none',
-                        )}
-                        type="button"
-                        onClick={() => setActive(id)}
-                      >
-                        {isActive ? (
-                          <span className="relative flex items-stretch">
-                            {index !== 0 && <TabScallopEdge side="left" />}
-                            <span className="bg-background relative z-10 flex items-center gap-2 rounded-t-xl px-3.5 py-1 [&>svg]:size-4">
-                              {Icon}
-                              {label}
-                            </span>
-                            {index !== ORDER.length - 1 && <TabScallopEdge side="right" />}
-                          </span>
-                        ) : (
-                          <>
-                            {Icon}
-                            {label}
-                          </>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div
-                  className={cn(
-                    'bg-background h-full w-full rounded-b-[calc(var(--radius-xl)-4px)]',
-
-                    active !== 'home' && 'rounded-tl-[calc(var(--radius-xl)-4px)]',
-                    active !== 'security' && 'rounded-tr-[calc(var(--radius-xl)-4px)]',
-                  )}
-                >
-                  <AnimatePresence mode="wait">
-                    <motion.p
-                      key={active}
-                      initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -6 }}
-                      transition={{ duration: 0.25, ease: 'easeInOut' }}
-                      className="text-muted-foreground py-2 text-center text-sm leading-relaxed"
-                    >
-                      {page.context}
-                    </motion.p>
-                  </AnimatePresence>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="lg:hidden">
-            <div className="mx-auto w-full max-w-full [scrollbar-width:none] overflow-x-auto scroll-smooth rounded-full [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              <div className="bg-foreground/10 shadow-custom mx-auto flex w-max items-center gap-0.5 rounded-full p-1">
-                {ORDER.map((id) => {
-                  const { label, icon: Icon } = PAGES[id];
-                  const isActive = id === active;
-                  return (
-                    <button
-                      key={id}
-                      ref={(el) => {
-                        if (el) mobileTabRefs.current[id] = el;
-                        else delete mobileTabRefs.current[id];
-                      }}
-                      aria-label={label}
-                      aria-current={isActive ? 'page' : undefined}
-                      className="text-foreground flex shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full px-3.5 py-2 transition-colors duration-150 ease-out [&>svg]:size-4"
-                      type="button"
-                      style={{
-                        backgroundColor: isActive ? 'var(--background)' : 'transparent',
-                      }}
-                      onClick={() => setActive(id)}
-                    >
-                      {Icon}
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <AnimatePresence mode="wait">
-              <motion.p
-                key={active}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -6 }}
-                transition={{ duration: 0.25, ease: 'easeInOut' }}
-                className="text-muted-foreground mx-auto mt-5 max-w-xl px-4 text-center text-sm leading-relaxed"
-              >
-                {page.context}
-              </motion.p>
-            </AnimatePresence>
-          </div>
-        </>
-      )}
     </div>
   );
 }

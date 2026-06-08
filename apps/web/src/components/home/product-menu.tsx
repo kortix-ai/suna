@@ -1,23 +1,38 @@
 'use client';
 
 import {
+  navigateToPlatformHash,
+  PLATFORM_SECTION_ID,
+  PLATFORM_TABS,
+  platformHashFromTab,
+  platformTabFromHash,
+  type PlatformTabId,
+} from '@/components/home/platform-hash';
+import {
   NavigationMenu,
   NavigationMenuContent,
   NavigationMenuItem,
   NavigationMenuLink,
   NavigationMenuList,
-  NavigationMenuSeparator,
   NavigationMenuTrigger,
 } from '@/components/ui/navigation-menu';
+import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import { Blocks, Boxes, Radio, type LucideIcon } from 'lucide-react';
+import { Monitor, type LucideIcon } from 'lucide-react';
 import Link from 'next/link';
-import { HiMiniSparkles } from 'react-icons/hi2';
+import { usePathname } from 'next/navigation';
 import { IconType } from 'react-icons/lib';
-import { MdShield } from 'react-icons/md';
-import { PiClockCountdownFill, PiMonitorFill } from 'react-icons/pi';
+import { LuMonitorSmartphone } from 'react-icons/lu';
 import { TbTerminal } from 'react-icons/tb';
 import { marketingButtonVariants } from '../ui/marketing/button';
+
+export {
+  PLATFORM_SECTION_ID,
+  PLATFORM_TABS,
+  platformHashFromTab,
+  platformTabFromHash,
+  type PlatformTabId,
+};
 
 export interface ProductItem {
   title: string;
@@ -26,59 +41,57 @@ export interface ProductItem {
   icon: LucideIcon | IconType;
 }
 
-const PRODUCT_IMP_ITEMS: ProductItem[] = [
+export const PLATFORM_PRODUCT_ITEMS: ProductItem[] = [
   {
-    title: 'Kortix CLI',
-    desc: 'The command center for your agents.',
-    href: '/cli',
+    title: 'CLI',
+    desc: 'Run agents from your terminal.',
+    href: '/#cli',
     icon: TbTerminal,
   },
   {
-    title: 'Kortix Cloud',
-    desc: 'The SDK for your agents.',
-    href: '/web',
-    icon: PiMonitorFill,
+    title: 'Desktop',
+    desc: 'Your command center on macOS, Windows, and Linux.',
+    href: '/#desktop',
+    icon: Monitor,
+  },
+  {
+    title: 'Web & Mobile',
+    desc: 'Ship from the browser or on the go.',
+    href: '/#web-mobile',
+    icon: LuMonitorSmartphone,
+  },
+  {
+    title: 'Slack',
+    desc: 'Agents where your team already talks.',
+    href: '/#slack',
+    icon: Icon.Slack,
   },
 ];
 
-export const PRODUCT_ITEMS: ProductItem[] = [
-  {
-    title: 'Skills',
-    desc: 'Reusable know-how every agent shares.',
-    href: '/#skills',
-    icon: HiMiniSparkles,
-  },
-  {
-    title: 'Integrations',
-    desc: '3,000+ tools, connected once.',
-    href: '/#integrations',
-    icon: Blocks,
-  },
-  {
-    title: 'Scheduling',
-    desc: 'Work that runs on a schedule, 24/7.',
-    href: '/#scheduling',
-    icon: PiClockCountdownFill,
-  },
-  {
-    title: 'Channels',
-    desc: 'Slack, email, web & WhatsApp.',
-    href: '/#channels',
-    icon: Radio,
-  },
-  {
-    title: 'Security',
-    desc: 'Roles, scoping, secrets & audit.',
-    href: '/#security',
-    icon: MdShield,
-  },
-  {
-    title: 'Framework',
-    desc: "The open framework it's all built on.",
-    href: '/technology',
-    icon: Boxes,
-  },
-];
+function PlatformProductLink({ item, className }: { item: ProductItem; className?: string }) {
+  const pathname = usePathname();
+  const ItemIcon = item.icon;
+
+  return (
+    <Link
+      href={item.href}
+      onClick={(event) => {
+        if (navigateToPlatformHash(item.href, pathname)) {
+          event.preventDefault();
+        }
+      }}
+      className={className}
+    >
+      <span className="mt-1 shrink-0">
+        <ItemIcon className="text-muted-foreground group-hover/link:text-foreground size-6 transition-all duration-200" />
+      </span>
+      <span className="min-w-0">
+        <span className="text-foreground block text-sm font-medium">{item.title}</span>
+        <span className="text-muted-foreground block text-sm leading-snug">{item.desc}</span>
+      </span>
+    </Link>
+  );
+}
 
 export function ProductMegaMenu() {
   return (
@@ -93,61 +106,16 @@ export function ProductMegaMenu() {
           >
             Product
           </NavigationMenuTrigger>
-          <NavigationMenuContent>
-            <div className="flex flex-row items-stretch gap-2">
-              <div className="flex flex-col self-stretch">
-                {PRODUCT_IMP_ITEMS.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <NavigationMenuLink key={item.title} asChild className="flex-1">
-                      <Link
-                        href={item.href}
-                        className="group/link flex h-full flex-row items-start gap-4 rounded-sm p-3 py-2 transition-colors"
-                      >
-                        <span className="mt-1 shrink-0">
-                          <Icon className="text-muted-foreground group-hover/link:text-foreground size-6 transition-all duration-200" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="text-foreground block text-sm font-medium">
-                            {item.title}
-                          </span>
-                          <span className="text-muted-foreground block text-sm leading-snug">
-                            {item.desc}
-                          </span>
-                        </span>
-                      </Link>
-                    </NavigationMenuLink>
-                  );
-                })}
-              </div>
-
-              <NavigationMenuSeparator orientation="vertical" />
-
-              <div className="grid w-[34rem] grid-cols-2 gap-1">
-                {PRODUCT_ITEMS.map((item) => {
-                  const Icon = item.icon;
-                  return (
-                    <NavigationMenuLink key={item.title} asChild>
-                      <Link
-                        href={item.href}
-                        className="group/link flex flex-row items-start gap-4 rounded-sm p-3 py-2 transition-colors"
-                      >
-                        <span className="mt-1 shrink-0">
-                          <Icon className="text-muted-foreground group-hover/link:text-foreground size-6 transition-all duration-200" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="text-foreground block text-sm font-medium">
-                            {item.title}
-                          </span>
-                          <span className="text-muted-foreground block text-sm leading-snug">
-                            {item.desc}
-                          </span>
-                        </span>
-                      </Link>
-                    </NavigationMenuLink>
-                  );
-                })}
-              </div>
+          <NavigationMenuContent className="max-w-[calc(100vw-2rem)] md:w-[42rem]">
+            <div className="grid grid-cols-2 gap-1 p-1">
+              {PLATFORM_PRODUCT_ITEMS.map((item) => (
+                <NavigationMenuLink key={item.title} asChild>
+                  <PlatformProductLink
+                    item={item}
+                    className="group/link flex h-full flex-row items-start gap-3 rounded-lg p-3 transition-colors"
+                  />
+                </NavigationMenuLink>
+              ))}
             </div>
           </NavigationMenuContent>
         </NavigationMenuItem>

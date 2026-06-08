@@ -2,8 +2,9 @@
 
 import { useTranslations } from 'next-intl';
 
+import { SlidingTabIndicator } from '@/components/ui/sliding-tab-indicator';
 import { cn } from '@/lib/utils';
-import { motion, useReducedMotion } from 'motion/react';
+import { motion } from 'motion/react';
 import { useState } from 'react';
 import { AiOutlineCheck } from 'react-icons/ai';
 import { HyperText } from '../ui/hyper-text';
@@ -297,15 +298,20 @@ function DeployBody() {
 
 export function CodeWindow({ className }: { className?: string }) {
   const [tab, setTab] = useState<TabId>('toml');
-  const reduceMotion = useReducedMotion();
   return (
     <div className={cn('border-border bg-card overflow-hidden rounded border', className)}>
-      <div className="border-border bg-card flex items-center gap-1 border-b p-2">
+      <SlidingTabIndicator
+        activeId={tab}
+        className="border-border bg-card flex items-center gap-1 border-b p-2"
+        indicatorClassName="bg-foreground rounded"
+      >
         {TABS.map((t) => {
           const isActive = tab === t.id;
           return (
             <button
               key={t.id}
+              type="button"
+              data-sliding-tab={t.id}
               onClick={() => setTab(t.id)}
               className={cn(
                 'relative rounded px-3 py-1.5 text-left text-sm font-medium transition-colors',
@@ -314,21 +320,11 @@ export function CodeWindow({ className }: { className?: string }) {
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground',
               )}
             >
-              {isActive && (
-                <motion.span
-                  layoutId="codeWindowActiveTab"
-                  aria-hidden
-                  className="bg-foreground pointer-events-none absolute inset-0 z-0 rounded"
-                  transition={
-                    reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 380, damping: 32 }
-                  }
-                />
-              )}
               <span className="relative z-10">{t.label}</span>
             </button>
           );
         })}
-      </div>
+      </SlidingTabIndicator>
       <div className="min-h-[260px] px-5 py-4 font-mono text-sm">
         {tab === 'toml' && <TomlBody />}
         {tab === 'agent' && <AgentBody />}

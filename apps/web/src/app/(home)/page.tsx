@@ -3,7 +3,18 @@
 import { useAuth } from '@/components/AuthProvider';
 import { CliDemo } from '@/components/home/cli-demo';
 import { CodeWindow } from '@/components/home/code-window';
+import { DesktopDemo } from '@/components/home/desktop-demo';
 import { InteractiveDemo } from '@/components/home/interactive-demo';
+import { InteractiveDemoSection } from '@/components/home/interactive-demo-section';
+import {
+  PLATFORM_SECTION_ID,
+  PLATFORM_TABS,
+  type PlatformTabId,
+  readPlatformTabFromLocation,
+  scrollToPlatformSection,
+  setPlatformHash,
+  subscribePlatformHash,
+} from '@/components/home/platform-hash';
 import { Reveal } from '@/components/home/reveal';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
@@ -22,6 +33,7 @@ import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-a
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
+import { SlidingTabIndicator } from '@/components/ui/sliding-tab-indicator';
 import { Textarea } from '@/components/ui/textarea';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { Icon } from '@/features/icon/icon';
@@ -39,12 +51,10 @@ import {
   Copy,
   FileText,
   GitBranch,
-  Monitor,
   MoreHorizontal,
   Plus,
   Server,
   Smile,
-  Terminal,
   TrendingUp,
 } from 'lucide-react';
 import {
@@ -59,25 +69,17 @@ import {
 import { useTranslations } from 'next-intl';
 import Image from 'next/image';
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { FaUsers } from 'react-icons/fa';
 import { FiBookmark } from 'react-icons/fi';
 import { HiOutlineDotsHorizontal } from 'react-icons/hi';
 import { HiArrowRight, HiMiniSparkles } from 'react-icons/hi2';
-import { LuMonitorSmartphone } from 'react-icons/lu';
 import { MdShield } from 'react-icons/md';
-import { PiBellFill, PiChatsCircleFill, PiFilesFill } from 'react-icons/pi';
+import { PiBellFill, PiChatCircleDotsFill, PiChatsCircleFill, PiFilesFill } from 'react-icons/pi';
 import { TbChevronUpRight } from 'react-icons/tb';
 
 const DEMO_URL = '/contact';
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
-
-const PLATFORM_TABS = [
-  { id: 'CLI', label: 'CLI', icon: Terminal },
-  { id: 'Desktop', label: 'Desktop', icon: Monitor },
-  { id: 'Web-Mobile', label: 'Web/Mobile', icon: LuMonitorSmartphone },
-  { id: 'Slack', label: 'Slack', icon: Icon.Slack },
-] as const;
 
 const favicon = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 const DEFAULT_INSTALL_HOST = 'kortix.com';
@@ -292,6 +294,36 @@ const INTEGRATIONS_ROW_1 = INTEGRATIONS.slice(0, INTEGRATIONS_MID);
 const INTEGRATIONS_ROW_2 = INTEGRATIONS.slice(INTEGRATIONS_MID, INTEGRATIONS_MID * 2);
 const INTEGRATIONS_ROW_3 = INTEGRATIONS.slice(INTEGRATIONS_MID);
 
+const WORKFORCE_MAP_CAPABILITIES = [
+  {
+    icon: HiMiniSparkles,
+    titleKey: 'workforceMapAgentsTitle',
+    descKey: 'workforceMapAgentsDesc',
+  },
+  {
+    icon: GitBranch,
+    titleKey: 'workforceMapAutomationsTitle',
+    descKey: 'workforceMapAutomationsDesc',
+  },
+  {
+    icon: Box,
+    titleKey: 'workforceMapIntegrationsTitle',
+    descKey: 'workforceMapIntegrationsDesc',
+  },
+  {
+    icon: Server,
+    titleKey: 'workforceMapMemoryTitle',
+    descKey: 'workforceMapMemoryDesc',
+  },
+] as const;
+
+const WORKFORCE_MAP_DOMAINS = [
+  { icon: PiChatCircleDotsFill, labelKey: 'workforceMapPillCommunication' },
+  { icon: FileText, labelKey: 'workforceMapPillDocs' },
+  { icon: Code2, labelKey: 'workforceMapPillCode' },
+  { icon: Building2, labelKey: 'workforceMapPillCrm' },
+] as const;
+
 const HOW_IT_WORKS_STEPS = [
   ['howItWorksStep1Label', 'howItWorksStep1Detail'],
   ['howItWorksStep2Label', 'howItWorksStep2Detail'],
@@ -414,7 +446,8 @@ function ChatMorningBriefReply({
 export default function Home() {
   const [activeUseCaseId, setActiveUseCaseId] =
     useState<(typeof USE_CASE_DEMOS)[number]['id']>('triageCustomerSignals');
-  const [activeTab, setActiveTab] = useState<'CLI' | 'Desktop' | 'Web-Mobile' | 'Slack'>('CLI');
+  const [activeTab, setActiveTab] = useState<PlatformTabId>('CLI');
+  const shouldScrollToPlatformRef = useRef(false);
   const reduceMotion = useReducedMotion();
   const { user } = useAuth();
   const { formattedStars } = useGitHubStars('kortix-ai', 'kortix');
@@ -467,6 +500,38 @@ export default function Home() {
     setInstallHost(window.location.host);
   }, []);
 
+  const handlePlatformTabChange = useCallback((tab: PlatformTabId) => {
+    setActiveTab(tab);
+    shouldScrollToPlatformRef.current = true;
+    setPlatformHash(tab, { scroll: false });
+  }, []);
+
+  useLayoutEffect(() => {
+    const tab = readPlatformTabFromLocation();
+    if (tab) {
+      setActiveTab(tab);
+      shouldScrollToPlatformRef.current = true;
+    }
+  }, []);
+
+  useEffect(() => {
+    return subscribePlatformHash((tab) => {
+      setActiveTab(tab);
+      shouldScrollToPlatformRef.current = true;
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!shouldScrollToPlatformRef.current) return;
+    const hashTab = readPlatformTabFromLocation();
+    if (hashTab !== activeTab) return;
+
+    shouldScrollToPlatformRef.current = false;
+    scrollToPlatformSection();
+    const retry = window.setTimeout(() => scrollToPlatformSection('auto'), 300);
+    return () => window.clearTimeout(retry);
+  }, [activeTab]);
+
   useEffect(() => {
     if (activeTab !== 'Slack') {
       setSlackTabVisibleMessages(0);
@@ -496,6 +561,13 @@ export default function Home() {
     };
   }, [isChatDemoInView]);
 
+  const PATHS = [
+    'M0.999991 1.00002C0.999992 25.9576 458 1.00001 458 53',
+    'M326 1.00001C326 25.9575 471 1.00001 471 53',
+    'M955 1.00002C955 25.9576 498 1.00001 498 53',
+    'M630 1.00001C630 25.9575 485 1.00001 485 53',
+  ];
+
   return (
     <>
       <div className="bg-background relative">
@@ -518,12 +590,19 @@ export default function Home() {
                 {tHome('heroDescription')}
               </p>
 
-              <div className="bg-card mt-14 flex w-fit items-center gap-4 rounded-sm border p-3 px-5">
-                <div className="flex gap-3">
-                  <span className="text-foreground font-mono text-sm">$ </span>
-                  <span className="text-foreground font-mono text-sm select-all">{installCmd}</span>
+              <div className="bg-card mt-14 flex w-full max-w-xl min-w-0 items-center gap-4 rounded-sm border p-3 px-5">
+                <div className="flex min-w-0 flex-1 gap-3 overflow-hidden">
+                  <span className="text-foreground shrink-0 font-mono text-sm">$ </span>
+                  <span className="text-foreground min-w-0 truncate font-mono text-sm select-all">
+                    {installCmd}
+                  </span>
                 </div>
-                <Button size="icon-sm" variant="ghost" onClick={() => copy(installCmd)}>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="shrink-0"
+                  onClick={() => copy(installCmd)}
+                >
                   {copied ? <Check className="text-primary size-4" /> : <Copy className="size-4" />}
                 </Button>
               </div>
@@ -539,14 +618,14 @@ export default function Home() {
             </section>
 
             <div id="demo" className="relative z-10 mt-14 scroll-mt-24 sm:mt-20">
-              <InteractiveDemo />
+              <InteractiveDemoSection />
             </div>
           </div>
         </section>
 
         <section
-          id="single-place"
-          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+          id={PLATFORM_SECTION_ID}
+          className="mx-auto flex max-w-6xl scroll-mt-24 flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
         >
           <Reveal>
             <div className="mb-12 max-w-2xl">
@@ -563,12 +642,23 @@ export default function Home() {
           </Reveal>
 
           <div className="w-full space-y-4">
-            <div className="relative flex w-full items-center gap-2">
-              {PLATFORM_TABS.map(({ id, label, icon: TabIcon }) => {
+            <SlidingTabIndicator
+              activeId={activeTab}
+              className="flex w-full flex-wrap items-center gap-2"
+              indicatorClassName="bg-foreground rounded"
+            >
+              {PLATFORM_TABS.map(({ id, label, hash, icon: TabIcon }) => {
                 return (
-                  <button
+                  <a
                     key={id}
-                    onClick={() => setActiveTab(id)}
+                    href={`/#${hash}`}
+                    role="tab"
+                    aria-selected={activeTab === id}
+                    data-sliding-tab={id}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      handlePlatformTabChange(id);
+                    }}
                     className={cn(
                       'relative rounded px-4 py-2 text-left text-base font-medium transition-colors',
                       activeTab === id
@@ -576,26 +666,14 @@ export default function Home() {
                         : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                     )}
                   >
-                    {activeTab === id && (
-                      <motion.span
-                        layoutId="singlePlaceActiveTab"
-                        aria-hidden
-                        className="bg-foreground pointer-events-none absolute inset-0 z-0 rounded"
-                        transition={
-                          reduceMotion
-                            ? { duration: 0 }
-                            : { type: 'spring', stiffness: 380, damping: 32 }
-                        }
-                      />
-                    )}
                     <span className="relative z-10 flex items-center gap-2">
                       <TabIcon className="size-4 shrink-0" aria-hidden />
                       {label}
                     </span>
-                  </button>
+                  </a>
                 );
               })}
-            </div>
+            </SlidingTabIndicator>
 
             <Reveal delay={0.1}>
               <div className="w-full">
@@ -624,6 +702,7 @@ export default function Home() {
                             // parentClassName="bg-background/30 h-full rounded-sm w-full"
                             embedded
                             aside={false}
+                            activePage="chat"
                           />
                         </div>
                       </div>
@@ -649,233 +728,244 @@ export default function Home() {
                             contentClassName="max-w-full mx-0 md:p-0 lg:p-0 p-0 "
                             innerClassName="border-none shadow-none bg-card/20 rounded-none"
                             aside={false}
+                            activePage="chat"
                           />
                         </div>
                       </div>
                     </div>
                   </div>
                 )}
-                {activeTab === 'Desktop' && (
-                  <div className="border-card bg-background relative flex aspect-video w-full flex-col items-center justify-center overflow-hidden rounded-[calc(var(--radius)+2px)] border-4">
-                    <p>Desktop</p>
-                  </div>
-                )}
+                {activeTab === 'Desktop' && <DesktopDemo />}
                 {activeTab === 'Slack' && (
-                  <div className="border-card bg-card relative z-2 col-span-6 flex aspect-video h-full w-full min-w-0 flex-1 flex-row items-center justify-center gap-1 rounded-[calc(var(--radius)+2px)] border-4 p-0.5 pl-0 shadow-sm">
-                    <div className="flex h-full min-h-0 w-12 flex-col items-center justify-start gap-5 py-2">
-                      <Icon.Slack className="size-[1.2rem]" />
-                      <FaUsers className="text-foreground/60 dark:text-foreground/80 size-[1.2rem]" />
-                      <PiChatsCircleFill className="text-foreground/60 dark:text-foreground/80 size-[1.2rem]" />
-                      <PiBellFill className="text-foreground/60 dark:text-foreground/80 size-[1.2rem]" />
-                      <PiFilesFill className="text-foreground/60 dark:text-foreground/80 size-[1.2rem]" />
-                      <FiBookmark className="text-foreground/60 dark:text-foreground/80 size-[1.2rem]" />
-                      <HiOutlineDotsHorizontal className="text-foreground/60 dark:text-foreground/80 size-[1.2rem]" />
+                  <div className="border-card bg-card relative z-2 col-span-6 flex h-[min(72vh,520px)] w-full min-w-0 flex-1 flex-row items-center justify-center gap-1 rounded-[calc(var(--radius)+2px)] border-4 p-0.5 shadow-sm sm:h-[min(80vw,480px)] md:aspect-video md:h-full md:pl-0 lg:min-h-0">
+                    <div className="bg-background/90 border-card absolute top-2.5 left-2.5 z-10 flex size-11 items-center justify-center rounded-md border md:hidden">
+                      <Icon.Slack className="size-6" />
                     </div>
-                    <div className="bg-background flex h-full min-h-0 flex-1 flex-col items-end justify-end space-y-4 rounded-md p-4">
-                      <AnimatePresence initial={false}>
-                        {slackTabVisibleMessages >= 1 ? (
-                          <motion.div
-                            key="chat-message-1"
-                            initial={{
-                              opacity: 0,
-                              y: 10,
-                            }}
-                            animate={{
-                              opacity: 1,
-                              y: 0,
-                            }}
-                            transition={{
-                              duration: 0.5,
-                              ease: 'easeIn',
-                            }}
-                            className="flex w-full flex-row items-start justify-start gap-2"
-                          >
-                            <span className="bg-primary flex size-[2.1rem] shrink-0 items-center justify-center rounded-md">
-                              <KortixLogo size={16} className="text-background" />
-                            </span>
-                            <div className="flex min-w-0 flex-1 flex-col gap-0">
-                              <div className="flex flex-row items-center justify-start gap-1">
-                                <span
-                                  className="text-foreground block truncate text-xs font-semibold"
-                                  style={{
-                                    textBox: 'trim-both',
-                                  }}
-                                >
-                                  Kortix
-                                </span>
-                                <span
-                                  className="bg-muted rounded-[0.2rem] p-[0.07rem] px-1 py-[0.04rem] text-[7px]"
-                                  style={{ textBox: 'trim-both' }}
-                                >
-                                  APP
-                                </span>
-                                <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
-                                  {new Date(Date.now()).toLocaleDateString('en-US', {
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric',
-                                  })}
-                                </span>
-                              </div>
-                              <span
-                                className="text-muted-foreground block truncate text-xs font-medium"
-                                style={{
-                                  textBox: 'trim-both',
-                                }}
-                              >
-                                Hey! 👋 What can I help you with?
+                    <div className="hidden h-full min-h-0 w-8 shrink-0 flex-col items-center justify-start gap-3 py-2 md:flex lg:w-12 lg:gap-5">
+                      <Icon.Slack className="size-[1.05rem] lg:size-[1.2rem]" />
+                      <FaUsers className="text-foreground/60 dark:text-foreground/80 size-[1.05rem] lg:size-[1.2rem]" />
+                      <PiChatsCircleFill className="text-foreground/60 dark:text-foreground/80 size-[1.05rem] lg:size-[1.2rem]" />
+                      <PiBellFill className="text-foreground/60 dark:text-foreground/80 size-[1.05rem] lg:size-[1.2rem]" />
+                      <PiFilesFill className="text-foreground/60 dark:text-foreground/80 size-[1.05rem] lg:size-[1.2rem]" />
+                      <FiBookmark className="text-foreground/60 dark:text-foreground/80 size-[1.05rem] lg:size-[1.2rem]" />
+                      <HiOutlineDotsHorizontal className="text-foreground/60 dark:text-foreground/80 size-[1.05rem] lg:size-[1.2rem]" />
+                    </div>
+                    <div className="bg-background flex h-full min-h-0 flex-1 flex-col items-end justify-end overflow-hidden rounded-md p-2.5 pt-10 sm:p-3 md:p-4 md:pt-4">
+                      <div className="flex min-h-0 w-full flex-1 flex-col justify-end space-y-2 overflow-y-auto sm:space-y-3 md:space-y-4">
+                        <AnimatePresence initial={false}>
+                          {slackTabVisibleMessages >= 1 ? (
+                            <motion.div
+                              key="chat-message-1"
+                              initial={{
+                                opacity: 0,
+                                y: 10,
+                              }}
+                              animate={{
+                                opacity: 1,
+                                y: 0,
+                              }}
+                              transition={{
+                                duration: 0.5,
+                                ease: 'easeIn',
+                              }}
+                              className="flex w-full flex-row items-start justify-start gap-1.5 sm:gap-2"
+                            >
+                              <span className="bg-primary flex size-[1.75rem] shrink-0 items-center justify-center rounded-md sm:size-[2.1rem]">
+                                <KortixLogo size={16} className="text-background max-sm:scale-90" />
                               </span>
-                            </div>
-                          </motion.div>
-                        ) : null}
-
-                        {slackTabVisibleMessages >= 2 ? (
-                          <motion.div
-                            key="chat-message-2"
-                            initial={{
-                              opacity: 0,
-                              y: 10,
-                            }}
-                            animate={{
-                              opacity: 1,
-                              y: 0,
-                            }}
-                            transition={{
-                              duration: 0.5,
-                              ease: 'easeIn',
-                            }}
-                            className="flex w-full flex-row items-start justify-start gap-2"
-                          >
-                            <span className="bg-primary relative flex size-[2.1rem] shrink-0 items-center justify-center overflow-hidden rounded-md">
-                              <Image
-                                src="https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/marko.png"
-                                alt="Marko Kraemer"
-                                className="size-full"
-                                fill
-                              />
-                            </span>
-
-                            <div className="flex min-w-0 flex-1 flex-col gap-0">
-                              <div className="flex flex-row items-center justify-start gap-1">
+                              <div className="flex min-w-0 flex-1 flex-col gap-0">
+                                <div className="flex flex-row items-center justify-start gap-1">
+                                  <span
+                                    className="text-foreground block truncate text-[11px] font-semibold sm:text-xs"
+                                    style={{
+                                      textBox: 'trim-both',
+                                    }}
+                                  >
+                                    Kortix
+                                  </span>
+                                  <span
+                                    className="bg-muted rounded-[0.2rem] p-[0.07rem] px-1 py-[0.04rem] text-[7px]"
+                                    style={{ textBox: 'trim-both' }}
+                                  >
+                                    APP
+                                  </span>
+                                  <span
+                                    className="hidden text-[9px] sm:inline"
+                                    style={{ textBox: 'trim-both' }}
+                                  >
+                                    {new Date(Date.now()).toLocaleDateString('en-US', {
+                                      year: 'numeric',
+                                      month: 'long',
+                                      day: 'numeric',
+                                    })}
+                                  </span>
+                                </div>
                                 <span
-                                  className="text-foreground block truncate text-xs font-semibold"
+                                  className="text-muted-foreground block truncate text-[11px] font-medium sm:text-xs"
                                   style={{
                                     textBox: 'trim-both',
                                   }}
                                 >
-                                  Marko
-                                </span>
-                                <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
-                                  {new Date(Date.now()).toLocaleDateString('en-US', {
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric',
-                                  })}
+                                  Hey! 👋 What can I help you with?
                                 </span>
                               </div>
-                              <span
-                                className="text-muted-foreground block truncate text-xs font-medium"
-                                style={{
-                                  textBox: 'trim-both',
-                                }}
-                              >
-                                What happened while I was sleeping?
-                              </span>
-                            </div>
-                          </motion.div>
-                        ) : null}
+                            </motion.div>
+                          ) : null}
 
-                        {slackTabVisibleMessages >= 3 ? (
-                          <motion.div
-                            key="chat-message-3"
-                            initial={{
-                              opacity: 0,
-                              y: 10,
-                            }}
-                            animate={{
-                              opacity: 1,
-                              y: 0,
-                            }}
-                            transition={{
-                              duration: 0.3,
-                              ease: 'easeIn',
-                            }}
-                            className="flex w-full flex-row items-start justify-start gap-2"
-                          >
-                            <span className="bg-primary flex size-[2.1rem] shrink-0 items-center justify-center rounded-md">
-                              <KortixLogo size={16} className="text-background" />
-                            </span>
-                            <div className="flex min-w-0 flex-1 flex-col gap-0">
-                              <div className="flex flex-row items-center justify-start gap-1">
-                                <span
-                                  className="text-foreground block truncate text-xs font-semibold"
-                                  style={{
-                                    textBox: 'trim-both',
-                                  }}
-                                >
-                                  Kortix
-                                </span>
-                                <span
-                                  className="bg-muted rounded-[0.2rem] p-[0.07rem] px-1 py-[0.04rem] text-[7px]"
-                                  style={{ textBox: 'trim-both' }}
-                                >
-                                  APP
-                                </span>
-                                <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
-                                  {new Date(Date.now()).toLocaleDateString('en-US', {
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric',
-                                  })}
-                                </span>
-                              </div>
-                              <div
-                                className="text-muted-foreground block text-xs font-medium"
-                                style={{
-                                  textBox: 'trim-both',
-                                }}
-                              >
-                                <ChatMorningBriefReply
-                                  markdown={tHome('chatMorningBriefMarkdown') as string}
-                                  thinkingText={tHome('chatMorningBriefThinking') as string}
+                          {slackTabVisibleMessages >= 2 ? (
+                            <motion.div
+                              key="chat-message-2"
+                              initial={{
+                                opacity: 0,
+                                y: 10,
+                              }}
+                              animate={{
+                                opacity: 1,
+                                y: 0,
+                              }}
+                              transition={{
+                                duration: 0.5,
+                                ease: 'easeIn',
+                              }}
+                              className="flex w-full flex-row items-start justify-start gap-1.5 sm:gap-2"
+                            >
+                              <span className="bg-primary relative flex size-[1.75rem] shrink-0 items-center justify-center overflow-hidden rounded-md sm:size-[2.1rem]">
+                                <Image
+                                  src="https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/marko.png"
+                                  alt="Marko Kraemer"
+                                  className="size-full"
+                                  fill
                                 />
-                              </div>
-                            </div>
-                          </motion.div>
-                        ) : null}
-                      </AnimatePresence>
+                              </span>
 
-                      <div className="border-border bg-card w-full shrink-0 rounded-(--radius-lg) border">
-                        <div className="px-3 py-2">
+                              <div className="flex min-w-0 flex-1 flex-col gap-0">
+                                <div className="flex flex-row items-center justify-start gap-1">
+                                  <span
+                                    className="text-foreground block truncate text-[11px] font-semibold sm:text-xs"
+                                    style={{
+                                      textBox: 'trim-both',
+                                    }}
+                                  >
+                                    Marko
+                                  </span>
+                                  <span
+                                    className="hidden text-[9px] sm:inline"
+                                    style={{ textBox: 'trim-both' }}
+                                  >
+                                    {new Date(Date.now()).toLocaleDateString('en-US', {
+                                      year: 'numeric',
+                                      month: 'long',
+                                      day: 'numeric',
+                                    })}
+                                  </span>
+                                </div>
+                                <span
+                                  className="text-muted-foreground block truncate text-[11px] font-medium sm:text-xs"
+                                  style={{
+                                    textBox: 'trim-both',
+                                  }}
+                                >
+                                  What happened while I was sleeping?
+                                </span>
+                              </div>
+                            </motion.div>
+                          ) : null}
+
+                          {slackTabVisibleMessages >= 3 ? (
+                            <motion.div
+                              key="chat-message-3"
+                              initial={{
+                                opacity: 0,
+                                y: 10,
+                              }}
+                              animate={{
+                                opacity: 1,
+                                y: 0,
+                              }}
+                              transition={{
+                                duration: 0.3,
+                                ease: 'easeIn',
+                              }}
+                              className="flex w-full flex-row items-start justify-start gap-1.5 sm:gap-2"
+                            >
+                              <span className="bg-primary flex size-[1.75rem] shrink-0 items-center justify-center rounded-md sm:size-[2.1rem]">
+                                <KortixLogo size={16} className="text-background max-sm:scale-90" />
+                              </span>
+                              <div className="flex min-w-0 flex-1 flex-col gap-0">
+                                <div className="flex flex-row items-center justify-start gap-1">
+                                  <span
+                                    className="text-foreground block truncate text-[11px] font-semibold sm:text-xs"
+                                    style={{
+                                      textBox: 'trim-both',
+                                    }}
+                                  >
+                                    Kortix
+                                  </span>
+                                  <span
+                                    className="bg-muted rounded-[0.2rem] p-[0.07rem] px-1 py-[0.04rem] text-[7px]"
+                                    style={{ textBox: 'trim-both' }}
+                                  >
+                                    APP
+                                  </span>
+                                  <span
+                                    className="hidden text-[9px] sm:inline"
+                                    style={{ textBox: 'trim-both' }}
+                                  >
+                                    {new Date(Date.now()).toLocaleDateString('en-US', {
+                                      year: 'numeric',
+                                      month: 'long',
+                                      day: 'numeric',
+                                    })}
+                                  </span>
+                                </div>
+                                <div
+                                  className="text-muted-foreground block text-[11px] font-medium sm:text-xs"
+                                  style={{
+                                    textBox: 'trim-both',
+                                  }}
+                                >
+                                  <ChatMorningBriefReply
+                                    markdown={tHome('chatMorningBriefMarkdown') as string}
+                                    thinkingText={tHome('chatMorningBriefThinking') as string}
+                                  />
+                                </div>
+                              </div>
+                            </motion.div>
+                          ) : null}
+                        </AnimatePresence>
+                      </div>
+
+                      <div className="border-border bg-card mt-2 w-full shrink-0 rounded-(--radius-lg) border sm:mt-3">
+                        <div className="px-2 py-1.5 sm:px-3 sm:py-2">
                           <Textarea
                             minHeight={20}
                             maxHeight={10}
                             placeholder="Type your message here..."
-                            className="resize-none rounded-none border-none bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
+                            className="resize-none rounded-none border-none bg-transparent p-0 text-[11px] shadow-none focus-visible:ring-0 sm:text-xs"
                           />
                         </div>
-                        <div className="flex items-center justify-between px-1.5 pb-1.5">
+                        <div className="flex items-center justify-between px-1 pb-1 sm:px-1.5 sm:pb-1.5">
                           <div className="text-muted-foreground flex items-center">
-                            <span className="flex size-7 items-center justify-center">
-                              <Plus className="size-[1.05rem] stroke-[1.5]" />
+                            <span className="flex size-6 items-center justify-center sm:size-7">
+                              <Plus className="size-[0.95rem] stroke-[1.5] sm:size-[1.05rem]" />
                             </span>
-                            <span className="flex size-7 items-center justify-center text-[0.8rem] font-semibold tracking-tight">
+                            <span className="hidden size-7 items-center justify-center text-[0.8rem] font-semibold tracking-tight sm:flex">
                               Aa
                             </span>
-                            <span className="flex size-7 items-center justify-center">
-                              <Smile className="size-[1.05rem] stroke-[1.5]" />
+                            <span className="flex size-6 items-center justify-center sm:size-7">
+                              <Smile className="size-[0.95rem] stroke-[1.5] sm:size-[1.05rem]" />
                             </span>
-                            <span className="flex size-7 items-center justify-center">
+                            <span className="hidden size-7 items-center justify-center sm:flex">
                               <AtSign className="size-[1.05rem] stroke-[1.5]" />
                             </span>
-                            <span className="flex size-7 items-center justify-center">
+                            <span className="hidden size-7 items-center justify-center md:flex">
                               <MoreHorizontal className="size-[1.05rem] stroke-[1.5]" />
                             </span>
                           </div>
                           <div className="text-muted-foreground flex items-center">
-                            <span className="flex size-7 items-center justify-center">
+                            <span className="flex size-6 items-center justify-center sm:size-7">
                               <svg
-                                className="size-[1.05rem]"
+                                className="size-[0.95rem] sm:size-[1.05rem]"
                                 width="24"
                                 height="24"
                                 fill="currentColor"
@@ -1013,6 +1103,122 @@ export default function Home() {
                 ))}
               </div>
             </div>
+          </Reveal>
+        </section>
+
+        <section
+          id="workspace-map"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+        >
+          <Reveal>
+            <div className="mb-12 max-w-2xl">
+              <Eyebrow>{tHome('workforceMapEyebrow')}</Eyebrow>
+              <h2 className="mt-3 text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
+                {tHome('workforceMapTitle')}
+              </h2>
+              <p className="text-muted-foreground mt-4 text-base text-balance">
+                {tHome('workforceMapDescription')}
+              </p>
+            </div>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <section className="flex flex-col items-center gap-5 pb-24 md:gap-0">
+              <div className="relative grid w-full grid-cols-2 gap-5 md:grid-cols-4">
+                {WORKFORCE_MAP_CAPABILITIES.map(({ icon: Icon, titleKey, descKey }) => (
+                  <div
+                    key={titleKey}
+                    className="group border-border bg-card hover:bg-background flex w-full flex-col justify-between gap-4 rounded-sm border p-4 shadow-sm transition md:aspect-[283/200]"
+                  >
+                    <div className="bg-secondary group-hover:bg-card self-start rounded-lg p-2.5">
+                      <Icon className="text-foreground size-5 shrink-0" />
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <p className="text-foreground text-base transition">{tHome(titleKey)}</p>
+                      <p className="text-muted-foreground text-sm text-balance transition">
+                        {tHome(descKey)}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <svg
+                viewBox="0 0 956 54"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                className="text-border mx-auto hidden max-w-[956px] md:block"
+              >
+                <defs>
+                  <linearGradient id="flow" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--kortix-blue)" />
+                    <stop offset="100%" stopColor="var(--background)" />
+                  </linearGradient>
+
+                  <linearGradient id="reveal" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="white" stopOpacity="0" />
+                    <stop offset="45%" stopColor="white" stopOpacity="1" />
+                    <stop offset="55%" stopColor="white" stopOpacity="1" />
+                    <stop offset="100%" stopColor="white" stopOpacity="0" />
+                    <animateTransform
+                      attributeName="gradientTransform"
+                      type="translate"
+                      from="0 -1"
+                      to="0 1"
+                      dur="2.5s"
+                      repeatCount="indefinite"
+                    />
+                  </linearGradient>
+
+                  <mask id="mask">
+                    <rect width="956" height="54" fill="url(#reveal)" />
+                  </mask>
+                </defs>
+
+                {PATHS.map((d, i) => (
+                  <path
+                    key={`b${i}`}
+                    d={d}
+                    stroke="currentColor"
+                    strokeOpacity="0.5"
+                    strokeWidth="2"
+                  />
+                ))}
+
+                <g mask="url(#mask)">
+                  {PATHS.map((d, i) => (
+                    <path key={`g${i}`} d={d} stroke="url(#flow)" strokeWidth="2" />
+                  ))}
+                </g>
+              </svg>
+
+              <div className="text-body-sm relative mx-auto grid w-full max-w-[856px] grid-flow-col-dense grid-cols-3 grid-rows-2 items-center gap-2 md:mx-auto md:flex md:w-auto md:flex-row md:gap-5">
+                {WORKFORCE_MAP_DOMAINS.slice(0, 2).map(({ icon: Icon, labelKey }) => (
+                  <div
+                    key={labelKey}
+                    className="group bg-card text-foreground border-border flex h-[46px] items-center justify-center gap-0.5 rounded-sm border px-6 py-3 transition md:gap-2"
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    <p>{tHome(labelKey)}</p>
+                  </div>
+                ))}
+
+                <div className="group text-foreground bg-foreground row-span-2 flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-sm px-6 py-3 transition hover:brightness-90 md:h-[64px] md:w-[105px] md:gap-2">
+                  <KortixLogo className="text-background" />
+                </div>
+
+                {WORKFORCE_MAP_DOMAINS.slice(2, 4).map(({ icon: Icon, labelKey }) => (
+                  <div
+                    key={labelKey}
+                    className="group bg-card text-foreground border-border flex h-[46px] items-center justify-center gap-0.5 rounded-sm border px-6 py-3 transition md:gap-2"
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    <p>{tHome(labelKey)}</p>
+                  </div>
+                ))}
+
+                <div className="bg-border absolute top-1/2 left-0 z-[-1] hidden h-[2px] w-full md:block"></div>
+              </div>
+            </section>
           </Reveal>
         </section>
 
@@ -1716,10 +1922,12 @@ export default function Home() {
 
           <Reveal>
             <div className="border-border bg-card grid w-full grid-cols-1 overflow-hidden rounded border lg:grid-cols-12">
-              <div
+              <SlidingTabIndicator
+                activeId={activeUseCase.id}
                 role="tablist"
                 aria-orientation="vertical"
                 className="scrollbar-hide border-border/60 col-span-12 flex gap-2 overflow-x-auto border-b p-3 lg:col-span-4 lg:flex-col lg:gap-0 lg:overflow-visible lg:border-r lg:border-b-0 lg:p-0"
+                indicatorClassName="dark:bg-muted/60 bg-popover rounded-sm lg:rounded-none"
               >
                 {USE_CASE_DEMOS.map((demo) => {
                   const copy = useCaseCopy[demo.id];
@@ -1730,6 +1938,7 @@ export default function Home() {
                       key={demo.id}
                       type="button"
                       role="tab"
+                      data-sliding-tab={demo.id}
                       aria-selected={isActive}
                       aria-controls={`use-case-panel-${demo.id}`}
                       id={`use-case-tab-${demo.id}`}
@@ -1739,19 +1948,6 @@ export default function Home() {
                         isActive ? '' : 'hover:bg-muted/30',
                       )}
                     >
-                      {isActive && (
-                        <motion.span
-                          layoutId="useCaseActiveTab"
-                          aria-hidden
-                          className="dark:bg-muted/60 bg-popover pointer-events-none absolute inset-0 z-0 rounded-sm lg:rounded-none"
-                          // style={{ boxShadow: 'inset 2px 0 0 0 var(--primary)' }}
-                          transition={
-                            reduceMotion
-                              ? { duration: 0 }
-                              : { type: 'spring', stiffness: 380, damping: 32 }
-                          }
-                        />
-                      )}
                       <span className="relative z-10 flex w-full flex-col gap-1">
                         <span className="flex items-center gap-2.5">
                           <Icon
@@ -1776,7 +1972,7 @@ export default function Home() {
                     </button>
                   );
                 })}
-              </div>
+              </SlidingTabIndicator>
 
               <div
                 role="tabpanel"
