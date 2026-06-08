@@ -45,7 +45,33 @@ const IAM_ACTION_MAP: Record<string, { title: string; kind: HumanizedAuditAction
   'iam.policy.create': { title: 'Created IAM policy', kind: 'create' },
   'iam.policy.update': { title: 'Updated IAM policy', kind: 'update' },
   'iam.policy.delete': { title: 'Deleted IAM policy', kind: 'delete' },
+  // ── Auth lifecycle ──
+  'auth.login.success': { title: 'Signed in', kind: 'read' },
+  'auth.login.fail': { title: 'Failed sign-in', kind: 'revoke' },
+  'auth.login.failure': { title: 'Failed sign-in', kind: 'revoke' },
+  'auth.logout': { title: 'Signed out', kind: 'other' },
+  'auth.signup': { title: 'Signed up', kind: 'create' },
+  'auth.signup.success': { title: 'Signed up', kind: 'create' },
+  'auth.token.refresh': { title: 'Refreshed session', kind: 'read' },
+  'auth.session.refresh': { title: 'Refreshed session', kind: 'read' },
+  'auth.password.recovery': { title: 'Requested password reset', kind: 'update' },
+  'auth.password.reset': { title: 'Reset password', kind: 'update' },
+  'auth.password.update': { title: 'Changed password', kind: 'update' },
+  'auth.user.update': { title: 'Updated account', kind: 'update' },
+  'auth.mfa.enroll': { title: 'Enrolled MFA', kind: 'create' },
+  'auth.mfa.verify': { title: 'Verified MFA', kind: 'read' },
+  'auth.mfa.unenroll': { title: 'Removed MFA factor', kind: 'delete' },
+  'auth.email.verify': { title: 'Verified email', kind: 'read' },
 };
+
+/** Turn an unmapped dotted/underscored action code into a readable sentence,
+ *  e.g. "auth.invite.accepted" → "Invite accepted". Drops a leading namespace. */
+function prettifyAction(action: string): string {
+  const cleaned = action.replace(/^(auth|iam|account|project|billing|member|group)\./, '');
+  const words = cleaned.replace(/[._]+/g, ' ').trim();
+  if (!words) return action;
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
 
 type PathSegments = string[];
 type HttpPatternHandler = (method: string, segs: PathSegments, rawPath: string) => HumanizedAuditAction | null;
@@ -217,7 +243,9 @@ export function humanizeAuditAction(action: string): HumanizedAuditAction {
     }
     return { title: `${method} ${path.replace(/\/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, '/…')}`, kind: kindFromMethod(method) };
   }
-  return { title: action, kind: 'other' };
+  // Unknown dotted code — prettify into a readable title instead of showing
+  // the raw "a.b.c" code (the raw code is still available on row expand).
+  return { title: prettifyAction(action), kind: 'other' };
 }
 
 function kindFromMethod(method: string): HumanizedAuditAction['kind'] {
