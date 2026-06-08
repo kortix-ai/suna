@@ -18,6 +18,8 @@ import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTabStore } from '@/stores/tab-store';
+import { useThemeColors } from '@/lib/theme-colors';
+import { useChangeRequests } from '@/lib/projects/hooks';
 import { haptics } from '@/lib/haptics';
 
 interface MenuItem {
@@ -33,6 +35,7 @@ interface MenuSection {
 
 interface RightDrawerContentProps {
   onClose: () => void;
+  projectId?: string;
 }
 
 // Top sections — scroll if they overflow.
@@ -72,10 +75,14 @@ const bottomItems: MenuItem[] = [
   { icon: 'settings-outline', label: 'Settings', pageId: 'page:settings' },
 ];
 
-export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
+export function RightDrawerContent({ onClose, projectId }: RightDrawerContentProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
+  const theme = useThemeColors();
+
+  // Open change-request count → a "review" nudge badge on the Changes item.
+  const openCrCount = useChangeRequests(projectId ?? null, 'open').data?.change_requests.length ?? 0;
 
   // Colors aligned with the left drawer (home.tsx renderDrawerContent + global.css tokens).
   const fgColor = isDark ? '#F8F8F8' : '#121215';
@@ -107,6 +114,14 @@ export function RightDrawerContent({ onClose }: RightDrawerContentProps) {
       <RNText style={{ fontSize: 15, fontFamily: 'Roobert', color: fgColor }}>
         {item.label}
       </RNText>
+      {item.pageId === 'page:changes' && openCrCount > 0 && (
+        <>
+          <View style={{ flex: 1 }} />
+          <View style={{ minWidth: 20, height: 20, paddingHorizontal: 6, borderRadius: 999, backgroundColor: theme.primary, alignItems: 'center', justifyContent: 'center' }}>
+            <RNText style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>{openCrCount}</RNText>
+          </View>
+        </>
+      )}
     </TouchableOpacity>
   );
 

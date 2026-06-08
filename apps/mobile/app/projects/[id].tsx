@@ -1817,7 +1817,7 @@ export default function ProjectSessionScreen() {
   ]);
 
   const renderRightDrawerContent = useCallback(
-    () => <RightDrawerContent onClose={handleRightDrawerClose} />,
+    () => <RightDrawerContent onClose={handleRightDrawerClose} projectId={projectId} />,
     [handleRightDrawerClose],
   );
 

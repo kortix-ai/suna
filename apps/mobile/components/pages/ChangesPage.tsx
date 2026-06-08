@@ -45,6 +45,7 @@ import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
+import { MarkdownRenderer } from '@/components/chat/tool-views/file-operation/MarkdownRenderer';
 import { relativeTime } from '@/lib/projects/triggers-format';
 import {
   useChangeRequests,
@@ -407,8 +408,8 @@ function CRDetailSheet({
         <MergeBanner cr={cr} projectId={projectId} isDark={isDark} />
 
         {cr.description?.trim() ? (
-          <View style={{ marginBottom: 16 }}>
-            <Text style={{ fontSize: 14, lineHeight: 20, color: fg }}>{cr.description.trim()}</Text>
+          <View style={{ marginHorizontal: -16, marginBottom: 10 }}>
+            <MarkdownRenderer content={cr.description.trim()} />
           </View>
         ) : null}
 
