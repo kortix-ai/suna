@@ -2,6 +2,7 @@
 
 import type { Icon } from '@/components/ui/kortix-icons';
 import { cn } from '@/lib/utils';
+import { IconType } from 'react-icons/lib';
 
 /**
  * Kortix <EntityAvatar> — the squared counterpart to <UserAvatar>.
@@ -29,7 +30,7 @@ export interface EntityAvatarProps {
   /** Text to derive the initial from when no icon is given. */
   label?: string;
   /** Lucide icon to render instead of an initial. */
-  icon?: Icon;
+  icon?: Icon | IconType;
   size?: EntityAvatarSize;
   className?: string;
 }

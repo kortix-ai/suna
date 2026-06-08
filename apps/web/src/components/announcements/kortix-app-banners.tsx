@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { X, Smartphone, Monitor } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { isDesktop, startDownload, desktopDownloadUrl } from '@/lib/desktop';
 import { featureFlags } from '@/lib/feature-flags';
 import { AppDownloadQR, APP_DOWNLOAD_URL } from '@/components/common/app-download-qr';
