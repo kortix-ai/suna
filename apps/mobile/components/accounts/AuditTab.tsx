@@ -183,16 +183,16 @@ function AuditRow({ event, actorEmail, isSelf, isDark, border }: { event: AuditE
     <View style={{ borderBottomWidth: 1, borderBottomColor: border }}>
       <TouchableOpacity onPress={() => canExpand && setExpanded((v) => !v)} disabled={!canExpand} activeOpacity={canExpand ? 0.6 : 1} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 16, paddingVertical: 12 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: KIND_DOT_COLOR[human.kind] }} />
-            <Text style={{ fontSize: 13.5, lineHeight: 18, fontFamily: 'Roobert-Medium', color: c.fg }}>{human.title}</Text>
-            {human.detail && <View style={{ paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 5, backgroundColor: c.avatarBg }}><Text style={{ fontSize: 11, fontFamily: MONO, color: c.fg }}>{human.detail}</Text></View>}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: KIND_DOT_COLOR[human.kind] }} />
+            <Text style={{ fontSize: 12.5, lineHeight: 16, fontFamily: 'Roobert-Medium', color: c.fg }}>{human.title}</Text>
+            {human.detail && <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 5, backgroundColor: c.avatarBg }}><Text style={{ fontSize: 10, fontFamily: MONO, color: c.fg }}>{human.detail}</Text></View>}
           </View>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3, marginLeft: 15, flexWrap: 'wrap' }}>
-            <Text style={{ fontSize: 11.5, color: c.muted }}>by <Text style={{ color: c.fg }}>{actorLabel}</Text></Text>
-            <Text style={{ fontSize: 11.5, color: c.muted }}>· {relative(occurred)}</Text>
-            {resourcePill && <View style={{ paddingHorizontal: 6, paddingVertical: 1.5, borderRadius: 5, borderWidth: 1, borderColor: border }}><Text style={{ fontSize: 10, color: c.muted, textTransform: 'capitalize' }}>{resourcePill}</Text></View>}
-            {event.ip && <Text style={{ fontSize: 10, fontFamily: MONO, color: c.muted }}>{event.ip}</Text>}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2, marginLeft: 13, flexWrap: 'wrap' }}>
+            <Text style={{ fontSize: 10.5, color: c.muted }}>by <Text style={{ color: c.fg }}>{actorLabel}</Text></Text>
+            <Text style={{ fontSize: 10.5, color: c.muted }}>· {relative(occurred)}</Text>
+            {resourcePill && <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 5, borderWidth: 1, borderColor: border }}><Text style={{ fontSize: 9.5, color: c.muted, textTransform: 'capitalize' }}>{resourcePill}</Text></View>}
+            {event.ip && <Text style={{ fontSize: 9.5, fontFamily: MONO, color: c.muted }}>{event.ip}</Text>}
           </View>
         </View>
         {canExpand && (expanded ? <ChevronDown size={15} color={c.muted} style={{ marginTop: 2 }} /> : <ChevronRight size={15} color={c.muted} style={{ marginTop: 2 }} />)}
