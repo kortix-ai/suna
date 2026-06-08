@@ -549,19 +549,182 @@ export function listPipedreamApps(projectId: string, q?: string, cursor?: string
   );
 }
 
-// ── Project access (members) — for the connector sharing member picker ───────
+// ── Project access (members) — full web parity (members-view) ────────────────
+
+/** One group attachment that grants this user access to the project. */
+export interface ProjectGroupAccessSource {
+  group_id: string;
+  group_name: string;
+  role: ProjectRole;
+}
 
 export interface ProjectAccessMember {
   user_id: string;
   email: string | null;
+  account_role: AccountRole;
+  project_role: ProjectRole | null;
+  effective_project_role: ProjectRole | null;
+  has_implicit_access: boolean;
+  /** Which path produced effective_project_role. */
+  effective_source?: 'implicit' | 'direct' | 'group' | null;
+  /** Every group attachment that includes this user. */
+  group_sources?: ProjectGroupAccessSource[];
+  joined_at?: string;
+  granted_by?: string | null;
+  granted_at?: string | null;
+  updated_at?: string | null;
+  expires_at?: string | null;
 }
 export interface ProjectAccessResponse {
+  project_id?: string;
+  account_id?: string;
+  can_manage?: boolean;
   viewer_user_id?: string;
   members: ProjectAccessMember[];
 }
 
 export function listProjectAccess(projectId: string) {
   return apiFetch<ProjectAccessResponse>(`/projects/${encodeURIComponent(projectId)}/access`);
+}
+
+export function updateProjectAccess(projectId: string, userId: string, role: ProjectRole) {
+  return apiFetch<ProjectAccessMember>(`/projects/${encodeURIComponent(projectId)}/access/${encodeURIComponent(userId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ role }),
+  });
+}
+
+export function revokeProjectAccess(projectId: string, userId: string) {
+  return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}/access/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Two-shape response: an existing user is granted instantly (ProjectAccessMember
+ *  row), or a non-Kortix email gets an invitation (status: 'invited'). */
+export type InviteProjectMemberResult =
+  | ProjectAccessMember
+  | {
+      status: 'invited';
+      email: string;
+      invite_id: string;
+      project_role: ProjectRole;
+      message: string;
+      invite_url: string;
+      email_sent: boolean;
+      email_skip_reason: string | null;
+    };
+
+export function isInviteSent(
+  r: InviteProjectMemberResult,
+): r is Extract<InviteProjectMemberResult, { status: 'invited' }> {
+  return 'status' in r && r.status === 'invited';
+}
+
+export function inviteProjectMember(projectId: string, email: string, role: ProjectRole) {
+  return apiFetch<InviteProjectMemberResult>(`/projects/${encodeURIComponent(projectId)}/access/invite`, {
+    method: 'POST',
+    body: JSON.stringify({ email, role }),
+  });
+}
+
+// ── Pending project invites (non-Kortix users not signed up yet) ─────────────
+
+export interface PendingProjectInvite {
+  invite_id: string;
+  email: string;
+  project_role: ProjectRole;
+  expires_at: string | null;
+  invited_by_email: string | null;
+  created_at: string;
+  invite_expires_at: string;
+  invite_expired: boolean;
+}
+
+export function listPendingProjectInvites(projectId: string) {
+  return apiFetch<{ pending: PendingProjectInvite[] }>(`/projects/${encodeURIComponent(projectId)}/access/pending-invites`);
+}
+
+export function revokePendingProjectInvite(projectId: string, inviteId: string) {
+  return apiFetch<{ ok: boolean; invitation_cancelled: boolean }>(
+    `/projects/${encodeURIComponent(projectId)}/access/pending-invites/${encodeURIComponent(inviteId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+export interface ResendProjectInviteResult {
+  ok: boolean;
+  expires_at: string;
+  invite_url: string;
+  email_sent: boolean;
+  email_skip_reason: string | null;
+}
+
+export function resendPendingProjectInvite(projectId: string, inviteId: string) {
+  return apiFetch<ResendProjectInviteResult>(
+    `/projects/${encodeURIComponent(projectId)}/access/pending-invites/${encodeURIComponent(inviteId)}/resend`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
+// ── IAM V2: project ⇄ group attachments + account groups ─────────────────────
+
+export interface ProjectGroupGrant {
+  group_id: string;
+  group_name: string;
+  role: ProjectRole;
+  granted_by: string | null;
+  created_at: string;
+  expires_at?: string | null;
+  member_count?: number;
+  override_count?: number;
+}
+
+export interface AccountGroup {
+  group_id: string;
+  name: string;
+  description: string | null;
+  source: 'manual' | 'scim';
+  member_count?: number;
+  project_count?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export function listProjectGroupGrants(projectId: string) {
+  return apiFetch<{ grants: ProjectGroupGrant[] }>(`/projects/${encodeURIComponent(projectId)}/group-grants`);
+}
+
+export function attachGroupToProject(projectId: string, groupId: string, role: ProjectRole) {
+  return apiFetch<{ project_id: string; group_id: string; role: ProjectRole }>(`/projects/${encodeURIComponent(projectId)}/group-grants`, {
+    method: 'POST',
+    body: JSON.stringify({ group_id: groupId, role }),
+  });
+}
+
+export function updateProjectGroupGrant(projectId: string, groupId: string, role: ProjectRole) {
+  return apiFetch<{ project_id: string; group_id: string; role: ProjectRole }>(
+    `/projects/${encodeURIComponent(projectId)}/group-grants/${encodeURIComponent(groupId)}`,
+    { method: 'PATCH', body: JSON.stringify({ role }) },
+  );
+}
+
+export function detachGroupFromProject(projectId: string, groupId: string) {
+  return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}/group-grants/${encodeURIComponent(groupId)}`, {
+    method: 'DELETE',
+  });
+}
+
+/** Account groups (IAM) — for the group-attach picker. */
+export function listAccountGroups(accountId: string) {
+  return apiFetch<{ groups: AccountGroup[] }>(`/accounts/${encodeURIComponent(accountId)}/iam/groups`).then((r) => r.groups);
+}
+
+export function removeGroupMember(accountId: string, groupId: string, userId: string) {
+  return apiFetch<{ removed: boolean }>(
+    `/accounts/${encodeURIComponent(accountId)}/iam/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  );
 }
 
 // ── Executor policies (tool-approval rules) ──────────────────────────────────

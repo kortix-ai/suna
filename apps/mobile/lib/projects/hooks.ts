@@ -66,9 +66,22 @@ import {
   updateProject,
   updateProjectTrigger,
   upsertProjectSecret,
+  inviteProjectMember,
+  updateProjectAccess,
+  revokeProjectAccess,
+  listPendingProjectInvites,
+  resendPendingProjectInvite,
+  revokePendingProjectInvite,
+  listProjectGroupGrants,
+  attachGroupToProject,
+  updateProjectGroupGrant,
+  detachGroupFromProject,
+  listAccountGroups,
+  removeGroupMember,
   type ChangeRequestStatus,
   type ConnectorSharing,
   type ExperimentalFeatureKey,
+  type ProjectRole,
   type CreateProjectSessionInput,
   type CreateProjectTriggerInput,
   type CreateSandboxTemplateInput,
@@ -114,6 +127,9 @@ export const projectKeys = {
   versionDiff: (projectId: string | null | undefined, from: string, into: string) =>
     ['version-diff', projectId, from, into] as const,
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
+  pendingInvites: (projectId: string | null | undefined) => ['project-pending-invites', projectId] as const,
+  groupGrants: (projectId: string | null | undefined) => ['project-group-grants', projectId] as const,
+  accountGroups: (accountId: string | null | undefined) => ['account-groups', accountId] as const,
   policies: (projectId: string | null | undefined) => ['project-policies', projectId] as const,
   pipedreamApps: (projectId: string | null | undefined, q: string) =>
     ['pipedream-apps', projectId, q] as const,
@@ -279,13 +295,134 @@ export function useSetProjectPolicies(projectId: string) {
   });
 }
 
-/** Project members (for the connector sharing member picker). */
+/** Project members (for the connector sharing member picker + Members page). */
 export function useProjectAccess(projectId: string | null) {
   return useQuery({
     queryKey: projectKeys.projectAccess(projectId),
     queryFn: () => listProjectAccess(projectId!),
     enabled: !!projectId,
     staleTime: 30_000,
+  });
+}
+
+// ── Members (web parity: customize/sections/members-view) ─────────────────────
+
+export function usePendingProjectInvites(projectId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: projectKeys.pendingInvites(projectId),
+    queryFn: () => listPendingProjectInvites(projectId!),
+    enabled: enabled && !!projectId,
+    staleTime: 5_000,
+  });
+}
+
+export function useProjectGroupGrants(projectId: string | null) {
+  return useQuery({
+    queryKey: projectKeys.groupGrants(projectId),
+    queryFn: () => listProjectGroupGrants(projectId!),
+    enabled: !!projectId,
+    staleTime: 20_000,
+  });
+}
+
+export function useAccountGroups(accountId: string | null, enabled: boolean) {
+  return useQuery({
+    queryKey: projectKeys.accountGroups(accountId),
+    queryFn: () => listAccountGroups(accountId!),
+    enabled: enabled && !!accountId,
+    staleTime: 60_000,
+  });
+}
+
+/** Invalidate everything that a membership/group change can ripple into. */
+function useInvalidateMembership(projectId: string) {
+  const queryClient = useQueryClient();
+  return () => {
+    queryClient.invalidateQueries({ queryKey: projectKeys.projectAccess(projectId) });
+    queryClient.invalidateQueries({ queryKey: projectKeys.groupGrants(projectId) });
+    queryClient.invalidateQueries({ queryKey: projectKeys.project(projectId) });
+    queryClient.invalidateQueries({ queryKey: ['projects'] });
+  };
+}
+
+export function useInviteProjectMember(projectId: string) {
+  const queryClient = useQueryClient();
+  const invalidate = useInvalidateMembership(projectId);
+  return useMutation({
+    mutationFn: ({ email, role }: { email: string; role: ProjectRole }) =>
+      inviteProjectMember(projectId, email, role),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.pendingInvites(projectId) });
+      invalidate();
+    },
+  });
+}
+
+export function useUpdateProjectAccess(projectId: string) {
+  const invalidate = useInvalidateMembership(projectId);
+  return useMutation({
+    mutationFn: ({ userId, role }: { userId: string; role: ProjectRole }) =>
+      updateProjectAccess(projectId, userId, role),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRevokeProjectAccess(projectId: string) {
+  const invalidate = useInvalidateMembership(projectId);
+  return useMutation({
+    mutationFn: (userId: string) => revokeProjectAccess(projectId, userId),
+    onSuccess: invalidate,
+  });
+}
+
+export function useResendProjectInvite(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (inviteId: string) => resendPendingProjectInvite(projectId, inviteId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.pendingInvites(projectId) }),
+  });
+}
+
+export function useRevokeProjectInvite(projectId: string) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (inviteId: string) => revokePendingProjectInvite(projectId, inviteId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.pendingInvites(projectId) }),
+  });
+}
+
+export function useAttachGroup(projectId: string) {
+  const invalidate = useInvalidateMembership(projectId);
+  return useMutation({
+    mutationFn: ({ groupId, role }: { groupId: string; role: ProjectRole }) =>
+      attachGroupToProject(projectId, groupId, role),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUpdateGroupGrant(projectId: string) {
+  const invalidate = useInvalidateMembership(projectId);
+  return useMutation({
+    mutationFn: ({ groupId, role }: { groupId: string; role: ProjectRole }) =>
+      updateProjectGroupGrant(projectId, groupId, role),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDetachGroup(projectId: string) {
+  const invalidate = useInvalidateMembership(projectId);
+  return useMutation({
+    mutationFn: (groupId: string) => detachGroupFromProject(projectId, groupId),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRemoveGroupMember(projectId: string, accountId: string | null) {
+  const invalidate = useInvalidateMembership(projectId);
+  return useMutation({
+    mutationFn: ({ groupId, userId }: { groupId: string; userId: string }) =>
+      removeGroupMember(accountId ?? '', groupId, userId),
+    onSuccess: invalidate,
   });
 }
 
