@@ -37,8 +37,13 @@ import { resumeStoppedSandbox } from './routes/shared';
 const WORKSPACE = '/workspace';
 /** Daemon port; it reverse-proxies `/session/*` to OpenCode (same as the browser). */
 const DAEMON_PORT = 8000;
-/** How long to wait for a just-woken box to become reachable before giving up. */
-const WAKE_DEADLINE_MS = 90_000;
+/**
+ * How long to wait for a just-woken box to become reachable before giving up.
+ * A box idle long enough to be auto-archived to cold storage can take well over
+ * a minute to restore + reboot OpenCode, so 90s was too tight and surfaced a
+ * spurious "couldn't reach the sandbox" on a box that was merely still resuming.
+ */
+const WAKE_DEADLINE_MS = 180_000;
 const POLL_INTERVAL_MS = 3_000;
 
 /**
