@@ -24,14 +24,23 @@ import { HTTPException } from 'hono/http-exception';
 //    streaming, git smart-HTTP, and the tunnel. WS upgrades never reach here
 //    (handled in Bun.serve's fetch before app.fetch), but we still guard on the
 //    Upgrade header defensively.
-//  - Fully env-tunable: REQUEST_DEADLINE_MS sets the budget; set it to 0 to
-//    disable the middleware entirely without a redeploy (instant kill switch).
+//  - Fully env-tunable: REQUEST_DEADLINE_MS sets the budget; 0 disables it.
+//
+// DEFAULT OFF (0): the DB-layer fix (pool sizing + statement_timeout) is the
+// proven incident fix and resolves the cascade on its own. This deadline is
+// defense-in-depth, but several endpoints are legitimately long *synchronous*
+// operations — /v1/projects/provision (creates a managed git repo + boots a
+// sandbox), session create / wake, deployments, migrations — and force-503'ing
+// those at a fixed deadline would be a regression. Enabling it safely requires
+// enumerating + exempting every such endpoint first. Until that analysis is
+// done, ship it inert; enable per-env with REQUEST_DEADLINE_MS=<ms> once the
+// long-op exemptions are confirmed.
 
 const DEADLINE_MS = (() => {
   const raw = process.env.REQUEST_DEADLINE_MS;
-  if (raw === undefined) return 28_000; // default: just under the 30s client abort
+  if (raw === undefined) return 0; // default OFF — see note above
   const n = Number(raw);
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 28_000;
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
 })();
 
 const ENABLED = DEADLINE_MS > 0;
