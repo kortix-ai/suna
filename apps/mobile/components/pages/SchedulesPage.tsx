@@ -430,12 +430,6 @@ export function SchedulesPage({
       />
 
       <PageContent>
-        {all.length > 0 && (
-          <View style={{ paddingHorizontal: 16, paddingTop: 10 }}>
-            <Text style={{ fontSize: 12.5, color: muted }}>{activeCount} of {all.length} active</Text>
-          </View>
-        )}
-
         {errors.length > 0 && (
           <View style={{ marginHorizontal: 16, marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: 'rgba(217,119,6,0.08)' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -449,6 +443,12 @@ export function SchedulesPage({
         )}
 
         <SearchListHeader value={search} onChangeText={setSearch} placeholder="Search schedules" onAdd={() => { haptics.tap(); addSheetRef.current?.present(); }} />
+
+        {all.length > 0 && (
+          <View style={{ paddingHorizontal: 16, paddingTop: 2, paddingBottom: 6 }}>
+            <Text style={{ fontSize: 12.5, color: muted }}>{activeCount} of {all.length} active</Text>
+          </View>
+        )}
 
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {isLoading ? (
