@@ -484,13 +484,31 @@ function CRDetailSheet({
 
 // ─── Rows ─────────────────────────────────────────────────────────────────────
 
-function CRRow({ cr, onPress, isDark }: { cr: ChangeRequest; onPress: () => void; isDark: boolean }) {
+function CRRow({
+  cr,
+  onPress,
+  onMerge,
+  onReject,
+  onReopen,
+  busy,
+  isDark,
+}: {
+  cr: ChangeRequest;
+  onPress: () => void;
+  onMerge: () => void;
+  onReject: () => void;
+  onReopen: () => void;
+  busy: boolean;
+  isDark: boolean;
+}) {
+  const theme = useThemeColors();
   const fg = isDark ? '#F8F8F8' : '#121215';
   const muted = isDark ? '#9b9b9b' : '#6e6e6e';
+  const border = isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)';
   const sm = STATUS_META[cr.status];
   const Icon = sm.icon;
   return (
-    <TouchableOpacity onPress={onPress} activeOpacity={0.6} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, gap: 12 }}>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.6} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 13, gap: 10 }}>
       <Icon size={20} color={sm.color} />
       <View style={{ flex: 1 }}>
         <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
@@ -500,7 +518,34 @@ function CRRow({ cr, onPress, isDark }: { cr: ChangeRequest; onPress: () => void
           {shortRef(cr.head_ref)} → {shortRef(cr.base_ref)} · {statusTime(cr)}
         </Text>
       </View>
-      <ChevronRight size={18} color={muted} />
+
+      {cr.status === 'open' ? (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+          {busy ? (
+            <ActivityIndicator size="small" color={muted} />
+          ) : (
+            <>
+              <TouchableOpacity onPress={onReject} hitSlop={6} style={{ width: 30, height: 30, borderRadius: 15, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center' }}>
+                <X size={15} color={muted} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={onMerge} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 30, borderRadius: 9999, backgroundColor: theme.primary }}>
+                <GitMerge size={13} color={theme.primaryForeground} />
+                <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Merge</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      ) : cr.status === 'closed' ? (
+        busy ? (
+          <ActivityIndicator size="small" color={muted} />
+        ) : (
+          <TouchableOpacity onPress={onReopen} activeOpacity={0.7} style={{ paddingHorizontal: 12, height: 30, borderRadius: 9999, borderWidth: 1, borderColor: border, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: fg }}>Reopen</Text>
+          </TouchableOpacity>
+        )
+      ) : (
+        <ChevronRight size={18} color={muted} />
+      )}
     </TouchableOpacity>
   );
 }
@@ -732,6 +777,30 @@ export function ChangesPage({
 
   const crs = useChangeRequests(projectId, status);
   const branches = useProjectBranches(projectId, tab === 'versions');
+  const mergeMut = useMergeChangeRequest(projectId);
+  const closeMut = useCloseChangeRequest(projectId);
+  const reopenMut = useReopenChangeRequest(projectId);
+
+  const rowBusy = (cr: ChangeRequest) =>
+    (mergeMut.isPending && mergeMut.variables?.crId === cr.cr_id) ||
+    (closeMut.isPending && closeMut.variables === cr.cr_id) ||
+    (reopenMut.isPending && reopenMut.variables === cr.cr_id);
+
+  const rowMerge = (cr: ChangeRequest) => {
+    haptics.tap();
+    mergeMut.mutate({ crId: cr.cr_id }, {
+      onSuccess: (r) => { haptics.success(); Alert.alert('Merged', r.merge.fast_forward ? 'Merged (fast-forward).' : `Merged ${shortSha(r.merge.merge_commit_sha)}.`); },
+      onError: (e: any) => Alert.alert('Merge failed', e?.message || 'Could not merge.'),
+    });
+  };
+  const rowReject = (cr: ChangeRequest) => {
+    haptics.medium();
+    closeMut.mutate(cr.cr_id, { onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not reject.') });
+  };
+  const rowReopen = (cr: ChangeRequest) => {
+    haptics.tap();
+    reopenMut.mutate(cr.cr_id, { onError: (e: any) => Alert.alert('Failed', e?.message || 'Could not reopen.') });
+  };
 
   const bgColor = isDark ? '#090909' : '#FFFFFF';
   const fg = isDark ? '#F8F8F8' : '#121215';
@@ -822,7 +891,15 @@ export function ChangesPage({
               ) : (
                 list.map((cr, i) => (
                   <View key={cr.cr_id}>
-                    <CRRow cr={cr} onPress={() => openRow(cr)} isDark={isDark} />
+                    <CRRow
+                      cr={cr}
+                      onPress={() => openRow(cr)}
+                      onMerge={() => rowMerge(cr)}
+                      onReject={() => rowReject(cr)}
+                      onReopen={() => rowReopen(cr)}
+                      busy={rowBusy(cr)}
+                      isDark={isDark}
+                    />
                     {i < list.length - 1 && <View style={{ height: 1, backgroundColor: border, marginLeft: 48 }} />}
                   </View>
                 ))
