@@ -121,7 +121,7 @@ export interface LinkRepositoryResponse {
 
 // ── Fetch helper ───────────────────────────────────────────────────────────
 
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getAuthToken();
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
