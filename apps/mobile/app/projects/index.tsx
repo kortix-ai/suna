@@ -385,7 +385,7 @@ export default function ProjectsScreen() {
                       Updated {relativeTime(project.updated_at)}
                     </Text>
                   </View>
-                  <Icon as={ChevronRight} size={18} className="text-muted-foreground/40" />
+                  <ChevronRight size={18} color={faint} />
                 </Pressable>
               ))}
             </View>
