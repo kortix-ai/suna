@@ -692,9 +692,9 @@ export function SandboxPage({
       />
 
       <PageContent>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false}>
           {/* Header: title + New template */}
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 6 }}>
             <Text style={{ flex: 1, fontSize: 19, fontFamily: 'Roobert-Medium', color: fg }}>Sandbox templates</Text>
             {canManage && (
               <TouchableOpacity onPress={openNew} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingLeft: 12, paddingRight: 14, height: 36, borderRadius: 9999, backgroundColor: theme.primary }}>
@@ -704,9 +704,7 @@ export function SandboxPage({
             )}
           </View>
           <Text style={{ fontSize: 12.5, lineHeight: 18, color: muted, marginBottom: 18 }}>
-            Sessions boot from a sandbox template. The platform default is shared by every project and clones your repo into{' '}
-            <Text style={{ fontFamily: MONO }}>/workspace</Text> at boot. Add your own here or via{' '}
-            <Text style={{ fontFamily: MONO }}>[[sandbox.templates]]</Text> in <Text style={{ fontFamily: MONO }}>kortix.toml</Text>.
+            Sessions boot from a sandbox template. The platform default is shared by every project and clones your repo into /workspace at boot. Add your own here or in kortix.toml.
           </Text>
 
           {isLoading ? (
