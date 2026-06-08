@@ -181,7 +181,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
         </View>
 
         {/* Search */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 42, borderRadius: 11, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 12, marginBottom: 14 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, marginBottom: 16 }}>
           <Search size={15} color={c.muted} />
           <TextInput value={search} onChangeText={setSearch} placeholder="Search by email…" placeholderTextColor={c.muted} autoCapitalize="none" autoCorrect={false} style={{ flex: 1, fontSize: 14, color: c.fg, fontFamily: 'Roobert', padding: 0 }} />
           {search.length > 0 && <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}><X size={15} color={c.muted} /></TouchableOpacity>}
@@ -190,12 +190,12 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
         {/* Pending invites */}
         {invites.length > 0 && (
           <View style={{ marginBottom: 16 }}>
-            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>Pending invites · {invites.length}</Text>
-            <View style={{ borderRadius: 14, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, overflow: 'hidden' }}>
+            <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 4 }}>Pending invites · {invites.length}</Text>
+            <View>
               {invites.map((inv, i) => {
                 const busy = busyId === inv.invite_id;
                 return (
-                  <View key={inv.invite_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
+                  <View key={inv.invite_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
                     <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(245,158,11,0.14)', alignItems: 'center', justifyContent: 'center' }}>
                       <Mail size={16} color="#d97706" />
                     </View>
@@ -209,9 +209,9 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
                     <RolePill role={inv.initial_role} isDark={isDark} />
                     {busy ? <ActivityIndicator size="small" color={c.muted} /> : canInvite ? (
                       <View style={{ flexDirection: 'row', gap: 6 }}>
-                        <TouchableOpacity onPress={() => onResend(inv.invite_id)} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}><RefreshCw size={13} color={c.muted} /></TouchableOpacity>
-                        <TouchableOpacity onPress={() => copyInvite(inv.invite_url)} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: c.border, alignItems: 'center', justifyContent: 'center' }}><LinkIcon size={13} color={c.muted} /></TouchableOpacity>
-                        <TouchableOpacity onPress={() => onCancelInvite(inv.invite_id, inv.email)} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.35)', alignItems: 'center', justifyContent: 'center' }}><X size={13} color="#ef4444" /></TouchableOpacity>
+                        <TouchableOpacity onPress={() => onResend(inv.invite_id)} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, backgroundColor: c.avatarBg, alignItems: 'center', justifyContent: 'center' }}><RefreshCw size={13} color={c.muted} /></TouchableOpacity>
+                        <TouchableOpacity onPress={() => copyInvite(inv.invite_url)} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, backgroundColor: c.avatarBg, alignItems: 'center', justifyContent: 'center' }}><LinkIcon size={13} color={c.muted} /></TouchableOpacity>
+                        <TouchableOpacity onPress={() => onCancelInvite(inv.invite_id, inv.email)} hitSlop={6} style={{ width: 32, height: 32, borderRadius: 9999, backgroundColor: 'rgba(239,68,68,0.1)', alignItems: 'center', justifyContent: 'center' }}><X size={13} color="#ef4444" /></TouchableOpacity>
                       </View>
                     ) : null}
                   </View>
@@ -223,7 +223,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
 
         {/* Members list */}
         {membersQuery.isLoading ? (
-          <SkeletonList count={5} isDark={isDark} />
+          <SkeletonList count={5} isDark={isDark} bare />
         ) : membersQuery.isError ? (
           <View style={{ paddingVertical: 20, gap: 10 }}>
             <Text style={{ fontSize: 13.5, color: '#ef4444' }}>{(membersQuery.error as Error)?.message || 'Failed to load members'}</Text>
@@ -235,7 +235,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
             <Text style={{ fontSize: 13.5, color: c.muted, textAlign: 'center' }}>{members.length === 0 ? 'No members yet.' : `No members match "${search.trim()}".`}</Text>
           </View>
         ) : (
-          <View style={{ borderRadius: 14, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, overflow: 'hidden' }}>
+          <View>
             {sorted.map((m, i) => {
               const isSelf = m.user_id === currentUserId;
               const selectable = selectMode && canBulk && !isSelf;
@@ -246,7 +246,7 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
                 haptics.tap(); openSheet({ kind: 'member', member: m });
               };
               return (
-                <TouchableOpacity key={m.user_id} onPress={onRow} activeOpacity={0.6} disabled={selectMode && !selectable} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
+                <TouchableOpacity key={m.user_id} onPress={onRow} activeOpacity={0.6} disabled={selectMode && !selectable} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
                   {selectMode && (
                     <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: selectable ? (selected ? theme.primary : c.inputBorder) : 'transparent', backgroundColor: selected ? theme.primary : 'transparent', alignItems: 'center', justifyContent: 'center' }}>
                       {selected && <Check size={14} color={theme.primaryForeground} />}

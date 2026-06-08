@@ -147,11 +147,15 @@ export function SkeletonRow({ isDark, avatar = true }: { isDark: boolean; avatar
   );
 }
 
-/** A bordered card containing N skeleton rows — matches the list cards. */
-export function SkeletonList({ count = 3, isDark, avatar = true }: { count?: number; isDark: boolean; avatar?: boolean }) {
+/** N skeleton rows with dividers. `bare` drops the card border/background to
+ *  match a borderless list. */
+export function SkeletonList({ count = 3, isDark, avatar = true, bare = false }: { count?: number; isDark: boolean; avatar?: boolean; bare?: boolean }) {
   const c = accountColors(isDark);
+  const wrap = bare
+    ? {}
+    : { borderRadius: 14, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, paddingHorizontal: 12 } as const;
   return (
-    <View style={{ borderRadius: 14, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, paddingHorizontal: 12 }}>
+    <View style={wrap}>
       {Array.from({ length: count }).map((_, i) => (
         <View key={i} style={{ borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
           <SkeletonRow isDark={isDark} avatar={avatar} />

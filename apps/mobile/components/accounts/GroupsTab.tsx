@@ -73,14 +73,14 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
         </View>
         <Text style={{ fontSize: 12.5, color: c.muted, marginBottom: 14 }}>Bundle members together and attach the whole group to projects with a role.</Text>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 42, borderRadius: 11, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 12, marginBottom: 14 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, marginBottom: 16 }}>
           <Search size={15} color={c.muted} />
           <TextInput value={search} onChangeText={setSearch} placeholder="Search by name…" placeholderTextColor={c.muted} autoCapitalize="none" autoCorrect={false} style={{ flex: 1, fontSize: 14, color: c.fg, fontFamily: 'Roobert', padding: 0 }} />
           {search.length > 0 && <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}><X size={15} color={c.muted} /></TouchableOpacity>}
         </View>
 
         {query.isLoading ? (
-          <SkeletonList count={3} isDark={isDark} />
+          <SkeletonList count={3} isDark={isDark} bare />
         ) : query.isError ? (
           <View style={{ paddingVertical: 20, gap: 10 }}>
             <Text style={{ fontSize: 13.5, color: '#ef4444' }}>{(query.error as Error)?.message || 'Failed to load groups'}</Text>
@@ -92,9 +92,9 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
             <Text style={{ fontSize: 13.5, color: c.muted, textAlign: 'center' }}>{search ? 'No groups match your search' : 'No groups yet. Create one to bulk-add members to projects.'}</Text>
           </View>
         ) : (
-          <View style={{ borderRadius: 14, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, overflow: 'hidden' }}>
+          <View>
             {filtered.map((g, i) => (
-              <TouchableOpacity key={g.group_id} onPress={() => { haptics.tap(); router.push(`/accounts/${accountId}/groups/${g.group_id}`); }} activeOpacity={0.6} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
+              <TouchableOpacity key={g.group_id} onPress={() => { haptics.tap(); router.push(`/accounts/${accountId}/groups/${g.group_id}`); }} activeOpacity={0.6} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
                 <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: c.avatarBg, alignItems: 'center', justifyContent: 'center' }}>
                   <Users size={16} color={c.muted} />
                 </View>
