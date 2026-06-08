@@ -11,7 +11,7 @@ import { View, ScrollView, RefreshControl, TextInput, Pressable, Alert } from 'r
 import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Search, X, FolderPlus, ChevronDown, Plus, AlertCircle } from 'lucide-react-native';
+import { Search, X, FolderPlus, ChevronDown, Plus, AlertCircle, ChevronRight } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -100,13 +100,6 @@ export default function ProjectsScreen() {
   const cardBorder = isDark ? 'rgba(255,255,255,0.10)' : 'rgba(0,0,0,0.08)';
   const inputBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.035)';
   const skeletonBg = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.055)';
-  const cardShadow = {
-    shadowColor: '#000',
-    shadowOpacity: isDark ? 0 : 0.05,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: isDark ? 0 : 1,
-  } as const;
 
   const openProject = React.useCallback(
     (p: KortixProject) => router.push(`/projects/${p.project_id}`),
@@ -290,20 +283,23 @@ export default function ProjectsScreen() {
 
         <View className="mt-5">
           {/* Loading skeletons */}
-          {loading &&
-            [0, 1, 2, 3].map((i) => (
-              <View
-                key={i}
-                className="mb-3 flex-row items-center rounded-2xl border"
-                style={{ paddingHorizontal: 16, paddingVertical: 16, backgroundColor: cardBg, borderColor: cardBorder }}
-              >
-                <View style={{ width: 40, height: 40, borderRadius: 13, backgroundColor: skeletonBg }} />
-                <View className="ml-3.5 flex-1">
-                  <View style={{ height: 13, width: '55%', borderRadius: 6, backgroundColor: skeletonBg }} />
-                  <View style={{ height: 11, width: '32%', borderRadius: 6, backgroundColor: skeletonBg, marginTop: 9 }} />
+          {loading && (
+            <View className="overflow-hidden rounded-2xl border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+              {[0, 1, 2, 3].map((i) => (
+                <View
+                  key={i}
+                  className="flex-row items-center"
+                  style={{ paddingHorizontal: 14, paddingVertical: 14, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: cardBorder }}
+                >
+                  <View style={{ width: 38, height: 38, borderRadius: 12, backgroundColor: skeletonBg }} />
+                  <View className="ml-3 flex-1">
+                    <View style={{ height: 13, width: '55%', borderRadius: 6, backgroundColor: skeletonBg }} />
+                    <View style={{ height: 11, width: '32%', borderRadius: 6, backgroundColor: skeletonBg, marginTop: 9 }} />
+                  </View>
                 </View>
-              </View>
-            ))}
+              ))}
+            </View>
+          )}
 
           {/* Error */}
           {projectsQuery.isError && !loading && (
@@ -368,27 +364,32 @@ export default function ProjectsScreen() {
             </View>
           )}
 
-          {/* Cards */}
-          {filtered.map((project) => (
-            <Pressable
-              key={project.project_id}
-              onPress={() => openProject(project)}
-              onLongPress={() => onCardLongPress(project)}
-              delayLongPress={300}
-              className="mb-3 flex-row items-center rounded-2xl border active:opacity-90"
-              style={{ paddingHorizontal: 16, paddingVertical: 14, backgroundColor: cardBg, borderColor: cardBorder, ...cardShadow }}
-            >
-              <Avatar variant="custom" size={40} fallbackText={project.name} />
-              <View className="ml-3.5 flex-1">
-                <Text numberOfLines={1} className="font-roobert-semibold text-[15px] text-foreground">
-                  {project.name}
-                </Text>
-                <Text numberOfLines={1} className="mt-0.5 font-roobert text-[13px] text-muted-foreground">
-                  Updated {relativeTime(project.updated_at)}
-                </Text>
-              </View>
-            </Pressable>
-          ))}
+          {/* Cards — flat grouped list (no shadows) */}
+          {filtered.length > 0 && (
+            <View className="overflow-hidden rounded-2xl border" style={{ backgroundColor: cardBg, borderColor: cardBorder }}>
+              {filtered.map((project, i) => (
+                <Pressable
+                  key={project.project_id}
+                  onPress={() => openProject(project)}
+                  onLongPress={() => onCardLongPress(project)}
+                  delayLongPress={300}
+                  className="flex-row items-center active:bg-black/[0.03] dark:active:bg-white/[0.03]"
+                  style={{ paddingHorizontal: 14, paddingVertical: 13, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: cardBorder }}
+                >
+                  <Avatar variant="custom" size={38} fallbackText={project.name} />
+                  <View className="ml-3 flex-1">
+                    <Text numberOfLines={1} className="font-roobert-semibold text-[15px] text-foreground">
+                      {project.name}
+                    </Text>
+                    <Text numberOfLines={1} className="mt-0.5 font-roobert text-[12.5px] text-muted-foreground">
+                      Updated {relativeTime(project.updated_at)}
+                    </Text>
+                  </View>
+                  <Icon as={ChevronRight} size={18} className="text-muted-foreground/40" />
+                </Pressable>
+              ))}
+            </View>
+          )}
         </View>
       </ScrollView>
 

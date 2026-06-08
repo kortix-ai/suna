@@ -1435,6 +1435,14 @@ export default function ProjectSessionScreen() {
     setDrawerOpen(false);
   }, []);
 
+  // Back to the projects list (the post-login landing). Used by the drawer's
+  // Kortix logo + "Projects" item.
+  const goToProjects = useCallback(() => {
+    haptics.tap();
+    setDrawerOpen(false);
+    router.push('/projects');
+  }, [router]);
+
   const handleBack = useCallback(() => navigateToSession(null), [navigateToSession]);
 
   const handleArchive = useCallback((sessionId: string) => {
@@ -1651,12 +1659,14 @@ export default function ProjectSessionScreen() {
         className="flex-1 bg-chrome-background"
         style={{ paddingTop: insets.top }}
       >
-        {/* Kortix wordmark */}
+        {/* Kortix wordmark — tap to go back to the projects list */}
         <View className="flex-row items-center justify-between px-5 pt-3 pb-4">
-          <KortixLogo variant="logomark" size={18} color={isDark ? 'dark' : 'light'} />
+          <TouchableOpacity onPress={goToProjects} activeOpacity={0.6} hitSlop={{ top: 8, bottom: 8, left: 8, right: 12 }}>
+            <KortixLogo variant="logomark" size={18} color={isDark ? 'dark' : 'light'} />
+          </TouchableOpacity>
         </View>
 
-        {/* Top-level actions: New session / Search / Files */}
+        {/* Top-level actions: New session / Search / Projects */}
         <View className="px-2 mb-2">
           <TouchableOpacity
             onPress={() => { haptics.tap(); handleNewSession(); }}
@@ -1674,27 +1684,40 @@ export default function ProjectSessionScreen() {
             <Ionicons name="search-outline" size={18} color={iconColor} />
             <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Search</Text>
           </TouchableOpacity>
+          <TouchableOpacity
+            onPress={goToProjects}
+            className="flex-row items-center rounded-lg px-3 py-2.5"
+            activeOpacity={0.6}
+          >
+            <Ionicons name="albums-outline" size={18} color={iconColor} />
+            <Text className="flex-1 text-sm font-medium ml-3 text-foreground">All projects</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Projects header (collapsible) — above Sessions, matches web sidebar */}
         {sortedProjects.length > 0 && (
           <>
-            <TouchableOpacity
-              onPress={() => { haptics.selection(); setProjectsExpanded((v) => !v); }}
-              className="flex-row items-center justify-between px-5 py-2.5"
-              activeOpacity={0.6}
-            >
-              <View className="flex-row items-center">
+            <View className="flex-row items-center justify-between px-5 py-2.5">
+              <TouchableOpacity
+                onPress={goToProjects}
+                className="flex-row items-center flex-1"
+                activeOpacity={0.6}
+              >
                 <Ionicons name="folder-outline" size={18} color={iconColor} />
                 <Text className="text-sm font-medium ml-3 text-foreground">Projects</Text>
-              </View>
-              <View className="flex-row items-center">
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => { haptics.selection(); setProjectsExpanded((v) => !v); }}
+                className="flex-row items-center"
+                activeOpacity={0.6}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
                 <View className="bg-muted rounded-full px-2 py-0.5 mr-1">
                   <Text className="text-xs text-muted-foreground">{sortedProjects.length}</Text>
                 </View>
                 <AnimatedChevron expanded={projectsExpanded} color={mutedColor} size={16} />
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+            </View>
 
             <AnimatedCollapsible expanded={projectsExpanded}>
               <View className="px-2 pb-2">
@@ -1824,6 +1847,7 @@ export default function ProjectSessionScreen() {
     projectsExpanded,
     sortedProjects,
     handleProjectPress,
+    goToProjects,
     userDisplayName,
     userEmail,
     planLabel,
