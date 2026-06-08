@@ -813,6 +813,15 @@ export function listGitHubRepositories(accountId: string, installationId?: strin
   );
 }
 
+/** Disconnect a GitHub App installation (Account → Git). */
+export function deleteGitHubInstallation(accountId: string, installationId?: string | null) {
+  const params = new URLSearchParams({ account_id: accountId });
+  if (installationId) params.set('installation_id', installationId);
+  return apiFetch<{ ok: boolean }>(`/projects/github/installation?${params.toString()}`, {
+    method: 'DELETE',
+  });
+}
+
 export function linkRepository(input: LinkRepositoryInput) {
   return apiFetch<LinkRepositoryResponse>('/projects/link-repository', {
     method: 'POST',
