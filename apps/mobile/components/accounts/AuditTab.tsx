@@ -189,7 +189,7 @@ function AuditRow({ event, actorEmail, isSelf, isDark, border }: { event: AuditE
             {human.detail && <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 5, backgroundColor: c.avatarBg }}><Text style={{ fontSize: 10, fontFamily: MONO, color: c.fg }}>{human.detail}</Text></View>}
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2, marginLeft: 13, flexWrap: 'wrap' }}>
-            <Text style={{ fontSize: 10.5, color: c.muted }}>by <Text style={{ color: c.fg }}>{actorLabel}</Text></Text>
+            <Text style={{ fontSize: 10.5, color: c.muted }}>by <Text style={{ fontSize: 10.5, color: c.fg }}>{actorLabel}</Text></Text>
             <Text style={{ fontSize: 10.5, color: c.muted }}>· {relative(occurred)}</Text>
             {resourcePill && <View style={{ paddingHorizontal: 5, paddingVertical: 1, borderRadius: 5, borderWidth: 1, borderColor: border }}><Text style={{ fontSize: 9.5, color: c.muted, textTransform: 'capitalize' }}>{resourcePill}</Text></View>}
             {event.ip && <Text style={{ fontSize: 9.5, fontFamily: MONO, color: c.muted }}>{event.ip}</Text>}
