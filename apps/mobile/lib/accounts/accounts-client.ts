@@ -155,3 +155,36 @@ export function addGroupMembers(accountId: string, groupId: string, userIds: str
     body: JSON.stringify({ userIds }),
   });
 }
+
+// ── Audit log ─────────────────────────────────────────────────────────────────
+
+export interface AuditEvent {
+  event_id: string;
+  occurred_at: string;
+  actor_user_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string | null;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  ip: string | null;
+  user_agent: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ListAuditFilter {
+  action?: string;
+  since?: string;
+  cursor?: string;
+  limit?: number;
+}
+
+export function listAuditEvents(accountId: string, filter: ListAuditFilter = {}) {
+  const params = new URLSearchParams();
+  if (filter.action) params.set('action', filter.action);
+  if (filter.since) params.set('since', filter.since);
+  if (filter.cursor) params.set('cursor', filter.cursor);
+  if (filter.limit) params.set('limit', String(filter.limit));
+  const qs = params.toString();
+  return apiFetch<{ events: AuditEvent[]; next_cursor: string | null }>(`${acc(accountId)}/audit${qs ? `?${qs}` : ''}`);
+}
