@@ -6,7 +6,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { View, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Alert } from 'react-native';
+import { View, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Alert, RefreshControl } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
@@ -155,7 +155,13 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + (selectMode ? 90 : 40) }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + (selectMode ? 90 : 40) }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        refreshControl={<RefreshControl refreshing={membersQuery.isRefetching || invitesQuery.isRefetching} onRefresh={() => { membersQuery.refetch(); if (canInvite) invitesQuery.refetch(); }} tintColor={c.muted} />}
+      >
         {/* Header row */}
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 }}>
           <Text style={{ flex: 1, fontSize: 18, fontFamily: 'Roobert-Medium', color: c.fg }}>
@@ -224,7 +230,10 @@ export function MembersTab({ account, currentUserId, can, isDark }: { account: A
             <TouchableOpacity onPress={() => membersQuery.refetch()} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
           </View>
         ) : sorted.length === 0 ? (
-          <Text style={{ fontSize: 13.5, color: c.muted, textAlign: 'center', paddingVertical: 28 }}>{members.length === 0 ? 'No members yet.' : `No members match "${search.trim()}".`}</Text>
+          <View style={{ alignItems: 'center', paddingVertical: 32, gap: 10 }}>
+            <Users size={26} color={c.muted} />
+            <Text style={{ fontSize: 13.5, color: c.muted, textAlign: 'center' }}>{members.length === 0 ? 'No members yet.' : `No members match "${search.trim()}".`}</Text>
+          </View>
         ) : (
           <View style={{ borderRadius: 14, borderWidth: 1, borderColor: c.border, backgroundColor: c.cardBg, overflow: 'hidden' }}>
             {sorted.map((m, i) => {

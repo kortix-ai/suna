@@ -5,7 +5,7 @@
  */
 
 import React, { useState } from 'react';
-import { View, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking } from 'react-native';
+import { View, TouchableOpacity, ScrollView, ActivityIndicator, Alert, Linking, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Github, ExternalLink, Unplug, Shield } from 'lucide-react-native';
@@ -75,7 +75,12 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
   };
 
   return (
-    <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40, gap: 14 }} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: 16, paddingBottom: insets.bottom + 40, gap: 14 }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={installationsQuery.isRefetching} onRefresh={() => installationsQuery.refetch()} tintColor={c.muted} />}
+    >
       <Card
         title="Git connections"
         count={installations.length}

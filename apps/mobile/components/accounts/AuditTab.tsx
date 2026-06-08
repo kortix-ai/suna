@@ -5,7 +5,7 @@
  */
 
 import React, { useMemo, useState } from 'react';
-import { View, TouchableOpacity, ScrollView, ActivityIndicator, Alert } from 'react-native';
+import { View, TouchableOpacity, ScrollView, ActivityIndicator, Alert, RefreshControl } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useInfiniteQuery } from '@tanstack/react-query';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -128,7 +128,12 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
         </ScrollView>
       </View>
 
-      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 40 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={query.isRefetching && !query.isFetchingNextPage} onRefresh={() => query.refetch()} tintColor={c.muted} />}
+      >
         {query.isLoading ? (
           <View style={{ padding: 16 }}><SkeletonList count={6} isDark={isDark} avatar={false} /></View>
         ) : query.isError ? (
