@@ -14,7 +14,6 @@ import { InlineMeta } from '@/components/ui/inline-meta';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
-import { Warp } from '@paper-design/shaders-react';
 import {
   ArrowRight,
   Blocks,
@@ -33,38 +32,26 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FaUsers } from 'react-icons/fa';
 import { GoHomeFill } from 'react-icons/go';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import { IconType } from 'react-icons/lib';
 import { MdShield } from 'react-icons/md';
 import { PiChatCircleDotsFill, PiClockCountdownFill } from 'react-icons/pi';
-import { RiCpuLine, RiRobot3Fill } from 'react-icons/ri';
+import { RiCpuLine, RiFolder3Fill, RiRobot3Fill } from 'react-icons/ri';
 import { KortixLogo } from '../sidebar/kortix-logo';
 import { Composer } from './interactive-demo/chat/composer';
-import { AUTO_DEMO_PROMPT } from './interactive-demo/chat/scenarios';
-import {
-  useDemoConversation,
-  type DemoConversation,
-} from './interactive-demo/chat/use-demo-conversation';
+import { type DemoConversation } from './interactive-demo/chat/use-demo-conversation';
+import { DraggableCliPanel } from './interactive-demo/cli/draggable-cli-panel';
+import { useDemoDirector } from './interactive-demo/cli/use-demo-director';
+import { VISIBLE_DEMO_PAGES } from './interactive-demo/page-flags';
 import { ChatPage } from './interactive-demo/pages/chat-page';
+import { ProjectsPage } from './interactive-demo/pages/projects-page';
 import { SkillsPage } from './interactive-demo/pages/skills-page';
+import type { ActiveModel, Nav, PageId, ProjectCard } from './interactive-demo/types';
 
 const favicon = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
-
-type PageId =
-  | 'home'
-  | 'chat'
-  | 'agents'
-  | 'skills'
-  | 'integrations'
-  | 'models'
-  | 'scheduling'
-  | 'channels'
-  | 'security';
-
-type Nav = (id: PageId) => void;
 
 /* ─── Shared primitives ─────────────────────────────────────────────────── */
 
@@ -123,12 +110,14 @@ function Row({
   subtitle,
   trailing,
   onClick,
+  className,
 }: {
   leading: React.ReactNode;
   title: React.ReactNode;
   subtitle?: React.ReactNode;
   trailing?: React.ReactNode;
   onClick?: () => void;
+  className?: string;
 }) {
   return (
     <div
@@ -138,6 +127,7 @@ function Row({
       className={cn(
         'border-border flex items-center gap-3 border-b px-4 py-3 last:border-0',
         onClick && 'hover:bg-muted/40 cursor-pointer transition-colors',
+        className,
       )}
     >
       <span className="shrink-0">{leading}</span>
@@ -514,7 +504,7 @@ const INTEGRATIONS: [string, string, boolean][] = [
 
 const CONNECTOR_TYPES = ['App', 'MCP', 'OpenAPI', 'GraphQL', 'HTTP'];
 
-function IntegrationsPage() {
+function IntegrationsPage({ connectedExtra = [] }: { connectedExtra?: string[] }) {
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
   const list = INTEGRATIONS.filter(
@@ -590,16 +580,22 @@ function IntegrationsPage() {
 
       {list.length > 0 ? (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {list.map(([domain, name, connected]) => (
-            <div
-              key={name}
-              className="border-border/60 bg-card flex items-center gap-2.5 rounded-md border p-2.5"
-            >
-              <BrandLogo domain={domain} alt={name} />
-              <span className="text-foreground truncate text-sm font-medium">{name}</span>
-              <ConnectBadge connected={connected} />
-            </div>
-          ))}
+          {list.map(([domain, name, connected]) => {
+            const justConnected = !connected && connectedExtra.includes(name);
+            return (
+              <div
+                key={name}
+                className={cn(
+                  'border-border/60 bg-card flex items-center gap-2.5 rounded-md border p-2.5 transition-all',
+                  justConnected && 'border-kortix-green/30 ring-kortix-green/30 ring-1',
+                )}
+              >
+                <BrandLogo domain={domain} alt={name} />
+                <span className="text-foreground truncate text-sm font-medium">{name}</span>
+                <ConnectBadge connected={connected || connectedExtra.includes(name)} />
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="border-border/60 text-muted-foreground rounded-md border border-dashed py-8 text-center text-sm">
@@ -678,12 +674,19 @@ const PROVIDERS: Provider[] = [
   { domain: 'nvidia.com', name: 'NVIDIA NIM', hint: 'NIM microservices', state: 'connect' },
 ];
 
-function ModelsPage() {
+function ModelsPage({
+  activeModel,
+  connectedDomains = [],
+}: {
+  activeModel?: ActiveModel;
+  connectedDomains?: string[];
+}) {
+  const activeName = activeModel?.name ?? 'Claude Opus 4.8';
   return (
     <div>
       <PageHead
         title="Models"
-        sub="Bring any provider — routed per session, keys stay in Secrets"
+        sub={`Bring any provider — routed per session · active: ${activeName}`}
         action={
           <Button variant="default" size="sm">
             <Plus className="size-3.5" /> Add provider
@@ -692,35 +695,47 @@ function ModelsPage() {
       />
 
       <div className="space-y-2">
-        {PROVIDERS.map((p) => (
-          <div
-            key={p.name}
-            className="border-border/60 bg-card flex items-center gap-3 rounded-md border p-2.5"
-          >
-            {p.domain ? (
-              <BrandLogo domain={p.domain} alt={p.name} />
-            ) : (
-              <span className="bg-foreground text-background flex size-8 shrink-0 items-center justify-center rounded-lg">
-                <RiCpuLine className="size-4" />
-              </span>
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="text-foreground truncate text-sm font-medium">{p.name}</div>
-              <div className="text-muted-foreground truncate text-xs">{p.hint}</div>
+        {PROVIDERS.map((p) => {
+          const isActive = !!activeModel && p.domain === activeModel.domain;
+          const connected =
+            p.state === 'connected' || (!!p.domain && connectedDomains.includes(p.domain));
+          return (
+            <div
+              key={p.name}
+              className={cn(
+                'border-border/60 bg-card flex items-center gap-3 rounded-md border p-2.5 transition-all',
+                isActive && 'border-kortix-green/30 ring-kortix-green/30 ring-2',
+              )}
+            >
+              {p.domain ? (
+                <BrandLogo domain={p.domain} alt={p.name} />
+              ) : (
+                <span className="bg-foreground text-background flex size-8 shrink-0 items-center justify-center rounded-lg">
+                  <RiCpuLine className="size-4" />
+                </span>
+              )}
+              <div className="min-w-0 flex-1">
+                <div className="text-foreground truncate text-sm font-medium">{p.name}</div>
+                <div className="text-muted-foreground truncate text-xs">{p.hint}</div>
+              </div>
+              {isActive ? (
+                <Badge size="sm" variant="success" className="shrink-0 gap-1">
+                  <HiMiniSparkles className="size-3" /> Active
+                </Badge>
+              ) : p.state === 'managed' ? (
+                <Badge size="sm" variant="highlight" className="shrink-0 gap-1">
+                  <HiMiniSparkles className="size-3" /> Managed
+                </Badge>
+              ) : connected ? (
+                <ConnectBadge connected />
+              ) : (
+                <Button variant="outline" size="sm" className="shrink-0">
+                  <KeyRound className="size-3.5" /> Connect
+                </Button>
+              )}
             </div>
-            {p.state === 'managed' ? (
-              <Badge size="sm" variant="highlight" className="shrink-0 gap-1">
-                <HiMiniSparkles className="size-3" /> Managed
-              </Badge>
-            ) : p.state === 'connected' ? (
-              <ConnectBadge connected />
-            ) : (
-              <Button variant="outline" size="sm" className="shrink-0">
-                <KeyRound className="size-3.5" /> Connect
-              </Button>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="border-border/60 bg-muted/20 text-muted-foreground mt-3 flex items-center gap-2 rounded-md border px-3 py-2.5 text-xs">
@@ -754,11 +769,21 @@ const INITIAL_JOBS: ScheduleJob[] = [
   },
 ];
 
-function SchedulingPage() {
+/** Appears on the Scheduling tab when the CLI runs `kortix triggers add`. */
+const ADDED_JOB: ScheduleJob = {
+  name: 'daily-briefing',
+  cron: '0 8 * * *',
+  when: 'every day · 08:00',
+  next: 'in 6h',
+  on: true,
+};
+
+function SchedulingPage({ added = false }: { added?: boolean }) {
   const [jobs, setJobs] = useState<ScheduleJob[]>(INITIAL_JOBS);
   const toggle = (name: string) =>
     setJobs((js) => js.map((j) => (j.name === name ? { ...j, on: !j.on } : j)));
-  const activeCount = jobs.filter((j) => j.on).length;
+  const allJobs = added ? [ADDED_JOB, ...jobs] : jobs;
+  const activeCount = allJobs.filter((j) => j.on).length;
 
   return (
     <div>
@@ -772,32 +797,36 @@ function SchedulingPage() {
         }
       />
       <Panel>
-        {jobs.map((job) => (
-          <Row
-            key={job.name}
-            leading={
-              <span
-                className={cn(
-                  'flex size-8 items-center justify-center rounded-lg border transition-colors',
-                  job.on
-                    ? 'border-kortix-green/20 bg-kortix-green/10 text-kortix-green'
-                    : 'border-border bg-background text-muted-foreground',
-                )}
-              >
-                <Clock className="size-4" />
-              </span>
-            }
-            title={job.name}
-            subtitle={
-              <InlineMeta>
-                <span className="font-mono">{job.cron}</span>
-                <span>{job.when}</span>
-                <span>{job.on ? `next ${job.next}` : 'paused'}</span>
-              </InlineMeta>
-            }
-            trailing={<Toggle on={job.on} onClick={() => toggle(job.name)} />}
-          />
-        ))}
+        {allJobs.map((job) => {
+          const isNew = added && job.name === ADDED_JOB.name;
+          return (
+            <Row
+              key={job.name}
+              className={isNew ? 'bg-kortix-green/5' : undefined}
+              leading={
+                <span
+                  className={cn(
+                    'flex size-8 items-center justify-center rounded-lg border transition-colors',
+                    job.on
+                      ? 'border-kortix-green/20 bg-kortix-green/10 text-kortix-green'
+                      : 'border-border bg-background text-muted-foreground',
+                  )}
+                >
+                  <Clock className="size-4" />
+                </span>
+              }
+              title={job.name}
+              subtitle={
+                <InlineMeta>
+                  <span className="font-mono">{job.cron}</span>
+                  <span>{job.when}</span>
+                  <span>{job.on ? `next ${job.next}` : 'paused'}</span>
+                </InlineMeta>
+              }
+              trailing={<Toggle on={job.on} onClick={isNew ? undefined : () => toggle(job.name)} />}
+            />
+          );
+        })}
       </Panel>
     </div>
   );
@@ -805,7 +834,13 @@ function SchedulingPage() {
 
 /* ─── Channels (Slack — mirrors the real customize surface) ─────────────── */
 
-function ChannelsPage() {
+function ChannelsPage({
+  connected = false,
+  workspace,
+}: {
+  connected?: boolean;
+  workspace?: string | null;
+}) {
   const [showByo, setShowByo] = useState(false);
   return (
     <div>
@@ -817,22 +852,36 @@ function ChannelsPage() {
       <div className="border-border bg-card overflow-hidden rounded-md border">
         <div className="flex flex-col items-start gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
-            <span className="border-border flex size-14 shrink-0 items-center justify-center rounded-lg border">
+            <span
+              className={cn(
+                'flex size-14 shrink-0 items-center justify-center rounded-lg border transition-colors',
+                connected ? 'border-kortix-green/30 bg-kortix-green/5' : 'border-border',
+              )}
+            >
               <Icon.Slack className="size-7" />
             </span>
             <div className="min-w-0">
               <p className="text-foreground text-sm font-medium">
-                Add Kortix to your Slack workspace
+                {connected
+                  ? `Connected to ${workspace ?? 'your workspace'}`
+                  : 'Add Kortix to your Slack workspace'}
               </p>
               <p className="text-muted-foreground mt-0.5 text-xs">
-                One click — approve scopes in Slack and we&apos;ll wire this project to the
-                workspace you choose. Tokens stay encrypted in this project&apos;s secrets.
+                {connected
+                  ? 'Tokens are encrypted in this project’s secrets. Invite the bot to any channel and @mention it to spawn a session.'
+                  : 'One click — approve scopes in Slack and we’ll wire this project to the workspace you choose. Tokens stay encrypted in this project’s secrets.'}
               </p>
             </div>
           </div>
-          <Button size="sm" className="shrink-0">
-            <Icon.Slack className="size-3.5" /> Add to Slack
-          </Button>
+          {connected ? (
+            <Badge size="sm" variant="success" className="shrink-0 gap-1">
+              <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" /> Connected
+            </Badge>
+          ) : (
+            <Button size="sm" className="shrink-0">
+              <Icon.Slack className="size-3.5" /> Add to Slack
+            </Button>
+          )}
         </div>
 
         <button
@@ -864,9 +913,18 @@ function ChannelsPage() {
 
       <div className="border-border/60 bg-muted/20 text-muted-foreground mt-3 flex items-center gap-2 rounded-md border px-3 py-2.5 text-xs">
         <MessageSquare className="size-3.5 shrink-0" />
-        Invite the bot to any channel and{' '}
-        <span className="text-foreground font-mono">@mention</span> it — a session spawns and the
-        agent replies in-thread.
+        {connected ? (
+          <span>
+            <span className="text-foreground font-mono">@mention</span> the bot in any channel — a
+            session spawns and the agent replies in-thread.
+          </span>
+        ) : (
+          <span>
+            Invite the bot to any channel and{' '}
+            <span className="text-foreground font-mono">@mention</span> it — a session spawns and
+            the agent replies in-thread.
+          </span>
+        )}
       </div>
     </div>
   );
@@ -958,10 +1016,33 @@ function PolicyRow({ policy }: { policy: Policy }) {
   );
 }
 
-function SecurityPage() {
+/** Lands in the vault / member list when the CLI runs secrets set / access invite. */
+const ADDED_MEMBER: Member = {
+  email: 'alex@acme.ai',
+  name: 'Alex Rivera',
+  role: 'Member',
+  last: 'invited just now',
+};
+const ADDED_SECRET: Secret = {
+  name: 'SENDGRID_API_KEY',
+  masked: 'SG.••••a1b2',
+  domain: 'sendgrid.com',
+  rotated: 'just now',
+  agents: 1,
+};
+
+function SecurityPage({
+  memberAdded = false,
+  secretAdded = false,
+}: {
+  memberAdded?: boolean;
+  secretAdded?: boolean;
+}) {
+  const members = memberAdded ? [ADDED_MEMBER, ...MEMBERS] : MEMBERS;
+  const secrets = secretAdded ? [ADDED_SECRET, ...SECRETS] : SECRETS;
   const stats: [string, string][] = [
-    [String(MEMBERS.length), 'Members'],
-    [String(SECRETS.length), 'Secrets'],
+    [String(members.length), 'Members'],
+    [String(secrets.length), 'Secrets'],
     ['41', 'Tool policies'],
     ['128', 'Audit events · 24h'],
   ];
@@ -985,16 +1066,19 @@ function SecurityPage() {
         <div className="grid gap-4 lg:grid-cols-2">
           <Panel
             title="Members & roles"
-            count="· 3"
+            count={`· ${members.length}`}
             action={
               <Button variant="outline" size="sm">
                 <Plus className="size-3.5" /> Invite
               </Button>
             }
           >
-            {MEMBERS.map((m) => (
+            {members.map((m) => (
               <Row
                 key={m.email}
+                className={
+                  memberAdded && m.email === ADDED_MEMBER.email ? 'bg-kortix-green/5' : undefined
+                }
                 leading={<UserAvatar email={m.email} name={m.name} size="sm" />}
                 title={m.name}
                 subtitle={
@@ -1020,10 +1104,13 @@ function SecurityPage() {
             ))}
           </Panel>
 
-          <Panel title="Secrets vault" count="· 5 encrypted">
-            {SECRETS.map((sec) => (
+          <Panel title="Secrets vault" count={`· ${secrets.length} encrypted`}>
+            {secrets.map((sec) => (
               <Row
                 key={sec.name}
+                className={
+                  secretAdded && sec.name === ADDED_SECRET.name ? 'bg-kortix-green/5' : undefined
+                }
                 leading={<BrandLogo domain={sec.domain} alt={sec.name} size={16} />}
                 title={<span className="font-mono text-xs">{sec.name}</span>}
                 subtitle={
@@ -1065,6 +1152,14 @@ function SecurityPage() {
 type DemoExtras = {
   focusedSkill: string | null;
   onSkillClick: (name: string) => void;
+  projects: ProjectCard[];
+  activeModel: ActiveModel;
+  connectedProviders: string[];
+  connectors: string[];
+  scheduleAdded: boolean;
+  secretAdded: boolean;
+  memberAdded: boolean;
+  slack: { connected: boolean; workspace: string | null };
 };
 
 const PAGES: Record<
@@ -1079,6 +1174,11 @@ const PAGES: Record<
     label: 'Home',
     icon: <GoHomeFill className="size-4" />,
     render: (nav, convo) => <HomePage nav={nav} convo={convo} />,
+  },
+  projects: {
+    label: 'Projects',
+    icon: <RiFolder3Fill className="size-4" />,
+    render: (_nav, _convo, extras) => <ProjectsPage projects={extras.projects} />,
   },
   chat: {
     label: 'Chat',
@@ -1098,41 +1198,37 @@ const PAGES: Record<
   integrations: {
     label: 'Integrations',
     icon: <Blocks className="size-4" />,
-    render: () => <IntegrationsPage />,
+    render: (_nav, _convo, extras) => <IntegrationsPage connectedExtra={extras.connectors} />,
   },
   models: {
     label: 'Models',
     icon: <RiCpuLine className="size-4" />,
-    render: () => <ModelsPage />,
+    render: (_nav, _convo, extras) => (
+      <ModelsPage activeModel={extras.activeModel} connectedDomains={extras.connectedProviders} />
+    ),
   },
   scheduling: {
     label: 'Scheduling',
     icon: <PiClockCountdownFill className="size-4" />,
-    render: () => <SchedulingPage />,
+    render: (_nav, _convo, extras) => <SchedulingPage added={extras.scheduleAdded} />,
   },
   channels: {
     label: 'Channels',
     icon: <MessageSquare className="size-4" />,
-    render: () => <ChannelsPage />,
+    render: (_nav, _convo, extras) => (
+      <ChannelsPage connected={extras.slack.connected} workspace={extras.slack.workspace} />
+    ),
   },
   security: {
     label: 'Security',
     icon: <MdShield className="size-4" />,
-    render: () => <SecurityPage />,
+    render: (_nav, _convo, extras) => (
+      <SecurityPage memberAdded={extras.memberAdded} secretAdded={extras.secretAdded} />
+    ),
   },
 };
 
-const ORDER: PageId[] = [
-  'home',
-  'chat',
-  'agents',
-  'skills',
-  'integrations',
-  'models',
-  'scheduling',
-  'channels',
-  'security',
-];
+const ORDER = VISIBLE_DEMO_PAGES;
 
 function TabScallopEdge({ side }: { side: 'left' | 'right' }) {
   const path = side === 'right' ? 'M0 0C0 32 16 64 38 64L0 64Z' : 'M38 0C38 32 22 64 0 64L38 64Z';
@@ -1196,18 +1292,31 @@ export function InteractiveDemoSection({
   className?: string;
   contentClassName?: string;
 }) {
-  const [active, setActive] = useState<PageId>('home');
+  const director = useDemoDirector();
+  const active = director.activePage;
   const [focusedSkill, setFocusedSkill] = useState<string | null>(null);
-  const convo = useDemoConversation({ onEnterChat: () => setActive('chat') });
   const page = PAGES[active];
   const rootRef = useRef<HTMLDivElement>(null);
-  const autoStarted = useRef(false);
   const tabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
 
-  const handleSkillClick = useCallback((name: string) => {
+  // The composer the pages use: any user send/typing pauses the CLI movie, then
+  // hands off to the real conversation so visitors can take over from autoplay.
+  const pageConvo: DemoConversation = {
+    ...director.convo,
+    submit: (text?: string) => {
+      director.pauseForUser();
+      director.convo.submit(text);
+    },
+    setDraft: (text: string) => {
+      director.pauseForUser();
+      director.convo.setDraft(text);
+    },
+  };
+
+  const handleSkillClick = (name: string) => {
     setFocusedSkill(name);
-    setActive('skills');
-  }, []);
+    director.navigate('skills');
+  };
 
   useEffect(() => {
     if (active !== 'skills') setFocusedSkill(null);
@@ -1227,7 +1336,7 @@ export function InteractiveDemoSection({
     const apply = () => {
       const h = window.location.hash.replace('#', '');
       if (h && (ORDER as string[]).includes(h)) {
-        setActive(h as PageId);
+        director.navigate(h as PageId);
         requestAnimationFrame(() =>
           document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth', block: 'start' }),
         );
@@ -1236,9 +1345,11 @@ export function InteractiveDemoSection({
     apply();
     window.addEventListener('hashchange', apply);
     return () => window.removeEventListener('hashchange', apply);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-play once when the demo scrolls into view — type on Home, then submit.
+  // Start the CLI movie once the demo scrolls into view (unless deep-linked to a
+  // specific tab, in which case we leave that tab put and don't autoplay).
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
@@ -1246,10 +1357,9 @@ export function InteractiveDemoSection({
     if (hash && hash !== 'demo' && hash !== 'home' && (ORDER as string[]).includes(hash)) return;
     const io = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && !autoStarted.current) {
-          autoStarted.current = true;
+        if (entry.isIntersecting) {
           io.disconnect();
-          convo.startAutoDemo(AUTO_DEMO_PROMPT);
+          director.start();
         }
       },
       { threshold: 0.4 },
@@ -1262,20 +1372,17 @@ export function InteractiveDemoSection({
   return (
     <div
       ref={rootRef}
-      className={cn(
-        'relative mx-auto w-full max-w-6xl',
-        embedded && 'h-full max-w-none',
-        className,
-      )}
+      className={cn('relative w-full overflow-visible', embedded && 'h-full max-w-none', className)}
     >
+      {!embedded && <DraggableCliPanel containerRef={rootRef} director={director} />}
       <div
         className={cn(
-          'relative -mx-1.5 overflow-hidden rounded-md p-4 sm:mx-0 md:p-8 lg:p-10',
+          'relative -mx-1.5 overflow-hidden p-4 sm:mx-0 md:p-0',
           embedded && 'mx-0 h-full p-0',
           contentClassName,
         )}
       >
-        {gradientbg && (
+        {/* {gradientbg && (
           <div className="absolute inset-0">
             <Warp
               speed={4.3}
@@ -1291,7 +1398,7 @@ export function InteractiveDemoSection({
               style={{ height: '100%', width: '100%' }}
             />
           </div>
-        )}
+        )} */}
 
         <div className={cn('relative z-10', embedded && 'h-full')}>
           <div
@@ -1319,7 +1426,7 @@ export function InteractiveDemoSection({
                       !isActive ? 'gap-2 rounded-full px-3.5 py-0 [&>svg]:size-4' : '',
                     )}
                     type="button"
-                    onClick={() => setActive(id)}
+                    onClick={() => director.navigate(id)}
                   >
                     {isActive ? (
                       <span className="relative flex items-stretch">
@@ -1350,7 +1457,7 @@ export function InteractiveDemoSection({
               className={cn(
                 'bg-background dark:bg-primary/7 w-full overflow-hidden rounded-b-xl sm:rounded-b-[calc(var(--radius-xl)-4px)]',
                 embedded && 'flex min-h-0 flex-1 flex-col',
-                active === 'home'
+                active === 'projects'
                   ? 'rounded-tr-xl sm:rounded-tr-[calc(var(--radius-xl)-4px)]'
                   : 'rounded-t-xl sm:rounded-t-[calc(var(--radius-xl)-4px)]',
               )}
@@ -1374,9 +1481,17 @@ export function InteractiveDemoSection({
                     transition={{ duration: 0.25, ease: 'easeInOut' }}
                     className="h-full w-full"
                   >
-                    {page.render(setActive, convo, {
+                    {page.render(director.navigate, pageConvo, {
                       focusedSkill,
                       onSkillClick: handleSkillClick,
+                      projects: director.projects,
+                      activeModel: director.activeModel,
+                      connectedProviders: director.connectedProviders,
+                      connectors: director.connectors,
+                      scheduleAdded: director.scheduleAdded,
+                      secretAdded: director.secretAdded,
+                      memberAdded: director.memberAdded,
+                      slack: director.slack,
                     })}
                   </motion.div>
                 </AnimatePresence>

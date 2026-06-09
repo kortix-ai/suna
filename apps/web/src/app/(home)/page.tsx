@@ -568,7 +568,7 @@ export default function Home() {
   return (
     <>
       <div className="bg-background relative">
-        <section id="hero" className="relative overflow-hidden px-6 pt-32 pb-12 sm:pt-36">
+        <section id="hero" className="relative overflow-hidden px-6 pt-32 pb-12 sm:py-36">
           <div className="pointer-events-none absolute inset-0 z-0 mask-y-to-95%" aria-hidden>
             <KortixLetterField seed={3382} />
           </div>
@@ -576,8 +576,8 @@ export default function Home() {
             <WallpaperBackground wallpaperId="brandmark" />
           </div>
 
-          <div className="z-20 mx-auto max-w-6xl">
-            <section className="w-full">
+          <div className="z-20">
+            <section className="mx-auto w-full max-w-6xl">
               <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
                 {tHome('heroCommandCenter')}
                 <br />
@@ -614,7 +614,7 @@ export default function Home() {
               </div>
             </section>
 
-            <div id="demo" className="relative z-10 mt-14 scroll-mt-24 sm:mt-20">
+            <div id="demo" className="relative z-10 mx-auto mt-14 max-w-6xl scroll-mt-24 sm:mt-20">
               <InteractiveDemoSection />
             </div>
           </div>

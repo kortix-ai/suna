@@ -1,17 +1,9 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import { Warp } from '@paper-design/shaders-react';
-import {
-  Blocks,
-  Bot,
-  ChevronRight,
-  Clock,
-  MessageSquare,
-  type LucideIcon,
-} from 'lucide-react';
+import { Blocks, Bot, ChevronRight, Clock, MessageSquare, type LucideIcon } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -21,7 +13,7 @@ import { HiMiniSparkles } from 'react-icons/hi2';
 import type { IconType } from 'react-icons/lib';
 import { MdShield } from 'react-icons/md';
 import { PiChatCircleDotsFill, PiClockCountdownFill } from 'react-icons/pi';
-import { RiCpuLine, RiRobot3Fill } from 'react-icons/ri';
+import { RiCpuLine, RiFolder3Fill, RiRobot3Fill } from 'react-icons/ri';
 import { KortixLogo } from '../sidebar/kortix-logo';
 import { Composer } from './interactive-demo/chat/composer';
 import { AUTO_DEMO_PROMPT } from './interactive-demo/chat/scenarios';
@@ -29,11 +21,17 @@ import {
   useDemoConversation,
   type DemoConversation,
 } from './interactive-demo/chat/use-demo-conversation';
+import {
+  defaultDemoPage,
+  isDemoPageEnabled,
+  VISIBLE_DEMO_PAGES,
+} from './interactive-demo/page-flags';
 import { AgentsPage } from './interactive-demo/pages/agents-page';
 import { ChannelsPage } from './interactive-demo/pages/channels-page';
 import { ChatPage } from './interactive-demo/pages/chat-page';
 import { IntegrationsPage } from './interactive-demo/pages/integrations-page';
 import { ModelsPage } from './interactive-demo/pages/models-page';
+import { ProjectsPage } from './interactive-demo/pages/projects-page';
 import { SchedulingPage } from './interactive-demo/pages/scheduling-page';
 import { SecurityPage } from './interactive-demo/pages/security-page';
 import { SkillsPage } from './interactive-demo/pages/skills-page';
@@ -65,13 +63,17 @@ const PAGES: Record<
       'Your company\u2019s home base \u2014 start a task or pick up where your agents left off.',
     render: (nav, convo) => <HomePage nav={nav} convo={convo} />,
   },
+  projects: {
+    label: 'Projects',
+    Icon: RiFolder3Fill,
+    context: 'Each project is a repo your agents run from \u2014 created with kortix init.',
+    render: () => <ProjectsPage projects={[]} />,
+  },
   chat: {
     label: 'Chat',
     Icon: PiChatCircleDotsFill,
     context: 'Ask in plain language and watch an agent do the real work across your tools.',
-    render: (_nav, convo, extras) => (
-      <ChatPage convo={convo} onSkillClick={extras.onSkillClick} />
-    ),
+    render: (_nav, convo, extras) => <ChatPage convo={convo} onSkillClick={extras.onSkillClick} />,
   },
   agents: {
     label: 'Agents',
@@ -134,17 +136,7 @@ function SendGlyph({ className = 'size-3.5' }: { className?: string }) {
   );
 }
 
-const ORDER: PageId[] = [
-  'home',
-  'chat',
-  'agents',
-  'skills',
-  'integrations',
-  'models',
-  'scheduling',
-  'channels',
-  'security',
-];
+const ORDER = VISIBLE_DEMO_PAGES;
 
 function TabScallopEdge({ side }: { side: 'left' | 'right' }) {
   const path = side === 'right' ? 'M0 0C0 32 16 64 38 64L0 64Z' : 'M38 0C38 32 22 64 0 64L38 64Z';
@@ -252,7 +244,12 @@ export function InteractiveDemo({
   activePage?: PageId;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [active, setActive] = useState<PageId>(activePage || 'home');
+  const [active, setActiveRaw] = useState<PageId>(
+    activePage && isDemoPageEnabled(activePage) ? activePage : defaultDemoPage(),
+  );
+  const setActive = useCallback((page: PageId) => {
+    if (isDemoPageEnabled(page)) setActiveRaw(page);
+  }, []);
   const [focusedSkill, setFocusedSkill] = useState<string | null>(null);
   const convo = useDemoConversation({ onEnterChat: () => setActive('chat') });
   const rootRef = useRef<HTMLDivElement>(null);
@@ -538,7 +535,10 @@ export function InteractiveDemo({
                       transition={{ duration: 0.25, ease: 'easeInOut' }}
                       className="h-full w-full"
                     >
-                      {page.render(setActive, convo, { focusedSkill, onSkillClick: handleSkillClick })}
+                      {page.render(setActive, convo, {
+                        focusedSkill,
+                        onSkillClick: handleSkillClick,
+                      })}
                     </motion.div>
                   </AnimatePresence>
                 </div>
@@ -599,7 +599,7 @@ export function InteractiveDemo({
                   className={cn(
                     'bg-background h-full w-full rounded-b-[calc(var(--radius-xl)-4px)]',
 
-                    active !== 'home' && 'rounded-tl-[calc(var(--radius-xl)-4px)]',
+                    active !== 'projects' && 'rounded-tl-[calc(var(--radius-xl)-4px)]',
                     active !== 'security' && 'rounded-tr-[calc(var(--radius-xl)-4px)]',
                   )}
                 >
