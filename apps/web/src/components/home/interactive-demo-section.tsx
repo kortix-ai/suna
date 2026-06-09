@@ -1348,7 +1348,7 @@ export function InteractiveDemoSection({
             {/* App panel */}
             <div
               className={cn(
-                'bg-background w-full overflow-hidden rounded-b-xl sm:rounded-b-[calc(var(--radius-xl)-4px)]',
+                'bg-background dark:bg-primary/7 w-full overflow-hidden rounded-b-xl sm:rounded-b-[calc(var(--radius-xl)-4px)]',
                 embedded && 'flex min-h-0 flex-1 flex-col',
               )}
             >
