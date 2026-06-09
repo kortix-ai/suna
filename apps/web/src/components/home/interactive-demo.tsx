@@ -22,6 +22,10 @@ import { ModelsPage } from './interactive-demo/pages/models-page';
 import { SchedulingPage } from './interactive-demo/pages/scheduling-page';
 import { SecurityPage } from './interactive-demo/pages/security-page';
 import { SkillsPage } from './interactive-demo/pages/skills-page';
+import {
+  useDemoConversation,
+  type DemoConversation,
+} from './interactive-demo/chat/use-demo-conversation';
 import type { Nav, PageId } from './interactive-demo/types';
 
 type PageIcon = LucideIcon | IconType;
@@ -31,20 +35,25 @@ const TAB_ICON = 'size-4';
 
 const PAGES: Record<
   PageId,
-  { label: string; Icon: PageIcon; context: string; render: (nav: Nav) => React.ReactNode }
+  {
+    label: string;
+    Icon: PageIcon;
+    context: string;
+    render: (nav: Nav, convo: DemoConversation) => React.ReactNode;
+  }
 > = {
   home: {
     label: 'Home',
     Icon: GoHomeFill,
     context:
       'Your company\u2019s home base \u2014 start a task or pick up where your agents left off.',
-    render: (nav) => <HomePage nav={nav} />,
+    render: (nav, convo) => <HomePage nav={nav} convo={convo} />,
   },
   chat: {
     label: 'Chat',
     Icon: PiChatCircleDotsFill,
     context: 'Ask in plain language and watch an agent do the real work across your tools.',
-    render: () => <ChatPage />,
+    render: (_nav, convo) => <ChatPage convo={convo} />,
   },
   agents: {
     label: 'Agents',
@@ -144,6 +153,7 @@ export function InteractiveDemo({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [active, setActive] = useState<PageId>(activePage || 'home');
+  const convo = useDemoConversation({ onEnterChat: () => setActive('chat') });
   const page = PAGES[active];
   const tabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
   const mobileTabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
@@ -338,7 +348,7 @@ export function InteractiveDemo({
                     transition={{ duration: 0.25, ease: 'easeInOut' }}
                     className="h-full w-full"
                   >
-                    {page.render(setActive)}
+                    {page.render(setActive, convo)}
                   </motion.div>
                 </AnimatePresence>
               </div>
@@ -383,7 +393,7 @@ export function InteractiveDemo({
                       transition={{ duration: 0.25, ease: 'easeInOut' }}
                       className="h-full w-full"
                     >
-                      {page.render(setActive)}
+                      {page.render(setActive, convo)}
                     </motion.div>
                   </AnimatePresence>
                 </div>

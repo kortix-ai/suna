@@ -27,21 +27,29 @@ import { ModelsPage } from './interactive-demo/pages/models-page';
 import { SchedulingPage } from './interactive-demo/pages/scheduling-page';
 import { SecurityPage } from './interactive-demo/pages/security-page';
 import { SkillsPage } from './interactive-demo/pages/skills-page';
+import {
+  useDemoConversation,
+  type DemoConversation,
+} from './interactive-demo/chat/use-demo-conversation';
 import type { Nav, PageId } from './interactive-demo/types';
 
 const PAGES: Record<
   PageId,
-  { label: string; icon: React.ReactNode; render: (nav: Nav) => React.ReactNode }
+  {
+    label: string;
+    icon: React.ReactNode;
+    render: (nav: Nav, convo: DemoConversation) => React.ReactNode;
+  }
 > = {
   home: {
     label: 'Home',
     icon: <GoHomeFill className="size-4" />,
-    render: (nav) => <HomePage nav={nav} />,
+    render: (nav, convo) => <HomePage nav={nav} convo={convo} />,
   },
   chat: {
     label: 'Chat',
     icon: <PiChatCircleDotsFill className="size-4" />,
-    render: () => <ChatPage />,
+    render: (_nav, convo) => <ChatPage convo={convo} />,
   },
   agents: {
     label: 'Agents',
@@ -151,6 +159,7 @@ export function InteractiveDemoSection({
   contentClassName?: string;
 }) {
   const [active, setActive] = useState<PageId>('home');
+  const convo = useDemoConversation({ onEnterChat: () => setActive('chat') });
   const page = PAGES[active];
   const tabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
 
@@ -290,7 +299,7 @@ export function InteractiveDemoSection({
                     transition={{ duration: 0.25, ease: 'easeInOut' }}
                     className="h-full w-full"
                   >
-                    {page.render(setActive)}
+                    {page.render(setActive, convo)}
                   </motion.div>
                 </AnimatePresence>
               </div>
