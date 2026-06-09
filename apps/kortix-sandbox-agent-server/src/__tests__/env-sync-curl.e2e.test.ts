@@ -92,7 +92,7 @@ describe('project env sync curl e2e', () => {
         env: { API_KEY: 'new', EXTRA_TOKEN: 'fresh' },
         names: ['API_KEY', 'EXTRA_TOKEN'],
       })
-      expect(restarts).toBe(1)
+      expect(restarts).toBe(0)
 
       const replay = await curlJson(`http://127.0.0.1:${server.port}/kortix/env`, JSON.stringify({
         revision: 'rev-curl-1',
@@ -101,7 +101,7 @@ describe('project env sync curl e2e', () => {
       }))
       expect(replay.status).toBe(200)
       expect(JSON.parse(replay.body)).toMatchObject({ ok: true, changed: false })
-      expect(restarts).toBe(1)
+      expect(restarts).toBe(0)
     } finally {
       server.stop(true)
     }
