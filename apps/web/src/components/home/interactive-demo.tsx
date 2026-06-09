@@ -1,11 +1,21 @@
 'use client';
 
+import { Badge } from '@/components/ui/badge';
+import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import { Warp } from '@paper-design/shaders-react';
-import { Blocks, MessageSquare, type LucideIcon } from 'lucide-react';
+import {
+  Blocks,
+  Bot,
+  ChevronRight,
+  Clock,
+  MessageSquare,
+  type LucideIcon,
+} from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { FaUsers } from 'react-icons/fa';
 import { GoHomeFill } from 'react-icons/go';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import type { IconType } from 'react-icons/lib';
@@ -13,6 +23,7 @@ import { MdShield } from 'react-icons/md';
 import { PiChatCircleDotsFill, PiClockCountdownFill } from 'react-icons/pi';
 import { RiCpuLine, RiRobot3Fill } from 'react-icons/ri';
 import { KortixLogo } from '../sidebar/kortix-logo';
+import { Composer } from './interactive-demo/chat/composer';
 import { AUTO_DEMO_PROMPT } from './interactive-demo/chat/scenarios';
 import {
   useDemoConversation,
@@ -21,7 +32,6 @@ import {
 import { AgentsPage } from './interactive-demo/pages/agents-page';
 import { ChannelsPage } from './interactive-demo/pages/channels-page';
 import { ChatPage } from './interactive-demo/pages/chat-page';
-import { HomePage } from './interactive-demo/pages/home-page';
 import { IntegrationsPage } from './interactive-demo/pages/integrations-page';
 import { ModelsPage } from './interactive-demo/pages/models-page';
 import { SchedulingPage } from './interactive-demo/pages/scheduling-page';
@@ -34,13 +44,18 @@ type PageIcon = LucideIcon | IconType;
 const RAIL_ICON = 'size-[1.05rem] lg:size-[1.2rem]';
 const TAB_ICON = 'size-4';
 
+type DemoExtras = {
+  focusedSkill: string | null;
+  onSkillClick: (name: string) => void;
+};
+
 const PAGES: Record<
   PageId,
   {
     label: string;
     Icon: PageIcon;
     context: string;
-    render: (nav: Nav, convo: DemoConversation) => React.ReactNode;
+    render: (nav: Nav, convo: DemoConversation, extras: DemoExtras) => React.ReactNode;
   }
 > = {
   home: {
@@ -54,7 +69,9 @@ const PAGES: Record<
     label: 'Chat',
     Icon: PiChatCircleDotsFill,
     context: 'Ask in plain language and watch an agent do the real work across your tools.',
-    render: (_nav, convo) => <ChatPage convo={convo} />,
+    render: (_nav, convo, extras) => (
+      <ChatPage convo={convo} onSkillClick={extras.onSkillClick} />
+    ),
   },
   agents: {
     label: 'Agents',
@@ -66,7 +83,7 @@ const PAGES: Record<
     label: 'Skills',
     Icon: HiMiniSparkles,
     context: 'Package how your company does a job once \u2014 every agent can reuse it.',
-    render: () => <SkillsPage />,
+    render: (_nav, _convo, extras) => <SkillsPage focusedSkill={extras.focusedSkill} />,
   },
   integrations: {
     label: 'Integrations',
@@ -102,6 +119,21 @@ const PAGES: Record<
   },
 };
 
+function SendGlyph({ className = 'size-3.5' }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      width="24"
+      height="24"
+      fill="currentColor"
+      viewBox="0 0 24 24"
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M20.04 2.323c1.016-.355 1.992.621 1.637 1.637l-5.925 16.93c-.385 1.098-1.915 1.16-2.387.097l-2.859-6.432 4.024-4.025a.75.75 0 0 0-1.06-1.06l-4.025 4.024-6.432-2.859c-1.063-.473-1-2.002.097-2.387z" />
+    </svg>
+  );
+}
+
 const ORDER: PageId[] = [
   'home',
   'chat',
@@ -130,6 +162,73 @@ function TabScallopEdge({ side }: { side: 'left' | 'right' }) {
     </svg>
   );
 }
+
+function HomePage({ nav, convo }: { nav: Nav; convo: DemoConversation }) {
+  const cards: [string, string, LucideIcon | IconType, string | undefined, PageId][] = [
+    ['Integrations', 'Connect the tools your agents use', Blocks, '1', 'integrations'],
+    ['Scheduled tasks', 'Run work on a schedule, 24/7', Clock, '2', 'scheduling'],
+    ['Skills', 'Reusable workflows every agent shares', HiMiniSparkles, '71', 'skills'],
+    ['Channels', 'Run this project from Slack', MessageSquare, undefined, 'channels'],
+    ['Your team', 'Invite people to run and review', FaUsers, '2', 'security'],
+    ['Agents', 'Shape how your agent thinks and acts', Bot, '3', 'agents'],
+  ];
+  const busy = convo.phase === 'thinking' || convo.phase === 'streaming';
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="mx-auto flex min-h-0 w-full max-w-3xl flex-1 flex-col items-center justify-center">
+        <div className="mt-4 flex w-full shrink-0 flex-col items-start justify-start space-y-6">
+          <KortixLogo size={24} variant="logomark" />
+
+          <div>
+            <div className="text-muted-foreground/70 mb-2 px-0.5 text-xs font-medium tracking-wider uppercase">
+              Build out your project
+            </div>
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {cards.map(([title, sub, Icon, count, target]) => (
+                <button
+                  key={title}
+                  type="button"
+                  onClick={() => nav(target)}
+                  className="border-border/70 bg-card hover:border-border hover:bg-muted/30 group flex items-center gap-3 rounded-md border p-3 text-left transition-colors"
+                >
+                  <span className="border-border bg-background flex size-9 shrink-0 items-center justify-center rounded-lg border">
+                    <Icon className="text-foreground/70 size-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="text-foreground flex items-center gap-1.5 text-sm font-medium">
+                      {title}
+                      {count && (
+                        <Badge size="sm" variant="muted">
+                          {count}
+                        </Badge>
+                      )}
+                    </span>
+                    <span className="text-muted-foreground mt-0.5 block truncate text-xs">
+                      {sub}
+                    </span>
+                  </span>
+                  <ChevronRight className="text-muted-foreground/40 group-hover:text-muted-foreground size-4 shrink-0 transition-colors" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="mt-auto w-full">
+          <Composer
+            variant="home"
+            value={convo.draft}
+            onChange={convo.setDraft}
+            onSubmit={() => convo.submit()}
+            onPromptPick={convo.submit}
+            disabled={busy}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function InteractiveDemo({
   gradientbg = true,
   tab = true,
@@ -154,10 +253,20 @@ export function InteractiveDemo({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [active, setActive] = useState<PageId>(activePage || 'home');
+  const [focusedSkill, setFocusedSkill] = useState<string | null>(null);
   const convo = useDemoConversation({ onEnterChat: () => setActive('chat') });
   const rootRef = useRef<HTMLDivElement>(null);
   const autoStarted = useRef(false);
   const page = PAGES[active];
+
+  const handleSkillClick = useCallback((name: string) => {
+    setFocusedSkill(name);
+    setActive('skills');
+  }, []);
+
+  useEffect(() => {
+    if (active !== 'skills') setFocusedSkill(null);
+  }, [active]);
   const tabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
   const mobileTabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
 
@@ -384,7 +493,7 @@ export function InteractiveDemo({
                     transition={{ duration: 0.25, ease: 'easeInOut' }}
                     className="h-full w-full"
                   >
-                    {page.render(setActive, convo)}
+                    {page.render(setActive, convo, { focusedSkill, onSkillClick: handleSkillClick })}
                   </motion.div>
                 </AnimatePresence>
               </div>
@@ -429,7 +538,7 @@ export function InteractiveDemo({
                       transition={{ duration: 0.25, ease: 'easeInOut' }}
                       className="h-full w-full"
                     >
-                      {page.render(setActive, convo)}
+                      {page.render(setActive, convo, { focusedSkill, onSkillClick: handleSkillClick })}
                     </motion.div>
                   </AnimatePresence>
                 </div>

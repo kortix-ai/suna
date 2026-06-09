@@ -5,7 +5,13 @@ import { AssistantTurn, UserBubble } from '../chat/chat-turn';
 import { Composer, HOME_PROMPT_MESSAGES } from '../chat/composer';
 import type { DemoConversation } from '../chat/use-demo-conversation';
 
-export function ChatPage({ convo }: { convo: DemoConversation }) {
+export function ChatPage({
+  convo,
+  onSkillClick,
+}: {
+  convo: DemoConversation;
+  onSkillClick?: (name: string) => void;
+}) {
   const sessionName = convo.scenario?.sessionName ?? 'new-session';
   const busy = convo.phase === 'thinking' || convo.phase === 'streaming';
   const others = HOME_PROMPT_MESSAGES.filter((p) => p !== convo.userText).slice(0, 3);
@@ -19,7 +25,7 @@ export function ChatPage({ convo }: { convo: DemoConversation }) {
 
       <div className="flex-1 space-y-4 overflow-y-auto">
         {convo.userText && <UserBubble text={convo.userText} />}
-        {convo.scenario && <AssistantTurn convo={convo} />}
+        {convo.scenario && <AssistantTurn convo={convo} onSkillClick={onSkillClick} />}
 
         {convo.phase === 'done' && others.length > 0 && (
           <div className="pt-2">

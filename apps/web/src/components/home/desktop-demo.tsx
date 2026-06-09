@@ -7,7 +7,7 @@ export function DesktopDemo({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'border-card bg-background relative aspect-video h-[min(72vh,520px)] w-full overflow-hidden rounded-[calc(var(--radius)+2px)] border-4 md:h-full',
+        'border-card bg-background relative aspect-video h-[min(92vh,820px)] w-full overflow-hidden rounded-[calc(var(--radius)+2px)] border-4 sm:h-[min(72vh,520px)] md:h-full',
         className,
       )}
     >

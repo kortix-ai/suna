@@ -33,5 +33,7 @@ export type DemoScenario = {
   prompt: string;
   sessionName: string;
   thinkingLabel: string;
+  /** Skill names from the Skills catalog invoked during this scenario. */
+  skills?: string[];
   steps: DemoStep[];
 };

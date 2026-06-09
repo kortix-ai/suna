@@ -6,6 +6,7 @@ import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
 import { AnimatePresence, motion } from 'motion/react';
 import { Reveal } from '../../reveal';
+import { SkillsRead } from './skill-reads';
 import { ToolCard } from './tool-card';
 import type { DemoConversation } from './use-demo-conversation';
 
@@ -21,11 +22,18 @@ export function UserBubble({ text }: { text: string }) {
   );
 }
 
-export function AssistantTurn({ convo }: { convo: DemoConversation }) {
+export function AssistantTurn({
+  convo,
+  onSkillClick,
+}: {
+  convo: DemoConversation;
+  onSkillClick?: (name: string) => void;
+}) {
   const sc = convo.scenario;
   if (!sc) return null;
   const isDone = convo.phase === 'done';
   const thinking = convo.phase === 'thinking';
+  const skills = sc.skills ?? [];
 
   return (
     <Reveal>
@@ -49,7 +57,7 @@ export function AssistantTurn({ convo }: { convo: DemoConversation }) {
       </div>
 
       <AnimatePresence>
-        {thinking && (
+        {thinking && skills.length === 0 && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -70,6 +78,9 @@ export function AssistantTurn({ convo }: { convo: DemoConversation }) {
       </AnimatePresence>
 
       <div className="space-y-3">
+        {skills.length > 0 && (
+          <SkillsRead skills={skills} phase={convo.phase} onSkillClick={onSkillClick} />
+        )}
         {sc.steps.map((step, i) => {
           if (i >= convo.startedSteps) return null;
           if (step.kind === 'tool') {

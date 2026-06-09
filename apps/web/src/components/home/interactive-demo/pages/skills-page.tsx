@@ -2,15 +2,32 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { Plus, Search } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import { CORE_SKILLS, GKW_SKILLS } from '../data';
 import { PageHead } from '../primitives';
 
-function SkillItem({ name, desc }: { name: string; desc: string }) {
+export const demoSkillId = (name: string) => `demo-skill-${name}`;
+
+function SkillItem({
+  name,
+  desc,
+  focused,
+}: {
+  name: string;
+  desc: string;
+  focused?: boolean;
+}) {
   return (
-    <div className="border-border/60 bg-card hover:bg-muted/30 flex items-start gap-2.5 rounded-md border p-2.5 transition-colors">
+    <div
+      id={demoSkillId(name)}
+      className={cn(
+        'border-border/60 bg-card hover:bg-muted/30 flex items-start gap-2.5 rounded-md border p-2.5 transition-colors',
+        focused && 'border-kortix-green/60 bg-kortix-green/5 ring-kortix-green/40 ring-2',
+      )}
+    >
       <span className="border-border bg-muted/40 mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md border">
         <HiMiniSparkles className="text-foreground/70 size-3" />
       </span>
@@ -22,9 +39,20 @@ function SkillItem({ name, desc }: { name: string; desc: string }) {
   );
 }
 
-export function SkillsPage() {
+export function SkillsPage({ focusedSkill }: { focusedSkill?: string | null } = {}) {
   const [q, setQ] = useState('');
   const query = q.trim().toLowerCase();
+
+  useEffect(() => {
+    if (!focusedSkill) return;
+    setQ('');
+    const t = window.setTimeout(() => {
+      document
+        .getElementById(demoSkillId(focusedSkill))
+        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [focusedSkill]);
   const match = ([n, d]: [string, string]) =>
     !query || n.toLowerCase().includes(query) || d.toLowerCase().includes(query);
   const core = CORE_SKILLS.filter(match);
@@ -61,13 +89,21 @@ export function SkillsPage() {
         )}
       </div>
 
-      {core.length > 0 && <SkillGroup label="Core" count={core.length} skills={core} />}
+      {core.length > 0 && (
+        <SkillGroup
+          label="Core"
+          count={core.length}
+          skills={core}
+          focusedSkill={focusedSkill}
+        />
+      )}
       {gkw.length > 0 && (
         <SkillGroup
           label="General Knowledge Worker"
           count={gkw.length}
           skills={gkw}
           className="mt-5"
+          focusedSkill={focusedSkill}
         />
       )}
       {core.length === 0 && gkw.length === 0 && (
@@ -84,11 +120,13 @@ function SkillGroup({
   count,
   skills,
   className,
+  focusedSkill,
 }: {
   label: string;
   count: number;
   skills: [string, string][];
   className?: string;
+  focusedSkill?: string | null;
 }) {
   return (
     <div className={className}>
@@ -100,7 +138,7 @@ function SkillGroup({
       </div>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {skills.map(([n, d]) => (
-          <SkillItem key={n} name={n} desc={d} />
+          <SkillItem key={n} name={n} desc={d} focused={focusedSkill === n} />
         ))}
       </div>
     </div>

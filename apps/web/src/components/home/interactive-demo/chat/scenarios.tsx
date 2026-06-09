@@ -1,5 +1,15 @@
-import { Database, Download, FileText, GitPullRequest, Mail, Search, Users } from 'lucide-react';
-import type { DemoScenario } from '../types';
+import {
+  Blocks,
+  Database,
+  Download,
+  FileText,
+  GitPullRequest,
+  Mail,
+  MessageSquare,
+  Users,
+} from 'lucide-react';
+import type { DemoScenario, DemoStep } from '../types';
+import { matchSkillsFromPrompt } from './match-skills';
 import { FileResult, ListResult, SentResult } from './result-card';
 
 export const SCENARIOS: DemoScenario[] = [
@@ -8,6 +18,7 @@ export const SCENARIOS: DemoScenario[] = [
     prompt: 'Build the Q3 board deck from our latest financials.',
     sessionName: 'q3-board-deck',
     thinkingLabel: 'Reading the latest financials…',
+    skills: ['sql-queries', 'financial-statements', 'visualization', 'pptx'],
     steps: [
       {
         id: 'deck-sql',
@@ -42,6 +53,7 @@ export const SCENARIOS: DemoScenario[] = [
     prompt: "Summarize this week's pipeline updates…",
     sessionName: 'pipeline-weekly',
     thinkingLabel: 'Reading CRM activity…',
+    skills: ['customer-research', 'daily-briefing', 'stakeholder-comms'],
     steps: [
       {
         id: 'pipe-crm',
@@ -64,6 +76,7 @@ export const SCENARIOS: DemoScenario[] = [
     prompt: 'What changed in our repos since Monday?',
     sessionName: 'repo-changes',
     thinkingLabel: 'Scanning commits since Monday…',
+    skills: ['coding-and-data', 'validation'],
     steps: [
       {
         id: 'repo-gh',
@@ -94,6 +107,7 @@ export const SCENARIOS: DemoScenario[] = [
     prompt: 'Run the weekly finance report and email the team…',
     sessionName: 'finance-weekly',
     thinkingLabel: 'Compiling the weekly numbers…',
+    skills: ['sql-queries', 'financial-statements', 'xlsx', 'stakeholder-comms'],
     steps: [
       {
         id: 'fin-sql',
@@ -127,23 +141,80 @@ export const AUTO_DEMO_PROMPT = SCENARIOS[0].prompt;
 
 export const GENERIC_ID = 'generic';
 
+function genericToolStep(skills: string[]): DemoStep {
+  const lead = skills[0];
+  const bySkill: Record<string, DemoStep> = {
+    'sql-queries': {
+      id: 'gen-sql',
+      kind: 'tool',
+      tool: 'query_warehouse',
+      icon: Database,
+      title: 'Pulling warehouse context',
+      durationMs: 1400,
+    },
+    'coding-and-data': {
+      id: 'gen-gh',
+      kind: 'tool',
+      tool: 'github.list_commits',
+      icon: GitPullRequest,
+      title: 'Scanning recent repo activity',
+      durationMs: 1400,
+    },
+    'kortix-slack': {
+      id: 'gen-slack',
+      kind: 'tool',
+      tool: 'slack.conversations_history',
+      icon: MessageSquare,
+      title: 'Reading the Slack thread',
+      durationMs: 1300,
+    },
+    'customer-research': {
+      id: 'gen-crm',
+      kind: 'tool',
+      tool: 'hubspot.search',
+      icon: Users,
+      title: 'Fetching account context',
+      durationMs: 1400,
+    },
+    'financial-statements': {
+      id: 'gen-fin',
+      kind: 'tool',
+      tool: 'query_warehouse',
+      icon: Database,
+      title: 'Loading finance.weekly',
+      durationMs: 1400,
+    },
+  };
+  return (
+    bySkill[lead] ?? {
+      id: 'gen-route',
+      kind: 'tool',
+      tool: 'kortix.route',
+      icon: Blocks,
+      title: 'Routing across connected tools',
+      durationMs: 1200,
+    }
+  );
+}
+
+function genericThinkingLabel(skills: string[]): string {
+  if (skills.length === 1) return `Reading ${skills[0]}…`;
+  return `Reading ${skills.slice(0, 2).join(', ')}…`;
+}
+
 export function matchScenario(text: string): DemoScenario {
   const found = SCENARIOS.find((s) => s.prompt.trim().toLowerCase() === text.trim().toLowerCase());
   if (found) return found;
+
+  const skills = matchSkillsFromPrompt(text);
   return {
     id: GENERIC_ID,
     prompt: text,
     sessionName: 'new-session',
-    thinkingLabel: 'Working on your request…',
+    thinkingLabel: genericThinkingLabel(skills),
+    skills,
     steps: [
-      {
-        id: 'gen-search',
-        kind: 'tool',
-        tool: 'web.search',
-        icon: Search,
-        title: 'Researching the web',
-        durationMs: 1500,
-      },
+      genericToolStep(skills),
       {
         id: 'gen-text',
         kind: 'text',

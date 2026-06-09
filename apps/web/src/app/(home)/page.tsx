@@ -716,7 +716,7 @@ export default function Home() {
                           <div className="bg-muted-foreground absolute bottom-3.5 left-1/2 h-1 w-[30%] -translate-x-1/2 rounded-full" />
                         </div>
 
-                        <div className="border-card relative z-1 aspect-video h-[min(95vw,480px)] w-[100%] shrink-0 overflow-hidden rounded-[calc(var(--radius)+2px)] border-5 shadow-sm">
+                        <div className="border-card relative z-1 aspect-video h-[min(95vw,480px)] w-[100%] shrink-0 overflow-hidden rounded-[calc(var(--radius)+2px)] border-4 shadow-sm">
                           <InteractiveDemo
                             gradientbg={false}
                             tab={false}
