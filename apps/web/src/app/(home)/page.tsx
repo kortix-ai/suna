@@ -622,7 +622,7 @@ export default function Home() {
 
         <section
           id={PLATFORM_SECTION_ID}
-          className="mx-auto flex max-w-6xl scroll-mt-24 flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+          className="mx-auto flex max-w-6xl scroll-mt-24 flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0"
         >
           <Reveal>
             <div className="mb-12 max-w-2xl">
@@ -984,7 +984,7 @@ export default function Home() {
 
         <section
           id="company-as-code"
-          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0"
         >
           <Reveal>
             <div className="mb-12 max-w-2xl">
@@ -1058,7 +1058,7 @@ export default function Home() {
 
         <section
           id="how-it-works"
-          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0"
         >
           <Reveal>
             <div className="mb-8 max-w-2xl">
@@ -1104,7 +1104,7 @@ export default function Home() {
 
         <section
           id="workspace-map"
-          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0"
         >
           <Reveal>
             <div className="mb-12 max-w-2xl">
@@ -1218,551 +1218,9 @@ export default function Home() {
           </Reveal>
         </section>
 
-        {/* <section id="surfaces" className="py-16 sm:py-24">
-          <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 sm:gap-12">
-            <Reveal>
-              <div className="mb-12 max-w-2xl">
-                <Eyebrow>{tHome('differentScreenEyebrow')}</Eyebrow>
-                <h2 className="mt-3 text-3xl font-medium text-balance md:text-4xl lg:tracking-tight">
-                  {tHome('differentScreenSectionTitle')}
-                </h2>
-                <p className="text-muted-foreground mt-4 text-lg text-balance">
-                  {tHome('differentScreenSectionDescription')}
-                </p>
-              </div>
-            </Reveal>
-          </div>
-
-          <div ref={screenCardsRef} className="m-auto hidden w-full lg:block">
-            <div className="flex w-full items-center justify-center px-6">
-              <div className="relative mx-auto grid w-full grid-cols-16 place-items-center items-center gap-4 overflow-visible">
-                <motion.div
-                  style={{ x: mobileCardX }}
-                  className="border-muted-foreground dark:border-card relative z-3 col-span-3 flex aspect-auto h-full shrink-0 items-center justify-center overflow-hidden rounded-xl border-4 shadow-sm"
-                >
-                  <img
-                    src="https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/ai-workspace-mobile"
-                    alt="Mobile"
-                    className="h-full w-full object-cover"
-                  />
-
-                  <div className="bg-muted-foreground absolute bottom-3.5 h-1 w-[30%] rounded-full" />
-                </motion.div>
-
-                <motion.div
-                  style={{ x: middleCardX }}
-                  transition={{ duration: 0.5 }}
-                  className="border-primary dark:border-card bg-primary dark:bg-card relative z-2 col-span-6 flex aspect-video h-full w-full min-w-0 flex-1 flex-row items-center justify-center gap-1 rounded-[calc(var(--radius)+2px)] border-4 p-0.5 pl-0 shadow-sm"
-                >
-                  <div className="flex h-full min-h-0 w-12 flex-col items-center justify-start gap-5 py-2">
-                    <FaUsers className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
-                    <PiChatsCircleFill className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
-                    <PiBellFill className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
-                    <PiFilesFill className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
-                    <FiBookmark className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
-                    <HiOutlineDotsHorizontal className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
-                  </div>
-                  <div
-                    ref={chatDemoDesktopRef}
-                    className="bg-background flex h-full min-h-0 flex-1 flex-col items-end justify-end space-y-4 rounded-md p-4"
-                  >
-                    <AnimatePresence initial={false}>
-                      {visibleChatMessages >= 1 ? (
-                        <motion.div
-                          key="chat-message-1"
-                          initial={{
-                            opacity: 0,
-                            y: 10,
-                          }}
-                          animate={{
-                            opacity: 1,
-                            y: 0,
-                          }}
-                          transition={{
-                            duration: 0.5,
-                            ease: 'easeIn',
-                          }}
-                          className="flex w-full flex-row items-start justify-start gap-2"
-                        >
-                          <span className="bg-primary flex size-[2.1rem] shrink-0 items-center justify-center rounded-md">
-                            <KortixLogo size={16} className="text-background" />
-                          </span>
-                          <div className="flex min-w-0 flex-1 flex-col gap-0">
-                            <div className="flex flex-row items-center justify-start gap-1">
-                              <span
-                                className="text-foreground block truncate text-xs font-semibold"
-                                style={{
-                                  textBox: 'trim-both',
-                                }}
-                              >
-                                Kortix
-                              </span>
-                              <span
-                                className="bg-muted rounded-[0.2rem] p-[0.07rem] px-1 py-[0.04rem] text-[7px]"
-                                style={{ textBox: 'trim-both' }}
-                              >
-                                APP
-                              </span>
-                              <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
-                                {new Date(Date.now()).toLocaleDateString('en-US', {
-                                  year: 'numeric',
-                                  month: 'long',
-                                  day: 'numeric',
-                                })}
-                              </span>
-                            </div>
-                            <span
-                              className="text-muted-foreground block truncate text-xs font-medium"
-                              style={{
-                                textBox: 'trim-both',
-                              }}
-                            >
-                              Hey! 👋 What can I help you with?
-                            </span>
-                          </div>
-                        </motion.div>
-                      ) : null}
-
-                      {visibleChatMessages >= 2 ? (
-                        <motion.div
-                          key="chat-message-2"
-                          initial={{
-                            opacity: 0,
-                            y: 10,
-                          }}
-                          animate={{
-                            opacity: 1,
-                            y: 0,
-                          }}
-                          transition={{
-                            duration: 0.5,
-                            ease: 'easeIn',
-                          }}
-                          className="flex w-full flex-row items-start justify-start gap-2"
-                        >
-                          <span className="bg-primary relative flex size-[2.1rem] shrink-0 items-center justify-center overflow-hidden rounded-md">
-                            <Image
-                              src="https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/marko.png"
-                              alt="Marko Kraemer"
-                              className="size-full"
-                              fill
-                            />
-                          </span>
-
-                          <div className="flex min-w-0 flex-1 flex-col gap-0">
-                            <div className="flex flex-row items-center justify-start gap-1">
-                              <span
-                                className="text-foreground block truncate text-xs font-semibold"
-                                style={{
-                                  textBox: 'trim-both',
-                                }}
-                              >
-                                Marko
-                              </span>
-                              <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
-                                {new Date(Date.now()).toLocaleDateString('en-US', {
-                                  year: 'numeric',
-                                  month: 'long',
-                                  day: 'numeric',
-                                })}
-                              </span>
-                            </div>
-                            <span
-                              className="text-muted-foreground block truncate text-xs font-medium"
-                              style={{
-                                textBox: 'trim-both',
-                              }}
-                            >
-                              What happened while I was sleeping?
-                            </span>
-                          </div>
-                        </motion.div>
-                      ) : null}
-
-                      {visibleChatMessages >= 3 ? (
-                        <motion.div
-                          key="chat-message-3"
-                          initial={{
-                            opacity: 0,
-                            y: 10,
-                          }}
-                          animate={{
-                            opacity: 1,
-                            y: 0,
-                          }}
-                          transition={{
-                            duration: 0.3,
-                            ease: 'easeIn',
-                          }}
-                          className="flex w-full flex-row items-start justify-start gap-2"
-                        >
-                          <span className="bg-primary flex size-[2.1rem] shrink-0 items-center justify-center rounded-md">
-                            <KortixLogo size={16} className="text-background" />
-                          </span>
-                          <div className="flex min-w-0 flex-1 flex-col gap-0">
-                            <div className="flex flex-row items-center justify-start gap-1">
-                              <span
-                                className="text-foreground block truncate text-xs font-semibold"
-                                style={{
-                                  textBox: 'trim-both',
-                                }}
-                              >
-                                Kortix
-                              </span>
-                              <span
-                                className="bg-muted rounded-[0.2rem] p-[0.07rem] px-1 py-[0.04rem] text-[7px]"
-                                style={{ textBox: 'trim-both' }}
-                              >
-                                APP
-                              </span>
-                              <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
-                                {new Date(Date.now()).toLocaleDateString('en-US', {
-                                  year: 'numeric',
-                                  month: 'long',
-                                  day: 'numeric',
-                                })}
-                              </span>
-                            </div>
-                            <div
-                              className="text-muted-foreground block text-xs font-medium"
-                              style={{
-                                textBox: 'trim-both',
-                              }}
-                            >
-                              <ChatMorningBriefReply
-                                markdown={tHome('chatMorningBriefMarkdown') as string}
-                                thinkingText={tHome('chatMorningBriefThinking') as string}
-                              />
-                            </div>
-                          </div>
-                        </motion.div>
-                      ) : null}
-                    </AnimatePresence>
-
-                    <div className="border-border bg-card w-full shrink-0 rounded-(--radius-lg) border">
-                      <div className="px-3 py-2">
-                        <Textarea
-                          minHeight={20}
-                          maxHeight={10}
-                          placeholder="Type your message here..."
-                          className="resize-none rounded-none border-none bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
-                        />
-                      </div>
-                      <div className="flex items-center justify-between px-1.5 pb-1.5">
-                        <div className="text-muted-foreground flex items-center">
-                          <span className="flex size-7 items-center justify-center">
-                            <Plus className="size-[1.05rem] stroke-[1.5]" />
-                          </span>
-                          <span className="flex size-7 items-center justify-center text-[0.8rem] font-semibold tracking-tight">
-                            Aa
-                          </span>
-                          <span className="flex size-7 items-center justify-center">
-                            <Smile className="size-[1.05rem] stroke-[1.5]" />
-                          </span>
-                          <span className="flex size-7 items-center justify-center">
-                            <AtSign className="size-[1.05rem] stroke-[1.5]" />
-                          </span>
-                          <span className="flex size-7 items-center justify-center">
-                            <MoreHorizontal className="size-[1.05rem] stroke-[1.5]" />
-                          </span>
-                        </div>
-                        <div className="text-muted-foreground flex items-center">
-                          <span className="flex size-7 items-center justify-center">
-                            <svg
-                              className="size-[1.05rem]"
-                              width="24"
-                              height="24"
-                              fill="currentColor"
-                              viewBox="0 0 24 24"
-                              xmlns="http://www.w3.org/2000/svg"
-                            >
-                              <path d="M20.04 2.323c1.016-.355 1.992.621 1.637 1.637l-5.925 16.93c-.385 1.098-1.915 1.16-2.387.097l-2.859-6.432 4.024-4.025a.75.75 0 0 0-1.06-1.06l-4.025 4.024-6.432-2.859c-1.063-.473-1-2.002.097-2.387z" />
-                            </svg>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-
-                <motion.div
-                  style={{ x: desktopCardX }}
-                  transition={{ duration: 0.5 }}
-                  className="border-primary dark:border-card relative z-1 col-span-7 aspect-video h-full w-full min-w-0 flex-1 rounded-[calc(var(--radius)+2px)] border-5 shadow-sm"
-                >
-                  <InteractiveDemo
-                    gradientbg={false}
-                    tab={false}
-                    className="max-w-full"
-                    contentClassName="max-w-full md:p-0 lg:p-0 p-0 "
-                    innerClassName="border-none shadow-none bg-primary dark:bg-card rounded-none"
-                    aside={false}
-                  />
-                </motion.div>
-              </div>
-            </div>
-          </div>
-
-          <div className="scrollbar-hide w-full overflow-x-auto scroll-smooth pb-12 lg:hidden">
-            <div className="flex w-full gap-2 pl-6">
-              <div className="border-primary dark:border-card relative aspect-9/19.5 h-[min(95vw,480px)] shrink-0 overflow-hidden rounded-xl border-4 shadow-sm">
-                <img
-                  src="https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/ai-workspace-mobile"
-                  alt="Mobile"
-                  className="h-full w-full object-cover"
-                />
-                <div className="bg-muted-foreground absolute bottom-3.5 left-1/2 h-1 w-[30%] -translate-x-1/2 rounded-full" />
-              </div>
-
-              <div className="border-primary dark:border-card bg-primary dark:bg-card relative z-2 flex aspect-video h-[min(95vw,480px)] w-[100%] shrink-0 flex-row items-center justify-center gap-1 overflow-y-auto rounded-[calc(var(--radius)+2px)] border-4 p-0.5 pl-0 shadow-sm">
-                <div className="flex h-full min-h-0 w-12 flex-col items-center justify-start gap-5 py-2">
-                  <FaUsers className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
-                  <PiChatsCircleFill className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
-                  <PiBellFill className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
-                  <PiFilesFill className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
-                  <FiBookmark className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
-                  <HiOutlineDotsHorizontal className="text-background/80 dark:text-primary/80 size-[1.2rem]" />
-                </div>
-                <div
-                  ref={chatDemoMobileRef}
-                  className="bg-background flex h-full min-h-0 flex-1 flex-col items-end justify-end space-y-4 rounded-md p-4"
-                >
-                  <AnimatePresence initial={false}>
-                    {visibleChatMessages >= 1 ? (
-                      <motion.div
-                        key="chat-message-1"
-                        initial={{
-                          opacity: 0,
-                          y: 10,
-                        }}
-                        animate={{
-                          opacity: 1,
-                          y: 0,
-                        }}
-                        transition={{
-                          duration: 0.5,
-                          ease: 'easeIn',
-                        }}
-                        className="flex w-full flex-row items-start justify-start gap-2"
-                      >
-                        <span className="bg-primary flex size-[2.1rem] shrink-0 items-center justify-center rounded-md">
-                          <KortixLogo size={16} className="text-background" />
-                        </span>
-                        <div className="flex min-w-0 flex-1 flex-col gap-0">
-                          <div className="flex flex-row items-center justify-start gap-1">
-                            <span
-                              className="text-foreground block truncate text-xs font-semibold"
-                              style={{
-                                textBox: 'trim-both',
-                              }}
-                            >
-                              Kortix
-                            </span>
-                            <span
-                              className="bg-muted rounded-[0.2rem] p-[0.07rem] px-1 py-[0.04rem] text-[7px]"
-                              style={{ textBox: 'trim-both' }}
-                            >
-                              APP
-                            </span>
-                            <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
-                              {new Date(Date.now()).toLocaleDateString('en-US', {
-                                year: 'numeric',
-                                month: 'long',
-                                day: 'numeric',
-                              })}
-                            </span>
-                          </div>
-                          <span
-                            className="text-muted-foreground block truncate text-xs font-medium"
-                            style={{
-                              textBox: 'trim-both',
-                            }}
-                          >
-                            Hey! 👋 What can I help you with?
-                          </span>
-                        </div>
-                      </motion.div>
-                    ) : null}
-
-                    {visibleChatMessages >= 2 ? (
-                      <motion.div
-                        key="chat-message-2"
-                        initial={{
-                          opacity: 0,
-                          y: 10,
-                        }}
-                        animate={{
-                          opacity: 1,
-                          y: 0,
-                        }}
-                        transition={{
-                          duration: 0.5,
-                          ease: 'easeIn',
-                        }}
-                        className="flex w-full flex-row items-start justify-start gap-2"
-                      >
-                        <span className="bg-primary relative flex size-[2.1rem] shrink-0 items-center justify-center overflow-hidden rounded-md">
-                          <Image
-                            src="https://ke4pydspzeg0nm0o.public.blob.vercel-storage.com/marko.png"
-                            alt="Marko Kraemer"
-                            className="size-full"
-                            fill
-                          />
-                        </span>
-
-                        <div className="flex min-w-0 flex-1 flex-col gap-0">
-                          <div className="flex flex-row items-center justify-start gap-1">
-                            <span
-                              className="text-foreground block truncate text-xs font-semibold"
-                              style={{
-                                textBox: 'trim-both',
-                              }}
-                            >
-                              Marko
-                            </span>
-                            <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
-                              {new Date(Date.now()).toLocaleDateString('en-US', {
-                                year: 'numeric',
-                                month: 'long',
-                                day: 'numeric',
-                              })}
-                            </span>
-                          </div>
-                          <span
-                            className="text-muted-foreground block truncate text-xs font-medium"
-                            style={{
-                              textBox: 'trim-both',
-                            }}
-                          >
-                            What happened while I was sleeping?
-                          </span>
-                        </div>
-                      </motion.div>
-                    ) : null}
-
-                    {visibleChatMessages >= 3 ? (
-                      <motion.div
-                        key="chat-message-3"
-                        initial={{
-                          opacity: 0,
-                          y: 10,
-                        }}
-                        animate={{
-                          opacity: 1,
-                          y: 0,
-                        }}
-                        transition={{
-                          duration: 0.3,
-                          ease: 'easeIn',
-                        }}
-                        className="flex w-full flex-row items-start justify-start gap-2"
-                      >
-                        <span className="bg-primary flex size-[2.1rem] shrink-0 items-center justify-center rounded-md">
-                          <KortixLogo size={16} className="text-background" />
-                        </span>
-                        <div className="flex min-w-0 flex-1 flex-col gap-0">
-                          <div className="flex flex-row items-center justify-start gap-1">
-                            <span
-                              className="text-foreground block truncate text-xs font-semibold"
-                              style={{
-                                textBox: 'trim-both',
-                              }}
-                            >
-                              Kortix
-                            </span>
-                            <span
-                              className="bg-muted rounded-[0.2rem] p-[0.07rem] px-1 py-[0.04rem] text-[7px]"
-                              style={{ textBox: 'trim-both' }}
-                            >
-                              APP
-                            </span>
-                            <span className="text-[9px]" style={{ textBox: 'trim-both' }}>
-                              {new Date(Date.now()).toLocaleDateString('en-US', {
-                                year: 'numeric',
-                                month: 'long',
-                                day: 'numeric',
-                              })}
-                            </span>
-                          </div>
-                          <div
-                            className="text-muted-foreground block text-xs font-medium"
-                            style={{
-                              textBox: 'trim-both',
-                            }}
-                          >
-                            <ChatMorningBriefReply
-                              markdown={tHome('chatMorningBriefMarkdown') as string}
-                              thinkingText={tHome('chatMorningBriefThinking') as string}
-                            />
-                          </div>
-                        </div>
-                      </motion.div>
-                    ) : null}
-                  </AnimatePresence>
-
-                  <div className="border-border bg-card w-full shrink-0 rounded-(--radius-lg) border">
-                    <div className="px-3 py-2">
-                      <Textarea
-                        minHeight={20}
-                        maxHeight={10}
-                        placeholder="Type your message here..."
-                        className="resize-none rounded-none border-none bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between px-1.5 pb-1.5">
-                      <div className="text-muted-foreground flex items-center">
-                        <span className="flex size-7 items-center justify-center">
-                          <Plus className="size-[1.05rem] stroke-[1.5]" />
-                        </span>
-                        <span className="flex size-7 items-center justify-center text-[0.8rem] font-semibold tracking-tight">
-                          Aa
-                        </span>
-                        <span className="flex size-7 items-center justify-center">
-                          <Smile className="size-[1.05rem] stroke-[1.5]" />
-                        </span>
-                        <span className="flex size-7 items-center justify-center">
-                          <AtSign className="size-[1.05rem] stroke-[1.5]" />
-                        </span>
-                        <span className="flex size-7 items-center justify-center">
-                          <MoreHorizontal className="size-[1.05rem] stroke-[1.5]" />
-                        </span>
-                      </div>
-                      <div className="text-muted-foreground flex items-center">
-                        <span className="flex size-7 items-center justify-center">
-                          <svg
-                            className="size-[1.05rem]"
-                            width="24"
-                            height="24"
-                            fill="currentColor"
-                            viewBox="0 0 24 24"
-                            xmlns="http://www.w3.org/2000/svg"
-                          >
-                            <path d="M20.04 2.323c1.016-.355 1.992.621 1.637 1.637l-5.925 16.93c-.385 1.098-1.915 1.16-2.387.097l-2.859-6.432 4.024-4.025a.75.75 0 0 0-1.06-1.06l-4.025 4.024-6.432-2.859c-1.063-.473-1-2.002.097-2.387z" />
-                          </svg>
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-primary dark:border-card relative z-1 aspect-video h-[min(95vw,480px)] w-[100%] shrink-0 overflow-hidden rounded-[calc(var(--radius)+2px)] border-5 shadow-sm">
-                <InteractiveDemo
-                  gradientbg={false}
-                  tab={false}
-                  className="w-full max-w-full"
-                  contentClassName="max-w-full mx-0 md:p-0 lg:p-0 p-0 "
-                  innerClassName="border-none shadow-none bg-primary dark:bg-card rounded-none"
-                  aside={false}
-                />
-              </div>
-            </div>
-          </div>
-        </section> */}
-
         <section
           id="integrations"
-          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0"
         >
           <Reveal>
             <div className="mb-8 max-w-2xl">
@@ -1781,7 +1239,7 @@ export default function Home() {
 
         <section
           id="enterprise"
-          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0"
         >
           <Reveal>
             <div className="mb-12 max-w-2xl">
@@ -1839,7 +1297,7 @@ export default function Home() {
 
         <section
           id="two-paths"
-          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0"
         >
           <Reveal>
             <div className="mb-12 max-w-2xl">
@@ -1905,7 +1363,7 @@ export default function Home() {
 
         <section
           id="use-cases"
-          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24"
+          className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0"
         >
           <Reveal>
             <div className="mb-2 max-w-2xl">
@@ -2042,7 +1500,7 @@ export default function Home() {
           </Reveal>
         </section>
 
-        <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24">
+        <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">
           <Reveal>
             <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
               <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">

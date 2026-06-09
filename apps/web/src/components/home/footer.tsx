@@ -1,72 +1,110 @@
 'use client';
 
-import { Icon } from '@/features/icon/icon';
+import { cn } from '@/lib/utils';
 import Link from 'next/link';
-import { Button } from '../ui/marketing/button';
 import { ThemeToggle } from './theme-toggle';
+
+type FooterLinkItem = {
+  label: string;
+  href: string;
+  external?: boolean;
+};
+
+type FooterSection = {
+  title: string;
+  links: FooterLinkItem[];
+};
+
+const FOOTER_SECTIONS: FooterSection[] = [
+  {
+    title: 'Product',
+    links: [
+      { label: 'CLI', href: '/developers' },
+      { label: 'Developer', href: '/developers' },
+      { label: 'Enterprise', href: '/enterprise' },
+      { label: 'Pricing', href: '/pricing' },
+    ],
+  },
+  {
+    title: 'Resources',
+    links: [
+      { label: 'Blog', href: '/blog' },
+      { label: 'Changelog', href: '/changelog' },
+      { label: 'Docs', href: '/docs' },
+      { label: 'Brand', href: '/design-system' },
+      { label: 'Status', href: 'https://status.kortix.com', external: true },
+    ],
+  },
+  {
+    title: 'Legal',
+    links: [
+      { label: 'Terms', href: '/legal?tab=terms' },
+      { label: 'Privacy', href: '/legal?tab=privacy' },
+    ],
+  },
+  {
+    title: 'Connect',
+    links: [
+      { label: 'X', href: 'https://x.com/kortix', external: true },
+      { label: 'LinkedIn', href: 'https://linkedin.com/company/kortix', external: true },
+    ],
+  },
+];
+
+function FooterLink({ label, href, external }: FooterLinkItem) {
+  const className = cn('group inline-block py-1 text-sm text-foreground transition-colors ');
+
+  if (external) {
+    return (
+      <Link href={href} target="_blank" rel="noopener noreferrer" className={className}>
+        {label}
+        <span className="inline-block opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+          &nbsp;↗
+        </span>
+      </Link>
+    );
+  }
+
+  return (
+    <Link href={href} className={className}>
+      {label}
+      <span className="inline-block opacity-0 transition-opacity duration-150 group-hover:opacity-100">
+        &nbsp;↗
+      </span>
+    </Link>
+  );
+}
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="border-border w-full border-t">
-      <div className="mx-auto max-w-6xl px-6 py-8 lg:px-0">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-muted-foreground flex flex-row-reverse flex-wrap items-center justify-between gap-x-4 gap-y-2 text-sm sm:flex-row">
-            <span>&copy; {currentYear} Kortix</span>
-            <div className="*:text-muted-foreground *:hover:text-foreground flex items-center gap-x-4 *:transition-colors *:hover:no-underline">
-              <Button variant="link" asChild size="xs" className="m-0 p-0">
-                <Link href="/support">Support</Link>
-              </Button>
-              <Button variant="link" asChild size="xs" className="m-0 p-0">
-                <Link href="/legal?tab=privacy">Privacy</Link>
-              </Button>
-
-              <Button variant="link" asChild size="xs" className="m-0 p-0">
-                <Link href="/legal?tab=terms">Terms</Link>
-              </Button>
-
-              <Button variant="link" asChild size="xs" className="m-0 p-0">
-                <Link href="https://status.kortix.com" target="_blank" rel="noopener noreferrer">
-                  Status
-                </Link>
-              </Button>
-            </div>
+    <footer id="site-footer" className="bg-card relative px-6 pt-12 pb-12 md:pb-16">
+      <div className="mx-auto mb-12 max-w-6xl lg:px-0">
+        <nav>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-8 md:grid-cols-5">
+            {FOOTER_SECTIONS.map((section) => (
+              <div key={section.title}>
+                <h3 className="text-muted-foreground pb-2 text-sm">{section.title}</h3>
+                <ul className="space-y-0">
+                  {section.links.map((link) => (
+                    <li key={link.label}>
+                      <FooterLink {...link} />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
           </div>
+        </nav>
+      </div>
 
-          <div className="flex items-center justify-between gap-4 md:justify-start">
-            <div className="flex items-center gap-2">
-              <Link
-                href="https://github.com/kortix-ai/suna"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="GitHub"
-                className="text-foreground hover:text-foreground flex size-7 items-center justify-center rounded transition-colors [&>svg]:size-5"
-              >
-                <Icon.Github />
-              </Link>
-              <Link
-                href="https://discord.com/invite/RvFhXUdZ9H"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="Discord"
-                className="text-muted-foreground hover:text-foreground flex size-7 items-center justify-center rounded transition-colors [&>svg]:size-5"
-              >
-                <Icon.Discord />
-              </Link>
-              <Link
-                href="https://x.com/kortix"
-                target="_blank"
-                rel="noopener noreferrer"
-                aria-label="X"
-                className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center rounded transition-colors [&>svg]:size-5"
-              >
-                <Icon.Twitter />
-              </Link>
-            </div>
-            <ThemeToggle variant="compact" />
-          </div>
+      <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 md:flex-row md:items-center lg:px-0">
+        <div className="text-muted-foreground flex items-center gap-3 text-base">
+          <small>&copy; {currentYear} Kortix</small>
         </div>
+
+        <ThemeToggle variant="compact" />
       </div>
     </footer>
   );
