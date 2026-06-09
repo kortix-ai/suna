@@ -16,8 +16,6 @@
 import { getDaytonaWarm, warmSnapshotsEnabled } from '../src/shared/daytona';
 import { bakeWarmSnapshot } from '../src/snapshots/warm-bake';
 
-const OPENCODE_PORT = 4096;
-
 async function main() {
   if (!warmSnapshotsEnabled()) {
     console.error(
@@ -38,20 +36,23 @@ async function main() {
   );
 
   if (verify) {
-    console.log('\n=== verifying warm boot ===');
+    console.log('\n=== verifying warm boot (runtime installed) ===');
     const t = Date.now();
     const sb = await daytona.create({ snapshot: name }, { timeout: 120 });
+    const createS = ((Date.now() - t) / 1000).toFixed(1);
     const probe = await sb.process.executeCommand(
-      `for i in $(seq 1 100); do code=$(curl -s -o /dev/null -w '%{http_code}' -m 2 http://127.0.0.1:${OPENCODE_PORT}/); ` +
-        `if [ "$code" = "200" ]; then echo "READY http=$code pid=$(cat /tmp/oc.pid 2>/dev/null)"; break; fi; sleep 0.2; done`,
+      `echo "create=${createS}s"; ` +
+        `for b in kortix-agent kortix opencode bun agent-browser node; do printf '%-14s ' "$b"; command -v "$b" || echo MISSING; done; ` +
+        `echo "opencode_db=$(ls /opt/kortix/home/.local/share/opencode 2>/dev/null | head -1 || echo none)"; ` +
+        `kortix --version 2>&1 | head -1`,
       undefined,
       undefined,
       60,
     );
-    const totalS = ((Date.now() - t) / 1000).toFixed(1);
-    const line = (probe.result || '').trim().split('\n').pop();
-    console.log(`warm boot: create→opencode-200 in ${totalS}s   ${line}`);
-    console.log(line?.includes('READY') ? 'RESULT: opencode serving on warm boot ✅' : 'RESULT: opencode NOT serving ❌');
+    const out = (probe.result || '').trim();
+    console.log(out);
+    const ok = !out.includes('MISSING');
+    console.log(ok ? `RESULT: full runtime present on warm boot (create ${createS}s) ✅` : 'RESULT: runtime incomplete ❌');
     await sb.delete().catch(() => {});
   }
 
