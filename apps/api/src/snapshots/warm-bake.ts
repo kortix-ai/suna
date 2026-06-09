@@ -297,9 +297,14 @@ export function warmDaemonStartCommands(env: Record<string, string>): { writeEnv
   const envFile = Object.entries(env).map(([k, v]) => `export ${k}=${sh(v)}`).join('\n');
   const b64 = Buffer.from(envFile, 'utf8').toString('base64');
   return {
-    writeEnv: `echo ${b64} | base64 -d > /opt/kortix/session.env && chmod 600 /opt/kortix/session.env && echo wrote`,
+    writeEnv: `echo ${b64} | base64 -d | sudo tee /opt/kortix/session.env >/dev/null && sudo chmod 600 /opt/kortix/session.env && echo wrote`,
+    // Run the daemon as ROOT, matching the normal Kortix sandbox (Dockerfile
+    // `USER root`). The entrypoint anchors cwd at `/` and the daemon creates its
+    // clone work-tree relative to cwd (`/.kortix-clone-…`); the base image's
+    // default `daytona` user can't write to root-owned `/`, so the clone fails
+    // with EACCES. sudo (passwordless on these images) restores parity.
     startDaemon:
-      `setsid bash -c 'source /opt/kortix/session.env; cd /; exec /usr/local/bin/kortix-entrypoint' ` +
+      `setsid sudo bash -c 'set -a; source /opt/kortix/session.env; set +a; cd /; exec /usr/local/bin/kortix-entrypoint' ` +
       `</dev/null >/tmp/kortix-agent.log 2>&1 & echo started`,
   };
 }
