@@ -63,6 +63,13 @@ const CREATE_TIMEOUT_S = 180;
 const SNAPSHOT_TIMEOUT_S = 300;
 const UPLOAD_TIMEOUT_S = 300;
 
+// Static runtime env the normal sandbox bakes as Dockerfile `ENV` lines. The
+// imperative bake can't bake image ENV, so we export these when launching the
+// daemon (before sourcing the per-session env, which wins on overlap). Values
+// are space/quote-free so they embed safely inside `sudo bash -c '…'`.
+const RUNTIME_ENV =
+  'export AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage KORTIX_WORKSPACE=/workspace;';
+
 export interface WarmBakeResult {
   snapshotName: string;
   baseSnapshot: string;
@@ -303,8 +310,14 @@ export function warmDaemonStartCommands(env: Record<string, string>): { writeEnv
     // clone work-tree relative to cwd (`/.kortix-clone-…`); the base image's
     // default `daytona` user can't write to root-owned `/`, so the clone fails
     // with EACCES. sudo (passwordless on these images) restores parity.
+    //
+    // RUNTIME_ENV mirrors the static `ENV` lines the Dockerfile bakes (which the
+    // imperative bake can't bake into the image) — exported first so the
+    // per-session `session.env` still wins on any overlap. Notably
+    // AGENT_BROWSER_ARGS, without which the agent's browser tool crashes in a
+    // sandboxed container.
     startDaemon:
-      `setsid sudo bash -c 'set -a; source /opt/kortix/session.env; set +a; cd /; exec /usr/local/bin/kortix-entrypoint' ` +
+      `setsid sudo bash -c '${RUNTIME_ENV} set -a; source /opt/kortix/session.env; set +a; cd /; exec /usr/local/bin/kortix-entrypoint' ` +
       `</dev/null >/tmp/kortix-agent.log 2>&1 & echo started`,
   };
 }
