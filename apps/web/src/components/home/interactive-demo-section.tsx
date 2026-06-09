@@ -1270,7 +1270,7 @@ export function InteractiveDemoSection({
     >
       <div
         className={cn(
-          'relative -mx-1.5 overflow-hidden rounded p-4 sm:mx-0 sm:rounded-sm md:p-8 lg:p-10',
+          'relative -mx-1.5 overflow-hidden rounded-md p-4 sm:mx-0 md:p-8 lg:p-10',
           embedded && 'mx-0 h-full p-0',
           contentClassName,
         )}
@@ -1296,7 +1296,7 @@ export function InteractiveDemoSection({
         <div className={cn('relative z-10', embedded && 'h-full')}>
           <div
             className={cn(
-              'bg-border dark:bg-background w-full rounded-xl p-1 sm:rounded-md',
+              'bg-border dark:bg-background w-full rounded-xl p-1',
               embedded && 'flex h-full flex-col',
             )}
           >
@@ -1350,6 +1350,9 @@ export function InteractiveDemoSection({
               className={cn(
                 'bg-background dark:bg-primary/7 w-full overflow-hidden rounded-b-xl sm:rounded-b-[calc(var(--radius-xl)-4px)]',
                 embedded && 'flex min-h-0 flex-1 flex-col',
+                active === 'home'
+                  ? 'rounded-tr-xl sm:rounded-tr-[calc(var(--radius-xl)-4px)]'
+                  : 'rounded-t-xl sm:rounded-t-[calc(var(--radius-xl)-4px)]',
               )}
             >
               {/* <TopBar label={page.label} embedded={embedded} /> */}
