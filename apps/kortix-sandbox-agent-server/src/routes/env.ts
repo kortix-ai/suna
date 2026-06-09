@@ -1,5 +1,6 @@
 import { Hono } from 'hono'
 
+import { writeAgentEnvFile } from '../agent-env-file'
 import type { Config } from '../config'
 import { logger } from '../logger'
 import type { Opencode } from '../opencode'
@@ -47,11 +48,11 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
         })
 
         if (result.changed) {
-          logger.info('[env] project env changed; restarting opencode', {
+          logger.info('[env] project env changed; refreshing live agent env file', {
             revision: result.revision,
             names: result.names.length,
           })
-          await opencode.restart()
+          writeAgentEnvFile(projectEnv)
         }
 
         return c.json({

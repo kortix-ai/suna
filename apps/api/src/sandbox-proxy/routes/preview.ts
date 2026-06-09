@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { getTraceHeaders } from '../../lib/request-context';
-import { listProjectSecretsSnapshotForUser } from '../../projects/secrets';
-import { resolveShareSubject } from '../../executor/share';
+import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { canAccessPreviewSandbox } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
@@ -225,40 +224,6 @@ function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: str
   return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
 }
 
-async function syncProjectEnvToSandbox(input: {
-  projectId: string;
-  userId: string;
-  previewUrl: string;
-  previewToken: string | null;
-  serviceKey: string | null;
-}): Promise<void> {
-  if (!input.serviceKey) return;
-
-  // Resolve as the acting user so the re-sync keeps personal overrides and
-  // share-scope restrictions consistent with what was injected at boot.
-  const subject = await resolveShareSubject(input.userId);
-  const snapshot = await listProjectSecretsSnapshotForUser(input.projectId, subject);
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${input.serviceKey}`,
-    'X-Daytona-Skip-Preview-Warning': 'true',
-    'X-Daytona-Disable-CORS': 'true',
-  };
-  if (input.previewToken) headers['X-Daytona-Preview-Token'] = input.previewToken;
-
-  const res = await fetch(`${input.previewUrl.replace(/\/$/, '')}/kortix/env`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(snapshot),
-    signal: AbortSignal.timeout(15_000),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`project env sync failed: ${res.status}${body ? ` ${body.slice(0, 500)}` : ''}`);
-  }
-}
-
 // === Core HTTP forwarder ======================================================
 //
 // Forwards one request to a sandbox port with ownership enforcement, the full
@@ -322,12 +287,12 @@ export async function forwardToSandbox(
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
         try {
-          await syncProjectEnvToSandbox({
+          await syncSandboxEnvForPrompt({
             projectId: record.projectId,
-            userId,
+            sessionId: record.sessionId,
+            serviceKey,
             previewUrl,
             previewToken,
-            serviceKey,
           });
         } catch (err) {
           throw new HTTPException(502, {

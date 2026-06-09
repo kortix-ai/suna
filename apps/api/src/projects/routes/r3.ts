@@ -8,6 +8,7 @@ import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
 import { completeChatGptHeadlessAuth, startChatGptHeadlessAuth } from '../opencode-chatgpt-auth';
 import { encryptProjectSecret, isValidSecretName } from '../secrets';
+import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -510,6 +511,8 @@ projectsApp.openapi(
 
   if (sharing) await setSecretSharing(secretId, sharing);
 
+  void propagateProjectSecretsToActiveSandboxes(projectId);
+
   const subject = await resolveShareSubject(loaded.userId);
   const views = await loadSecretViewsForUser(projectId, subject, true);
   const view = views.find((v) => v.name === name);
@@ -628,6 +631,8 @@ projectsApp.openapi(
           },
         });
 
+      void propagateProjectSecretsToActiveSandboxes(projectId);
+
       const subject = await resolveShareSubject(loaded.userId);
       const views = await loadSecretViewsForUser(projectId, subject, true);
       const view = views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME);
@@ -662,6 +667,8 @@ projectsApp.openapi(
       ))
       .limit(1);
     if (sharing && row) await setSecretSharing(row.secretId, sharing);
+
+    void propagateProjectSecretsToActiveSandboxes(projectId);
 
     const subject = await resolveShareSubject(loaded.userId);
     const views = await loadSecretViewsForUser(projectId, subject, true);
@@ -713,6 +720,8 @@ projectsApp.openapi(
       eq(projectSecrets.name, name),
       isNull(projectSecrets.ownerUserId),
     ));
+
+  void propagateProjectSecretsToActiveSandboxes(projectId);
 
   return c.json({ ok: true });
 },
@@ -797,6 +806,8 @@ projectsApp.openapi(
       .where(eq(projectSecrets.secretId, existingMine.secretId));
   }
 
+  void propagateProjectSecretsToActiveSandboxes(projectId);
+
   const subject = await resolveShareSubject(loaded.userId);
   const views = await loadSecretViewsForUser(projectId, subject, roleAllows(loaded.effectiveRole, 'manage'));
   return c.json(views.find((v) => v.name === name) ?? { name }, 200);
@@ -837,6 +848,8 @@ projectsApp.openapi(
       eq(projectSecrets.name, name),
       eq(projectSecrets.ownerUserId, loaded.userId),
     ));
+
+  void propagateProjectSecretsToActiveSandboxes(projectId);
 
   return c.json({ ok: true });
 },

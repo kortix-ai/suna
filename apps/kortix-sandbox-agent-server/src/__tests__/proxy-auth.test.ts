@@ -491,7 +491,7 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
-  it('syncs project env through /kortix/env and restarts opencode only on changes', async () => {
+  it('syncs project env through /kortix/env without restarting opencode', async () => {
     let restartCalls = 0
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRET_NAMES: 'OLD_SECRET,REMOVED_SECRET',
@@ -526,7 +526,7 @@ describe('daemon proxy auth gate', () => {
       revision: 'rev-1',
       names: ['NEW_SECRET', 'OLD_SECRET', 'REMOVED_SECRET'],
     })
-    expect(restartCalls).toBe(1)
+    expect(restartCalls).toBe(0)
     expect(mergeProjectEnv({
       OLD_SECRET: 'old-process',
       REMOVED_SECRET: 'gone-process',
@@ -551,7 +551,7 @@ describe('daemon proxy auth gate', () => {
     })
     expect(replay.status).toBe(200)
     expect(await replay.json()).toMatchObject({ ok: true, changed: false })
-    expect(restartCalls).toBe(1)
+    expect(restartCalls).toBe(0)
   })
 
   it('does not restart opencode when env sync matches the boot revision and values', async () => {
