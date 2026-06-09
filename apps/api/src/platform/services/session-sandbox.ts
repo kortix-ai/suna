@@ -165,7 +165,11 @@ export async function provisionSessionSandbox(opts: {
   // instead of resolving/building the per-project Dockerfile snapshot. Fully
   // inert unless KORTIX_WARM_SNAPSHOT_ENABLED + DAYTONA_WARM_TARGET are set;
   // ensureWarmBaseReady returns null (→ normal path) when not ready or on error.
-  const warmBase = providerName === 'daytona' ? await ensureWarmBaseReady() : null;
+  // Restricted to the platform-default slug: the warm base carries only the
+  // default runtime, so a project with a custom [[sandbox.templates]] Dockerfile
+  // must still boot its own per-project snapshot.
+  const warmBase =
+    providerName === 'daytona' && slug === DEFAULT_SANDBOX_SLUG ? await ensureWarmBaseReady() : null;
   let firstImagePromise: Promise<FirstImage> | null = warmBase
     ? null
     : (async () => {
