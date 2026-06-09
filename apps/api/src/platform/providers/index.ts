@@ -36,6 +36,14 @@ export interface CreateSandboxOpts {
    * once claimed). See docs/specs/warm-pool.md.
    */
   autoStopInterval?: number;
+  /**
+   * Daytona experimental warm-snapshot path. When set, the sandbox is created
+   * from this memory-state warm base on the WARM target (~1.3s) and the session
+   * daemon is started post-restore with `envVars` written to an env file — since
+   * memory-restore freezes baked env and the entrypoint doesn't re-run. See
+   * snapshots/warm-bake.ts. Daytona-only; other providers ignore it.
+   */
+  warmBaseSnapshot?: string;
 }
 
 export interface ProvisionResult {

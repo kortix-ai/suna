@@ -232,3 +232,74 @@ kortix --version`,
     );
   }
 }
+
+// ─── Warm base manager ───────────────────────────────────────────────────────
+// One shared, project-agnostic warm base per runtime identity. Bump WARM_BASE_VERSION
+// whenever the baked runtime layer changes (binaries, opencode/agent-browser version,
+// install steps) so sessions don't boot a stale base.
+const WARM_BASE_VERSION = 'v1';
+
+/** Deterministic name of the current warm base snapshot. */
+export function warmBaseSnapshotName(): string {
+  return `kortix-warm-runtime-${OPENCODE_VERSION}-${WARM_BASE_VERSION}`;
+}
+
+// In-process dedup so concurrent session boots + the startup kick collapse to one bake.
+let warmBaseBuildInFlight: Promise<void> | null = null;
+
+/**
+ * Is the warm base ready to boot sessions from? Returns its name if the snapshot
+ * is active on the warm target; otherwise kicks a background bake (deduped) and
+ * returns null so the caller falls back to the normal Dockerfile path this time.
+ * Never throws — a warm-path failure must never block session creation.
+ */
+export async function ensureWarmBaseReady(onLog?: (l: string) => void): Promise<string | null> {
+  if (!warmSnapshotsEnabled()) return null;
+  const name = warmBaseSnapshotName();
+  try {
+    const snap = await getDaytonaWarm().snapshot.get(name);
+    if (String((snap as { state?: string })?.state ?? '').toLowerCase() === 'active') return name;
+  } catch {
+    // not found / transient → fall through to bake
+  }
+  kickWarmBaseBuild(onLog);
+  return null;
+}
+
+/** Fire-and-forget bake of the warm base if missing. Idempotent + deduped. */
+export function kickWarmBaseBuild(onLog?: (l: string) => void): void {
+  if (!warmSnapshotsEnabled() || warmBaseBuildInFlight) return;
+  const name = warmBaseSnapshotName();
+  const log = onLog ?? ((l: string) => console.log(l));
+  warmBaseBuildInFlight = (async () => {
+    try {
+      const existing = await getDaytonaWarm().snapshot.get(name).catch(() => null);
+      if (String((existing as { state?: string } | null)?.state ?? '').toLowerCase() === 'active') return;
+      log(`[warm-bake] baking warm base ${name} ...`);
+      await bakeWarmSnapshot({ name, onLog: log });
+      log(`[warm-bake] warm base ${name} ready`);
+    } catch (err) {
+      log(`[warm-bake] warm base bake failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      warmBaseBuildInFlight = null;
+    }
+  })();
+}
+
+/**
+ * Build the per-session env-file + daemon-start commands for a warm sandbox.
+ * Daytona's executeCommand env param does NOT propagate, and memory-restore
+ * freezes baked env, so we write the session identity to a file and start the
+ * daemon sourcing it. Exported for the Daytona provider's warm create path.
+ */
+export function warmDaemonStartCommands(env: Record<string, string>): { writeEnv: string; startDaemon: string } {
+  const sh = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
+  const envFile = Object.entries(env).map(([k, v]) => `export ${k}=${sh(v)}`).join('\n');
+  const b64 = Buffer.from(envFile, 'utf8').toString('base64');
+  return {
+    writeEnv: `echo ${b64} | base64 -d > /opt/kortix/session.env && chmod 600 /opt/kortix/session.env && echo wrote`,
+    startDaemon:
+      `setsid bash -c 'source /opt/kortix/session.env; cd /; exec /usr/local/bin/kortix-entrypoint' ` +
+      `</dev/null >/tmp/kortix-agent.log 2>&1 & echo started`,
+  };
+}
