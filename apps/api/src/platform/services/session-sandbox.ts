@@ -19,6 +19,7 @@ import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
 import {
   getProvider,
+  WarmRuntimeUnavailableError,
   type CreateSandboxOpts,
   type ProviderName,
 } from '../providers';
@@ -168,7 +169,7 @@ export async function provisionSessionSandbox(opts: {
   // Restricted to the platform-default slug: the warm base carries only the
   // default runtime, so a project with a custom [[sandbox.templates]] Dockerfile
   // must still boot its own per-project snapshot.
-  const warmBase =
+  let warmBase =
     providerName === 'daytona' && slug === DEFAULT_SANDBOX_SLUG ? await ensureWarmBaseReady() : null;
   let firstImagePromise: Promise<FirstImage> | null = warmBase
     ? null
@@ -517,6 +518,26 @@ export async function provisionSessionSandbox(opts: {
       );
       break provisioning;
     } catch (bgErr) {
+      // Warm restore kept coming up without the baked runtime (Daytona's
+      // experimental snapshot drops the filesystem layer ~half the time, and
+      // createWarm exhausted its in-provider retries). Drop the warm path and
+      // re-provision from the normal Dockerfile snapshot so the session still
+      // starts — warm is a best-effort speedup, never a hard dependency.
+      if (warmBase && bgErr instanceof WarmRuntimeUnavailableError) {
+        console.warn(
+          `[session-sandbox] warm runtime unavailable for ${sandbox.sandboxId} — falling back to the normal snapshot path`,
+        );
+        warmBase = null;
+        providerCreateInput.warmBaseSnapshot = undefined;
+        if (bgExternalId) {
+          await provider.remove(bgExternalId).catch(() => {});
+          bgExternalId = null;
+        }
+        imageInfo = null;
+        tl.mark('warm-fallback');
+        continue provisioning;
+      }
+
       // Daytona dropped the image between resolve and create. Force a rebuild
       // (delete the snapshot so the next ensureSandboxImage call rebuilds it)
       // and retry once. Capped at one heal per session start. Never on the warm

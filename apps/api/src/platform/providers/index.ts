@@ -15,6 +15,20 @@ import { PlatinumProvider } from './platinum';
 export type ProviderName = 'daytona' | 'local_docker' | 'platinum';
 export type { SandboxProviderName } from '../../config';
 
+/**
+ * Thrown by the Daytona warm path when the experimental memory-snapshot restore
+ * comes up WITHOUT the baked runtime (its filesystem layer is dropped ~half the
+ * time — a Daytona experimental-region bug). Non-retryable at the provision
+ * layer: the caller falls back to the normal Dockerfile-snapshot path instead of
+ * spinning up more flaky warm boxes.
+ */
+export class WarmRuntimeUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WarmRuntimeUnavailableError';
+  }
+}
+
 export interface CreateSandboxOpts {
   accountId: string;
   userId: string;
