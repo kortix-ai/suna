@@ -172,6 +172,14 @@ export class DaytonaProvider implements SandboxProvider {
       );
     }
 
+    // A memory-snapshot restore brings back the VM's FROZEN clock (stuck at bake
+    // time — hours behind). That breaks elapsed-time UI and, worse, time-based
+    // checks (JWT/token expiry, TLS cert validity). Reset to real wall-clock
+    // time before anything else runs. Best-effort.
+    await sb.process
+      .executeCommand(`sudo date -s @${Math.floor(Date.now() / 1000)} >/dev/null 2>&1 || true`, undefined, undefined, 15)
+      .catch(() => {});
+
     const { writeEnv, startDaemon } = warmDaemonStartCommands(envVars);
     const wrote = await sb.process.executeCommand(writeEnv, undefined, undefined, 30);
     if (!(wrote.result ?? '').includes('wrote')) {
