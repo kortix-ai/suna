@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
-import { InlineMeta } from '@/components/ui/inline-meta';
 import { Button } from '@/components/ui/button';
+import { InlineMeta } from '@/components/ui/inline-meta';
 import { cn } from '@/lib/utils';
 import { Clock, Plus } from 'lucide-react';
+import { useState } from 'react';
 import { INITIAL_JOBS, type ScheduleJob } from '../data';
 import { PageHead, Panel, Row, Toggle } from '../primitives';
 

@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import { ChevronDown, MessageSquare } from 'lucide-react';
+import { useState } from 'react';
 import { PageHead } from '../primitives';
 
 export function ChannelsPage() {

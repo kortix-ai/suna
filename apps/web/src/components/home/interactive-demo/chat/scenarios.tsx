@@ -122,12 +122,13 @@ export const SCENARIOS: DemoScenario[] = [
   },
 ];
 
+/** The prompt the demo auto-types on first view — must match a scenario. */
+export const AUTO_DEMO_PROMPT = SCENARIOS[0].prompt;
+
 export const GENERIC_ID = 'generic';
 
 export function matchScenario(text: string): DemoScenario {
-  const found = SCENARIOS.find(
-    (s) => s.prompt.trim().toLowerCase() === text.trim().toLowerCase(),
-  );
+  const found = SCENARIOS.find((s) => s.prompt.trim().toLowerCase() === text.trim().toLowerCase());
   if (found) return found;
   return {
     id: GENERIC_ID,

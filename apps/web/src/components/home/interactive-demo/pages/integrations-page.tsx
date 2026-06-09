@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Blocks, Search } from 'lucide-react';
+import { useState } from 'react';
 import { CONNECTOR_TYPES, INTEGRATIONS } from '../data';
 import { BrandLogo, ConnectBadge } from '../primitives';
 

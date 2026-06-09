@@ -1,8 +1,8 @@
 'use client';
 
-import type { ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import type { ReactNode } from 'react';
 import { favicon } from './data';
 
 export function PageHead({
@@ -88,7 +88,15 @@ export function Row({
 }
 
 /** Real brand logo (favicon) on a neutral tile — used for Integrations + Models. */
-export function BrandLogo({ domain, alt, size = 20 }: { domain: string; alt: string; size?: number }) {
+export function BrandLogo({
+  domain,
+  alt,
+  size = 20,
+}: {
+  domain: string;
+  alt: string;
+  size?: number;
+}) {
   return (
     <span
       className="border-border bg-background flex shrink-0 items-center justify-center overflow-hidden rounded-lg border"
@@ -175,4 +183,3 @@ export function SendGlyph({ className = 'size-3.5' }: { className?: string }) {
     </svg>
   );
 }
-

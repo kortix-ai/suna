@@ -301,8 +301,19 @@ export const INITIAL_JOBS: ScheduleJob[] = [
   },
 ];
 
-export type Member = { email: string; name: string; role: 'Owner' | 'Admin' | 'Member'; last: string };
-export type Secret = { name: string; masked: string; domain: string; rotated: string; agents: number };
+export type Member = {
+  email: string;
+  name: string;
+  role: 'Owner' | 'Admin' | 'Member';
+  last: string;
+};
+export type Secret = {
+  name: string;
+  masked: string;
+  domain: string;
+  rotated: string;
+  agents: number;
+};
 export type Policy = { domain: string; name: string; allow: number; ask: number; block: number };
 
 export const MEMBERS: Member[] = [
@@ -354,4 +365,3 @@ export const POLICIES: Policy[] = [
   { domain: 'slack.com', name: 'Slack', allow: 9, ask: 1, block: 0 },
   { domain: 'stripe.com', name: 'Stripe', allow: 4, ask: 6, block: 2 },
 ];
-

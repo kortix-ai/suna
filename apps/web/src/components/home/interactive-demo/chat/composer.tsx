@@ -4,7 +4,7 @@ import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
 import { ArrowUp, Paperclip } from 'lucide-react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { RiMicAiFill, RiRobot3Fill } from 'react-icons/ri';
 
 export const HOME_PROMPT_MESSAGES = [
@@ -71,7 +71,12 @@ export function Composer({
   };
 
   return (
-    <div className={cn('border-border bg-card rounded-[24px] border', variant === 'home' ? 'p-3' : 'p-2.5')}>
+    <div
+      className={cn(
+        'border-border bg-card rounded-[24px] border',
+        variant === 'home' ? 'p-3' : 'p-2.5',
+      )}
+    >
       <div className={cn('relative', variant === 'home' && 'min-h-20 px-1')}>
         {showCycling && (
           <CyclingPromptText className="text-muted-foreground pointer-events-none absolute inset-x-1 top-0 text-sm" />

@@ -1,18 +1,23 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { Warp } from '@paper-design/shaders-react';
 import { Blocks, MessageSquare, type LucideIcon } from 'lucide-react';
-import type { IconType } from 'react-icons/lib';
+import { AnimatePresence, motion } from 'motion/react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useRef, useState } from 'react';
 import { GoHomeFill } from 'react-icons/go';
 import { HiMiniSparkles } from 'react-icons/hi2';
+import type { IconType } from 'react-icons/lib';
 import { MdShield } from 'react-icons/md';
 import { PiChatCircleDotsFill, PiClockCountdownFill } from 'react-icons/pi';
 import { RiCpuLine, RiRobot3Fill } from 'react-icons/ri';
 import { KortixLogo } from '../sidebar/kortix-logo';
+import { AUTO_DEMO_PROMPT } from './interactive-demo/chat/scenarios';
+import {
+  useDemoConversation,
+  type DemoConversation,
+} from './interactive-demo/chat/use-demo-conversation';
 import { AgentsPage } from './interactive-demo/pages/agents-page';
 import { ChannelsPage } from './interactive-demo/pages/channels-page';
 import { ChatPage } from './interactive-demo/pages/chat-page';
@@ -22,10 +27,6 @@ import { ModelsPage } from './interactive-demo/pages/models-page';
 import { SchedulingPage } from './interactive-demo/pages/scheduling-page';
 import { SecurityPage } from './interactive-demo/pages/security-page';
 import { SkillsPage } from './interactive-demo/pages/skills-page';
-import {
-  useDemoConversation,
-  type DemoConversation,
-} from './interactive-demo/chat/use-demo-conversation';
 import type { Nav, PageId } from './interactive-demo/types';
 
 type PageIcon = LucideIcon | IconType;
@@ -154,6 +155,8 @@ export function InteractiveDemo({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [active, setActive] = useState<PageId>(activePage || 'home');
   const convo = useDemoConversation({ onEnterChat: () => setActive('chat') });
+  const rootRef = useRef<HTMLDivElement>(null);
+  const autoStarted = useRef(false);
   const page = PAGES[active];
   const tabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
   const mobileTabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
@@ -183,8 +186,41 @@ export function InteractiveDemo({
     return () => window.removeEventListener('hashchange', apply);
   }, []);
 
+  // Auto-play once when the demo scrolls into view. Home-start surfaces type a
+  // default prompt then submit; chat-first embeds stream it directly. Any real
+  // interaction cancels it.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const startPage = activePage ?? 'home';
+    const hash = window.location.hash.replace('#', '');
+    if (
+      startPage === 'home' &&
+      hash &&
+      hash !== 'demo' &&
+      hash !== 'home' &&
+      (ORDER as string[]).includes(hash)
+    )
+      return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !autoStarted.current) {
+          autoStarted.current = true;
+          io.disconnect();
+          if (startPage === 'chat') convo.submit(AUTO_DEMO_PROMPT);
+          else convo.startAutoDemo(AUTO_DEMO_PROMPT);
+        }
+      },
+      { threshold: 0.4 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div
+      ref={rootRef}
       className={cn(
         'relative mx-auto w-full max-w-6xl space-y-8',
         embedded && 'mx-0 h-full max-w-none space-y-0',

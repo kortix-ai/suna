@@ -1,15 +1,5 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
-import { cn } from '@/lib/utils';
-import { Warp } from '@paper-design/shaders-react';
-import { Blocks, MessageSquare } from 'lucide-react';
-import { GoHomeFill } from 'react-icons/go';
-import { HiMiniSparkles } from 'react-icons/hi2';
-import { MdShield } from 'react-icons/md';
-import { PiChatCircleDotsFill, PiClockCountdownFill } from 'react-icons/pi';
-import { RiCpuLine, RiRobot3Fill } from 'react-icons/ri';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -17,7 +7,22 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
+import { cn } from '@/lib/utils';
+import { Warp } from '@paper-design/shaders-react';
+import { Blocks, MessageSquare } from 'lucide-react';
+import { AnimatePresence, motion } from 'motion/react';
+import { useEffect, useRef, useState } from 'react';
+import { GoHomeFill } from 'react-icons/go';
+import { HiMiniSparkles } from 'react-icons/hi2';
+import { MdShield } from 'react-icons/md';
+import { PiChatCircleDotsFill, PiClockCountdownFill } from 'react-icons/pi';
+import { RiCpuLine, RiRobot3Fill } from 'react-icons/ri';
 import { KortixLogo } from '../sidebar/kortix-logo';
+import { AUTO_DEMO_PROMPT } from './interactive-demo/chat/scenarios';
+import {
+  useDemoConversation,
+  type DemoConversation,
+} from './interactive-demo/chat/use-demo-conversation';
 import { AgentsPage } from './interactive-demo/pages/agents-page';
 import { ChannelsPage } from './interactive-demo/pages/channels-page';
 import { ChatPage } from './interactive-demo/pages/chat-page';
@@ -27,10 +32,6 @@ import { ModelsPage } from './interactive-demo/pages/models-page';
 import { SchedulingPage } from './interactive-demo/pages/scheduling-page';
 import { SecurityPage } from './interactive-demo/pages/security-page';
 import { SkillsPage } from './interactive-demo/pages/skills-page';
-import {
-  useDemoConversation,
-  type DemoConversation,
-} from './interactive-demo/chat/use-demo-conversation';
 import type { Nav, PageId } from './interactive-demo/types';
 
 const PAGES: Record<
@@ -160,6 +161,8 @@ export function InteractiveDemoSection({
 }) {
   const [active, setActive] = useState<PageId>('home');
   const convo = useDemoConversation({ onEnterChat: () => setActive('chat') });
+  const rootRef = useRef<HTMLDivElement>(null);
+  const autoStarted = useRef(false);
   const page = PAGES[active];
   const tabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
 
@@ -188,8 +191,31 @@ export function InteractiveDemoSection({
     return () => window.removeEventListener('hashchange', apply);
   }, []);
 
+  // Auto-play once when the demo scrolls into view: type a default prompt into
+  // the Home composer and submit it. Any real interaction cancels it.
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const hash = window.location.hash.replace('#', '');
+    if (hash && hash !== 'demo' && hash !== 'home' && (ORDER as string[]).includes(hash)) return;
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting && !autoStarted.current) {
+          autoStarted.current = true;
+          io.disconnect();
+          convo.startAutoDemo(AUTO_DEMO_PROMPT);
+        }
+      },
+      { threshold: 0.4 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div
+      ref={rootRef}
       className={cn(
         'relative mx-auto w-full max-w-6xl',
         embedded && 'h-full max-w-none',

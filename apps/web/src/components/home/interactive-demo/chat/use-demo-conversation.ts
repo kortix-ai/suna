@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { useReducedMotion } from 'motion/react';
-import { matchScenario } from './scenarios';
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type { DemoScenario } from '../types';
+import { matchScenario } from './scenarios';
 
 const THINKING_MS = 1600;
 const STREAM_CHARS_PER_TICK = 6;
