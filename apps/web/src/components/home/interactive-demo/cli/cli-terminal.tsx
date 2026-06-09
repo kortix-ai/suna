@@ -1,6 +1,6 @@
 'use client';
 
-import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef, type HTMLAttributes } from 'react';
 import { KORTIX_CMD_CLASS, KORTIX_CMD_STYLE, LineView } from './terminal';
@@ -26,12 +26,12 @@ export function CliTerminal({
   }, [scrollback, typed]);
 
   return (
-    <div className="bg-card border-border flex h-full w-full flex-col overflow-hidden rounded-md border">
+    <div className="bg-background border-border flex h-full w-full flex-col overflow-hidden rounded-md border">
       {/* chrome */}
       <div
         {...dragHandleProps}
         className={cn(
-          'border-border/70 bg-muted/60 flex w-full shrink-0 items-center gap-2 border-b px-3 py-2',
+          'border-border/70 bg-background flex w-full shrink-0 items-center gap-2 border-b px-3 py-2',
           dragHandleProps?.className,
         )}
       >
@@ -40,8 +40,8 @@ export function CliTerminal({
           <span className="size-2.5 rounded-full bg-amber-400/80" />
           <span className="size-2.5 rounded-full bg-emerald-400/80" />
         </div>
-        <span className="text-muted-foreground/70 ml-1.5 inline-flex items-center gap-1 text-[11px] font-medium">
-          <KortixAsterisk index={0} parentClass="mt-0" />
+        <span className="text-muted-foreground ml-1.5 inline-flex items-center gap-1 text-[11px] font-medium">
+          <KortixLogo size={12} />
           kortix cli
         </span>
         <span className="ml-auto inline-flex items-center gap-2">

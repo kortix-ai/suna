@@ -1297,6 +1297,8 @@ export function InteractiveDemoSection({
   const [focusedSkill, setFocusedSkill] = useState<string | null>(null);
   const page = PAGES[active];
   const rootRef = useRef<HTMLDivElement>(null);
+  const tabStripRef = useRef<HTMLDivElement>(null);
+  const panelScrollRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Partial<Record<PageId, HTMLButtonElement>>>({});
 
   // The composer the pages use: any user send/typing pauses the CLI movie, then
@@ -1322,13 +1324,24 @@ export function InteractiveDemoSection({
     if (active !== 'skills') setFocusedSkill(null);
   }, [active]);
 
-  // Keep the active tab in view on small screens (the tab strip scrolls).
+  // Keep the active tab in view on small screens — scroll the tab strip only,
+  // never the document (scrollIntoView was nudging the landing page on CLI nav).
   useEffect(() => {
-    tabRefs.current[active]?.scrollIntoView({
+    const tab = tabRefs.current[active];
+    const strip = tabStripRef.current;
+    if (!tab || !strip) return;
+
+    const tabCenter = tab.offsetLeft + tab.offsetWidth / 2;
+    const targetLeft = tabCenter - strip.clientWidth / 2;
+    strip.scrollTo({
+      left: Math.max(0, Math.min(targetLeft, strip.scrollWidth - strip.clientWidth)),
       behavior: 'smooth',
-      inline: 'center',
-      block: 'nearest',
     });
+  }, [active]);
+
+  // Reset panel scroll when the CLI (or a tab click) switches pages.
+  useEffect(() => {
+    if (panelScrollRef.current) panelScrollRef.current.scrollTop = 0;
   }, [active]);
 
   // Deep-link from the navbar Product menu via the URL hash (e.g. /#agents).
@@ -1408,7 +1421,10 @@ export function InteractiveDemoSection({
             )}
           >
             {/* Scalloped feature tabs */}
-            <div className="shadow-custom flex w-full [scrollbar-width:none] items-center gap-0.5 overflow-hidden overflow-x-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <div
+              ref={tabStripRef}
+              className="shadow-custom flex w-full [scrollbar-width:none] items-center gap-0.5 overflow-hidden overflow-x-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+            >
               {ORDER.map((id, index) => {
                 const { label, icon: Icon } = PAGES[id];
                 const isActive = id === active;
@@ -1465,6 +1481,8 @@ export function InteractiveDemoSection({
               {/* <TopBar label={page.label} embedded={embedded} /> */}
 
               <div
+                ref={panelScrollRef}
+                data-demo-panel-scroll
                 className={cn(
                   '[&::-webkit-scrollbar-thumb]:bg-border w-full overflow-y-auto [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full',
                   embedded

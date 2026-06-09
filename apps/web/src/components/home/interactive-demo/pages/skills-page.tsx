@@ -11,15 +11,7 @@ import { PageHead } from '../primitives';
 
 export const demoSkillId = (name: string) => `demo-skill-${name}`;
 
-function SkillItem({
-  name,
-  desc,
-  focused,
-}: {
-  name: string;
-  desc: string;
-  focused?: boolean;
-}) {
+function SkillItem({ name, desc, focused }: { name: string; desc: string; focused?: boolean }) {
   return (
     <div
       id={demoSkillId(name)}
@@ -47,9 +39,11 @@ export function SkillsPage({ focusedSkill }: { focusedSkill?: string | null } = 
     if (!focusedSkill) return;
     setQ('');
     const t = window.setTimeout(() => {
-      document
-        .getElementById(demoSkillId(focusedSkill))
-        ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const el = document.getElementById(demoSkillId(focusedSkill));
+      const scroller = el?.closest('[data-demo-panel-scroll]');
+      if (!el || !(scroller instanceof HTMLElement)) return;
+      const top = el.offsetTop - (scroller.clientHeight - el.offsetHeight) / 2;
+      scroller.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
     }, 150);
     return () => window.clearTimeout(t);
   }, [focusedSkill]);
@@ -90,12 +84,7 @@ export function SkillsPage({ focusedSkill }: { focusedSkill?: string | null } = 
       </div>
 
       {core.length > 0 && (
-        <SkillGroup
-          label="Core"
-          count={core.length}
-          skills={core}
-          focusedSkill={focusedSkill}
-        />
+        <SkillGroup label="Core" count={core.length} skills={core} focusedSkill={focusedSkill} />
       )}
       {gkw.length > 0 && (
         <SkillGroup

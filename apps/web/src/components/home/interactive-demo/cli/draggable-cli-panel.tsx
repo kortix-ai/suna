@@ -1,9 +1,12 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { motion } from 'motion/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CliTerminal } from './cli-terminal';
 import type { DemoDirector } from './use-demo-director';
+
+const ENTRANCE_DELAY_MS = 2000;
 
 const PANEL_W = 384; // max-w-[24rem]
 const PANEL_H = 480; // h-[30rem]
@@ -16,16 +19,18 @@ const OVERFLOW = {
   left: 384, // matches original -left-96
 } as const;
 
-function clampPosition(x: number, y: number, containerW: number, containerH: number) {
+function maxPosition(containerW: number, containerH: number) {
   return {
-    x: Math.min(
-      Math.max(x, -OVERFLOW.left),
-      Math.max(-OVERFLOW.left, containerW - PANEL_W + OVERFLOW.right),
-    ),
-    y: Math.min(
-      Math.max(y, -OVERFLOW.top),
-      Math.max(-OVERFLOW.top, containerH - PANEL_H + OVERFLOW.bottom),
-    ),
+    x: Math.max(-OVERFLOW.left, containerW - PANEL_W + OVERFLOW.right),
+    y: Math.max(-OVERFLOW.top, containerH - PANEL_H + OVERFLOW.bottom),
+  };
+}
+
+function clampPosition(x: number, y: number, containerW: number, containerH: number) {
+  const max = maxPosition(containerW, containerH);
+  return {
+    x: Math.min(Math.max(x, -OVERFLOW.left), max.x),
+    y: Math.min(Math.max(y, -OVERFLOW.top), max.y),
   };
 }
 
@@ -37,19 +42,28 @@ export function DraggableCliPanel({
   director: DemoDirector;
 }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [entranceReady, setEntranceReady] = useState(false);
   const [dragging, setDragging] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
+    const timer = window.setTimeout(() => setEntranceReady(true), ENTRANCE_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
     const container = containerRef.current;
     if (!container || pos !== null) return;
 
-    const { height } = container.getBoundingClientRect();
-    // Match the original absolute placement: -left-96, -bottom-12
-    setPos({
-      x: -384,
-      y: height - PANEL_H + 48,
-    });
+    const applyInitialPos = () => {
+      const { width, height } = container.getBoundingClientRect();
+      if (height === 0) return;
+      setPos(maxPosition(width, height));
+    };
+
+    applyInitialPos();
+    const ro = new ResizeObserver(applyInitialPos);
+    ro.observe(container);
+    return () => ro.disconnect();
   }, [containerRef, pos]);
 
   useEffect(() => {
@@ -109,10 +123,13 @@ export function DraggableCliPanel({
     [containerRef, pos],
   );
 
-  if (pos === null) return null;
+  if (pos === null || !entranceReady) return null;
 
   return (
-    <div
+    <motion.div
+      initial={{ opacity: 0, y: 32 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, ease: 'easeOut' }}
       className={cn(
         'absolute z-50 hidden h-[30rem] w-full max-w-[24rem] touch-none select-none lg:flex',
         dragging
@@ -128,6 +145,6 @@ export function DraggableCliPanel({
           className: cn('cursor-grab touch-none', dragging && 'cursor-grabbing'),
         }}
       />
-    </div>
+    </motion.div>
   );
 }
