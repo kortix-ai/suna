@@ -131,10 +131,10 @@ export function DraggableCliPanel({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: 'easeOut' }}
       className={cn(
-        'absolute z-50 hidden h-[30rem] w-full max-w-[24rem] touch-none select-none lg:flex',
+        'absolute z-50 hidden h-120 w-full max-w-[24rem] touch-none overflow-hidden rounded-md select-none lg:flex',
         dragging
-          ? 'ring-border/40 z-[60] scale-[1.02] cursor-grabbing shadow-2xl ring-1'
-          : 'cursor-grab shadow-lg transition-[transform,box-shadow] duration-150',
+          ? 'ring-border/40 z-60 scale-[1.02] cursor-grabbing shadow-2xl ring-1'
+          : 'cursor-grab shadow-md transition-[transform,box-shadow] duration-150',
       )}
       style={{ left: pos.x, top: pos.y }}
     >
@@ -142,7 +142,7 @@ export function DraggableCliPanel({
         director={director}
         dragHandleProps={{
           onPointerDown,
-          className: cn('cursor-grab touch-none', dragging && 'cursor-grabbing'),
+          className: cn('cursor-grab touch-none ', dragging && 'cursor-grabbing'),
         }}
       />
     </motion.div>

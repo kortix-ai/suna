@@ -1187,30 +1187,33 @@ export default function Home() {
                 </g>
               </svg>
 
-              <div className="text-body-sm relative mx-auto grid w-full max-w-[856px] grid-flow-col-dense grid-cols-3 grid-rows-2 items-center gap-2 md:mx-auto md:flex md:w-auto md:flex-row md:gap-5">
-                {WORKFORCE_MAP_DOMAINS.slice(0, 2).map(({ icon: Icon, labelKey }) => (
-                  <div
-                    key={labelKey}
-                    className="group bg-card text-foreground border-border flex h-[46px] items-center justify-center gap-0.5 rounded-sm border px-6 py-3 transition md:gap-2"
-                  >
-                    <Icon className="size-4 shrink-0" />
-                    <p>{tHome(labelKey)}</p>
-                  </div>
-                ))}
-
-                <div className="group text-foreground bg-foreground row-span-2 flex h-full w-full flex-col items-center justify-center gap-0.5 rounded-sm px-6 py-3 transition hover:brightness-90 md:h-[64px] md:w-[105px] md:gap-2">
-                  <KortixLogo className="text-background" />
+              <div className="text-body-sm relative mx-auto flex w-full max-w-[856px] flex-col items-center gap-2 md:w-auto md:flex-row md:gap-5">
+                <div className="group text-foreground bg-foreground order-1 flex h-[76px] w-full flex-col items-center justify-center gap-0.5 rounded-sm px-6 py-3 transition hover:brightness-90 md:order-3 md:h-[64px] md:w-[105px] md:gap-2">
+                  <span className="hidden lg:block">
+                    <KortixLogo className="text-background" />
+                  </span>
+                  <span className="block lg:hidden">
+                    <KortixLogo variant="logomark" className="text-background" />
+                  </span>
                 </div>
 
-                {WORKFORCE_MAP_DOMAINS.slice(2, 4).map(({ icon: Icon, labelKey }) => (
-                  <div
-                    key={labelKey}
-                    className="group bg-card text-foreground border-border flex h-[46px] items-center justify-center gap-0.5 rounded-sm border px-6 py-3 transition md:gap-2"
-                  >
-                    <Icon className="size-4 shrink-0" />
-                    <p>{tHome(labelKey)}</p>
-                  </div>
-                ))}
+                <div className="order-2 grid w-full grid-cols-2 gap-2 md:contents">
+                  {WORKFORCE_MAP_DOMAINS.map(({ icon: Icon, labelKey }, index) => (
+                    <div
+                      key={labelKey}
+                      className={cn(
+                        'group bg-card text-foreground border-border flex h-[46px] items-center justify-center gap-0.5 rounded-sm border px-6 py-3 transition md:gap-2',
+                        index === 0 && 'md:order-1',
+                        index === 1 && 'md:order-2',
+                        index === 2 && 'md:order-4',
+                        index === 3 && 'md:order-5',
+                      )}
+                    >
+                      <Icon className="hidden size-4 shrink-0 lg:block" />
+                      <p>{tHome(labelKey)}</p>
+                    </div>
+                  ))}
+                </div>
 
                 <div className="bg-border absolute top-1/2 left-0 z-[-1] hidden h-[2px] w-full md:block"></div>
               </div>
