@@ -191,6 +191,17 @@ const envSchema = z.object({
   DAYTONA_SERVER_URL:          optStr,
   DAYTONA_TARGET:              optStr,
 
+  // ── Daytona warm snapshots (experimental memory/process snapshots) ─────────
+  // Off by default. When KORTIX_WARM_SNAPSHOT_ENABLED is true AND
+  // DAYTONA_WARM_TARGET names Daytona's VM-class region (e.g. "experimental"),
+  // sessions can boot from a snapshot baked with services already running in
+  // RAM (opencode pre-migrated + serving), cutting cold-boot latency to ~2s.
+  // The warm snapshot is baked imperatively off a stock base snapshot — the
+  // experimental region can't build Dockerfile images. See snapshots/warm-bake.ts.
+  KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
+  DAYTONA_WARM_TARGET:         optStr,
+  DAYTONA_WARM_BASE_SNAPSHOT:  optStrDefault('daytonaio/sandbox:0.8.0'),
+
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
   // pt_live_… key; PLATINUM_API_URL is the control-plane base
@@ -512,6 +523,9 @@ export const config = {
   DAYTONA_API_KEY: env.DAYTONA_API_KEY,
   DAYTONA_SERVER_URL: env.DAYTONA_SERVER_URL,
   DAYTONA_TARGET: env.DAYTONA_TARGET,
+  KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
+  DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
+  DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
 
   PLATINUM_API_KEY: env.PLATINUM_API_KEY,
   PLATINUM_API_URL: env.PLATINUM_API_URL,

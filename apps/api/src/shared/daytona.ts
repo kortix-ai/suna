@@ -23,6 +23,45 @@ export function getDaytona(): Daytona {
   return daytonaClient;
 }
 
+let daytonaWarmClient: Daytona | null = null;
+
+/**
+ * Get the Daytona client pinned to the WARM target (Daytona's VM-class region,
+ * e.g. "experimental"), where snapshots preserve full memory/process state.
+ *
+ * The TS SDK takes `target` on the client, not per-create, so warm sandboxes
+ * need their own client. Same API key + server URL as the main client; only the
+ * target differs. Returns the main client when no warm target is set.
+ */
+export function getDaytonaWarm(): Daytona {
+  const warmTarget = config.DAYTONA_WARM_TARGET;
+  if (!warmTarget) return getDaytona();
+  if (!daytonaWarmClient) {
+    if (!config.DAYTONA_API_KEY) {
+      throw new Error('Missing DAYTONA_API_KEY');
+    }
+    daytonaWarmClient = new Daytona({
+      apiKey: config.DAYTONA_API_KEY,
+      apiUrl: config.DAYTONA_SERVER_URL || undefined,
+      target: warmTarget,
+    });
+  }
+  return daytonaWarmClient;
+}
+
+/**
+ * True when warm (memory-state) snapshots are turned on AND a warm target is
+ * configured. The single gate every warm-snapshot code path checks first, so
+ * the feature is fully inert on prod until both are set.
+ */
+export function warmSnapshotsEnabled(): boolean {
+  return (
+    config.KORTIX_WARM_SNAPSHOT_ENABLED &&
+    !!config.DAYTONA_API_KEY &&
+    !!config.DAYTONA_WARM_TARGET
+  );
+}
+
 /**
  * Check if Daytona is configured.
  */
