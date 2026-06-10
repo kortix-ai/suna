@@ -208,29 +208,67 @@ function VersionSheet({
         ) : (
           // Branch listing came back empty (the repo's git mirror is unavailable —
           // the API returns the default branch but no list). Never show a blank
-          // sheet: surface the current version plus a clear reason + retry.
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 32, gap: 14 }}>
+          // sheet: keep the current version as a normal list row up top, then a
+          // proper empty state for the rest.
+          <View style={{ flex: 1 }}>
             {value ? (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, alignSelf: 'stretch', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: border }}>
-                <GitBranch size={18} color={theme.primary} />
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                    <Text style={{ fontSize: 14.5, fontFamily: 'Menlo', color: theme.primary }} numberOfLines={1}>{shortRef(value)}</Text>
-                    {value === defaultBranch && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: muted }}>MAIN</Text>}
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 }}>
+                  <GitBranch size={18} color={theme.primary} />
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Text style={{ fontSize: 14.5, fontFamily: 'Menlo', color: theme.primary }} numberOfLines={1}>{shortRef(value)}</Text>
+                      {value === defaultBranch && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: muted }}>MAIN</Text>}
+                    </View>
+                    <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }}>Current version</Text>
                   </View>
-                  <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }}>Current version</Text>
+                  <Check size={17} color={theme.primary} />
                 </View>
-                <Check size={17} color={theme.primary} />
+                <View style={{ height: 1, backgroundColor: border, marginHorizontal: 16 }} />
+              </>
+            ) : null}
+            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 36, paddingVertical: 32, gap: 6 }}>
+              <View
+                style={{
+                  width: 64,
+                  height: 64,
+                  borderRadius: 20,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginBottom: 10,
+                  backgroundColor: isDark ? 'rgba(248, 248, 248, 0.05)' : 'rgba(18, 18, 21, 0.04)',
+                }}
+              >
+                <GitBranch
+                  size={26}
+                  strokeWidth={1.5}
+                  color={isDark ? 'rgba(248, 248, 248, 0.25)' : 'rgba(18, 18, 21, 0.25)'}
+                />
               </View>
-            ) : null}
-            <Text style={{ fontSize: 13, color: muted, textAlign: 'center', lineHeight: 19 }}>
-              Other versions couldn’t be loaded — the repository may still be preparing.
-            </Text>
-            {onRetry ? (
-              <TouchableOpacity onPress={() => { haptics.tap(); onRetry(); }} activeOpacity={0.7} style={{ paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: border }}>
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
-              </TouchableOpacity>
-            ) : null}
+              <Text style={{ fontSize: 15.5, fontFamily: 'Roobert-Medium', color: fg, textAlign: 'center' }}>
+                No other versions yet
+              </Text>
+              <Text style={{ fontSize: 13, color: muted, textAlign: 'center', lineHeight: 19 }}>
+                Branches couldn’t be loaded — the repository may still be preparing.
+              </Text>
+              {onRetry ? (
+                <TouchableOpacity
+                  onPress={() => { haptics.tap(); onRetry(); }}
+                  activeOpacity={0.7}
+                  style={{
+                    marginTop: 14,
+                    paddingHorizontal: 22,
+                    paddingVertical: 11,
+                    borderRadius: 9999,
+                    backgroundColor: isDark ? '#F8F8F8' : '#121215',
+                  }}
+                >
+                  <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: isDark ? '#121215' : '#F8F8F8' }}>
+                    Try again
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
           </View>
         )}
       </BottomSheetScrollView>
