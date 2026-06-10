@@ -181,7 +181,77 @@ async function main() {
     })
     .catch((err) => logger.warn('[boot] on_boot resolution failed', { err: (err as Error).message }))
 
+  // Warm-SEED builder boot (autoClone but NO session): this VM is booted by
+  // Platinum's stateful-capture machinery to be snapshotted fully warm — repo
+  // cloned, opencode up. Forked sessions land their real env (KORTIX_SESSION_ID,
+  // tokens, branch) in /etc/dnah-env via the host's reconfigure; the snapshot
+  // resumes THIS process, so it must adopt that env itself: without this the
+  // fork keeps the seed's baked tokens and stays on the default branch (caught
+  // live 2026-06-10 — forks answered health on `main` with the deriving
+  // session's credentials). Become capture-ready here, but leave the session
+  // runtime (initial session + event relay) to the adopting session.
+  if ((process.env.KORTIX_SESSION_ID ?? '').trim() === '' && cfg.autoClone) {
+    void waitForOpencodeReady(opencode, cfg.projectTarget).then((ok) => {
+      if (ok) {
+        bootMark('opencode-ready')
+        logger.info('[seed] capture-ready; awaiting session adoption', { timeline: bootState.timeline })
+      } else {
+        logger.warn('[seed] opencode did not become ready within deadline; capture will not trigger')
+      }
+    })
+    armSeedAdoption(opencode, server, bootState, bootMark)
+    return
+  }
+
   void startSessionRuntime(opencode, cfg, bootState, bootMark)
+}
+
+// Adopt a forked session inside a warm-seed clone. Mirrors the warm-pool claim
+// path, but the repo is already baked — materializeRepo() takes its local-only
+// branch (remote set-url + `checkout -B <session>`), so adoption is ~100ms.
+// Trigger: KORTIX_SESSION_ID appearing in /etc/dnah-env (the seed's own env
+// never contains it — platinum-seed.ts strips it from captureEnv).
+function armSeedAdoption(
+  opencode: ReturnType<typeof createOpencodeSupervisor>,
+  server: ReturnType<typeof startProxy>,
+  bootState: SandboxBootState,
+  bootMark: (label: string) => void,
+): void {
+  let adopted = false
+  const adopt = (trigger: string) => {
+    if (adopted) return
+    adopted = true
+    void (async () => {
+      const t0 = Date.now()
+      reloadSessionEnv()
+      const cfg2 = loadConfig()
+      // Re-arm the proxy with the session's tokens — the seed booted with the
+      // deriving session's credentials, which must never serve this fork.
+      server.reload(cfg2)
+      bootState.initialOpenCodeSessionRequired =
+        (process.env.KORTIX_INITIAL_PROMPT ?? '').trim().length > 0 ||
+        (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
+      logger.info('[seed] adoption — initializing session', { trigger, branch: process.env.KORTIX_BRANCH_NAME })
+      try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
+      try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
+      if (cfg2.autoClone) {
+        await materializeRepo(cfg2).catch((err) => {
+          bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+          logger.error('[seed] repo adoption failed', err)
+        })
+        bootMark('seed-repo-adopted')
+        if (!bootState.repoMaterializationError) await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
+      }
+      await startSessionRuntime(opencode, cfg2, bootState, bootMark)
+      logger.info('[seed] adoption complete', { adoptMs: Date.now() - t0, timeline: bootState.timeline })
+    })()
+  }
+  process.on('SIGHUP', () => adopt('sighup'))
+  const poll = setInterval(() => {
+    let txt = ''
+    try { txt = readFileSync('/etc/dnah-env', 'utf8') } catch { return }
+    if (/^KORTIX_SESSION_ID=\S/m.test(txt)) { clearInterval(poll); adopt('env-poll') }
+  }, 250)
 }
 
 // Post-opencode session runtime: create the initial opencode session (when a
