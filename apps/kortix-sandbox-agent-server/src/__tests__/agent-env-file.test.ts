@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { writeAgentEnvFile } from '../agent-env-file'
+import { shredAgentEnvFile, writeAgentEnvFile } from '../agent-env-file'
 import { createProjectEnvStore } from '../project-env'
 
 let dir: string
@@ -15,76 +15,101 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-function paths() {
-  return { json: join(dir, 'agent-env.json'), sh: join(dir, 'agent-env.sh') }
+function shPath() {
+  return join(dir, 'agent-env.sh')
 }
 
 describe('writeAgentEnvFile', () => {
-  test('writes the live env snapshot as 0600 JSON', () => {
-    const store = createProjectEnvStore({
-      KORTIX_PROJECT_SECRETS_REVISION: 'rev-boot',
-      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
-      API_KEY: 'secret',
-    } as NodeJS.ProcessEnv)
-    const { json } = paths()
-
-    expect(writeAgentEnvFile(store, paths())).toBe(true)
-
-    const parsed = JSON.parse(readFileSync(json, 'utf8'))
-    expect(parsed).toMatchObject({
-      env: { API_KEY: 'secret' },
-      names: ['API_KEY'],
-      revision: 'rev-boot',
-    })
-    expect(statSync(json).mode & 0o777).toBe(0o600)
-  })
-
   test('writes a 0600 shell file that exports each secret', () => {
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
       API_KEY: 'secret',
     } as NodeJS.ProcessEnv)
-    const { sh } = paths()
+    const sh = shPath()
 
-    writeAgentEnvFile(store, paths())
+    expect(writeAgentEnvFile(store, { sh })).toBe(true)
 
     const body = readFileSync(sh, 'utf8')
     expect(body).toContain("export API_KEY='secret'")
     expect(statSync(sh).mode & 0o777).toBe(0o600)
   })
 
-  test('shell file is injection-safe — values are single-quote escaped', () => {
+  test('injection-safe — values are single-quote escaped', () => {
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRET_NAMES: 'EVIL',
       EVIL: "$(touch /tmp/pwned); a'b",
     } as NodeJS.ProcessEnv)
-    const { sh } = paths()
+    const sh = shPath()
 
-    writeAgentEnvFile(store, paths())
+    writeAgentEnvFile(store, { sh })
 
     const body = readFileSync(sh, 'utf8')
     expect(body).toContain(`export EVIL='$(touch /tmp/pwned); a'\\''b'`)
   })
 
-  test('reflects rotation and unsets a revoked secret in both files', () => {
+  test('skips a value containing a NUL byte rather than breaking the file', () => {
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRET_NAMES: 'GOOD,BADNUL',
+      GOOD: 'ok',
+      BADNUL: `x${String.fromCharCode(0)}y`,
+    } as NodeJS.ProcessEnv)
+    const sh = shPath()
+
+    writeAgentEnvFile(store, { sh })
+
+    const body = readFileSync(sh, 'utf8')
+    expect(body).toContain("export GOOD='ok'")
+    expect(body).not.toContain('BADNUL')
+    expect(body.includes(String.fromCharCode(0))).toBe(false)
+  })
+
+  test('drops reserved/dangerous names even if they reach the store', () => {
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRET_NAMES: 'GOOD,PATH,LD_PRELOAD,BASH_ENV',
+      GOOD: 'ok',
+      PATH: '/evil',
+      LD_PRELOAD: '/evil.so',
+      BASH_ENV: '/evil.sh',
+    } as NodeJS.ProcessEnv)
+    const sh = shPath()
+
+    writeAgentEnvFile(store, { sh })
+
+    const body = readFileSync(sh, 'utf8')
+    expect(body).toContain("export GOOD='ok'")
+    expect(body).not.toContain('/evil')
+    expect(body).not.toContain('LD_PRELOAD')
+  })
+
+  test('rotation + revocation: exports new value, unsets a removed boot secret', () => {
     const store = createProjectEnvStore({
       KORTIX_PROJECT_SECRET_NAMES: 'API_KEY,OLD',
       API_KEY: 'v1',
       OLD: 'gone-soon',
     } as NodeJS.ProcessEnv)
-    const { json, sh } = paths()
+    const sh = shPath()
 
     store.apply({ revision: 'r2', env: { API_KEY: 'v2' }, names: ['API_KEY'] })
-    writeAgentEnvFile(store, paths(), {
-      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY,OLD',
-    } as NodeJS.ProcessEnv)
-
-    const parsed = JSON.parse(readFileSync(json, 'utf8'))
-    expect(parsed.env).toEqual({ API_KEY: 'v2' })
-    expect(parsed.revision).toBe('r2')
+    writeAgentEnvFile(store, {
+      sh,
+      bootEnv: { KORTIX_PROJECT_SECRET_NAMES: 'API_KEY,OLD' } as NodeJS.ProcessEnv,
+    })
 
     const body = readFileSync(sh, 'utf8')
     expect(body).toContain("export API_KEY='v2'")
     expect(body).toContain('unset OLD')
+  })
+
+  test('shredAgentEnvFile removes the file', () => {
+    const store = createProjectEnvStore({
+      KORTIX_PROJECT_SECRET_NAMES: 'API_KEY',
+      API_KEY: 'secret',
+    } as NodeJS.ProcessEnv)
+    const sh = shPath()
+    writeAgentEnvFile(store, { sh })
+    expect(existsSync(sh)).toBe(true)
+
+    shredAgentEnvFile(sh)
+    expect(existsSync(sh)).toBe(false)
   })
 })
