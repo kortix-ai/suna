@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'no
 import { dirname, join } from 'node:path'
 import { access, constants, stat } from 'node:fs/promises'
 
+import { AGENT_ENV_SH } from './agent-env-file'
 import type { Config } from './config'
 import { buildGitIdentityEnv } from './git'
 import { logger } from './logger'
@@ -315,6 +316,11 @@ export function createOpencodeSupervisor(
       XDG_CONFIG_HOME: OPENCODE_CONFIG_HOME,
       XDG_CACHE_HOME: OPENCODE_CACHE_HOME,
       OPENCODE_CONFIG_DIR: opencodeConfigDir,
+      // Every non-interactive shell opencode spawns (`bash -c`) sources this,
+      // so live project secrets reach the agent's commands without any
+      // opencode plugin/config. Interactive shells + terminals get it from the
+      // image-baked /etc/profile.d + /etc/bash.bashrc hooks instead.
+      BASH_ENV: AGENT_ENV_SH,
       PORT: undefined,
       APP_PORT: undefined,
     }

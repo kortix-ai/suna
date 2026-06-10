@@ -140,6 +140,17 @@ RUN chmod +x /usr/local/bin/kortix-agent /usr/local/bin/kortix /usr/local/bin/ko
     && bash /opt/kortix/apps/sandbox/agent-cli/install-shims.sh /opt/kortix/apps/sandbox/agent-cli \
     && kortix --version
 
+# Platform-owned secret delivery. The daemon writes live project secrets to
+# /run/kortix/agent-env.sh; these baked hooks source it into every shell —
+# login/non-login, interactive PTY shells, and any terminal the user opens —
+# so secrets load automatically and CANNOT be removed via user opencode config.
+# (Non-interactive `bash -c` from opencode's own tools is covered by BASH_ENV,
+# which the daemon sets when it spawns opencode.)
+RUN printf '%s\n' '[ -r /run/kortix/agent-env.sh ] && . /run/kortix/agent-env.sh' \
+      > /etc/profile.d/kortix-agent-env.sh \
+    && printf '%s\n' '[ -r /run/kortix/agent-env.sh ] && . /run/kortix/agent-env.sh' \
+      >> /etc/bash.bashrc
+
 ENV KORTIX_WORKSPACE=/workspace
 WORKDIR /workspace
 
