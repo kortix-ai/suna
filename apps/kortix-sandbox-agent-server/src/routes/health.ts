@@ -1,8 +1,25 @@
 import { Hono } from 'hono'
+import { readFileSync } from 'node:fs'
 
 import type { Config } from '../config'
 import { readRepoInfo } from '../git'
 import type { Opencode } from '../opencode'
+
+/**
+ * The branch this VM's session is supposed to be on, read from the host-
+ * written env file rather than process.env: warm-seed forks resume a process
+ * whose env predates the session (adoption reloads it ~250ms later), but
+ * /etc/dnah-env carries the session's KORTIX_BRANCH_NAME from the instant the
+ * VM exists — so the readiness gate below is correct even pre-adoption.
+ * Empty when this VM is a seed builder (no session) → gate inert.
+ */
+function wantedSessionBranch(): string {
+  try {
+    const m = readFileSync('/etc/dnah-env', 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
+    if (m?.[1]) return m[1]
+  } catch { /* no env file (local dev) */ }
+  return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
+}
 
 export type BootMark = { label: string; atMs: number }
 
@@ -51,7 +68,16 @@ export function createHealthRouter(
     const repoInfo = await readRepoInfo(cfg.projectTarget).catch(() => null)
     const opencodeState = opencode.getState()
     const repoRequired = cfg.autoClone
-    const repoReady = !repoRequired || repoInfo !== null
+    // A repo on disk isn't ready until it's on the SESSION branch: the clone
+    // path renames the repo into place BEFORE the branch checkout (which can
+    // wait seconds on a remote-branch fetch), and warm-seed forks resume on
+    // the seed's default branch until adoption re-checks-out. Without the
+    // branch gate, runtimeReady=true had a window where a prompt would land
+    // on the default branch (observed live: `main` at ready, session branch
+    // +3s). Seed builders have no session branch → gate inert for capture.
+    const wantBranch = repoRequired ? wantedSessionBranch() : ''
+    const repoReady =
+      !repoRequired || (repoInfo !== null && (!wantBranch || repoInfo.branch === wantBranch))
     const initialSessionReady =
       !bootState.initialOpenCodeSessionRequired || !!bootState.initialOpenCodeSessionId
     const initialSessionError = bootState.initialOpenCodeSessionError ?? null
