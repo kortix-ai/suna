@@ -78,7 +78,13 @@ export async function listSandboxOpencodeSessions(
   try {
     const res = await fetch(
       `${ep.url}/session?directory=${encodeURIComponent(WORKSPACE)}`,
-      { method: 'GET', headers: ep.headers, signal: AbortSignal.timeout(8_000) },
+      // Fail FAST: a healthy daemon answers this list in <300ms; an 8s budget
+      // only ever bought riding out a wedged first connection to a freshly
+      // restored microVM (residual CH RX stall), and it costs chat-ready
+      // latency 1:1 because the FE's ensure retry can't start until this
+      // returns. Observed: 8s 'unreachable' tails on warm forks; 3s + the
+      // FE's ~1.6s backoff retry beats hanging.
+      { method: 'GET', headers: ep.headers, signal: AbortSignal.timeout(3_000) },
     );
     // 503 = daemon up but OpenCode/repo not ready yet — distinct from a hard
     // failure so callers can retry rather than treat it as "empty".
