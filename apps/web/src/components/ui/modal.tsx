@@ -111,7 +111,7 @@ const ModalContentInner = React.forwardRef<
     >
       {children}
 
-      <div className="absolute top-3 right-2 flex items-center justify-end gap-2">
+      <div className="absolute top-3 right-3 flex items-center justify-end gap-2">
         {closeButtonChildren}
         {showCloseButton && (
           <ModalClose>
@@ -119,7 +119,7 @@ const ModalContentInner = React.forwardRef<
               <Button
                 variant="ghost"
                 className={cn(
-                  'size-8 rounded-md p-0 text-xs font-semibold focus:outline-none',
+                  'size-8 p-0 text-xs font-semibold focus:outline-none',
                   closeClassName,
                 )}
               >
@@ -147,14 +147,14 @@ const ModalContent = React.forwardRef<
 ModalContent.displayName = DialogPrimitive.Content.displayName;
 
 const ModalHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex flex-col space-y-0 text-left', 'px-4 pt-4', className)} {...props} />
+  <div className={cn('flex flex-col space-y-0 text-left', 'px-5 pt-5', className)} {...props} />
 );
 ModalHeader.displayName = 'ModalHeader';
 
 const ModalFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      'flex flex-col-reverse items-center justify-end gap-y-2 rounded-b-none px-4 sm:flex-row sm:justify-end sm:space-x-2 sm:gap-y-0 md:rounded-b-xl md:px-4 lg:rounded-b-xl',
+      'flex flex-col-reverse items-center justify-end gap-y-2 rounded-b-none px-5 sm:flex-row sm:justify-end sm:space-x-2 sm:gap-y-0 md:rounded-b-xl md:px-5 lg:rounded-b-xl',
 
       className,
     )}
@@ -227,7 +227,7 @@ const LazyModal = ({
 };
 
 const ModalBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex-1 space-y-4 p-4 pt-0', className)} {...props} />
+  <div className={cn('flex-1 space-y-4 p-5 pt-0', className)} {...props} />
 );
 ModalBody.displayName = 'ModalBody';
 

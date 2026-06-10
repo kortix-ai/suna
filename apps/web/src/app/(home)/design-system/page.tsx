@@ -35,7 +35,13 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import {
+  Alert,
+  AlertContent,
+  AlertDescription,
+  AlertMedia,
+  AlertTitle,
+} from '@/components/ui/alert';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,7 +53,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Badge } from '@/components/ui/badge';
+import { Badge, badgeColors } from '@/components/ui/badge';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -1365,16 +1371,33 @@ export default function BrandPage() {
                   <div className="space-y-4">
                     <div>
                       <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        Solid colors
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {(Object.keys(badgeColors) as Array<keyof typeof badgeColors>).map(
+                          (color) => (
+                            <Badge key={color} variant="solid" color={color}>
+                              {color}
+                            </Badge>
+                          ),
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
                         {tHardcodedUi.raw('appHomeDesignSystemPage.line1114JsxTextBaseVariants')}
                       </p>
                       <div className="flex flex-wrap gap-2">
+                        <Badge variant="solid">Solid</Badge>
                         <Badge variant="default">Default</Badge>
                         <Badge variant="secondary">Secondary</Badge>
+                        <Badge variant="accent">Accent</Badge>
                         <Badge variant="destructive">Destructive</Badge>
                         <Badge variant="outline">Outline</Badge>
                         <Badge variant="new">New</Badge>
                         <Badge variant="beta">Beta</Badge>
                         <Badge variant="highlight">Highlight</Badge>
+                        <Badge variant="transparent">Transparent</Badge>
                       </div>
                     </div>
                     <div>
@@ -1383,6 +1406,8 @@ export default function BrandPage() {
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="success">Success</Badge>
+                        <Badge variant="badgeSuccess">Badge success</Badge>
+                        <Badge variant="update">Update</Badge>
                         <Badge variant="warning">Warning</Badge>
                         <Badge variant="info">Info</Badge>
                         <Badge variant="muted">Muted</Badge>
@@ -1654,25 +1679,65 @@ export default function BrandPage() {
                   )}
                 </ComponentDesc>
                 <DemoContainer>
-                  <div className="flex flex-wrap gap-2">
-                    <Toggle
-                      variant="default"
-                      pressed={togglePressed}
-                      onPressedChange={setTogglePressed}
-                      aria-label={tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line1356JsxAttrAriaLabelToggleBold',
-                      )}
-                    >
-                      <Bold className="size-4" />
-                    </Toggle>
-                    <Toggle
-                      variant="outline"
-                      aria-label={tHardcodedUi.raw(
-                        'appHomeDesignSystemPage.line1360JsxAttrAriaLabelToggleSettings',
-                      )}
-                    >
-                      <Settings className="size-4" />
-                    </Toggle>
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        Icon only
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Toggle
+                          variant="default"
+                          pressed={togglePressed}
+                          onPressedChange={setTogglePressed}
+                          aria-label={tHardcodedUi.raw(
+                            'appHomeDesignSystemPage.line1356JsxAttrAriaLabelToggleBold',
+                          )}
+                        >
+                          <Bold className="size-4" />
+                        </Toggle>
+                        <Toggle
+                          variant="outline"
+                          aria-label={tHardcodedUi.raw(
+                            'appHomeDesignSystemPage.line1360JsxAttrAriaLabelToggleSettings',
+                          )}
+                        >
+                          <Settings className="size-4" />
+                        </Toggle>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        Text only
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Toggle variant="default">Bold</Toggle>
+                        <Toggle variant="outline">Archive</Toggle>
+                        <Toggle variant="secondary">Pinned</Toggle>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        Text + icon
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Toggle variant="default">
+                          <Bold className="size-4" />
+                          Bold
+                        </Toggle>
+                        <Toggle variant="outline">
+                          <Star className="size-4" />
+                          Starred
+                        </Toggle>
+                        <Toggle variant="secondary">
+                          <Check className="size-4" />
+                          Selected
+                        </Toggle>
+                        <Toggle variant="outline">
+                          <Settings className="size-4" />
+                          Settings
+                        </Toggle>
+                      </div>
+                    </div>
                   </div>
                 </DemoContainer>
               </div>
@@ -2017,33 +2082,45 @@ export default function BrandPage() {
                 <DemoContainer>
                   <div className="space-y-3">
                     <Alert>
-                      <Info className="size-4" />
-                      <AlertTitle>
-                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1628JsxTextDefaultAlert')}
-                      </AlertTitle>
-                      <AlertDescription>
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1630JsxTextThisIsADefaultInformationalAlert',
-                        )}
-                      </AlertDescription>
+                      <AlertMedia>
+                        <Info className="size-4" />
+                      </AlertMedia>
+                      <AlertContent>
+                        <AlertTitle>
+                          {tHardcodedUi.raw('appHomeDesignSystemPage.line1628JsxTextDefaultAlert')}
+                        </AlertTitle>
+                        <AlertDescription>
+                          {tHardcodedUi.raw(
+                            'appHomeDesignSystemPage.line1630JsxTextThisIsADefaultInformationalAlert',
+                          )}
+                        </AlertDescription>
+                      </AlertContent>
                     </Alert>
                     <Alert variant="destructive">
-                      <AlertCircle className="size-4" />
-                      <AlertTitle>Destructive</AlertTitle>
-                      <AlertDescription>
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1637JsxTextSomethingWentWrongPleaseTryAgain',
-                        )}
-                      </AlertDescription>
+                      <AlertMedia>
+                        <AlertCircle className="size-4" />
+                      </AlertMedia>
+                      <AlertContent>
+                        <AlertTitle>Destructive</AlertTitle>
+                        <AlertDescription>
+                          {tHardcodedUi.raw(
+                            'appHomeDesignSystemPage.line1637JsxTextSomethingWentWrongPleaseTryAgain',
+                          )}
+                        </AlertDescription>
+                      </AlertContent>
                     </Alert>
                     <Alert variant="warning">
-                      <TriangleAlert className="size-4" />
-                      <AlertTitle>Warning</AlertTitle>
-                      <AlertDescription>
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1644JsxTextThisActionMayHaveUnintendedConsequences',
-                        )}
-                      </AlertDescription>
+                      <AlertMedia>
+                        <TriangleAlert className="size-4" />
+                      </AlertMedia>
+                      <AlertContent>
+                        <AlertTitle>Warning</AlertTitle>
+                        <AlertDescription>
+                          {tHardcodedUi.raw(
+                            'appHomeDesignSystemPage.line1644JsxTextThisActionMayHaveUnintendedConsequences',
+                          )}
+                        </AlertDescription>
+                      </AlertContent>
                     </Alert>
                   </div>
                 </DemoContainer>

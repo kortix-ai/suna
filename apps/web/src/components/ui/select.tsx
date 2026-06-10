@@ -23,14 +23,13 @@ const SelectTrigger = React.forwardRef<
   <SelectPrimitive.Trigger
     ref={ref}
     className={cn(
-      'border-input bg-background ring-offset-background placeholder:text-muted-foreground hover:border-primary/10 hover:bg-muted/40 focus:ring-kortix-base focus-visible:ring-kortix-base flex h-9 w-fit items-center justify-between rounded-md border px-4 py-2 text-sm focus:ring-[0.6px] focus:outline-none focus-visible:ring-[0.6px] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 has-[>svg]:px-3 [&>span]:line-clamp-1',
+      'border-input bg-background ring-offset-background placeholder:text-muted-foreground hover:border-primary/10 hover:bg-muted/40 focus:ring-kortix-base focus-visible:ring-kortix-base flex h-9 w-fit items-center justify-between rounded-lg border px-4 py-2 text-sm focus:ring-[0.6px] focus:outline-none focus-visible:ring-[0.6px] focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 has-[>svg]:px-3 [&>span]:line-clamp-1',
       variant === 'outline' &&
         'bg-transprarent hover:bg-foreground/5/80 border-input hover:text-accent-foreground h-9 px-3',
       variant === 'secondary' && buttonVariants({ variant: 'input', size }),
       variant === 'secondary' && 'mx-0.5 my-0 w-fit border-none py-0',
       variant === 'accent' && 'mx-0.5 my-0 w-fit border-none py-0',
-      variant === 'accent' &&
-        'bg-primary/5 text-accent-foreground hover:bg-primary/10 h-8 rounded-md',
+      variant === 'accent' && 'bg-primary/5 text-accent-foreground hover:bg-primary/10 h-8',
       className,
     )}
     {...props}

@@ -31,7 +31,7 @@ function TabsList({ className, variant = 'secondary', size = 'default', ...props
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        'text-muted-foreground inline-flex w-fit items-center justify-center gap-1 rounded-lg',
+        'text-muted-foreground inline-flex w-fit items-center justify-center gap-1 rounded-full',
         className,
         variant === 'secondary' && 'bg-foreground/10 p-[1.5px] px-[2px]',
         sizeMap[size],
@@ -52,14 +52,14 @@ function TabsTrigger({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        "focus-visible:outline-ring focus-visible:border-kortix-blue inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-[calc(var(--radius)-1.5px)] border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "focus-visible:outline-ring focus-visible:border-kortix-base inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center gap-1.5 rounded-full border border-transparent px-2 py-1 text-sm font-medium whitespace-nowrap transition-[color,box-shadow] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50 data-[state=active]:shadow-sm [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
 
         'data-[state=active]:bg-background hover:data-[state=inactive]:bg-secondary data-[state=inactive]:bg-transparent',
-        'data-[state=active]:text-foreground data-[state=inactive]:text-foreground/60 hover:data-[state=inactive]:text-foreground',
+        'data-[state=active]:text-foreground data-[state=inactive]:text-foreground/60 hover:data-[state=inactive]:text-foreground hover:data-[state=inactive]:bg-muted',
 
         className,
         variant === 'large' &&
-          'border-border/80 h-10 rounded-4xl border px-4 data-[state=inactive]:bg-transparent',
+          'border-border/80 h-10 border px-4 data-[state=inactive]:bg-transparent',
         variant === 'transparent' &&
           'text-primary data-[state=active]:text-primary data-[state=inactive]:text-primary bg-transparent data-[state=active]:border-transparent data-[state=active]:bg-transparent data-[state=active]:shadow-none data-[state=inactive]:bg-transparent dark:data-[state=active]:border-none',
         variant === 'underline' &&
@@ -90,7 +90,7 @@ function TabsListCompact({ className, ...props }: React.ComponentProps<typeof Ta
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        'bg-foreground/10 text-muted-foreground inline-flex h-7 w-fit items-center justify-center gap-0.5 rounded-md p-[1.5px] px-[2px]',
+        'bg-foreground/10 text-muted-foreground inline-flex h-7 w-fit items-center justify-center gap-0.5 rounded-full p-[1.5px] px-[2px]',
         className,
       )}
       {...props}
@@ -107,7 +107,7 @@ function TabsTriggerCompact({
     <TabsPrimitive.Trigger
       data-slot="tabs-trigger"
       className={cn(
-        'focus:ring-kortix-base focus:border-kortix-blue focus:outline-ring focus:border-kortix-blue inline-flex h-[calc(100%-2px)] flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-sm border border-transparent px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus:ring-[0.6px] focus:outline-none',
+        'focus:ring-kortix-base focus:outline-ring focus:border-kortix-base inline-flex h-[calc(100%-2px)] flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-full border border-transparent px-2.5 py-1 text-xs font-medium whitespace-nowrap transition-colors duration-150 focus:ring-[0.6px] focus:outline-none',
         // 'data-[state=active]:text-foreground focus-visible:border-ring focus-visible:outline-ring focus-visible:ring-ring/50 data-[state=active]:bg-background data-[state=inactive]:bg-transparent data-[state=inactive]:text-foreground/60 ',
         'data-[state=active]:bg-background hover:data-[state=inactive]:bg-secondary data-[state=inactive]:bg-transparent',
         'data-[state=active]:text-foreground data-[state=inactive]:text-foreground/60 hover:data-[state=inactive]:text-foreground',

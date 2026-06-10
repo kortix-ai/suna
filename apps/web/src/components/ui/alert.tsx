@@ -1,46 +1,51 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 
+import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { cn } from '@/lib/utils';
 
-const alertVariants = cva(
-  'relative w-full rounded-lg border px-4 py-3 text-sm grid has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] grid-cols-[0_1fr] has-[>svg]:gap-x-3 gap-y-0.5 items-start [&>svg]:size-4 [&>svg]:translate-y-0.5 [&>svg]:text-current',
-  {
-    variants: {
-      variant: {
-        default: 'bg-card text-card-foreground',
-        destructive:
-          'text-destructive bg-card [&>svg]:text-current *:data-[slot=alert-description]:text-destructive/90',
-        warning:
-          'text-amber-600 border-amber-600/50 bg-amber-200/10 dark:bg-amber-900/10 dark:border-amber-600/50 dark:text-amber-400 [&>svg]:text-current *:data-[slot=alert-description]:text-amber-500/90',
-      },
-    },
-    defaultVariants: {
-      variant: 'default',
+const alertVariants = cva('w-full rounded-xl', {
+  variants: {
+    variant: {
+      default: 'bg-card text-card-foreground',
+      destructive:
+        'text-destructive bg-card [&_[data-slot=item-media]_svg]:text-current [&_[data-slot=item-description]]:text-destructive/90',
+      warning:
+        'text-kortix-orange border-kortix-orange border-[0.5px] bg-kortix-orange/10 [&_[data-slot=item-media]_svg]:text-current [&_[data-slot=item-description]]:text-kortix-orange/90',
     },
   },
-);
+  defaultVariants: {
+    variant: 'default',
+  },
+});
 
-function Alert({
+function AlertMedia({
   className,
-  variant,
+  variant = 'default',
   ...props
-}: React.ComponentProps<'div'> & VariantProps<typeof alertVariants>) {
+}: React.ComponentProps<typeof ItemMedia>) {
   return (
-    <div
-      data-slot="alert"
-      role="alert"
-      className={cn(alertVariants({ variant }), className)}
+    <ItemMedia
+      data-slot="alert-media"
+      variant={variant}
+      className={cn(
+        'size-4 shrink-0 self-start [&_svg]:text-current [&_svg:not([class*="size-"])]:size-4',
+        className,
+      )}
       {...props}
     />
   );
 }
 
-function AlertTitle({ className, ...props }: React.ComponentProps<'div'>) {
+function AlertContent({ className, ...props }: React.ComponentProps<typeof ItemContent>) {
+  return <ItemContent data-slot="alert-content" className={className} {...props} />;
+}
+
+function AlertTitle({ className, ...props }: React.ComponentProps<typeof ItemTitle>) {
   return (
-    <div
+    <ItemTitle
       data-slot="alert-title"
-      className={cn('col-start-2 line-clamp-1 min-h-4 font-medium tracking-tight', className)}
+      className={cn('line-clamp-1 min-h-4 tracking-tight', className)}
       {...props}
     />
   );
@@ -49,9 +54,11 @@ function AlertTitle({ className, ...props }: React.ComponentProps<'div'>) {
 function AlertDescription({ className, ...props }: React.ComponentProps<'div'>) {
   return (
     <div
-      data-slot="alert-description"
+      data-slot="item-description"
       className={cn(
-        'text-muted-foreground col-start-2 grid justify-items-start gap-1 text-sm [&_p]:leading-relaxed',
+        'text-muted-foreground text-sm leading-normal font-normal text-balance',
+        '[&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4',
+        '[&_p]:leading-relaxed',
         className,
       )}
       {...props}
@@ -59,4 +66,80 @@ function AlertDescription({ className, ...props }: React.ComponentProps<'div'>) 
   );
 }
 
-export { Alert, AlertDescription, AlertTitle };
+function AlertActions({ className, ...props }: React.ComponentProps<typeof ItemActions>) {
+  return <ItemActions data-slot="alert-actions" className={className} {...props} />;
+}
+
+function partitionAlertChildren(children: React.ReactNode) {
+  const mediaChildren: React.ReactNode[] = [];
+  const contentChildren: React.ReactNode[] = [];
+  const actionChildren: React.ReactNode[] = [];
+
+  React.Children.forEach(children, (child) => {
+    if (!React.isValidElement(child)) {
+      if (child != null) {
+        contentChildren.push(child);
+      }
+      return;
+    }
+
+    if (child.type === AlertMedia) {
+      mediaChildren.push(child);
+      return;
+    }
+
+    if (child.type === AlertActions) {
+      actionChildren.push(child);
+      return;
+    }
+
+    if (
+      child.type === AlertTitle ||
+      child.type === AlertDescription ||
+      child.type === AlertContent
+    ) {
+      contentChildren.push(child);
+      return;
+    }
+
+    mediaChildren.push(<AlertMedia key={mediaChildren.length}>{child}</AlertMedia>);
+  });
+
+  const hasContentWrapper = contentChildren.some(
+    (child) => React.isValidElement(child) && child.type === AlertContent,
+  );
+
+  return { mediaChildren, contentChildren, actionChildren, hasContentWrapper };
+}
+
+function Alert({
+  className,
+  variant,
+  children,
+  ...props
+}: React.ComponentProps<'div'> & VariantProps<typeof alertVariants>) {
+  const { mediaChildren, contentChildren, actionChildren, hasContentWrapper } =
+    partitionAlertChildren(children);
+
+  return (
+    <Item
+      role="alert"
+      data-slot="alert"
+      variant="outline"
+      size="sm"
+      className={cn(alertVariants({ variant }), className)}
+      {...props}
+    >
+      {mediaChildren}
+      {contentChildren.length > 0 &&
+        (hasContentWrapper ? (
+          contentChildren
+        ) : (
+          <ItemContent data-slot="alert-content">{contentChildren}</ItemContent>
+        ))}
+      {actionChildren}
+    </Item>
+  );
+}
+
+export { Alert, AlertActions, AlertContent, AlertDescription, AlertMedia, AlertTitle };

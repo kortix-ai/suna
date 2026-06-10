@@ -5,7 +5,7 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  "flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50  [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none  aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-center cursor-pointer shadow-none focus-visible:outline-none focus-visible:ring-kortix-base focus-visible:ring-[0.6px]",
+  "flex items-center justify-center gap-2 whitespace-nowrap rounded-full text-sm font-medium transition-all disabled:pointer-events-none disabled:opacity-50  [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4 shrink-0 [&_svg]:shrink-0 outline-none  aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive text-center cursor-pointer shadow-none focus-visible:outline-none focus-visible:ring-kortix-base focus-visible:ring-[0.6px]",
 
   {
     variants: {
@@ -49,17 +49,16 @@ const buttonVariants = cva(
       },
       size: {
         default: 'h-9 px-4 py-2 has-[>svg]:px-3',
-        xs: 'h-7 rounded-md gap-1.5 px-2.5 has-[>svg]:px-2',
-        base: "h-7 gap-1 px-2.5   in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        sm: 'h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5',
-        lg: 'h-10 rounded-md px-6 has-[>svg]:px-4',
-        xl: 'h-12 rounded-md px-8 has-[>svg]:px-6',
-        icon: 'size-8 rounded-md',
-        'icon-xs': 'size-6 rounded-sm',
-        'icon-sm': 'size-7 rounded-md',
-        'icon-lg': 'size-10 rounded-md',
-        'magic-sm':
-          'h-9 px-4 py-2 has-[>svg]:px-3  sm:h-8 sm:rounded-sm sm:gap-1.5 sm:px-3 sm:has-[>svg]:px-2.5',
+        xs: 'h-7  gap-1.5 px-2.5 has-[>svg]:px-2',
+        base: "h-7 gap-1 px-2.5   in-data-[slot=button-group]:rounded-2xl has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
+        sm: 'h-8  gap-1.5 px-3 has-[>svg]:px-2.5',
+        lg: 'h-10  px-6 has-[>svg]:px-4',
+        xl: 'h-12  px-8 has-[>svg]:px-6',
+        icon: 'size-8 ',
+        'icon-xs': 'size-6 ',
+        'icon-sm': 'size-7 ',
+        'icon-lg': 'size-10 ',
+        'magic-sm': 'h-9 px-4 py-2 has-[>svg]:px-3  sm:h-8 sm:gap-1.5 sm:px-3 sm:has-[>svg]:px-2.5',
 
         toolbar: "h-7 gap-1.5 px-2.5 text-xs [&_svg:not([class*='size-'])]:size-3.5",
       },

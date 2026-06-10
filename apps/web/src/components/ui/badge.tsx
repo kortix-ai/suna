@@ -4,11 +4,34 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
+const badgeColors = {
+  gray: '#a3a3a3',
+  red: '#ef4444',
+  orange: '#f97316',
+  amber: '#f59e0b',
+  yellow: '#eab308',
+  lime: '#84cc16',
+  green: '#22c55e',
+  emerald: '#10b981',
+  teal: '#14b8a6',
+  cyan: '#06b6d4',
+  blue: '#3b82f6',
+  indigo: '#6366f1',
+  violet: '#8b5cf6',
+  purple: '#a855f7',
+  fuchsia: '#d946ef',
+  pink: '#ec4899',
+  rose: '#f43f5e',
+} as const;
+
+type BadgeColor = keyof typeof badgeColors;
+
 const badgeVariants = cva(
   'border-transparent   disabled:border-alpha-300 focus-visible:ring-offset-background outline-hidden has-focus-visible:ring-2 pointer-events-none inline-flex shrink-0 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap  px-2.5 py-1 text-xs font-medium ring-blue-600 transition-all focus-visible:ring-2 focus-visible:ring-offset-1 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400 disabled:ring-0 [&>svg]:pointer-events-none bg-accent text-accent-foreground hover:bg-accent focus:bg-accent focus-visible:bg-accent has-[>svg]:pl-[10px] [&>svg]:size-3 h-6 rounded-full',
   {
     variants: {
       variant: {
+        solid: '',
         default: 'border border-foreground/10 bg-foreground text-background',
         secondary: 'border border-secondary/10 bg-secondary text-secondary-foreground',
         accent: 'bg-foreground/5  ',
@@ -42,20 +65,36 @@ const badgeVariants = cva(
 
 function Badge({
   className,
-  variant,
+  variant = 'solid',
+  color = 'gray',
   size,
   asChild = false,
   ...props
-}: React.ComponentProps<'span'> & VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
+}: React.ComponentProps<'span'> &
+  VariantProps<typeof badgeVariants> & { asChild?: boolean; color?: BadgeColor }) {
   const Comp = asChild ? Slot : 'span';
+
+  const colorValue = badgeColors[color];
+  const isSolid = variant === 'solid';
+
+  const colorStyle = isSolid
+    ? color === 'gray'
+      ? { backgroundColor: 'var(--accent)', color: 'var(--foreground)' }
+      : {
+          color: 'var(--foreground)',
+          backgroundColor: `color-mix(in srgb, ${colorValue} 15%, var(--background))`,
+        }
+    : {};
 
   return (
     <Comp
       data-slot="badge"
       className={cn(badgeVariants({ variant, size }), className)}
+      style={{ ...colorStyle }}
       {...props}
     />
   );
 }
 
-export { Badge, badgeVariants };
+export { Badge, badgeColors, badgeVariants };
+export type { BadgeColor };
