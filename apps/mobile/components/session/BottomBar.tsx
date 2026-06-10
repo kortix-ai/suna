@@ -53,6 +53,7 @@ interface BottomBarProps {
   onExportTranscript?: () => void;
   onViewChanges?: () => void;
   onDiagnostics?: () => void;
+  onRestartSession?: () => void;
   onArchiveSession?: () => void;
   customMenuItems?: BottomBarMenuItem[];
   onMenuDismiss?: () => void;
@@ -86,6 +87,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   onExportTranscript,
   onViewChanges,
   onDiagnostics,
+  onRestartSession,
   onArchiveSession,
   customMenuItems,
   onMenuDismiss,
@@ -161,8 +163,9 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     { icon: 'git-compare-outline' as const, label: 'View changes', onPress: () => { closeSheet(); onViewChanges?.(); } },
     { icon: 'download-outline' as const, label: 'Export transcript', onPress: () => { closeSheet(); onExportTranscript?.(); } },
     { icon: 'layers-outline' as const, label: 'Compact session', onPress: () => { closeSheet(); onCompactSession?.(); } },
+    { icon: 'refresh-outline' as const, label: 'Restart session', onPress: () => { closeSheet(); onRestartSession?.(); } },
     { icon: 'archive-outline' as const, label: 'Archive session', onPress: () => { closeSheet(); onArchiveSession?.(); } },
-  ], [closeSheet, onDiagnostics, onViewChanges, onExportTranscript, onCompactSession, onArchiveSession]);
+  ], [closeSheet, onDiagnostics, onViewChanges, onExportTranscript, onCompactSession, onRestartSession, onArchiveSession]);
 
 
   const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);

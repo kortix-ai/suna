@@ -1417,6 +1417,49 @@ export default function ProjectSessionScreen() {
     }
   }, [connectingProjectSessionId, restartingSession, projectId, ensureAndOpen]);
 
+  // Restart the *active* (already-connected) session from the session menu —
+  // web parity. Confirms first (it stops anything running in the sandbox),
+  // then re-provisions and re-drives the connect loop, showing the connecting
+  // screen meanwhile. erroredSessionRef is seeded before flipping
+  // connectingProjectSessionId so the auto-connect effect doesn't race the
+  // restart; it's cleared once re-provision resolves so ensureAndOpen runs.
+  const handleRestartActiveSession = useCallback(() => {
+    const sid = activeSessionId;
+    if (!sid || restartingSession) return;
+    Alert.alert(
+      'Restart Session',
+      'This tears down and re-provisions the session runtime. Your conversation is kept, but anything running in the sandbox (dev servers, terminals) will stop.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Restart',
+          style: 'destructive',
+          onPress: async () => {
+            haptics.tap();
+            setRestartingSession(true);
+            erroredSessionRef.current = sid;
+            ensuringRef.current = null;
+            setConnectError(null);
+            setConnectingProjectSessionId(sid);
+            try {
+              await restartProjectSession(projectId, sid);
+              erroredSessionRef.current = null;
+              void ensureAndOpen(sid);
+            } catch (err: any) {
+              erroredSessionRef.current = sid;
+              setConnectError({
+                title: 'Restart failed',
+                message: err?.message || 'Could not restart the session runtime. Please try again.',
+              });
+            } finally {
+              setRestartingSession(false);
+            }
+          },
+        },
+      ],
+    );
+  }, [activeSessionId, restartingSession, projectId, ensureAndOpen]);
+
   // Drive the connecting state: ensureAndOpen polls GET /sandbox (which provisions
   // on open), resolves the OpenCode pin, and opens the chat. It guards against
   // concurrent runs, so re-firing on re-render is harmless. A session that ended
@@ -2621,6 +2664,7 @@ export default function ProjectSessionScreen() {
                   }
                 }}
                 onDiagnostics={() => log.log('TODO: diagnostics')}
+                onRestartSession={handleRestartActiveSession}
                 onArchiveSession={() => { if (activeSessionId) handleArchive(activeSessionId); }}
                 customMenuItems={
                   activePageId === 'page:workspace'
