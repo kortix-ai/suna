@@ -195,6 +195,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
   // Viewer state
   const [viewerVisible, setViewerVisible] = useState(savedTabState?.viewerVisible ?? false);
   const [viewerFile, setViewerFile] = useState<SandboxFile | null>(savedTabState?.viewerFile ?? null);
+  const [viewerInitialEdit, setViewerInitialEdit] = useState(false);
 
   // Context-selected file (long-press selects for three-dot menu actions)
   const [selectedFile, setSelectedFile] = useState<SandboxFile | null>(savedTabState?.selectedFile ?? null);
@@ -574,7 +575,8 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
       newFileSheetRef.current?.dismiss();
       setNewFileName('');
       haptics.success();
-      // Open the brand-new file in the viewer so it can be edited straight away.
+      // Open the brand-new file straight into the editor.
+      setViewerInitialEdit(true);
       setViewerFile({ name, path: filePath, type: 'file', size: 0, modified: new Date().toISOString() });
       setViewerVisible(true);
     } catch {
@@ -1553,10 +1555,12 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
         onClose={() => {
           setViewerVisible(false);
           setViewerFile(null);
+          setViewerInitialEdit(false);
         }}
         file={viewerFile}
         sandboxId={sandboxId || ''}
         sandboxUrl={sandboxUrl}
+        initialEditing={viewerInitialEdit}
       />
       </PageContent>
     </View>

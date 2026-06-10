@@ -47,6 +47,8 @@ interface FileViewerProps {
   fileList?: SandboxFile[];
   currentIndex?: number;
   onNavigate?: (index: number) => void;
+  /** Open straight into the editor (e.g. for a just-created file). */
+  initialEditing?: boolean;
 }
 
 /**
@@ -61,6 +63,7 @@ export function FileViewer({
   fileList,
   currentIndex = -1,
   onNavigate,
+  initialEditing,
 }: FileViewerProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -216,11 +219,12 @@ export function FileViewer({
   const canEdit = !!file && !!sandboxUrl && !!shouldFetchText && !isLoading && !textError;
   const dirty = editing && draft !== (textContent ?? '');
 
-  // Reset edit mode whenever the file changes or the viewer closes.
+  // Reset edit mode whenever the file changes or the viewer closes. A freshly
+  // created file (initialEditing) opens straight into the editor.
   useEffect(() => {
-    setEditing(false);
+    setEditing(visible && !!initialEditing);
     setDraft('');
-  }, [file?.path, visible]);
+  }, [file?.path, visible, initialEditing]);
 
   const handleStartEdit = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
