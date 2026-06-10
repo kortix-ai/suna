@@ -53,7 +53,8 @@ import { useResolvedConfig } from '@/lib/opencode/hooks/use-local-config';
 import { useCompactSession } from '@/lib/opencode/hooks/use-compact-session';
 import { useTabStore, PAGE_TABS } from '@/stores/tab-store';
 import { RightDrawerContent } from '@/components/session/RightDrawerContent';
-import { UserMenuSheet } from '@/components/session/UserMenuSheet';
+import { AccountMenuSheet } from '@/components/projects/AccountMenuSheet';
+import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { ViewChangesSheet } from '@/components/session/ViewChangesSheet';
 import { ExportTranscriptSheet } from '@/components/session/ExportTranscriptSheet';
 import { SessionRenameSheet } from '@/components/session/SessionRenameSheet';
@@ -103,7 +104,7 @@ import { useSandboxPoller } from '@/lib/platform/use-sandbox-poller';
 import type { SandboxProviderName } from '@/lib/platform/client';
 import { getSandboxUrl } from '@/lib/platform/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { useProjectSessions, useCreateProjectSession, useProject, projectKeys } from '@/lib/projects/hooks';
+import { useProjectSessions, useCreateProjectSession, useProject, useAccounts, projectKeys } from '@/lib/projects/hooks';
 import { ensureOpencodeSession, wakeProjectSession, getProjectSessionSandbox, restartProjectSession, deleteProjectSession } from '@/lib/projects/projects-client';
 import type { ProjectSession, ProjectSessionStatus, EnsureOpencodeResult } from '@/lib/projects/projects-client';
 import { Avatar } from '@/components/ui/Avatar';
@@ -952,7 +953,6 @@ export default function ProjectSessionScreen() {
   const [rightDrawerOpen, setRightDrawerOpen] = useState(false);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [pendingFilePath, setPendingFilePath] = useState<string | null>(null);
-  const userMenuSheetRef = useRef<BottomSheetModal>(null);
   const viewChangesSheetRef = useRef<BottomSheetModal>(null);
   const exportTranscriptSheetRef = useRef<BottomSheetModal>(null);
   const renameSessionSheetRef = useRef<BottomSheetModal>(null);
@@ -977,6 +977,15 @@ export default function ProjectSessionScreen() {
   const planLabel = 'Self-Hosted';
   const sandboxLabel = sandboxId || 'Sandbox';
   const sandboxHost = sandboxUrl ? sandboxUrl.replace(/^https?:\/\//, '') : undefined;
+  // Account menu (web-parity user menu) — same account resolution as the
+  // projects screen: the store's selection, falling back to the first account.
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountsQuery = useAccounts(!!user);
+  const selectedAccountId = useCurrentAccountStore((s) => s.selectedAccountId);
+  const activeAccount =
+    accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ??
+    accountsQuery.data?.[0] ??
+    null;
 
   useEffect(() => {
     let mounted = true;
@@ -1653,7 +1662,7 @@ export default function ProjectSessionScreen() {
   }, [activePageId, activeSessionId, setShowTabsOverview]);
 
   const closeUserMenuSheet = useCallback(() => {
-    userMenuSheetRef.current?.dismiss();
+    setAccountMenuOpen(false);
   }, []);
 
   const handleGoToSettings = useCallback(() => {
@@ -1725,7 +1734,7 @@ export default function ProjectSessionScreen() {
   }, [themePreference, setColorScheme, themeTransitionOpacity]);
 
   const handleUserMenuOpen = useCallback(() => {
-    userMenuSheetRef.current?.present();
+    setAccountMenuOpen(true);
   }, []);
 
   const handleSignOut = useCallback(() => {
@@ -2863,18 +2872,15 @@ export default function ProjectSessionScreen() {
         </Drawer>
       </Drawer>
 
-      <UserMenuSheet
-        ref={userMenuSheetRef}
-        sandboxLabel={sandboxLabel}
-        sandboxHost={sandboxHost}
-        onManageInstances={handleManageInstances}
-        onAddInstance={handleAddInstance}
-        onOpenSettings={handleGoToSettings}
-        onOpenChangelog={handleOpenChangelog}
-        onSignOut={handleSignOut}
-        onSelectTheme={handleThemeSelect}
-        activeTheme={themePreference}
+      <AccountMenuSheet
+        open={accountMenuOpen}
+        name={(user?.user_metadata?.full_name as string | undefined) ?? undefined}
+        email={userEmail}
+        accountName={activeAccount?.name}
+        accountId={activeAccount?.account_id ?? null}
         isSigningOut={isSigningOut}
+        onSignOut={handleSignOut}
+        onClose={() => setAccountMenuOpen(false)}
       />
 
       <ViewChangesSheet
