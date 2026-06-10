@@ -56,6 +56,8 @@ import { RightDrawerContent } from '@/components/session/RightDrawerContent';
 import { UserMenuSheet } from '@/components/session/UserMenuSheet';
 import { ViewChangesSheet } from '@/components/session/ViewChangesSheet';
 import { ExportTranscriptSheet } from '@/components/session/ExportTranscriptSheet';
+import { SessionRenameSheet } from '@/components/session/SessionRenameSheet';
+import { SessionShareSheet } from '@/components/session/SessionShareSheet';
 import { ProjectsPage } from '@/components/pages/ProjectsPage';
 import { ProjectDetailPage } from '@/components/pages/ProjectDetailPage';
 import { useKortixProjects, type KortixProject } from '@/lib/kortix';
@@ -100,8 +102,9 @@ import { ProvisioningProgress } from '@/components/provisioning/ProvisioningProg
 import { useSandboxPoller } from '@/lib/platform/use-sandbox-poller';
 import type { SandboxProviderName } from '@/lib/platform/client';
 import { getSandboxUrl } from '@/lib/platform/client';
-import { useProjectSessions, useCreateProjectSession, useProject } from '@/lib/projects/hooks';
-import { ensureOpencodeSession, wakeProjectSession, getProjectSessionSandbox, restartProjectSession } from '@/lib/projects/projects-client';
+import { useQueryClient } from '@tanstack/react-query';
+import { useProjectSessions, useCreateProjectSession, useProject, projectKeys } from '@/lib/projects/hooks';
+import { ensureOpencodeSession, wakeProjectSession, getProjectSessionSandbox, restartProjectSession, deleteProjectSession } from '@/lib/projects/projects-client';
 import type { ProjectSession, ProjectSessionStatus, EnsureOpencodeResult } from '@/lib/projects/projects-client';
 import { Avatar } from '@/components/ui/Avatar';
 import {
@@ -952,6 +955,8 @@ export default function ProjectSessionScreen() {
   const userMenuSheetRef = useRef<BottomSheetModal>(null);
   const viewChangesSheetRef = useRef<BottomSheetModal>(null);
   const exportTranscriptSheetRef = useRef<BottomSheetModal>(null);
+  const renameSessionSheetRef = useRef<BottomSheetModal>(null);
+  const shareSessionSheetRef = useRef<BottomSheetModal>(null);
   const [themePreference, setThemePreference] = useState<ThemePreference>('light');
   // The sandbox-update badge polls the GLOBAL sandbox (${sandboxUrl}/kortix/health)
   // — a legacy-shell concept that 403s on the repo-first project screen (sessions
@@ -1000,6 +1005,7 @@ export default function ProjectSessionScreen() {
 
   // Compact session mutation
   const compactSession = useCompactSession();
+  const queryClient = useQueryClient();
 
   // Persisted tab state (survives app restarts)
   const activeSessionId = useTabStore((s) => s.activeSessionId);
@@ -1423,8 +1429,26 @@ export default function ProjectSessionScreen() {
   // screen meanwhile. erroredSessionRef is seeded before flipping
   // connectingProjectSessionId so the auto-connect effect doesn't race the
   // restart; it's cleared once re-provision resolves so ensureAndOpen runs.
+  // The active tab's project-session row. The tab store's activeSessionId is
+  // the OPENCODE root id (connectToProjectSession navigates with
+  // ps.opencode_session_id), so resolve back to the Kortix row through the pin
+  // — every /projects/:id/sessions/:sid API call needs the Kortix UUID. The
+  // session_id fallback covers the brief pre-connect window where a tab can
+  // still carry the Kortix id (the two id shapes can't collide).
+  const activeProjectSession = useMemo(
+    () =>
+      activeSessionId
+        ? projectSessions.find(
+            (s) => s.opencode_session_id === activeSessionId || s.session_id === activeSessionId,
+          ) ?? null
+        : null,
+    [projectSessions, activeSessionId],
+  );
+
   const handleRestartActiveSession = useCallback(() => {
-    const sid = activeSessionId;
+    // Kortix id — restartProjectSession, the connecting screen, and
+    // ensureAndOpen all operate in the Kortix id space, not the OpenCode one.
+    const sid = activeProjectSession?.session_id;
     if (!sid || restartingSession) return;
     Alert.alert(
       'Restart Session',
@@ -1458,7 +1482,44 @@ export default function ProjectSessionScreen() {
         },
       ],
     );
-  }, [activeSessionId, restartingSession, projectId, ensureAndOpen]);
+  }, [activeProjectSession, restartingSession, projectId, ensureAndOpen]);
+
+  // Delete the active session (web parity: deleteProjectSession — destroys the
+  // sandbox, the git branch is preserved server-side). API takes the Kortix
+  // UUID; the tab is keyed by the OpenCode id, and closeTab (not just
+  // deselect) so no dead pill survives in the persisted tab strip.
+  const handleDeleteActiveSession = useCallback(() => {
+    const ps = activeProjectSession;
+    if (!ps) return;
+    const title = ps.custom_name || ps.name || 'this session';
+    Alert.alert(
+      'Delete session?',
+      `This will permanently destroy the sandbox for "${title}". This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            haptics.tap();
+            try {
+              await deleteProjectSession(projectId, ps.session_id);
+              if (ps.opencode_session_id) {
+                closeTab(ps.opencode_session_id);
+              } else if (useTabStore.getState().activeSessionId) {
+                navigateToSession(null);
+              }
+              queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
+              haptics.success();
+            } catch (err: any) {
+              haptics.warning();
+              Alert.alert('Delete failed', err?.message || 'Could not delete the session.');
+            }
+          },
+        },
+      ],
+    );
+  }, [activeProjectSession, projectId, closeTab, navigateToSession, queryClient]);
 
   // Drive the connecting state: ensureAndOpen polls GET /sandbox (which provisions
   // on open), resolves the OpenCode pin, and opens the chat. It guards against
@@ -2664,8 +2725,19 @@ export default function ProjectSessionScreen() {
                   }
                 }}
                 onDiagnostics={() => log.log('TODO: diagnostics')}
+                onRenameSession={
+                  activeProjectSession
+                    ? () => renameSessionSheetRef.current?.present()
+                    : undefined
+                }
+                onShareSession={
+                  activeProjectSession && activeProjectSession.can_manage_sharing !== false
+                    ? () => shareSessionSheetRef.current?.present()
+                    : undefined
+                }
                 onRestartSession={handleRestartActiveSession}
                 onArchiveSession={() => { if (activeSessionId) handleArchive(activeSessionId); }}
+                onDeleteSession={activeProjectSession ? handleDeleteActiveSession : undefined}
                 customMenuItems={
                   activePageId === 'page:workspace'
                     ? ([
@@ -2813,6 +2885,18 @@ export default function ProjectSessionScreen() {
       <ExportTranscriptSheet
         ref={exportTranscriptSheetRef}
         sessionId={activeSessionId}
+      />
+
+      <SessionRenameSheet
+        ref={renameSessionSheetRef}
+        projectId={projectId}
+        session={activeProjectSession}
+      />
+
+      <SessionShareSheet
+        ref={shareSessionSheetRef}
+        projectId={projectId}
+        session={activeProjectSession}
       />
 
       {/* Command Palette */}

@@ -217,6 +217,12 @@ export type ProjectSessionStatus =
   | 'failed'
   | 'completed';
 
+/** Who can see/open a session (same intent shape as web's ConnectorSharing). */
+export type SessionSharing =
+  | { mode: 'project' }
+  | { mode: 'private'; ownerId: string }
+  | { mode: 'members'; memberIds?: string[]; groupIds?: string[] };
+
 export interface ProjectSession {
   session_id: string;
   account_id: string;
@@ -228,10 +234,19 @@ export interface ProjectSession {
   sandbox_url: string | null;
   opencode_session_id: string | null;
   name: string | null;
+  /** User-set name override; null falls back to the auto title (web parity). */
+  custom_name?: string | null;
   agent_name: string | null;
   status: ProjectSessionStatus;
   error: string | null;
   metadata: Record<string, unknown>;
+  // Ownership + org-visibility (web parity: Phase 2 session sharing).
+  created_by?: string | null;
+  owner_email?: string | null;
+  visibility?: 'private' | 'project' | 'restricted';
+  sharing?: SessionSharing | null;
+  is_owner?: boolean;
+  can_manage_sharing?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -344,6 +359,49 @@ export function restartProjectSession(projectId: string, sessionId: string) {
   return apiFetch<{ ok: boolean; session_id: string; status: string }>(
     `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/restart`,
     { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
+/**
+ * Rename a session (web parity: updateProjectSession). `name` becomes the
+ * user-set override (metadata.custom_name server-side); "" clears it and
+ * reverts to the auto title.
+ */
+export function updateProjectSession(
+  projectId: string,
+  sessionId: string,
+  input: { name?: string; metadata?: Record<string, unknown> },
+) {
+  return apiFetch<ProjectSession>(
+    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`,
+    { method: 'PATCH', body: JSON.stringify(input) },
+  );
+}
+
+/**
+ * Permanently delete a session — tears down the sandbox VM and stops the
+ * session (the git branch is preserved server-side for recovery). Owner or
+ * project manager only (web parity: deleteProjectSession).
+ */
+export function deleteProjectSession(projectId: string, sessionId: string) {
+  return apiFetch<{ ok: boolean }>(
+    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`,
+    { method: 'DELETE' },
+  );
+}
+
+/**
+ * Set who can see/open a session (private | project | members). Owner or
+ * project manager only (web parity: setProjectSessionSharing).
+ */
+export function setProjectSessionSharing(
+  projectId: string,
+  sessionId: string,
+  intent: SessionSharing,
+) {
+  return apiFetch<ProjectSession>(
+    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/sharing`,
+    { method: 'PUT', body: JSON.stringify(intent) },
   );
 }
 

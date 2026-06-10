@@ -53,8 +53,12 @@ interface BottomBarProps {
   onExportTranscript?: () => void;
   onViewChanges?: () => void;
   onDiagnostics?: () => void;
+  onRenameSession?: () => void;
+  /** Omit to hide Share (e.g. viewer lacks can_manage_sharing). */
+  onShareSession?: () => void;
   onRestartSession?: () => void;
   onArchiveSession?: () => void;
+  onDeleteSession?: () => void;
   customMenuItems?: BottomBarMenuItem[];
   onMenuDismiss?: () => void;
 }
@@ -87,8 +91,11 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   onExportTranscript,
   onViewChanges,
   onDiagnostics,
+  onRenameSession,
+  onShareSession,
   onRestartSession,
   onArchiveSession,
+  onDeleteSession,
   customMenuItems,
   onMenuDismiss,
 }, ref) {
@@ -158,14 +165,30 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     sheetRef.current?.dismiss();
   }, []);
 
+  // Web session-menu order first (Rename, Share, Restart, Export, Compact,
+  // Delete), with the mobile-only extras (View changes, Diagnostics, Archive)
+  // slotted before the destructive tail. Share renders only when the caller
+  // passes a handler (gated on can_manage_sharing upstream).
+  // Rename/Share/Delete rows render only when their handler is provided —
+  // the caller gates them on the resolved project-session row (and Share
+  // additionally on can_manage_sharing), mirroring web's isProjectSession gate.
   const menuItems = useMemo(() => [
-    { icon: 'alert-circle-outline' as const, label: 'Diagnostics', onPress: () => { closeSheet(); onDiagnostics?.(); } },
-    { icon: 'git-compare-outline' as const, label: 'View changes', onPress: () => { closeSheet(); onViewChanges?.(); } },
-    { icon: 'download-outline' as const, label: 'Export transcript', onPress: () => { closeSheet(); onExportTranscript?.(); } },
-    { icon: 'layers-outline' as const, label: 'Compact session', onPress: () => { closeSheet(); onCompactSession?.(); } },
-    { icon: 'refresh-outline' as const, label: 'Restart session', onPress: () => { closeSheet(); onRestartSession?.(); } },
-    { icon: 'archive-outline' as const, label: 'Archive session', onPress: () => { closeSheet(); onArchiveSession?.(); } },
-  ], [closeSheet, onDiagnostics, onViewChanges, onExportTranscript, onCompactSession, onRestartSession, onArchiveSession]);
+    ...(onRenameSession
+      ? [{ icon: 'pencil-outline' as const, label: 'Rename session', destructive: false, onPress: () => { closeSheet(); onRenameSession(); } }]
+      : []),
+    ...(onShareSession
+      ? [{ icon: 'share-outline' as const, label: 'Share session', destructive: false, onPress: () => { closeSheet(); onShareSession(); } }]
+      : []),
+    { icon: 'refresh-outline' as const, label: 'Restart session', destructive: false, onPress: () => { closeSheet(); onRestartSession?.(); } },
+    { icon: 'download-outline' as const, label: 'Export transcript', destructive: false, onPress: () => { closeSheet(); onExportTranscript?.(); } },
+    { icon: 'layers-outline' as const, label: 'Compact session', destructive: false, onPress: () => { closeSheet(); onCompactSession?.(); } },
+    { icon: 'git-compare-outline' as const, label: 'View changes', destructive: false, onPress: () => { closeSheet(); onViewChanges?.(); } },
+    { icon: 'alert-circle-outline' as const, label: 'Diagnostics', destructive: false, onPress: () => { closeSheet(); onDiagnostics?.(); } },
+    { icon: 'archive-outline' as const, label: 'Archive session', destructive: false, onPress: () => { closeSheet(); onArchiveSession?.(); } },
+    ...(onDeleteSession
+      ? [{ icon: 'trash-outline' as const, label: 'Delete session', destructive: true, onPress: () => { closeSheet(); onDeleteSession(); } }]
+      : []),
+  ], [closeSheet, onRenameSession, onShareSession, onRestartSession, onExportTranscript, onCompactSession, onViewChanges, onDiagnostics, onArchiveSession, onDeleteSession]);
 
 
   const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
@@ -719,8 +742,13 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
                 className="flex-row items-center px-6 py-3.5"
                 activeOpacity={0.6}
               >
-                <Ionicons name={item.icon} size={20} color={iconColor} />
-                <Text className="text-[15px] ml-4 text-foreground">{item.label}</Text>
+                <Ionicons name={item.icon} size={20} color={item.destructive ? '#ef4444' : iconColor} />
+                <Text
+                  className="text-[15px] ml-4"
+                  style={{ color: item.destructive ? '#ef4444' : (isDark ? '#F8F8F8' : '#121215') }}
+                >
+                  {item.label}
+                </Text>
               </TouchableOpacity>
             ))
           )}
