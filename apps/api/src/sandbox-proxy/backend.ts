@@ -22,7 +22,7 @@
 
 import { and, eq, ne } from 'drizzle-orm';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
-import { getDaytona } from '../shared/daytona';
+import { getProvider, type ProviderName } from '../platform/providers';
 import { db } from '../shared/db';
 import { resolvePreviewUserContext } from '../shared/preview-ownership';
 import {
@@ -39,6 +39,8 @@ export interface SandboxRecord {
   sandboxId: string;
   /** Provider-side id used in proxy URLs (`/v1/p/<externalId>/<port>`). */
   externalId: string;
+  /** Owning session — links to project_sessions for the launching identity. */
+  sessionId: string;
   projectId: string;
   accountId: string;
   provider: string;
@@ -85,6 +87,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
     .select({
       sandboxId: sessionSandboxes.sandboxId,
       externalId: sessionSandboxes.externalId,
+      sessionId: sessionSandboxes.sessionId,
       projectId: sessionSandboxes.projectId,
       accountId: sessionSandboxes.accountId,
       provider: sessionSandboxes.provider,
@@ -105,6 +108,7 @@ export async function loadSandbox(externalId: string): Promise<SandboxRecord | n
   return {
     sandboxId: row.sandboxId,
     externalId: row.externalId ?? externalId,
+    sessionId: row.sessionId,
     projectId: row.projectId,
     accountId: row.accountId,
     provider: row.provider,
@@ -144,24 +148,26 @@ export async function resolveServiceKey(sandboxId: string): Promise<string | nul
   }
 }
 
-// ── Preview link (Daytona getPreviewLink, cached per port) ────────────────────
+// ── Preview link (provider-resolved upstream, cached per port) ────────────────
+// Delegates to the sandbox's provider — NOT hardcoded to Daytona. The proxy is
+// provider-agnostic: a Platinum sandbox resolves to its edge URL, Daytona to a
+// preview link, local-docker to the container address. (This is the fix for the
+// 502/503 every non-Daytona sandbox hit through `/v1/p/`.)
 
 export async function resolvePreviewLink(
-  sandboxId: string,
+  externalId: string,
   port: number,
 ): Promise<{ url: string; token: string | null }> {
-  const key = previewLinkKey(sandboxId, port);
+  const key = previewLinkKey(externalId, port);
   const cached = previewLinkCache.get(key);
   if (cached && Date.now() < cached.expiresAt) {
     return { url: cached.url, token: cached.token };
   }
   previewLinkCache.delete(key);
 
-  const daytona = getDaytona();
-  const sandbox = await daytona.get(sandboxId);
-  const link = await (sandbox as any).getPreviewLink(port);
-  const url = link.url || String(link);
-  const token = link.token || null;
+  const record = await loadSandbox(externalId);
+  if (!record) throw new Error(`[proxy] no sandbox row for ${externalId}`);
+  const { url, token } = await getProvider(record.provider as ProviderName).resolvePreviewLink(externalId, port);
 
   previewLinkCache.set(key, { url, token, expiresAt: Date.now() + CACHE_TTL_MS });
   return { url, token };
@@ -208,14 +214,14 @@ export async function buildSandboxUpstreamHeaders(opts: {
 
 // ── Lifecycle side-effects ─────────────────────────────────────────────────
 
-export async function wakeSandbox(sandboxId: string): Promise<void> {
+export async function wakeSandbox(externalId: string): Promise<void> {
   try {
-    const daytona = getDaytona();
-    const sandbox = await daytona.get(sandboxId);
-    await (sandbox as any).start?.();
-    console.log(`[PREVIEW] Wake-up triggered for sandbox ${sandboxId}`);
+    const record = await loadSandbox(externalId);
+    if (!record) return;
+    await getProvider(record.provider as ProviderName).ensureRunning(externalId);
+    console.log(`[PREVIEW] Wake-up triggered for sandbox ${externalId}`);
   } catch (e) {
-    console.error(`[PREVIEW] Failed to wake sandbox ${sandboxId}:`, e);
+    console.error(`[PREVIEW] Failed to wake sandbox ${externalId}:`, e);
   }
 }
 

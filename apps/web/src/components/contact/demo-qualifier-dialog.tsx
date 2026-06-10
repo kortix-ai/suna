@@ -29,10 +29,10 @@ import {
 // Shared demo qualifier
 //
 // One screening gate in front of EVERY booking calendar (public /contact demo
-// AND the in-app "Book a call with Marko" widget). Visitors answer a couple of
-// minimal questions; we persist all of it (/api/demo-request) and route them:
-//   • company big enough → the booking calendar (answers prefilled)
-//   • 1–10               → self-serve (no call needed)
+// AND the in-app "Book a call with Marko" widget). Kortix is sold to COMPANIES
+// only, so we always capture name + work email + company, then route on size:
+//   • 11+ employees → the booking calendar (answers prefilled)
+//   • 1–10          → no call; we store the lead and confirm "request received"
 //
 // Cal only prefills a custom field when the config KEY equals its identifier and
 // (for a dropdown) the VALUE matches an option verbatim — so the identifiers +
@@ -74,8 +74,9 @@ export interface DemoQualifierDialogProps {
   /** Prefill for logged-in surfaces (the in-app widget). */
   defaultName?: string;
   defaultEmail?: string;
-  /** Where the self-serve (disqualified) CTA points. */
-  selfServeHref?: string;
+  /** Fired once a qualified lead completes a booking (e.g. so an onboarding
+   *  wizard can mark the step done and advance). */
+  onBookingSuccessful?: () => void;
 }
 
 export function DemoQualifierDialog({
@@ -88,9 +89,9 @@ export function DemoQualifierDialog({
   description = "A couple of quick details so we can tailor the session — or point you to self-serve if that's faster.",
   defaultName = '',
   defaultEmail = '',
-  selfServeHref = '/auth',
+  onBookingSuccessful,
 }: DemoQualifierDialogProps) {
-  const [step, setStep] = useState<'form' | 'cal' | 'selfserve'>('form');
+  const [step, setStep] = useState<'form' | 'cal' | 'received'>('form');
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState(defaultName);
   const [email, setEmail] = useState(defaultEmail);
@@ -121,14 +122,21 @@ export function DemoQualifierDialog({
       cal('ui', { hideEventTypeDetails: false, layout: 'month_view' });
       cal('on', {
         action: 'bookingSuccessful',
-        callback: () => window.setTimeout(() => onOpenChange(false), 1500),
+        callback: () => {
+          onBookingSuccessful?.();
+          window.setTimeout(() => onOpenChange(false), 1500);
+        },
       });
     })();
-  }, [calNamespace, onOpenChange]);
+  }, [calNamespace, onOpenChange, onBookingSuccessful]);
 
   const submit = useCallback(async () => {
     if (!EMAIL_RE.test(email.trim())) {
       setError('Enter a valid work email so we can reach you.');
+      return;
+    }
+    if (!company.trim()) {
+      setError('Tell us your company name.');
       return;
     }
     if (!size) {
@@ -160,7 +168,7 @@ export function DemoQualifierDialog({
       setSubmitting(false);
     }
 
-    setStep(qualified ? 'cal' : 'selfserve');
+    setStep(qualified ? 'cal' : 'received');
   }, [email, size, name, company, goal, source]);
 
   // Answers ride into the booking as prefill, keyed by each Cal field identifier.
@@ -227,13 +235,16 @@ export function DemoQualifierDialog({
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="dq-company">Company name</Label>
+                <Label htmlFor="dq-company">
+                  Company name <span className="text-destructive">*</span>
+                </Label>
                 <Input
                   id="dq-company"
                   value={company}
                   onChange={(e) => setCompany(e.target.value)}
                   placeholder="Acme Inc."
                   autoComplete="organization"
+                  required
                 />
               </div>
 
@@ -297,24 +308,20 @@ export function DemoQualifierDialog({
           </form>
         </DialogContent>
       ) : (
-        // Disqualified → self-serve. Confirm capture, then frame self-serve as
-        // the faster path (not a rejection).
+        // Disqualified (1–10). Kortix is enterprise-only, so there's no
+        // self-serve path — we've stored the lead; just confirm we got it.
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[420px]">
           <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-            <DialogTitle>You can start right now</DialogTitle>
+            <DialogTitle>Request received</DialogTitle>
             <DialogDescription>
-              No call needed — Kortix is self-serve, so you can dive straight in.
+              Thanks — we&apos;ve got your details.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 px-6 py-5">
-            <InfoBanner tone="success" icon={Check} title="Request received">
-              We&apos;ve saved your details and we&apos;ll be in touch if it&apos;s a fit.
+            <InfoBanner tone="success" icon={Check} title="We'll be in touch">
+              Kortix is built for companies — we&apos;ll reach out if it&apos;s a fit.
             </InfoBanner>
-            <p className="text-sm leading-relaxed text-muted-foreground">
-              Spin up your first agent in minutes — most teams your size are up
-              and running the same day. If you hit a wall, we&apos;re one email away.
-            </p>
           </div>
 
           <DialogFooter variant="bar">
@@ -324,12 +331,7 @@ export function DemoQualifierDialog({
                 Email us
               </a>
             </Button>
-            <Button asChild>
-              <a href={selfServeHref}>
-                Launch Kortix
-                <ArrowRight />
-              </a>
-            </Button>
+            <Button onClick={() => onOpenChange(false)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       )}

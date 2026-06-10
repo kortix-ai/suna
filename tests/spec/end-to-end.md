@@ -17,7 +17,7 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
   - **PAT** — `kortix_pat_…` CLI personal access token (`account_tokens`). Carries real `userId`. May be **project-scoped** (`projectId` set).
   - **APIKEY** — `kortix_` / `kortix_sb_` (`api_keys`). Account/sandbox identity; `accountId→userId` mapped. Used by sandbox→router (search/LLM/proxy).
   - **COOKIE** — `__preview_session`, scoped `/v1/p/`, 1h.
-- Auth middlewares: `supabaseAuth` (JWT or PAT) on `/v1/accounts/*`, `/v1/projects/*`, `/v1/platform/api-keys`. `combinedAuth` (JWT|token|PAT|cookie|`X-Kortix-Token`|`?token=`) on `/v1/p/*`, `/v1/queue/*`, `/v1/servers/*`, `/v1/tunnel/*`, `/v1/deployments/*`. `apiKeyAuth` (kortix_ only) on `/v1/router/*`. `requireAdmin` (platform role) on `/v1/ops/*`. Webhooks = HMAC, no auth middleware.
+- Auth middlewares: `supabaseAuth` (JWT or PAT) on `/v1/accounts/*`, `/v1/projects/*`, `/v1/platform/api-keys`. `combinedAuth` (JWT|token|PAT|cookie|`X-Kortix-Token`|`?token=`) on `/v1/p/*`, `/v1/servers/*`, `/v1/tunnel/*`, `/v1/deployments/*`. `apiKeyAuth` (kortix_ only) on `/v1/router/*`. `requireAdmin` (platform role) on `/v1/ops/*`. Webhooks = HMAC, no auth middleware.
 - Project authz gate `loadProjectForUser(c, id, level)`: `read`→`PROJECT_READ` (any project role), `write`→`PROJECT_WRITE` (editor/manager), `manage`→`PROJECT_DELETE` (manager only). Account owner/admin get implicit `manager` on every project.
 
 ### Principals (fixtures every run must provision)
@@ -45,6 +45,8 @@ Stack: TypeScript/Hono on Bun (`apps/api`), Drizzle→Postgres (`kortix` schema)
 `SYS-3` `GET /v1/user-roles` (`supabaseAuth`) → `{isAdmin, role}` (platform role).
 `SYS-4` `GET /v1/router/health` → router health (no auth).
 `SYS-5` 404 shape — `GET /v1/nonexistent` → `{error:true,message:"Not found",status:404}`. Every state-changing `/v1/*` passes `auditStateChangingRequest`.
+`SYS-6` `GET /v1/system/maintenance` → public read of the maintenance config (banner + maintenance page); default `{level:"none",…}`. Write is admin-only (`ADM-6`).
+`DOCS-1` `GET /v1/openapi.json` → public OpenAPI 3.1 spec (typed via `@hono/zod-openapi`). `GET /v1/docs` → public Scalar API reference (HTML).
 
 ---
 
@@ -179,7 +181,7 @@ DB `project_sessions` (`status queued|branching|provisioning|running|stopped|fai
 `SESS-3` CLI client-branch optimization — `kortix sessions new`: if server can't self-create branch (not managed-freestyle, not GitHub app/pat) AND local `origin` == `project.repo_url`, CLI mints uuid, `git push origin HEAD:refs/heads/<uuid>`, then posts `session_id`+`branch_already_created:true`+`base_ref`.
 `SESS-4` `GET /projects/:id/sessions` → `read` → list (updatedAt desc).
 `SESS-5` `GET /projects/:id/sessions/:sid` → `read` → 200; non-uuid `sid` → 400.
-`SESS-6` `PATCH /projects/:id/sessions/:sid {name?,opencode_session_id?,metadata?}` → `write`; attempting `status`/`sandbox_url`/`error` → 400 (server-managed).
+`SESS-6` `PATCH /projects/:id/sessions/:sid {name?,metadata?}` → `write`; attempting `status`/`sandbox_url`/`error`/`opencode_session_id` → 400 (server-managed); any other field → 400 (not user-editable). `name` sets a sticky USER override stored in `metadata.custom_name` (NOT clobbered by `/sync-opencode-sessions`, which only writes the auto title `metadata.name`); `name:""`/null clears it. Response `name` = resolved display (`custom_name ?? metadata.name`); `custom_name` exposed separately (authoritative override or null).
 `SESS-7` `DELETE /projects/:id/sessions/:sid` → `write` → 200 soft-delete status `stopped`; **remote branch preserved**.
 `SESS-8` `GET /projects/:id/sessions/:sid/sandbox` → `read` → `session_sandboxes` row; **404 while row not yet inserted** (frontend polls); then status `provisioning`→`active` with `base_url`/`external_id`.
 `SESS-9` `POST /projects/:id/sessions/:sid/restart` → `write` → **202**; tears down container, revokes sandbox keys, re-provisions with rotated git/LLM/CLI tokens (status→`provisioning`); branch preserved.
@@ -210,12 +212,6 @@ All under `/p/:sandboxId/:port/*` (`combinedAuth` + rate-limit). `:sandboxId` = 
 `RUN-6` `GET /p/<sbx>/8000/session/<ocId>/message` (+`/message/<mid>`) → list/get messages (results).
 `RUN-7` `GET /p/<sbx>/8000/session/<ocId>/diff` → working-tree diff; agent commits land on branch `<sessionId>`.
 `RUN-8` proxy authz — request without any valid token/cookie → 401; preview-token from a `share` → scoped 200.
-
-### Persistent message queue (survives reload)
-`Q-1` `POST /queue/sessions/:sid {text,id?}` → 201 enqueue.
-`Q-2` `GET /queue/sessions/:sid` · `GET /queue/all` · `GET /queue/status` → list/status.
-`Q-3` `DELETE /queue/sessions/:sid` (clear) · `DELETE /queue/messages/:mid` (one) · `POST /queue/messages/:mid/move-up|move-down` (reorder).
-`Q-4` drainer (server, ~2s poll) — detects idle session → forwards queued msgs to OpenCode `prompt_async`; assert queued msg eventually drained.
 
 ---
 
@@ -380,7 +376,16 @@ DB `project_secrets` (AES-256-GCM, key bound to `projectId`, unique `(project_id
 `APP-1` `GET /projects/:id/apps` (`read`) · `POST` (`manage`) · `PATCH/DELETE /:slug` (`manage`) · `POST /:slug/deploy|stop` (`manage`) · `GET /:slug/logs` (`read`).
 
 ### Ops (platform admin)
-`OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200; non-admin → 403. Legacy `/v1/admin/*` → 404.
+`OPS-1` `GET /ops/overview` → `requireAdmin` (platform admin/super_admin) → 200; non-admin → 403.
+
+### Admin console API (platform admin)
+The `/v1/admin/api/*` surface backs `apps/web/src/app/admin/` — all guarded by `supabaseAuth` + `requireAdmin` (platform admin/super_admin): ANON → 401, authed non-admin → 403. The 200 happy paths run when a platform-admin token is provided (`KE2E_ADMIN_TOKEN`, capability `admin`).
+`ADM-1` `GET /v1/admin/api/accounts` → paged account list (search/tier/balance filters) → 200; non-admin → 403.
+`ADM-2` `GET /v1/admin/api/accounts/:id/users` → the account's member users → 200; non-admin → 403.
+`ADM-3` `GET /v1/admin/api/accounts/:id/ledger` → the account's credit ledger → 200; non-admin → 403.
+`ADM-4` `POST /v1/admin/api/accounts/:id/credits {amount,description?,isExpiring?}` → grant credits → 200 `{ok:true,balance}`; non-positive amount → 400; non-admin → 403.
+`ADM-5` `POST /v1/admin/api/accounts/:id/credits/debit {amount,description?}` → debit credits → 200 `{ok:true,balance}`; non-positive amount → 400; non-admin → 403.
+`ADM-6` `PUT /v1/system/maintenance` (`supabaseAuth`, handler does admin check) → update maintenance config → 200; non-admin → 403; ANON → 401.
 
 ---
 
@@ -576,4 +581,5 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `SEC-5` `PUT/DELETE /projects/:id/secrets/:name/personal` → per-user secret override set/clear.
 `CONN-10` `POST /executor/projects/:id/connectors/:slug/connect[/finalize]` → pipedream; unknown connector → 404/501.
 `CONN-11` `POST /executor/webhook/pipedream` → public; bad/unsigned payload → rejected.
+`CONN-12` `GET /executor/projects/:id/connectors/:slug/config` → admin reads a connector's connection def for editing; unknown connector → 404/501; NONMEMBER → 403.
 `DEL-3` `DELETE /v1/account/delete-immediately` (+ /billing mirror) → ANON → 401 (auth boundary; destructive happy path not run).

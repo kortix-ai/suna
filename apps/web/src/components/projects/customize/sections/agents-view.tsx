@@ -21,6 +21,7 @@ import {
   Bot,
   Copy,
   ExternalLink,
+  Loader2,
   Pencil,
   Plus,
   Search,
@@ -97,7 +98,7 @@ export function AgentsView({ projectId }: { projectId: string }) {
   }, [agents, query]);
 
   const selected = agents.find((a) => a.path === selectedPath) ?? null;
-  const startThread = useConfigureThread(projectId);
+  const configure = useConfigureThread(projectId);
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
@@ -111,9 +112,14 @@ export function AgentsView({ projectId }: { projectId: string }) {
               size="sm"
               variant="outline"
               className="h-7 gap-1 px-2 text-xs"
-              onClick={() => startThread(newConfigPrompt('agent'))}
+              onClick={() => configure.start(newConfigPrompt('agent'))}
+              disabled={configure.pending}
             >
-              <Plus className="h-3 w-3" />
+              {configure.pending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Plus className="h-3 w-3" />
+              )}
               New
             </Button>
           }
@@ -142,7 +148,10 @@ export function AgentsView({ projectId }: { projectId: string }) {
               onRetry={() => detailQuery.refetch()}
             />
           ) : agents.length === 0 ? (
-            <EmptyList onCreate={() => startThread(newConfigPrompt('agent'))} />
+            <EmptyList
+              onCreate={() => configure.start(newConfigPrompt('agent'))}
+              creating={configure.pending}
+            />
           ) : filtered.length === 0 ? (
             <NoMatches query={query} />
           ) : (
@@ -228,7 +237,7 @@ function AgentDetail({
   isDefault: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const startThread = useConfigureThread(projectId);
+  const configure = useConfigureThread(projectId);
   const fileQuery = useQuery({
     queryKey: ['project-file-source', projectId, agent.path],
     queryFn: () => readProjectFile(projectId, agent.path),
@@ -263,7 +272,8 @@ function AgentDetail({
         </span>
         <DetailToolbarActions
           onCopy={onCopy}
-          onEdit={() => startThread(editConfigPrompt('agent', agent.name, agent.path))}
+          onEdit={() => configure.start(editConfigPrompt('agent', agent.name, agent.path))}
+          editing={configure.pending}
           copyDisabled={!fileQuery.data?.content}
         />
       </header>
@@ -329,10 +339,12 @@ function AgentDetail({
 function DetailToolbarActions({
   onCopy,
   onEdit,
+  editing,
   copyDisabled,
 }: {
   onCopy: () => void;
   onEdit: () => void;
+  editing: boolean;
   copyDisabled: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -357,8 +369,13 @@ function DetailToolbarActions({
         size="sm"
         className="h-7 gap-1.5 px-2.5 text-xs"
         onClick={onEdit}
+        disabled={editing}
       >
-        <Pencil className="h-3.5 w-3.5" />
+        {editing ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Pencil className="h-3.5 w-3.5" />
+        )}
         Edit with agent
       </Button>
     </div>
@@ -426,7 +443,7 @@ function NoMatches({ query }: { query: string }) {
   );
 }
 
-function EmptyList({ onCreate }: { onCreate: () => void }) {
+function EmptyList({ onCreate, creating }: { onCreate: () => void; creating: boolean }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
@@ -439,8 +456,18 @@ function EmptyList({ onCreate }: { onCreate: () => void }) {
       }
       action={
         <div className="flex flex-col items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={onCreate}>
-            <Plus className="h-3.5 w-3.5" />
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={onCreate}
+            disabled={creating}
+          >
+            {creating ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Plus className="h-3.5 w-3.5" />
+            )}
             Create an agent
           </Button>
           <Button asChild variant="ghost" size="sm" className="gap-1.5">

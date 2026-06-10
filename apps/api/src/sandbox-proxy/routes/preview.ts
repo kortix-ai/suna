@@ -1,8 +1,7 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { getTraceHeaders } from '../../lib/request-context';
-import { listProjectSecretsSnapshotForUser } from '../../projects/secrets';
-import { resolveShareSubject } from '../../executor/share';
+import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
 import { canAccessPreviewSandbox } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
@@ -33,6 +32,158 @@ function jsonProxyError(body: Record<string, unknown>, status: number): Response
     status,
     headers: { 'Content-Type': 'application/json' },
   });
+}
+
+// Remove the `frame-ancestors` directive from a CSP value, preserving the rest.
+// Returns null if nothing meaningful remains (so the header can be dropped).
+function stripFrameAncestors(csp: string): string | null {
+  const kept = csp
+    .split(';')
+    .map((d) => d.trim())
+    .filter((d) => d && !/^frame-ancestors(\s|$)/i.test(d));
+  return kept.length ? kept.join('; ') : null;
+}
+
+// Build the response headers we send back to the browser: clone the upstream
+// headers, neutralize framing restrictions, and apply CORS. Previews are
+// embedded in the Kortix session UI via an <iframe>, so any app that ships
+// `X-Frame-Options` or a CSP `frame-ancestors` (Next.js, and most frameworks,
+// default to these) would otherwise refuse to load in the panel. Stripping them
+// at the proxy makes embedding work for ANY project without per-app config —
+// the same project-agnostic approach as the origin/host re-origination above.
+// This is safe for previews: access is already gated by the preview token +
+// ownership check, so they aren't world-framable.
+function clientResponseHeaders(upstreamHeaders: Headers, origin: string): Headers {
+  const headers = new Headers(upstreamHeaders);
+  headers.delete('x-frame-options');
+  for (const key of ['content-security-policy', 'content-security-policy-report-only']) {
+    const csp = headers.get(key);
+    if (csp && /frame-ancestors/i.test(csp)) {
+      const next = stripFrameAncestors(csp);
+      if (next) headers.set(key, next);
+      else headers.delete(key);
+    }
+  }
+  if (origin) {
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Access-Control-Allow-Credentials', 'true');
+  }
+  return headers;
+}
+
+// Is this request a top-level browser navigation (so it expects an HTML page,
+// not JSON)? Used to decide whether an "unreachable" state renders a friendly
+// page or a machine-readable error. `Accept: text/html` is the standard signal;
+// `sec-fetch-dest` covers document/iframe loads that send a terse Accept.
+function isBrowserNavigation(incomingHeaders: Headers): boolean {
+  const accept = incomingHeaders.get('accept') || '';
+  if (accept.includes('text/html')) return true;
+  const dest = incomingHeaders.get('sec-fetch-dest') || '';
+  return dest === 'document' || dest === 'iframe' || dest === 'frame';
+}
+
+// Minimal, dependency-free HTML shown when a sandbox port can't be reached —
+// instead of the browser's bare "HTTP ERROR 502" interstitial. Self-contained
+// (inline CSS/JS), dark-mode aware, and gently auto-retries a few times to ride
+// out the boot window before falling back to a manual Retry button.
+function portUnreachableHtml(port: number): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Port ${port} isn't responding</title>
+<style>
+  :root { color-scheme: light dark; }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; align-items: center; justify-content: center;
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #fafafa; color: #18181b; padding: 24px;
+  }
+  @media (prefers-color-scheme: dark) { body { background: #0a0a0a; color: #e4e4e7; } }
+  .card { max-width: 420px; width: 100%; text-align: center; }
+  .dot {
+    width: 10px; height: 10px; border-radius: 999px; background: #f59e0b;
+    display: inline-block; margin-right: 8px; vertical-align: middle;
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .3; } }
+  h1 { font-size: 16px; font-weight: 600; margin: 0 0 8px; }
+  p { margin: 0 0 6px; color: #71717a; }
+  @media (prefers-color-scheme: dark) { p { color: #a1a1aa; } }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .actions { margin-top: 20px; }
+  button {
+    font: inherit; font-weight: 500; cursor: pointer;
+    padding: 8px 16px; border-radius: 8px; border: 1px solid #e4e4e7;
+    background: #18181b; color: #fafafa; transition: opacity .15s;
+  }
+  button:hover { opacity: .85; }
+  @media (prefers-color-scheme: dark) { button { background: #fafafa; color: #18181b; border-color: #27272a; } }
+  .status { margin-top: 14px; font-size: 12px; color: #a1a1aa; min-height: 16px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1><span class="dot"></span>Port ${port} isn't responding yet</h1>
+    <p>Nothing is answering on <code>localhost:${port}</code>.</p>
+    <p>The service may still be starting, or it isn't running.</p>
+    <div class="actions"><button id="retry" type="button">Retry now</button></div>
+    <div class="status" id="status"></div>
+  </div>
+  <script>
+    (function () {
+      var KEY = 'kortix-preview-retries-${port}';
+      var MAX = 5, DELAY = 4000;
+      var n = parseInt(sessionStorage.getItem(KEY) || '0', 10) || 0;
+      var statusEl = document.getElementById('status');
+      function reload() { sessionStorage.setItem(KEY, String(n + 1)); location.reload(); }
+      document.getElementById('retry').addEventListener('click', function () {
+        sessionStorage.setItem(KEY, '0'); location.reload();
+      });
+      if (n < MAX) {
+        var left = Math.round(DELAY / 1000);
+        statusEl.textContent = 'Retrying automatically in ' + left + 's… (' + (n + 1) + '/' + MAX + ')';
+        var t = setInterval(function () {
+          left -= 1;
+          statusEl.textContent = left > 0
+            ? 'Retrying automatically in ' + left + 's… (' + (n + 1) + '/' + MAX + ')'
+            : 'Retrying…';
+        }, 1000);
+        setTimeout(function () { clearInterval(t); reload(); }, DELAY);
+      } else {
+        statusEl.textContent = 'Still not responding after several tries. Use Retry once the service is up.';
+      }
+    })();
+  </script>
+</body>
+</html>`;
+}
+
+// Response for an unreachable / not-yet-ready sandbox port: a friendly HTML page
+// for browser navigations, machine-readable JSON otherwise. Marked no-store so a
+// retry always re-hits the upstream instead of a cached error.
+function portUnreachableResponse(opts: {
+  port: number;
+  status: number;
+  origin: string;
+  incomingHeaders: Headers;
+  reason: string;
+}): Response {
+  const { port, status, origin, incomingHeaders, reason } = opts;
+  const headers = new Headers({ 'Cache-Control': 'no-store' });
+  if (origin) {
+    headers.set('Access-Control-Allow-Origin', origin);
+    headers.set('Access-Control-Allow-Credentials', 'true');
+  }
+  if (isBrowserNavigation(incomingHeaders)) {
+    headers.set('Content-Type', 'text/html; charset=utf-8');
+    return new Response(portUnreachableHtml(port), { status, headers });
+  }
+  headers.set('Content-Type', 'application/json');
+  return new Response(JSON.stringify({ error: reason, port, status }), { status, headers });
 }
 
 // Rewrite an upstream redirect Location so the user stays on the preview.
@@ -71,40 +222,6 @@ function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: str
   if (port !== 8000) return false;
   if (method.toUpperCase() !== 'POST') return false;
   return /^\/session\/[^/]+\/(?:prompt_async|message)(?:$|[/?#])/.test(path);
-}
-
-async function syncProjectEnvToSandbox(input: {
-  projectId: string;
-  userId: string;
-  previewUrl: string;
-  previewToken: string | null;
-  serviceKey: string | null;
-}): Promise<void> {
-  if (!input.serviceKey) return;
-
-  // Resolve as the acting user so the re-sync keeps personal overrides and
-  // share-scope restrictions consistent with what was injected at boot.
-  const subject = await resolveShareSubject(input.userId);
-  const snapshot = await listProjectSecretsSnapshotForUser(input.projectId, subject);
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${input.serviceKey}`,
-    'X-Daytona-Skip-Preview-Warning': 'true',
-    'X-Daytona-Disable-CORS': 'true',
-  };
-  if (input.previewToken) headers['X-Daytona-Preview-Token'] = input.previewToken;
-
-  const res = await fetch(`${input.previewUrl.replace(/\/$/, '')}/kortix/env`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(snapshot),
-    signal: AbortSignal.timeout(15_000),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`project env sync failed: ${res.status}${body ? ` ${body.slice(0, 500)}` : ''}`);
-  }
 }
 
 // === Core HTTP forwarder ======================================================
@@ -148,7 +265,13 @@ export async function forwardToSandbox(
     });
   }
   if (record.status !== 'active') {
-    return jsonProxyError({ error: 'sandbox not ready', status: record.status }, 503);
+    return portUnreachableResponse({
+      port,
+      status: 503,
+      origin,
+      incomingHeaders,
+      reason: `sandbox not ready (status: ${record.status})`,
+    });
   }
   const serviceKey = record.serviceKey;
 
@@ -164,12 +287,12 @@ export async function forwardToSandbox(
 
       if (shouldSyncProjectEnvBeforeProxy(port, method, remainingPath)) {
         try {
-          await syncProjectEnvToSandbox({
+          await syncSandboxEnvForPrompt({
             projectId: record.projectId,
-            userId,
+            sessionId: record.sessionId,
+            serviceKey,
             previewUrl,
             previewToken,
-            serviceKey,
           });
         } catch (err) {
           throw new HTTPException(502, {
@@ -201,6 +324,21 @@ export async function forwardToSandbox(
         headers.set(key, value);
       }
 
+      // Re-originate the request to the upstream so the sandbox dev server sees a
+      // CONSISTENT origin/host pair. The browser's Origin reflects OUR public proxy
+      // host (p3000-<id>.localhost:8008 or the path-based API host), but the upstream
+      // is reached at `previewUrl` and — behind Daytona — sees a `host`/`x-forwarded-host`
+      // of the Daytona proxy (3000-<id>.daytonaproxy01.net). Frameworks that enforce
+      // same-origin on mutations (Next.js Server Actions, SvelteKit, Remix, Django CSRF)
+      // reject that mismatch as "Invalid Server Actions request." Rewriting Origin (and
+      // pinning x-forwarded-host for single-hop local_docker upstreams) to the upstream
+      // origin makes this proxy transparent to ANY framework — no per-project config.
+      const upstreamUrl = new URL(previewUrl);
+      if (headers.has('origin')) {
+        headers.set('origin', upstreamUrl.origin);
+      }
+      headers.set('x-forwarded-host', upstreamUrl.host);
+
       // Public base URL the client used, so the sandbox emits browser-reachable
       // URLs (static-web <base> tag, OpenAPI server URL). origin + redirectPrefix
       // is exactly the prefix the client sees.
@@ -216,9 +354,14 @@ export async function forwardToSandbox(
         headers.set('X-Forwarded-Prefix', `${resolvedOrigin}${redirectPrefix}`);
       }
 
-      console.log(
-        `[PREVIEW] ${method} ${sandboxId}:${port}${remainingPath} -> ${targetUrl}${attempt > 0 ? ` (retry ${attempt})` : ''}`,
-      );
+      // Only log retries — the happy path is already covered by the
+      // per-request "Request completed" INFO line, and logging every proxied
+      // asset (e.g. each _next/static chunk) floods the console.
+      if (attempt > 0) {
+        console.log(
+          `[PREVIEW] ${method} ${sandboxId}:${port}${remainingPath} -> ${targetUrl} (retry ${attempt})`,
+        );
+      }
 
       const upstream = await fetch(targetUrl, {
         method,
@@ -231,17 +374,13 @@ export async function forwardToSandbox(
       });
 
       if (upstream.status >= 300 && upstream.status < 400) {
-        const respHeaders = new Headers(upstream.headers);
+        const respHeaders = clientResponseHeaders(upstream.headers, origin);
         const safeLocation = sanitizeRedirectLocation(
           previewUrl,
           upstream.headers.get('location'),
           redirectPrefix,
         );
         if (safeLocation) respHeaders.set('Location', safeLocation);
-        if (origin) {
-          respHeaders.set('Access-Control-Allow-Origin', origin);
-          respHeaders.set('Access-Control-Allow-Credentials', 'true');
-        }
         return new Response(null, {
           status: upstream.status,
           statusText: upstream.statusText,
@@ -264,11 +403,7 @@ export async function forwardToSandbox(
         const bodyText = await upstream.clone().text().catch(() => '');
         if (bodyText.includes('opencode not ready')) {
           void markSandboxUsed(sandboxId);
-          const notReadyHeaders = new Headers(upstream.headers);
-          if (origin) {
-            notReadyHeaders.set('Access-Control-Allow-Origin', origin);
-            notReadyHeaders.set('Access-Control-Allow-Credentials', 'true');
-          }
+          const notReadyHeaders = clientResponseHeaders(upstream.headers, origin);
           return new Response(bodyText, {
             status: upstream.status,
             statusText: upstream.statusText,
@@ -277,14 +412,29 @@ export async function forwardToSandbox(
         }
       }
 
-      if ((upstream.status === 502 || upstream.status === 503) && attempt < MAX_RETRIES) {
-        // Port not ready yet — sandbox is booting (container running, port down).
-        console.warn(
-          `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
-        );
-        invalidatePreviewLink(sandboxId, port);
-        await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
-        continue;
+      if (upstream.status === 502 || upstream.status === 503) {
+        if (attempt < MAX_RETRIES) {
+          // Port not ready yet — sandbox is booting (container running, port down).
+          console.warn(
+            `[PREVIEW] Sandbox ${sandboxId}:${port} returned ${upstream.status} (port not ready, attempt ${attempt + 1}/${MAX_RETRIES + 1})`,
+          );
+          invalidatePreviewLink(sandboxId, port);
+          await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt]));
+          continue;
+        }
+        // Retries exhausted and the port still isn't answering. Show the friendly
+        // "port unreachable" page to browsers instead of the upstream's bare 5xx;
+        // programmatic clients still get the real status + JSON via passthrough.
+        if (isBrowserNavigation(incomingHeaders)) {
+          void markSandboxUsed(sandboxId);
+          return portUnreachableResponse({
+            port,
+            status: upstream.status,
+            origin,
+            incomingHeaders,
+            reason: 'sandbox port unreachable',
+          });
+        }
       }
 
       if (upstream.status === 400 && attempt < MAX_RETRIES) {
@@ -309,11 +459,7 @@ export async function forwardToSandbox(
           continue;
         }
         // Not a Daytona stopped error — pass through.
-        const errHeaders = new Headers(upstream.headers);
-        if (origin) {
-          errHeaders.set('Access-Control-Allow-Origin', origin);
-          errHeaders.set('Access-Control-Allow-Credentials', 'true');
-        }
+        const errHeaders = clientResponseHeaders(upstream.headers, origin);
         return new Response(bodyText, {
           status: upstream.status,
           statusText: upstream.statusText,
@@ -323,11 +469,7 @@ export async function forwardToSandbox(
 
       // Got an HTTP response → sandbox is alive, pass it through with CORS.
       void markSandboxUsed(sandboxId);
-      const respHeaders = new Headers(upstream.headers);
-      if (origin) {
-        respHeaders.set('Access-Control-Allow-Origin', origin);
-        respHeaders.set('Access-Control-Allow-Credentials', 'true');
-      }
+      const respHeaders = clientResponseHeaders(upstream.headers, origin);
       return new Response(upstream.body, {
         status: upstream.status,
         statusText: upstream.statusText,
@@ -354,8 +496,12 @@ export async function forwardToSandbox(
 
   // All retries exhausted — error the row so we stop hammering a dead instance.
   await markSandboxErrored(sandboxId);
-  throw new HTTPException(502, {
-    message: 'Sandbox upstream unreachable. Please retry in a few seconds.',
+  return portUnreachableResponse({
+    port,
+    status: 502,
+    origin,
+    incomingHeaders,
+    reason: 'sandbox upstream unreachable',
   });
 }
 

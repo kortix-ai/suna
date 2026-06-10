@@ -4,7 +4,7 @@ import {
   createInstallationToken,
   createRepo as ghCreateRepo,
   deleteRepo as ghDeleteRepo,
-  getGitHubOwnerType,
+  isOrgAccount,
 } from '../github';
 import { config } from '../../config';
 import {
@@ -76,16 +76,14 @@ async function managedAdminAuth(): Promise<GitHubAuthContext> {
   if (!owner) throw new Error('Managed GitHub git not configured (MANAGED_GIT_GITHUB_OWNER)');
   const pat = managedGithubToken();
   if (pat) {
-    // Personal-account support is a LOCAL-DEV convenience only. The prior
-    // Freestyle backend never required an org, so for local dev a PAT owner may
-    // be a personal User — detect it so createRepo targets POST /user/repos
-    // instead of POST /orgs/{owner}/repos (which 404s for a personal account).
-    // Production managed repos always live under the configured org, so prod
-    // keeps the strict org-only path. Defaults to Organization on lookup failure.
+    // owner may be a personal account (throwaway) → createRepo must hit
+    // /user/repos, not /orgs/{owner}/repos. Production managed repos always live
+    // under the configured org, so prod keeps the strict org-only path (no
+    // lookup); only local dev detects a personal owner (cached via isOrgAccount).
     const ownerType =
       config.INTERNAL_KORTIX_ENV === 'prod'
         ? 'Organization'
-        : await getGitHubOwnerType(owner, { token: pat });
+        : (await isOrgAccount(owner, { token: pat })) ? 'Organization' : 'User';
     return { token: pat, source: 'pat', owner, ownerType };
   }
   const installId = managedGithubInstallId();

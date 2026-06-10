@@ -48,6 +48,9 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  // Set when the address bar gets something that isn't a sandbox port, so we
+  // can flag it inline instead of attempting to browse it.
+  const [addressError, setAddressError] = useState(false);
   const loadTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Extract metadata from tab
@@ -187,25 +190,36 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
     setRefreshKey((k) => k + 1);
   }, [subdomainOpts, rewritePortPath, tabId, updateTabMetadata, historyIndex]);
 
-  /** Handle address bar submission. */
+  /**
+   * Handle address bar submission. This bar controls the sandbox's local
+   * PORTS only — not arbitrary external sites — so we accept a bare port,
+   * `:port`, `localhost:port`, `127.0.0.1:port`, or a full localhost URL
+   * (each optionally followed by a path). Anything else (e.g. `google.com`)
+   * is rejected inline rather than attempting to browse it.
+   */
   const handleAddressSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
-    setIsAddressEditing(false);
 
     let url = addressValue.trim();
     if (!url) return;
 
-    if (/^localhost:\d+/.test(url)) {
+    if (/^\d{1,5}(?:[/?#]|$)/.test(url)) {
+      url = `http://localhost:${url}`;
+    } else if (/^:\d{1,5}/.test(url)) {
+      url = `http://localhost${url}`;
+    } else if (/^(?:localhost|127\.0\.0\.1):\d+/i.test(url)) {
       url = `http://${url}`;
     }
-    if (/^\d{1,5}$/.test(url)) {
-      url = `http://localhost:${url}`;
-    }
-    if (/^:\d{1,5}/.test(url)) {
-      url = `http://localhost${url}`;
+
+    const parsed = parseLocalhostUrl(url);
+    if (!parsed) {
+      setAddressError(true);
+      return;
     }
 
-    navigateTo(url);
+    setAddressError(false);
+    setIsAddressEditing(false);
+    navigateTo(toInternalUrl(parsed.port, parsed.path));
   }, [addressValue, navigateTo]);
 
   const canGoBack = historyIndex > 0;
@@ -345,13 +359,19 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
 
           {/* Address bar */}
           <form onSubmit={handleAddressSubmit} className="flex-1 flex items-center">
-            <div className="w-full flex items-center h-7 px-2.5 bg-foreground/[0.035] border border-transparent rounded-2xl text-xs tracking-tight focus-within:bg-background focus-within:border-border/60 transition-colors">
-              <Globe className="h-3 w-3 mr-2 shrink-0 opacity-50" />
+            <div
+              className={cn(
+                'w-full flex items-center h-7 px-2.5 bg-foreground/[0.035] border border-transparent rounded-2xl text-xs tracking-tight focus-within:bg-background focus-within:border-border/60 transition-colors',
+                addressError && 'border-red-500 focus-within:border-red-500',
+              )}
+            >
+              <Globe className={cn('h-3 w-3 mr-2 shrink-0 opacity-50', addressError && 'text-red-500 opacity-100')} />
               <input
                 ref={addressInputRef}
                 type="text"
                 value={addressValue}
-                onChange={(e) => setAddressValue(e.target.value)}
+                title="Enter a sandbox port, e.g. 3000"
+                onChange={(e) => { setAddressValue(e.target.value); if (addressError) setAddressError(false); }}
                 onFocus={() => {
                   setIsAddressEditing(true);
                   // Select all on focus for easy replacement
@@ -421,13 +441,19 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
 
         {/* Address bar — editable */}
         <form onSubmit={handleAddressSubmit} className="flex-1 flex items-center">
-          <div className="w-full flex items-center h-7 px-3 bg-background border rounded-2xl text-xs font-mono">
-            <Globe className="h-3 w-3 mr-2 shrink-0 opacity-50" />
+          <div
+            className={cn(
+              'w-full flex items-center h-7 px-3 bg-background border rounded-2xl text-xs font-mono',
+              addressError && 'border-red-500 focus-within:border-red-500',
+            )}
+          >
+            <Globe className={cn('h-3 w-3 mr-2 shrink-0 opacity-50', addressError && 'text-red-500 opacity-100')} />
             <input
               ref={addressInputRef}
               type="text"
               value={displayUrl}
-              onChange={(e) => setAddressValue(e.target.value)}
+              title="Enter a sandbox port, e.g. 3000"
+              onChange={(e) => { setAddressValue(e.target.value); if (addressError) setAddressError(false); }}
               onFocus={() => {
                 setIsAddressEditing(true);
                 if (isExternalBrowsing) {

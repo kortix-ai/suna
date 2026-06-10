@@ -310,24 +310,26 @@ export async function getRepo(opts: {
 }
 
 /**
- * Resolve whether a GitHub owner is a personal `User` or an `Organization`.
- * Managed repo creation needs this to choose `POST /user/repos` vs
- * `POST /orgs/{org}/repos`. Defaults to `Organization` on lookup failure so
- * the prior (org-only) behaviour is preserved when GitHub is unreachable.
+ * Whether a GitHub login is an Organization (vs a personal User). Managed-git
+ * was built assuming MANAGED_GIT_GITHUB_OWNER is an org, but a personal account
+ * (e.g. a throwaway) needs `/user/repos` not `/orgs/{owner}/repos`. Cached —
+ * an account's type doesn't change. Safe default 'org' (historical behavior).
  */
-export async function getGitHubOwnerType(
-  owner: string,
+const accountTypeCache = new Map<string, boolean>();
+export async function isOrgAccount(
+  login: string,
   auth?: Pick<GitHubAuthContext, 'token'>,
-): Promise<'User' | 'Organization'> {
+): Promise<boolean> {
+  const key = login.toLowerCase();
+  const cached = accountTypeCache.get(key);
+  if (cached !== undefined) return cached;
   try {
-    const info = await ghFetch<{ type?: string }>(
-      `/users/${encodeURIComponent(owner)}`,
-      undefined,
-      auth,
-    );
-    return info?.type === 'User' ? 'User' : 'Organization';
+    const acc = await ghFetch<{ type?: string }>(`/users/${encodeURIComponent(login)}`, undefined, auth);
+    const isOrg = (acc.type ?? 'Organization') === 'Organization';
+    accountTypeCache.set(key, isOrg);
+    return isOrg;
   } catch {
-    return 'Organization';
+    return true;
   }
 }
 

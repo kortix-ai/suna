@@ -1,9 +1,67 @@
 import { z } from 'zod'
 
+/**
+ * BACKEND_URL may be EITHER:
+ *  - an absolute http(s) URL (e.g. "http://localhost:8008/v1") — used server-side
+ *    where `new URL(...)` needs an absolute base, and in normal deployments; or
+ *  - a root-relative path (e.g. "/v1") — used in the sandbox preview so the
+ *    BROWSER hits the SAME origin it's served from and the preview proxy rewrites
+ *    it to the in-sandbox API (single-origin proxy, no CORS, no exposed port).
+ * Server-side callers that build a URL must resolve the absolute
+ * `process.env.BACKEND_URL` rather than this (possibly relative) public value.
+ */
+const backendUrlSchema = z
+  .string()
+  .refine(
+    (value) => {
+      if (value.startsWith('/')) return true // root-relative (same-origin proxy)
+      try {
+        const parsed = new URL(value)
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      } catch {
+        return false
+      }
+    },
+    'BACKEND_URL must be an absolute http(s) URL or a root-relative path (e.g. "/v1")',
+  )
+
+/**
+ * SUPABASE_URL may be EITHER:
+ *  - an absolute http(s) URL (e.g. "http://127.0.0.1:54321") — used server-side
+ *    where the runtime reaches Supabase directly, and in normal deployments; or
+ *  - a root-relative path (e.g. "/supabase") — used in the sandbox preview so the
+ *    BROWSER hits the SAME origin it's served from and the preview proxy rewrites
+ *    it to the in-sandbox Supabase (single-origin proxy, no CORS, no exposed
+ *    port). The browser client resolves the relative value against
+ *    `window.location.origin` before handing it to supabase-js (which requires an
+ *    absolute URL). Mirrors BACKEND_URL above.
+ */
+const supabaseUrlSchema = z
+  .string()
+  .refine(
+    (value) => {
+      if (value.startsWith('/')) return true // root-relative (same-origin proxy)
+      try {
+        const parsed = new URL(value)
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:'
+      } catch {
+        return false
+      }
+    },
+    'SUPABASE_URL must be an absolute http(s) URL or a root-relative path (e.g. "/supabase")',
+  )
+
 const RuntimeEnvSchema = z.object({
-  SUPABASE_URL: z.string().url('SUPABASE_URL must be a valid URL'),
+  SUPABASE_URL: supabaseUrlSchema,
   SUPABASE_ANON_KEY: z.string().min(1, 'SUPABASE_ANON_KEY is required'),
-  BACKEND_URL: z.string().url('BACKEND_URL must be a valid URL'),
+  BACKEND_URL: backendUrlSchema,
+  /** Publicly-reachable API ORIGIN (scheme://host, no /v1) for webhooks that
+   *  EXTERNAL services (e.g. Slack) must call. BACKEND_URL can't serve this: in
+   *  local dev it's intentionally localhost so the BROWSER talks to the API
+   *  directly. This carries the same public origin sandbox callbacks use — the
+   *  dev Cloudflare tunnel locally, the real API origin in prod. Optional;
+   *  callers fall back to BACKEND_URL when unset. */
+  WEBHOOK_BASE_URL: z.string().optional(),
   /** Whether billing/paywall UI is enabled. Mirrors the backend's
    *  KORTIX_BILLING_INTERNAL_ENABLED. Set via NEXT_PUBLIC_BILLING_ENABLED. */
   BILLING_ENABLED: z.boolean().default(false),

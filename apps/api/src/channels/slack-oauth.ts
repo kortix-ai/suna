@@ -136,14 +136,22 @@ function redirectToDashboard(
   c: Context,
   qs: Record<string, string | undefined>,
 ): Response {
-  const base = (config.KORTIX_DASHBOARD_URL || 'http://localhost:3000').replace(/\/$/, '');
+  // Mirror dashboardBaseUrl()'s fallback chain so an OAuth callback never
+  // redirects to localhost in a deployed environment where FRONTEND_URL
+  // happens to be unset.
+  const base = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/+$/, '');
   const params = new URLSearchParams();
   for (const [k, v] of Object.entries(qs)) {
     if (v) params.set(k, v);
   }
+  // Channels lives in the Customize overlay (no standalone /channels route) — it's
+  // opened via /projects/:id/customize?section=channels. Redirecting to the old
+  // /projects/:id/channels 404'd after a successful install. With no project (an
+  // error before the project resolved) fall back to the dashboard home.
+  if (qs.projectId) params.set('section', 'channels');
   const target = qs.projectId
-    ? `${base}/projects/${qs.projectId}/channels?${params.toString()}`
-    : `${base}/channels?${params.toString()}`;
+    ? `${base}/projects/${qs.projectId}/customize?${params.toString()}`
+    : `${base}/?${params.toString()}`;
   return c.redirect(target, 302);
 }
 

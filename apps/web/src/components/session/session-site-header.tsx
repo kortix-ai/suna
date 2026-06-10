@@ -34,6 +34,7 @@ import {
   MoreHorizontal,
   Layers,
   Loader2,
+  Pencil,
   RotateCcw,
   Share2,
   Trash2,
@@ -42,6 +43,7 @@ import { SessionChangesIndicator } from '@/components/session/session-changes-in
 import { ExportTranscriptDialog } from '@/components/session/export-transcript-dialog';
 import { CompactDialog } from '@/components/session/compact-dialog';
 import { SessionShareDialog } from '@/components/projects/session-share-dialog';
+import { RenameSessionDialog } from '@/components/projects/rename-session-dialog';
 import {
   deleteProjectSession,
   listProjectSessions,
@@ -75,6 +77,7 @@ export function SessionSiteHeader({
   const [exportOpen, setExportOpen] = useState(false);
   const [compactOpen, setCompactOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Lifecycle actions (Share / Restart / Delete) operate on the project-level
@@ -150,6 +153,13 @@ export function SessionSiteHeader({
                   {/* Lifecycle actions — parity with the session list */}
                   {isProjectSession && (
                     <>
+                      <DropdownMenuItem
+                        className="cursor-pointer"
+                        onClick={() => setRenameOpen(true)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                        Rename…
+                      </DropdownMenuItem>
                       {canShare && (
                         <DropdownMenuItem
                           className="cursor-pointer"
@@ -259,6 +269,13 @@ export function SessionSiteHeader({
             onSaved={() =>
               queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] })
             }
+          />
+          <RenameSessionDialog
+            projectId={projectId!}
+            sessionId={projectSessionId!}
+            currentName={projectSession?.custom_name ?? ''}
+            open={renameOpen}
+            onOpenChange={setRenameOpen}
           />
           <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
             <AlertDialogContent>

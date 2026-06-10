@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useState, memo } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Loader2, MoreHorizontal, RotateCcw, Share2, Trash2 } from 'lucide-react';
+import { Loader2, MoreHorizontal, Pencil, RotateCcw, Share2, Trash2 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 
@@ -41,6 +41,7 @@ import {
   type ProjectSessionStatus,
 } from '@/lib/projects-client';
 import { SessionShareDialog } from '@/components/projects/session-share-dialog';
+import { RenameSessionDialog } from '@/components/projects/rename-session-dialog';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -77,6 +78,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const queryClient = useQueryClient();
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(null);
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
+  const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -153,6 +155,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
                 childCount={children.length}
                 onDelete={(id, label) => setSessionToDelete({ id, label })}
                 onShare={(s) => setSessionToShare(s)}
+                onRename={(id, name) => setSessionToRename({ id, name })}
                 onRestart={(id) => restartMutation.mutate(id)}
                 isRestarting={
                   restartMutation.isPending &&
@@ -190,6 +193,14 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
         onSaved={() => queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] })}
       />
 
+      <RenameSessionDialog
+        projectId={projectId}
+        sessionId={sessionToRename?.id ?? null}
+        currentName={sessionToRename?.name}
+        open={!!sessionToRename}
+        onOpenChange={(open) => !open && setSessionToRename(null)}
+      />
+
       <AlertDialog
         open={!!sessionToDelete}
         onOpenChange={(open) => !open && setSessionToDelete(null)}
@@ -225,6 +236,7 @@ interface ProjectSessionRowProps {
   isActive: boolean;
   onDelete: (sessionId: string, label: string) => void;
   onShare: (session: ProjectSession) => void;
+  onRename: (sessionId: string, currentName: string) => void;
   onRestart: (sessionId: string) => void;
   isRestarting: boolean;
   titleOverride?: string;
@@ -237,6 +249,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
   isActive,
   onDelete,
   onShare,
+  onRename,
   onRestart,
   isRestarting,
   titleOverride,
@@ -249,15 +262,21 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
   // when the cursor leaves the row.
   const showActions = isHovering || menuOpen;
 
-  // Title source of truth is the cloud DB's `name` column (mirrored from
-  // opencode via /v1/projects/sync-opencode-sessions). Older rows may still
-  // carry the legacy metadata.session_name key, so fall back to it before
-  // showing the branch_name slice.
+  // Display precedence: a user-set name (custom_name) is authoritative and
+  // ALWAYS wins — even over the live opencode root title (titleOverride). With
+  // no override we fall back to the live opencode title, then the synced auto
+  // name, then the legacy metadata.session_name key, then the branch slice.
   const legacyMetadataName =
     typeof session.metadata?.session_name === 'string'
       ? (session.metadata.session_name as string)
       : null;
-  const titleCandidate = titleOverride?.trim() || session.name?.trim() || legacyMetadataName?.trim() || null;
+  const userOverride = session.custom_name?.trim() || null;
+  const titleCandidate =
+    userOverride ||
+    titleOverride?.trim() ||
+    session.name?.trim() ||
+    legacyMetadataName?.trim() ||
+    null;
   const fallback = session.branch_name ? session.branch_name.slice(0, 14) : 'session';
   const displayTitle = titleCandidate || fallback;
 
@@ -342,12 +361,25 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-40 p-1">
+              <DropdownMenuItem
+                className="cursor-pointer"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setMenuOpen(false);
+                  onRename(session.session_id, userOverride ?? '');
+                }}
+              >
+                <Pencil className="h-4 w-4" />
+                Rename…
+              </DropdownMenuItem>
               {session.can_manage_sharing !== false && (
                 <DropdownMenuItem
                   className="cursor-pointer"
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    setMenuOpen(false);
                     onShare(session);
                   }}
                 >
@@ -361,6 +393,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  setMenuOpen(false);
                   onRestart(session.session_id);
                 }}
               >
@@ -376,6 +409,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
+                  setMenuOpen(false);
                   onDelete(session.session_id, displayTitle);
                 }}
               >

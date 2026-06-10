@@ -2,7 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -84,7 +84,7 @@ import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
 import { ScimCard } from '@/components/iam/scim-card';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
 import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
-import { usePermission } from '@/lib/use-permission';
+import { usePermissions } from '@/lib/use-permission';
 import {
   type AccountDetail,
   type AccountInvitation,
@@ -105,6 +105,19 @@ import {
 } from '@/lib/projects-client';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import { cn } from '@/lib/utils';
+
+// Stable (module-level) probe list for the account-capabilities batch. Order
+// must match the destructure at the call site. Declared outside the component
+// so its identity is constant across renders and React Query doesn't refetch.
+const ACCOUNT_PERMISSION_PROBES = [
+  { action: 'account.write' },
+  { action: 'account.delete' },
+  { action: 'member.invite' },
+  { action: 'member.remove' },
+  { action: 'member.update' },
+  { action: 'group.create' },
+  { action: 'audit.read' },
+];
 
 const ROLE_LABEL: Record<AccountRole, string> = {
   owner: 'Owner',
@@ -191,13 +204,20 @@ export default function AccountSettingsPage() {
   // guard would change the hook count between renders.
   // usePermission internally short-circuits when accountId is falsy, so
   // it's safe to call before the account query resolves.
-  const canWriteAccount = usePermission(accountId, 'account.write').allowed;
-  const canDeleteAccount = usePermission(accountId, 'account.delete').allowed;
-  const canInviteMember = usePermission(accountId, 'member.invite').allowed;
-  const canRemoveMember = usePermission(accountId, 'member.remove').allowed;
-  const canUpdateMember = usePermission(accountId, 'member.update').allowed;
-  const canCreateGroup = usePermission(accountId, 'group.create').allowed;
-  const canReadAudit = usePermission(accountId, 'audit.read').allowed;
+  // One batched probe instead of 7 separate /effective?action=… GETs. Each
+  // singular probe was its own DB round-trip, so a single load of this page
+  // fanned out 7 concurrent queries — a meaningful contributor to DB
+  // connection-pool pressure. The :batch endpoint answers all of them in one
+  // request. Results come back in the same order as ACCOUNT_PERMISSION_PROBES.
+  const [
+    { allowed: canWriteAccount },
+    { allowed: canDeleteAccount },
+    { allowed: canInviteMember },
+    { allowed: canRemoveMember },
+    { allowed: canUpdateMember },
+    { allowed: canCreateGroup },
+    { allowed: canReadAudit },
+  ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
   if (authLoading || !user) {
     return (
@@ -1565,69 +1585,208 @@ function InviteMemberModal({
   onInvited: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const [email, setEmail] = useState('');
+  const [emails, setEmails] = useState<string[]>([]);
+  const [inputValue, setInputValue] = useState('');
   const [role, setRole] = useState<AccountRole>('member');
   const [inlineError, setInlineError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
   const mutation = useMutation({
-    mutationFn: () =>
-      inviteAccountMember(accountId, { email: email.trim(), role }),
-    onSuccess: (res) => {
-      if (res.status === 'pending') {
-        if (res.email_sent) {
-          toast.success(
-            `Invite sent to ${res.email} — they'll see it when they sign up`,
-          );
-        } else {
+    mutationFn: async (list: string[]) =>
+      Promise.all(
+        list.map(async (addr) => {
+          try {
+            const res = await inviteAccountMember(accountId, {
+              email: addr,
+              role,
+            });
+            return { email: addr, ok: true as const, res };
+          } catch (err) {
+            return {
+              email: addr,
+              ok: false as const,
+              status: (err as { status?: number }).status,
+              message: (err as Error).message,
+            };
+          }
+        }),
+      ),
+    onSuccess: (results) => {
+      type Ok = Extract<(typeof results)[number], { ok: true }>;
+      type Failed = Extract<(typeof results)[number], { ok: false }>;
+      const succeeded = results.filter((r): r is Ok => r.ok);
+      const failed = results.filter((r): r is Failed => !r.ok);
+      const alreadyMembers = failed.filter((r) => r.status === 409);
+      const otherFailures = failed.filter((r) => r.status !== 409);
+
+      if (succeeded.length === 1) {
+        const r = succeeded[0];
+        if (r.res.status === 'pending' && !r.res.email_sent) {
           // Email delivery was skipped (e.g. Mailtrap not configured locally).
           // Surface the link so the admin can share it manually.
+          const inviteUrl = r.res.invite_url;
           toast.warning(
             `Invite created — email skipped. Share the link manually.`,
             {
               action: {
                 label: 'Copy link',
-                onClick: () => copyInviteLink(res.invite_url),
+                onClick: () => copyInviteLink(inviteUrl),
               },
               duration: 10_000,
             },
           );
+        } else if (r.res.status === 'pending') {
+          toast.success(
+            `Invite sent to ${r.res.email} — they'll see it when they sign up`,
+          );
+        } else {
+          toast.success(`Added ${r.res.email}`);
         }
-      } else {
-        toast.success(`Added ${res.email}`);
+      } else if (succeeded.length > 1) {
+        toast.success(`Invited ${succeeded.length} people`);
+        const skipped = succeeded.filter(
+          (r) => r.res.status === 'pending' && !r.res.email_sent,
+        ).length;
+        if (skipped > 0) {
+          toast.warning(
+            `${skipped} ${skipped === 1 ? 'email was' : 'emails were'} skipped — share their links manually.`,
+          );
+        }
       }
-      onInvited();
-      reset();
-      onOpenChange(false);
-    },
-    onError: (err: Error & { status?: number }) => {
-      if (err.status === 409) {
-        setInlineError('That user is already a member of this account.');
+
+      if (alreadyMembers.length > 0) {
+        toast.warning(
+          alreadyMembers.length === 1
+            ? `${alreadyMembers[0].email} is already a member.`
+            : `${alreadyMembers.length} were already members.`,
+        );
+      }
+
+      if (succeeded.length > 0 || alreadyMembers.length > 0) {
+        onInvited();
+      }
+
+      // Keep only the genuinely-failed emails so the admin can retry them.
+      const failedEmails = otherFailures.map((r) => r.email);
+      if (failedEmails.length > 0) {
+        setEmails(failedEmails);
+        setInputValue('');
+        setInlineError(
+          otherFailures.length === 1
+            ? otherFailures[0].message || 'Failed to invite member'
+            : `Failed to invite ${otherFailures.length} of these — try again.`,
+        );
       } else {
-        setInlineError(err.message || 'Failed to invite member');
+        reset();
+        onOpenChange(false);
       }
     },
   });
 
   function reset() {
-    setEmail('');
+    setEmails([]);
+    setInputValue('');
     setRole('member');
     setInlineError(null);
+  }
+
+  /**
+   * Parse free text (typed or pasted) into email chips. Splits on commas,
+   * semicolons, and whitespace. Returns true if everything parsed cleanly;
+   * leaves any invalid tokens in the input and surfaces an error otherwise.
+   */
+  function commitInput(raw: string): boolean {
+    const tokens = raw
+      .split(/[\s,;]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    if (tokens.length === 0) {
+      setInputValue('');
+      return true;
+    }
+    const valid: string[] = [];
+    const invalid: string[] = [];
+    for (const t of tokens) {
+      if (!EMAIL_RE.test(t)) invalid.push(t);
+      else valid.push(t);
+    }
+    if (valid.length > 0) {
+      setEmails((prev) => [
+        ...prev,
+        ...valid.filter((v) => !prev.includes(v)),
+      ]);
+    }
+    if (invalid.length > 0) {
+      setInputValue(invalid.join(', '));
+      setInlineError(
+        `${invalid.length === 1 ? 'Not a valid email' : 'Not valid emails'}: ${invalid.join(', ')}`,
+      );
+      return false;
+    }
+    setInputValue('');
+    setInlineError(null);
+    return true;
+  }
+
+  function removeEmail(addr: string) {
+    setEmails((prev) => prev.filter((e) => e !== addr));
+  }
+
+  function handleInputKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (
+      event.key === 'Enter' ||
+      event.key === ',' ||
+      event.key === ';' ||
+      (event.key === ' ' && inputValue.trim() !== '')
+    ) {
+      event.preventDefault();
+      commitInput(inputValue);
+    } else if (
+      event.key === 'Backspace' &&
+      inputValue === '' &&
+      emails.length > 0
+    ) {
+      setEmails((prev) => prev.slice(0, -1));
+    }
+  }
+
+  function handlePaste(event: React.ClipboardEvent<HTMLInputElement>) {
+    const text = event.clipboardData.getData('text');
+    // Only intercept multi-email pastes; let a single address paste normally
+    // so the admin can still edit it before committing.
+    if (/[\s,;]/.test(text.trim())) {
+      event.preventDefault();
+      commitInput(`${inputValue} ${text}`);
+    }
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setInlineError(null);
-    const trimmed = email.trim();
-    if (!trimmed) {
-      setInlineError('Email is required');
+    const tokens = inputValue
+      .split(/[\s,;]+/)
+      .map((t) => t.trim())
+      .filter(Boolean);
+    const invalid = tokens.filter((t) => !EMAIL_RE.test(t));
+    if (invalid.length > 0) {
+      setInlineError(
+        `${invalid.length === 1 ? 'Not a valid email' : 'Not valid emails'}: ${invalid.join(', ')}`,
+      );
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      setInlineError('Enter a valid email address');
+    const all = Array.from(new Set([...emails, ...tokens]));
+    if (all.length === 0) {
+      setInlineError('Add at least one email');
       return;
     }
-    mutation.mutate();
+    setEmails(all);
+    setInputValue('');
+    mutation.mutate(all);
   }
+
+  const pendingCount = emails.length + (inputValue.trim() ? 1 : 0);
 
   return (
     <Dialog
@@ -1645,23 +1804,53 @@ function InviteMemberModal({
         <form onSubmit={handleSubmit}>
           <div className="px-6 py-5 space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="invite-email">Email</Label>
-            <div className="relative">
-              <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
+            <Label htmlFor="invite-email">Emails</Label>
+            <div
+              className="flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-2xl border bg-card px-3 py-1.5 text-sm transition-[color] focus-within:outline-none focus-within:ring-2 focus-within:ring-primary/50"
+              onClick={() => inputRef.current?.focus()}
+            >
+              <Mail className="pointer-events-none h-4 w-4 shrink-0 text-muted-foreground" />
+              {emails.map((addr) => (
+                <Badge key={addr} variant="secondary" className="gap-1 pr-1">
+                  {addr}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeEmail(addr);
+                    }}
+                    className="text-muted-foreground transition-colors hover:text-foreground"
+                    aria-label={`Remove ${addr}`}
+                    disabled={mutation.isPending}
+                  >
+                    <X className="size-3" />
+                  </button>
+                </Badge>
+              ))}
+              <input
+                ref={inputRef}
                 id="invite-email"
-                type="email"
-                value={email}
+                type="text"
+                value={inputValue}
                 onChange={(e) => {
-                  setEmail(e.target.value);
+                  setInputValue(e.target.value);
                   if (inlineError) setInlineError(null);
                 }}
-                placeholder={tHardcodedUi.raw('appAccountsIdPage.line1130JsxAttrPlaceholderTeammateCompanyCom')}
+                onKeyDown={handleInputKeyDown}
+                onPaste={handlePaste}
+                placeholder={
+                  emails.length === 0
+                    ? tHardcodedUi.raw('appAccountsIdPage.line1130JsxAttrPlaceholderTeammateCompanyCom')
+                    : 'Add another…'
+                }
                 autoFocus
-                className="pl-9"
+                className="min-w-[8rem] flex-1 bg-transparent font-medium outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
                 disabled={mutation.isPending}
               />
             </div>
+            <p className="text-xs text-muted-foreground">
+              Add several at once — separate with commas, spaces, or Enter.
+            </p>
           </div>
 
           <div className="space-y-1.5">
@@ -1698,14 +1887,14 @@ function InviteMemberModal({
             <Button
               type="submit"
               className="gap-1.5"
-              disabled={mutation.isPending}
+              disabled={mutation.isPending || pendingCount === 0}
             >
               {mutation.isPending ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <UserPlus className="h-4 w-4" />
               )}
-              Invite
+              {pendingCount > 1 ? `Invite ${pendingCount}` : 'Invite'}
             </Button>
           </div>
         </form>

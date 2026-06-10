@@ -216,7 +216,13 @@ function webDashboardUrl(apiBase: string): string {
       return `${url.protocol}//${url.hostname}:3000`;
     }
     if (url.hostname.startsWith('api.')) {
+      // api.kortix.com → kortix.com
       url.hostname = url.hostname.slice(4);
+      return url.origin;
+    }
+    if (url.hostname.includes('-api.')) {
+      // dev-api.kortix.com → dev.kortix.com (and any <env>-api.<domain>)
+      url.hostname = url.hostname.replace('-api.', '.');
       return url.origin;
     }
     return url.origin;

@@ -282,8 +282,37 @@ const STRIPE_PRICES_STAGING: StripePriceConfig = {
   computeProductId: 'prod_U6B5Gh1aMPdnLO',
 };
 
+// Local-dev Stripe TEST-mode sandbox. Every id here lives in the test mode of
+// the main Kortix Stripe account (acct_1R5BVvG6l1KZGqIr) — the account your
+// local `STRIPE_SECRET_KEY` (sk_test_…) points at. The prod/staging configs
+// above are LIVE-mode ids in other accounts and 404 with a test key ("No such
+// price"), which is why local per-seat checkout was failing. Created via the
+// Stripe API; regenerate with apps/api/scripts/ or the Stripe dashboard (test
+// mode) if the sandbox account is ever reset.
+const STRIPE_PRICES_DEV: StripePriceConfig = {
+  subscriptions: {
+    free: { monthly: 'price_1RIGvuG6l1KZGqIrw14abxeL' },
+    pro:  { monthly: 'price_1TeyA7G6l1KZGqIr7ZhEpoVm' },
+    per_seat: { monthly: 'price_1TeyA7G6l1KZGqIrTb2DKGS0' }, // test "Kortix seat" $40/mo
+  },
+  credits: {
+    10:  'price_1TeyA8G6l1KZGqIrWYDbPN0O',
+    25:  'price_1TeyA9G6l1KZGqIrbdZNyyDn',
+    50:  'price_1TeyA9G6l1KZGqIrNbj3otrU',
+    100: 'price_1TeyA9G6l1KZGqIrqSwPsznA',
+    250: 'price_1TeyAAG6l1KZGqIrZavIxtSE',
+    500: 'price_1TeyAAG6l1KZGqIrm5HnnDaT',
+  },
+  productId: 'prod_UeGhOr4r0v9gna',
+  computeProductId: 'prod_UeGh9sa2UA2wRR',
+};
+
 function getStripePrices(): StripePriceConfig {
-  return config.INTERNAL_KORTIX_ENV === 'prod' ? STRIPE_PRICES_PROD : STRIPE_PRICES_STAGING;
+  switch (config.INTERNAL_KORTIX_ENV) {
+    case 'prod':    return STRIPE_PRICES_PROD;
+    case 'staging': return STRIPE_PRICES_STAGING;
+    default:        return STRIPE_PRICES_DEV; // 'dev' / unset → local test sandbox
+  }
 }
 
 export function getProductId(): string {
@@ -378,6 +407,21 @@ export function canPurchaseCredits(tierName: string): boolean {
 /** Returns true if the tier is a paid tier (not free/none). */
 export function isPaidTier(tierName: string): boolean {
   return tierName !== 'free' && tierName !== 'none';
+}
+
+/**
+ * Whether a tier unlocks the full model catalog — i.e. the premium LLM gateway
+ * (Claude/GPT/Gemini/…), not just OpenCode's built-in Zen models.
+ *
+ * Driven entirely by the tier's `models` config: every paid tier — `pro`,
+ * `per_seat`, and all legacy `tier_*` plans — carries `models: ['all']`, so this
+ * is the single source of truth for premium-model entitlement. Crucially it keys
+ * off the resolved TIER, not `billing_model`: legacy paid customers are just as
+ * entitled to premium models as per-seat teams (the gateway meters every account
+ * the same way), and gating on `isPerSeatAccount` wrongly locked them out.
+ */
+export function tierGrantsAllModels(tierName: string): boolean {
+  return getTier(tierName).models.includes('all');
 }
 
 /** Returns the per-seat Stripe price ID for the current environment. */

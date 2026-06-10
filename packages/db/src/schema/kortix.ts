@@ -31,6 +31,7 @@ export const sandboxProviderEnum = kortixSchema.enum('sandbox_provider', [
   'daytona',
   'local_docker',
   'justavps',
+  'platinum',
 ]);
 
 export const deploymentStatusEnum = kortixSchema.enum('deployment_status', [
@@ -732,6 +733,45 @@ export const sessionSandboxes = kortixSchema.table(
 );
 
 /**
+ * Provider analytics — an append-only telemetry log, one row per terminal
+ * provisioning/migration outcome. Written fire-and-forget from the provision
+ * path (the `provisionTimeline` is already computed, so capture is ~free) and
+ * survives the session_sandboxes row being deleted (e.g. on migration). Powers
+ * the admin Providers → Analytics tab: per-provider success rate, provision
+ * latency (p50/p95), and where the time goes (phase marks). Lightweight and
+ * non-intrusive — never on the request hot path, no FKs, append-only.
+ */
+export const providerEvents = kortixSchema.table(
+  'provider_events',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    provider: text('provider').notNull(),
+    // 'provision' (a sandbox-create attempt) | 'migrate' (a cross-provider move)
+    kind: text('kind').notNull(),
+    // 'ok' | 'error' | 'stopped'
+    outcome: text('outcome').notNull(),
+    totalMs: integer('total_ms'),
+    // Provision timeline marks: [{ label, atMs, deltaMs }]
+    marks: jsonb('marks').default([]).$type<unknown[]>(),
+    attempts: integer('attempts').default(1),
+    // 'capacity' | 'other' for errors; null otherwise.
+    errorClass: text('error_class'),
+    error: text('error'),
+    // For migrate: the source provider moved away from.
+    fromProvider: text('from_provider'),
+    sessionId: text('session_id'),
+    accountId: uuid('account_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_provider_events_provider').on(table.provider),
+    index('idx_provider_events_kind').on(table.kind),
+    index('idx_provider_events_outcome').on(table.outcome),
+    index('idx_provider_events_created').on(table.createdAt),
+  ],
+);
+
+/**
  * Sandbox templates — the durable identity for "a kind of sandbox a session
  * can boot from." One row per template; the platform default is a shared row
  * (project_id NULL, is_shared=true) reused by every project. Per-project
@@ -985,6 +1025,40 @@ export const legacySandboxMigrations = kortixSchema.table(
     index('idx_legacy_sandbox_migrations_status').on(table.status),
     index('idx_legacy_sandbox_migrations_account').on(table.accountId),
     index('idx_legacy_sandbox_migrations_heartbeat').on(table.status, table.heartbeatAt),
+  ],
+);
+
+// Suna (agentpress) → opencode migration. One row per ACCOUNT: all of the
+// account's old Suna projects become ONE new project with N sessions (chats),
+// each chat's sandbox files archived under legacy/<slug>/. Same durable-runner
+// model as legacy_sandbox_migrations (phase/progress/heartbeat lease, resumable
+// by the worker), but keyed on account_id since the source is public.resources,
+// not kortix.sandboxes.
+export const sunaAccountMigrations = kortixSchema.table(
+  'suna_account_migrations',
+  {
+    migrationId: uuid('migration_id').defaultRandom().primaryKey(),
+    runId: text('run_id').notNull(),
+    accountId: uuid('account_id').notNull(),
+    projectId: uuid('project_id'),
+    status: varchar('status', { length: 32 }).default('planned').notNull(),
+    mode: varchar('mode', { length: 32 }).default('dry_run').notNull(),
+    plan: jsonb('plan').default({}).$type<Record<string, unknown>>().notNull(),
+    error: text('error'),
+    phase: varchar('phase', { length: 32 }),
+    progress: jsonb('progress').default({}).$type<Record<string, unknown>>().notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    heartbeatAt: timestamp('heartbeat_at', { withTimezone: true }),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    appliedAt: timestamp('applied_at', { withTimezone: true }),
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_suna_account_migrations_status').on(table.status),
+    index('idx_suna_account_migrations_account').on(table.accountId),
+    index('idx_suna_account_migrations_heartbeat').on(table.status, table.heartbeatAt),
   ],
 );
 

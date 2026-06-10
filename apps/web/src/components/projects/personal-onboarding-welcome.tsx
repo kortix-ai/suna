@@ -10,9 +10,12 @@ import { useAuth } from '@/components/AuthProvider';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
 import { DemoQualifierDialog } from '@/components/contact/demo-qualifier-dialog';
+import { isWorkEmail } from '@/lib/personal-email';
 import { cn } from '@/lib/utils';
 
-const MARKO_CAL_LINK = 'marko-kraemer/kortix-onboarding';
+// Public team demo event (cal.com/team/kortix/demo). Namespace stays unique to
+// this surface so the embed's UI config doesn't collide with other instances.
+const MARKO_CAL_LINK = 'team/kortix/demo';
 const MARKO_CAL_NAMESPACE = 'kortix-onboarding';
 const MARKO_EMAIL = 'marko@kortix.ai';
 const MARKO_WHATSAPP = '17372940835';
@@ -70,10 +73,13 @@ export function PersonalOnboardingWelcome({
     return () => window.clearTimeout(t);
   }, [hydrated, dismissed]);
 
-  // Cloud-only (self-hosters never see the founder). The card itself shows for
-  // everyone on cloud — Marko is the default; the BOOKING is screened via the
-  // qualifier below. Subscription only gates the personal WhatsApp line.
+  // Show the enterprise-demo card to any cloud signup on a WORK email — those
+  // are the real leads. Self-hosters (flag off → tier 'none') and personal/free
+  // inboxes (gmail, outlook, …) never see it. The BOOKING is further screened
+  // to 11+ employees via the qualifier below; the personal WhatsApp line stays
+  // a paid-only perk.
   if (tier === 'none') return null;
+  if (!isWorkEmail(user?.email)) return null;
   if (!hydrated || dismissed) return null;
   if (wizardPending) return null;
 
@@ -136,13 +142,13 @@ export function PersonalOnboardingWelcome({
               Want a hand setting up your company&rsquo;s AI command center?
               {isPaid
                 ? ' Book a call or send me a WhatsApp message whenever you need help.'
-                : ' Book a call whenever you need help.'}
+                : ' Book a demo and I’ll walk you through it.'}
             </p>
 
             <div className="flex flex-wrap items-center gap-2">
               <Button onClick={() => setQualifierOpen(true)}>
                 <CalendarDays />
-                Book a call
+                Book a demo
               </Button>
               {isPaid && (
                 <Button asChild variant="outline">
@@ -175,8 +181,8 @@ export function PersonalOnboardingWelcome({
         </div>
       </div>
 
-      {/* Same screening gate as the public demo: small teams get routed to
-          self-serve instead of onto Marko's calendar. */}
+      {/* Same screening gate as the public demo: teams under 11 are captured
+          as a lead and confirmed, not put onto Marko's calendar. */}
       <DemoQualifierDialog
         open={qualifierOpen}
         onOpenChange={setQualifierOpen}
@@ -184,10 +190,9 @@ export function PersonalOnboardingWelcome({
         calNamespace={MARKO_CAL_NAMESPACE}
         source="marko-widget"
         title="Book a call with Marko"
-        description="A couple of quick details so Marko can tailor the call — or point you to self-serve if that's faster."
+        description="A couple of quick details so Marko can tailor the call."
         defaultName={defaultName}
         defaultEmail={defaultEmail}
-        selfServeHref="/projects"
       />
     </>
   );

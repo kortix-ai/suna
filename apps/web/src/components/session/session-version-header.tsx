@@ -13,7 +13,7 @@
  */
 
 import { useParams } from 'next/navigation';
-import { GitBranch, GitPullRequestArrow, Loader2 } from 'lucide-react';
+import { GitBranch, GitPullRequestArrow, Info, Loader2 } from 'lucide-react';
 
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
 import { cn } from '@/lib/utils';
@@ -93,42 +93,76 @@ export function SessionVersionHeader({
 
   return (
     <div className="flex-shrink-0 border-b border-border/60">
-      {/* Version framing — name this version by its id, framed against main. */}
-      <div className="flex items-center gap-2 px-4 pt-3 pb-1">
-        <GitBranch className="size-3.5 shrink-0 text-muted-foreground/70" />
-        <span className="min-w-0 truncate text-sm" title={gitSessionId}>
-          <span className="font-medium text-foreground">Version </span>
-          <span className="font-mono text-foreground/90">{shortVersionId}</span>
-          <span className="text-muted-foreground"> · alternative version of </span>
-          <span className="font-mono text-foreground/90">{baseRef}</span>
-        </span>
-        {hasChanges && (
-          <Button
-            size="sm"
-            className="ml-auto h-7 shrink-0 gap-1.5"
-            onClick={openChangeRequest}
-            disabled={asking}
+      {/* Compact header row — tabs (left) + version chip & CTA (right). */}
+      <div className="flex items-center gap-3 px-4">
+        {/* Tabs — All files (default) · Changes (secondary). */}
+        <div role="tablist" aria-label="Files view" className="flex items-center gap-5">
+          <SubTab active={mode === 'files'} onClick={() => onModeChange('files')} label="All files" />
+          <SubTab
+            active={mode === 'changes'}
+            onClick={() => onModeChange('changes')}
+            label="Changes"
+            count={changedCount}
+          />
+        </div>
+
+        {/* Version chip + change-request CTA, right-aligned on the same row.
+            On "All files" the verbose framing lives in the tooltip; on
+            "Changes" it's spelled out in the explanation strip below. */}
+        <div className="ml-auto flex min-w-0 items-center gap-2">
+          <span
+            className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+            title={`Version ${shortVersionId} · alternative version of ${baseRef}`}
           >
-            {asking ? (
-              <Loader2 className="size-3.5 animate-spin" />
-            ) : (
-              <GitPullRequestArrow className="size-3.5" />
-            )}
-            Open change request
-          </Button>
-        )}
+            <GitBranch className="size-3.5 shrink-0 text-muted-foreground/70" />
+            <span className="truncate font-mono text-foreground/80">{shortVersionId}</span>
+          </span>
+          {hasChanges && (
+            <Button
+              size="sm"
+              className="h-7 shrink-0 gap-1.5"
+              onClick={openChangeRequest}
+              disabled={asking}
+            >
+              {asking ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <GitPullRequestArrow className="size-3.5" />
+              )}
+              Open change request
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Tabs — All files (default) · Changes (secondary). */}
-      <div role="tablist" aria-label="Files view" className="flex items-center gap-5 px-4">
-        <SubTab active={mode === 'files'} onClick={() => onModeChange('files')} label="All files" />
-        <SubTab
-          active={mode === 'changes'}
-          onClick={() => onModeChange('changes')}
-          label="Changes"
-          count={changedCount}
-        />
-      </div>
+      {/* Contextual explanation — only on the Changes tab, where the version
+          framing matters most: what these changes are and how they reach main. */}
+      {mode === 'changes' && (
+        <div className="flex gap-2 border-t border-border/60 bg-muted/15 px-4 py-2.5">
+          <Info className="mt-px size-3.5 shrink-0 text-muted-foreground/60" />
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            What this session changed in version{' '}
+            <span className="font-mono text-foreground/80">{shortVersionId}</span> — a separate
+            version of{' '}
+            <span className="font-mono text-foreground/80">{baseRef}</span>. These edits stay here and
+            don&apos;t affect{' '}
+            <span className="font-mono text-foreground/80">{baseRef}</span> until you{' '}
+            {hasChanges ? (
+              <button
+                type="button"
+                onClick={openChangeRequest}
+                disabled={asking}
+                className="font-medium text-foreground underline decoration-dotted underline-offset-2 hover:decoration-solid disabled:opacity-60"
+              >
+                open a change request
+              </button>
+            ) : (
+              <span className="font-medium text-foreground/80">open a change request</span>
+            )}{' '}
+            to merge them in.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

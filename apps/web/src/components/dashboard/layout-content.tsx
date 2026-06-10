@@ -94,6 +94,12 @@ const MobileAppInterstitial = lazy(() =>
 	})),
 );
 
+const KortixAppBanners = lazy(() =>
+	import("@/components/announcements/kortix-app-banners").then((mod) => ({
+		default: mod.KortixAppBanners,
+	})),
+);
+
 const SleepOverlay = lazy(() =>
 	import("@/components/dashboard/sleep-overlay").then((mod) => ({
 		default: mod.SleepOverlay,
@@ -1150,6 +1156,15 @@ export default function DashboardLayoutContent({
 						<MobileAppInterstitial />
 					</Suspense>
 				) : null}
+
+				{/* Bottom-right "Get Kortix Desktop" widget. Desktop banner only
+				    for now (mobile kept implemented but hidden via showMobile);
+				    auto-hidden inside the desktop app itself. */}
+				{!hideChrome && (
+					<Suspense fallback={null}>
+						<KortixAppBanners />
+					</Suspense>
+				)}
 			</AppProviders>
 		</NovuInboxProvider>
 			)}

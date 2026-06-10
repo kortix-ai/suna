@@ -6,7 +6,6 @@ import type { Opencode } from './opencode'
 import { isRepoMaterialized } from './git'
 import { createHealthRouter, type SandboxBootState } from './routes/health'
 import { createRefreshRouter } from './routes/refresh'
-import { createPromptRouter } from './routes/prompt'
 import { createAbortRouter } from './routes/abort'
 import { createEnvRouter } from './routes/env'
 import { createGitRouter } from './routes/git'
@@ -46,7 +45,6 @@ export function buildOpencodeApp(
   const kortixRouter = new Hono()
   const healthRouter = createHealthRouter(cfg, opencode, bootTime, bootState, staticWebPort)
   const refreshRouter = createRefreshRouter(cfg, opencode)
-  const promptRouter = createPromptRouter(cfg)
   const abortRouter = createAbortRouter(cfg)
   const envRouter = projectEnv ? createEnvRouter(cfg, opencode, projectEnv) : null
   // NOTE: /kortix/git is currently unused by the product (the agent commits +
@@ -56,8 +54,6 @@ export function buildOpencodeApp(
   kortixRouter.route('/health/', healthRouter)
   kortixRouter.route('/refresh', refreshRouter)
   kortixRouter.route('/refresh/', refreshRouter)
-  kortixRouter.route('/prompt', promptRouter)
-  kortixRouter.route('/prompt/', promptRouter)
   kortixRouter.route('/abort', abortRouter)
   kortixRouter.route('/abort/', abortRouter)
   kortixRouter.route('/git', gitRouter)
@@ -216,6 +212,11 @@ export function buildOpencodeApp(
 export type ProxyServer = {
   stop(): Promise<void>
   port: number
+  // Rebuild the control surface with a new Config. A warm-pool spare boots
+  // tokenless and only learns its session cfg (KORTIX_TOKEN, projectId, …) on
+  // claim; without this the proxy auth gate + routers keep the empty boot cfg
+  // and reject every request with "KORTIX_TOKEN not configured".
+  reload(next: Config): void
 }
 
 export function startProxy(
@@ -226,7 +227,9 @@ export function startProxy(
   projectEnv?: ProjectEnvStore,
   staticWebPort: number | null = null,
 ): ProxyServer {
-  const app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort)
+  // Mutable so claim-time reload() can hot-swap the handler in place; the
+  // indirection below re-reads `app` per request, so reassigning it is enough.
+  let app = buildOpencodeApp(cfg, opencode, bootTime, bootState, projectEnv, staticWebPort)
 
   const server = Bun.serve({
     port: cfg.servicePort,
@@ -234,7 +237,7 @@ export function startProxy(
     // SSE streams from OpenCode can be long-lived with no traffic; default 10s
     // kills them. 255s matches kortix-master's tuned value.
     idleTimeout: 255,
-    fetch: app.fetch,
+    fetch: (req, srv) => app.fetch(req, srv),
   })
 
   const boundPort = server.port ?? cfg.servicePort
@@ -242,6 +245,10 @@ export function startProxy(
 
   return {
     port: boundPort,
+    reload(next: Config) {
+      app = buildOpencodeApp(next, opencode, bootTime, bootState, projectEnv, staticWebPort)
+      logger.info('[proxy] reloaded with session config', { projectId: next.projectId })
+    },
     async stop() {
       server.stop(true)
     },

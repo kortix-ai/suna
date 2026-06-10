@@ -10,6 +10,7 @@
 
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
+import { openExternalRoute } from '@/lib/desktop';
 import { BookOpen, Copy } from 'lucide-react';
 import { toast } from '@/lib/toast';
 
@@ -74,7 +75,7 @@ export function SupportDialog({
               variant="ghost"
               onClick={() => {
                 onOpenChange(false);
-                router.push('/docs');
+                if (!openExternalRoute('/docs')) router.push('/docs');
               }}
               className="gap-1.5"
             >

@@ -51,6 +51,11 @@ import {
   deleteConnectorFromManifest,
   getProjectPoliciesFromManifest,
   setConnectorCredentialShared,
+  setConnectorCredentialModeInManifest,
+  setConnectorNameInManifest,
+  getConnectorPoliciesFromManifest,
+  getConnectorConfigFromManifest,
+  setConnectorPoliciesInManifest,
   setProjectPoliciesInManifest,
   upsertConnectorInManifest,
   type ConnectorDraft,
@@ -336,6 +341,12 @@ export const dbExecutorRouterDeps: ExecutorRouterDeps = {
     await deleteCredential(row.connectorId, mode === 'per_user' ? userId : null);
     return { ok: true as const };
   },
+  setCredentialMode: (projectId, accountId, slug, mode) => setConnectorCredentialModeInManifest(projectId, accountId, slug, mode),
+  setConnectorName: (projectId, accountId, slug, name) => setConnectorNameInManifest(projectId, accountId, slug, name),
+  getConnectorPolicies: (projectId, slug) => getConnectorPoliciesFromManifest(projectId, slug),
+  getConnectorConfig: (projectId, slug) => getConnectorConfigFromManifest(projectId, slug),
+  setConnectorPolicies: (projectId, accountId, slug, policies) =>
+    setConnectorPoliciesInManifest(projectId, accountId, slug, policies as Parameters<typeof setConnectorPoliciesInManifest>[3]),
   pipedreamConnect: pipedreamConfigured()
     ? async (projectId, slug, userId, redirects) => {
         const conn = await loadPipedreamConnector(projectId, slug);

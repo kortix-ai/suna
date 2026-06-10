@@ -26,6 +26,7 @@ import { runValidate } from './commands/validate.ts';
 import { runWhoami } from './commands/whoami.ts';
 import { printBanner } from './banner.ts';
 import { activeHostEntry } from './api/config.ts';
+import { getUpdateNotice } from './update-check.ts';
 import { C, header, pad, rule } from './style.ts';
 
 // CI bakes the real version via --define process.env.KORTIX_CLI_VERSION (the
@@ -104,18 +105,25 @@ async function main(argv: string[]): Promise<number> {
   if (argv.length === 0) {
     // No args — show the big ASCII banner above the help, like `vercel`.
     printBanner();
+    const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
+    if (notice) process.stdout.write(`${notice}\n`);
     process.stdout.write(renderHelp());
     return 0;
   }
   if (argv[0] === 'help' || argv[0] === '--help' || argv[0] === '-h') {
+    const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
+    if (notice) process.stdout.write(`${notice}\n`);
     process.stdout.write(renderHelp());
     return 0;
   }
   if (argv[0] === 'version') {
     printVersion();
+    const notice = await getUpdateNotice(VERSION, { allowFetch: true, style: 'box' });
+    if (notice) process.stdout.write(`${notice}\n`);
     return 0;
   }
   printActiveHostNotice(argv[0]);
+  await printUpdateNoticeForCommand(argv[0]);
   if (argv[0] === 'init') {
     return runInit(argv.slice(1));
   }
@@ -222,6 +230,15 @@ function printActiveHostNotice(command: string): void {
   process.stderr.write(
     `${C.dim}host ${C.reset}${C.bold}${name}${C.reset}${C.dim} (${host.url}, ${loginState})${C.reset}\n`,
   );
+}
+
+// Passive, cache-only nudge for subcommands (never touches the network, so it
+// adds no latency). The prominent box only shows on the bare landing screen.
+// `update`/`uninstall` skip it — they're about the binary itself.
+async function printUpdateNoticeForCommand(command: string): Promise<void> {
+  if (command === 'update' || command === 'uninstall') return;
+  const notice = await getUpdateNotice(VERSION, { allowFetch: false, style: 'line' });
+  if (notice) process.stderr.write(`${notice}\n`);
 }
 
 main(process.argv.slice(2))

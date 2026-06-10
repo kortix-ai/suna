@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "bash scripts/dev-local.sh",
+    "preview": "bash scripts/dev-local.sh --build",
     "worktree": "bun run scripts/worktree/cli.ts",
     "dev:dev-env": "pnpm --filter kortix-api dev:dev-env",
     "dev:prod-env": "pnpm --filter kortix-api dev:prod-env",
@@ -19,8 +20,7 @@
     "cli:bundle:all": "pnpm --filter @kortix/cli bundle:all",
     "nuke": "bash scripts/nuke-local.sh",
     "nuke:start": "bash scripts/nuke-local.sh --start",
-    "start": "bash scripts/start-local.sh",
-    "stripe:listen": "stripe listen --forward-to http://localhost:8008/v1/billing/webhooks/stripe"
+    "stripe:listen": "stripe listen --api-key \"$(dotenvx get STRIPE_SECRET_KEY -f apps/api/.env)\" --forward-to http://localhost:8008/v1/billing/webhooks/stripe"
   },
   "devDependencies": {
     "@clack/prompts": "^0.7.0",
