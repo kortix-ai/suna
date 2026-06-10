@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Download, ChevronLeft, ChevronRight, History, Code, Eye } from 'lucide-react';
+import { X, Download, ChevronLeft, ChevronRight, History, Code, Eye, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useDialogDepth, dialogOverlayZ, dialogContentZ } from '@/lib/z-stack';
 import { cn } from '@/lib/utils';
@@ -51,6 +51,13 @@ export interface FilePreviewModalProps extends FilePreviewState {
   extraActions?: ReactNode;
   /** History button tooltip. */
   historyLabel?: string;
+  /**
+   * When true, the viewer renders INLINE — filling its (relative) parent
+   * container instead of portaling to a full-screen overlay. An "Expand"
+   * button in the toolbar lets the user pop it to the full-screen view. Used
+   * by the session side panel so files open in the panel, not over the page.
+   */
+  embedded?: boolean;
 }
 
 /**
@@ -86,9 +93,15 @@ export function FilePreviewModal({
   statusSlot,
   extraActions,
   historyLabel = 'History',
+  embedded = false,
 }: FilePreviewModalProps) {
   const dialogDepth = useDialogDepth();
   const isOpen = panelMode === 'viewer' && !!selectedFilePath;
+
+  // Embedded viewers start inline (in the side panel); "Expand" pops them to
+  // the full-screen overlay. Non-embedded viewers are always full-screen.
+  const [expanded, setExpanded] = useState(false);
+  const fullscreen = !embedded || expanded;
 
   const fileName = selectedFilePath?.split('/').pop() || '';
   const hasNext = currentFileIndex < filePathList.length - 1;
@@ -105,6 +118,7 @@ export function FilePreviewModal({
   useEffect(() => {
     setHistoryPath(null);
     setMarkdownPreview(true);
+    setExpanded(false);
   }, [selectedFilePath]);
 
   // Keyboard navigation. Capture-phase + stopImmediatePropagation so ESC only
@@ -154,6 +168,7 @@ export function FilePreviewModal({
         e.preventDefault();
         e.stopImmediatePropagation();
         if (historyPath) setHistoryPath(null);
+        else if (embedded && expanded) setExpanded(false);
         else onClose();
         return;
       }
@@ -170,14 +185,15 @@ export function FilePreviewModal({
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isOpen, onClose, onNext, onPrev, hasNext, hasPrev, historyPath]);
+  }, [isOpen, onClose, onNext, onPrev, hasNext, hasPrev, historyPath, embedded, expanded]);
 
   // Move focus into the dialog on open and restore it to the triggering element
   // on close. Standalone (session Files tab) this completes the focus trap;
   // nested under the Customize Radix dialog, Radix's FocusScope may keep focus —
   // we make a single, non-looping attempt and don't fight it (no regression).
   useEffect(() => {
-    if (!isOpen) return;
+    // Inline (embedded) viewers must not steal focus from the chat composer.
+    if (!isOpen || !fullscreen) return;
     const previouslyFocused = document.activeElement as HTMLElement | null;
     surfaceRef.current?.focus();
     return () => {
@@ -185,17 +201,18 @@ export function FilePreviewModal({
         previouslyFocused.focus();
       }
     };
-  }, [isOpen]);
+  }, [isOpen, fullscreen]);
 
-  // Lock body scroll while open.
+  // Lock body scroll only while shown full-screen (inline viewers scroll within
+  // the panel and must leave the rest of the page scrollable).
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && fullscreen) {
       document.body.style.overflow = 'hidden';
       return () => {
         document.body.style.overflow = '';
       };
     }
-  }, [isOpen]);
+  }, [isOpen, fullscreen]);
 
   // Keep wheel/touch scroll alive when nested under a Radix modal Dialog:
   // stop the event before it reaches document, where react-remove-scroll would
@@ -203,7 +220,7 @@ export function FilePreviewModal({
   // real DOM bubbling, ahead of the document-level listener.
   const contentRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !fullscreen) return;
     const el = contentRef.current;
     if (!el) return;
     const stop = (e: Event) => e.stopPropagation();
@@ -213,7 +230,7 @@ export function FilePreviewModal({
       el.removeEventListener('wheel', stop);
       el.removeEventListener('touchmove', stop);
     };
-  }, [isOpen, selectedFilePath]);
+  }, [isOpen, fullscreen, selectedFilePath]);
 
   const handleDownload = useCallback(async () => {
     if (!selectedFilePath) return;
@@ -294,6 +311,17 @@ export function FilePreviewModal({
           <Download className="h-4 w-4" />
         </Button>
         {extraActions}
+        {embedded && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            onClick={() => setExpanded((v) => !v)}
+            title={expanded ? 'Collapse to panel' : 'Expand'}
+          >
+            {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+          </Button>
+        )}
         <div className="w-px h-5 bg-border/50 mx-1" />
         <Button
           variant="ghost"
@@ -351,13 +379,41 @@ export function FilePreviewModal({
     </>
   );
 
+  const panelInner = (
+    <>
+      <div className="flex items-center gap-2 px-3 h-12 border-b border-border/40 shrink-0 bg-background/95 backdrop-blur-sm">
+        {toolbar}
+      </div>
+      <div ref={contentRef} className="flex-1 relative min-h-0 overflow-hidden">
+        {body}
+      </div>
+    </>
+  );
+
+  // Inline (embedded, not expanded): fill the relative parent — the side panel —
+  // instead of portaling to a full-screen overlay. No backdrop, no body lock.
+  if (!fullscreen) {
+    return (
+      <div
+        ref={surfaceRef}
+        data-file-preview-embedded=""
+        role="dialog"
+        aria-label={`File preview${fileName ? `: ${fileName}` : ''}`}
+        tabIndex={-1}
+        className="absolute inset-0 z-20 flex flex-col bg-background overflow-hidden animate-in fade-in-0 duration-150 outline-none"
+      >
+        {panelInner}
+      </div>
+    );
+  }
+
   const node = (
     <>
       <div
         data-file-preview-overlay=""
         className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in-0 duration-150 pointer-events-auto"
         style={{ zIndex: dialogOverlayZ(dialogDepth + 1) }}
-        onClick={onClose}
+        onClick={embedded ? () => setExpanded(false) : onClose}
       />
       <div
         ref={surfaceRef}
@@ -369,12 +425,7 @@ export function FilePreviewModal({
         className="kx-fullscreen-modal fixed inset-3 sm:inset-4 flex flex-col rounded-2xl border border-border/60 bg-background shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-[0.98] duration-150 pointer-events-auto outline-none"
         style={{ zIndex: dialogContentZ(dialogDepth + 1) }}
       >
-        <div className="flex items-center gap-2 px-3 h-12 border-b border-border/40 shrink-0 bg-background/95 backdrop-blur-sm">
-          {toolbar}
-        </div>
-        <div ref={contentRef} className="flex-1 relative min-h-0 overflow-hidden">
-          {body}
-        </div>
+        {panelInner}
       </div>
     </>
   );

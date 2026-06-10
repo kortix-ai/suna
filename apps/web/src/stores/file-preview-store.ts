@@ -1,4 +1,8 @@
 import { create } from 'zustand';
+import {
+  getActivePanelSessionId,
+  openFileInSessionPanel,
+} from '@/stores/session-browser-store';
 
 interface FilePreviewState {
   /** Whether the preview dialog is open */
@@ -20,6 +24,14 @@ export const useFilePreviewStore = create<FilePreviewState>((set) => ({
   lineNumber: undefined,
 
   openPreview: (filePath, lineNumber) => {
+    // Inside a session, files open in the side panel's Files tab (inline, with
+    // an Expand button) rather than this full-screen modal. The modal is the
+    // fallback for surfaces with no side panel (e.g. the dashboard).
+    const sessionId = getActivePanelSessionId();
+    if (sessionId) {
+      openFileInSessionPanel(sessionId, filePath, lineNumber);
+      return;
+    }
     set({ isOpen: true, filePath, lineNumber });
   },
 

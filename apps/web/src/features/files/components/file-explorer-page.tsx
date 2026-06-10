@@ -69,7 +69,7 @@ import { DRAG_MIME } from './file-tree-item';
  * Opening a file (single- or double-click, context menu) always opens the
  * full-screen preview modal overlay.
  */
-export function FileExplorerPage() {
+export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = {}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const currentPath = useFilesStore((s) => s.currentPath);
   const navigateToPath = useFilesStore((s) => s.navigateToPath);
@@ -761,7 +761,7 @@ export function FileExplorerPage() {
       )}
 
       {/* File preview modal */}
-      <FilePreviewModal />
+      <FilePreviewModal embedded={embedded} />
 
       {/* History popover */}
       {historyPopoverPath && (

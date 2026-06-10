@@ -17,9 +17,38 @@ import { resolveScopedAccountId } from '../../shared/resolve-account';
 import type { AppEnv } from '../../types';
 import { json, errors, auth, ErrorSchema } from '../../openapi';
 import { startSunaMigration, latestSunaMigration, PHASE_ORDER } from './suna-migration-runner';
-import { sunaAccountMigrations } from '@kortix/db';
+import { sunaAccountMigrations, type Database } from '@kortix/db';
+import { withTimeout } from '../../shared/with-timeout';
 
 type Row = typeof sunaAccountMigrations.$inferSelect;
+
+// Wall-clock budget for the eligibility GET, kept comfortably under the
+// frontend's 30s request timeout (apps/web/src/lib/api-client.ts → "Request
+// timed out after 30s"). This handler is polled by the Migrate button /
+// suna-migration banner (apps/web/src/hooks/legacy/use-suna-migration.ts:
+// staleTime 15s, plus 2.5s polling while a migration is in flight), and it
+// awaits two unbounded DB ops — `latestSunaMigration` and especially
+// `countSunaProjects`, an un-LIMITed `count(*)` over the legacy `public.projects`
+// table (the OG Suna dataset, which can be large). A slow/contended DB therefore
+// let the request hang to the client's 30s abort and re-fire:
+//   ApiError — Request timed out after 30s: /projects/suna-migration/eligibility
+// Bounding the whole body guarantees the poll always answers fast; a degraded DB
+// renders the button as "not eligible / unknown" instead of paging us. The
+// losing query settles in the background and the next poll re-checks.
+export const SUNA_ELIGIBILITY_BUDGET_MS = 12_000;
+
+export interface SunaEligibilityPayload {
+  eligible: boolean;
+  migration: ReturnType<typeof serialize>;
+}
+
+// Safe degraded payload, surfaced when the DB is too slow: "not eligible, no
+// migration info". The Migrate button simply doesn't show and the next poll
+// re-checks once the DB recovers — strictly better than hanging the request.
+export const SUNA_ELIGIBILITY_DEGRADED: SunaEligibilityPayload = {
+  eligible: false,
+  migration: null,
+};
 
 function serialize(row: Row | null) {
   if (!row) return null;
@@ -52,6 +81,20 @@ async function countSunaProjects(accountId: string): Promise<number> {
   }
 }
 
+// Eligibility logic, extracted so the wall-clock degradation contract is
+// unit-testable without booting the full route/server env.
+export async function buildEligibility(
+  database: Database,
+  accountId: string,
+): Promise<SunaEligibilityPayload> {
+  const latest = await latestSunaMigration(database, accountId);
+  if (latest && ['completed', 'running', 'planned'].includes(latest.status)) {
+    return { eligible: false, migration: serialize(latest) };
+  }
+  const eligible = (await countSunaProjects(accountId)) > 0;
+  return { eligible, migration: serialize(latest) };
+}
+
 export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
   app.openapi(
     createRoute({
@@ -62,12 +105,19 @@ export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
     }),
     async (c: any) => {
       const accountId = await resolveScopedAccountId(c, 'query');
-      const latest = await latestSunaMigration(db, accountId);
-      if (latest && ['completed', 'running', 'planned'].includes(latest.status)) {
-        return c.json({ eligible: false, migration: serialize(latest) });
+      let payload: SunaEligibilityPayload = SUNA_ELIGIBILITY_DEGRADED;
+      try {
+        payload = await withTimeout(
+          buildEligibility(db, accountId),
+          SUNA_ELIGIBILITY_BUDGET_MS,
+          'suna-migration eligibility',
+        );
+      } catch {
+        // DB too slow / failing — degrade to "not eligible" rather than hang to
+        // the client's 30s abort. The losing query settles in the background;
+        // the next poll re-checks once the DB recovers.
       }
-      const eligible = (await countSunaProjects(accountId)) > 0;
-      return c.json({ eligible, migration: serialize(latest) });
+      return c.json(payload);
     },
   );
 
