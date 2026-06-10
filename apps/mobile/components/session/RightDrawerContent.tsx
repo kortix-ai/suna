@@ -69,8 +69,10 @@ const topSections: MenuSection[] = [
 const bottomItems: MenuItem[] = [
   { icon: 'git-pull-request-outline', label: 'Changes', pageId: 'page:changes' },
   { icon: 'folder-outline', label: 'Files', pageId: 'page:files-nav' },
+  { icon: 'terminal-outline', label: 'Terminal', pageId: 'page:terminal' },
+  { icon: 'compass-outline', label: 'Browser', pageId: 'page:browser' },
   { icon: 'cube-outline', label: 'Sandbox', pageId: 'page:sandbox' },
-  { icon: 'terminal-outline', label: 'Dev', pageId: 'page:dev' },
+  { icon: 'git-branch-outline', label: 'Dev', pageId: 'page:dev' },
   { icon: 'people-outline', label: 'Members', pageId: 'page:members' },
   { icon: 'settings-outline', label: 'Settings', pageId: 'page:settings' },
 ];
