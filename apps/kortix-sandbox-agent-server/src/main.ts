@@ -191,13 +191,35 @@ async function main() {
   // session's credentials). Become capture-ready here, but leave the session
   // runtime (initial session + event relay) to the adopting session.
   if ((process.env.KORTIX_SESSION_ID ?? '').trim() === '' && cfg.autoClone) {
-    void waitForOpencodeReady(opencode, cfg.projectTarget).then((ok) => {
-      if (ok) {
-        bootMark('opencode-ready')
-        logger.info('[seed] capture-ready; awaiting session adoption', { timeline: bootState.timeline })
-      } else {
+    void waitForOpencodeReady(opencode, cfg.projectTarget).then(async (ok) => {
+      if (!ok) {
         logger.warn('[seed] opencode did not become ready within deadline; capture will not trigger')
+        return
       }
+      bootMark('opencode-ready')
+      // Pre-create the root opencode session and pin it, so forks' backend
+      // ensure-opencode resolves 'healed' off the listed session instead of
+      // paying opencode's first-session project init (~2s) on the chat-ready
+      // path. The capture condition requires the pin file, so the snapshot is
+      // guaranteed to contain this session.
+      try {
+        const res = await waitForInitialSessionCreate(
+          `http://127.0.0.1:${cfg.opencodeInternalPort}`,
+          process.env.KORTIX_WORKSPACE || '/workspace',
+        )
+        const session = (await res.json()) as { id?: string }
+        if (session.id) {
+          mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
+          writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
+          bootMark('seed-opencode-session')
+          logger.info('[seed] pre-created root opencode session', { sessionId: session.id })
+        }
+      } catch (err) {
+        logger.warn('[seed] root opencode session pre-create failed', {
+          err: err instanceof Error ? err.message : String(err),
+        })
+      }
+      logger.info('[seed] capture-ready; awaiting session adoption', { timeline: bootState.timeline })
     })
     armSeedAdoption(opencode, server, bootState, bootMark)
     return

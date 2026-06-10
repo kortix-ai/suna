@@ -15,7 +15,7 @@ import { sessionSandboxes } from '@kortix/db';
 import { eq } from 'drizzle-orm';
 import { readFileSync } from 'fs';
 
-const ACC = 'fbea71d0-9655-4ab4-aca5-1b68e1ae7f71';
+const ACC = process.env.ACC ?? 'fbea71d0-9655-4ab4-aca5-1b68e1ae7f71';
 const BASE = 'http://localhost:8008';
 const PT = 'https://api.platinum.dev';
 const PTKEY = readFileSync('/tmp/ptkey', 'utf8').trim();
@@ -72,12 +72,20 @@ async function runSession(projectId: string, label: string) {
   const baseUrl: string | null = (row as any)?.baseUrl ?? m.baseUrl ?? null;
   if (!row?.externalId || !baseUrl) { console.log(`[${label}] no externalId/baseUrl: ${JSON.stringify(m).slice(0, 200)}`); return null; }
   const readyMs = await waitRuntimeReady(baseUrl);
+  // chat-ready equivalent: the FE fires ensure-opencode at runtime-ready and
+  // chat unlocks when it returns a pin. Seeds pre-create the root opencode
+  // session, so this should be 'healed' in <500ms (was ~2.2s 'created').
+  const tEnsure = now();
+  const ens: any = await (await fetch(`${BASE}/v1/projects/${projectId}/sessions/${ses.session_id}/ensure-opencode`, {
+    method: 'POST', headers: H, body: '{}',
+  })).json().catch(() => ({}));
+  const ensureMs = now() - tEnsure;
   // in-guest receipts: branch must equal sessionId, repo must be present
   const guest = await ptExec(row.externalId,
     `cd /workspace 2>/dev/null && git branch --show-current && test -d .git && echo GIT_OK && git log --oneline -1 | head -c 60`);
   // which template did the VM actually boot from + via (platinum view)
   const pt: any = await (await fetch(`${PT}/v1/sandboxes/${row.externalId}`, { headers: PTH })).json();
-  console.log(`[${label}] post=${tPost}ms ready=${readyMs}ms total=${tPost + readyMs}ms`);
+  console.log(`[${label}] post=${tPost}ms ready=${readyMs}ms ensure=${ensureMs}ms(${ens?.ensure?.reason ?? '?'}) usable=${tPost + readyMs + ensureMs}ms`);
   console.log(`[${label}] guest: ${guest.replace(/\n/g, ' | ')}`);
   console.log(`[${label}] platinum: template=${pt.template_id ?? pt.template} state=${pt.state} via=${pt.metadata?.via ?? '?'}`);
   return { sessionId: ses.session_id, externalId: row.externalId, readyMs, totalMs: tPost + readyMs, branch: guest.split('\n')[0] };

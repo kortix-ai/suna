@@ -125,10 +125,12 @@ async function deriveSeed(
     body: JSON.stringify({
       name,
       capture_env: captureEnv,
-      // Snapshot the moment the in-guest kortix runtime is fully up: repo
-      // cloned + opencode serving. Same probe the frontend polls.
+      // Snapshot once the in-guest kortix runtime is fully up (repo cloned +
+      // opencode serving — same probe the frontend polls) AND the seed has
+      // pre-created+pinned its root opencode session, so forks' ensure-opencode
+      // resolves instantly instead of paying first-session init on chat-ready.
       capture_condition: {
-        cmd: `curl -s -m 3 http://127.0.0.1:8000/kortix/health | grep -q '"runtimeReady":true'`,
+        cmd: `curl -s -m 3 http://127.0.0.1:8000/kortix/health | grep -q '"runtimeReady":true' && test -s /var/run/kortix/opencode-session-id`,
         timeoutSec: 240,
       },
     }),
