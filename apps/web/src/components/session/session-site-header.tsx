@@ -282,9 +282,9 @@ export function SessionSiteHeader({
               <AlertDialogHeader>
                 <AlertDialogTitle>Delete session?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This will permanently destroy the branch and sandbox for{' '}
-                  <span className="font-medium text-foreground">{sessionTitle}</span>. This
-                  action cannot be undone.
+                  This will permanently destroy the sandbox for{' '}
+                  <span className="font-medium text-foreground">{sessionTitle}</span>; the git
+                  branch is preserved. This action cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
