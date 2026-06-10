@@ -42,8 +42,13 @@ interface PlatinumTemplateRow {
   state: string;
 }
 
-function seedName(projectId: string, sha: string): string {
-  return `proj-seed-${projectId}-${sha.slice(0, 12)}`.toLowerCase();
+function seedName(projectId: string, sha: string, parentTemplate: string): string {
+  // The parent template name ends in the runtime content hash
+  // (kortix-default-<hash>); folding its tail into the seed name makes a
+  // runtime upgrade invalidate every seed automatically — a seed is only
+  // fresh for (repo HEAD × runtime image) it was captured from.
+  const parentTail = parentTemplate.split('-').pop() ?? 'x';
+  return `proj-seed-${projectId}-${sha.slice(0, 12)}-${parentTail.slice(0, 12)}`.toLowerCase();
 }
 
 async function templateByName(name: string): Promise<PlatinumTemplateRow | null> {
@@ -77,7 +82,7 @@ export async function resolveProjectSeed(opts: {
   if (!isPlatinumConfigured()) return null;
   try {
     const sha = await resolveCommitSha(opts.project, opts.project.defaultBranch);
-    const name = seedName(opts.projectId, sha);
+    const name = seedName(opts.projectId, sha, opts.defaultTemplate);
     const existing = await templateByName(name);
     if (existing && existing.state === 'ready') return name;
     if (!existing && !deriveInFlight.has(opts.projectId)) {
