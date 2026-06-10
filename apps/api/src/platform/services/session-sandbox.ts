@@ -38,6 +38,7 @@ import {
 } from '../../snapshots/builder';
 import { config } from '../../config';
 import { selectProvider } from './provider-balancer';
+import { resolveProjectSeed } from './platinum-seed';
 import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
@@ -286,9 +287,15 @@ export async function provisionSessionSandbox(opts: {
           }
         : {}),
     },
-    // Warm-pool boxes disable provider auto-stop so they stay ready until
-    // claimed; once claimed (pool_state cleared) our idle sweep hibernates them.
-    ...(opts.poolState ? { autoStopInterval: 0 } : {}),
+    // Session sandboxes auto-stop on idle at the PROVIDER level (Platinum
+    // enforces auto_stop_minutes; the in-repo hibernate sweep is never
+    // scheduled, which left session VMs running for days — caught live
+    // 2026-06-10). Stopped sandboxes keep their disk and wake automatically
+    // on inbound preview traffic, so the UX cost is one ~2s resume after an
+    // idle gap. Warm-pool boxes (legacy; pool is disabled) opt out.
+    ...(opts.poolState
+      ? { autoStopInterval: 0 }
+      : { autoStopInterval: Math.max(0, Number(process.env.KORTIX_SANDBOX_AUTO_STOP_MIN ?? 30) || 0) }),
   };
 
   // Detach the actual provisioning — the API caller navigates immediately
@@ -311,12 +318,15 @@ export async function provisionSessionSandbox(opts: {
       // kicked off in parallel with the token round-trip; heal-retries re-resolve
       // from scratch (the prior snapshot was just deleted).
       let image: EnsureSandboxImageResult;
+      let imageGitProject: GitBackedProject;
       if (firstImagePromise) {
-        image = await firstImagePromise;
+        const first = await firstImagePromise;
+        image = first;
+        imageGitProject = first.gitProject;
         firstImagePromise = null;
       } else {
-        const gitProject = await resolveGitProject();
-        image = await ensureSandboxImage(gitProject, {
+        imageGitProject = await resolveGitProject();
+        image = await ensureSandboxImage(imageGitProject, {
           slug,
           accountId,
           source: 'session-start',
@@ -330,10 +340,28 @@ export async function provisionSessionSandbox(opts: {
         isDefault: image.isDefault,
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
-      providerCreateInput.snapshot = image.snapshotName;
+      // Platinum warm-seed fast path: boot from the per-project STATEFUL seed
+      // (repo + runtime baked into a warm snapshot → CoW-fork, ~0.9s to
+      // runtimeReady) when a seed matching the current default-branch HEAD
+      // exists. Misses fall back to the default template and kick a background
+      // derive so the NEXT session is fast. Only for default-template sessions
+      // based on the default branch — custom Dockerfile templates and non-main
+      // baseRefs keep the plain path. See platform/services/platinum-seed.ts.
+      let seedTemplate: string | null = null;
+      if (providerName === 'platinum' && image.isDefault && !opts.poolState
+          && branch === opts.gitProject.defaultBranch) {
+        seedTemplate = await resolveProjectSeed({
+          project: imageGitProject,
+          projectId,
+          envVars: providerCreateInput.envVars ?? {},
+          defaultTemplate: image.snapshotName,
+        });
+        if (seedTemplate) tl.mark('seed-hit');
+      }
+      providerCreateInput.snapshot = seedTemplate ?? image.snapshotName;
       console.log(
-        `[session-sandbox] Booting ${sandbox.sandboxId} from ${image.snapshotName} ` +
-        `(template "${image.slug}"${image.isDefault ? ' [platform default]' : ''}, ` +
+        `[session-sandbox] Booting ${sandbox.sandboxId} from ${seedTemplate ?? image.snapshotName} ` +
+        `(template "${image.slug}"${seedTemplate ? ' [warm seed]' : image.isDefault ? ' [platform default]' : ''}, ` +
         `branch ${branch}, ${image.built ? 'fresh build' : 'cache hit'})`,
       );
 
