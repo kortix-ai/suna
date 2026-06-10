@@ -20,6 +20,7 @@ import {
   Dimensions,
   Animated,
   Easing,
+  RefreshControl,
 } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -44,12 +45,14 @@ import {
   X,
   History,
   GitCommitHorizontal,
+  LayoutGrid,
+  List,
 } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
 import { useThemeColors, getSheetBg } from '@/lib/theme-colors';
-import { getFileIconComponent } from '@/components/files/FileItem';
+import { FileItem, getFileIconComponent, getMutedIconColor } from '@/components/files/FileItem';
 import { FilePreview, getFilePreviewType } from '@/components/files/FilePreviewRenderers';
 import { PatchDiffView } from '@/components/diff/PatchDiffView';
 import { relativeTime } from '@/lib/projects/triggers-format';
@@ -484,33 +487,39 @@ function CommitDiff({ projectId, sha, path, isDark }: { projectId: string; sha: 
 
 // ─── File row ─────────────────────────────────────────────────────────────────
 
-function FileRow({
+// Grid card — identical chrome to the old Files page's FileRowCard (bordered
+// rounded card, monochrome icon, 2-up wrap) so both Files surfaces look alike.
+function FileCard({
   file,
-  subtitle,
-  onPress,
   isDark,
+  onPress,
 }: {
   file: SandboxFile;
-  subtitle?: string;
-  onPress: (f: SandboxFile) => void;
   isDark: boolean;
+  onPress: (f: SandboxFile) => void;
 }) {
-  const theme = useThemeColors();
+  const FileIcon = getFileIconComponent(file);
+  const iconColor = getMutedIconColor(isDark);
   const fg = isDark ? '#F8F8F8' : '#121215';
-  const muted = isDark ? '#9b9b9b' : '#6e6e6e';
-  const iconBg = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)';
-  const Icon = getFileIconComponent(file);
-  const isDir = file.type === 'directory';
   return (
-    <TouchableOpacity onPress={() => onPress(file)} activeOpacity={0.6} style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 9, gap: 12 }}>
-      <View style={{ width: 38, height: 38, borderRadius: 10, backgroundColor: isDir ? theme.primaryLight : iconBg, alignItems: 'center', justifyContent: 'center' }}>
-        <Icon size={19} color={isDir ? theme.primary : muted} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>{file.name}</Text>
-        {subtitle ? <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }} numberOfLines={1}>{subtitle}</Text> : null}
-      </View>
-      {isDir && <ChevronRight size={18} color={muted} />}
+    <TouchableOpacity
+      onPress={() => { haptics.tap(); onPress(file); }}
+      activeOpacity={0.7}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: isDark ? 'rgba(248, 248, 248, 0.1)' : 'rgba(18, 18, 21, 0.1)',
+        backgroundColor: isDark ? '#1a1a1c' : '#ffffff',
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+      }}
+    >
+      <FileIcon size={18} color={iconColor} strokeWidth={2} style={{ marginRight: 8 }} />
+      <Text style={{ flex: 1, fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }} numberOfLines={1}>
+        {file.name}
+      </Text>
     </TouchableOpacity>
   );
 }
@@ -536,6 +545,7 @@ export function FilesNavPage({
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc');
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [downloadingDir, setDownloadingDir] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
   const versionSheetRef = React.useRef<BottomSheetModal>(null);
 
   const branchesQuery = useProjectBranches(projectId);
@@ -580,11 +590,9 @@ export function FilesNavPage({
   }, [entries, path, sortBy, sortOrder]);
 
   const fileRows = useMemo(() => rows.filter((r) => r.type === 'file').map((r) => ({ name: r.name, path: r.path })), [rows]);
-  const folderCount = rows.length - fileRows.length;
-  const countLabel = [
-    folderCount > 0 ? `${folderCount} ${folderCount === 1 ? 'folder' : 'folders'}` : '',
-    fileRows.length > 0 ? `${fileRows.length} ${fileRows.length === 1 ? 'file' : 'files'}` : '',
-  ].filter(Boolean).join('  ·  ');
+  // FOLDERS / FILES sections, same as the sandbox Files page.
+  const folderEntries = useMemo(() => rows.filter((r) => r.type === 'directory'), [rows]);
+  const fileEntries = useMemo(() => rows.filter((r) => r.type === 'file'), [rows]);
 
   const segments = path ? path.split('/').filter(Boolean) : [];
 
@@ -636,9 +644,20 @@ export function FilesNavPage({
         isDrawerOpen={isDrawerOpen}
         isRightDrawerOpen={isRightDrawerOpen}
         rightActions={
-          <TouchableOpacity onPress={() => filesQuery.refetch()} className="p-1 mr-1" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            {filesQuery.isFetching ? <ActivityIndicator size="small" color={muted} /> : <RefreshCw size={18} color={isDark ? '#F8F8F8' : '#121215'} />}
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <TouchableOpacity
+              onPress={() => { haptics.selection(); setViewMode((v) => (v === 'list' ? 'grid' : 'list')); }}
+              className="p-1"
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              {viewMode === 'list'
+                ? <LayoutGrid size={18} color={isDark ? '#F8F8F8' : '#121215'} strokeWidth={2} />
+                : <List size={18} color={isDark ? '#F8F8F8' : '#121215'} strokeWidth={2} />}
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => filesQuery.refetch()} className="p-1 mr-1" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              {filesQuery.isFetching ? <ActivityIndicator size="small" color={muted} /> : <RefreshCw size={18} color={isDark ? '#F8F8F8' : '#121215'} />}
+            </TouchableOpacity>
+          </View>
         }
       />
 
@@ -686,7 +705,14 @@ export function FilesNavPage({
         </ScrollView>
 
         {/* File list */}
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 40, paddingTop: 4, ...(centerContent ? { flexGrow: 1, justifyContent: 'center' } : null) }} showsVerticalScrollIndicator={false}>
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom + 40, paddingTop: 4, ...(centerContent ? { flexGrow: 1, justifyContent: 'center' } : null) }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl refreshing={filesQuery.isRefetching} onRefresh={() => filesQuery.refetch()} />
+          }
+        >
           {listLoading ? (
             <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
           ) : filesQuery.isError ? (
@@ -709,21 +735,74 @@ export function FilesNavPage({
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Refresh</Text>
               </TouchableOpacity>
             </View>
-          ) : (
+          ) : viewMode === 'grid' ? (
+            /* ── Grid view — FOLDERS / FILES sections of 2-up cards (old Files page UI) ── */
             <>
-              <Text style={{ fontSize: 11, fontFamily: 'Roobert-Medium', color: muted, textTransform: 'uppercase', letterSpacing: 0.5, paddingHorizontal: 16, paddingTop: 6, paddingBottom: 6 }}>
-                {countLabel}
-              </Text>
-              {rows.map((file) => (
-                <FileRow
-                  key={file.path}
-                  file={file}
-                  subtitle={!path && file.type === 'directory' && file.name in ELEVATED ? ELEVATED[file.name] : undefined}
-                  onPress={onRowPress}
-                  isDark={isDark}
-                />
-              ))}
+              {folderEntries.length > 0 && (
+                <View className="px-4 pt-3">
+                  <Text
+                    className="text-xs font-roobert-medium mb-3 uppercase tracking-wider"
+                    style={{ color: isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)' }}
+                  >
+                    Folders
+                  </Text>
+                  <View className="flex-row flex-wrap" style={{ marginHorizontal: -4 }}>
+                    {folderEntries.map((file) => (
+                      <View key={file.path} style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}>
+                        <FileCard file={file} isDark={isDark} onPress={onRowPress} />
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+              {fileEntries.length > 0 && (
+                <View className="px-4 pt-2">
+                  <Text
+                    className="text-xs font-roobert-medium mb-3 uppercase tracking-wider"
+                    style={{ color: isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)' }}
+                  >
+                    Files
+                  </Text>
+                  <View className="flex-row flex-wrap" style={{ marginHorizontal: -4 }}>
+                    {fileEntries.map((file) => (
+                      <View key={file.path} style={{ width: '50%', paddingHorizontal: 4, marginBottom: 8 }}>
+                        <FileCard file={file} isDark={isDark} onPress={onRowPress} />
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
             </>
+          ) : (
+            /* ── List view — FOLDERS / FILES sections of FileItem rows (old Files page UI) ── */
+            <View className="px-4 pt-2">
+              {folderEntries.length > 0 && (
+                <View className="mb-2">
+                  <Text
+                    className="text-xs font-roobert-medium mb-2 uppercase tracking-wider px-1"
+                    style={{ color: isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)' }}
+                  >
+                    Folders
+                  </Text>
+                  {folderEntries.map((file) => (
+                    <FileItem key={file.path} file={file} onPress={onRowPress} />
+                  ))}
+                </View>
+              )}
+              {fileEntries.length > 0 && (
+                <View>
+                  <Text
+                    className="text-xs font-roobert-medium mb-2 uppercase tracking-wider px-1"
+                    style={{ color: isDark ? 'rgba(248, 248, 248, 0.4)' : 'rgba(18, 18, 21, 0.4)' }}
+                  >
+                    Files
+                  </Text>
+                  {fileEntries.map((file) => (
+                    <FileItem key={file.path} file={file} onPress={onRowPress} />
+                  ))}
+                </View>
+              )}
+            </View>
           )}
         </ScrollView>
       </PageContent>
