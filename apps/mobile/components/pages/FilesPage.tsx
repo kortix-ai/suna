@@ -915,7 +915,7 @@ export const FilesPage = forwardRef<FilesPageRef, FilesPageProps>(function Files
             >
               Upload files or create a folder{'\n'}to get started
             </Text>
-            <View className="flex-row gap-3">
+            <View className="flex-row flex-wrap items-center justify-center gap-3" style={{ alignSelf: 'stretch' }}>
               <Pressable
                 onPress={handleUploadDocument}
                 className="flex-row items-center px-5 py-3 active:opacity-70"
