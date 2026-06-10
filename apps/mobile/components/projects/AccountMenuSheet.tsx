@@ -13,7 +13,7 @@ import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { BookOpen, CreditCard, Download, Home, LifeBuoy, LogOut, Monitor, Moon, Settings, Sun } from 'lucide-react-native';
+import { BookOpen, Home, LifeBuoy, LogOut, Monitor, Moon, Settings, Sun } from 'lucide-react-native';
 
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -142,21 +142,13 @@ export function AccountMenuSheet({
           </>
         )}
 
-        {/* Actions — same order as web's user-menu.tsx */}
+        {/* Actions — web's user-menu.tsx order, minus Download apps and Billing
+            (not relevant in the app: you're already on mobile, and billing
+            deliberately lives on the web). */}
         <ActionRow icon={Home} label="Home" onPress={() => go(() => router.replace('/home'))} />
         <ActionRow icon={BookOpen} label="Docs" onPress={() => go(() => Linking.openURL(`${frontend}/docs`).catch(() => {}))} />
-        <ActionRow icon={Download} label="Download apps" onPress={() => go(() => Linking.openURL(`${frontend}/download`).catch(() => {}))} />
         <ActionRow icon={LifeBuoy} label="Support" onPress={() => go(() => Linking.openURL(`${frontend}/support`).catch(() => {}))} />
         <ActionRow icon={Settings} label="User settings" onPress={() => go(() => router.push('/(settings)'))} />
-        {/* Billing lives on the web (mobile settings hides Plan/Billing/Usage) —
-            open the account's billing tab in the browser, like web's menu does in-app. */}
-        {!!accountId && (
-          <ActionRow
-            icon={CreditCard}
-            label="Billing"
-            onPress={() => go(() => Linking.openURL(`${frontend}/accounts/${accountId}?tab=billing`).catch(() => {}))}
-          />
-        )}
 
         {/* Theme */}
         <View className="flex-row items-center justify-between px-2 py-1.5">
