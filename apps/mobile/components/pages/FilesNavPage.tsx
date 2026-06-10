@@ -140,6 +140,8 @@ function VersionSheet({
   value,
   onSelect,
   onClose,
+  onRetry,
+  isLoading,
   isDark,
 }: {
   branches: ProjectBranch[];
@@ -147,6 +149,8 @@ function VersionSheet({
   value: string;
   onSelect: (ref: string) => void;
   onClose: () => void;
+  onRetry?: () => void;
+  isLoading?: boolean;
   isDark: boolean;
 }) {
   const theme = useThemeColors();
@@ -169,30 +173,63 @@ function VersionSheet({
           <X size={17} color={muted} />
         </TouchableOpacity>
       </View>
-      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: 6 }} showsVerticalScrollIndicator={false}>
-        {sorted.map((b) => {
-          const on = b.name === value;
-          return (
-            <TouchableOpacity
-              key={b.name}
-              onPress={() => { haptics.selection(); onSelect(b.name); }}
-              activeOpacity={0.6}
-              style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 }}
-            >
-              <GitBranch size={18} color={on ? theme.primary : muted} />
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={{ fontSize: 14.5, fontFamily: 'Menlo', color: on ? theme.primary : fg }} numberOfLines={1}>{shortRef(b.name)}</Text>
-                  {b.is_default && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: muted }}>MAIN</Text>}
+      <BottomSheetScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingVertical: 6, flexGrow: 1 }} showsVerticalScrollIndicator={false}>
+        {sorted.length > 0 ? (
+          sorted.map((b) => {
+            const on = b.name === value;
+            return (
+              <TouchableOpacity
+                key={b.name}
+                onPress={() => { haptics.selection(); onSelect(b.name); }}
+                activeOpacity={0.6}
+                style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 12 }}
+              >
+                <GitBranch size={18} color={on ? theme.primary : muted} />
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 14.5, fontFamily: 'Menlo', color: on ? theme.primary : fg }} numberOfLines={1}>{shortRef(b.name)}</Text>
+                    {b.is_default && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: muted }}>MAIN</Text>}
+                  </View>
+                  <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }} numberOfLines={1}>
+                    {b.subject || 'No commits'}{b.committed_at ? ` · ${relativeTime(b.committed_at)}` : ''}
+                  </Text>
                 </View>
-                <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }} numberOfLines={1}>
-                  {b.subject || 'No commits'}{b.committed_at ? ` · ${relativeTime(b.committed_at)}` : ''}
-                </Text>
+                {on && <Check size={17} color={theme.primary} />}
+              </TouchableOpacity>
+            );
+          })
+        ) : isLoading ? (
+          <View style={{ paddingVertical: 48, alignItems: 'center' }}>
+            <ActivityIndicator size="small" color={muted} />
+          </View>
+        ) : (
+          // Branch listing came back empty (the repo's git mirror is unavailable —
+          // the API returns the default branch but no list). Never show a blank
+          // sheet: surface the current version plus a clear reason + retry.
+          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 24, paddingVertical: 32, gap: 14 }}>
+            {value ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, alignSelf: 'stretch', paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: border }}>
+                <GitBranch size={18} color={theme.primary} />
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={{ fontSize: 14.5, fontFamily: 'Menlo', color: theme.primary }} numberOfLines={1}>{shortRef(value)}</Text>
+                    {value === defaultBranch && <Text style={{ fontSize: 10.5, fontFamily: 'Roobert-Medium', color: muted }}>MAIN</Text>}
+                  </View>
+                  <Text style={{ fontSize: 12.5, color: muted, marginTop: 1 }}>Current version</Text>
+                </View>
+                <Check size={17} color={theme.primary} />
               </View>
-              {on && <Check size={17} color={theme.primary} />}
-            </TouchableOpacity>
-          );
-        })}
+            ) : null}
+            <Text style={{ fontSize: 13, color: muted, textAlign: 'center', lineHeight: 19 }}>
+              Other versions couldn’t be loaded — the repository may still be preparing.
+            </Text>
+            {onRetry ? (
+              <TouchableOpacity onPress={() => { haptics.tap(); onRetry(); }} activeOpacity={0.7} style={{ paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+                <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        )}
       </BottomSheetScrollView>
     </View>
   );
@@ -551,6 +588,12 @@ export function FilesNavPage({
 
   const segments = path ? path.split('/').filter(Boolean) : [];
 
+  // Loading/empty/error all render a single centered block — give the scroll
+  // content flexGrow so it sits in the middle instead of clipped at the top.
+  const listLoading = filesQuery.isLoading || (!ref_ && branchesQuery.isLoading);
+  const listEmpty = !listLoading && !filesQuery.isError && rows.length === 0;
+  const centerContent = listLoading || filesQuery.isError || listEmpty;
+
   const openFile = (file: SandboxFile) => {
     const idx = fileRows.findIndex((f) => f.path === file.path);
     if (idx >= 0) { haptics.tap(); setViewerIndex(idx); }
@@ -643,8 +686,8 @@ export function FilesNavPage({
         </ScrollView>
 
         {/* File list */}
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 40, paddingTop: 4 }} showsVerticalScrollIndicator={false}>
-          {(filesQuery.isLoading || (!ref_ && branchesQuery.isLoading)) ? (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 40, paddingTop: 4, ...(centerContent ? { flexGrow: 1, justifyContent: 'center' } : null) }} showsVerticalScrollIndicator={false}>
+          {listLoading ? (
             <View style={{ paddingVertical: 48, alignItems: 'center' }}><ActivityIndicator size="small" color={muted} /></View>
           ) : filesQuery.isError ? (
             <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
@@ -653,10 +696,18 @@ export function FilesNavPage({
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
               </TouchableOpacity>
             </View>
-          ) : rows.length === 0 ? (
-            <View style={{ padding: 48, alignItems: 'center', gap: 10 }}>
-              <FolderOpen size={28} color={muted} />
-              <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>{path ? 'This folder is empty.' : 'No files in this version.'}</Text>
+          ) : listEmpty ? (
+            <View style={{ paddingHorizontal: 36, paddingVertical: 40, alignItems: 'center', gap: 10 }}>
+              <FolderOpen size={30} color={muted} />
+              <Text style={{ fontSize: 15, fontFamily: 'Roobert-Medium', color: fg, textAlign: 'center' }}>{path ? 'This folder is empty' : 'No files in this version'}</Text>
+              {!path && (
+                <Text style={{ fontSize: 13, color: muted, textAlign: 'center', lineHeight: 19 }}>
+                  These are the project’s git files — they’re read-only here. To add or edit files, ask the agent in a session, or open a different version.
+                </Text>
+              )}
+              <TouchableOpacity onPress={() => { haptics.tap(); filesQuery.refetch(); branchesQuery.refetch(); }} activeOpacity={0.7} style={{ marginTop: 4, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+                <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Refresh</Text>
+              </TouchableOpacity>
             </View>
           ) : (
             <>
@@ -692,6 +743,8 @@ export function FilesNavPage({
           value={ref_}
           onSelect={(r) => { setRef(r); setPath(''); versionSheetRef.current?.dismiss(); }}
           onClose={() => versionSheetRef.current?.dismiss()}
+          onRetry={() => branchesQuery.refetch()}
+          isLoading={branchesQuery.isLoading || branchesQuery.isFetching}
           isDark={isDark}
         />
       </BottomSheetModal>
