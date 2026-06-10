@@ -4,11 +4,20 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Modal, Pressable, Share, Platform } from 'react-native';
+import {
+  View,
+  Modal,
+  Pressable,
+  Share,
+  Platform,
+  TextInput,
+  KeyboardAvoidingView,
+  Alert,
+} from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui';
-import { X, Download, ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { X, Download, ChevronLeft, ChevronRight, Pencil, Check } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
@@ -22,7 +31,7 @@ import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { FilePreview, FilePreviewType, getFilePreviewType } from './FilePreviewRenderers';
-import { useOpenCodeFileContent, useOpenCodeFileBlob, blobToDataURL } from '@/lib/files/hooks';
+import { useOpenCodeFileContent, useOpenCodeFileBlob, blobToDataURL, useOpenCodeWriteFile } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
 
 import { log } from '@/lib/logger';
@@ -59,6 +68,10 @@ export function FileViewer({
   const [blobUrl, setBlobUrl] = useState<string | undefined>();
   const [viewMode, setViewMode] = useState<'preview' | 'raw'>('preview');
   const [isDownloading, setIsDownloading] = useState(false);
+  // In-place text editing
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const writeMutation = useOpenCodeWriteFile();
 
   const previewType = file ? getFilePreviewType(file.name) : FilePreviewType.OTHER;
   const isImage = previewType === FilePreviewType.IMAGE;
@@ -198,6 +211,56 @@ export function FileViewer({
   const hasError = textError || imageError;
   const canNavigate = fileList && fileList.length > 1 && currentIndex >= 0;
 
+  // ── In-place editing ──────────────────────────────────────────────────────
+  // Text files can be edited once their content has loaded.
+  const canEdit = !!file && !!sandboxUrl && !!shouldFetchText && !isLoading && !textError;
+  const dirty = editing && draft !== (textContent ?? '');
+
+  // Reset edit mode whenever the file changes or the viewer closes.
+  useEffect(() => {
+    setEditing(false);
+    setDraft('');
+  }, [file?.path, visible]);
+
+  const handleStartEdit = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setDraft(textContent ?? '');
+    setEditing(true);
+  }, [textContent]);
+
+  const handleCancelEdit = useCallback(() => {
+    if (dirty) {
+      Alert.alert('Discard changes?', 'Your edits will be lost.', [
+        { text: 'Keep editing', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: () => setEditing(false) },
+      ]);
+      return;
+    }
+    setEditing(false);
+  }, [dirty]);
+
+  const handleSave = useCallback(async () => {
+    if (!file || !sandboxUrl) return;
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await writeMutation.mutateAsync({ sandboxUrl, path: file.path, content: draft });
+      setEditing(false); // content query is invalidated → refetches the saved text
+    } catch (e: any) {
+      Alert.alert('Save failed', e?.message || 'Could not save the file. Your edits are kept — try again.');
+    }
+  }, [file, sandboxUrl, draft, writeMutation]);
+
+  const handleCloseGuarded = useCallback(() => {
+    if (editing && dirty) {
+      Alert.alert('Discard changes?', 'Your edits will be lost.', [
+        { text: 'Keep editing', style: 'cancel' },
+        { text: 'Discard', style: 'destructive', onPress: () => { setEditing(false); handleClose(); } },
+      ]);
+      return;
+    }
+    handleClose();
+  }, [editing, dirty, handleClose]);
+
   const insets = useSafeAreaInsets();
 
   if (!visible || !file) {
@@ -209,7 +272,7 @@ export function FileViewer({
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={handleClose}>
+      onRequestClose={handleCloseGuarded}>
       <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
         {/* Drag handle indicator (visible on iOS pageSheet) */}
         <View
@@ -257,70 +320,135 @@ export function FileViewer({
             </View>
 
             {/* Action Buttons */}
-            <View className="flex-row items-center gap-3">
-              {canNavigate && (
-                <>
-                  <AnimatedPressable
-                    onPress={handlePrevious}
-                    disabled={currentIndex <= 0}
-                    className="p-2"
-                    style={{ opacity: currentIndex <= 0 ? 0.3 : 1 }}>
-                    <Icon
-                      as={ChevronLeft}
-                      size={24}
-                      color={isDark ? '#f8f8f8' : '#121215'}
-                      strokeWidth={2}
-                    />
-                  </AnimatedPressable>
-                  <AnimatedPressable
-                    onPress={handleNext}
-                    disabled={currentIndex >= (fileList?.length || 0) - 1}
-                    className="p-2"
-                    style={{ opacity: currentIndex >= (fileList?.length || 0) - 1 ? 0.3 : 1 }}>
-                    <Icon
-                      as={ChevronRight}
-                      size={24}
-                      color={isDark ? '#f8f8f8' : '#121215'}
-                      strokeWidth={2}
-                    />
-                  </AnimatedPressable>
-                </>
-              )}
-              <AnimatedPressable 
-                onPress={handleDownload} 
-                disabled={isDownloading}
-                className="p-2"
-                style={{ opacity: isDownloading ? 0.6 : 1 }}>
-                {isDownloading ? (
-                  <KortixLoader size="small" />
-                ) : (
-                  <Icon
-                    as={Download}
-                    size={22}
-                    color={isDark ? '#f8f8f8' : '#121215'}
-                    strokeWidth={2}
-                  />
+            {editing ? (
+              <View className="flex-row items-center gap-2">
+                <Pressable onPress={handleCancelEdit} className="px-2 py-2" hitSlop={8}>
+                  <Text
+                    style={{ color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}
+                    className="font-roobert-medium text-sm">
+                    Cancel
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleSave}
+                  disabled={writeMutation.isPending || !dirty}
+                  hitSlop={6}
+                  className="flex-row items-center rounded-full px-3.5 py-2"
+                  style={{
+                    backgroundColor: isDark ? '#f8f8f8' : '#121215',
+                    opacity: writeMutation.isPending || !dirty ? 0.5 : 1,
+                    gap: 6,
+                  }}>
+                  {writeMutation.isPending ? (
+                    <KortixLoader size="small" forceTheme={isDark ? 'light' : 'dark'} />
+                  ) : (
+                    <Icon as={Check} size={16} color={isDark ? '#121215' : '#f8f8f8'} strokeWidth={2.4} />
+                  )}
+                  <Text
+                    style={{ color: isDark ? '#121215' : '#f8f8f8' }}
+                    className="font-roobert-medium text-sm">
+                    {writeMutation.isPending ? 'Saving…' : 'Save'}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : (
+              <View className="flex-row items-center gap-3">
+                {canNavigate && (
+                  <>
+                    <AnimatedPressable
+                      onPress={handlePrevious}
+                      disabled={currentIndex <= 0}
+                      className="p-2"
+                      style={{ opacity: currentIndex <= 0 ? 0.3 : 1 }}>
+                      <Icon
+                        as={ChevronLeft}
+                        size={24}
+                        color={isDark ? '#f8f8f8' : '#121215'}
+                        strokeWidth={2}
+                      />
+                    </AnimatedPressable>
+                    <AnimatedPressable
+                      onPress={handleNext}
+                      disabled={currentIndex >= (fileList?.length || 0) - 1}
+                      className="p-2"
+                      style={{ opacity: currentIndex >= (fileList?.length || 0) - 1 ? 0.3 : 1 }}>
+                      <Icon
+                        as={ChevronRight}
+                        size={24}
+                        color={isDark ? '#f8f8f8' : '#121215'}
+                        strokeWidth={2}
+                      />
+                    </AnimatedPressable>
+                  </>
                 )}
-              </AnimatedPressable>
-              <AnimatedPressable
-                onPressIn={() => {
-                  closeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-                }}
-                onPressOut={() => {
-                  closeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-                }}
-                onPress={handleClose}
-                style={closeAnimatedStyle}
-                className="p-2">
-                <Icon as={X} size={24} color={isDark ? '#f8f8f8' : '#121215'} strokeWidth={2} />
-              </AnimatedPressable>
-            </View>
+                {canEdit && (
+                  <AnimatedPressable onPress={handleStartEdit} className="p-2" hitSlop={6}>
+                    <Icon as={Pencil} size={20} color={isDark ? '#f8f8f8' : '#121215'} strokeWidth={2} />
+                  </AnimatedPressable>
+                )}
+                <AnimatedPressable
+                  onPress={handleDownload}
+                  disabled={isDownloading}
+                  className="p-2"
+                  style={{ opacity: isDownloading ? 0.6 : 1 }}>
+                  {isDownloading ? (
+                    <KortixLoader size="small" />
+                  ) : (
+                    <Icon
+                      as={Download}
+                      size={22}
+                      color={isDark ? '#f8f8f8' : '#121215'}
+                      strokeWidth={2}
+                    />
+                  )}
+                </AnimatedPressable>
+                <AnimatedPressable
+                  onPressIn={() => {
+                    closeScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+                  }}
+                  onPressOut={() => {
+                    closeScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+                  }}
+                  onPress={handleCloseGuarded}
+                  style={closeAnimatedStyle}
+                  className="p-2">
+                  <Icon as={X} size={24} color={isDark ? '#f8f8f8' : '#121215'} strokeWidth={2} />
+                </AnimatedPressable>
+              </View>
+            )}
           </Animated.View>
         </View>
 
         {/* Content */}
         <View className="flex-1">
-          {isLoading ? (
+          {editing ? (
+            <KeyboardAvoidingView
+              style={{ flex: 1 }}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              keyboardVerticalOffset={insets.top + 8}>
+              <TextInput
+                value={draft}
+                onChangeText={setDraft}
+                multiline
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                spellCheck={false}
+                editable={!writeMutation.isPending}
+                textAlignVertical="top"
+                style={{
+                  flex: 1,
+                  paddingHorizontal: 16,
+                  paddingTop: 12,
+                  paddingBottom: insets.bottom + 12,
+                  fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+                  fontSize: 13,
+                  lineHeight: 19,
+                  color: isDark ? '#f8f8f8' : '#121215',
+                }}
+              />
+            </KeyboardAvoidingView>
+          ) : isLoading ? (
             <View className="flex-1 items-center justify-center">
               <KortixLoader size="large" />
               <Text className="mt-4 text-sm text-muted-foreground">Loading file...</Text>

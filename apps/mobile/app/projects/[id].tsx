@@ -105,7 +105,7 @@ import { ensureOpencodeSession, wakeProjectSession, getProjectSessionSandbox, re
 import type { ProjectSession, ProjectSessionStatus, EnsureOpencodeResult } from '@/lib/projects/projects-client';
 import { Avatar } from '@/components/ui/Avatar';
 import {
-  Eye, EyeOff, RefreshCw, Upload, Image, FolderPlus, LayoutGrid, List,
+  Eye, EyeOff, RefreshCw, Upload, Image, FolderPlus, FilePlus, LayoutGrid, List,
   FileText, Copy, Pencil, Trash2,
   Bot, Sparkles, Terminal, FolderOpen, Plug, Settings,
   ChevronsUpDown,
@@ -2722,6 +2722,11 @@ export default function ProjectSessionScreen() {
                               icon: Image,
                               label: 'Upload image',
                               onPress: () => filesPageRef.current?.uploadImage(),
+                            },
+                            {
+                              icon: FilePlus,
+                              label: 'New file',
+                              onPress: () => filesPageRef.current?.createFile(),
                             },
                             {
                               icon: FolderPlus,
