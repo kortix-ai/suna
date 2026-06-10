@@ -29,6 +29,7 @@ import * as Updates from 'expo-updates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from '@/lib/logger';
 import { useAppearanceStore } from '@/stores/appearance-store';
+import { useThemeStore } from '@/stores/theme-store';
 import { installHapticsGate } from '@/lib/haptics';
 import { consumeAuthCallbackState } from '@/lib/auth/callback-state';
 
@@ -123,6 +124,9 @@ export default function RootLayout() {
     };
 
     loadSavedTheme();
+    // Hydrate the theme store from the same key so its consumers (e.g. the
+    // account menu's theme pills) show the persisted preference, not the default.
+    void useThemeStore.getState().initialize();
 
     return () => {
       isMounted = false;
