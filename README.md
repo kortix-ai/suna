@@ -57,28 +57,10 @@ Not as a metaphor — literally something you can clone. Inside it: your agents,
 Most AI tools give you a chat box. Kortix gives you a **command center** — one place where your agents, skills, integrations, automations and memory all live, and a workforce of agents that produces real output (decks, reports, code, replies, deployed work), not just chat. It feels as simple as a chat app. Underneath, everything is code you own.
 
 ```
-suna/
-├── apps/
-│   ├── web/                        # Next.js dashboard + marketing + docs
-│   ├── api/                        # Bun/Hono unified API monolith
-│   ├── cli/                        # kortix CLI (init, ship, sessions, cr, self-host)
-│   ├── sandbox/                    # Base Docker image for session sandboxes
-│   ├── kortix-sandbox-agent-server/# kortix-agent daemon (OpenCode supervisor + proxy)
-│   ├── mobile/                     # React Native / Expo mobile app
-│   └── desktop/                    # Tauri 2 shell wrapping the web app
-├── packages/
-│   ├── db/                         # Drizzle ORM schemas + Postgres client
-│   ├── shared/                     # Cross-app utilities, LLM catalog, tool icons
-│   ├── starter/                    # Project scaffold templates (base, knowledge-worker)
-│   ├── manifest-schema/            # kortix.toml validator
-│   ├── executor-sdk/               # Connector executor client SDK
-│   └── agent-tunnel/               # Cloud ↔ local machine tunnel relay
-├── supabase/                       # Local Supabase config + SQL migrations
-├── infra/terraform/                # AWS Lightsail API hosting (dev/prod)
-├── tests/                          # E2E, Playwright, shell, security suites
-├── scripts/                        # dev-local.sh, setup-env.sh, nuke-local.sh
-├── .kortix/opencode/               # This repo's OpenCode agents, skills, commands
-└── kortix.toml                     # Platform dogfood manifest (triggers, sandbox, connectors)
+project  (git repo + kortix.toml)
+   └─ session ──> isolated cloud sandbox on a branch named after the session
+                     └─ agent (OpenCode) works, commits, pushes
+                           └─ change request ──> you review & merge ──> main
 ```
 
 - Every **session** runs in its own disposable Linux sandbox on its own branch — the agent can install, run and break anything; only what it commits survives.
