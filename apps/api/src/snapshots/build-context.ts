@@ -73,6 +73,25 @@ export async function stageBuildContext(
   await assertExists(ENTRYPOINT_PATH, 'KORTIX_SNAPSHOT_ENTRYPOINT_PATH');
   await assertExistsDir(AGENT_CLI_SRC_PATH, 'KORTIX_SNAPSHOT_AGENT_CLI_PATH');
   await assertExistsDir(EXECUTOR_SDK_SRC_PATH, 'KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH');
+  // Fingerprint/artifact skew guard: the snapshot identity hashes the agent
+  // SOURCE (templates.ts AGENT_SRC_DIR), but the image bakes this prebuilt
+  // dist binary — an edited src/ with a stale dist/ ships old code under a
+  // NEW content hash, which is worse than failing (caught live 2026-06-10: a
+  // daemon fix "rebuilt" into a fresh template whose forks still ran the old
+  // binary). Refuse to stage a context whose binary predates the source.
+  // Env-overridden binary paths skip this — the caller is pinning on purpose.
+  if (!process.env.KORTIX_SNAPSHOT_AGENT_BIN_PATH) {
+    const binMtime = (await stat(AGENT_BIN_PATH)).mtimeMs;
+    const srcDir = resolve(REPO_ROOT, 'apps/kortix-sandbox-agent-server/src');
+    const newestSrc = await newestMtimeMs(srcDir);
+    if (newestSrc > binMtime) {
+      throw new Error(
+        `kortix-agent dist binary (${AGENT_BIN_PATH}) is older than its source ` +
+        `(${srcDir}) — run \`bun run build\` in apps/kortix-sandbox-agent-server ` +
+        `or the image will bake stale code under a fresh content hash`,
+      );
+    }
+  }
 
   const contextDir = await mkdtemp(join(tmpdir(), 'kortix-snap-'));
   await gzipFile(AGENT_BIN_PATH, join(contextDir, 'kortix-agent.gz'));
@@ -101,6 +120,17 @@ export async function stageBuildContext(
   }
   console.info(`[snapshots] ${snapshotName}: build context staged at ${contextDir}`);
   return { contextDir, composedPath, dockerfileName };
+}
+
+async function newestMtimeMs(dir: string): Promise<number> {
+  const { readdir } = await import('node:fs/promises');
+  let newest = 0;
+  for (const entry of await readdir(dir, { withFileTypes: true, recursive: true })) {
+    if (!entry.isFile()) continue;
+    const s = await stat(join(entry.parentPath ?? (entry as any).path ?? dir, entry.name)).catch(() => null);
+    if (s && s.mtimeMs > newest) newest = s.mtimeMs;
+  }
+  return newest;
 }
 
 async function assertExists(path: string, envVarHint: string): Promise<void> {
