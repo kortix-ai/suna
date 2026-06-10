@@ -21,6 +21,13 @@
  * maintain loop boots + clones + snapshots). If main moves inside that window
  * the baked repo can be one commit ahead of the sha in the name. Sessions in
  * that state branch from a slightly NEWER base — never an older one.
+ *
+ * Known v1 semantics: opencode inside a fork keeps the SEED's LLM-gateway/
+ * executor PAT (its process env is fixed at spawn; restarting it on adoption
+ * would cost the sub-second win). Both PATs belong to the same account +
+ * project, so spend lands on the right account — only per-session attribution
+ * of LLM usage is off. The daemon proxy itself re-arms with the session's own
+ * tokens on adoption, so FE→sandbox auth is per-session correct.
  */
 
 import { isPlatinumConfigured, platinumJson } from '../../shared/platinum';
