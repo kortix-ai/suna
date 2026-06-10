@@ -264,6 +264,13 @@ export async function forwardToSandbox(
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
     });
   }
+  // /kortix/env is a platform-only control endpoint that writes the sandbox's
+  // live secret env. The API reaches it server-to-server (postEnvToDaemon),
+  // never through this user-facing proxy — block it so an account member can't
+  // inject arbitrary env into a sandbox by POSTing /v1/p/<id>/8000/kortix/env.
+  if (port === 8000 && /^\/kortix\/env(?:$|[/?#])/.test(remainingPath)) {
+    return jsonProxyError({ error: 'not found' }, 404);
+  }
   if (record.status !== 'active') {
     return portUnreachableResponse({
       port,

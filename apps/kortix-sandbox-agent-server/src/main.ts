@@ -1,7 +1,7 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname } from 'node:path'
-import { writeAgentEnvFile } from './agent-env-file'
+import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
 import { loadConfig, resolveOpencodeConfigDir, resolveSandboxOnBoot, type Config } from './config'
 import {
   configureGitCredentialHelper,
@@ -96,7 +96,12 @@ async function main() {
   // the boot long-pole; the opencode spawn (binary launch + port bind) is fast
   // and opencode doesn't touch the workspace until its first request anyway.
   const projectEnv = createProjectEnvStore()
-  writeAgentEnvFile(projectEnv)
+  if (!agentEnvDirIsTmpfs()) {
+    logger.error('[boot] /dev/shm is not tmpfs — agent secret file would persist to disk; check the sandbox runtime mount')
+  }
+  if (!writeAgentEnvFile(projectEnv)) {
+    logger.error('[boot] failed to write agent secret env file; agent shells will lack project secrets')
+  }
   const repoMaterializePromise: Promise<void> = cfg.autoClone
     ? materializeRepo(cfg).catch((err) => {
         bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
