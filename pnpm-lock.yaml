@@ -197,7 +197,7 @@ importers:
         version: 3.0.7
       '@expensify/react-native-live-markdown':
         specifier: 0.1.317
-        version: 0.1.317(expensify-common@2.0.171)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+        version: 0.1.317(expensify-common@2.0.171)(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
       '@gorhom/bottom-sheet':
         specifier: ^5.2.6
         version: 5.2.8(@types/react@19.1.17)(react-native-gesture-handler@2.28.0)(react-native-reanimated@4.1.6)(react-native@0.81.5)(react@19.1.0)
@@ -455,7 +455,7 @@ importers:
         version: 9.12.0(react-native-purchases@9.12.0)(react-native-web@0.21.2)(react-native@0.81.5)(react@19.1.0)
       react-native-reanimated:
         specifier: ~4.1.3
-        version: 4.1.6(@babel/core@7.29.0)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+        version: 4.1.6(@babel/core@7.29.0)(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
       react-native-safe-area-context:
         specifier: ~5.6.0
         version: 5.6.2(react-native@0.81.5)(react@19.1.0)
@@ -490,8 +490,8 @@ importers:
         specifier: ^13.16.0
         version: 13.16.1(react-native@0.81.5)(react@19.1.0)
       react-native-worklets:
-        specifier: 0.6.0
-        version: 0.6.0(@babel/core@7.29.0)(react-native@0.81.5)(react@19.1.0)
+        specifier: 0.5.1
+        version: 0.5.1(@babel/core@7.29.0)(react-native@0.81.5)(react@19.1.0)
       react-syntax-highlighter:
         specifier: ^16.0.0
         version: 16.1.1(react@19.1.0)
@@ -4622,7 +4622,7 @@ packages:
       levn: 0.4.1
     dev: true
 
-  /@expensify/react-native-live-markdown@0.1.317(expensify-common@2.0.171)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0):
+  /@expensify/react-native-live-markdown@0.1.317(expensify-common@2.0.171)(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0):
     resolution: {integrity: sha512-B5KYLH7O8jHiP5AWQJ+n/fXPN4XldH+ODiwAylEVUOWEcbI0WztFYWK4fCsCq6kx3ajYl0Y58nfza3jnSuj95g==}
     engines: {node: '>= 18.0.0'}
     peerDependencies:
@@ -4634,7 +4634,7 @@ packages:
       expensify-common: 2.0.171
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
-      react-native-worklets: 0.6.0(@babel/core@7.29.0)(react-native@0.81.5)(react@19.1.0)
+      react-native-worklets: 0.5.1(@babel/core@7.29.0)(react-native@0.81.5)(react@19.1.0)
     dev: false
 
   /@expo/cli@54.0.23(expo-router@6.0.23)(expo@54.0.33)(react-native@0.81.5):
@@ -5212,7 +5212,7 @@ packages:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
       react-native-gesture-handler: 2.28.0(react-native@0.81.5)(react@19.1.0)
-      react-native-reanimated: 4.1.6(@babel/core@7.29.0)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+      react-native-reanimated: 4.1.6(@babel/core@7.29.0)(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
     dev: false
 
   /@gorhom/portal@1.0.14(react-native@0.81.5)(react@19.1.0):
@@ -21477,7 +21477,7 @@ packages:
       react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
       react-native-gesture-handler: 2.28.0(react-native@0.81.5)(react@19.1.0)
       react-native-is-edge-to-edge: 1.3.1(react-native@0.81.5)(react@19.1.0)
-      react-native-reanimated: 4.1.6(@babel/core@7.29.0)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+      react-native-reanimated: 4.1.6(@babel/core@7.29.0)(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
       react-native-safe-area-context: 5.6.2(react-native@0.81.5)(react@19.1.0)
       react-native-screens: 4.16.0(react-native@0.81.5)(react@19.1.0)
       react-native-web: 0.21.2(react-dom@19.1.0)(react@19.1.0)
@@ -27465,7 +27465,7 @@ packages:
       lightningcss: 1.27.0
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
-      react-native-reanimated: 4.1.6(@babel/core@7.29.0)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+      react-native-reanimated: 4.1.6(@babel/core@7.29.0)(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
       react-native-safe-area-context: 5.6.2(react-native@0.81.5)(react@19.1.0)
       react-native-svg: 15.12.1(react-native@0.81.5)(react@19.1.0)
       semver: 7.7.4
@@ -27486,7 +27486,7 @@ packages:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
       react-native-gesture-handler: 2.28.0(react-native@0.81.5)(react@19.1.0)
-      react-native-reanimated: 4.1.6(@babel/core@7.29.0)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+      react-native-reanimated: 4.1.6(@babel/core@7.29.0)(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
       use-latest-callback: 0.2.6(react@19.1.0)
     dev: false
 
@@ -27537,7 +27537,7 @@ packages:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
       react-native-is-edge-to-edge: 1.3.1(react-native@0.81.5)(react@19.1.0)
-      react-native-reanimated: 4.1.6(@babel/core@7.29.0)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+      react-native-reanimated: 4.1.6(@babel/core@7.29.0)(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
     dev: false
 
   /react-native-markdown-display@7.0.2(react-native@0.81.5)(react@19.1.0):
@@ -27589,7 +27589,7 @@ packages:
       react-native-web: 0.21.2(react-dom@19.1.0)(react@19.1.0)
     dev: false
 
-  /react-native-reanimated@4.1.6(@babel/core@7.29.0)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0):
+  /react-native-reanimated@4.1.6(@babel/core@7.29.0)(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0):
     resolution: {integrity: sha512-F+ZJBYiok/6Jzp1re75F/9aLzkgoQCOh4yxrnwATa8392RvM3kx+fiXXFvwcgE59v48lMwd9q0nzF1oJLXpfxQ==}
     peerDependencies:
       '@babel/core': ^7.0.0-0
@@ -27601,7 +27601,7 @@ packages:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
       react-native-is-edge-to-edge: 1.3.1(react-native@0.81.5)(react@19.1.0)
-      react-native-worklets: 0.6.0(@babel/core@7.29.0)(react-native@0.81.5)(react@19.1.0)
+      react-native-worklets: 0.5.1(@babel/core@7.29.0)(react-native@0.81.5)(react@19.1.0)
       semver: 7.7.2
 
   /react-native-safe-area-context@5.6.2(react-native@0.81.5)(react@19.1.0):
@@ -27729,8 +27729,8 @@ packages:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.0)(@types/react@19.1.17)(react@19.1.0)
 
-  /react-native-worklets@0.6.0(@babel/core@7.29.0)(react-native@0.81.5)(react@19.1.0):
-    resolution: {integrity: sha512-yETMNuCcivdYWteuG4eRqgiAk2DzRCrVAaEBIEWPo4emrf3BNjadFo85L5QvyEusrX9QKE3ZEAx8U5A/nbyFgg==}
+  /react-native-worklets@0.5.1(@babel/core@7.29.0)(react-native@0.81.5)(react@19.1.0):
+    resolution: {integrity: sha512-lJG6Uk9YuojjEX/tQrCbcbmpdLCSFxDK1rJlkDhgqkVi1KZzG7cdcBFQRqyNOOzR9Y0CXNuldmtWTGOyM0k0+w==}
     peerDependencies:
       '@babel/core': ^7.0.0-0
       react: '*'

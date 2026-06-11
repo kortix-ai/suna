@@ -16,6 +16,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { randomUUID } from 'node:crypto';
 import { resolveProjectGitAuth } from './git';
+import { isReservedSandboxEnvName, RESERVED_SANDBOX_ENV_NAMES } from './sandbox-env-names';
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES, ProjectRow, ProjectSessionRow, RequestAuditContext, UUID_V4_REGEX, deriveKortixApiRoot, normalizeJsonObject, normalizeString } from './serializers';
 
@@ -126,18 +127,7 @@ export async function checkConcurrentSessionCap(accountId: string, userId: strin
 }
 
 
-export const RESERVED_SANDBOX_ENV_NAMES = new Set([
-  'PORT', 'PATH', 'HOME', 'PWD', 'USER', 'LOGNAME', 'SHELL', 'HOSTNAME',
-  'TERM', 'TMPDIR', 'NODE_ENV', 'NODE_OPTIONS', 'LD_PRELOAD', 'LD_LIBRARY_PATH',
-]);
-
-export function isReservedSandboxEnvName(name: string): boolean {
-  return (
-    RESERVED_SANDBOX_ENV_NAMES.has(name) ||
-    name.startsWith('KORTIX_') ||
-    name.startsWith('OPENCODE_')
-  );
-}
+export { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName };
 
 
 export async function buildSessionSandboxEnvVars(input: {

@@ -1,3 +1,4 @@
+import { shredAgentEnvFile } from './agent-env-file'
 import { logger } from './logger'
 import type { Opencode } from './opencode'
 import type { ProxyServer } from './proxy'
@@ -14,6 +15,7 @@ export function installShutdownHandlers(
     if (shuttingDown) return
     shuttingDown = true
     logger.info('[shutdown] signal received', { signal })
+    shredAgentEnvFile()
 
     void (async () => {
       try {
