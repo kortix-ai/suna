@@ -3,7 +3,6 @@ import { DEFAULT_READ_LIMIT, MAX_LINE_LENGTH } from './opencode-pty/src/shared/c
 import { formatLine, formatSessionInfo } from './opencode-pty/src/plugin/pty/formatters.ts'
 import { initPermissions, checkCommandPermission, checkWorkdirPermission } from './opencode-pty/src/plugin/pty/permissions.ts'
 import { initManager, manager } from './opencode-pty/src/plugin/pty/manager.ts'
-import { applyLiveProjectEnv } from './opencode-pty/src/plugin/pty/live-env.ts'
 
 const ETX = String.fromCharCode(3)
 const EOT = String.fromCharCode(4)
@@ -227,9 +226,6 @@ const PtyToolsPlugin: Plugin = async ({ client, directory, serverUrl }) => {
           return `<kortix_system type="pty-kill" source="opencode-pty">\n${inner}\n</kortix_system>`
         },
       }),
-    },
-    'shell.env': async (_input, output) => {
-      applyLiveProjectEnv(output?.env)
     },
     event: async ({ event }) => {
       if (event.type === 'session.deleted') manager.cleanupBySession(event.properties.info.id)
