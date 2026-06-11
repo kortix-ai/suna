@@ -146,7 +146,7 @@ export function TeamPlanCheckout({
           // Non-billing member: they can't pay for the team, so don't pitch a
           // dead Subscribe button. Tell them who can — and that an owner
           // subscribing activates their seat automatically.
-          <div className="flex items-start gap-3 rounded-xl border border-border/60 bg-background px-4 py-3.5">
+          <div className="flex items-start gap-3 rounded-2xl border border-border/60 bg-background px-4 py-3.5">
             <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
               <UserPlus className="size-4" />
             </span>
