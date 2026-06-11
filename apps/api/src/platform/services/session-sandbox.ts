@@ -525,8 +525,13 @@ export async function provisionSessionSandbox(opts: {
       // starts — warm is a best-effort speedup, never a hard dependency.
       if (warmBase && bgErr instanceof WarmRuntimeUnavailableError) {
         console.warn(
-          `[session-sandbox] warm runtime unavailable for ${sandbox.sandboxId} — falling back to the normal snapshot path`,
+          `[session-sandbox] warm runtime unavailable for ${sandbox.sandboxId} — falling back to the normal snapshot path:`,
+          bgErr.message,
         );
+        // Pause the warm path fleet-wide for a few minutes so subsequent
+        // sessions skip the doomed warm attempt (e.g. region revoked).
+        const { noteWarmPathFailure } = await import('../../snapshots/warm-bake');
+        noteWarmPathFailure();
         warmBase = null;
         providerCreateInput.warmBaseSnapshot = undefined;
         if (bgExternalId) {

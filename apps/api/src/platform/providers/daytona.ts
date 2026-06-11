@@ -68,9 +68,20 @@ export class DaytonaProvider implements SandboxProvider {
     }
 
     // Experimental warm path: boot from the memory-state warm base on the WARM
-    // target and start the daemon post-restore (see createWarm).
+    // target and start the daemon post-restore (see createWarm). ANY warm
+    // failure — flaky restore, "Region not found" (the experimental region can
+    // be revoked org-side at any time), env-write failure — surfaces as
+    // WarmRuntimeUnavailableError so the session falls back to the normal
+    // Dockerfile-snapshot path instead of erroring. Warm is best-effort, never
+    // a hard dependency.
     if (opts.warmBaseSnapshot) {
-      return this.createWarm(opts, opts.warmBaseSnapshot, envVars, sandboxApiBase, createTimeoutSeconds);
+      try {
+        return await this.createWarm(opts, opts.warmBaseSnapshot, envVars, sandboxApiBase, createTimeoutSeconds);
+      } catch (err) {
+        if (err instanceof WarmRuntimeUnavailableError) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new WarmRuntimeUnavailableError(`warm create failed: ${msg}`);
+      }
     }
 
     // Every Daytona sandbox boots from its project's own per-project

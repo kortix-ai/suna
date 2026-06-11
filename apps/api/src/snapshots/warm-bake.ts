@@ -24,6 +24,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, basename, join, resolve } from 'node:path';
@@ -241,18 +242,41 @@ kortix --version`,
 }
 
 // ─── Warm base manager ───────────────────────────────────────────────────────
-// One shared, project-agnostic warm base per runtime identity. Bump WARM_BASE_VERSION
-// whenever the baked runtime layer changes (binaries, opencode/agent-browser version,
-// install steps) so sessions don't boot a stale base.
-const WARM_BASE_VERSION = 'v1';
+// One shared, project-agnostic warm base per RUNTIME IDENTITY. The name is
+// content-addressed off the same runtime-artifact fingerprint the normal
+// snapshot builder uses (SANDBOX_VERSION + runtime layer + opencode/agent-
+// browser pins + runtime source trees), so a new release deploys → new
+// fingerprint → new name → the startup kick bakes a fresh base, and sessions
+// never boot last release's binaries. Old bases are reaped after a successful
+// bake (see reapStaleWarmBases).
+const WARM_BASE_PREFIX = 'kortix-warm-runtime-';
 
-/** Deterministic name of the current warm base snapshot. */
-export function warmBaseSnapshotName(): string {
-  return `kortix-warm-runtime-${OPENCODE_VERSION}-${WARM_BASE_VERSION}`;
+/**
+ * Deterministic, content-addressed name of the current warm base snapshot.
+ * Async because the runtime fingerprint hashes the runtime source trees on
+ * first call (cached for the process lifetime afterwards).
+ */
+export async function warmBaseSnapshotName(): Promise<string> {
+  const { currentRuntimeArtifactFingerprint } = await import('./templates');
+  const fingerprint = await currentRuntimeArtifactFingerprint();
+  const hash = createHash('sha256').update(fingerprint).digest('hex').slice(0, 12);
+  return `${WARM_BASE_PREFIX}${hash}`;
 }
 
 // In-process dedup so concurrent session boots + the startup kick collapse to one bake.
 let warmBaseBuildInFlight: Promise<void> | null = null;
+
+// After a warm CREATE fails (e.g. the experimental region was revoked org-side
+// — snapshot lookups still succeed, so name resolution alone can't detect it),
+// pause the warm path so sessions go straight to the normal route instead of
+// paying a doomed warm attempt each. Self-heals after the cooldown.
+const WARM_FAILURE_COOLDOWN_MS = 5 * 60 * 1000;
+let warmPathPausedUntil = 0;
+
+/** Called by the session provisioner when a warm create fell back. */
+export function noteWarmPathFailure(): void {
+  warmPathPausedUntil = Date.now() + WARM_FAILURE_COOLDOWN_MS;
+}
 
 /**
  * Is the warm base ready to boot sessions from? Returns its name if the snapshot
@@ -262,12 +286,13 @@ let warmBaseBuildInFlight: Promise<void> | null = null;
  */
 export async function ensureWarmBaseReady(onLog?: (l: string) => void): Promise<string | null> {
   if (!warmSnapshotsEnabled()) return null;
-  const name = warmBaseSnapshotName();
+  if (Date.now() < warmPathPausedUntil) return null;
   try {
+    const name = await warmBaseSnapshotName();
     const snap = await getDaytonaWarm().snapshot.get(name);
     if (String((snap as { state?: string })?.state ?? '').toLowerCase() === 'active') return name;
   } catch {
-    // not found / transient → fall through to bake
+    // fingerprint failed / not found / transient → fall through to bake
   }
   kickWarmBaseBuild(onLog);
   return null;
@@ -276,21 +301,46 @@ export async function ensureWarmBaseReady(onLog?: (l: string) => void): Promise<
 /** Fire-and-forget bake of the warm base if missing. Idempotent + deduped. */
 export function kickWarmBaseBuild(onLog?: (l: string) => void): void {
   if (!warmSnapshotsEnabled() || warmBaseBuildInFlight) return;
-  const name = warmBaseSnapshotName();
   const log = onLog ?? ((l: string) => console.log(l));
   warmBaseBuildInFlight = (async () => {
     try {
+      const name = await warmBaseSnapshotName();
       const existing = await getDaytonaWarm().snapshot.get(name).catch(() => null);
-      if (String((existing as { state?: string } | null)?.state ?? '').toLowerCase() === 'active') return;
+      if (String((existing as { state?: string } | null)?.state ?? '').toLowerCase() === 'active') {
+        await reapStaleWarmBases(name, log);
+        return;
+      }
       log(`[warm-bake] baking warm base ${name} ...`);
       await bakeWarmSnapshot({ name, onLog: log });
       log(`[warm-bake] warm base ${name} ready`);
+      await reapStaleWarmBases(name, log);
     } catch (err) {
       log(`[warm-bake] warm base bake failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       warmBaseBuildInFlight = null;
     }
   })();
+}
+
+/**
+ * Delete warm bases from PREVIOUS runtime identities. Names are namespaced
+ * under `kortix-warm-runtime-`, so anything in that namespace that isn't the
+ * current name is a stale release's base — without this, every deploy leaks one
+ * snapshot into the 100/org quota. Best-effort: skipped entirely when the org
+ * listing fails (never delete based on a partial view).
+ */
+async function reapStaleWarmBases(currentName: string, log: (l: string) => void): Promise<void> {
+  try {
+    const { listDaytonaSnapshots, deleteDaytonaSnapshotById } = await import('../shared/daytona');
+    const all = await listDaytonaSnapshots();
+    const stale = all.filter((s) => s.name.startsWith(WARM_BASE_PREFIX) && s.name !== currentName);
+    for (const snap of stale) {
+      const ok = await deleteDaytonaSnapshotById(snap.id);
+      log(`[warm-bake] reaped stale warm base ${snap.name}: ${ok ? 'ok' : 'failed'}`);
+    }
+  } catch (err) {
+    log(`[warm-bake] stale warm-base reap skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 /**

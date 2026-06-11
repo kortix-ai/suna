@@ -14,7 +14,7 @@
  *   KEEP_SNAPSHOT=1      don't delete the baked snapshot at the end
  */
 import { getDaytonaWarm, warmSnapshotsEnabled } from '../src/shared/daytona';
-import { bakeWarmSnapshot } from '../src/snapshots/warm-bake';
+import { bakeWarmSnapshot, warmBaseSnapshotName } from '../src/snapshots/warm-bake';
 
 async function main() {
   if (!warmSnapshotsEnabled()) {
@@ -23,9 +23,16 @@ async function main() {
     );
     process.exit(1);
   }
-  const name = process.env.WARM_SNAPSHOT_NAME || `kortix-warm-manual-${Math.random().toString(36).slice(2, 8)}`;
+  // Default to the CANONICAL content-addressed name — the one the API resolves
+  // at session boot — so a manual pre-bake is immediately picked up. Note the
+  // fingerprint depends on SANDBOX_VERSION + local runtime sources, so a bake
+  // from your laptop only matches an API running the same code.
+  const canonical = !process.env.WARM_SNAPSHOT_NAME;
+  const name = process.env.WARM_SNAPSHOT_NAME || (await warmBaseSnapshotName());
   const verify = process.env.VERIFY !== '0';
-  const keep = process.env.KEEP_SNAPSHOT === '1';
+  // Canonical bakes are kept by default (deleting one would undo the pre-bake);
+  // explicitly-named test bakes are cleaned up unless KEEP_SNAPSHOT=1.
+  const keep = canonical ? process.env.KEEP_SNAPSHOT !== '0' : process.env.KEEP_SNAPSHOT === '1';
   const daytona = getDaytonaWarm();
 
   console.log(`\n=== baking warm snapshot "${name}" ===`);
@@ -65,7 +72,7 @@ async function main() {
       /* ignore */
     }
   } else {
-    console.log(`\nkept snapshot ${name} (KEEP_SNAPSHOT=1)`);
+    console.log(`\nkept snapshot ${name}`);
   }
 }
 
