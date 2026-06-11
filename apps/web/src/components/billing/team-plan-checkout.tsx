@@ -33,7 +33,11 @@ export function TeamPlanCheckout({
   const createPerSeat = useCreatePerSeatCheckout();
 
   const pricePerSeat = accountState?.seats?.price_per_seat_usd ?? 40;
-  const seatCount = accountState?.seats?.count ?? 1;
+  // The seat count a subscribe will actually be billed for = the live account
+  // member count (what the server puts on the Stripe line item). Prefer it over
+  // seats.count (which is the already-subscribed Stripe quantity) so the modal's
+  // projected total matches the upcoming Stripe checkout exactly — no surprise.
+  const seatCount = Math.max(1, accountState?.member_count ?? accountState?.seats?.count ?? 1);
   const monthlyTotal = pricePerSeat * seatCount;
   const hasSeatMath = seatCount > 1;
 

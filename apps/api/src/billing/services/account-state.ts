@@ -20,6 +20,7 @@ import {
 import { getUsageBreakdownThisPeriod } from './usage-breakdown';
 import { getCreditSummary } from './credits';
 import { getAutoTopupSettings } from './auto-topup';
+import { countActiveMembers } from './seat-management';
 import { isPlatformAdmin } from '../../shared/platform-roles';
 import { maxConcurrentSessionsForTier } from '../../shared/account-limits';
 import { db } from '../../shared/db';
@@ -182,6 +183,9 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
     can_claim_computer: canClaimComputer,
     can_claim_per_seat: canClaimPerSeatPricing,
     billing_model: (isPerSeatAccount(sub?.billingModel) ? 'per_seat' : 'legacy') as 'per_seat' | 'legacy',
+    // Live member count = the seat quantity a per-seat subscribe bills for now
+    // (matches createPerSeatCheckoutSession). Drives the modal's projected total.
+    member_count: await countActiveMembers(accountId).catch(() => 1),
     seats: isPerSeatAccount(sub?.billingModel)
       ? {
           count: sub?.seatCount ?? 1,
@@ -255,6 +259,7 @@ export function buildLocalAccountState(): AccountStateResponse {
     can_claim_computer: false,
     can_claim_per_seat: false,
     billing_model: 'legacy',
+    member_count: 1,
   };
 }
 

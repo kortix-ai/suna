@@ -133,6 +133,11 @@ export interface AccountState {
     typical_compute_budget_per_seat_usd: number;
     typical_llm_budget_per_seat_usd: number;
   };
+  // Live account-member count = the seat quantity a per-seat subscribe is billed
+  // for right now (server uses the same count for the Stripe line item). Lets the
+  // subscribe modal show the real projected total before redirecting to Stripe.
+  // Present once the API is updated; absent → fall back to seats.count then 1.
+  member_count?: number;
   usage_this_period?: {
     compute_usd: number;
     llm_usd: number;
