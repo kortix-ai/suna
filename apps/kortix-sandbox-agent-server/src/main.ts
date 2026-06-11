@@ -191,9 +191,18 @@ async function main() {
   // session's credentials). Become capture-ready here, but leave the session
   // runtime (initial session + event relay) to the adopting session.
   if ((process.env.KORTIX_SESSION_ID ?? '').trim() === '' && cfg.autoClone) {
-    void waitForOpencodeReady(opencode, cfg.projectTarget).then(async (ok) => {
+    void (async () => {
+      // Keep waiting as long as the platform's capture budget plausibly
+      // allows — a single bounded wait (20s) missed opencode by 4 seconds
+      // once and the seed then NEVER wrote its pin, so every capture of that
+      // template aborted at its 240s budget forever (caught live 2026-06-11).
+      const deadline = Date.now() + 5 * 60_000
+      let ok = false
+      while (!ok && Date.now() < deadline) {
+        ok = await waitForOpencodeReady(opencode, cfg.projectTarget)
+      }
       if (!ok) {
-        logger.warn('[seed] opencode did not become ready within deadline; capture will not trigger')
+        logger.warn('[seed] opencode never became ready; capture will not trigger')
         return
       }
       bootMark('opencode-ready')
@@ -220,7 +229,7 @@ async function main() {
         })
       }
       logger.info('[seed] capture-ready; awaiting session adoption', { timeline: bootState.timeline })
-    })
+    })()
     armSeedAdoption(opencode, server, bootState, bootMark)
     return
   }

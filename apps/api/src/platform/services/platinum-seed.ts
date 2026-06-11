@@ -31,7 +31,7 @@
  */
 
 import { isPlatinumConfigured, platinumJson } from '../../shared/platinum';
-import { resolveCommitSha, type GitBackedProject } from '../../projects/git';
+import { invalidateProjectMirror, resolveCommitSha, type GitBackedProject } from '../../projects/git';
 
 /** Env keys that are per-session, never baked into a seed. The daemon adopts
  *  the real session's values from /etc/dnah-env after the fork. */
@@ -88,7 +88,17 @@ export async function resolveProjectSeed(opts: {
 }): Promise<string | null> {
   if (!isPlatinumConfigured()) return null;
   try {
-    const sha = await resolveCommitSha(opts.project, opts.project.defaultBranch);
+    let sha: string;
+    try {
+      sha = await resolveCommitSha(opts.project, opts.project.defaultBranch);
+    } catch {
+      // Fresh projects: the mirror can get cloned BEFORE the starter repo's
+      // first commit lands, and the 60s refresh TTL then keeps serving the
+      // empty mirror ("fatal: Needed a single revision") — which silently
+      // skipped the very first derive. Force one refresh and retry.
+      invalidateProjectMirror(opts.projectId);
+      sha = await resolveCommitSha(opts.project, opts.project.defaultBranch);
+    }
     const name = seedName(opts.projectId, sha, opts.defaultTemplate);
     const existing = await templateByName(name);
     if (existing && existing.state === 'ready') return name;
