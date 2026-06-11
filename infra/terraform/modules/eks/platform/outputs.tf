@@ -14,5 +14,7 @@ output "controllers" {
     external_dns                 = var.external_dns_chart_version
     metrics_server               = var.metrics_server_chart_version
     cluster_autoscaler           = var.cluster_autoscaler_chart_version
+    argo_cd                      = var.argo_cd_chart_version
+    argo_rollouts                = var.argo_rollouts_chart_version
   }
 }

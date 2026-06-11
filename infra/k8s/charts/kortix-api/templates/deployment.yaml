@@ -63,6 +63,22 @@ spec:
             - name: KORTIX_VERSION
               value: {{ .Values.kortixVersion | quote }}
             {{- end }}
+            {{- if .Values.env.internalKortixEnv }}
+            - name: INTERNAL_KORTIX_ENV
+              value: {{ .Values.env.internalKortixEnv | quote }}
+            {{- end }}
+            {{- if not .Values.workers.enabled }}
+            # API-only profile: force the leader-elected singleton workers off so
+            # this env never runs scheduler/maintenance/migration jobs.
+            - name: KORTIX_TRIGGER_SCHEDULER_ENABLED
+              value: "false"
+            - name: KORTIX_PROJECT_MAINTENANCE_ENABLED
+              value: "false"
+            - name: KORTIX_LEGACY_MIGRATION_WORKER_ENABLED
+              value: "false"
+            - name: KORTIX_SUNA_MIGRATION_WORKER_ENABLED
+              value: "false"
+            {{- end }}
             {{- range $k, $v := .Values.extraEnv }}
             - name: {{ $k }}
               value: {{ $v | quote }}

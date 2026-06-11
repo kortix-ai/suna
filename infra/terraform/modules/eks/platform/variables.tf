@@ -60,6 +60,16 @@ variable "cluster_autoscaler_chart_version" {
   default = "9.37.0"
 }
 
+variable "argo_cd_chart_version" {
+  type    = string
+  default = "7.6.12" # app v2.12.x
+}
+
+variable "argo_rollouts_chart_version" {
+  type    = string
+  default = "2.37.3" # app v1.7.x
+}
+
 variable "tags" {
   type    = map(string)
   default = {}

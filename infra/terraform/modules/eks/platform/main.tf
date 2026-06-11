@@ -202,3 +202,57 @@ resource "helm_release" "cluster_autoscaler" {
     value = "least-waste"
   }
 }
+
+# ── Argo CD (GitOps deploy engine) ────────────────────────────────────────────
+# The single deploy engine: it reconciles the cluster to the manifests in
+# infra/k8s/ (app-of-apps), replacing imperative `helm upgrade`/`aws ecs` calls.
+# Installed once here; thereafter it self-manages via the app-of-apps. Server is
+# ClusterIP (reach it with `kubectl -n argocd port-forward svc/argocd-server`).
+resource "helm_release" "argo_cd" {
+  name             = "argo-cd"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-cd"
+  version          = var.argo_cd_chart_version
+  namespace        = "argocd"
+  create_namespace = true
+  atomic           = true
+  timeout          = 900
+
+  # Run the core controllers with 2 replicas where the chart supports it (HA-lite).
+  set {
+    name  = "redis-ha.enabled"
+    value = "false"
+  }
+  set {
+    name  = "applicationSet.replicas"
+    value = "2"
+  }
+  set {
+    name  = "server.replicas"
+    value = "2"
+  }
+  set {
+    name  = "repoServer.replicas"
+    value = "2"
+  }
+}
+
+# ── Argo Rollouts (progressive delivery) ──────────────────────────────────────
+# Controller for canary Rollouts + AnalysisRuns. The Rollout resources + the
+# CloudWatch AnalysisTemplate are added in Phase 2 (chart + argocd/analysis);
+# this just installs the controller + CRDs.
+resource "helm_release" "argo_rollouts" {
+  name             = "argo-rollouts"
+  repository       = "https://argoproj.github.io/argo-helm"
+  chart            = "argo-rollouts"
+  version          = var.argo_rollouts_chart_version
+  namespace        = "argo-rollouts"
+  create_namespace = true
+  atomic           = true
+  timeout          = 600
+
+  set {
+    name  = "controller.replicas"
+    value = "2"
+  }
+}

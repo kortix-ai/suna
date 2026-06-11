@@ -75,6 +75,22 @@ externalSecrets:
 # Always-injected non-secret env (PORT is also set from containerPort).
 extraEnv: {}
 
+# Environment profile. These render as explicit container env that OVERRIDE the
+# synced secret bundle (k8s `env` wins over `envFrom`), so an env can be made
+# API-only without changing the shared secret.
+env:
+  # Override INTERNAL_KORTIX_ENV (dev|staging|prod). "" = inherit from the bundle.
+  internalKortixEnv: ""
+
+# Singleton/background work (leader-elected: scheduler, project maintenance,
+# legacy + suna migration workers — see apps/api/src/index.ts). workers.enabled
+# = false forces the four KORTIX_*_ENABLED flags off, so this env NEVER runs
+# singleton jobs even if it wins the Postgres leader lease. Use false for a
+# pre-prod / canary that shares prod data; true for the environment that owns
+# the background work for its data plane.
+workers:
+  enabled: true
+
 ingress:
   enabled: true
   host: api-eks.kortix.com
