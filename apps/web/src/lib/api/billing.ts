@@ -115,6 +115,12 @@ export interface AccountState {
   }>;
   can_add_instances?: boolean;
   can_claim_computer?: boolean;
+  // Whether the CURRENT user may change billing for this account (billing.write —
+  // owners only by default). Drives the "Subscribe" / "Manage billing" CTA gate:
+  // members (billing.read only) see a disabled CTA instead of clicking through to
+  // a 403. UI hint only — the billing API enforces the same gate server-side.
+  // Absent (undefined) is treated as "allowed" so older responses don't block owners.
+  can_manage_billing?: boolean;
   // True only for genuine legacy per-machine accounts that have a machine to
   // migrate — gates the "Claim seat-based pricing" card (new per-seat-era users
   // must not see it, or the claim dead-ends on "nothing to switch").

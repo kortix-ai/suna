@@ -37,6 +37,12 @@ export function TeamPlanCheckout({
   const monthlyTotal = pricePerSeat * seatCount;
   const hasSeatMath = seatCount > 1;
 
+  // Only members with billing.write (account owners) can subscribe on the
+  // account's behalf. Members get a disabled CTA + explanation instead of a
+  // click that fails server-side. `undefined` (loading / older response) is
+  // treated as allowed so the CTA never flickers disabled for a real owner.
+  const canManageBilling = accountState?.can_manage_billing !== false;
+
   const handleSubscribe = () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
     createPerSeat.mutate({
@@ -102,7 +108,7 @@ export function TeamPlanCheckout({
         )}
         <Button
           onClick={handleSubscribe}
-          disabled={createPerSeat.isPending}
+          disabled={createPerSeat.isPending || !canManageBilling}
           size="lg"
           className="group w-full"
         >
@@ -118,9 +124,15 @@ export function TeamPlanCheckout({
             </>
           )}
         </Button>
-        <p className="text-center text-xs text-muted-foreground">
-          Auto-prorated · cancel anytime · billed monthly
-        </p>
+        {canManageBilling ? (
+          <p className="text-center text-xs text-muted-foreground">
+            Auto-prorated · cancel anytime · billed monthly
+          </p>
+        ) : (
+          <p className="text-center text-xs text-muted-foreground">
+            Only an account owner can manage billing. Ask an owner to subscribe for the team.
+          </p>
+        )}
         {createPerSeat.isError && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
