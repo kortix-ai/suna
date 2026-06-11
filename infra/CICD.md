@@ -80,6 +80,7 @@ There is no per-component version.
 | `desktop.yml`     | push → main (`apps/desktop/**`) / dispatch | signed desktop installers → `desktop-dev-latest`              |
 | `promote.yml`     | manual dispatch                      | bump `VERSION` · tag `vX.Y.Z` · fast-forward `prod`                 |
 | `deploy-prod.yml` | push → `prod`                        | retag images → `:X.Y.Z`+`:latest`, cut Release, roll ECS `kortix-prod` |
+| `deploy-prod-eks.yml` | push → `prod`                    | PARALLEL EKS path: `helm upgrade` `kortix-api` on `kortix-prod-eks` → `api-eks.kortix.com` (no-ops until the EKS stack is applied; never touches ECS). See `infra/EKS.md`. |
 
 ### Path-filtering (deploy-dev)
 
@@ -149,10 +150,14 @@ whose `ACTIVE_BACKEND` plain-text var selects the origin:
 api.kortix.com ─► api-kortix-router Worker ─► ACTIVE_BACKEND
     new          → new-api.kortix.com   (old Lightsail box, v0.8.x)   ← live now
     ecs-fargate  → api-prod.kortix.com  (new ECS prod stack)          ← ready
+    eks          → api-eks.kortix.com   (EKS prod stack)              ← parallel, see infra/EKS.md
 ```
 
 **Apex cutover = flip `ACTIVE_BACKEND` → `ecs-fargate`** (one Worker var; instant,
 sub-second, fully reversible — flip back to `new` to roll back). No DNS surgery.
+The EKS stack (`infra/EKS.md`) adds an `eks` backend on the same switch: prove it
+under `api-eks.kortix.com`, then flip `ACTIVE_BACKEND → eks`; roll back to
+`ecs-fargate` anytime. ECS keeps running in parallel until EKS is proven.
 `kortix.com` (Vercel) will likewise be pointed at the `prod`-branch frontend at
 cutover. Until then api.kortix.com / kortix.com stay on the old box, untouched.
 
