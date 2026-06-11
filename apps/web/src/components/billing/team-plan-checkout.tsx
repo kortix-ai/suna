@@ -16,7 +16,7 @@ import {
 import { useCreatePerSeatCheckout } from '@/hooks/billing';
 import type { AccountState } from '@/lib/api/billing';
 import { cn } from '@/lib/utils';
-import { AlertTriangle, ArrowRight, Check, Loader2 } from 'lucide-react';
+import { AlertTriangle, ArrowRight, Check, Loader2, UserPlus } from 'lucide-react';
 
 export interface TeamPlanCheckoutProps {
   accountState?: AccountState;
@@ -33,9 +33,19 @@ export function TeamPlanCheckout({
   const createPerSeat = useCreatePerSeatCheckout();
 
   const pricePerSeat = accountState?.seats?.price_per_seat_usd ?? 40;
-  const seatCount = accountState?.seats?.count ?? 1;
+  // The seat count a subscribe will actually be billed for = the live account
+  // member count (what the server puts on the Stripe line item). Prefer it over
+  // seats.count (which is the already-subscribed Stripe quantity) so the modal's
+  // projected total matches the upcoming Stripe checkout exactly — no surprise.
+  const seatCount = Math.max(1, accountState?.member_count ?? accountState?.seats?.count ?? 1);
   const monthlyTotal = pricePerSeat * seatCount;
   const hasSeatMath = seatCount > 1;
+
+  // Only members with billing.write (account owners) can subscribe on the
+  // account's behalf. Members get a disabled CTA + explanation instead of a
+  // click that fails server-side. `undefined` (loading / older response) is
+  // treated as allowed so the CTA never flickers disabled for a real owner.
+  const canManageBilling = accountState?.can_manage_billing !== false;
 
   const handleSubscribe = () => {
     const origin = typeof window !== 'undefined' ? window.location.origin : '';
@@ -100,34 +110,54 @@ export function TeamPlanCheckout({
             <span className="font-medium tabular-nums">${monthlyTotal} / month</span>
           </div>
         )}
-        <Button
-          onClick={handleSubscribe}
-          disabled={createPerSeat.isPending}
-          size="lg"
-          className="group w-full"
-        >
-          {createPerSeat.isPending ? (
-            <>
-              <Loader2 className="size-4 animate-spin" />
-              Starting checkout…
-            </>
-          ) : (
-            <>
-              {hasSeatMath ? `Subscribe — $${monthlyTotal}/month` : 'Subscribe — $40 / user / month'}
-              <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-            </>
-          )}
-        </Button>
-        <p className="text-center text-xs text-muted-foreground">
-          Auto-prorated · cancel anytime · billed monthly
-        </p>
-        {createPerSeat.isError && (
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
-            <AlertDescription>
-              {(createPerSeat.error as Error)?.message ?? 'Could not start checkout.'}
-            </AlertDescription>
-          </Alert>
+        {canManageBilling ? (
+          <>
+            <Button
+              onClick={handleSubscribe}
+              disabled={createPerSeat.isPending}
+              size="lg"
+              className="group w-full"
+            >
+              {createPerSeat.isPending ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Starting checkout…
+                </>
+              ) : (
+                <>
+                  {hasSeatMath ? `Subscribe — $${monthlyTotal}/month` : 'Subscribe — $40 / user / month'}
+                  <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                </>
+              )}
+            </Button>
+            <p className="text-center text-xs text-muted-foreground">
+              Auto-prorated · cancel anytime · billed monthly
+            </p>
+            {createPerSeat.isError && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  {(createPerSeat.error as Error)?.message ?? 'Could not start checkout.'}
+                </AlertDescription>
+              </Alert>
+            )}
+          </>
+        ) : (
+          // Non-billing member: they can't pay for the team, so don't pitch a
+          // dead Subscribe button. Tell them who can — and that an owner
+          // subscribing activates their seat automatically.
+          <div className="flex items-start gap-3 rounded-xl border border-border/60 bg-background px-4 py-3.5">
+            <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground">
+              <UserPlus className="size-4" />
+            </span>
+            <div className="space-y-0.5">
+              <p className="text-sm font-medium text-foreground">Ask an account owner for a seat</p>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Only account owners can manage billing. Once an owner subscribes to Kortix Team,
+                your seat is activated automatically.
+              </p>
+            </div>
+          </div>
         )}
       </div>
     </section>

@@ -67,6 +67,7 @@ import { useReferralDialog } from '@/stores/referral-dialog';
 import { ReferralDialog } from '@/components/referrals/referral-dialog';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listAccounts } from '@/lib/projects-client';
+import { usePermission } from '@/lib/use-permission';
 
 export type UserMenuVariant = 'header' | 'sidebar';
 
@@ -117,6 +118,14 @@ export function UserMenu({
 
   const currentAccount =
     accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ?? null;
+
+  // Hide the Billing shortcut from users who can't manage billing (billing.write
+  // — owners + the billing_manager policy). Mirrors the AccountSwitcher gate so a
+  // non-billable member never reaches a billing tab they can't act on.
+  const canManageBilling = usePermission(
+    currentAccount?.account_id,
+    'billing.write',
+  ).allowed;
 
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
@@ -276,7 +285,7 @@ export function UserMenu({
           />
           {/* Billing — account-level surface. Jumps to /accounts/[id]?tab=billing.
               The AccountSwitcher in the header also routes here. */}
-          {isBillingEnabled() && (
+          {isBillingEnabled() && canManageBilling && (
             <ActionRow
               icon={<CreditCard className="size-3.5" />}
               label="Billing"
