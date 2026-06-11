@@ -6,7 +6,7 @@
  * - Main: Either SessionPage (active session) or DashboardHome (new chat input)
  */
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -552,6 +552,12 @@ export default function HomeScreen() {
   const { colorScheme, setColorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const router = useRouter();
+
+  // Tabs are remembered PER PROJECT; the sandbox home screen gets its own
+  // reserved scope so its tabs never bleed into (or out of) a project.
+  useLayoutEffect(() => {
+    useTabStore.getState().setScope('home');
+  }, []);
   const {
     sandboxUrl, sandboxId, isLoading: sandboxLoading, error: sandboxError,
     isProvisioning, provisioningSandboxId, provisioningExternalId, provisioningProvider, onProvisioningComplete,

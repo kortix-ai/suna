@@ -6,7 +6,7 @@
  * - Main: Either SessionPage (active session) or DashboardHome (new chat input)
  */
 
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useRef, useEffect, useLayoutEffect } from 'react';
 import {
   View,
   TouchableOpacity,
@@ -760,6 +760,13 @@ export default function ProjectSessionScreen() {
   // new API onto.
   const { id: projectId } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
+
+  // Tabs are remembered PER PROJECT: switch the tab store onto this project's
+  // scope before the first paint (the store snapshots the outgoing project and
+  // hydrates this one's saved tabs — empty for a never-visited project).
+  useLayoutEffect(() => {
+    if (projectId) useTabStore.getState().setScope(projectId);
+  }, [projectId]);
   const { width: windowWidth } = useWindowDimensions();
   const { colorScheme, setColorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';

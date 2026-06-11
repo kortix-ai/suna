@@ -60,6 +60,29 @@ export const PAGE_TABS: Record<string, PageTab> = {
 // Store
 // ---------------------------------------------------------------------------
 
+/** The per-scope (per-project) slice of tab state. */
+interface TabScopeSnapshot {
+  activeSessionId: string | null;
+  activePageId: string | null;
+  openTabIds: string[];
+  openPageIds: string[];
+  openTabOrder: string[];
+  sessionHistory: string[];
+  historyIndex: number;
+  tabStateById: Record<string, Record<string, unknown>>;
+}
+
+const emptyScope = (): TabScopeSnapshot => ({
+  activeSessionId: null,
+  activePageId: null,
+  openTabIds: [],
+  openPageIds: [],
+  openTabOrder: [],
+  sessionHistory: [],
+  historyIndex: -1,
+  tabStateById: {},
+});
+
 interface TabState {
   /** Currently active session/tab ID (null = dashboard or page tab) */
   activeSessionId: string | null;
@@ -79,6 +102,10 @@ interface TabState {
   showTabsOverview: boolean;
   /** Per-tab ephemeral UI state (scroll positions, view state, etc.) */
   tabStateById: Record<string, Record<string, unknown>>;
+  /** Which scope (project id, or 'home') the flat fields above belong to. */
+  scopeKey: string | null;
+  /** Saved tab state for every other scope, keyed by project id / 'home'. */
+  scopes: Record<string, TabScopeSnapshot>;
 
   navigateToSession: (sessionId: string | null) => void;
   navigateToPage: (pageId: string) => void;
@@ -89,6 +116,13 @@ interface TabState {
   setShowTabsOverview: (show: boolean) => void;
   setTabState: (tabId: string, patch: Record<string, unknown>) => void;
   clearTabState: (tabId: string) => void;
+  /**
+   * Switch the store to a project's tab scope: snapshots the current flat
+   * state under the old scope key and hydrates the flat state from the new
+   * scope (empty for a never-visited project). Tabs are remembered PER
+   * PROJECT, not globally. No-op when already on the scope.
+   */
+  setScope: (key: string) => void;
 }
 
 export const useTabStore = create<TabState>()(
@@ -103,6 +137,49 @@ export const useTabStore = create<TabState>()(
       historyIndex: -1,
       showTabsOverview: false,
       tabStateById: {},
+      scopeKey: null,
+      scopes: {},
+
+      setScope: (key) => {
+        const s = get();
+        if (s.scopeKey === key) return;
+
+        // Migration / first run: no scope owned the flat state yet — adopt it
+        // as this scope's state so pre-scoping tabs aren't lost.
+        if (!s.scopeKey) {
+          set({ scopeKey: key, showTabsOverview: false });
+          return;
+        }
+
+        // Snapshot the outgoing scope, hydrate the incoming one.
+        const scopes: Record<string, TabScopeSnapshot> = {
+          ...s.scopes,
+          [s.scopeKey]: {
+            activeSessionId: s.activeSessionId,
+            activePageId: s.activePageId,
+            openTabIds: s.openTabIds,
+            openPageIds: s.openPageIds,
+            openTabOrder: s.openTabOrder,
+            sessionHistory: s.sessionHistory,
+            historyIndex: s.historyIndex,
+            tabStateById: s.tabStateById,
+          },
+        };
+        const next = scopes[key] ?? emptyScope();
+        set({
+          scopeKey: key,
+          scopes,
+          activeSessionId: next.activeSessionId,
+          activePageId: next.activePageId,
+          openTabIds: next.openTabIds,
+          openPageIds: next.openPageIds,
+          openTabOrder: next.openTabOrder,
+          sessionHistory: next.sessionHistory,
+          historyIndex: next.historyIndex,
+          tabStateById: next.tabStateById,
+          showTabsOverview: false,
+        });
+      },
 
       navigateToSession: (sessionId) => {
         set((state) => {
@@ -350,6 +427,8 @@ export const useTabStore = create<TabState>()(
         sessionHistory: state.sessionHistory,
         historyIndex: state.historyIndex,
         tabStateById: state.tabStateById,
+        scopeKey: state.scopeKey,
+        scopes: state.scopes,
       }),
       // Guard rehydration against corrupted AsyncStorage data.
       // If any persisted field is missing or the wrong type, reset it to a safe default
@@ -370,6 +449,12 @@ export const useTabStore = create<TabState>()(
         if (state.activePageId !== null && typeof state.activePageId !== 'string') {
           state.activePageId = null;
         }
+        if (state.scopeKey != null && typeof state.scopeKey !== 'string') {
+          state.scopeKey = null;
+        }
+        state.scopes = state.scopes && typeof state.scopes === 'object' && !Array.isArray(state.scopes)
+          ? state.scopes
+          : {};
       },
     },
   ),
