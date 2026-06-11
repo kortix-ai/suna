@@ -173,7 +173,7 @@ function RepoAccessForm({ projectId, isDark }: { projectId: string; isDark: bool
           style={{ flex: 1, fontSize: 14, color: fg, fontFamily: 'Roobert', padding: 0 }}
         />
       </View>
-      <TouchableOpacity onPress={() => invite.mutate()} disabled={!canSubmit} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 44, borderRadius: 9999, backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}>
+      <TouchableOpacity onPress={() => { haptics.tap(); invite.mutate(); }} disabled={!canSubmit} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, height: 44, borderRadius: 9999, backgroundColor: theme.primary, opacity: canSubmit ? 1 : 0.5 }}>
         {invite.isPending ? <ActivityIndicator size="small" color={theme.primaryForeground} /> : <UserPlus size={14} color={theme.primaryForeground} />}
         <Text style={{ fontSize: 13.5, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Add me</Text>
       </TouchableOpacity>
@@ -249,7 +249,7 @@ export function DevPage({
           ) : isError ? (
             <View style={{ padding: 20, borderRadius: 14, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)', backgroundColor: 'rgba(239,68,68,0.05)', gap: 12 }}>
               <Text style={{ fontSize: 13.5, color: '#ef4444' }}>Couldn't load this project: {(error as Error)?.message}</Text>
-              <TouchableOpacity onPress={() => refetch()} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+              <TouchableOpacity onPress={() => { haptics.tap(); refetch(); }} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
                 <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
               </TouchableOpacity>
             </View>

@@ -143,7 +143,7 @@ export function GitTab({ account, can, isDark }: { account: AccountDetail; can: 
                       </TouchableOpacity>
                     )}
                     {canManage && id && (
-                      <TouchableOpacity onPress={() => confirmDisconnect(id, inst.owner_login)} disabled={disconnect.isPending} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}>
+                      <TouchableOpacity onPress={() => { haptics.tap(); confirmDisconnect(id, inst.owner_login); }} disabled={disconnect.isPending} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 12, height: 32, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}>
                         {disconnect.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Unplug size={13} color="#ef4444" />}
                         <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Disconnect</Text>
                       </TouchableOpacity>

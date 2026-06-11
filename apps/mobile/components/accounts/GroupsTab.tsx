@@ -76,7 +76,7 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, height: 44, borderRadius: 9999, borderWidth: 1, borderColor: c.inputBorder, backgroundColor: c.inputBg, paddingHorizontal: 16, marginBottom: 16 }}>
           <Search size={15} color={c.muted} />
           <TextInput value={search} onChangeText={setSearch} placeholder="Search by name…" placeholderTextColor={c.muted} autoCapitalize="none" autoCorrect={false} style={{ flex: 1, fontSize: 14, color: c.fg, fontFamily: 'Roobert', padding: 0 }} />
-          {search.length > 0 && <TouchableOpacity onPress={() => setSearch('')} hitSlop={8}><X size={15} color={c.muted} /></TouchableOpacity>}
+          {search.length > 0 && <TouchableOpacity onPress={() => { haptics.tap(); setSearch(''); }} hitSlop={8}><X size={15} color={c.muted} /></TouchableOpacity>}
         </View>
 
         {query.isLoading ? (
@@ -84,7 +84,7 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
         ) : query.isError ? (
           <View style={{ paddingVertical: 20, gap: 10 }}>
             <Text style={{ fontSize: 13.5, color: '#ef4444' }}>{(query.error as Error)?.message || 'Failed to load groups'}</Text>
-            <TouchableOpacity onPress={() => query.refetch()} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => { haptics.tap(); query.refetch(); }} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
           </View>
         ) : filtered.length === 0 ? (
           <View style={{ alignItems: 'center', paddingVertical: 36, gap: 10 }}>
@@ -108,7 +108,7 @@ export function GroupsTab({ account, can, isDark }: { account: AccountDetail; ca
                   </Text>
                 </View>
                 {canCreate && (busyId === g.group_id ? <ActivityIndicator size="small" color={c.muted} /> : (
-                  <TouchableOpacity onPress={() => confirmDelete(g.group_id, g.name)} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} color="#ef4444" /></TouchableOpacity>
+                  <TouchableOpacity onPress={() => { haptics.tap(); confirmDelete(g.group_id, g.name); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} color="#ef4444" /></TouchableOpacity>
                 ))}
                 <ChevronRight size={16} color={c.muted} />
               </TouchableOpacity>
@@ -161,7 +161,7 @@ function CreateGroupSheet({ accountId, onCreated, onClose, isDark }: { accountId
         <SheetTextInput value={description} onChangeText={setDescription} placeholder="Engineers shipping the platform" />
       </BottomSheetScrollView>
       <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
-        <PrimaryButton label="Create group" onPress={() => create.mutate()} disabled={!name.trim() || create.isPending} pending={create.isPending} />
+        <PrimaryButton label="Create group" onPress={() => { haptics.tap(); create.mutate(); }} disabled={!name.trim() || create.isPending} pending={create.isPending} />
       </View>
     </View>
   );

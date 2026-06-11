@@ -109,11 +109,11 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
       <View style={{ borderBottomWidth: 1, borderBottomColor: c.border }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 4 }}>
           <Text style={{ flex: 1, fontSize: 11, fontFamily: 'Roobert-Medium', color: c.muted, textTransform: 'uppercase', letterSpacing: 0.5 }}>Audit log</Text>
-          <TouchableOpacity onPress={() => exporting ? null : Alert.alert('Export audit log', 'Choose a format', [
+          <TouchableOpacity onPress={() => { if (exporting) return; haptics.tap(); Alert.alert('Export audit log', 'Choose a format', [
             { text: 'CSV', onPress: () => exportEvents('csv') },
             { text: 'JSONL', onPress: () => exportEvents('jsonl') },
             { text: 'Cancel', style: 'cancel' },
-          ])} disabled={exporting} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, height: 30, borderRadius: 9999, borderWidth: 1, borderColor: c.border }}>
+          ]); }} disabled={exporting} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, height: 30, borderRadius: 9999, borderWidth: 1, borderColor: c.border }}>
             {exporting ? <ActivityIndicator size="small" color={c.muted} /> : <Download size={13} color={c.muted} />}
             <Text style={{ fontSize: 12.5, fontFamily: 'Roobert-Medium', color: c.fg }}>Export</Text>
           </TouchableOpacity>
@@ -141,7 +141,7 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
         ) : query.isError ? (
           <View style={{ padding: 20, gap: 10 }}>
             <Text style={{ fontSize: 13.5, color: '#ef4444' }}>{(query.error as Error)?.message || 'Failed to load audit events'}</Text>
-            <TouchableOpacity onPress={() => query.refetch()} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => { haptics.tap(); query.refetch(); }} style={{ alignSelf: 'flex-start', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
           </View>
         ) : events.length === 0 ? (
           <View style={{ paddingVertical: 48, alignItems: 'center', gap: 4 }}>
@@ -155,7 +155,7 @@ export function AuditTab({ account, isDark }: { account: AccountDetail; isDark: 
             ))}
             {query.hasNextPage && (
               <View style={{ alignItems: 'center', paddingVertical: 14 }}>
-                <TouchableOpacity onPress={() => query.fetchNextPage()} disabled={query.isFetchingNextPage} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: c.border }}>
+                <TouchableOpacity onPress={() => { haptics.tap(); query.fetchNextPage(); }} disabled={query.isFetchingNextPage} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 16, height: 36, borderRadius: 9999, borderWidth: 1, borderColor: c.border }}>
                   {query.isFetchingNextPage && <ActivityIndicator size="small" color={c.muted} />}
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Load more</Text>
                 </TouchableOpacity>
@@ -181,7 +181,7 @@ function AuditRow({ event, actorEmail, isSelf, isDark, border }: { event: AuditE
 
   return (
     <View style={{ borderBottomWidth: 1, borderBottomColor: border }}>
-      <TouchableOpacity onPress={() => canExpand && setExpanded((v) => !v)} disabled={!canExpand} activeOpacity={canExpand ? 0.6 : 1} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 16, paddingVertical: 12 }}>
+      <TouchableOpacity onPress={() => { if (canExpand) { haptics.selection(); setExpanded((v) => !v); } }} disabled={!canExpand} activeOpacity={canExpand ? 0.6 : 1} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8, paddingHorizontal: 16, paddingVertical: 12 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
             <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: KIND_DOT_COLOR[human.kind] }} />

@@ -337,7 +337,7 @@ export function AgentsPage({
                 <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
                   {(error as Error)?.message ?? 'Failed to load agents'}
                 </Text>
-                <TouchableOpacity onPress={() => refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+                <TouchableOpacity onPress={() => { haptics.tap(); refetch(); }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
                 </TouchableOpacity>
               </View>
@@ -348,7 +348,7 @@ export function AgentsPage({
                 </Text>
                 {agents.length === 0 && (
                   <TouchableOpacity
-                    onPress={() => onConfigure(newConfigPrompt('agent'))}
+                    onPress={() => { haptics.tap(); onConfigure(newConfigPrompt('agent')); }}
                     activeOpacity={0.7}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: border }}
                   >

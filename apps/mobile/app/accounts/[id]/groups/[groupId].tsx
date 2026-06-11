@@ -129,7 +129,7 @@ export default function GroupDetailScreen() {
       ) : groupQuery.isError ? (
         <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
           <Text style={{ fontSize: 14, color: '#ef4444', textAlign: 'center' }}>{(groupQuery.error as Error)?.message || 'Failed to load group'}</Text>
-          <TouchableOpacity onPress={() => groupQuery.refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => { haptics.tap(); groupQuery.refetch(); }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: c.border }}><Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: c.fg }}>Retry</Text></TouchableOpacity>
         </View>
       ) : (
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 6, paddingBottom: insets.bottom + 48 }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -141,7 +141,7 @@ export default function GroupDetailScreen() {
           <TextInput value={description} onChangeText={setDescription} maxLength={256} placeholder="Optional" placeholderTextColor={c.muted} style={input} />
           <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 14 }}>
             <Text style={{ flex: 1, fontSize: 11.5, color: c.muted }}>Created {formatDate(group?.created_at)}</Text>
-            <TouchableOpacity onPress={() => dirty && update.mutate()} disabled={!dirty || update.isPending} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, height: 40, borderRadius: 9999, backgroundColor: theme.primary, opacity: dirty && !update.isPending ? 1 : 0.5 }}>
+            <TouchableOpacity onPress={() => { if (dirty) { haptics.tap(); update.mutate(); } }} disabled={!dirty || update.isPending} activeOpacity={0.85} style={{ flexDirection: 'row', alignItems: 'center', gap: 7, paddingHorizontal: 18, height: 40, borderRadius: 9999, backgroundColor: theme.primary, opacity: dirty && !update.isPending ? 1 : 0.5 }}>
               {update.isPending && <ActivityIndicator size="small" color={theme.primaryForeground} />}
               <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: theme.primaryForeground }}>Save</Text>
             </TouchableOpacity>
@@ -169,7 +169,7 @@ export default function GroupDetailScreen() {
               <View key={m.user_id} style={{ flexDirection: 'row', alignItems: 'center', gap: 11, paddingVertical: 11, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: c.border }}>
                 <InitialsAvatar label={emailByUserId.get(m.user_id) ?? m.user_id} isDark={isDark} size={32} />
                 <Text style={{ flex: 1, fontSize: 13.5, fontFamily: 'Roobert-Medium', color: c.fg }} numberOfLines={1}>{emailByUserId.get(m.user_id) ?? m.user_id}</Text>
-                <TouchableOpacity onPress={() => confirmRemove(m.user_id)} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} color="#ef4444" /></TouchableOpacity>
+                <TouchableOpacity onPress={() => { haptics.tap(); confirmRemove(m.user_id); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><Trash2 size={14} color="#ef4444" /></TouchableOpacity>
               </View>
             ))}
           </View>
@@ -195,7 +195,7 @@ export default function GroupDetailScreen() {
                   <Text style={{ fontSize: 11, color: c.muted, marginTop: 1 }}>Attached {formatDate(g.created_at)}</Text>
                 </View>
                 <Pill label={g.role.charAt(0).toUpperCase() + g.role.slice(1)} isDark={isDark} />
-                <TouchableOpacity onPress={() => confirmDetach(g.project_id, g.project_name)} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><X size={15} color="#ef4444" /></TouchableOpacity>
+                <TouchableOpacity onPress={() => { haptics.tap(); confirmDetach(g.project_id, g.project_name); }} hitSlop={8} style={{ width: 32, height: 32, borderRadius: 9999, alignItems: 'center', justifyContent: 'center' }}><X size={15} color="#ef4444" /></TouchableOpacity>
               </View>
             ))}
           </View>
@@ -203,7 +203,7 @@ export default function GroupDetailScreen() {
           <View style={divider} />
 
           {/* ── Danger ── */}
-          <TouchableOpacity onPress={confirmDelete} disabled={del.isPending} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}>
+          <TouchableOpacity onPress={() => { haptics.tap(); confirmDelete(); }} disabled={del.isPending} activeOpacity={0.7} style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, height: 46, borderRadius: 9999, borderWidth: 1, borderColor: 'rgba(239,68,68,0.4)' }}>
             {del.isPending ? <ActivityIndicator size="small" color="#ef4444" /> : <Trash2 size={15} color="#ef4444" />}
             <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: '#ef4444' }}>Delete group</Text>
           </TouchableOpacity>
@@ -268,7 +268,7 @@ function AddMembersSheet({ candidates, onAdd, onClose, isDark }: { candidates: {
       </BottomSheetScrollView>
       {candidates.length > 0 && (
         <View style={{ padding: 16, paddingBottom: insets.bottom + 16, borderTopWidth: 1, borderTopColor: c.border }}>
-          <PrimaryButton label={selected.size > 0 ? `Add ${selected.size}` : 'Add'} onPress={() => { setBusy(true); onAdd([...selected]); }} disabled={selected.size === 0 || busy} pending={busy} />
+          <PrimaryButton label={selected.size > 0 ? `Add ${selected.size}` : 'Add'} onPress={() => { haptics.tap(); setBusy(true); onAdd([...selected]); }} disabled={selected.size === 0 || busy} pending={busy} />
         </View>
       )}
     </View>

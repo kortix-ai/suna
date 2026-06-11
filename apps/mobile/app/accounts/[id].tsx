@@ -129,7 +129,7 @@ export default function AccountSettingsScreen() {
         accountQuery.isError ? (
           <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
             <Text style={{ fontSize: 14, color: '#ef4444', textAlign: 'center' }}>{(accountQuery.error as Error)?.message || 'Failed to load account'}</Text>
-            <TouchableOpacity onPress={() => accountQuery.refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+            <TouchableOpacity onPress={() => { haptics.tap(); accountQuery.refetch(); }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
               <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
             </TouchableOpacity>
           </View>

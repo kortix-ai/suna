@@ -292,7 +292,7 @@ export function SkillsPage({
                 <Text style={{ fontSize: 14, color: muted, textAlign: 'center' }}>
                   {(error as Error)?.message ?? 'Failed to load skills'}
                 </Text>
-                <TouchableOpacity onPress={() => refetch()} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
+                <TouchableOpacity onPress={() => { haptics.tap(); refetch(); }} style={{ paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: border }}>
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>Retry</Text>
                 </TouchableOpacity>
               </View>
@@ -303,7 +303,7 @@ export function SkillsPage({
                 </Text>
                 {skills.length === 0 && (
                   <TouchableOpacity
-                    onPress={() => onConfigure(newConfigPrompt('skill'))}
+                    onPress={() => { haptics.tap(); onConfigure(newConfigPrompt('skill')); }}
                     activeOpacity={0.7}
                     style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 999, borderWidth: 1, borderColor: border }}
                   >
