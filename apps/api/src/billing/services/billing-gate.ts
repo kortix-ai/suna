@@ -74,6 +74,9 @@ export async function assertBillingActive(accountId: string): Promise<void> {
         error: result.message,
         code: result.reason,
         balance: result.balance,
+        // The blocked account — so the upgrade dialog scopes to it instead of
+        // the caller's primary account (see web error-handler → openUpgradeDialog).
+        account_id: accountId,
       }),
       { status: 402, headers: { 'content-type': 'application/json' } },
     ),
