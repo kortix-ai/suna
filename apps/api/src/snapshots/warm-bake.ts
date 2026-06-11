@@ -140,9 +140,41 @@ function stageBuildContext(): { tarball: string; cleanup: () => void } {
 }
 
 /**
- * Bake a full-runtime warm snapshot named `name`. Boots a throwaway builder off
- * the stock base snapshot, installs the Kortix runtime + uploads the binaries,
- * snapshots the live box, then removes the builder.
+ * Pick the snapshot the BUILDER box boots from, preferring one that is actually
+ * bootable in the warm region. Daytona's experimental region can only reliably
+ * boot snapshots CREATED in it (stock/shared snapshots intermittently fail with
+ * "Region not found" despite their region metadata) — so each bake self-hosts:
+ * it boots the PREVIOUS warm base (always region-local, newest first), refreshes
+ * the runtime on top, and snapshots under the new name. The configured stock
+ * base is only the genesis fallback for a brand-new org/region.
+ */
+async function resolveBuilderBaseSnapshot(onLog?: (l: string) => void): Promise<string> {
+  try {
+    const { listDaytonaSnapshots } = await import('../shared/daytona');
+    const warmRegion = config.DAYTONA_WARM_TARGET;
+    const candidates = (await listDaytonaSnapshots())
+      .filter(
+        (s) =>
+          s.name.startsWith(WARM_BASE_PREFIX) &&
+          s.state === 'active' &&
+          s.regionIds.includes(warmRegion),
+      )
+      .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+    if (candidates.length > 0) {
+      onLog?.(`[warm-bake] builder base: previous warm base ${candidates[0].name} (region-local)`);
+      return candidates[0].name;
+    }
+  } catch (err) {
+    onLog?.(`[warm-bake] builder-base lookup failed, using stock base: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return config.DAYTONA_WARM_BASE_SNAPSHOT;
+}
+
+/**
+ * Bake a full-runtime warm snapshot named `name`. Boots a throwaway builder
+ * (previous warm base if available, else the stock base), installs/refreshes
+ * the Kortix runtime + uploads the binaries, snapshots the live box, then
+ * removes the builder.
  */
 export async function bakeWarmSnapshot(opts: {
   name: string;
@@ -152,23 +184,82 @@ export async function bakeWarmSnapshot(opts: {
   if (!warmSnapshotsEnabled()) {
     throw new WarmBakeError('warm snapshots are not enabled (KORTIX_WARM_SNAPSHOT_ENABLED / DAYTONA_WARM_TARGET)');
   }
-  const baseSnapshot = opts.baseSnapshot || config.DAYTONA_WARM_BASE_SNAPSHOT;
-  const daytona = getDaytonaWarm();
   const onLog = opts.onLog;
+  const baseSnapshot = opts.baseSnapshot || (await resolveBuilderBaseSnapshot(onLog));
+  const daytona = getDaytonaWarm();
 
   const { tarball, cleanup } = stageBuildContext();
   onLog?.(`[warm-bake] staged build context (${(statSync(tarball).size / 1048576).toFixed(1)} MB)`);
 
   onLog?.(`[warm-bake] booting builder from ${baseSnapshot} on target "${config.DAYTONA_WARM_TARGET}"`);
-  const sb = await daytona.create({ snapshot: baseSnapshot }, { timeout: CREATE_TIMEOUT_S });
+  // The experimental region's create is flaky ("failed to start: internal
+  // error", dropped filesystems). The bake is a background job, so just retry;
+  // a builder that lost the base filesystem is still fine — every install step
+  // below recreates the runtime from scratch.
+  // ~half of experimental-region creates currently fail with "internal error";
+  // 6 tries puts a full streak of bad luck under 2%. Background job — patience
+  // is free.
+  const BUILDER_ATTEMPTS = 6;
+  let sb: Awaited<ReturnType<typeof daytona.create>> | null = null;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= BUILDER_ATTEMPTS && !sb; attempt++) {
+    let box: Awaited<ReturnType<typeof daytona.create>> | null = null;
+    try {
+      box = await daytona.create({ snapshot: baseSnapshot }, { timeout: CREATE_TIMEOUT_S });
+      // Health-gate the box before committing to a multi-minute bake: a flaky
+      // restore can come up with broken egress (npm/apt then hang for minutes).
+      // Cheap probe: outbound HTTPS to the npm registry must answer.
+      const probe = await box.process.executeCommand(
+        `curl -s -o /dev/null -m 8 -w '%{http_code}' https://registry.npmjs.org/ || echo 000`,
+        undefined,
+        undefined,
+        20,
+      );
+      if (!(probe.result ?? '').includes('200')) {
+        throw new Error(`builder egress unhealthy (npm registry probe: ${(probe.result ?? '').trim() || 'no response'})`);
+      }
+      sb = box;
+    } catch (err) {
+      lastErr = err;
+      onLog?.(
+        `[warm-bake] builder attempt ${attempt}/${BUILDER_ATTEMPTS} failed: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+      if (box) await box.delete().catch(() => {});
+      await new Promise((r) => setTimeout(r, 2_000 * attempt));
+    }
+  }
+  if (!sb) {
+    throw new WarmBakeError(
+      `builder create failed after ${BUILDER_ATTEMPTS} attempts: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+      lastErr,
+    );
+  }
 
   try {
     const bakeStart = Date.now();
 
+    // Restored boxes intermittently come up with broken IPv6 routing: tiny
+    // requests pass (curl happy-eyeballs falls back to v4) but Node/npm
+    // downloads hang for minutes on v6. Prefer IPv4 system-wide before any
+    // network-touching step.
+    await step(sb, 'prefer ipv4',
+      `grep -q '^precedence ::ffff:0:0/96 100' /etc/gai.conf 2>/dev/null || ` +
+        `echo 'precedence ::ffff:0:0/96 100' | sudo tee -a /etc/gai.conf >/dev/null; echo ok`,
+      30, onLog);
+
+    // Every install below is SKIPPED when its pin is already satisfied — the
+    // self-hosted builder (previous warm base) usually has identical pins, so
+    // the common rebake (only the kortix binaries changed) touches the network
+    // as little as possible.
     await step(sb, 'apt runtime deps',
-      `sudo apt-get update -o Acquire::Retries=2 >/tmp/apt.log 2>&1 && ` +
-        `sudo apt-get install -y --no-install-recommends ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping >>/tmp/apt.log 2>&1; ` +
-        `node -v; npm -v`,
+      `if command -v node >/dev/null && command -v git >/dev/null && command -v tmux >/dev/null && command -v ip >/dev/null && command -v arping >/dev/null; then
+  echo "skip (already installed)"; node -v; npm -v
+else
+  sudo apt-get update -o Acquire::Retries=2 >/tmp/apt.log 2>&1
+  sudo apt-get install -y --no-install-recommends ca-certificates curl git gzip nodejs npm unzip tmux iproute2 iputils-arping >>/tmp/apt.log 2>&1
+  node -v; npm -v
+fi`,
       600, onLog);
 
     await step(sb, 'runtime dirs',
@@ -176,8 +267,13 @@ export async function bakeWarmSnapshot(opts: {
         `sudo chown -R daytona:daytona /opt/kortix /workspace /ephemeral && echo ok`,
       60, onLog);
 
-    await step(sb, `npm i -g opencode@${OPENCODE_VERSION}`,
-      `sudo npm install -g --no-audit --no-fund opencode-ai@${OPENCODE_VERSION} >/tmp/oc-install.log 2>&1; command -v opencode && opencode --version`,
+    await step(sb, `opencode@${OPENCODE_VERSION}`,
+      `if [ "$(opencode --version 2>/dev/null)" = "${OPENCODE_VERSION}" ]; then
+  echo "skip (pin satisfied)"; opencode --version
+else
+  sudo npm install -g --no-audit --no-fund opencode-ai@${OPENCODE_VERSION} >/tmp/oc-install.log 2>&1
+  command -v opencode && opencode --version
+fi`,
       600, onLog);
 
     await step(sb, 'opencode migration bake',
@@ -191,14 +287,25 @@ sleep 2; kill $pid 2>/dev/null; sleep 1; tail -2 /tmp/oc-bake.log`,
 
     await step(sb, 'bun + agent-browser',
       `${XDG_EXPORTS}
-curl -fsSL https://bun.com/install | bash >/tmp/bun.log 2>&1
-sudo install -m 755 ${RUNTIME_HOME}/.bun/bin/bun /usr/local/bin/bun 2>/dev/null || sudo install -m 755 "$HOME/.bun/bin/bun" /usr/local/bin/bun
+if ! command -v bun >/dev/null; then
+  curl -fsSL https://bun.com/install | bash >/tmp/bun.log 2>&1
+  sudo install -m 755 ${RUNTIME_HOME}/.bun/bin/bun /usr/local/bin/bun 2>/dev/null || sudo install -m 755 "$HOME/.bun/bin/bun" /usr/local/bin/bun
+fi
 bun --version
 mkdir -p /opt/kortix/home/.bun/install/cache /opt/kortix/opencode-config-deps
 cd /opt/kortix/opencode-config-deps
-printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > package.json
-HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install >/tmp/cfgdeps.log 2>&1
-sudo npm install -g --no-audit --no-fund agent-browser@${AGENT_BROWSER_VERSION} >/tmp/ab.log 2>&1
+deps='{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}'
+if [ "$(cat package.json 2>/dev/null)" = "$deps" ] && [ -d node_modules ]; then
+  echo "config-deps: skip (unchanged)"
+else
+  printf '%s' "$deps" > package.json
+  HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install >/tmp/cfgdeps.log 2>&1
+fi
+if [ "$(agent-browser --version 2>/dev/null | grep -oE '[0-9.]+$')" = "${AGENT_BROWSER_VERSION}" ]; then
+  echo "agent-browser: skip (pin satisfied)"
+else
+  sudo npm install -g --no-audit --no-fund agent-browser@${AGENT_BROWSER_VERSION} >/tmp/ab.log 2>&1
+fi
 agent-browser --version`,
       600, onLog);
 
@@ -211,6 +318,10 @@ agent-browser --version`,
     await step(sb, 'install kortix runtime',
       `set -e
 mkdir -p /tmp/ctx && tar xzf /tmp/kortix-ctx.tar.gz -C /tmp/ctx
+# The builder may be a PREVIOUS warm base (self-hosted bake) — clear the source
+# trees first so files removed upstream don't linger (a stale agent-cli script
+# would get re-linked as a shim by install-shims.sh).
+sudo rm -rf /opt/kortix/apps/sandbox/agent-cli /opt/kortix/packages/executor-sdk
 # sudo + '>' redirect would run the redirect as the non-root shell (denied);
 # pipe into 'sudo tee' so the privileged write lands in /usr/local/bin.
 gunzip -c /tmp/ctx/kortix-agent.gz | sudo tee /usr/local/bin/kortix-agent >/dev/null
