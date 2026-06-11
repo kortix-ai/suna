@@ -37,7 +37,9 @@ load_local_env() {
   export ENV_MODE=local
   # `local_docker` was removed when we consolidated on cloud — listing it here
   # only made the API log "Unknown sandbox provider" twice on every boot.
-  export ALLOWED_SANDBOX_PROVIDERS="daytona"
+  # Default only — the shared .env (decrypted above) or a personal .env.local
+  # (below) decides the real provider order (e.g. "platinum,daytona").
+  export ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-daytona}"
   # KORTIX_URL is resolved by ensure_dev_tunnel() below. Cloud (Daytona)
   # sandboxes call BACK to it (LLM router, web search, RPC) and cannot reach
   # this machine's localhost — so they need a public tunnel URL. The dashboard
@@ -46,6 +48,17 @@ load_local_env() {
   export NEXT_PUBLIC_BACKEND_URL="http://localhost:8008/v1"
   export KORTIX_PUBLIC_BACKEND_URL="http://localhost:8008/v1"
   export BACKEND_URL="http://localhost:8008/v1"
+
+  # Personal per-machine overrides — sourced LAST so they beat both the shared
+  # encrypted env and the defaults above. Gitignored plaintext KEY=VALUE files
+  # (no spaces in unquoted values). This is where billing-off, provider order,
+  # DOCKER_HOST, etc. live for YOUR machine — never in the committed .env.
+  for _f in apps/api/.env.local apps/web/.env.local; do
+    if [[ -f "$ROOT_DIR/$_f" ]]; then
+      set -a; source "$ROOT_DIR/$_f"; set +a
+      echo "[dev] personal overrides loaded from $_f"
+    fi
+  done
 }
 
 # Front the local API with a public Cloudflare quick tunnel so cloud Daytona
@@ -64,7 +77,7 @@ ensure_dev_tunnel() {
 
   # Local-docker sandboxes run on this machine — no public callback needed.
   # Honor an explicit opt-out too.
-  if [[ "${KORTIX_DEV_TUNNEL:-auto}" == "0" || "$default_provider" != "daytona" ]]; then
+  if [[ "${KORTIX_DEV_TUNNEL:-auto}" == "0" || ( "$default_provider" != "daytona" && "$default_provider" != "platinum" ) ]]; then
     export KORTIX_URL="$api_origin"
     echo "[dev] Tunnel skipped — KORTIX_URL=$KORTIX_URL"
     if [[ "$default_provider" == "daytona" ]]; then

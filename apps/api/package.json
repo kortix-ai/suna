@@ -5,7 +5,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "dotenvx run -f .env -- bun run --hot src/index.ts",
+    "dev": "dotenvx run --ignore=MISSING_ENV_FILE -f .env.local -f .env -- bun run --hot src/index.ts",
     "dev:dev-env": "dotenvx run -f .env.dev -- bun run --hot src/index.ts",
     "dev:prod-env": "dotenvx run -f .env.prod -- bun run --hot src/index.ts",
     "dev:envfile": "bun --env-file=.env.local run --hot src/index.ts",
