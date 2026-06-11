@@ -38,10 +38,18 @@ function serialize(row: Row | null) {
 }
 
 async function countSunaProjects(accountId: string): Promise<number> {
-  const rows = (await db.execute(
-    sql`SELECT count(*)::int AS n FROM public.projects WHERE account_id = ${accountId}`,
-  )) as unknown as Array<{ n: number }>;
-  return rows[0]?.n ?? 0;
+  // The legacy Suna schema (public.projects) only exists on deployments that
+  // ever ran Suna. Locally / on fresh installs the relation is missing and
+  // this raw query 500'd the eligibility endpoint on every dashboard load —
+  // no Suna schema simply means nothing to migrate.
+  try {
+    const rows = (await db.execute(
+      sql`SELECT count(*)::int AS n FROM public.projects WHERE account_id = ${accountId}`,
+    )) as unknown as Array<{ n: number }>;
+    return rows[0]?.n ?? 0;
+  } catch {
+    return 0;
+  }
 }
 
 export function registerSunaMigrationRoutes(app: OpenAPIHono<AppEnv>): void {
