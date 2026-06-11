@@ -143,9 +143,9 @@ describe('handleCall — denials', () => {
 });
 
 describe('handleCall — upstream + errors', () => {
-  test('non-2xx upstream → error', async () => {
+  test('non-2xx upstream → error with the body excerpt (agent sees the real cause)', async () => {
     const { deps } = makeDeps({ fetchStatus: 402, fetchBody: '{"error":"declined"}' });
-    expect(await handleCall(deps, baseInput)).toEqual({ status: 'error', reason: 'upstream_402' });
+    expect(await handleCall(deps, baseInput)).toEqual({ status: 'error', reason: 'upstream_402: {"error":"declined"}' });
   });
 
   test('thrown execution error is caught + audited', async () => {

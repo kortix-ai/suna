@@ -21,6 +21,7 @@ import {
 } from './policy';
 import { isSecretUsableBy, type SecretGrant, type ShareScope, type ShareSubject } from './share';
 import { executeCall, paramHintsFromSchema, type ExecResult, type ExecutorAuth, type FetchImpl } from './execute';
+import { logger } from '../lib/logger';
 import type { ActionBinding, Risk } from './types';
 
 export interface GatewayConnector {
@@ -231,18 +232,53 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         fetchImpl: deps.fetchImpl,
       });
     }
-    await audit(deps, input, connector.connectorId, result.ok ? 'ok' : 'error', action.risk, {
+    if (result.ok) {
+      await audit(deps, input, connector.connectorId, 'ok', action.risk, { http_status: result.status });
+      return { status: 'ok', data: result.data, risk: action.risk };
+    }
+    const reason = upstreamReason(result) + fallbackHint(connector, action.binding);
+    await audit(deps, input, connector.connectorId, 'error', action.risk, {
       http_status: result.status,
+      reason: reason.slice(0, 500),
     });
-    return result.ok
-      ? { status: 'ok', data: result.data, risk: action.risk }
-      // Surface a string error body (e.g. a Pipedream action error message) so the
-      // agent sees the real cause; fall back to the status code for structured bodies.
-      : { status: 'error', reason: typeof result.data === 'string' && result.data ? result.data : `upstream_${result.status}` };
+    logger.warn(`[executor] ${fullPath} failed (upstream ${result.status}): ${reason.slice(0, 500)}`);
+    return { status: 'error', reason };
   } catch (e) {
-    await audit(deps, input, connector.connectorId, 'error', action.risk, { reason: (e as Error).message });
-    return { status: 'error', reason: (e as Error).message };
+    const reason = (e as Error).message + fallbackHint(connector, action.binding);
+    await audit(deps, input, connector.connectorId, 'error', action.risk, { reason: reason.slice(0, 500) });
+    logger.warn(`[executor] ${fullPath} threw: ${reason.slice(0, 500)}`);
+    return { status: 'error', reason };
   }
+}
+
+/**
+ * Surface the real upstream cause to the agent: string bodies verbatim (e.g. a
+ * Pipedream component error message), structured bodies as a status-prefixed
+ * JSON excerpt — never a bare opaque status code.
+ */
+function upstreamReason(result: ExecResult): string {
+  if (typeof result.data === 'string' && result.data) return result.data;
+  if (result.data != null) {
+    try {
+      const body = JSON.stringify(result.data);
+      if (body && body !== '{}' && body !== 'null' && body !== '[]') {
+        return `upstream_${result.status}: ${body.slice(0, 2000)}`;
+      }
+    } catch { /* unserializable body — fall through to the bare status */ }
+  }
+  return `upstream_${result.status}`;
+}
+
+/**
+ * Pipedream component runs can fail inside Pipedream's runtime even when the
+ * connection is healthy (e.g. components that read $auth fields Connect never
+ * hydrates). Every pipedream connector also exposes the proxy-backed `request`
+ * tool, which talks straight to the app's API — point the agent at it so one
+ * broken component doesn't dead-end the whole connector.
+ */
+function fallbackHint(connector: GatewayConnector, binding: ActionBinding): string {
+  if (connector.provider !== 'pipedream' || binding.kind !== 'pipedream') return '';
+  return ` — fallback: the \`${connector.slug}.request\` tool calls the app's API directly and is unaffected by component failures`;
 }
 
 async function audit(

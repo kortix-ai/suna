@@ -1,13 +1,8 @@
-Mobile app v2 (account management, files, terminal) + team billing fixes
+Connector actions fixed across apps
 
-## Mobile app v2
-Full account-management parity with web: members, invites, groups, roles, audit log (filters, diffs, CSV/JSONL export), tokens (PATs + service accounts), security (MFA, session controls), observability webhooks, and Git installations — all native. Plus a rebuilt Files page (create/edit/save, classic UI), Terminal + Browser side-panel tabs with a real ANSI PTY renderer, session menu parity (rename/share/delete/restart), per-project tab memory, offline boot fixes, and a broad visual polish pass (borderless lists, bottom sheets, skeleton loaders, haptics).
+### Fixed
+- **Named connector actions work again across apps** (Salesforce, Google Drive, Box, OneDrive, WhatsApp Business, and more). Tool calls were failing with an opaque "HTTP 502" because the connected account was attached under the wrong property name for many apps, so actions ran without their credentials. The binding is now resolved from each action's own definition — existing connectors work immediately, no reconnect needed.
 
-## Team billing fixes
-- Upgrade/subscribe flow is now scoped to the project's account, not the viewer's primary account (fixes per-seat checkout charging the wrong account)
-- Checkout/subscribe gated behind billing.write; Billing shortcut hidden for non-billable users
-- Subscribe modal shows the live projected seat total
-- Newly-joined invitees land on /projects instead of account settings
-
-## Web
-- Delete-session dialog clarifies the branch is preserved
+### Improved
+- When a connector call fails, the agent now sees the real cause — the upstream status and error message instead of a bare 502 — plus a pointer to the connector's raw `request` tool as a fallback. (Error responses moved from HTTP 502 to 500 so the message survives the proxy layer.)
+- Connector call failures are now recorded with their reason, making them diagnosable in one step.
