@@ -12,6 +12,7 @@ import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
 import { ToastProvider } from '@/components/ui/toast-provider';
+import { OfflineBanner } from '@/components/ui/OfflineBanner';
 import { useFonts } from 'expo-font';
 import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
 import { StatusBar, setStatusBarStyle } from 'expo-status-bar';
@@ -28,6 +29,7 @@ import * as Updates from 'expo-updates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { log } from '@/lib/logger';
 import { useAppearanceStore } from '@/stores/appearance-store';
+import { useThemeStore } from '@/stores/theme-store';
 import { installHapticsGate } from '@/lib/haptics';
 import { consumeAuthCallbackState } from '@/lib/auth/callback-state';
 
@@ -76,10 +78,22 @@ export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts(ROOBERT_FONTS);
 
   useEffect(() => {
-    initializeI18n().then(() => {
-      log.log('✅ i18n initialized in RootLayout');
+    let settled = false;
+    const markReady = () => {
+      if (settled) return;
+      settled = true;
       setI18nInitialized(true);
-    });
+    };
+    // Never let i18n bootstrap block the whole app. It uses locally-bundled
+    // translation resources, so even if the (network-touching) locale lookup
+    // hangs or rejects — e.g. the device is offline — we still boot. The hard
+    // cap guarantees the splash never sticks on a blank screen.
+    initializeI18n()
+      .then(() => log.log('✅ i18n initialized in RootLayout'))
+      .catch((err) => log.error('❌ i18n init failed; booting with defaults:', err))
+      .finally(markReady);
+    const cap = setTimeout(markReady, 4000);
+    return () => clearTimeout(cap);
   }, []);
 
   const themeLoadedRef = useRef(false);
@@ -110,6 +124,9 @@ export default function RootLayout() {
     };
 
     loadSavedTheme();
+    // Hydrate the theme store from the same key so its consumers (e.g. the
+    // account menu's theme pills) show the persisted preference, not the default.
+    void useThemeStore.getState().initialize();
 
     return () => {
       isMounted = false;
@@ -584,6 +601,12 @@ export default function RootLayout() {
                                       }}
                                     />
                                     <Stack.Screen
+                                      name="projects"
+                                      options={{
+                                        gestureEnabled: false,
+                                      }}
+                                    />
+                                    <Stack.Screen
                                       name="auth"
                                       options={{
                                         gestureEnabled: false,
@@ -620,6 +643,22 @@ export default function RootLayout() {
                                         gestureEnabled: true,
                                       }}
                                     />
+                                    <Stack.Screen
+                                      name="accounts/index"
+                                      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
+                                    />
+                                    <Stack.Screen
+                                      name="accounts/[id]"
+                                      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
+                                    />
+                                    <Stack.Screen
+                                      name="accounts/[id]/groups/[groupId]"
+                                      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
+                                    />
+                                    <Stack.Screen
+                                      name="accounts/[id]/members/[userId]"
+                                      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
+                                    />
                                     <Stack.Screen name="trigger-detail" />
                                     <Stack.Screen name="worker-config" />
                                     <Stack.Screen
@@ -633,6 +672,7 @@ export default function RootLayout() {
                                 </AuthProtection>
                               </View>
                               <PortalHost />
+                              <OfflineBanner />
                             </ThemeProvider>
                           </BottomSheetModalProvider>
                         </ToastProvider>
@@ -683,8 +723,8 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
     // RULE 2: Authenticated users should NEVER see auth screens
     // This prevents back navigation/gestures from showing auth to logged-in users
     if (isAuthenticated && inAuthGroup) {
-      log.log('🚫 Authenticated user on auth screen, redirecting to /home');
-      router.replace('/home');
+      log.log('🚫 Authenticated user on auth screen, redirecting to /projects');
+      router.replace('/projects');
       return;
     }
   }, [isAuthenticated, authLoading, segments, router]);

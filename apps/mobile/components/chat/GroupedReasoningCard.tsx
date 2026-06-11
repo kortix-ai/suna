@@ -183,9 +183,7 @@ export function GroupedReasoningCard({ parts, isStreaming = false }: GroupedReas
           flexDirection: 'row',
           alignItems: 'center',
           gap: 8,
-          paddingHorizontal: 8,
           paddingVertical: 4,
-          borderRadius: 6,
         }}
       >
         <Animated.View style={pulseStyle}>

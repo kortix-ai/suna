@@ -53,6 +53,7 @@ import { listAccounts, type KortixAccount } from '@/lib/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { CreateAccountModal } from '@/components/accounts/create-account-modal';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import { usePermission } from '@/lib/use-permission';
 
 export type AccountSwitcherVariant = 'header' | 'sidebar';
 
@@ -88,6 +89,15 @@ export function AccountSwitcher({
     accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ??
     accountsQuery.data?.[0] ??
     null;
+
+  // Only show the Billing shortcut to users who can actually manage billing
+  // (billing.write — owners + the billing_manager policy). Plain members get a
+  // billing tab they can't act on, so hide it. Engine probe (not raw role) so a
+  // member granted billing via an explicit policy still sees it.
+  const canManageBilling = usePermission(
+    activeAccount?.account_id,
+    'billing.write',
+  ).allowed;
 
   const sortedAccounts = useMemo(
     () =>
@@ -287,7 +297,7 @@ export function AccountSwitcher({
               )}
             </span>
           </DropdownMenuItem>
-          {billingActive && (
+          {billingActive && canManageBilling && (
             <DropdownMenuItem
               onSelect={() =>
                 deferAfterClose(() =>

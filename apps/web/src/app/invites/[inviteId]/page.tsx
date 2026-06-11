@@ -58,8 +58,10 @@ export default function InvitePage() {
       if (!current) throw new Error('Invite is still loading');
       return { kind: 'account' as const, data: await acceptAccountInvite(inviteId!) };
     },
-    onSuccess: (result) => {
-      router.replace(`/accounts/${result.data.account_id}`);
+    onSuccess: () => {
+      // Land a newly-joined member on their projects, not the account settings
+      // page — they came here to start working, not to manage the account.
+      router.replace('/projects');
     },
   });
 
@@ -79,9 +81,10 @@ export default function InvitePage() {
     const item = inviteQuery.data;
     const inv = item?.invite;
     // Only auto-redirect the actual recipient. Strangers with a link hit the
-    // "wrong account" state instead.
+    // "wrong account" state instead. Auto-claimed invites (already accepted on
+    // first sign-in) land on /projects too — same destination as a manual accept.
     if (!item || !inv?.email_matches_caller || !inv.accepted_at) return;
-    router.replace(`/accounts/${item.invite.account_id}`);
+    router.replace('/projects');
   }, [inviteQuery.data, router]);
 
   if (authLoading || !user || inviteQuery.isLoading) {

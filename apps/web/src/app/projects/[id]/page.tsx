@@ -2,11 +2,11 @@
 
 import { useCallback, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ProjectShell } from '@/components/projects/project-shell';
 import { ProjectHome, type ProjectHomeSendOptions } from '@/components/projects/project-home';
-import { createProjectSession } from '@/lib/projects-client';
+import { createProjectSession, getProjectDetail } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { useAccountState } from '@/hooks/billing';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
@@ -31,7 +31,17 @@ export default function ProjectIndexPage() {
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
-  const { data: accountState } = useAccountState();
+  // The account that OWNS this project (team account), not the viewer's primary
+  // account — so the "are you subscribed?" check and the upgrade dialog target
+  // the right wallet. Reuses ProjectShell's project-detail query (same key → no
+  // extra fetch).
+  const { data: projectDetail } = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId),
+    enabled: !!projectId,
+  });
+  const projectAccountId = projectDetail?.project?.account_id ?? undefined;
+  const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
 
   const [busy, setBusy] = useState(false);
@@ -46,7 +56,7 @@ export default function ProjectIndexPage() {
         !!accountState &&
         !accountState.subscription?.subscription_id;
       if (noPlan) {
-        openUpgradeDialog({ reason: 'subscription_required' });
+        openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId });
         return;
       }
 
@@ -69,8 +79,11 @@ export default function ProjectIndexPage() {
         // 429 concurrent-session-limit is handled globally — skip the toast.
         if (code === 'concurrent_session_limit') return;
         // No plan → open the one Team plan subscribe modal. Don't navigate.
+        // Scope to the blocked account from the 402 (the project's owning
+        // account), falling back to the project account we already resolved.
         if (code === 'subscription_required' || code === 'no_account') {
-          openUpgradeDialog({ reason: code });
+          const blockedAccountId = (err as any)?.detail?.account_id ?? projectAccountId;
+          openUpgradeDialog({ reason: code, accountId: blockedAccountId });
           return;
         }
         // Out of credits on an existing plan (legacy/balance) → surface the
@@ -78,7 +91,7 @@ export default function ProjectIndexPage() {
         toast.error(err instanceof Error ? err.message : 'Failed to start session');
       }
     },
-    [projectId, queryClient, router, accountState, openUpgradeDialog, busy],
+    [projectId, projectAccountId, queryClient, router, accountState, openUpgradeDialog, busy],
   );
 
   return (

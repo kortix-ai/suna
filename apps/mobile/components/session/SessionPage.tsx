@@ -55,7 +55,6 @@ import { getAuthToken } from '@/api/config';
 import { log } from '@/lib/logger';
 
 import { SessionChatInput, type PromptOptions, type TrackedMention } from './SessionChatInput';
-import { ProjectPicker } from './ProjectPicker';
 import { SandboxHealthPill } from './SandboxHealthPill';
 import { useRouter } from 'expo-router';
 import { useAudioRecorder } from '@/hooks/media/useAudioRecorder';
@@ -980,14 +979,6 @@ export function SessionPage({ sessionId, onBack, onOpenDrawer, onOpenRightDrawer
           style={{ height: 24, marginTop: -24, zIndex: 1 }}
           pointerEvents="none"
         />
-      )}
-
-      {/* Project picker — only on fresh sessions, above the chat input.
-          Mirrors the web's dashboard/empty-state ProjectSelector: shared
-          selection store so the picked project survives app restarts and
-          scopes the next `/kortix/task`-creating send. */}
-      {showFreshHero && !onboardingMode && !hasQuestion && (
-        <ProjectPicker />
       )}
 
       {/* Sandbox health pill — full-width row immediately above the chat
