@@ -123,8 +123,9 @@ projectsApp.openapi(
 
   // Re-bake the project's WARM snapshot at the new tip (repo pre-cloned +
   // opencode caches) so the next session boots commit-fresh with no clone.
-  // No-op unless warm snapshots are enabled. Best-effort, never blocks.
-  kickProjectWarmBake(projectForGit);
+  // No-op unless warm snapshots are enabled (and skipped for projects whose
+  // default template is custom). Best-effort, never blocks.
+  kickProjectWarmBake({ ...projectForGit, metadata: loaded.row.metadata });
 
   // A merged CR may have edited kortix.toml's [[connectors]]. The connector DB
   // cache (what the gateway + dashboard read) is derived from the manifest, so

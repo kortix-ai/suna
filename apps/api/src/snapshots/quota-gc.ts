@@ -44,6 +44,9 @@ const QUOTA_GC_PRESSURE_THRESHOLD = 60;
 const QUOTA_GC_MIN_IDLE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Max deletions per sweep pass — keeps each pass cheap and observable. */
 const QUOTA_GC_MAX_PER_PASS = 15;
+/** A project counts as ACTIVE (its warm snapshot is protected) when it has a
+ * session or portal presence within this window. */
+const QUOTA_GC_PROJECT_ACTIVE_MS = 14 * 24 * 60 * 60 * 1000;
 
 export interface QuotaGcResult {
   /** Snapshots in our template namespaces (the pressure number). */
@@ -80,6 +83,8 @@ export async function reconcileSnapshotQuota(
   result.namespaceCount = namespace.length;
   if (namespace.length < QUOTA_GC_PRESSURE_THRESHOLD) return result;
 
+  const now = opts.now ?? Date.now();
+
   // Names any local template row would boot from (trust-the-row / graceful
   // last-known-good path). Never delete these.
   const referenced = new Set(
@@ -90,16 +95,39 @@ export async function reconcileSnapshotQuota(
         .where(isNotNull(sandboxTemplates.providerSnapshotName))
     ).map((r) => r.name as string),
   );
-  // Per-project warm snapshots are referenced via projects.metadata, not the
-  // templates table — protect the current pointer of every project.
-  for (const r of await db
-    .select({ name: sql<string>`${projects.metadata} -> 'warm_snapshot' ->> 'name'` })
-    .from(projects)
-    .where(sql`${projects.metadata} -> 'warm_snapshot' ->> 'name' IS NOT NULL`)) {
-    if (r.name) referenced.add(r.name);
+  // Per-project warm snapshots (kortix-wproj-*) are referenced via
+  // projects.metadata. Protect a pointer ONLY while its project is alive and
+  // recently ACTIVE (a session in the activity window, or portal presence) —
+  // archived/dormant projects' snapshots are reclaimable: their sessions fall
+  // back to the generic warm base, and the pool-presence hook re-bakes the
+  // snapshot the moment someone returns. Pointers of reclaimed snapshots are
+  // cleared below so session boot never chases a deleted name.
+  const activityCutoff = new Date(now - QUOTA_GC_PROJECT_ACTIVE_MS).toISOString();
+  const pointerRows = await db.execute(sql`
+    SELECT p.project_id AS project_id,
+           p.metadata -> 'warm_snapshot' ->> 'name' AS name,
+           (
+             p.status <> 'archived' AND (
+               coalesce((p.metadata ->> 'warm_pool_seen_at')::timestamptz, 'epoch'::timestamptz) > ${activityCutoff}::timestamptz
+               OR EXISTS (
+                 SELECT 1 FROM kortix.project_sessions ps
+                 WHERE ps.project_id = p.project_id AND ps.created_at > ${activityCutoff}::timestamptz
+               )
+             )
+           ) AS active
+    FROM kortix.projects p
+    WHERE p.metadata -> 'warm_snapshot' ->> 'name' IS NOT NULL
+  `);
+  const pointerList = ((pointerRows as unknown as { rows?: any[] }).rows ?? (pointerRows as unknown as any[])) as Array<{
+    project_id: string; name: string; active: boolean;
+  }>;
+  const pointerProject = new Map<string, string>();
+  for (const r of pointerList) {
+    if (!r.name) continue;
+    pointerProject.set(r.name, r.project_id);
+    if (r.active) referenced.add(r.name);
   }
 
-  const now = opts.now ?? Date.now();
   const lastTouch = (s: { lastUsedAt?: string | null; createdAt: string | null }) => {
     const t = s.lastUsedAt || s.createdAt;
     return t ? new Date(t).getTime() : Number.NaN;
@@ -119,7 +147,17 @@ export async function reconcileSnapshotQuota(
     }
     const ok = await deleteDaytonaSnapshotById(snap.id);
     console.log(`[snapshot-gc] delete ${snap.name} (last used ${snap.lastUsedAt ?? snap.createdAt}): ${ok ? 'ok' : 'failed'}`);
-    if (ok) result.deleted++;
+    if (ok) {
+      result.deleted++;
+      // Reclaimed an inactive project's warm snapshot — clear its pointer so
+      // session boot doesn't chase the deleted name (it would just fall back,
+      // but a clean pointer lets the presence hook re-bake without a miss).
+      const projectId = pointerProject.get(snap.name);
+      if (projectId) {
+        const { writeProjectWarmPointer } = await import('./warm-project');
+        await writeProjectWarmPointer(projectId, null).catch(() => {});
+      }
+    }
   }
   if (result.namespaceCount >= QUOTA_GC_PRESSURE_THRESHOLD) {
     console.log(

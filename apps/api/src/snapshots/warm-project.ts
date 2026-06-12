@@ -62,6 +62,18 @@ export interface WarmableProject {
   repoUrl: string | null;
   defaultBranch: string;
   manifestPath: string | null;
+  /** Optional projects.metadata — used to skip projects whose default template
+   * is custom (their sessions can't use the default-runtime warm snapshot). */
+  metadata?: unknown;
+}
+
+/** True when the project's default template is a custom slug — its sessions
+ * boot that template's image, so a default-runtime warm snapshot would only
+ * burn a quota slot without ever being used. */
+function usesCustomDefaultTemplate(project: WarmableProject): boolean {
+  const meta = (project.metadata ?? null) as Record<string, unknown> | null;
+  const slug = typeof meta?.default_sandbox_slug === 'string' ? meta.default_sandbox_slug.trim() : '';
+  return !!slug && slug !== 'default';
 }
 
 function proj8(projectId: string): string {
@@ -86,7 +98,7 @@ export function readProjectWarmPointer(metadata: unknown): ProjectWarmPointer | 
   };
 }
 
-async function writeProjectWarmPointer(projectId: string, ptr: ProjectWarmPointer | null): Promise<void> {
+export async function writeProjectWarmPointer(projectId: string, ptr: ProjectWarmPointer | null): Promise<void> {
   await db
     .update(projects)
     .set({
@@ -236,6 +248,7 @@ const inflightProjectBakes = new Map<string, Promise<void>>();
  */
 export function kickProjectWarmBake(project: WarmableProject, onLog?: (l: string) => void): void {
   if (!warmSnapshotsEnabled() || !project.repoUrl) return;
+  if (usesCustomDefaultTemplate(project)) return;
   if (inflightProjectBakes.has(project.projectId)) return;
   const log = onLog ?? ((l: string) => console.log(l));
   const run = (async () => {

@@ -335,6 +335,14 @@ export async function refillProjectPool(projectId: string): Promise<void> {
     if (!project) return;
     const cfg = resolveWarmConfig(project.metadata);
     if (!cfg.enabled || cfg.size <= 0) return;
+    // Presence implies the user is (back) in this project — if its per-project
+    // warm snapshot was reclaimed while dormant (quota GC) or never baked, kick
+    // a re-bake now so upcoming sessions and pool refills boot clone-free.
+    // Deduped + custom-template-aware inside kickProjectWarmBake.
+    {
+      const { readProjectWarmPointer, kickProjectWarmBake } = await import('../../snapshots/warm-project');
+      if (!readProjectWarmPointer(project.metadata)) kickProjectWarmBake(project);
+    }
     const desired = cfg.size;
     const live = await db
       .select({ n: sql<number>`count(*)::int` })
