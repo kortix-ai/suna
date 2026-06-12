@@ -117,6 +117,10 @@ kortix-darwin-arm64
 kortix-darwin-x64
 kortix-linux-x64
 kortix-linux-arm64
+# …but the bare `kortix` pattern above also matches the kortix-system skill's
+# `references/kortix/` doc dir — keep those committed (they ship to sandboxes).
+!**/references/kortix/
+!**/references/kortix/**
 
 # Terraform — never commit local state, provider binaries, lockfile, or tfvars
 infra/terraform/**/.terraform/

@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import {
   Copy,
   ExternalLink,
+  Loader2,
   Pencil,
   Plus,
   Search,
@@ -83,7 +84,7 @@ export function CommandsView({ projectId }: { projectId: string }) {
   }, [commands, query]);
 
   const selected = commands.find((c) => c.path === selectedPath) ?? null;
-  const startThread = useConfigureThread(projectId);
+  const configure = useConfigureThread(projectId);
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
@@ -97,9 +98,14 @@ export function CommandsView({ projectId }: { projectId: string }) {
               size="sm"
               variant="outline"
               className="h-7 gap-1 px-2 text-xs"
-              onClick={() => startThread(newConfigPrompt('command'))}
+              onClick={() => configure.start(newConfigPrompt('command'))}
+              disabled={configure.pending}
             >
-              <Plus className="h-3 w-3" />
+              {configure.pending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Plus className="h-3 w-3" />
+              )}
               New
             </Button>
           }
@@ -128,7 +134,10 @@ export function CommandsView({ projectId }: { projectId: string }) {
               onRetry={() => detailQuery.refetch()}
             />
           ) : commands.length === 0 ? (
-            <EmptyList onCreate={() => startThread(newConfigPrompt('command'))} />
+            <EmptyList
+              onCreate={() => configure.start(newConfigPrompt('command'))}
+              creating={configure.pending}
+            />
           ) : filtered.length === 0 ? (
             <NoMatches query={query} />
           ) : (
@@ -206,7 +215,7 @@ function CommandDetail({
   command: Command;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
-  const startThread = useConfigureThread(projectId);
+  const configure = useConfigureThread(projectId);
   const fileQuery = useQuery({
     queryKey: ['project-file-source', projectId, command.path],
     queryFn: () => readProjectFile(projectId, command.path),
@@ -240,7 +249,8 @@ function CommandDetail({
         </span>
         <DetailToolbarActions
           onCopy={onCopy}
-          onEdit={() => startThread(editConfigPrompt('command', command.name, command.path))}
+          onEdit={() => configure.start(editConfigPrompt('command', command.name, command.path))}
+          editing={configure.pending}
           copyDisabled={!fileQuery.data?.content}
         />
       </header>
@@ -288,10 +298,12 @@ function CommandDetail({
 function DetailToolbarActions({
   onCopy,
   onEdit,
+  editing,
   copyDisabled,
 }: {
   onCopy: () => void;
   onEdit: () => void;
+  editing: boolean;
   copyDisabled: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -316,8 +328,13 @@ function DetailToolbarActions({
         size="sm"
         className="h-7 gap-1.5 px-2.5 text-xs"
         onClick={onEdit}
+        disabled={editing}
       >
-        <Pencil className="h-3.5 w-3.5" />
+        {editing ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Pencil className="h-3.5 w-3.5" />
+        )}
         Edit with agent
       </Button>
     </div>
@@ -385,7 +402,7 @@ function NoMatches({ query }: { query: string }) {
   );
 }
 
-function EmptyList({ onCreate }: { onCreate: () => void }) {
+function EmptyList({ onCreate, creating }: { onCreate: () => void; creating: boolean }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <EmptyState
@@ -398,8 +415,18 @@ function EmptyList({ onCreate }: { onCreate: () => void }) {
       }
       action={
         <div className="flex flex-col items-center gap-2">
-          <Button variant="outline" size="sm" className="gap-1.5" onClick={onCreate}>
-            <Plus className="h-3.5 w-3.5" />
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={onCreate}
+            disabled={creating}
+          >
+            {creating ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Plus className="h-3.5 w-3.5" />
+            )}
             Create a command
           </Button>
           <Button asChild variant="ghost" size="sm" className="gap-1.5">

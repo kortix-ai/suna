@@ -96,6 +96,49 @@ jobs:
           echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
           echo "Proposing v$NEW"
 
+      - name: Pre-flight — refuse to promote unless this commit is fully green
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          SHA="$(git rev-parse HEAD)"
+          echo "Promote source ${{ inputs.ref }} @ $SHA"
+          # Every check-run on this commit must be completed + success (skipped /
+          # neutral OK). Crucially this INCLUDES deploy-dev, which builds the
+          # :dev-<sha8> image that deploy-prod retags — so an all-green commit
+          # guarantees that image exists. This blocks the race where prod retags a
+          # stale :dev-latest because the new dev image hadn't finished building.
+          # Robustly judge greenness, tolerating two GitHub quirks that would
+          # otherwise make this gate un-passable:
+          #   1. THIS promote run registers an in_progress check on HEAD (and a
+          #      failed earlier attempt leaves a `failure` one) — exclude any
+          #      check-run belonging to our own github.run_id.
+          #   2. Re-runs / concurrency leave SUPERSEDED duplicate check-runs of
+          #      the same name (e.g. a `cancelled` CodeQL "Analyze" next to a
+          #      later `success`). Keep only the latest run per name (max
+          #      started_at) so a stale cancelled/failed attempt can't block.
+          #   3. NON-CI noise that has nothing to do with releasability:
+          #      - "Dependabot*" — GitHub's background dependency-update jobs,
+          #        which fail routinely (lockfile/monorepo) and are irrelevant.
+          #      - "Open review-gated release PR" — a PRIOR promote attempt's own
+          #        check (the current run is already excluded via run_id, but an
+          #        earlier failed attempt would otherwise self-block the retry).
+          NOT_GREEN="$(RID="${{ github.run_id }}" gh api "repos/${{ github.repository }}/commits/$SHA/check-runs?per_page=100" --paginate \
+            --jq '[ .check_runs[]
+                    | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)
+                    | select(((.name | ascii_downcase | startswith("dependabot")) or (.name == "Open review-gated release PR")) | not) ]
+                  | group_by(.name) | map(max_by(.started_at // ""))
+                  | .[]
+                  | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))
+                  | "\(.name): \(.status)/\(.conclusion)"' || true)"
+          if [ -n "$NOT_GREEN" ]; then
+            echo "::error::Refusing to promote — $SHA is not all-green (this includes the dev image build):"
+            echo "$NOT_GREEN"
+            echo "Wait for these to finish/pass on '${{ inputs.ref }}', then re-run promote." >&2
+            exit 1
+          fi
+          echo "✓ All checks green on $SHA — safe to promote."
+
       - name: Freeze release branch + open PR into prod
         env:
           GH_TOKEN: ${{ github.token }}
@@ -106,6 +149,9 @@ jobs:
           NEW="${{ steps.ver.outputs.new }}"
           TAG="${{ steps.ver.outputs.tag }}"
           RELBR="release/$TAG"
+          # The commit being promoted (the source ref's HEAD, BEFORE we branch +
+          # merge prod). deploy-prod pins the dev image to this exact SHA.
+          SRC_SHA="$(git rev-parse HEAD)"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -122,7 +168,18 @@ jobs:
           # is published here.
           printf '%s\n' "$NEW" > VERSION
           printf '%s\n\n%s\n' "$IN_TITLE" "$IN_NOTES" > RELEASE_NOTES.md
-          git add VERSION RELEASE_NOTES.md
+          printf '%s\n' "$SRC_SHA" > RELEASE_SOURCE_SHA
+
+          # Bump the EKS GitOps source to this release. Merging the PR into prod
+          # carries this onto the prod branch, which Argo CD tracks → Argo deploys
+          # EKS. The deploy IS the reviewed merge (no out-of-band push). yq is
+          # preinstalled on ubuntu-latest. (No-op if the file isn't present yet.)
+          if [ -f infra/k8s/envs/prod/values.yaml ]; then
+            NEW="$NEW" yq -i '.image.tag = strenv(NEW) | .kortixVersion = strenv(NEW)' infra/k8s/envs/prod/values.yaml
+          fi
+
+          git add VERSION RELEASE_NOTES.md RELEASE_SOURCE_SHA
+          git add infra/k8s/envs/prod/values.yaml 2>/dev/null || true
           git commit -m "release: $TAG"
           git push -f origin "HEAD:refs/heads/$RELBR"
 
@@ -130,7 +187,7 @@ jobs:
           if [ -n "$existing" ]; then
             echo "Release PR #$existing already open for $RELBR."
           else
-            printf '%s\n\n%s\n\n---\n_Merging this PR **publishes %s**: tags it, cuts the GitHub Release, retags images, rolls the prod ECS service, and deploys the prod frontend. Nothing is published until this merges._\n' \
+            printf '%s\n\n%s\n\n---\n_Merging this PR **publishes %s**: tags it, cuts the GitHub Release, retags images, rolls the prod ECS service, and — via the bumped `infra/k8s/envs/prod/values.yaml` — has Argo CD deploy EKS prod. Nothing is published until this merges._\n' \
               "$IN_TITLE" "$IN_NOTES" "$TAG" \
               | gh pr create --base prod --head "$RELBR" --title "Release $TAG — $IN_TITLE" --body-file -
           fi

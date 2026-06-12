@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { Appearance } from 'react-native';
+import { colorScheme as nativewindColorScheme } from 'nativewind';
 import { log } from '@/lib/logger';
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
@@ -48,8 +49,11 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
       const resolvedTheme = resolveTheme(preference);
       
       log.log('🌓 Theme store: Initialized with:', { preference, resolvedTheme });
-      
+
       set({ preference, resolvedTheme, isLoaded: true });
+      // Apply to NativeWind so every `dark:` class / useColorScheme() consumer
+      // follows the persisted preference (idempotent with _layout's restore).
+      nativewindColorScheme.set(preference);
     } catch (error) {
       log.error('🌓 Theme store: Failed to load preference:', error);
       set({ preference: 'light', resolvedTheme: 'light', isLoaded: true });
@@ -58,11 +62,15 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
   setPreference: async (preference: ThemePreference) => {
     const resolvedTheme = resolveTheme(preference);
-    
+
     log.log('🌓 Theme store: Setting preference:', { preference, resolvedTheme });
-    
+
     set({ preference, resolvedTheme });
-    
+    // The whole app styles via NativeWind (`dark:` classes + useColorScheme),
+    // so applying here is what actually flips the theme live. NativeWind
+    // handles 'system' natively (it tracks OS appearance changes itself).
+    nativewindColorScheme.set(preference);
+
     try {
       await AsyncStorage.setItem(THEME_PREFERENCE_KEY, preference);
       log.log('🌓 Theme store: Preference saved to storage');

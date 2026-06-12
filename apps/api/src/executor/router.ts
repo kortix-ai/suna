@@ -157,8 +157,31 @@ export interface ExecutorRouterDeps {
   deleteConnector?(projectId: string, slug: string): Promise<CrudOutcome>;
   /** Set a connector's credential value (stored scope='connector', never injected). */
   setConnectorCredential?(projectId: string, slug: string, value: string): Promise<CrudOutcome>;
+  deleteConnectorCredential?(projectId: string, slug: string, userId: string): Promise<CrudOutcome>;
+  /** Change a connector's credential mode (shared ↔ per_user) in kortix.toml + re-sync. */
+  setCredentialMode?(projectId: string, accountId: string, slug: string, mode: 'shared' | 'per_user'): Promise<CrudOutcome>;
+  /** Rename a connector (display label) in kortix.toml + re-sync. */
+  setConnectorName?(projectId: string, accountId: string, slug: string, name: string): Promise<CrudOutcome>;
+  /** Read a connector's [[connectors.policies]] (per-tool/per-pattern permissions). */
+  getConnectorPolicies?(projectId: string, slug: string): Promise<{ policies: Array<{ match: string; action: string }> } | null>;
+  /** Read a connector's definition (provider + connection fields) from kortix.toml for editing. */
+  getConnectorConfig?(projectId: string, slug: string): Promise<{
+    slug: string;
+    provider: string;
+    credentialMode: 'shared' | 'per_user';
+    app: string | null;
+    account: string | null;
+    url: string | null;
+    transport: 'http' | 'sse' | null;
+    endpoint: string | null;
+    baseUrl: string | null;
+    spec: string | null;
+    auth: { type: 'none' | 'bearer' | 'basic' | 'custom'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+  } | null>;
+  /** Replace a connector's [[connectors.policies]] in kortix.toml + re-sync. */
+  setConnectorPolicies?(projectId: string, accountId: string, slug: string, policies: Array<{ match: string; action: string }>): Promise<CrudOutcome>;
   /** Pipedream 1-click: mint a connect token (for the frontend SDK overlay) + link. null = not pipedream. */
-  pipedreamConnect?(projectId: string, slug: string, userId: string): Promise<{ token?: string; app?: string; connectUrl?: string } | null>;
+  pipedreamConnect?(projectId: string, slug: string, userId: string, redirects?: { success?: string; error?: string }): Promise<{ token?: string; app?: string; connectUrl?: string } | null>;
   /** Pipedream 1-click: after the user finishes, persist the account binding (their own for per_user). */
   pipedreamFinalize?(projectId: string, slug: string, userId: string): Promise<{ connected: boolean; accountId?: string } | null>;
   /** Pipedream webhook: verify sig + finalize. Returns false on bad signature. */
@@ -240,7 +263,11 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         401: json(CallResponseSchema, 'Unauthorized'),
         403: json(CallResponseSchema, 'Denied'),
         404: json(CallResponseSchema, 'Connector or action not found'),
-        502: json(CallResponseSchema, 'Execution error'),
+        // 500, NOT 502: Cloudflare replaces origin 502/504 bodies with its own
+        // branded error page, which destroys the JSON `reason` before the
+        // sandbox SDK can read it — the agent then sees a bare "HTTP 502" and
+        // can't self-correct. 500 passes through with the body intact.
+        500: json(CallResponseSchema, 'Execution error'),
       },
     }),
     // Manual parse kept: original tolerates a missing/partial body (defaulting
@@ -285,7 +312,8 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
             result.reason === 'connector_not_found' || result.reason === 'action_not_found' ? 404 : 403,
           );
         default:
-          return c.json({ ok: false, status: 'error', reason: result.reason }, 502);
+          // 500, not 502 — see the route schema note (Cloudflare eats 502 bodies).
+          return c.json({ ok: false, status: 'error', reason: result.reason }, 500);
       }
     },
   );
@@ -407,6 +435,31 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     },
   );
 
+  // ── Admin: disconnect a connector (remove its credential) ────────────────
+  app.openapi(
+    createRoute({
+      method: 'delete',
+      path: '/projects/{projectId}/connectors/{slug}/credential',
+      tags: ['executor'],
+      summary: 'Disconnect a connector (remove its credential)',
+      ...auth,
+      request: { params: ProjectSlugParam },
+      responses: {
+        200: json(OkSchema, 'Disconnected'),
+        ...errors(403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.deleteConnectorCredential) return c.json({ error: 'not supported' }, 501);
+      const result = await deps.deleteConnectorCredential(projectId, slug, admin.userId);
+      return result.ok ? c.json({ ok: true }) : c.json({ error: result.error }, result.status as 404);
+    },
+  );
+
   // ── Admin: browse the Pipedream app catalogue ────────────────────────────
   app.openapi(
     createRoute({
@@ -497,6 +550,156 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
     },
   );
 
+  // ── Admin: change a connector's credential mode (shared ↔ per_user) ───────
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/credential-mode',
+      tags: ['executor'],
+      summary: 'Change a connector\'s credential mode (shared ↔ per_user)',
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(CrudOkSchema, 'Mode updated'),
+        ...errors(400, 403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.setCredentialMode) return c.json({ error: 'not supported' }, 501);
+      let body: any;
+      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      const mode = body?.mode;
+      if (mode !== 'shared' && mode !== 'per_user') {
+        return c.json({ error: 'mode must be "shared" or "per_user"' }, 400);
+      }
+      const result = await deps.setCredentialMode(projectId, admin.accountId, slug, mode);
+      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+    },
+  );
+
+  // ── Admin: rename a connector (display label) ────────────────────────────
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/name',
+      tags: ['executor'],
+      summary: 'Rename a connector (display label)',
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(CrudOkSchema, 'Renamed'),
+        ...errors(400, 403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.setConnectorName) return c.json({ error: 'not supported' }, 501);
+      let body: any;
+      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      const name = typeof body?.name === 'string' ? body.name : '';
+      if (!name.trim()) return c.json({ error: '`name` is required' }, 400);
+      const result = await deps.setConnectorName(projectId, admin.accountId, slug, name);
+      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+    },
+  );
+
+  // ── Admin: read a connector's per-tool/per-pattern policies ──────────────
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/connectors/{slug}/policies',
+      tags: ['executor'],
+      summary: 'Read a connector\'s tool-call policies',
+      ...auth,
+      request: { params: ProjectSlugParam },
+      responses: {
+        200: json(OpaqueSchema, 'Connector policies'),
+        ...errors(403, 404),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.getConnectorPolicies) return c.json({ error: 'not supported' }, 501);
+      const result = await deps.getConnectorPolicies(projectId, slug);
+      if (!result) return c.json({ error: 'connector not found' }, 404);
+      return c.json(result);
+    },
+  );
+
+  // ── Admin: read a connector's definition (for editing the connection) ────
+  app.openapi(
+    createRoute({
+      method: 'get',
+      path: '/projects/{projectId}/connectors/{slug}/config',
+      tags: ['executor'],
+      summary: 'Read a connector\'s connection config (provider, url, auth, …)',
+      ...auth,
+      request: { params: ProjectSlugParam },
+      responses: {
+        200: json(OpaqueSchema, 'Connector config'),
+        ...errors(403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.getConnectorConfig) return c.json({ error: 'not supported' }, 501);
+      const result = await deps.getConnectorConfig(projectId, slug);
+      if (!result) return c.json({ error: 'connector not found' }, 404);
+      return c.json(result);
+    },
+  );
+
+  // ── Admin: replace a connector's policies (write-through to kortix.toml) ──
+  app.openapi(
+    createRoute({
+      method: 'put',
+      path: '/projects/{projectId}/connectors/{slug}/policies',
+      tags: ['executor'],
+      summary: 'Replace a connector\'s tool-call policies',
+      ...auth,
+      request: {
+        params: ProjectSlugParam,
+        body: { content: { 'application/json': { schema: OpaqueSchema } } },
+      },
+      responses: {
+        200: json(CrudOkSchema, 'Policies updated'),
+        ...errors(400, 403, 404, 501),
+      },
+    }),
+    async (c: any) => {
+      const projectId = c.req.param('projectId');
+      const slug = c.req.param('slug');
+      const admin = await deps.resolveAdmin(c, projectId);
+      if (!admin) return c.json({ error: 'forbidden' }, 403);
+      if (!deps.setConnectorPolicies) return c.json({ error: 'not supported' }, 501);
+      let body: any;
+      try { body = await c.req.json(); } catch { return c.json({ error: 'invalid_json' }, 400); }
+      const policies = Array.isArray(body?.policies) ? body.policies : null;
+      if (!policies) return c.json({ error: '`policies` must be an array' }, 400);
+      const result = await deps.setConnectorPolicies(projectId, admin.accountId, slug, policies);
+      return result.ok ? c.json({ ok: true, sync: result.sync }) : c.json({ error: result.error }, result.status as 400);
+    },
+  );
+
   // ── Pipedream 1-click connect (admin) ────────────────────────────────────
   app.openapi(
     createRoute({
@@ -517,7 +720,16 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const admin = await deps.resolveAdmin(c, projectId);
       if (!admin) return c.json({ error: 'forbidden' }, 403);
       if (!deps.pipedreamConnect) return c.json({ error: 'pipedream not configured' }, 501);
-      const result = await deps.pipedreamConnect(projectId, slug, admin.userId);
+      // Native clients pass app deep-link redirect URIs so the in-app browser
+      // auto-dismisses back to the app instead of landing on a web page.
+      let redirects: { success?: string; error?: string } | undefined;
+      try {
+        const body = await c.req.json();
+        if (body?.success_redirect_uri || body?.error_redirect_uri) {
+          redirects = { success: body.success_redirect_uri, error: body.error_redirect_uri };
+        }
+      } catch { /* no body */ }
+      const result = await deps.pipedreamConnect(projectId, slug, admin.userId, redirects);
       if (!result) return c.json({ error: 'not a pipedream connector' }, 404);
       return c.json(result);
     },

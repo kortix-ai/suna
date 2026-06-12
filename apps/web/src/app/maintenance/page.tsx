@@ -1,6 +1,15 @@
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
 import { Wrench } from 'lucide-react';
 import { getMaintenanceConfig } from '@/lib/maintenance-store';
+import { LocalTime } from '@/components/ui/local-time';
+
+const SCHEDULE_FORMAT: Intl.DateTimeFormatOptions = {
+  weekday: 'short',
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+};
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -39,7 +48,17 @@ export default async function MaintenancePage() {
           <div className="inline-flex items-center gap-2 rounded-lg bg-muted px-4 py-2.5 text-sm text-muted-foreground">
             <span className="font-medium">Scheduled:</span>
             <span>
-              {formatDateTime(config.startTime!)} – {formatDateTime(config.endTime!)}
+              <LocalTime
+                value={config.startTime!}
+                options={SCHEDULE_FORMAT}
+                fallback={config.startTime!}
+              />{' '}
+              –{' '}
+              <LocalTime
+                value={config.endTime!}
+                options={SCHEDULE_FORMAT}
+                fallback={config.endTime!}
+              />
             </span>
           </div>
         )}
@@ -74,20 +93,4 @@ function AutoRefresh() {
       }}
     />
   );
-}
-
-function formatDateTime(iso: string): string {
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return iso;
-    return d.toLocaleString('en-US', {
-      weekday: 'short',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
 }

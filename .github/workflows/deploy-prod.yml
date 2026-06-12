@@ -11,11 +11,10 @@ name: Deploy Prod
 #   2. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
 #      installers and cut a single GitHub Release `vX.Y.Z`.
 #   3. Roll the `kortix-prod` ECS Fargate service onto the new image (OIDC).
-#   4. Deploy the prod frontend on Vercel (the `prod` branch → new.kortix.com,
-#      and kortix.com after the apex cutover).
+#   4. Deploy the prod frontend on Vercel (the `prod` branch → kortix.com).
 #
-# The prod stack is api-prod.kortix.com (ECS) + new.kortix.com (Vercel) today;
-# after the apex DNS cutover it is api.kortix.com + kortix.com — same pipeline.
+# The prod stack is api-prod.kortix.com (ECS) + kortix.com (Vercel). The legacy
+# new.kortix.com Vercel domain was retired in the apex cutover — same pipeline.
 
 on:
   push:
@@ -45,6 +44,7 @@ jobs:
       tag: ${{ steps.v.outputs.tag }}
       title: ${{ steps.v.outputs.title }}
       notes: ${{ steps.v.outputs.notes }}
+      source_sha: ${{ steps.v.outputs.source_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -74,6 +74,17 @@ jobs:
             { echo 'notes<<KORTIX_NOTES_EOF'; echo 'KORTIX_NOTES_EOF'; } >> "$GITHUB_OUTPUT"
           fi
 
+          # The exact source commit this release was cut from (stamped by
+          # promote.yml). Empty for legacy releases that predate SHA stamping.
+          if [ -f RELEASE_SOURCE_SHA ]; then
+            SRC="$(tr -d '[:space:]' < RELEASE_SOURCE_SHA)"
+            echo "source_sha=$SRC" >> "$GITHUB_OUTPUT"
+            echo "Release source commit: $SRC"
+          else
+            echo "source_sha=" >> "$GITHUB_OUTPUT"
+            echo "No RELEASE_SOURCE_SHA (legacy release) — will retag :dev-latest"
+          fi
+
   # ── Retag dev images → versioned + latest (no rebuild) ──────────────────────
   retag-images:
     name: Re-tag dev → v${{ needs.version.outputs.version }}
@@ -90,15 +101,35 @@ jobs:
       - name: Re-tag release images
         env:
           VERSION: ${{ needs.version.outputs.version }}
+          SOURCE_SHA: ${{ needs.version.outputs.source_sha }}
         run: |
           set -euo pipefail
+          # Per image, prefer the dev image built from the EXACT promoted commit
+          # (dev-<sha8>). deploy-dev only rebuilds the surfaces a commit touched,
+          # so that tag exists only for changed surfaces — an api-only commit has
+          # no frontend dev-<sha8>, and vice-versa. For an UNCHANGED surface,
+          # :dev-latest IS that surface's current image, and promote.yml's
+          # pre-flight green-gate already guarantees this commit's builds finished
+          # (no stale-image race). So: pin to dev-<sha8> when present, else fall
+          # back to :dev-latest. Fail only if neither exists (nothing to ship).
+          SHA8=""
+          [ -n "${SOURCE_SHA:-}" ] && SHA8="dev-${SOURCE_SHA:0:8}"
           for IMAGE in kortix/kortix-api kortix/kortix-frontend; do
-            echo "Re-tagging $IMAGE:dev-latest → $IMAGE:${VERSION} + $IMAGE:latest"
+            if [ -n "$SHA8" ] && docker buildx imagetools inspect "$IMAGE:$SHA8" >/dev/null 2>&1; then
+              SRC_TAG="$SHA8"
+            elif docker buildx imagetools inspect "$IMAGE:dev-latest" >/dev/null 2>&1; then
+              SRC_TAG="dev-latest"
+              echo "::notice::$IMAGE has no $SHA8 (surface unchanged in this commit) — using :dev-latest."
+            else
+              echo "::error::$IMAGE: neither ${SHA8:-dev-<sha8>} nor :dev-latest is published — no dev image to promote."
+              exit 1
+            fi
+            echo "Re-tagging $IMAGE:$SRC_TAG → $IMAGE:${VERSION} + $IMAGE:latest"
             docker buildx imagetools create \
               --tag "$IMAGE:${VERSION}" \
               --tag "$IMAGE:latest" \
-              "$IMAGE:dev-latest"
-            echo "✓ $IMAGE:${VERSION}"
+              "$IMAGE:$SRC_TAG"
+            echo "✓ $IMAGE:${VERSION} (from $SRC_TAG)"
           done
       - name: Summary
         env:
@@ -179,7 +210,7 @@ jobs:
     needs: version
     runs-on: ${{ matrix.runner }}
     env:
-      DESKTOP_URL: https://kortix.com/dashboard
+      DESKTOP_URL: https://kortix.com/projects
     strategy:
       fail-fast: false
       matrix:
@@ -489,9 +520,8 @@ jobs:
 
   # ── Prod frontend (Vercel) ──────────────────────────────────────────────────
   # No job here: the Vercel project is git-connected and auto-deploys the `prod`
-  # branch on every push (new.kortix.com today, kortix.com after the apex
-  # cutover) — the same way dev.kortix.com auto-deploys from `main`. The promote
-  # workflow's push to `prod` is what triggers it.
+  # branch on every push (→ kortix.com) — the same way dev.kortix.com
+  # auto-deploys from `main`. The promote workflow's push to `prod` triggers it.
   frontend-note:
     name: Prod frontend (Vercel auto-deploys prod)
     needs: version  # gate with the rest of the pipeline (skipped on a failed promote)
@@ -501,7 +531,7 @@ jobs:
         run: |
           {
             echo "### Frontend → **prod** (Vercel)"
-            echo "Vercel auto-deploys the \`prod\` branch (new.kortix.com → api-prod; kortix.com after apex cutover). No action needed here."
+            echo "Vercel auto-deploys the \`prod\` branch (→ kortix.com). No action needed here."
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Keep main's VERSION honest (post-publish, never premature) ──────────────

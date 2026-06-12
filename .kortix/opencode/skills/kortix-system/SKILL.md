@@ -1,6 +1,6 @@
 ---
 name: kortix-system
-description: Canonical reference for a Kortix project. Covers (1) the platform overview — repo-native projects, sessions backed by ephemeral branches, the strict boundary between Kortix config (`kortix.toml`) and OpenCode config (`.kortix/opencode/`) — (2) the in-depth `kortix.toml` manifest with every key, every trigger field, the secrets contract, the `[[apps]]` deployment surface, (3) the full `kortix` CLI reference (every command, every flag, the project-scoped token model, what works inside a session sandbox with the pre-injected `KORTIX_TOKEN`), (4) the Kortix change-request (CR) system — the mandatory path for landing any session-branch work on `main`, including the rule that an agent MUST open a CR if it wants its changes merged, and (5) the OpenCode runtime reference mirroring opencode.ai/docs/ for agents, skills, commands, tools (built-in + custom), plugins, MCP servers, permissions, rules (AGENTS.md), and models. Load when the user asks how Kortix works, asks about anything in `kortix.toml` or the `kortix` CLI, asks about anything under `.kortix/opencode/`, asks how to merge / ship / land session work on `main`, asks anything about change requests / CRs / PRs, or needs to author/edit any OpenCode primitive (agent persona, skill, slash command, custom tool, plugin, MCP server, permission policy, AGENTS.md rule, or model config).
+description: Canonical reference for a Kortix project. Covers (1) the platform overview — repo-native projects, sessions backed by ephemeral branches, the strict boundary between Kortix config (`kortix.toml`) and OpenCode config (`.kortix/opencode/`) — (2) the in-depth `kortix.toml` manifest with every key, every trigger field, the secrets contract, the `[[apps]]` deployment surface, (3) the full `kortix` CLI reference (every command, every flag, the project-scoped token model, what works inside a session sandbox with the pre-injected `KORTIX_TOKEN`), (4) the Kortix change-request (CR) system — the mandatory path for landing any session-branch work on `main`, including the rule that an agent MUST open a CR if it wants its changes merged, (5) the session sandbox runtime environment — what runs inside a session, including the fact that the sandbox **does support Docker and Docker-in-Docker** (`dockerd`, building images, and running containers/services all work in-session, so agents should never assume a sandbox can't run Docker or that they "can't verify"), and (6) the OpenCode runtime reference mirroring opencode.ai/docs/ for agents, skills, commands, tools (built-in + custom), plugins, MCP servers, permissions, rules (AGENTS.md), and models. Load when the user asks how Kortix works, asks about anything in `kortix.toml` or the `kortix` CLI, asks about anything under `.kortix/opencode/`, asks how to merge / ship / land session work on `main`, asks anything about change requests / CRs / PRs, or needs to author/edit any OpenCode primitive (agent persona, skill, slash command, custom tool, plugin, MCP server, permission policy, AGENTS.md rule, or model config).
 ---
 
 <skill name="kortix-system">
@@ -59,6 +59,9 @@ Load this skill when the user asks any of:
 - "Where do secrets come from?" / "Why does my session fail to start?"
 - "What's the difference between `kortix.toml` and `opencode.jsonc`?"
 - "How do I customize the sandbox image?"
+- "Can I run Docker / Docker-in-Docker in the sandbox?" /
+  "Can I run containers / a database in a session?" /
+  "Can I actually verify my work from inside the sandbox?"
 - "How do I deploy a frontend from this project?" (`[[apps]]`)
 - "How do I create a new OpenCode agent / skill / slash command / custom tool / plugin?"
 - "How do I register an MCP server?"
@@ -75,7 +78,11 @@ agent's own instructions cover that. This skill is the **configuration
 </when-to-load>
 
 <cli>
-You are running inside a Kortix session sandbox. The **`kortix` CLI**
+You are running inside a Kortix session sandbox — a real Linux VM that
+**DOES support Docker and Docker-in-Docker** (`dockerd`, `docker build`,
+running containers/services all work). Never assume a sandbox can't run
+Docker or that you "can't verify from here" — you can; see the `sandbox.md`
+reference below. The **`kortix` CLI**
 is on `$PATH` (`/usr/local/bin/kortix`) and pre-authenticated against
 this exact project — a project-scoped token is already injected as
 `$KORTIX_CLI_TOKEN`, with `$KORTIX_API_URL` pointed at the right host.
@@ -99,6 +106,15 @@ Kortix cloud state — not just files in the repo. Examples:
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
 | "deploy the marketing app" | `kortix apps deploy marketing-site` (when `[[apps]]` is enabled) |
+| "add / list connectors" | `kortix connectors add <slug> --provider …`, `kortix connectors ls`, `connectors show <slug>` |
+| "connect an app / set its credential" | `kortix connectors connect <slug>` (Pipedream) / `connectors credential <slug>` |
+| "who can use a connector" | `kortix connectors share <slug> --mode project\|private\|members` |
+| "shared profile vs each-member-BYO" | `kortix connectors mode <slug> shared\|per_user` |
+| "rename a connector" | `kortix connectors rename <slug> "Gmail (work)"` |
+| "control what a connector may do (per-tool / glob / regex)" | `kortix connectors policy <slug> set <match> allow\|ask\|block` · `policy <slug> ls\|rm\|clear` |
+| "project-wide execution rules" | `kortix connectors policy ls`, `policy set --default risk\|allow_all` |
+
+> **Connectors are fully CLI-configurable** — everything the dashboard's Customize → Connectors does (add/remove, connect, credential, profile model, who-can-use, rename, and per-tool/glob/**regex** Allow/Ask/Block permissions) has a `kortix connectors …` command. `add`/`rm`/`policy set --default` edit the local `kortix.toml` (then `kortix ship`); the rest apply immediately via the cloud. Connector *management* is an admin operation — it needs a **user login** (your laptop or the dashboard), not the project-scoped sandbox token. Inside a session the agent doesn't configure connectors; it **uses** them through the `kortix-executor` MCP (`connectors`/`discover`/`describe`/`call`), and the gateway enforces these policies on every call (returning a denial or pending-approval).
 
 **Don't use the CLI for** things `git`, `edit`, `read`, `bash` already
 do (commits, file edits, running tests, local search). The CLI is the
@@ -191,6 +207,17 @@ The platform never reads opencode's config dir; OpenCode never reads `kortix.tom
 </contract>
 
 <references>
+
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/sandbox.md">
+  The session sandbox runtime environment — what you can run inside a
+  session. Key point: the sandbox **fully supports Docker and
+  Docker-in-Docker** — `dockerd`, building images, and running
+  containers/services all work. The #1 misconception to kill: an agent
+  assuming a sandbox can't run Docker/containers and therefore that it
+  "can't verify from here." It can. Load this whenever an agent is about
+  to run the stack, reaches for Docker/containers, or starts to doubt it
+  can verify from inside the sandbox.
+</reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md">
   In-depth `kortix` CLI reference. Every subcommand (login, hosts,

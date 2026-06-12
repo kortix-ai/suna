@@ -21,10 +21,8 @@ import { Database } from 'bun:sqlite';
 import type { NormalizedMessage, NormalizedPart } from './agentpress-mapper';
 
 const WORKSPACE_DIR = '/workspace';
-// opencode app version stamped on sessions (NOT NULL). Display metadata only.
 const OPENCODE_VERSION = '1.2.25';
 
-// opencode's real schema, verbatim (CREATE … IF NOT EXISTS for idempotency).
 const REAL_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS "__drizzle_migrations" (
   id INTEGER PRIMARY KEY,
@@ -206,13 +204,24 @@ function slugFromTitle(title: string, fallback: string): string {
   return s || fallback;
 }
 
-// message.data — mirrors real opencode rows (role + time; assistant carries
-// model/agent/path/cost/tokens metadata, all placeholder for legacy imports).
-function messageData(role: 'user' | 'assistant', atMs: number): Record<string, unknown> {
-  if (role === 'user') return { role: 'user', time: { created: atMs } };
+// message.data — mirrors real opencode rows. opencode validates required keys
+// on read (e.g. info.agent), so BOTH roles must carry agent/model — a user
+// message with only role+time makes opencode 400 ("Missing key … [info][agent]")
+// and the whole thread fails to render.
+function messageData(role: 'user' | 'assistant', atMs: number, parentId: string): Record<string, unknown> {
+  if (role === 'user') return {
+    role: 'user',
+    time: { created: atMs },
+    summary: { diffs: [] },
+    agent: 'kortix',
+    model: { providerID: 'kortix', modelID: 'unknown' },
+  };
   return {
     role: 'assistant',
     time: { created: atMs, completed: atMs },
+    // opencode requires parentID on assistant messages (the user message that
+    // started the turn). Missing it 400s the whole thread on read.
+    parentID: parentId,
     modelID: 'unknown', providerID: 'unknown', mode: 'kortix', agent: 'kortix',
     path: { cwd: WORKSPACE_DIR, root: WORKSPACE_DIR },
     cost: 0, tokens: { total: 0, input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
@@ -261,10 +270,15 @@ export function writeConversations(dbPath: string, projectId: string, sessions: 
         insSession.run(sessionID, projectId, slugFromTitle(title, `session-${sIdx++}`), WORKSPACE_DIR, title, OPENCODE_VERSION, now, now);
         res.sessions++;
 
+        let lastUserMessageId: string | null = null;
         for (const m of s.messages) {
           const atMs = Date.parse(m.createdAt) || now;
           const messageID = id('msg', atMs);
-          insMessage.run(messageID, sessionID, atMs, atMs, JSON.stringify(messageData(m.role, atMs)));
+          // parentID for an assistant message is the user message that started
+          // the turn; fall back to itself if a session somehow opens on assistant.
+          const parentId = m.role === 'user' ? messageID : (lastUserMessageId ?? messageID);
+          insMessage.run(messageID, sessionID, atMs, atMs, JSON.stringify(messageData(m.role, atMs, parentId)));
+          if (m.role === 'user') lastUserMessageId = messageID;
           res.messages++;
 
           for (const p of m.parts) {

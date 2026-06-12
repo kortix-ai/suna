@@ -9,7 +9,8 @@ import { and, eq } from 'drizzle-orm';
 import { executorConnectors, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { commitManifest, loadManifestForEdit } from '../projects/index';
-import { extractConnectors } from '../projects/connectors';
+import { extractConnectors, type ConnectorPolicySpec, type ConnectorPolicyAction, type ConnectorSpec } from '../projects/connectors';
+import { isValidMatcher } from './policy';
 import {
   extractProjectPolicies,
   projectPoliciesToTomlEntries,
@@ -106,8 +107,18 @@ export async function upsertConnectorInManifest(
   const entry = draftToEntry(draft);
   const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
   const idx = current.findIndex((c) => c?.slug === draft.slug);
-  if (idx >= 0) current[idx] = entry;
-  else current.push(entry);
+  if (idx >= 0) {
+    // Updating in place: carry over fields the connection draft doesn't own —
+    // per-tool policies, the enabled flag, and the display name (when the draft
+    // omits it) — so editing the connection never clobbers permissions or rename.
+    const prev = current[idx]!;
+    if (prev.policies !== undefined) entry.policies = prev.policies;
+    if (prev.enabled !== undefined) entry.enabled = prev.enabled;
+    if (entry.name === undefined && prev.name !== undefined) entry.name = prev.name;
+    current[idx] = entry;
+  } else {
+    current.push(entry);
+  }
   manifest.raw.connectors = current;
 
   const parsed = extractConnectors(manifest);
@@ -157,6 +168,203 @@ export async function setConnectorCredentialShared(projectId: string, slug: stri
   if (!connectorId) return { ok: false, error: 'connector not found', status: 404 };
   await upsertCredential({ projectId, connectorId, userId: null, value, kind: 'secret' });
   return { ok: true };
+}
+
+/**
+ * Change ONLY a connector's credential MODE (shared ↔ per_user) in kortix.toml,
+ * commit, and re-sync so the runtime row reflects it. We deliberately don't wipe
+ * existing credentials — switching just changes how they resolve (shared = the
+ * userId-null row; per_user = each member's own), so the admin is told they may
+ * need to (re)connect. Other manifest fields are left untouched.
+ */
+export async function setConnectorCredentialModeInManifest(
+  projectId: string,
+  accountId: string,
+  slug: string,
+  mode: 'shared' | 'per_user',
+): Promise<CrudResult> {
+  const row = await loadRow(projectId);
+  if (!row) return { ok: false, error: 'project not found', status: 404 };
+
+  let manifest;
+  try {
+    manifest = await loadManifestForEdit(row);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
+  }
+
+  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const entry = current.find((c) => c?.slug === slug);
+  if (!entry) return { ok: false, error: 'connector not found', status: 404 };
+  entry.credential = mode;
+  manifest.raw.connectors = current;
+
+  const parsed = extractConnectors(manifest);
+  const err = parsed.errors.find((e) => e.slug === slug);
+  if (err) return { ok: false, error: err.error, status: 400 };
+
+  const committed = await commitManifest(row, manifest, `chore: set ${slug} credential mode → ${mode}`);
+  if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
+
+  const sync = await syncProjectConnectors(projectId, accountId);
+  return { ok: true, sync };
+}
+
+/** Rename a connector — patches the kortix.toml entry's `name` (display label) + re-syncs. */
+export async function setConnectorNameInManifest(
+  projectId: string,
+  accountId: string,
+  slug: string,
+  name: string,
+): Promise<CrudResult> {
+  const trimmed = name.trim();
+  if (!trimmed) return { ok: false, error: 'name is required', status: 400 };
+  if (trimmed.length > 255) return { ok: false, error: 'name is too long (max 255)', status: 400 };
+
+  const row = await loadRow(projectId);
+  if (!row) return { ok: false, error: 'project not found', status: 404 };
+
+  let manifest;
+  try {
+    manifest = await loadManifestForEdit(row);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
+  }
+
+  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const entry = current.find((c) => c?.slug === slug);
+  if (!entry) return { ok: false, error: 'connector not found', status: 404 };
+  entry.name = trimmed;
+  manifest.raw.connectors = current;
+
+  const parsed = extractConnectors(manifest);
+  const err = parsed.errors.find((e) => e.slug === slug);
+  if (err) return { ok: false, error: err.error, status: 400 };
+
+  const committed = await commitManifest(row, manifest, `chore: rename connector ${slug} → ${trimmed}`);
+  if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
+
+  const sync = await syncProjectConnectors(projectId, accountId);
+  return { ok: true, sync };
+}
+
+// ─── Connector definition (the [[connectors]] entry itself) ─────────────────
+
+/** The editable connection config — same fields the "Add connector" form sets. */
+export interface ConnectorConfigView {
+  slug: string;
+  provider: ConnectorSpec['provider'];
+  credentialMode: 'shared' | 'per_user';
+  app: string | null;
+  account: string | null;
+  url: string | null;
+  transport: 'http' | 'sse' | null;
+  endpoint: string | null;
+  baseUrl: string | null;
+  spec: string | null;
+  auth: { type: 'none' | 'bearer' | 'basic' | 'custom'; in: 'header' | 'query'; name: string | null; prefix: string | null };
+}
+
+/**
+ * Read a single connector's definition from kortix.toml (source of truth) in the
+ * same shape the dashboard edits. Parsed via extractConnectors so it round-trips
+ * exactly with the upsert path. Returns null if the connector doesn't exist.
+ */
+export async function getConnectorConfigFromManifest(
+  projectId: string,
+  slug: string,
+): Promise<ConnectorConfigView | null> {
+  const row = await loadRow(projectId);
+  if (!row) return null;
+  const manifest = await loadManifestForEdit(row).catch(() => null);
+  if (!manifest) return null;
+  const spec = extractConnectors(manifest).specs.find((s) => s.slug === slug);
+  if (!spec) return null;
+  return {
+    slug: spec.slug,
+    provider: spec.provider,
+    credentialMode: spec.credentialMode,
+    app: spec.app,
+    account: spec.account,
+    url: spec.url,
+    transport: spec.transport,
+    endpoint: spec.endpoint,
+    baseUrl: spec.baseUrl,
+    spec: spec.spec,
+    auth: { type: spec.auth.type, in: spec.auth.in, name: spec.auth.name, prefix: spec.auth.prefix },
+  };
+}
+
+// ─── Per-connector policies ([[connectors.policies]]) ───────────────────────
+
+const CONNECTOR_POLICY_ACTIONS: readonly ConnectorPolicyAction[] = ['always_run', 'require_approval', 'block'];
+
+/** Read a single connector's [[connectors.policies]] from kortix.toml (source of truth). */
+export async function getConnectorPoliciesFromManifest(
+  projectId: string,
+  slug: string,
+): Promise<{ policies: ConnectorPolicySpec[] } | null> {
+  const row = await loadRow(projectId);
+  if (!row) return null;
+  const manifest = await loadManifestForEdit(row).catch(() => null);
+  if (!manifest) return { policies: [] };
+  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const entry = current.find((c) => c?.slug === slug);
+  if (!entry) return null;
+  const raw = Array.isArray(entry.policies) ? (entry.policies as Record<string, unknown>[]) : [];
+  const policies = raw
+    .filter((p) => p && typeof p.match === 'string')
+    .map((p) => ({ match: String(p.match), action: p.action as ConnectorPolicyAction }));
+  return { policies };
+}
+
+/**
+ * Replace a connector's [[connectors.policies]] in kortix.toml, commit, re-sync
+ * (→ executor_connector_policies, which the gateway enforces). Matches are glob
+ * or `/regex/` — validated here so a bad regex can't be persisted.
+ */
+export async function setConnectorPoliciesInManifest(
+  projectId: string,
+  accountId: string,
+  slug: string,
+  policies: ConnectorPolicySpec[],
+): Promise<CrudResult> {
+  for (const [i, p] of policies.entries()) {
+    if (!p.match || typeof p.match !== 'string') return { ok: false, error: `rule #${i + 1}: \`match\` is required`, status: 400 };
+    if (!isValidMatcher(p.match.trim())) return { ok: false, error: `rule #${i + 1}: invalid regex pattern`, status: 400 };
+    if (!CONNECTOR_POLICY_ACTIONS.includes(p.action)) {
+      return { ok: false, error: `rule #${i + 1}: \`action\` must be ${CONNECTOR_POLICY_ACTIONS.join(' | ')}`, status: 400 };
+    }
+  }
+
+  const row = await loadRow(projectId);
+  if (!row) return { ok: false, error: 'project not found', status: 404 };
+
+  let manifest;
+  try {
+    manifest = await loadManifestForEdit(row);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message || 'failed to read manifest', status: 400 };
+  }
+
+  const current = Array.isArray(manifest.raw.connectors) ? (manifest.raw.connectors as Record<string, unknown>[]) : [];
+  const entry = current.find((c) => c?.slug === slug);
+  if (!entry) return { ok: false, error: 'connector not found', status: 404 };
+
+  const clean = policies.map((p) => ({ match: p.match.trim(), action: p.action }));
+  if (clean.length) entry.policies = clean;
+  else delete entry.policies;
+  manifest.raw.connectors = current;
+
+  const parsed = extractConnectors(manifest);
+  const err = parsed.errors.find((e) => e.slug === slug);
+  if (err) return { ok: false, error: err.error, status: 400 };
+
+  const committed = await commitManifest(row, manifest, `chore: update ${slug} permissions`);
+  if ('error' in committed) return { ok: false, error: committed.error, status: committed.status };
+
+  const sync = await syncProjectConnectors(projectId, accountId);
+  return { ok: true, sync };
 }
 
 // ─── Project-level policies (top-level [[policies]] + [policy]) ──────────────

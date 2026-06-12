@@ -17,6 +17,25 @@ import type { ExecResult } from './execute';
 
 const PD_BASE = 'https://api.pipedream.com';
 
+/**
+ * Pipedream's catalogue includes internal WORKFLOW UTILITIES (schedule, http,
+ * pipedream_utils, formatting, helper_functions, data stores, …) alongside real
+ * third-party apps. They aren't connectable — they carry no auth method, so
+ * there's nothing to authorize — and only clutter the "connect an app" grid.
+ * We hide anything with no auth_type, plus an explicit slug denylist for any
+ * that ever ship with a stray auth flag.
+ */
+const UTILITY_APP_SLUGS = new Set([
+  'pipedream_utils', 'schedule', 'http', 'formatting', 'helper_functions',
+  'data_stores', 'sse', 'delay', 'filter', 'end', 'throw_error',
+  'only_continue', 'code', 'rss', 'pipedream', 'go', 'node', 'python', 'bash',
+]);
+
+function isConnectableApp(a: { slug: string; authType: string | null }): boolean {
+  if (UTILITY_APP_SLUGS.has(a.slug)) return false;
+  return !!a.authType && a.authType !== 'none';
+}
+
 export function pipedreamConfigured(): boolean {
   return !!(config.PIPEDREAM_CLIENT_ID && config.PIPEDREAM_CLIENT_SECRET && config.PIPEDREAM_PROJECT_ID);
 }
@@ -109,11 +128,15 @@ class PipedreamProvider {
       page_info: { total_count: number; count: number; end_cursor?: string };
       data: Array<{ name_slug: string; name: string; description?: string; img_src?: string; auth_type?: string; categories: string[] }>;
     }>('GET', `/v1/connect/${this.projectId}/apps?${params.toString()}`);
-    const apps = (data.data || []).map((a) => ({
-      slug: a.name_slug, name: a.name, description: a.description ?? null, imgSrc: a.img_src ?? null,
-      authType: a.auth_type ?? null, categories: a.categories || [],
-    }));
-    return { apps, nextCursor: data.page_info?.end_cursor, hasMore: apps.length >= limit };
+    const apps = (data.data || [])
+      .map((a) => ({
+        slug: a.name_slug, name: a.name, description: a.description ?? null, imgSrc: a.img_src ?? null,
+        authType: a.auth_type ?? null, categories: a.categories || [],
+      }))
+      .filter(isConnectableApp);
+    // hasMore is driven by Pipedream's cursor, NOT apps.length — filtering out
+    // utility apps would otherwise shrink a page below `limit` and stop paging early.
+    return { apps, nextCursor: data.page_info?.end_cursor, hasMore: !!data.page_info?.end_cursor };
   }
 
   async listActions(app: string, limit = 100): Promise<PipedreamActionLike[]> {
@@ -125,18 +148,65 @@ class PipedreamProvider {
       key: a.key,
       name: a.name,
       description: a.description,
-      params: (a.configurable_props || []).filter((p) => p.name !== 'app').map((p) => ({
+      // Drop the account-selector prop. Pipedream names it after the app slug
+      // (e.g. `gmail`, `google_drive`) with `type: "app"` — NOT literally "app" —
+      // so it must be filtered by type. If it leaks into the schema the agent
+      // fills it and clobbers the credential binding in `runAction` (empty result).
+      params: (a.configurable_props || []).filter((p) => p.type !== 'app').map((p) => ({
         name: p.name, type: p.type, required: !p.optional, description: p.description,
       })),
     }));
   }
 
+  /**
+   * actionKey → the component's account-selector prop NAME. Components name
+   * their app prop with an arbitrary variable, NOT the app slug — salesforce
+   * components use `salesforce` (slug `salesforce_rest_api`), google_drive
+   * uses `googleDrive`. Binding the credential under the slug lands on a
+   * nonexistent prop, so the component runs with an EMPTY $auth and crashes
+   * deep in its own code (e.g. salesforce `_subdomain()` TypeError) — that was
+   * the prod-wide named-action 502 incident of 2026-06-11.
+   */
+  private appPropNames = new Map<string, string>();
+
+  private async resolveAppPropName(actionKey: string, app: string): Promise<string> {
+    const cached = this.appPropNames.get(actionKey);
+    if (cached) return cached;
+    let name = app; // last-resort fallback: the slug (correct for e.g. gmail)
+    try {
+      const res = await this.api<{ data?: { configurable_props?: Array<{ name?: string; type?: string }> } }>(
+        'GET', `/v1/connect/${this.projectId}/components/${encodeURIComponent(actionKey)}`,
+      );
+      const props = res.data?.configurable_props ?? [];
+      const appProp = props.find((p) => p?.type === 'app' && p.name);
+      if (appProp?.name) name = appProp.name;
+    } catch { /* keep the slug fallback — never block the call on metadata */ }
+    this.appPropNames.set(actionKey, name);
+    return name;
+  }
+
   async runAction(extUserId: string, app: string, actionKey: string, props: Record<string, unknown>, providerAccountId: string): Promise<unknown> {
+    const appProp = await this.resolveAppPropName(actionKey, app);
     const data = await this.api<Record<string, unknown>>('POST', `/v1/connect/${this.projectId}/actions/run`, {
       id: actionKey,
       external_user_id: extUserId,
-      configured_props: { [app]: { authProvisionId: providerAccountId }, ...props },
+      // Spread the agent's args FIRST so the account-selector binding (under the
+      // component's REAL app-prop name) always wins — a stray same-named arg can
+      // never overwrite the credential.
+      configured_props: { ...props, [appProp]: { authProvisionId: providerAccountId } },
     });
+    // Pipedream returns HTTP 200 even when the action THREW: the failure is in a
+    // top-level `error` and/or an `os` log entry with k:"error". If we don't catch
+    // it, `data.exports` ({}) gets returned and the gateway reports a fake
+    // `ok:true, data:{}` — masking real errors (expired/broken connection, bad
+    // args) as "empty data". Surface it instead.
+    const osErr = Array.isArray(data.os)
+      ? (data.os as Array<{ k?: string; err?: { message?: string; name?: string } }>).find((o) => o?.k === 'error')?.err
+      : undefined;
+    const err = (data.error ?? osErr) as { message?: string; name?: string } | undefined;
+    if (err && typeof err === 'object') {
+      throw new Error(`pipedream action error: ${err.message ?? err.name ?? 'unknown error'}`);
+    }
     return data.ret ?? data.exports ?? data.os ?? data;
   }
 
@@ -201,8 +271,9 @@ export async function pipedreamConnectUrl(
   slug: string,
   app: string,
   userId: string | null,
+  redirects?: { success?: string; error?: string },
 ): Promise<{ connectUrl?: string; token: string; expiresAt: string }> {
-  return getProvider().createConnectToken(externalUserId(projectId, slug, userId), app);
+  return getProvider().createConnectToken(externalUserId(projectId, slug, userId), app, redirects);
 }
 
 /**
@@ -233,6 +304,11 @@ export function verifyWebhookSig(extUserId: string, sig: string | null): boolean
 /** Fetch the app's action catalog (raw, for normalizePipedream). */
 export async function pipedreamCatalog(app: string): Promise<PipedreamActionLike[]> {
   return getProvider().listActions(app);
+}
+
+/** List the connected accounts for an external user id (used by finalize + live e2e). */
+export async function pipedreamListAccounts(extUserId: string): Promise<Array<{ id: string; app: string; appName: string }>> {
+  return getProvider().listAccounts(extUserId);
 }
 
 export interface PipedreamApp {

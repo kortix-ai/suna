@@ -18,6 +18,7 @@ import { ProjectShell } from '@/components/projects/project-shell';
 import { Button } from '@/components/ui/button';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
 import {
+  getProjectDetail,
   getProjectSessionSandbox,
   restartProjectSession,
   syncOpencodeSessionData,
@@ -67,7 +68,18 @@ export default function ProjectSessionPage() {
   // Detect "no plan" up front so we can (a) skip the sandbox poll entirely and
   // (b) render a calm gated screen instead of an infinite loader. Subscribed-
   // but-out-of-credits accounts are NOT gated (they can still CRUD).
-  const { data: accountState } = useAccountState();
+  //
+  // Scope to the account that OWNS this project (team account), not the viewer's
+  // primary account — otherwise a member who owns their own personal account
+  // reads the wrong "are you subscribed?" answer and the upgrade dialog targets
+  // the wrong wallet. Reuses ProjectShell's project-detail query (same key).
+  const { data: projectDetail } = useQuery({
+    queryKey: ['project-detail', projectId],
+    queryFn: () => getProjectDetail(projectId!),
+    enabled: !!projectId,
+  });
+  const projectAccountId = projectDetail?.project?.account_id ?? undefined;
+  const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const accountLoaded = !!accountState;
   const noPlan =
@@ -157,8 +169,8 @@ export default function ProjectSessionPage() {
   useEffect(() => {
     if (!noPlan || billingGatedRef.current) return;
     billingGatedRef.current = true;
-    openUpgradeDialog({ reason: 'subscription_required' });
-  }, [noPlan, openUpgradeDialog]);
+    openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId });
+  }, [noPlan, openUpgradeDialog, projectAccountId]);
 
   // From the first paint we mount ProjectShell so the project's sidebar is
   // always visible — no full-page "Preparing workspace" flash. The inner
@@ -177,7 +189,7 @@ export default function ProjectSessionPage() {
           title="Subscribe to start sessions"
           message="Your team isn't on a plan yet. Subscribe to Kortix Team to run sessions, with LLM compute and AI Computers for every teammate."
           action={
-            <Button onClick={() => openUpgradeDialog({ reason: 'subscription_required' })}>
+            <Button onClick={() => openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId })}>
               Subscribe to Team plan
             </Button>
           }

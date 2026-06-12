@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import {
   ChevronLeft,
+  ChevronRight,
   ChevronDown,
   SquarePen,
   Loader2,
@@ -466,7 +467,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           the footer Account·You menu (see UserMenu).
          ==================================================================== */}
       <SidebarHeader className="pb-1 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
-        <div className="flex h-7 shrink-0 items-center justify-between px-2 group-data-[collapsible=icon]:justify-center">
+        <div className="relative flex h-7 shrink-0 items-center justify-between px-2 group-data-[collapsible=icon]:justify-center">
           <Link
             href="/projects"
             className="flex items-center group-data-[collapsible=icon]:hidden"
@@ -474,13 +475,21 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           >
             <KortixLogo variant="logomark" size={16} className="flex-shrink-0" />
           </Link>
-          <Link
-            href="/projects"
-            className="hidden items-center group-data-[collapsible=icon]:flex"
-            aria-label="Projects"
-          >
-            <KortixLogo variant="symbol" size={20} className="flex-shrink-0" />
-          </Link>
+          {/* Collapsed: clicking the logo expands the sidebar (no nav). The
+              symbol swaps to a chevron on hover to signal "expand". */}
+          {effectiveState === 'collapsed' && (
+            <button
+              type="button"
+              className="group/collapsed absolute inset-0 flex items-center justify-center cursor-pointer"
+              onClick={() => (isMobile ? setOpenMobile(true) : setOpen(true))}
+              aria-label="Expand sidebar"
+            >
+              <span className="flex items-center justify-center group-hover/collapsed:hidden">
+                <KortixLogo variant="symbol" size={20} className="flex-shrink-0" />
+              </span>
+              <ChevronRight className="hidden h-3.5 w-3.5 text-sidebar-foreground group-hover/collapsed:block" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => (isMobile ? setOpenMobile(false) : setOpen(false))}
@@ -536,6 +545,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <CollapsedIconButton
               icon={<ListTree className="h-4 w-4" />}
               label="Sessions"
+              onClick={() => (isMobile ? setOpenMobile(true) : setOpen(true))}
               flyoutContent={<ProjectSessionsFlyout projectId={projectId} />}
             />
           </div>

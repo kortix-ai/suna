@@ -24,11 +24,13 @@ import { useTranslations } from 'next-intl';
 import * as React from 'react';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { openExternalRoute } from '@/lib/desktop';
 import { useQuery } from '@tanstack/react-query';
 import {
   BookOpen,
   ChevronsUpDown,
   CreditCard,
+  Download,
   Home,
   LifeBuoy,
   LogOut,
@@ -57,6 +59,7 @@ import { resetClientState } from '@/lib/utils/reset-client-state';
 import { transitionFromElement } from '@/lib/view-transition';
 import { themeOptions, type SettingsTabId } from '@/lib/menu-registry';
 import { SupportDialog } from '@/components/layout/support-dialog';
+import { DownloadAppsModal } from '@/components/layout/download-apps-modal';
 import { UserSettingsModal } from '@/components/settings/user-settings-modal';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { isBillingEnabled } from '@/lib/config';
@@ -64,6 +67,7 @@ import { useReferralDialog } from '@/stores/referral-dialog';
 import { ReferralDialog } from '@/components/referrals/referral-dialog';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { listAccounts } from '@/lib/projects-client';
+import { usePermission } from '@/lib/use-permission';
 
 export type UserMenuVariant = 'header' | 'sidebar';
 
@@ -94,6 +98,7 @@ export function UserMenu({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
   const [supportOpen, setSupportOpen] = useState(false);
+  const [downloadOpen, setDownloadOpen] = useState(false);
 
   // Mounted on every authenticated page, so this menu owns the "default
   // selected account" guarantee for the whole app. The account *switcher*
@@ -113,6 +118,14 @@ export function UserMenu({
 
   const currentAccount =
     accountsQuery.data?.find((a) => a.account_id === selectedAccountId) ?? null;
+
+  // Hide the Billing shortcut from users who can't manage billing (billing.write
+  // — owners + the billing_manager policy). Mirrors the AccountSwitcher gate so a
+  // non-billable member never reaches a billing tab they can't act on.
+  const canManageBilling = usePermission(
+    currentAccount?.account_id,
+    'billing.write',
+  ).allowed;
 
   const deferAfterClose = (fn: () => void) => {
     setMenuOpen(false);
@@ -251,7 +264,14 @@ export function UserMenu({
           <ActionRow
             icon={<BookOpen className="size-3.5" />}
             label="Docs"
-            onSelect={() => deferAfterClose(() => router.push('/docs'))}
+            onSelect={() => deferAfterClose(() => {
+              if (!openExternalRoute('/docs')) router.push('/docs');
+            })}
+          />
+          <ActionRow
+            icon={<Download className="size-3.5" />}
+            label="Download apps"
+            onSelect={() => deferAfterClose(() => setDownloadOpen(true))}
           />
           <ActionRow
             icon={<LifeBuoy className="size-3.5" />}
@@ -265,7 +285,7 @@ export function UserMenu({
           />
           {/* Billing — account-level surface. Jumps to /accounts/[id]?tab=billing.
               The AccountSwitcher in the header also routes here. */}
-          {isBillingEnabled() && (
+          {isBillingEnabled() && canManageBilling && (
             <ActionRow
               icon={<CreditCard className="size-3.5" />}
               label="Billing"
@@ -339,6 +359,7 @@ export function UserMenu({
         returnUrl={typeof window !== 'undefined' ? window?.location?.href || '/' : '/'}
       />
       <SupportDialog open={supportOpen} onOpenChange={setSupportOpen} />
+      <DownloadAppsModal open={downloadOpen} onOpenChange={setDownloadOpen} />
       <ReferralDialog open={referralOpen} onOpenChange={closeReferral} />
     </>
   );

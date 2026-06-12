@@ -255,10 +255,11 @@ describe('POST /call', () => {
     expect((await res.json()).reason).toBe('needs_auth');
   });
 
-  test('502 upstream failure', async () => {
+  test('500 upstream failure (NOT 502 — Cloudflare replaces origin 502 bodies)', async () => {
     world.upstreamStatus = 500;
     const res = await req('/call', { method: 'POST', headers: { 'x-test-user': ALICE, 'content-type': 'application/json' }, body: JSON.stringify({ connector: 'stripe', action: 'charges.create', args: {} }) });
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(500);
+    expect((await res.json()).reason).toBeTruthy();
   });
 });
 

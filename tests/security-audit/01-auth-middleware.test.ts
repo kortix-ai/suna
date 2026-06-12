@@ -155,7 +155,6 @@ describe('Security Audit: Auth Middleware', () => {
       const routes = [
         '/v1/admin/api/sandboxes',
         '/v1/billing/account-state',
-        '/v1/queue/all',
       ];
       for (const route of routes) {
         const token = extractToken({}, '', 'malicious-token', route);

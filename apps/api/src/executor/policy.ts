@@ -34,9 +34,46 @@ export function globToRegex(glob: string): RegExp {
   return new RegExp(`^${escaped}$`, 'i');
 }
 
+/**
+ * A `match` is EITHER a glob (default) OR an explicit regex when wrapped in
+ * slashes: `/^charges\.(create|update)$/i`. Regex is NOT auto-anchored — the
+ * author controls `^`/`$` — and case-insensitive by default. An invalid regex
+ * compiles to a never-match so a typo can't silently allow-all. (Storing the
+ * matcher as a plain string keeps the schema unchanged — no migration.)
+ */
+export function isRegexMatcher(pattern: string): boolean {
+  return /^\/.*\/[a-z]*$/.test(pattern) && pattern.length > 2;
+}
+
+export function compileMatcher(pattern: string): RegExp {
+  if (isRegexMatcher(pattern)) {
+    const lastSlash = pattern.lastIndexOf('/');
+    const body = pattern.slice(1, lastSlash);
+    const flags = pattern.slice(lastSlash + 1) || 'i';
+    try {
+      return new RegExp(body, flags.includes('i') ? flags : `${flags}i`);
+    } catch {
+      return /(?!)/; // invalid regex → never matches (fail safe, never allow-all)
+    }
+  }
+  return globToRegex(pattern);
+}
+
+/** True if `pattern` is a syntactically valid matcher (glob always is; regex may not be). */
+export function isValidMatcher(pattern: string): boolean {
+  if (!isRegexMatcher(pattern)) return pattern.length > 0;
+  const lastSlash = pattern.lastIndexOf('/');
+  try {
+    new RegExp(pattern.slice(1, lastSlash), pattern.slice(lastSlash + 1) || 'i');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function matchesPolicy(pattern: string, path: string): boolean {
   if (pattern === '*') return true;
-  return globToRegex(pattern).test(path);
+  return compileMatcher(pattern).test(path);
 }
 
 /**

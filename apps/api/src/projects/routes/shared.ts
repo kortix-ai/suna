@@ -1,13 +1,15 @@
+import { reopenComputeForSandbox } from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { auth, json } from '../../openapi';
+import { getProvider } from '../../platform/providers';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
-import { changeRequests, projectSessions } from '@kortix/db';
-import { eq, inArray } from 'drizzle-orm';
+import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
+import { and, eq, inArray } from 'drizzle-orm';
 import { resolveProjectGitAuth } from '../lib/git';
 import { ProjectRow, isPlainObject, normalizeString, readBody } from '../lib/serializers';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
@@ -142,6 +144,68 @@ export const syncOpencodeSessionsHandler = async (c: any) => {
   return c.json({ updated });
 };
 
+
+/**
+ * Resume a hibernated (status='stopped') session sandbox IN PLACE instead of
+ * destroying it and cold-reprovisioning a fresh one. A stopped row whose
+ * `externalId` is still set is a powered-down VM whose disk — the repo clone,
+ * installed deps, opencode — is intact, so resuming it skips the dominant boot
+ * costs (snapshot pull + clone + deps).
+ *
+ * Atomically wins the stopped→active transition (so concurrent opens don't
+ * double-start the provider), flips the session back to `running`, reopens
+ * compute metering, and kicks the provider start in the background. The
+ * caller returns `active` immediately; the frontend's existing health poll
+ * waits for the container to come back — identical to the idle-wake path.
+ *
+ * On a hard provider-start failure the row is reverted to `stopped` so the
+ * next open simply retries the resume (transient blips self-heal).
+ *
+ * Returns true when THIS call won the transition (and kicked the start).
+ */
+export async function resumeStoppedSandbox(row: {
+  sandboxId: string;
+  sessionId: string;
+  accountId: string;
+  provider: string;
+  externalId: string | null;
+}): Promise<boolean> {
+  if (!row.externalId) return false;
+  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) return false;
+
+  const now = new Date();
+  // Conditional update = the lock: only the request that flips stopped→active
+  // proceeds to start the VM. Concurrent polls see `active` and just return it.
+  const [won] = await db
+    .update(sessionSandboxes)
+    .set({ status: 'active', updatedAt: now })
+    .where(and(eq(sessionSandboxes.sandboxId, row.sandboxId), eq(sessionSandboxes.status, 'stopped')))
+    .returning();
+  if (!won) return false;
+
+  await db
+    .update(projectSessions)
+    .set({ status: 'running', updatedAt: now })
+    .where(eq(projectSessions.sessionId, row.sessionId))
+    .catch((err) => console.warn(`[projects] failed to mark session running on resume for ${row.sessionId}:`, err));
+
+  void reopenComputeForSandbox(row.sandboxId, row.accountId, row.sessionId).catch((err) =>
+    console.warn(`[projects] compute reopen failed for ${row.sandboxId}:`, err),
+  );
+
+  const provider = getProvider(row.provider as SandboxProviderName);
+  void provider.start(row.externalId).catch(async (err) => {
+    console.warn(`[projects] failed to resume sandbox ${row.externalId} for session ${row.sessionId}:`, err);
+    // Revert so a later open retries the resume instead of spinning the health
+    // poll against a VM that never came up.
+    await db
+      .update(sessionSandboxes)
+      .set({ status: 'stopped', updatedAt: new Date() })
+      .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
+      .catch(() => {});
+  });
+  return true;
+}
 
 export async function kickProvisionOnOpen(
   loaded: { row: { accountId: string; repoUrl: string; defaultBranch: string; manifestPath: string }; userId: string },

@@ -76,7 +76,7 @@ function SessionFilesExplorerInner({ chatSessionId }: { chatSessionId?: string }
         onModeChange={onModeChange}
       />
       <div className="min-h-0 flex-1">
-        {showDiff ? <SessionDiffViewer sessionId={chatSessionId!} /> : <FileExplorerPage />}
+        {showDiff ? <SessionDiffViewer sessionId={chatSessionId!} /> : <FileExplorerPage embedded />}
       </div>
     </div>
   );

@@ -270,7 +270,7 @@ jobs:
       - name: Build Linux desktop installer
         run: pnpm --filter @kortix/desktop tauri build --bundles appimage
         env:
-          KORTIX_DESKTOP_DEFAULT_URL: https://dev.kortix.com/dashboard
+          KORTIX_DESKTOP_DEFAULT_URL: https://dev.kortix.com/projects
 
       - name: Verify installer exists
         run: |

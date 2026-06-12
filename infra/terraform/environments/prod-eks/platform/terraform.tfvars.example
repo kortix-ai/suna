@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (gitignored). Only one input — the rest comes from the
+# cluster layer's remote state.
+#
+# Prefer env so it never touches disk:
+#   export TF_VAR_cloudflare_api_token=...
+
+# cloudflare_api_token = "..."   # Cloudflare token with DNS:Edit on kortix.com

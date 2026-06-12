@@ -1,0 +1,27 @@
+{{- if not .Values.rollout.enabled }}
+# Standard Deployment (rollout.enabled=false). When progressive delivery is on,
+# rollout.yaml renders an Argo Rollouts Rollout instead and this is omitted.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kortix-api.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kortix-api.labels" . | nindent 4 }}
+spec:
+  # When the HPA owns replicas, omit the static count so a deploy can't briefly
+  # reset it (the HPA reconciles it anyway).
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "kortix-api.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: {{ .Values.rollingUpdate.maxSurge }}
+      maxUnavailable: {{ .Values.rollingUpdate.maxUnavailable }}
+  template:
+    {{- include "kortix-api.podTemplate" . | nindent 4 }}
+{{- end }}
