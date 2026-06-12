@@ -87,6 +87,9 @@ async function spawnAgentTurn(
       initial_prompt: initialPrompt,
     },
     enforceAccountCap: false,
+    // Channel sessions are team-facing — project-visible, not private to the
+    // stand-in owner the session is attributed to.
+    visibility: 'project',
     metadata: {
       source: 'telegram',
       telegram: {

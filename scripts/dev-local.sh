@@ -51,6 +51,13 @@ load_local_env() {
   # `local_docker` was removed when we consolidated on cloud — listing it here
   # only made the API log "Unknown sandbox provider" twice on every boot.
   export ALLOWED_SANDBOX_PROVIDERS="daytona"
+  # DOCKER_HOST only feeds the (now-disabled) local_docker provider, but the
+  # committed apps/api/.env may carry a stale per-machine socket path (e.g.
+  # another dev's ~/.docker/run/docker.sock). Once exported it hijacks the
+  # `docker`/`supabase` commands below — which must use THIS machine's active
+  # Docker context — making them fail with "Docker daemon is not running" even
+  # though Docker is up. Drop it so Docker resolves the context normally.
+  unset DOCKER_HOST
   # KORTIX_URL is resolved by ensure_dev_tunnel() below. Cloud (Daytona)
   # sandboxes call BACK to it (LLM router, web search, RPC) and cannot reach
   # this machine's localhost — so they need a public tunnel URL. The dashboard
@@ -363,6 +370,8 @@ SUPABASE_SERVICE_ROLE_KEY=${SB_SERVICE_ROLE_KEY}
 DAYTONA_API_KEY=${DAYTONA_API_KEY:-}
 DAYTONA_SERVER_URL=${DAYTONA_SERVER_URL:-}
 DAYTONA_TARGET=${DAYTONA_TARGET:-us}
+KORTIX_WARM_SNAPSHOT_ENABLED=${KORTIX_WARM_SNAPSHOT_ENABLED:-false}
+DAYTONA_WARM_TARGET=${DAYTONA_WARM_TARGET:-}
 TUNNEL_SIGNING_SECRET=${TUNNEL_SIGNING_SECRET:-dev-local-tunnel-signing-secret-32chars}
 API_KEY_SECRET=${API_KEY_SECRET:-dev-local-api-key-secret-please-32chars}
 OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
@@ -474,8 +483,20 @@ kill_dev_ports 3000 8008 "${PORT:-8008}"
 
 echo "[dev] Checking Supabase configuration..."
 if ! docker info >/dev/null 2>&1; then
-  echo "[dev] ERROR: Docker daemon is not running"
-  exit 1
+  # Docker Desktop is often still booting right after login / wake, and a
+  # one-shot check would fail the whole dev stack on that race. On macOS, nudge
+  # Docker Desktop to start, then wait for the daemon instead of bailing.
+  if [[ "$(uname)" == "Darwin" && -d /Applications/Docker.app ]]; then
+    echo "[dev] Docker daemon not up yet — starting Docker Desktop…"
+    open -a Docker >/dev/null 2>&1 || true
+  fi
+  echo "[dev] Waiting for Docker daemon (up to 90s)…"
+  for _ in $(seq 1 90); do docker info >/dev/null 2>&1 && break; sleep 1; done
+  if ! docker info >/dev/null 2>&1; then
+    echo "[dev] ERROR: Docker daemon is not running (start Docker Desktop, then retry)"
+    exit 1
+  fi
+  echo "[dev] Docker daemon is up."
 fi
 
 SUPABASE_TARGET="${SUPABASE_URL:-${NEXT_PUBLIC_SUPABASE_URL:-}}"

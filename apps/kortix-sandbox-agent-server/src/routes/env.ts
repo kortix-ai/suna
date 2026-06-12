@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 
 import { writeAgentEnvFile } from '../agent-env-file'
 import type { Config } from '../config'
+import { KORTIX_USER_CONTEXT_HEADER } from '../kortix-user-context'
 import { logger } from '../logger'
 import type { Opencode } from '../opencode'
 import type { ProjectEnvStore } from '../project-env'
@@ -21,6 +22,14 @@ export function createEnvRouter(cfg: Config, opencode: Opencode, projectEnv: Pro
     }
     if (bearerToken(c.req.header('Authorization')) !== cfg.kortixToken) {
       return c.json({ error: 'unauthorized' }, 401)
+    }
+    // Defense in depth: this is a server-to-server control endpoint. The API's
+    // postEnvToDaemon never sends a user-context header; the user-facing /v1/p
+    // proxy always does. So a present user-context header means this arrived via
+    // the proxy (which should already block /kortix/env) — refuse it.
+    if (c.req.header(KORTIX_USER_CONTEXT_HEADER)) {
+      logger.warn('[env] rejecting /kortix/env carrying user-context header')
+      return c.json({ error: 'forbidden' }, 403)
     }
     if (syncInFlight) {
       return c.json({ error: 'env sync already running' }, 409)

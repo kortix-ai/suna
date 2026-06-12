@@ -44,12 +44,38 @@ export async function resolveSandboxEnvSnapshot(
   return { env, names, revision: projectSecretsRevision(env) };
 }
 
+function isSecureOrPrivateTarget(rawUrl: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(rawUrl);
+  } catch {
+    return false;
+  }
+  if (u.protocol === 'https:') return true;
+  if (u.protocol !== 'http:') return false;
+  const h = u.hostname;
+  if (['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(h)) return true;
+  if (!h.includes('.')) return true; // single-label docker/service name on a private bridge
+  if (/\.(local|internal|svc|cluster\.local)$/.test(h)) return true;
+  // RFC1918 / link-local — anchored to full IPv4 literals so a public hostname
+  // like "10.foo.evil.com" can't slip through a `^10.` prefix match.
+  if (/^10(\.\d{1,3}){3}$/.test(h)) return true;
+  if (/^192\.168(\.\d{1,3}){2}$/.test(h)) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])(\.\d{1,3}){2}$/.test(h)) return true;
+  if (/^169\.254(\.\d{1,3}){2}$/.test(h)) return true;
+  if (/^f[cd][0-9a-f]{2}:/i.test(h)) return true; // IPv6 unique-local
+  return false; // plain http to a public host — refuse to send secrets in cleartext
+}
+
 async function postEnvToDaemon(args: {
   previewUrl: string;
   previewToken: string | null;
   serviceKey: string;
   snapshot: SandboxEnvSnapshot;
 }): Promise<void> {
+  if (!isSecureOrPrivateTarget(args.previewUrl)) {
+    throw new Error('refusing to push secrets over insecure transport (non-TLS public host)');
+  }
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${args.serviceKey}`,

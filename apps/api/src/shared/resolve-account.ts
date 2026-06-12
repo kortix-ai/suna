@@ -131,21 +131,34 @@ export async function resolveAccountId(userId: string): Promise<string> {
     }
   } catch { }
 
-  // First-time signup. Pending account invitations are auto-claimed on the
-  // first /v1/accounts call (see accounts/index.ts:autoClaimPendingInvites)
-  // — no sandbox-scoped invite claim needed anymore.
+  // First-time signup → create the user's personal account (id == userId) and a
+  // self-membership. Pending account invitations are auto-claimed on the first
+  // /v1/accounts call (see accounts/index.ts:autoClaimPendingInvites).
+  //
+  // GUARD: only self-provision the membership when we ACTUALLY created the
+  // account. Kortix tokens (PAT/session/sandbox) map accountId→userId in the auth
+  // middleware (middleware/auth.ts: `c.set('userId', result.accountId)`), so a
+  // token-authed caller reaches here with `userId` == an EXISTING account_id.
+  // Without this guard we'd insert a phantom account_members row
+  // (user_id == account_id, owner, super) — a "shadow user" that shows as a bare
+  // UUID in the members list (no auth email) AND inflates the per-seat count
+  // (countActiveMembers). Creating the membership only on a fresh account keeps
+  // genuine new-user signup working while never minting a self-membership for an
+  // account that already exists.
   try {
-    await db.insert(accounts).values({
+    const createdAccount = await db.insert(accounts).values({
       accountId: userId,
       name: defaultAccountName(),
-    }).onConflictDoNothing();
+    }).onConflictDoNothing().returning({ accountId: accounts.accountId });
 
-    await db.insert(accountMembers).values({
-      userId,
-      accountId: userId,
-      accountRole: 'owner',
-      isSuperAdmin: true,
-    }).onConflictDoNothing();
+    if (createdAccount.length > 0) {
+      await db.insert(accountMembers).values({
+        userId,
+        accountId: userId,
+        accountRole: 'owner',
+        isSuperAdmin: true,
+      }).onConflictDoNothing();
+    }
   } catch { }
 
   return userId;

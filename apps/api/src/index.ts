@@ -40,6 +40,8 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
+import { kickWarmBaseBuild } from './snapshots/warm-bake';
+import { warmSnapshotsEnabled } from './shared/daytona';
 import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
 import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
@@ -246,6 +248,14 @@ app.use('/v1/*', requestDeadline);
 // that drives snapshot content-hashing and must stay constant across releases.
 // Falls back to 'dev' for local development.
 const API_VERSION = process.env.KORTIX_VERSION || 'dev';
+// Exact source commit the image was built from (baked at build, preserved across
+// the prod retag — unlike KORTIX_VERSION which prod overrides to the clean tag).
+// Lets the team verify precisely which code is live. 'unknown' for local dev.
+const API_COMMIT = process.env.KORTIX_COMMIT || 'unknown';
+// When this process booted — confirms a deploy actually rolled fresh pods.
+const STARTED_AT = new Date().toISOString();
+// Which replica answered (pod name in k8s, task/container id in ECS).
+const API_INSTANCE = process.env.HOSTNAME || 'unknown';
 
 // OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
 // register into the spec as each sub-router is migrated to @hono/zod-openapi.
@@ -256,8 +266,14 @@ const HealthSchema = z
     status: z.string(),
     service: z.string(),
     version: z.string(),
+    commit: z.string(),
+    environment: z.string(),
+    instance: z.string(),
+    started_at: z.string(),
+    uptime_seconds: z.number(),
     timestamp: z.string(),
     billing_enabled: z.boolean(),
+    warm_snapshots: z.boolean(),
     tunnel: z.any(),
     leader: z.boolean(),
   })
@@ -268,8 +284,17 @@ const healthHandler = (c: any) =>
     status: 'ok',
     service: 'kortix-api',
     version: API_VERSION,
+    commit: API_COMMIT,
+    environment: config.INTERNAL_KORTIX_ENV,
+    instance: API_INSTANCE,
+    started_at: STARTED_AT,
+    uptime_seconds: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
+    // Whether the Daytona warm-snapshot path is live in this env (flag + key +
+    // warm target all present) — see snapshots/warm-bake.ts. Surfaced here so a
+    // misconfigured env var is visible remotely instead of failing silently.
+    warm_snapshots: warmSnapshotsEnabled(),
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
   });
@@ -772,6 +797,10 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
+  // Experimental: pre-bake the shared memory-state warm base so the first
+  // session can boot from it (~1.3s). No-op unless KORTIX_WARM_SNAPSHOT_ENABLED
+  // + DAYTONA_WARM_TARGET are set; best-effort.
+  kickWarmBaseBuild();
   startLegacyMigrationWorker();
   startSunaMigrationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row

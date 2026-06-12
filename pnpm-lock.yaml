@@ -70,8 +70,8 @@ importers:
   apps/api:
     dependencies:
       '@daytonaio/sdk':
-        specifier: ^0.143.0
-        version: 0.143.0(ws@8.21.0)
+        specifier: ^0.184.0
+        version: 0.184.0(ws@8.21.0)
       '@hono/zod-openapi':
         specifier: ^0.19.10
         version: 0.19.10(hono@4.12.18)(zod@3.25.76)
@@ -197,7 +197,7 @@ importers:
         version: 3.0.7
       '@expensify/react-native-live-markdown':
         specifier: 0.1.317
-        version: 0.1.317(expensify-common@2.0.182)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+        version: 0.1.317(expensify-common@2.0.182)(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
       '@gorhom/bottom-sheet':
         specifier: ^5.2.6
         version: 5.2.14(@types/react@19.1.17)(react-native-gesture-handler@2.28.0)(react-native-reanimated@4.1.7)(react-native@0.81.5)(react@19.1.0)
@@ -455,7 +455,7 @@ importers:
         version: 9.15.2(react-native-purchases@9.15.2)(react-native-web@0.21.2)(react-native@0.81.5)(react@19.1.0)
       react-native-reanimated:
         specifier: ~4.1.3
-        version: 4.1.7(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+        version: 4.1.7(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
       react-native-safe-area-context:
         specifier: ~5.6.0
         version: 5.6.2(react-native@0.81.5)(react@19.1.0)
@@ -490,8 +490,8 @@ importers:
         specifier: ^13.16.0
         version: 13.16.1(react-native@0.81.5)(react@19.1.0)
       react-native-worklets:
-        specifier: 0.6.0
-        version: 0.6.0(@babel/core@7.29.7)(react-native@0.81.5)(react@19.1.0)
+        specifier: 0.5.1
+        version: 0.5.1(@babel/core@7.29.7)(react-native@0.81.5)(react@19.1.0)
       react-syntax-highlighter:
         specifier: ^16.0.0
         version: 16.1.1(react@19.1.0)
@@ -3096,27 +3096,35 @@ packages:
       - react-native
     dev: false
 
-  /@daytonaio/api-client@0.143.0:
-    resolution: {integrity: sha512-LcrvExGcwyngt1JnVoxuBMD19fL9F+vwGnp18Hav5HJEbICM0pbrJc2FJ242sQJquNIF5mq+5jgznWg6wshZJA==}
+  /@daytona/api-client@0.184.0:
+    resolution: {integrity: sha512-wfBVkH48Aiz4mVR4n8Qzd2g7OhU3pr/ZASOTwLncTZ/LJDpBiVFtVk+KOYKRSNEHWXs6znPbMXxRIh9pTdmYeg==}
     dependencies:
       axios: 1.15.2
     transitivePeerDependencies:
       - debug
     dev: false
 
-  /@daytonaio/sdk@0.143.0(ws@8.21.0):
-    resolution: {integrity: sha512-itQ409W+WuuqLd8edIRVUWeRUyujSlOKInnN6GeC3OqyOWT27wyD/KzkesXDJtQ6HthGtqa4uRtHqnayd5wRCQ==}
+  /@daytona/toolbox-api-client@0.184.0:
+    resolution: {integrity: sha512-uuhJJF0uLAnK6nNM7sgjTErf7NKnrc+kd0AlYjdxsDk7Nad+v0FZeecQZ4GEE4GDSr/Hg3f9SxgHFVY/rGLrCQ==}
+    dependencies:
+      axios: 1.15.2
+    transitivePeerDependencies:
+      - debug
+    dev: false
+
+  /@daytonaio/sdk@0.184.0(ws@8.21.0):
+    resolution: {integrity: sha512-9dIzN1keoS10DVVXoI1f1WEz/FeJc0iTIv2z21Yg844j2gdCclsvQJVhV3rUHRxinRLSuyr312PIb9/xZEglDg==}
     dependencies:
       '@aws-sdk/client-s3': 3.1057.0
       '@aws-sdk/lib-storage': 3.1057.0(@aws-sdk/client-s3@3.1057.0)
-      '@daytonaio/api-client': 0.143.0
-      '@daytonaio/toolbox-api-client': 0.143.0
+      '@daytona/api-client': 0.184.0
+      '@daytona/toolbox-api-client': 0.184.0
       '@iarna/toml': 2.2.5
       '@opentelemetry/api': 1.9.0
-      '@opentelemetry/exporter-trace-otlp-http': 0.207.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/instrumentation-http': 0.207.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/otlp-exporter-base': 0.207.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/resources': 2.2.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/exporter-trace-otlp-http': 0.217.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/instrumentation-http': 0.217.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/otlp-exporter-base': 0.217.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/resources': 2.7.1(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-node': 0.217.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/sdk-trace-base': 2.7.1(@opentelemetry/api@1.9.0)
       '@opentelemetry/semantic-conventions': 1.41.1
@@ -3134,14 +3142,6 @@ packages:
       - debug
       - supports-color
       - ws
-    dev: false
-
-  /@daytonaio/toolbox-api-client@0.143.0:
-    resolution: {integrity: sha512-E6+yHPnFygNqRIctoDheISHCpzQkHydAU7fiBfsA5pnElfB/yLTOXQlnZfP8gfvOmUkRNU8QCXKzaualRTlI7w==}
-    dependencies:
-      axios: 1.15.2
-    transitivePeerDependencies:
-      - debug
     dev: false
 
   /@dimforge/rapier3d-compat@0.12.0:
@@ -4188,7 +4188,7 @@ packages:
       levn: 0.4.1
     dev: true
 
-  /@expensify/react-native-live-markdown@0.1.317(expensify-common@2.0.182)(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0):
+  /@expensify/react-native-live-markdown@0.1.317(expensify-common@2.0.182)(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0):
     resolution: {integrity: sha512-B5KYLH7O8jHiP5AWQJ+n/fXPN4XldH+ODiwAylEVUOWEcbI0WztFYWK4fCsCq6kx3ajYl0Y58nfza3jnSuj95g==}
     engines: {node: '>= 18.0.0'}
     peerDependencies:
@@ -4200,7 +4200,7 @@ packages:
       expensify-common: 2.0.182
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
-      react-native-worklets: 0.6.0(@babel/core@7.29.7)(react-native@0.81.5)(react@19.1.0)
+      react-native-worklets: 0.5.1(@babel/core@7.29.7)(react-native@0.81.5)(react@19.1.0)
     dev: false
 
   /@expo/cli@54.0.25(expo-router@6.0.24)(expo@54.0.35)(react-native@0.81.5)(typescript@5.9.3):
@@ -4762,7 +4762,7 @@ packages:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
       react-native-gesture-handler: 2.28.0(react-native@0.81.5)(react@19.1.0)
-      react-native-reanimated: 4.1.7(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+      react-native-reanimated: 4.1.7(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
     dev: false
 
   /@gorhom/portal@1.0.14(react-native@0.81.5)(react@19.1.0):
@@ -5961,13 +5961,6 @@ packages:
       cross-spawn: 7.0.6
     dev: false
 
-  /@opentelemetry/api-logs@0.207.0:
-    resolution: {integrity: sha512-lAb0jQRVyleQQGiuuvCOTDVspc14nx6XJjP4FspJ1sNARo3Regq4ZZbrc3rN4b1TYSuUCvgH+UXUPug4SLOqEQ==}
-    engines: {node: '>=8.0.0'}
-    dependencies:
-      '@opentelemetry/api': 1.9.0
-    dev: false
-
   /@opentelemetry/api-logs@0.208.0:
     resolution: {integrity: sha512-CjruKY9V6NMssL/T1kAFgzosF1v9o6oeN+aX5JB/C/xPNtmgIJqcXHG7fA82Ou1zCpWGl4lROQUKwUNE1pMCyg==}
     engines: {node: '>=8.0.0'}
@@ -6168,20 +6161,6 @@ packages:
       '@opentelemetry/sdk-trace-base': 2.7.1(@opentelemetry/api@1.9.0)
     dev: false
 
-  /@opentelemetry/exporter-trace-otlp-http@0.207.0(@opentelemetry/api@1.9.0):
-    resolution: {integrity: sha512-HSRBzXHIC7C8UfPQdu15zEEoBGv0yWkhEwxqgPCHVUKUQ9NLHVGXkVrf65Uaj7UwmAkC1gQfkuVYvLlD//AnUQ==}
-    engines: {node: ^18.19.0 || >=20.6.0}
-    peerDependencies:
-      '@opentelemetry/api': 1.9.0
-    dependencies:
-      '@opentelemetry/api': 1.9.0
-      '@opentelemetry/core': 2.2.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/otlp-exporter-base': 0.207.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/otlp-transformer': 0.207.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/resources': 2.2.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/sdk-trace-base': 2.2.0(@opentelemetry/api@1.9.0)
-    dev: false
-
   /@opentelemetry/exporter-trace-otlp-http@0.217.0(@opentelemetry/api@1.9.0):
     resolution: {integrity: sha512-38YQoqtYjglz2GV94LGUN/djLvxtvGIQO68o6qAFPVshjmwSdX1F2i0c7vn3lEl1L5B/YqjB/bgKXaVx7KO+RQ==}
     engines: {node: ^18.19.0 || >=20.6.0}
@@ -6223,31 +6202,17 @@ packages:
       '@opentelemetry/semantic-conventions': 1.41.1
     dev: false
 
-  /@opentelemetry/instrumentation-http@0.207.0(@opentelemetry/api@1.9.0):
-    resolution: {integrity: sha512-FC4i5hVixTzuhg4SV2ycTEAYx+0E2hm+GwbdoVPSA6kna0pPVI4etzaA9UkpJ9ussumQheFXP6rkGIaFJjMxsw==}
+  /@opentelemetry/instrumentation-http@0.217.0(@opentelemetry/api@1.9.0):
+    resolution: {integrity: sha512-B88Y7k5A9a60pHUboFoeJlgVwXq2T0rsZKj6dTwzSMKSOsNXR4Jz5ovwprVn3kHLAZrkyLEjQtBJ34DYHs1U4Q==}
     engines: {node: ^18.19.0 || >=20.6.0}
     peerDependencies:
       '@opentelemetry/api': 1.9.0
     dependencies:
       '@opentelemetry/api': 1.9.0
-      '@opentelemetry/core': 2.2.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/instrumentation': 0.207.0(@opentelemetry/api@1.9.0)
+      '@opentelemetry/core': 2.7.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/instrumentation': 0.217.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/semantic-conventions': 1.41.1
       forwarded-parse: 2.1.2
-    transitivePeerDependencies:
-      - supports-color
-    dev: false
-
-  /@opentelemetry/instrumentation@0.207.0(@opentelemetry/api@1.9.0):
-    resolution: {integrity: sha512-y6eeli9+TLKnznrR8AZlQMSJT7wILpXH+6EYq5Vf/4Ao+huI7EedxQHwRgVUOMLFbe7VFDvHJrX9/f4lcwnJsA==}
-    engines: {node: ^18.19.0 || >=20.6.0}
-    peerDependencies:
-      '@opentelemetry/api': 1.9.0
-    dependencies:
-      '@opentelemetry/api': 1.9.0
-      '@opentelemetry/api-logs': 0.207.0
-      import-in-the-middle: 3.0.0
-      require-in-the-middle: 8.0.1
     transitivePeerDependencies:
       - supports-color
     dev: false
@@ -6278,17 +6243,6 @@ packages:
       require-in-the-middle: 8.0.1
     transitivePeerDependencies:
       - supports-color
-    dev: false
-
-  /@opentelemetry/otlp-exporter-base@0.207.0(@opentelemetry/api@1.9.0):
-    resolution: {integrity: sha512-4RQluMVVGMrHok/3SVeSJ6EnRNkA2MINcX88sh+d/7DjGUrewW/WT88IsMEci0wUM+5ykTpPPNbEOoW+jwHnbw==}
-    engines: {node: ^18.19.0 || >=20.6.0}
-    peerDependencies:
-      '@opentelemetry/api': 1.9.0
-    dependencies:
-      '@opentelemetry/api': 1.9.0
-      '@opentelemetry/core': 2.2.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/otlp-transformer': 0.207.0(@opentelemetry/api@1.9.0)
     dev: false
 
   /@opentelemetry/otlp-exporter-base@0.208.0(@opentelemetry/api@1.9.0):
@@ -6324,22 +6278,6 @@ packages:
       '@opentelemetry/core': 2.7.1(@opentelemetry/api@1.9.0)
       '@opentelemetry/otlp-exporter-base': 0.217.0(@opentelemetry/api@1.9.0)
       '@opentelemetry/otlp-transformer': 0.217.0(@opentelemetry/api@1.9.0)
-    dev: false
-
-  /@opentelemetry/otlp-transformer@0.207.0(@opentelemetry/api@1.9.0):
-    resolution: {integrity: sha512-+6DRZLqM02uTIY5GASMZWUwr52sLfNiEe20+OEaZKhztCs3+2LxoTjb6JxFRd9q1qNqckXKYlUKjbH/AhG8/ZA==}
-    engines: {node: ^18.19.0 || >=20.6.0}
-    peerDependencies:
-      '@opentelemetry/api': 1.9.0
-    dependencies:
-      '@opentelemetry/api': 1.9.0
-      '@opentelemetry/api-logs': 0.207.0
-      '@opentelemetry/core': 2.2.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/resources': 2.2.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/sdk-logs': 0.207.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/sdk-metrics': 2.2.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/sdk-trace-base': 2.2.0(@opentelemetry/api@1.9.0)
-      protobufjs: 7.5.6
     dev: false
 
   /@opentelemetry/otlp-transformer@0.208.0(@opentelemetry/api@1.9.0):
@@ -6414,18 +6352,6 @@ packages:
       '@opentelemetry/api': 1.9.0
       '@opentelemetry/core': 2.7.1(@opentelemetry/api@1.9.0)
       '@opentelemetry/semantic-conventions': 1.41.1
-    dev: false
-
-  /@opentelemetry/sdk-logs@0.207.0(@opentelemetry/api@1.9.0):
-    resolution: {integrity: sha512-4MEQmn04y+WFe6cyzdrXf58hZxilvY59lzZj2AccuHW/+BxLn/rGVN/Irsi/F0qfBOpMOrrCLKTExoSL2zoQmg==}
-    engines: {node: ^18.19.0 || >=20.6.0}
-    peerDependencies:
-      '@opentelemetry/api': 1.9.0
-    dependencies:
-      '@opentelemetry/api': 1.9.0
-      '@opentelemetry/api-logs': 0.207.0
-      '@opentelemetry/core': 2.2.0(@opentelemetry/api@1.9.0)
-      '@opentelemetry/resources': 2.2.0(@opentelemetry/api@1.9.0)
     dev: false
 
   /@opentelemetry/sdk-logs@0.208.0(@opentelemetry/api@1.9.0):
@@ -18826,7 +18752,7 @@ packages:
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
       react-native-gesture-handler: 2.28.0(react-native@0.81.5)(react@19.1.0)
       react-native-is-edge-to-edge: 1.3.1(react-native@0.81.5)(react@19.1.0)
-      react-native-reanimated: 4.1.7(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+      react-native-reanimated: 4.1.7(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
       react-native-safe-area-context: 5.6.2(react-native@0.81.5)(react@19.1.0)
       react-native-screens: 4.16.0(react-native@0.81.5)(react@19.1.0)
       react-native-web: 0.21.2(react-dom@19.1.0)(react@19.1.0)
@@ -24700,7 +24626,7 @@ packages:
       lightningcss: 1.27.0
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
-      react-native-reanimated: 4.1.7(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+      react-native-reanimated: 4.1.7(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
       react-native-safe-area-context: 5.6.2(react-native@0.81.5)(react@19.1.0)
       react-native-svg: 15.12.1(react-native@0.81.5)(react@19.1.0)
       semver: 7.8.1
@@ -24721,7 +24647,7 @@ packages:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
       react-native-gesture-handler: 2.28.0(react-native@0.81.5)(react@19.1.0)
-      react-native-reanimated: 4.1.7(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+      react-native-reanimated: 4.1.7(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
       use-latest-callback: 0.2.6(react@19.1.0)
     dev: false
 
@@ -24772,7 +24698,7 @@ packages:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
       react-native-is-edge-to-edge: 1.3.1(react-native@0.81.5)(react@19.1.0)
-      react-native-reanimated: 4.1.7(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0)
+      react-native-reanimated: 4.1.7(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0)
     dev: false
 
   /react-native-markdown-display@7.0.2(react-native@0.81.5)(react@19.1.0):
@@ -24824,7 +24750,7 @@ packages:
       react-native-web: 0.21.2(react-dom@19.1.0)(react@19.1.0)
     dev: false
 
-  /react-native-reanimated@4.1.7(react-native-worklets@0.6.0)(react-native@0.81.5)(react@19.1.0):
+  /react-native-reanimated@4.1.7(react-native-worklets@0.5.1)(react-native@0.81.5)(react@19.1.0):
     resolution: {integrity: sha512-Q4H6xA3Tn7QL0/E/KjI86I1KK4tcf+ErRE04LH34Etka2oVQhW6oXQ+Q8ZcDCVxiWp5vgbBH6XcH8BOo4w/Rhg==}
     peerDependencies:
       react: '*'
@@ -24834,7 +24760,7 @@ packages:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
       react-native-is-edge-to-edge: 1.3.1(react-native@0.81.5)(react@19.1.0)
-      react-native-worklets: 0.6.0(@babel/core@7.29.7)(react-native@0.81.5)(react@19.1.0)
+      react-native-worklets: 0.5.1(@babel/core@7.29.7)(react-native@0.81.5)(react@19.1.0)
       semver: 7.8.1
 
   /react-native-safe-area-context@5.6.2(react-native@0.81.5)(react@19.1.0):
@@ -24962,8 +24888,8 @@ packages:
       react: 19.1.0
       react-native: 0.81.5(@babel/core@7.29.7)(@types/react@19.1.17)(react@19.1.0)
 
-  /react-native-worklets@0.6.0(@babel/core@7.29.7)(react-native@0.81.5)(react@19.1.0):
-    resolution: {integrity: sha512-yETMNuCcivdYWteuG4eRqgiAk2DzRCrVAaEBIEWPo4emrf3BNjadFo85L5QvyEusrX9QKE3ZEAx8U5A/nbyFgg==}
+  /react-native-worklets@0.5.1(@babel/core@7.29.7)(react-native@0.81.5)(react@19.1.0):
+    resolution: {integrity: sha512-lJG6Uk9YuojjEX/tQrCbcbmpdLCSFxDK1rJlkDhgqkVi1KZzG7cdcBFQRqyNOOzR9Y0CXNuldmtWTGOyM0k0+w==}
     peerDependencies:
       '@babel/core': ^7.0.0-0
       react: '*'

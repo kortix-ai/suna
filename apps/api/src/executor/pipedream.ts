@@ -158,13 +158,42 @@ class PipedreamProvider {
     }));
   }
 
+  /**
+   * actionKey → the component's account-selector prop NAME. Components name
+   * their app prop with an arbitrary variable, NOT the app slug — salesforce
+   * components use `salesforce` (slug `salesforce_rest_api`), google_drive
+   * uses `googleDrive`. Binding the credential under the slug lands on a
+   * nonexistent prop, so the component runs with an EMPTY $auth and crashes
+   * deep in its own code (e.g. salesforce `_subdomain()` TypeError) — that was
+   * the prod-wide named-action 502 incident of 2026-06-11.
+   */
+  private appPropNames = new Map<string, string>();
+
+  private async resolveAppPropName(actionKey: string, app: string): Promise<string> {
+    const cached = this.appPropNames.get(actionKey);
+    if (cached) return cached;
+    let name = app; // last-resort fallback: the slug (correct for e.g. gmail)
+    try {
+      const res = await this.api<{ data?: { configurable_props?: Array<{ name?: string; type?: string }> } }>(
+        'GET', `/v1/connect/${this.projectId}/components/${encodeURIComponent(actionKey)}`,
+      );
+      const props = res.data?.configurable_props ?? [];
+      const appProp = props.find((p) => p?.type === 'app' && p.name);
+      if (appProp?.name) name = appProp.name;
+    } catch { /* keep the slug fallback — never block the call on metadata */ }
+    this.appPropNames.set(actionKey, name);
+    return name;
+  }
+
   async runAction(extUserId: string, app: string, actionKey: string, props: Record<string, unknown>, providerAccountId: string): Promise<unknown> {
+    const appProp = await this.resolveAppPropName(actionKey, app);
     const data = await this.api<Record<string, unknown>>('POST', `/v1/connect/${this.projectId}/actions/run`, {
       id: actionKey,
       external_user_id: extUserId,
-      // Spread the agent's args FIRST so the account-selector binding (keyed by
-      // the app slug) always wins — a stray `props[app]` can never overwrite it.
-      configured_props: { ...props, [app]: { authProvisionId: providerAccountId } },
+      // Spread the agent's args FIRST so the account-selector binding (under the
+      // component's REAL app-prop name) always wins — a stray same-named arg can
+      // never overwrite the credential.
+      configured_props: { ...props, [appProp]: { authProvisionId: providerAccountId } },
     });
     // Pipedream returns HTTP 200 even when the action THREW: the failure is in a
     // top-level `error` and/or an `os` log entry with k:"error". If we don't catch
@@ -242,8 +271,9 @@ export async function pipedreamConnectUrl(
   slug: string,
   app: string,
   userId: string | null,
+  redirects?: { success?: string; error?: string },
 ): Promise<{ connectUrl?: string; token: string; expiresAt: string }> {
-  return getProvider().createConnectToken(externalUserId(projectId, slug, userId), app);
+  return getProvider().createConnectToken(externalUserId(projectId, slug, userId), app, redirects);
 }
 
 /**

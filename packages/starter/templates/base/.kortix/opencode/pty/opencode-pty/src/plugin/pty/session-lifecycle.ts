@@ -2,7 +2,6 @@ import { RingBuffer } from './buffer.ts'
 import type { PTYSession, PTYSessionInfo, SpawnOptions } from './types.ts'
 import { DEFAULT_TERMINAL_COLS, DEFAULT_TERMINAL_ROWS } from '../constants.ts'
 import { existsSync } from 'node:fs'
-import { applyLiveProjectEnv } from './live-env.ts'
 
 // ── Lazy bun-pty import ─────────────────────────────────────────────────────
 // bun-pty is a Bun-native module. Static imports crash the whole module graph
@@ -95,9 +94,7 @@ export class SessionLifecycleManager {
       )
     }
 
-    const env = { ...process.env } as Record<string, string>
-    applyLiveProjectEnv(env)
-    Object.assign(env, session.env ?? {})
+    const env = { ...process.env, ...session.env } as Record<string, string>
     const spawnContext = {
       command: session.command,
       args: session.args,

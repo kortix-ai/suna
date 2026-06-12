@@ -198,6 +198,11 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
     errAny?.message;
   const v2Balance: number =
     typeof v2Detail?.balance === 'number' ? v2Detail.balance : 0;
+  // The blocked account (e.g. the project's team account), surfaced by the
+  // billing 402s. Scopes the upgrade dialog so a non-billing member sees the
+  // team's gated CTA, not their own primary account. Absent → primary account.
+  const v2AccountId: string | undefined =
+    typeof v2Detail?.account_id === 'string' ? v2Detail.account_id : undefined;
 
   // No active plan → pitch the one central Team plan subscribe modal.
   if (
@@ -209,6 +214,7 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
       reason: v2Code,
       message: v2Message ?? '',
       balance: v2Balance,
+      accountId: v2AccountId,
     });
     return;
   }

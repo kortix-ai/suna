@@ -1,7 +1,7 @@
 import { writeFileSync, readFileSync, existsSync, mkdirSync, openSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { dirname } from 'node:path'
-import { writeAgentEnvFile } from './agent-env-file'
+import { agentEnvDirIsTmpfs, writeAgentEnvFile } from './agent-env-file'
 import { loadConfig, resolveOpencodeConfigDir, resolveSandboxOnBoot, type Config } from './config'
 import {
   configureGitCredentialHelper,
@@ -11,7 +11,7 @@ import {
   runGitCredentialHelper,
 } from './git'
 import { logger } from './logger'
-import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady } from './opencode'
+import { createOpencodeSupervisor, OPENCODE_HOME, waitForOpencodeReady, type Opencode } from './opencode'
 import { ensureOpencodeConfigDeps } from './opencode-config-deps'
 import { startOpencodeEventLoop, type QuestionRequest } from './opencode-events'
 import { createProjectEnvStore } from './project-env'
@@ -96,7 +96,12 @@ async function main() {
   // the boot long-pole; the opencode spawn (binary launch + port bind) is fast
   // and opencode doesn't touch the workspace until its first request anyway.
   const projectEnv = createProjectEnvStore()
-  writeAgentEnvFile(projectEnv)
+  if (!agentEnvDirIsTmpfs()) {
+    logger.error('[boot] /dev/shm is not tmpfs — agent secret file would persist to disk; check the sandbox runtime mount')
+  }
+  if (!writeAgentEnvFile(projectEnv)) {
+    logger.error('[boot] failed to write agent secret env file; agent shells will lack project secrets')
+  }
   const repoMaterializePromise: Promise<void> = cfg.autoClone
     ? materializeRepo(cfg).catch((err) => {
         bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
@@ -201,6 +206,11 @@ async function startSessionRuntime(
       logger.warn('[opencode-events] question relay failed', { err: (err as Error).message }),
     )
   }
+  const onSessionIdle = (opencodeSessionId: string) => {
+    void relayTurnEndToApi(opencodeSessionId, opencode, cfg).catch((err) =>
+      logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
+    )
+  }
   if (bootState.initialOpenCodeSessionRequired) {
     await maybeCreateInitialOpencodeSession(cfg.opencodeInternalPort, bootState, bootMark).catch((err) => {
       bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
@@ -210,7 +220,7 @@ async function startSessionRuntime(
       opencode.markReady()
       bootMark('opencode-ready')
       logger.info('[boot] opencode ready via initial session', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
-      startOpencodeEventLoop(opencode, cfg, { onQuestionAsked })
+      startOpencodeEventLoop(opencode, cfg, { onQuestionAsked, onSessionIdle })
       return
     }
   }
@@ -218,7 +228,7 @@ async function startSessionRuntime(
   if (ready) {
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
-    startOpencodeEventLoop(opencode, cfg, { onQuestionAsked })
+    startOpencodeEventLoop(opencode, cfg, { onQuestionAsked, onSessionIdle })
   } else {
     logger.warn('[boot] opencode did not become ready within deadline; supervisor still retrying', { opencodePid: opencode.getPid() })
   }
@@ -455,6 +465,64 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
     logger.info('[opencode-events] question replied to opencode', { requestId: req.id })
   } catch (err) {
     logger.warn('[opencode-events] opencode question.reply failed', { err: (err as Error).message })
+  }
+}
+
+// Relay an opencode `session.idle` for the ROOT turn to apps/api so the Slack
+// live stream gets closed even when the agent ends without `slack send`. opencode
+// fires session.idle for every session — including subagent (Task tool) children —
+// so we ignore any idle whose sessionID isn't the pinned root turn session.
+async function relayTurnEndToApi(
+  opencodeSessionId: string,
+  opencode: Pick<Opencode, 'getInternalUrl'>,
+  cfg: Config,
+): Promise<void> {
+  // Only the root turn closes the Slack stream. A subagent going idle mid-task
+  // must NOT finalize the user-facing stream.
+  if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
+
+  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
+  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
+  const token = (process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_TOKEN || '').trim()
+  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
+  if (!projectId || !sessionId || !token || !apiUrl) return
+
+  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ session_id: sessionId, kind: 'end' }),
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!res.ok) {
+      logger.warn('[opencode-events] turn-end relay non-ok', { status: res.status })
+    }
+  } catch (err) {
+    logger.warn('[opencode-events] turn-end relay fetch failed', { err: (err as Error).message })
+  }
+}
+
+// Is this opencode session the root turn session (not a subagent child)? Prefer
+// the boot-pinned id (cheap, no I/O); fall back to asking opencode whether the
+// session has a parentID. On any uncertainty, return false so we never close the
+// stream prematurely — the watchdog remains the backstop.
+async function isRootOpencodeSession(
+  opencodeSessionId: string,
+  opencode: Pick<Opencode, 'getInternalUrl'>,
+  cfg: Config,
+): Promise<boolean> {
+  const pinned = readPinnedOpencodeSessionId()
+  if (pinned) return opencodeSessionId === pinned
+  try {
+    const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}?directory=${encodeURIComponent(cfg.workspace)}`
+    const res = await fetch(url, { signal: AbortSignal.timeout(5_000) })
+    if (!res.ok) return false
+    const session = (await res.json()) as { parentID?: string | null }
+    return !session.parentID
+  } catch {
+    return false
   }
 }
 

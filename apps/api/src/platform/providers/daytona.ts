@@ -5,12 +5,14 @@
  * Extracted from the original account.ts provisioning logic.
  */
 
-import { getDaytona } from '../../shared/daytona';
+import { getDaytona, getDaytonaWarm } from '../../shared/daytona';
+import { warmDaemonStartCommands } from '../../snapshots/warm-bake';
 import { serviceKeyForExternalId } from '../service-key';
 import { config, SANDBOX_VERSION } from '../../config';
 // (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
 // own per-project snapshot, resolved by the snapshot builder. Callers
 // must pass `opts.snapshot`; there is no shared platform-wide image.)
+import { WarmRuntimeUnavailableError } from './index';
 import type {
   SandboxProvider,
   ProviderName,
@@ -37,24 +39,6 @@ export class DaytonaProvider implements SandboxProvider {
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
-    // Every Daytona sandbox boots from its project's own per-project
-    // snapshot (`kortix-snap-…`), resolved by the snapshot builder before
-    // we get here (see platform/services/session-sandbox.ts +
-    // snapshots/builder.ts). There is intentionally no shared platform
-    // fallback: a missing snapshot means the project's first build
-    // hasn't finished, which is a session-creation error — not something
-    // we paper over with an unrelated image.
-    const snapshot = opts.snapshot;
-    if (!snapshot) {
-      throw new Error(
-        'Daytona create() called without opts.snapshot. ' +
-        'Every sandbox must boot from a per-project snapshot built by ' +
-        'apps/api/src/snapshots/builder.ts. There is no shared fallback.',
-      );
-    }
-
-    const daytona = getDaytona();
-
     // KORTIX_URL is the public API base URL the sandbox calls back on. Strip
     // any route suffix so older env files that included /v1 or /v1/router still
     // resolve to the bare origin.
@@ -83,6 +67,40 @@ export class DaytonaProvider implements SandboxProvider {
       throw new Error('[daytona] create() called without KORTIX_TOKEN — sandbox cannot authenticate to the Kortix router.');
     }
 
+    // Experimental warm path: boot from the memory-state warm base on the WARM
+    // target and start the daemon post-restore (see createWarm). ANY warm
+    // failure — flaky restore, "Region not found" (the experimental region can
+    // be revoked org-side at any time), env-write failure — surfaces as
+    // WarmRuntimeUnavailableError so the session falls back to the normal
+    // Dockerfile-snapshot path instead of erroring. Warm is best-effort, never
+    // a hard dependency.
+    if (opts.warmBaseSnapshot) {
+      try {
+        return await this.createWarm(opts, opts.warmBaseSnapshot, envVars, sandboxApiBase, createTimeoutSeconds);
+      } catch (err) {
+        if (err instanceof WarmRuntimeUnavailableError) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new WarmRuntimeUnavailableError(`warm create failed: ${msg}`);
+      }
+    }
+
+    // Every Daytona sandbox boots from its project's own per-project
+    // snapshot (`kortix-snap-…`), resolved by the snapshot builder before
+    // we get here (see platform/services/session-sandbox.ts +
+    // snapshots/builder.ts). There is intentionally no shared platform
+    // fallback: a missing snapshot means the project's first build
+    // hasn't finished, which is a session-creation error — not something
+    // we paper over with an unrelated image.
+    const snapshot = opts.snapshot;
+    if (!snapshot) {
+      throw new Error(
+        'Daytona create() called without opts.snapshot. ' +
+        'Every sandbox must boot from a per-project snapshot built by ' +
+        'apps/api/src/snapshots/builder.ts. There is no shared fallback.',
+      );
+    }
+
+    const daytona = getDaytona();
     const daytonaSandbox = await daytona.create(
       {
         snapshot,
@@ -113,6 +131,127 @@ export class DaytonaProvider implements SandboxProvider {
         version: SANDBOX_VERSION,
       },
     };
+  }
+
+  /**
+   * Warm path: create from the experimental memory-state warm base (~1.3s) on
+   * the WARM target, then start the session daemon post-restore. The daemon's
+   * identity (KORTIX_TOKEN, repo, branch, …) is written to an env file the
+   * daemon sources — create-time envVars don't survive a memory restore and the
+   * entrypoint doesn't re-run, so we inject + launch here.
+   */
+  private async createWarm(
+    opts: CreateSandboxOpts,
+    warmBaseSnapshot: string,
+    envVars: Record<string, string>,
+    sandboxApiBase: string,
+    timeout: number,
+  ): Promise<ProvisionResult> {
+    const daytona = getDaytonaWarm();
+
+    // Daytona's experimental region is non-deterministic in TWO ways: creates
+    // fail outright ("Sandbox failed to start: internal error"), and boxes that
+    // do start can come up WITHOUT the baked runtime (filesystem layer dropped).
+    // Retry through both; after the cap, give up so the caller falls back to the
+    // normal Dockerfile path rather than booting a broken box.
+    const MAX_WARM_ATTEMPTS = 4;
+    let sb: Awaited<ReturnType<typeof daytona.create>> | null = null;
+    let sawCreateFailure = false;
+    for (let attempt = 1; attempt <= MAX_WARM_ATTEMPTS; attempt++) {
+      let box: Awaited<ReturnType<typeof daytona.create>> | null = null;
+      try {
+        box = await daytona.create(
+          {
+            snapshot: warmBaseSnapshot,
+            autoStopInterval: opts.autoStopInterval ?? 15,
+            autoArchiveInterval: 30,
+            autoDeleteInterval: -1,
+            public: false,
+          },
+          { timeout },
+        );
+      } catch (err) {
+        // The throw leaves an error-state box org-side that we have no handle
+        // to — swept below once the loop settles.
+        sawCreateFailure = true;
+        console.warn(
+          `[daytona] warm create attempt ${attempt}/${MAX_WARM_ATTEMPTS} failed:`,
+          err instanceof Error ? err.message : err,
+        );
+        continue;
+      }
+      if (await DaytonaProvider.warmRuntimePresent(box)) {
+        sb = box;
+        break;
+      }
+      console.warn(
+        `[daytona] warm box ${box.id} restored without runtime ` +
+        `(experimental snapshot flakiness) — attempt ${attempt}/${MAX_WARM_ATTEMPTS}, recreating`,
+      );
+      await box.delete().catch(() => {});
+    }
+    if (sawCreateFailure) {
+      // Fire-and-forget: clear the error-state corpses failed creates left in
+      // the org (targeted by warm-base snapshot name + error state).
+      void import('../../snapshots/warm-bake')
+        .then(({ reapErroredWarmBoxes }) => reapErroredWarmBoxes(warmBaseSnapshot, (l) => console.log(l)))
+        .catch(() => {});
+    }
+    if (!sb) {
+      throw new WarmRuntimeUnavailableError(
+        `warm base ${warmBaseSnapshot} unavailable after ${MAX_WARM_ATTEMPTS} attempts (create failures and/or dropped-runtime restores)`,
+      );
+    }
+
+    // A memory-snapshot restore brings back the VM's FROZEN clock (stuck at bake
+    // time — hours behind). That breaks elapsed-time UI and, worse, time-based
+    // checks (JWT/token expiry, TLS cert validity). Reset to real wall-clock
+    // time before anything else runs. Best-effort.
+    await sb.process
+      .executeCommand(`sudo date -s @${Math.floor(Date.now() / 1000)} >/dev/null 2>&1 || true`, undefined, undefined, 15)
+      .catch(() => {});
+
+    const { writeEnv, startDaemon } = warmDaemonStartCommands(envVars);
+    const wrote = await sb.process.executeCommand(writeEnv, undefined, undefined, 30);
+    if (!(wrote.result ?? '').includes('wrote')) {
+      throw new Error(`[daytona] warm create: failed to write session env (${(wrote.result ?? '').slice(0, 200)})`);
+    }
+    await sb.process.executeCommand(startDaemon, undefined, undefined, 30);
+
+    const externalId = sb.id;
+    const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/8000`;
+    return {
+      externalId,
+      baseUrl,
+      metadata: {
+        provisionedBy: opts.userId,
+        daytonaSandboxId: externalId,
+        snapshot: warmBaseSnapshot,
+        warm: true,
+        version: SANDBOX_VERSION,
+      },
+    };
+  }
+
+  /**
+   * True iff the baked Kortix runtime survived the warm-snapshot restore. The
+   * experimental region drops the filesystem layer ~half the time, so a restored
+   * box may be missing the daemon/entrypoint binaries entirely — booting it would
+   * fail with "kortix-entrypoint: No such file or directory". Cheap probe before
+   * we commit to a warm box.
+   */
+  private static async warmRuntimePresent(sb: { process: { executeCommand: (c: string, cwd?: string, env?: Record<string, string>, t?: number) => Promise<{ result?: string }> } }): Promise<boolean> {
+    try {
+      const r = await sb.process.executeCommand(
+        'test -x /usr/local/bin/kortix-agent && test -x /usr/local/bin/kortix-entrypoint && command -v opencode >/dev/null && echo ok',
+        undefined,
+        undefined,
+        30,
+      );
+      return (r.result ?? '').includes('ok');
+    } catch {
+      return false;
+    }
   }
 
   async start(externalId: string): Promise<void> {

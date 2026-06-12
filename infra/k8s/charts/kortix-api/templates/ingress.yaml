@@ -1,0 +1,51 @@
+{{- if .Values.ingress.enabled }}
+{{- if not .Values.ingress.certificateArn }}
+{{- fail "ingress.certificateArn is required (the ACM cert ARN from terraform output acm_certificate_arn)" }}
+{{- end }}
+# The AWS Load Balancer Controller turns this Ingress into a real ALB (the same
+# shape as the ECS stack: internet-facing, ACM TLS, :80 -> :443 redirect, IP
+# targets, /v1/health checks). external-dns then points api-eks.kortix.com at it
+# (Cloudflare, proxied).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "kortix-api.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kortix-api.labels" . | nindent 4 }}
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
+    alb.ingress.kubernetes.io/certificate-arn: {{ .Values.ingress.certificateArn | quote }}
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-path: {{ .Values.health.path | quote }}
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/healthy-threshold-count: "2"
+    alb.ingress.kubernetes.io/unhealthy-threshold-count: "3"
+    alb.ingress.kubernetes.io/success-codes: "200-399"
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds={{ .Values.ingress.idleTimeout }}
+    alb.ingress.kubernetes.io/target-group-attributes: deregistration_delay.timeout_seconds=30
+    {{- if .Values.ingress.inboundCidrs }}
+    alb.ingress.kubernetes.io/inbound-cidrs: {{ .Values.ingress.inboundCidrs | quote }}
+    {{- end }}
+    # external-dns: create the proxied Cloudflare record for this host -> the ALB.
+    external-dns.alpha.kubernetes.io/hostname: {{ .Values.ingress.host | quote }}
+    external-dns.alpha.kubernetes.io/cloudflare-proxied: {{ .Values.ingress.cloudflareProxied | quote }}
+spec:
+  ingressClassName: alb
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "kortix-api.name" . }}
+                port:
+                  name: http
+{{- end }}

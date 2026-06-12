@@ -1,0 +1,138 @@
+# Defaults for the kortix-api chart. Environment-specific values (cert ARN, IRSA
+# role, hostname) are filled at deploy time from the cluster layer's Terraform
+# outputs — see .github/workflows/deploy-prod-eks.yml and infra/EKS.md.
+
+image:
+  repository: kortix/kortix-api
+  # Overridden per deploy with the released version (e.g. 0.9.36). :latest is the
+  # safe default but prod CI always pins an explicit tag.
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Reported by GET /v1/health (matches the ECS task-def KORTIX_VERSION stamp).
+kortixVersion: ""
+
+containerPort: 8000
+
+# HA + autoscaling. replicas is the floor the HPA scales from.
+replicas: 3
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 12
+  targetCPUUtilizationPercentage: 60
+  targetMemoryUtilizationPercentage: 70
+
+# Pod resource envelope. requests drive scheduling + cluster-autoscaler; limits
+# cap noisy neighbours. Memory limit == request to avoid OOM surprises.
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "1"
+    memory: "1Gi"
+
+# Disruption budget: never let voluntary disruptions (node drain, roll) drop us
+# below half the replicas.
+pdb:
+  enabled: true
+  minAvailable: 50%
+
+# Zero-downtime rolling deploy: add one new pod before removing any old one, and
+# never run below full capacity mid-roll.
+rollingUpdate:
+  maxSurge: 1
+  maxUnavailable: 0
+
+# Graceful shutdown: stop taking traffic, drain in-flight requests, then exit.
+terminationGracePeriodSeconds: 60
+preStopSleepSeconds: 10
+
+health:
+  path: /v1/health
+  # startup probe covers slow first-boot (schema/migrations); liveness restarts a
+  # hung pod; readiness gates ALB traffic.
+  startupFailureThreshold: 30 # 30 * 5s = up to 150s to become healthy
+  livenessPeriodSeconds: 15
+  readinessPeriodSeconds: 10
+
+serviceAccount:
+  name: kortix-api
+  # IRSA role ARN that can read the Secrets Manager bundle (from TF output
+  # app_irsa_role_arn). REQUIRED.
+  roleArn: ""
+
+# External Secrets: sync the shared Secrets Manager bundle into a k8s Secret the
+# Deployment consumes via envFrom. This is the SAME secret the ECS task reads.
+externalSecrets:
+  enabled: true
+  region: us-west-2
+  secretName: kortix-prod-env # Secrets Manager source bundle (friendly name; ECS references the same secret by its full ARN kortix-prod-env-omifd2)
+  targetSecretName: kortix-api-env # synced k8s Secret
+  refreshInterval: 1h
+
+# Always-injected non-secret env (PORT is also set from containerPort).
+extraEnv: {}
+
+# Environment profile. These render as explicit container env that OVERRIDE the
+# synced secret bundle (k8s `env` wins over `envFrom`), so an env can be made
+# API-only without changing the shared secret.
+env:
+  # Override INTERNAL_KORTIX_ENV (dev|staging|prod). "" = inherit from the bundle.
+  internalKortixEnv: ""
+
+# Singleton/background work (leader-elected: scheduler, project maintenance,
+# legacy + suna migration workers — see apps/api/src/index.ts). workers.enabled
+# = false forces the four KORTIX_*_ENABLED flags off, so this env NEVER runs
+# singleton jobs even if it wins the Postgres leader lease. Use false for a
+# pre-prod / canary that shares prod data; true for the environment that owns
+# the background work for its data plane.
+workers:
+  enabled: true
+
+ingress:
+  enabled: true
+  host: api-eks.kortix.com
+  # ACM cert ARN for the ALB HTTPS listener (from TF output acm_certificate_arn).
+  certificateArn: ""
+  # Cloudflare proxies the record (orange cloud) — external-dns sets this.
+  cloudflareProxied: true
+  # ALB idle timeout (s) — raise for long-lived/streaming requests (matches ECS).
+  idleTimeout: 300
+  # Lock ALB ingress to Cloudflare IP ranges in prod (recommended). Empty = open.
+  inboundCidrs: ""
+
+# Spread pods across AZs and nodes so a node/AZ loss can't take all replicas.
+topologySpread:
+  enabled: true
+
+# Progressive delivery (Argo Rollouts). enabled=false → a plain Deployment.
+# enabled=true → a canary Rollout that shifts traffic through `steps` while a
+# background CloudWatch AnalysisRun watches ALB error-rate + latency and ABORTS
+# (auto-rollback to stable) on breach. Per-env (prod enables it post-adoption).
+rollout:
+  enabled: false
+  # FAST canary: a brief soak at each weight while the background analysis watches
+  # 5xx/latency. ~1 min total. At prod traffic, 30s yields plenty of metric data;
+  # lengthen the pauses if you ever want a longer soak window for a risky release.
+  steps:
+    - setWeight: 25
+    - pause: { duration: 30s }
+    - setWeight: 50
+    - pause: { duration: 30s }
+    - setWeight: 100
+  analysis:
+    enabled: false
+    startingStep: 1 # begin analysis after the first setWeight
+    interval: 30s # how often the analysis samples CloudWatch
+    # ALB CloudWatch dimensions — set once from the live ALB/target group (stable
+    # for the life of the ingress). See infra/GITOPS.md.
+    lbArnSuffix: "" # app/<alb-name>/<hex>
+    tgArnSuffix: "" # targetgroup/<tg-name>/<hex>
+    errorRatePercentThreshold: "1" # fail canary if 5xx rate >= this %
+    p95LatencySecondsThreshold: "1.5" # fail canary if p95 target latency >= this
+    # Only ASSESS the thresholds once the window has this many requests — below
+    # it the sample is too small to judge (a single 5xx = huge rate %), so it
+    # passes. Keeps a low-traffic env (pre-cutover) from false-aborting.
+    minRequests: "20"
