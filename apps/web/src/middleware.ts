@@ -7,6 +7,7 @@ import { detectBestLocaleFromHeaders } from '@/lib/utils/geo-detection-server';
 import { KORTIX_SUPABASE_AUTH_COOKIE } from '@/lib/supabase/constants';
 import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes';
 import { getMaintenanceConfig, type MaintenanceLevel } from '@/lib/maintenance-store';
+import { getPublicRequestUrl } from '@/lib/request-origin';
 
 // Marketing pages that support locale routing for SEO (/de, /it, etc.)
 const MARKETING_ROUTES = [
@@ -87,6 +88,27 @@ const DESKTOP_ALLOWED_ROUTES = [
   '/debug',
 ];
 
+function clearSupabaseAuthCookies(request: NextRequest, response: NextResponse) {
+  const names = new Set<string>([KORTIX_SUPABASE_AUTH_COOKIE]);
+  for (const cookie of request.cookies.getAll()) {
+    if (
+      cookie.name === KORTIX_SUPABASE_AUTH_COOKIE ||
+      cookie.name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}.`) ||
+      cookie.name.startsWith(`${KORTIX_SUPABASE_AUTH_COOKIE}-`)
+    ) {
+      names.add(cookie.name);
+    }
+  }
+
+  for (const name of names) {
+    response.cookies.set(name, '', {
+      path: '/',
+      maxAge: 0,
+      sameSite: 'lax',
+    });
+  }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -116,7 +138,7 @@ export async function middleware(request: NextRequest) {
     try {
       const config = await getMaintenanceConfig();
       if (config.level === 'blocking') {
-        return NextResponse.redirect(new URL('/maintenance', request.url));
+        return NextResponse.redirect(getPublicRequestUrl(request, '/maintenance'));
       }
     } catch {
       // If Edge Config is unreachable, don't block traffic
@@ -136,7 +158,7 @@ export async function middleware(request: NextRequest) {
     // If we have Supabase auth parameters, redirect to /auth/callback
     // Note: Mobile apps use direct deep links and bypass this route
     if (code || token || type || error) {
-      const callbackUrl = new URL('/auth/callback', request.url);
+      const callbackUrl = getPublicRequestUrl(request, '/auth/callback');
 
       // Preserve all query parameters
       searchParams.forEach((value, key) => {
@@ -164,7 +186,7 @@ export async function middleware(request: NextRequest) {
         route => pathname === route || pathname.startsWith(route + '/'),
       );
     if (!isAllowed) {
-      return NextResponse.redirect(new URL('/projects', request.url));
+      return NextResponse.redirect(getPublicRequestUrl(request, '/projects'));
     }
   }
 
@@ -273,12 +295,12 @@ export async function middleware(request: NextRequest) {
 
   // FAST PATH: authenticated users hitting the homepage go straight to /projects.
   if (pathname === '/' && user) {
-    return NextResponse.redirect(new URL('/projects', request.url));
+    return NextResponse.redirect(getPublicRequestUrl(request, '/projects'));
   }
 
   // Desktop shell never shows the marketing homepage — bounce to /projects.
   if (pathname === '/' && request.headers.get('user-agent')?.includes('KortixDesktop')) {
-    return NextResponse.redirect(new URL('/projects', request.url));
+    return NextResponse.redirect(getPublicRequestUrl(request, '/projects'));
   }
 
   // Auto-redirect based on geo-detection for marketing pages
@@ -309,7 +331,7 @@ export async function middleware(request: NextRequest) {
       // Only redirect if detected locale is not English (default)
       // This prevents unnecessary redirects for English speakers
       if (detectedLocale !== defaultLocale) {
-        const redirectUrl = new URL(request.url);
+        const redirectUrl = getPublicRequestUrl(request);
         redirectUrl.pathname = `/${detectedLocale}${pathname === '/' ? '' : pathname}`;
 
         const redirectResponse = NextResponse.redirect(redirectUrl);
@@ -337,11 +359,13 @@ export async function middleware(request: NextRequest) {
 
     // Redirect to auth if not authenticated (using the user we already fetched)
     if (authError || !user) {
-      const url = request.nextUrl.clone();
+      const url = getPublicRequestUrl(request);
       url.pathname = '/auth';
       const redirectTarget = `${pathname}${request.nextUrl.search || ''}`;
       url.searchParams.set('redirect', redirectTarget);
-      return NextResponse.redirect(url);
+      const redirectResponse = NextResponse.redirect(url);
+      clearSupabaseAuthCookies(request, redirectResponse);
+      return redirectResponse;
     }
 
     // ── Billing-related routes (activate-trial, etc.) ────────────────────

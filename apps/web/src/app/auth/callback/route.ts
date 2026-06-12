@@ -5,6 +5,7 @@ import type { NextRequest } from 'next/server'
 import { ACTIVE_INSTANCE_COOKIE } from '@/lib/instance-routes'
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url'
 import { buildDesktopBounceHtml } from '@/lib/auth/desktop-bounce'
+import { getPublicRequestOrigin } from '@/lib/request-origin'
 
 /**
  * Auth Callback Route - Web Handler
@@ -43,10 +44,10 @@ export async function GET(request: NextRequest) {
     })
   }
 
-  // Use request origin for redirects (most reliable for local dev)
-  // This ensures localhost:3000 redirects stay on localhost, not staging
-  const requestOrigin = request.nextUrl.origin
-  const baseUrl = requestOrigin || runtimeEnv.APP_URL || 'http://localhost:3000'
+  // Use the public browser origin for redirects. Behind self-hosted reverse
+  // proxies, Next may see its internal listener (for example localhost:3001)
+  // as request.nextUrl.origin, which must never leak into Location headers.
+  const baseUrl = getPublicRequestOrigin(request, runtimeEnv.APP_URL)
   const error = searchParams.get('error')
   const errorCode = searchParams.get('error_code')
   const errorDescription = searchParams.get('error_description')
