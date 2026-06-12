@@ -25,10 +25,12 @@
 
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
+import { copyFileSync, createReadStream, createWriteStream, mkdirSync, mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, basename, join, resolve } from 'node:path';
+import { pipeline } from 'node:stream/promises';
 import { fileURLToPath } from 'node:url';
+import { createGzip } from 'node:zlib';
 import { SandboxState } from '@daytonaio/sdk';
 import { config } from '../config';
 import { getDaytonaWarm, warmSnapshotsEnabled } from '../shared/daytona';
@@ -104,12 +106,22 @@ async function step(sb: Sandbox, label: string, script: string, timeoutS: number
   return out;
 }
 
+/** Gzip a file at max compression (same as the Dockerfile-snapshot builder). */
+async function gzipFile(sourcePath: string, targetPath: string): Promise<void> {
+  await pipeline(createReadStream(sourcePath), createGzip({ level: 9 }), createWriteStream(targetPath));
+}
+
 /**
  * Stage the runtime artifacts into a single gzipped tarball on the local disk:
  * gzipped binaries + entrypoint + the agent-cli and executor-sdk source trees.
  * Returns the tarball path; caller deletes the temp dir.
+ *
+ * No shell is involved: gzip/copy happen in-process and `tar` is invoked with
+ * an argument ARRAY (execFileSync without a shell), so the artifact paths —
+ * which can come from KORTIX_SNAPSHOT_* env vars — are never interpreted as
+ * shell syntax (CodeQL: indirect uncontrolled command line).
  */
-function stageBuildContext(): { tarball: string; cleanup: () => void } {
+async function stageBuildContext(): Promise<{ tarball: string; cleanup: () => void }> {
   for (const [p, hint] of [
     [AGENT_BIN_PATH, 'KORTIX_SNAPSHOT_AGENT_BIN_PATH'],
     [CLI_BIN_PATH, 'KORTIX_SNAPSHOT_CLI_BIN_PATH'],
@@ -124,19 +136,13 @@ function stageBuildContext(): { tarball: string; cleanup: () => void } {
   const dir = mkdtempSync(join(tmpdir(), 'kortix-warm-ctx-'));
   const tarball = join(dir, 'kortix-runtime-ctx.tar.gz');
   const ctx = join(dir, 'ctx');
-  // One bash invocation: assemble ctx/ then tar it. -I 'gzip -9' keeps the
-  // binaries small (~37MB each) so the single upload stays reasonable.
-  const script = [
-    'set -e',
-    `mkdir -p "${ctx}"`,
-    `gzip -9 -c "${AGENT_BIN_PATH}" > "${ctx}/kortix-agent.gz"`,
-    `gzip -9 -c "${CLI_BIN_PATH}" > "${ctx}/kortix.gz"`,
-    `cp "${ENTRYPOINT_PATH}" "${ctx}/kortix-entrypoint"`,
-    `tar czf "${ctx}/agent-cli.tar.gz" -C "${dirname(AGENT_CLI_SRC_PATH)}" "${basename(AGENT_CLI_SRC_PATH)}"`,
-    `tar czf "${ctx}/executor-sdk.tar.gz" -C "${dirname(EXECUTOR_SDK_SRC_PATH)}" "${basename(EXECUTOR_SDK_SRC_PATH)}"`,
-    `tar czf "${tarball}" -C "${ctx}" .`,
-  ].join('\n');
-  execFileSync('bash', ['-c', script], { stdio: 'pipe' });
+  mkdirSync(ctx);
+  await gzipFile(AGENT_BIN_PATH, join(ctx, 'kortix-agent.gz'));
+  await gzipFile(CLI_BIN_PATH, join(ctx, 'kortix.gz'));
+  copyFileSync(ENTRYPOINT_PATH, join(ctx, 'kortix-entrypoint'));
+  execFileSync('tar', ['czf', join(ctx, 'agent-cli.tar.gz'), '-C', dirname(AGENT_CLI_SRC_PATH), basename(AGENT_CLI_SRC_PATH)], { stdio: 'pipe' });
+  execFileSync('tar', ['czf', join(ctx, 'executor-sdk.tar.gz'), '-C', dirname(EXECUTOR_SDK_SRC_PATH), basename(EXECUTOR_SDK_SRC_PATH)], { stdio: 'pipe' });
+  execFileSync('tar', ['czf', tarball, '-C', ctx, '.'], { stdio: 'pipe' });
   return { tarball, cleanup: () => rmSync(dir, { recursive: true, force: true }) };
 }
 
@@ -189,7 +195,7 @@ export async function bakeWarmSnapshot(opts: {
   const baseSnapshot = opts.baseSnapshot || (await resolveBuilderBaseSnapshot(onLog));
   const daytona = getDaytonaWarm();
 
-  const { tarball, cleanup } = stageBuildContext();
+  const { tarball, cleanup } = await stageBuildContext();
   onLog?.(`[warm-bake] staged build context (${(statSync(tarball).size / 1048576).toFixed(1)} MB)`);
 
   onLog?.(`[warm-bake] booting builder from ${baseSnapshot} on target "${config.DAYTONA_WARM_TARGET}"`);
