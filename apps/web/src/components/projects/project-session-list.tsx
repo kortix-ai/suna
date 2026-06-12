@@ -2,9 +2,9 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useState, memo } from 'react';
+import { useCallback, useEffect, useState, memo } from 'react';
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Loader2, MoreHorizontal, Pencil, RotateCcw, Share2, Trash2 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -34,13 +34,14 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
 import {
   deleteProjectSession,
+  getProjectSessionSandbox,
   listProjectSessions,
   restartProjectSession,
   type ProjectSession,
   type ProjectOpenCodeSession,
   type ProjectSessionStatus,
 } from '@/lib/projects-client';
-import { SessionShareDialog } from '@/components/projects/session-share-dialog';
+import { SessionShareDialog, SessionVisibilityBadge } from '@/components/projects/session-share-dialog';
 import { RenameSessionDialog } from '@/components/projects/rename-session-dialog';
 
 interface ProjectSessionListProps {
@@ -72,6 +73,7 @@ function directSubsessions(session: ProjectSession): ProjectOpenCodeSession[] {
 
 export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const activeOpenCodeSessionId = searchParams.get('oc');
@@ -79,6 +81,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; label: string } | null>(null);
   const [sessionToShare, setSessionToShare] = useState<ProjectSession | null>(null);
   const [sessionToRename, setSessionToRename] = useState<{ id: string; name: string } | null>(null);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -92,24 +95,41 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
   const deleteMutation = useMutation({
     mutationFn: (sessionId: string) => deleteProjectSession(projectId, sessionId),
     onSuccess: () => {
-      toast.success('Session deleted');
+      toast.success(tHardcodedUi.raw('componentsProjectsProjectSessionList.sessionDeleted'));
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to delete session');
+      toast.error(err instanceof Error ? err.message : tHardcodedUi.raw('componentsProjectsProjectSessionList.failedToDeleteSession'));
     },
   });
 
   const restartMutation = useMutation({
     mutationFn: (sessionId: string) => restartProjectSession(projectId, sessionId),
     onSuccess: () => {
-      toast.success('Restarting session…');
+      toast.success(tHardcodedUi.raw('componentsProjectsProjectSessionList.restartingSession'));
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to restart session');
+      toast.error(err instanceof Error ? err.message : tHardcodedUi.raw('componentsProjectsProjectSessionList.failedToRestartSession'));
     },
   });
+
+  useEffect(() => {
+    setPendingHref(null);
+  }, [pathname, activeOpenCodeSessionId]);
+
+  const prefetchProjectSession = useCallback(
+    (sessionId: string, href?: string) => {
+      const nextHref = href ?? `/projects/${projectId}/sessions/${sessionId}`;
+      router.prefetch(nextHref);
+      queryClient.prefetchQuery({
+        queryKey: ['project', 'session-sandbox', projectId, sessionId],
+        queryFn: () => getProjectSessionSandbox(projectId, sessionId),
+        staleTime: 15_000,
+      });
+    },
+    [projectId, queryClient, router],
+  );
 
   if (isLoading) {
     return (
@@ -151,8 +171,11 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
                 session={session}
                 href={href}
                 isActive={!!isActive && !activeOpenCodeSessionId}
+                isPending={pendingHref === href}
                 titleOverride={root?.title ?? undefined}
                 childCount={children.length}
+                onNavigateStart={() => setPendingHref(href)}
+                onPrefetch={() => prefetchProjectSession(session.session_id, href)}
                 onDelete={(id, label) => setSessionToDelete({ id, label })}
                 onShare={(s) => setSessionToShare(s)}
                 onRename={(id, name) => setSessionToRename({ id, name })}
@@ -171,10 +194,13 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
                     return (
                       <ProjectSubsessionRow
                         key={child.id}
-                        title={child.title || 'Sub-session'}
+                        title={child.title || tHardcodedUi.raw('componentsProjectsProjectSessionList.subSession')}
                         href={childHref}
                         isActive={activeChild}
+                        isPending={pendingHref === childHref}
                         updatedAt={child.updated_at}
+                        onNavigateStart={() => setPendingHref(childHref)}
+                        onPrefetch={() => prefetchProjectSession(session.session_id, childHref)}
                       />
                     );
                   })}
@@ -212,7 +238,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
               <span className="font-medium text-foreground">{sessionToDelete?.label}</span>{tHardcodedUi.raw('componentsProjectsProjectSessionList.line193JsxTextThisActionCannotBeUndone')}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{tHardcodedUi.raw('componentsProjectsProjectSessionList.cancel')}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 if (sessionToDelete) {
@@ -221,7 +247,7 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
                 }
               }}
             >
-              Delete
+              {tHardcodedUi.raw('componentsProjectsProjectSessionList.delete')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -239,6 +265,9 @@ interface ProjectSessionRowProps {
   onRename: (sessionId: string, currentName: string) => void;
   onRestart: (sessionId: string) => void;
   isRestarting: boolean;
+  isPending: boolean;
+  onNavigateStart: () => void;
+  onPrefetch: () => void;
   titleOverride?: string;
   childCount?: number;
 }
@@ -252,6 +281,9 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
   onRename,
   onRestart,
   isRestarting,
+  isPending,
+  onNavigateStart,
+  onPrefetch,
   titleOverride,
   childCount = 0,
 }: ProjectSessionRowProps) {
@@ -277,7 +309,9 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
     session.name?.trim() ||
     legacyMetadataName?.trim() ||
     null;
-  const fallback = session.branch_name ? session.branch_name.slice(0, 14) : 'session';
+  const fallback = session.branch_name
+    ? session.branch_name.slice(0, 14)
+    : tHardcodedUi.raw('componentsProjectsProjectSessionList.sessionFallback');
   const displayTitle = titleCandidate || fallback;
 
   const relative = (() => {
@@ -292,8 +326,14 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
     <Link
       href={href}
       className="block"
-      onMouseEnter={() => setIsHovering(true)}
+      onMouseEnter={() => {
+        setIsHovering(true);
+        onPrefetch();
+      }}
       onMouseLeave={() => setIsHovering(false)}
+      onFocus={onPrefetch}
+      onPointerDown={onPrefetch}
+      onClick={onNavigateStart}
     >
       <div
         className={cn(
@@ -301,27 +341,33 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
           // Active reads distinctly from hover: solid fill + a left accent bar,
           // while hover is only a half-strength wash. (Before, active and hover
           // shared the same background, so a selected row looked merely hovered.)
-          isActive
+          isActive || isPending
             ? 'bg-sidebar-accent text-sidebar-foreground font-medium'
             : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
         )}
       >
-        {isActive && (
+        {(isActive || isPending) && (
           <span
             aria-hidden
             className="absolute inset-y-1.5 left-0 w-[2px] rounded-r-full bg-foreground"
           />
         )}
-        <SessionStatusDot status={session.status} />
+        {isPending && !isActive ? (
+          <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin text-muted-foreground" />
+        ) : (
+          <SessionStatusDot status={session.status} />
+        )}
 
         <span
           className={cn(
             'flex-1 truncate text-sm',
-            isActive && 'font-medium',
+            (isActive || isPending) && 'font-medium',
           )}
         >
           {displayTitle}
         </span>
+
+        <SessionVisibilityBadge session={session} />
 
         {childCount > 0 && (
           <span className="rounded-full bg-sidebar-accent/60 px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
@@ -371,7 +417,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
                 }}
               >
                 <Pencil className="h-4 w-4" />
-                Rename…
+                {tHardcodedUi.raw('componentsProjectsProjectSessionList.rename')}
               </DropdownMenuItem>
               {session.can_manage_sharing !== false && (
                 <DropdownMenuItem
@@ -384,7 +430,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
                   }}
                 >
                   <Share2 className="h-4 w-4" />
-                  Share…
+                  {tHardcodedUi.raw('componentsProjectsProjectSessionList.share')}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem
@@ -402,7 +448,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
                 ) : (
                   <RotateCcw className="h-4 w-4" />
                 )}
-                Restart
+                {tHardcodedUi.raw('componentsProjectsProjectSessionList.restart')}
               </DropdownMenuItem>
               <DropdownMenuItem
                 className="cursor-pointer"
@@ -414,7 +460,7 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
                 }}
               >
                 <Trash2 className="h-4 w-4" />
-                Delete
+                {tHardcodedUi.raw('componentsProjectsProjectSessionList.delete')}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -428,29 +474,46 @@ function ProjectSubsessionRow({
   title,
   href,
   isActive,
+  isPending,
   updatedAt,
+  onNavigateStart,
+  onPrefetch,
 }: {
   title: string;
   href: string;
   isActive: boolean;
+  isPending: boolean;
   updatedAt: number | null;
+  onNavigateStart: () => void;
+  onPrefetch: () => void;
 }) {
   const relative = updatedAt
     ? shortRelative(formatDistanceToNowStrict(new Date(updatedAt), { addSuffix: false }))
     : '';
 
   return (
-    <Link href={href} className="block">
+    <Link
+      href={href}
+      className="block"
+      onMouseEnter={onPrefetch}
+      onFocus={onPrefetch}
+      onPointerDown={onPrefetch}
+      onClick={onNavigateStart}
+    >
       <div
         className={cn(
           'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-sm transition-colors duration-150',
-          isActive
+          isActive || isPending
             ? 'bg-sidebar-accent text-sidebar-foreground font-medium'
             : 'text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground',
         )}
       >
-        <span className="h-1 w-1 flex-shrink-0 rounded-full bg-muted-foreground/40" />
-        <span className={cn('flex-1 truncate', isActive && 'font-medium')}>
+        {isPending && !isActive ? (
+          <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin text-muted-foreground" />
+        ) : (
+          <span className="h-1 w-1 flex-shrink-0 rounded-full bg-muted-foreground/40" />
+        )}
+        <span className={cn('flex-1 truncate', (isActive || isPending) && 'font-medium')}>
           {title}
         </span>
         {relative && (
@@ -464,6 +527,7 @@ function ProjectSubsessionRow({
 }
 
 function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
+  const tHardcodedUi = useTranslations('hardcodedUi');
   const isProvisioning =
     status === 'queued' || status === 'branching' || status === 'provisioning';
 
@@ -486,8 +550,8 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
           )}
         </div>
       </TooltipTrigger>
-      <TooltipContent side="right" className="text-xs capitalize">
-        {status}
+      <TooltipContent side="right" className="text-xs">
+        {tHardcodedUi.raw(`componentsProjectsProjectSessionList.status.${status}`)}
       </TooltipContent>
     </Tooltip>
   );

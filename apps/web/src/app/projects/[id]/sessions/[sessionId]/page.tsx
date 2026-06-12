@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 
 import { useEffect, useRef, type ReactNode } from 'react';
+import dynamic from 'next/dynamic';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, RotateCcw } from 'lucide-react';
@@ -11,8 +12,6 @@ import { useAuth } from '@/components/AuthProvider';
 import { useAccountState } from '@/hooks/billing';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { isBillingEnabled } from '@/lib/config';
-import { SessionChat } from '@/components/session/session-chat';
-import { SessionLayout } from '@/components/session/session-layout';
 import { SessionLoadingSkeleton } from '@/components/session/session-loading-skeleton';
 import { ProjectShell } from '@/components/projects/project-shell';
 import { Button } from '@/components/ui/button';
@@ -37,6 +36,16 @@ import {
   useCanonicalOpenCodeSession,
 } from '@/hooks/opencode/use-canonical-opencode-session';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
+
+const SessionLayout = dynamic(
+  () => import('@/components/session/session-layout').then((mod) => mod.SessionLayout),
+  { loading: () => <SessionLoadingSkeleton /> },
+);
+
+const SessionChat = dynamic(
+  () => import('@/components/session/session-chat').then((mod) => mod.SessionChat),
+  { loading: () => <SessionLoadingSkeleton /> },
+);
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.

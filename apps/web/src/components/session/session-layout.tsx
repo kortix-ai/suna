@@ -2,8 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
+import dynamic from 'next/dynamic';
 import * as ResizablePrimitive from 'react-resizable-panels';
-import { PreviewTabContent } from '@/components/tabs/preview-tab-content';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
 import {
@@ -26,11 +26,28 @@ import {
   useSessionBrowserStore,
   type SessionPanelView,
 } from '@/stores/session-browser-store';
-import { SessionFilesExplorer } from '@/components/session/session-files-explorer';
-import { SessionTerminalPanel } from '@/components/session/session-terminal-panel';
-import { SessionActionsPanel } from '@/components/session/session-actions-panel';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { X } from 'lucide-react';
+
+const PreviewTabContent = dynamic(
+  () => import('@/components/tabs/preview-tab-content').then((mod) => mod.PreviewTabContent),
+  { loading: () => null },
+);
+
+const SessionFilesExplorer = dynamic(
+  () => import('@/components/session/session-files-explorer').then((mod) => mod.SessionFilesExplorer),
+  { loading: () => null },
+);
+
+const SessionTerminalPanel = dynamic(
+  () => import('@/components/session/session-terminal-panel').then((mod) => mod.SessionTerminalPanel),
+  { loading: () => null },
+);
+
+const SessionActionsPanel = dynamic(
+  () => import('@/components/session/session-actions-panel').then((mod) => mod.SessionActionsPanel),
+  { loading: () => null },
+);
 
 // ============================================================================
 // Session Layout
@@ -261,7 +278,8 @@ export const SessionLayout = memo(function SessionLayout({
   // uses — so there is exactly one tool-rendering implementation. The terminal
   // is layered on top and toggled with `hidden` (display:none) rather than
   // unmounted, keeping its connection alive across view switches.
-  const nonTerminalBody = showBrowser ? (
+  const shouldRenderNonTerminalBody = shouldShowPanel && !showTerminal;
+  const nonTerminalBody = !shouldRenderNonTerminalBody ? null : showBrowser ? (
     <PreviewTabContent tabId={sessionPreviewTabId(sessionId)} />
   ) : showExplorer ? (
     <SessionFilesExplorer chatSessionId={sessionId} />

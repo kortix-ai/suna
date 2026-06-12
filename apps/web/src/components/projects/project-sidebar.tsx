@@ -25,7 +25,12 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { listProjectSessions, type ProjectOpenCodeSession, type ProjectSession } from '@/lib/projects-client';
+import {
+  getProjectSessionSandbox,
+  listProjectSessions,
+  type ProjectOpenCodeSession,
+  type ProjectSession,
+} from '@/lib/projects-client';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 
@@ -74,6 +79,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { createProjectSession } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
+import { displayEmailFromUser, displayNameFromUser } from '@/lib/user-display';
 
 const isMac =
   typeof navigator !== 'undefined' &&
@@ -250,8 +256,10 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const openTab = useProjectSessionTabsStore((s) => s.openTab);
   const activeOpenCodeSessionId = searchParams.get('oc');
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['project-sessions', projectId],
@@ -274,6 +282,23 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
     );
   }, [data]);
+
+  useEffect(() => {
+    setPendingHref(null);
+  }, [pathname, activeOpenCodeSessionId]);
+
+  const prefetchProjectSession = useCallback(
+    (sessionId: string, href?: string) => {
+      const nextHref = href ?? `/projects/${projectId}/sessions/${sessionId}`;
+      router.prefetch(nextHref);
+      queryClient.prefetchQuery({
+        queryKey: ['project', 'session-sandbox', projectId, sessionId],
+        queryFn: () => getProjectSessionSandbox(projectId, sessionId),
+        staleTime: 15_000,
+      });
+    },
+    [projectId, queryClient, router],
+  );
 
   return (
     <div className="overflow-y-auto py-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
@@ -307,17 +332,24 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
           return (
             <div key={session.session_id}>
               <button
+                onMouseEnter={() => prefetchProjectSession(session.session_id, href)}
+                onFocus={() => prefetchProjectSession(session.session_id, href)}
+                onPointerDown={() => prefetchProjectSession(session.session_id, href)}
                 onClick={() => {
+                  setPendingHref(href);
                   openTab(projectId, session.session_id);
                   router.push(href);
                 }}
                 className={cn(
                   'flex items-center gap-2 w-full px-3 py-1.5 text-sm cursor-pointer transition-colors duration-100',
-                  active && !activeOpenCodeSessionId
+                  (active && !activeOpenCodeSessionId) || pendingHref === href
                     ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
                     : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
                 )}
               >
+                {pendingHref === href && !(active && !activeOpenCodeSessionId) && (
+                  <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin text-muted-foreground" />
+                )}
                 <span className="flex-1 truncate text-left">{label}</span>
                 {children.length > 0 && (
                   <span className="rounded-full bg-sidebar-accent/60 px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
@@ -341,19 +373,29 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
                     return (
                       <button
                         key={child.id}
+                        onMouseEnter={() => prefetchProjectSession(session.session_id, childHref)}
+                        onFocus={() => prefetchProjectSession(session.session_id, childHref)}
+                        onPointerDown={() => prefetchProjectSession(session.session_id, childHref)}
                         onClick={() => {
+                          setPendingHref(childHref);
                           openTab(projectId, session.session_id);
                           router.push(childHref);
                         }}
                         className={cn(
                           'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-sm transition-colors duration-100',
-                          childActive
+                          childActive || pendingHref === childHref
                             ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
                             : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
                         )}
                       >
-                        <span className="h-1 w-1 flex-shrink-0 rounded-full bg-muted-foreground/40" />
-                        <span className="flex-1 truncate text-left">{child.title || 'Sub-session'}</span>
+                        {pendingHref === childHref && !childActive ? (
+                          <Loader2 className="h-3 w-3 flex-shrink-0 animate-spin text-muted-foreground" />
+                        ) : (
+                          <span className="h-1 w-1 flex-shrink-0 rounded-full bg-muted-foreground/40" />
+                        )}
+                        <span className="flex-1 truncate text-left">
+                          {child.title || tHardcodedUi.raw('componentsProjectsProjectSidebar.subSession')}
+                        </span>
                         {childRelative && (
                           <span className="flex-shrink-0 text-xs tabular-nums text-muted-foreground/60">
                             {childRelative}
@@ -392,11 +434,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const { user: authUser } = useAuth();
   const user = useMemo(
     () => ({
-      name:
-        authUser?.user_metadata?.name ||
-        authUser?.email?.split('@')[0] ||
-        'User',
-      email: authUser?.email ?? '',
+      name: displayNameFromUser(authUser),
+      email: displayEmailFromUser(authUser, ''),
       avatar:
         authUser?.user_metadata?.avatar_url ||
         authUser?.user_metadata?.picture ||
@@ -417,7 +456,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     },
     onError: (err) => {
       if ((err as any)?.code === 'concurrent_session_limit') return;
-      toast.error(err instanceof Error ? err.message : 'Failed to start session');
+      toast.error(err instanceof Error ? err.message : tHardcodedUi.raw('componentsProjectsProjectSidebar.failedToStartSession'));
     },
   });
 
@@ -471,7 +510,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <Link
             href="/projects"
             className="flex items-center group-data-[collapsible=icon]:hidden"
-            aria-label="Projects"
+            aria-label={tHardcodedUi.raw('componentsProjectsProjectSidebar.projects')}
           >
             <KortixLogo variant="logomark" size={16} className="flex-shrink-0" />
           </Link>
@@ -482,7 +521,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               type="button"
               className="group/collapsed absolute inset-0 flex items-center justify-center cursor-pointer"
               onClick={() => (isMobile ? setOpenMobile(true) : setOpen(true))}
-              aria-label="Expand sidebar"
+              aria-label={tHardcodedUi.raw('componentsProjectsProjectSidebar.expandSidebar')}
             >
               <span className="flex items-center justify-center group-hover/collapsed:hidden">
                 <KortixLogo variant="symbol" size={20} className="flex-shrink-0" />
@@ -493,7 +532,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <button
             type="button"
             onClick={() => (isMobile ? setOpenMobile(false) : setOpen(false))}
-            aria-label={isMobile ? 'Close menu' : 'Collapse sidebar'}
+            aria-label={isMobile
+              ? tHardcodedUi.raw('componentsProjectsProjectSidebar.closeMenu')
+              : tHardcodedUi.raw('componentsProjectsProjectSidebar.collapseSidebar')}
             className={cn(
               'flex items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground',
               isMobile ? 'h-8 w-8' : 'h-6 w-6',
@@ -544,7 +585,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             />
             <CollapsedIconButton
               icon={<ListTree className="h-4 w-4" />}
-              label="Sessions"
+              label={tHardcodedUi.raw('componentsProjectsProjectSidebar.sessions')}
               onClick={() => (isMobile ? setOpenMobile(true) : setOpen(true))}
               flyoutContent={<ProjectSessionsFlyout projectId={projectId} />}
             />
@@ -559,7 +600,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             <ProjectSetupRailItem projectId={projectId} />
             <CollapsedIconButton
               icon={<SlidersHorizontal className="h-4 w-4" />}
-              label="Customize"
+              label={tHardcodedUi.raw('componentsProjectsProjectSidebar.customize')}
               onClick={goCustomize}
               isActive={customizeOpen}
             />
@@ -585,7 +626,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   ) : (
                     <SquarePen />
                   )}
-                  <span>{createSession.isPending ? 'Creating…' : 'New session'}</span>
+                  <span>
+                    {createSession.isPending
+                      ? tHardcodedUi.raw('componentsProjectsProjectSidebar.creating')
+                      : tHardcodedUi.raw('componentsProjectsProjectSidebar.line510JsxAttrLabelNewSession')}
+                  </span>
                   <KbdHint mod={modSymbol} letter="J" />
                 </SidebarMenuButton>
               </SidebarMenuItem>
@@ -603,7 +648,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             >
               <CollapsibleTrigger asChild>
                 <SidebarGroupLabel className="group/label mt-1 flex h-6 cursor-pointer items-center gap-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground/60 hover:text-sidebar-foreground">
-                  <span className="flex-1 text-left">Sessions</span>
+                  <span className="flex-1 text-left">{tHardcodedUi.raw('componentsProjectsProjectSidebar.sessions')}</span>
                   <ChevronDown className="size-3 transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
                 </SidebarGroupLabel>
               </CollapsibleTrigger>
@@ -629,7 +674,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   className="!text-sm font-normal data-[active=true]:font-normal !transition-none transform-none [&_svg]:!size-4"
                 >
                   <SlidersHorizontal />
-                  <span>Customize</span>
+                  <span>{tHardcodedUi.raw('componentsProjectsProjectSidebar.customize')}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
