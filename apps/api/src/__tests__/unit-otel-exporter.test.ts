@@ -10,7 +10,7 @@ describe('OTLP trace exporter', () => {
     fetchCalls.length = 0;
     process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT = 'https://otel.example.test/v1/traces';
     process.env.OTEL_EXPORTER_OTLP_HEADERS = 'Authorization=Bearer test-token';
-    process.env.INTERNAL_KORTIX_ENV = 'test';
+    process.env.INTERNAL_KORTIX_ENV = 'dev';
     process.env.SANDBOX_VERSION = 'test-version';
     globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
