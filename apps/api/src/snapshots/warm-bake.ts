@@ -450,13 +450,22 @@ export function kickWarmBaseBuild(onLog?: (l: string) => void): void {
  * exists org-side in `error` state and lingers in the dashboard forever.
  * Targeted by snapshot name + error state so we never touch live sandboxes.
  * Best-effort and bounded; safe to fire-and-forget.
+ *
+ * With no `snapshotName`, sweeps errored boxes for EVERY `kortix-warm-runtime-*`
+ * base — used by the periodic warm-pool reconcile, since the opportunistic
+ * after-a-failed-create reap can't keep up on a busy environment (each failed
+ * create leaves a fresh corpse) and misses entirely across process restarts.
  */
-export async function reapErroredWarmBoxes(snapshotName: string, log?: (l: string) => void): Promise<number> {
+export async function reapErroredWarmBoxes(snapshotName?: string, log?: (l: string) => void): Promise<number> {
   if (!warmSnapshotsEnabled()) return 0;
   let reaped = 0;
   try {
     const daytona = getDaytonaWarm();
-    for await (const box of daytona.list({ states: [SandboxState.ERROR], snapshots: [snapshotName] })) {
+    const query = snapshotName
+      ? { states: [SandboxState.ERROR], snapshots: [snapshotName] }
+      : { states: [SandboxState.ERROR] };
+    for await (const box of daytona.list(query)) {
+      if (!snapshotName && !(box.snapshot ?? '').startsWith(WARM_BASE_PREFIX)) continue;
       try {
         await box.delete();
         reaped++;
@@ -465,7 +474,7 @@ export async function reapErroredWarmBoxes(snapshotName: string, log?: (l: strin
       }
       if (reaped >= 25) break; // bound a single pass
     }
-    if (reaped > 0) log?.(`[warm-bake] reaped ${reaped} errored warm box(es) for ${snapshotName}`);
+    if (reaped > 0) log?.(`[warm-bake] reaped ${reaped} errored warm box(es) for ${snapshotName ?? 'all warm bases'}`);
   } catch (err) {
     log?.(`[warm-bake] errored-box reap skipped: ${err instanceof Error ? err.message : String(err)}`);
   }

@@ -367,6 +367,16 @@ export function notePoolPresence(projectId: string): void {
 export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: number; projects: number }> {
   if (!warmPoolEnabled()) return { reaped: 0, projects: 0 };
   let reaped = 0;
+
+  // 0. Sweep errored corpses from failed warm-snapshot creates (the flaky
+  //    experimental region fails ~half of creates and the SDK throws without a
+  //    box handle, so they linger in `error` state org-side). The opportunistic
+  //    reap in createWarm can't keep up on a busy env; this periodic pass keeps
+  //    the org converging to clean. Fire-and-forget — never blocks the pool.
+  void import('../../snapshots/warm-bake')
+    .then(({ reapErroredWarmBoxes }) => reapErroredWarmBoxes(undefined, (l) => console.log(l)))
+    .catch(() => {});
+
   const presenceCutoff = new Date(now.getTime() - config.KORTIX_WARM_POOL_PRESENCE_MINUTES * 60_000);
   const present = await db
     .select({ projectId: projects.projectId, metadata: projects.metadata })
