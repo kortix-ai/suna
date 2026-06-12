@@ -20,6 +20,10 @@ export interface QuestionRequest {
 
 export type OpencodeEventHandlers = {
   onQuestionAsked?: (req: QuestionRequest) => void
+  // Fired when an opencode session finishes processing a turn. opencode emits
+  // this for EVERY session — including subagent (Task tool) child sessions — so
+  // the handler is responsible for filtering down to the root turn.
+  onSessionIdle?: (sessionID: string) => void
 }
 
 // Subscribe to opencode's SSE event stream and dispatch known event types.
@@ -109,5 +113,10 @@ function dispatch(event: { type?: string; properties?: unknown }, handlers: Open
     if (req?.id && req?.sessionID && Array.isArray(req.questions)) {
       handlers.onQuestionAsked(req)
     }
+    return
+  }
+  if (event.type === 'session.idle' && handlers.onSessionIdle) {
+    const props = event.properties as { sessionID?: string } | undefined
+    if (props?.sessionID) handlers.onSessionIdle(props.sessionID)
   }
 }

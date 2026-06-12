@@ -214,6 +214,21 @@ export async function relayTurnAnswer(
   return true;
 }
 
+// Called when the agent's turn goes idle (opencode `session.idle` on the root
+// session). If the agent already delivered its reply via `slack send`, the
+// stream is gone and there's nothing to do. If it ended WITHOUT sending — e.g.
+// it judged the message needed no reply — we silently close the live stream so
+// the "On it…" placeholder / streaming plan doesn't hang until the 15-min
+// watchdog. No "_Done._" filler is posted (see finalizeStream's silent path).
+export async function relayTurnEnd(sessionId: string): Promise<boolean> {
+  const handle = await loadStream(sessionId);
+  if (!handle || handle.finalized) return false;
+  if (!(await claimFinalize(sessionId))) return false;
+  await finalizeStream(handle, {});
+  await deleteStream(sessionId);
+  return true;
+}
+
 export async function handleAskSubmit(payload: SlackInteractionPayload, askId: string): Promise<void> {
   const pending = pendingAsks.get(askId);
   if (!pending) {
