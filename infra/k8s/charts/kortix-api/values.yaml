@@ -106,3 +106,27 @@ ingress:
 # Spread pods across AZs and nodes so a node/AZ loss can't take all replicas.
 topologySpread:
   enabled: true
+
+# Progressive delivery (Argo Rollouts). enabled=false → a plain Deployment.
+# enabled=true → a canary Rollout that shifts traffic through `steps` while a
+# background CloudWatch AnalysisRun watches ALB error-rate + latency and ABORTS
+# (auto-rollback to stable) on breach. Per-env (prod enables it post-adoption).
+rollout:
+  enabled: false
+  steps:
+    - setWeight: 10
+    - pause: { duration: 2m }
+    - setWeight: 25
+    - pause: { duration: 2m }
+    - setWeight: 50
+    - pause: { duration: 3m }
+    - setWeight: 100
+  analysis:
+    enabled: false
+    startingStep: 1 # begin analysis after the first setWeight
+    # ALB CloudWatch dimensions — set once from the live ALB/target group (stable
+    # for the life of the ingress). See infra/GITOPS.md.
+    lbArnSuffix: "" # app/<alb-name>/<hex>
+    tgArnSuffix: "" # targetgroup/<tg-name>/<hex>
+    errorRatePercentThreshold: "1" # fail canary if 5xx rate >= this %
+    p95LatencySecondsThreshold: "1.5" # fail canary if p95 target latency >= this

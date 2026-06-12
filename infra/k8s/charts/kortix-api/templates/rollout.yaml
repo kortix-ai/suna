@@ -1,0 +1,42 @@
+{{- if .Values.rollout.enabled }}
+# Argo Rollouts canary (replaces the Deployment when rollout.enabled). Shifts
+# weight through .Values.rollout.steps; a background AnalysisRun (CloudWatch ALB
+# error-rate + p95 latency) aborts the rollout — auto-rollback to stable — if the
+# new version breaches thresholds. Same pod spec as the Deployment (shared
+# _pod.tpl), so probes / drain / spread / secrets are identical.
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+metadata:
+  name: {{ include "kortix-api.name" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kortix-api.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "kortix-api.selectorLabels" . | nindent 6 }}
+  template:
+    {{- include "kortix-api.podTemplate" . | nindent 4 }}
+  strategy:
+    canary:
+      {{- if .Values.rollout.analysis.enabled }}
+      analysis:
+        startingStep: {{ .Values.rollout.analysis.startingStep }}
+        templates:
+          - templateName: {{ include "kortix-api.name" . }}-success-rate
+        args:
+          - name: lb-arn-suffix
+            value: {{ .Values.rollout.analysis.lbArnSuffix | quote }}
+          - name: tg-arn-suffix
+            value: {{ .Values.rollout.analysis.tgArnSuffix | quote }}
+          - name: error-rate-threshold
+            value: {{ .Values.rollout.analysis.errorRatePercentThreshold | quote }}
+          - name: p95-latency-threshold
+            value: {{ .Values.rollout.analysis.p95LatencySecondsThreshold | quote }}
+      {{- end }}
+      steps:
+{{ toYaml .Values.rollout.steps | indent 8 }}
+{{- end }}

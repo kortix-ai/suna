@@ -255,4 +255,9 @@ resource "helm_release" "argo_rollouts" {
     name  = "controller.replicas"
     value = "2"
   }
+  # IRSA so the controller can query CloudWatch for canary analysis.
+  set {
+    name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
+    value = module.argo_rollouts_irsa.role_arn
+  }
 }

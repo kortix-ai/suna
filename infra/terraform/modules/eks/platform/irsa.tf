@@ -67,6 +67,27 @@ module "cluster_autoscaler_irsa" {
   tags              = var.tags
 }
 
+# Argo Rollouts controller — reads CloudWatch so the canary AnalysisRuns can
+# query ALB error-rate + latency to auto-promote / auto-rollback.
+data "aws_iam_policy_document" "rollouts_cloudwatch" {
+  statement {
+    effect    = "Allow"
+    actions   = ["cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "cloudwatch:ListMetrics"]
+    resources = ["*"]
+  }
+}
+
+module "argo_rollouts_irsa" {
+  source            = "../irsa"
+  name              = "${var.cluster_name}-argo-rollouts"
+  oidc_provider_arn = var.oidc_provider_arn
+  oidc_provider_url = var.oidc_provider_url
+  namespace         = "argo-rollouts"
+  service_accounts  = ["argo-rollouts"]
+  policy_json       = data.aws_iam_policy_document.rollouts_cloudwatch.json
+  tags              = var.tags
+}
+
 # ── Cloudflare API token for external-dns ─────────────────────────────────────
 # external-dns reads CF_API_TOKEN from this secret to create the proxied
 # api-eks.kortix.com record pointing at the ALB it discovers.

@@ -1,17 +1,19 @@
-name: Deploy Prod (EKS)
+name: Deploy Prod (EKS / GitOps)
 
-# PARALLEL prod path on EKS, alongside the untouched ECS pipeline (deploy-prod.yml).
-# Serves api-eks.kortix.com from the EKS cluster while api.kortix.com / api-prod
-# stay on ECS — so EKS can be proven in prod before api.kortix.com is flipped to
-# it (one Cloudflare Worker var; instantly reversible). This workflow NEVER
-# touches ECS.
+# EKS prod deploy via GitOps. On a prod release, this bumps the image tag in
+# infra/k8s/envs/prod/values.yaml and pushes it — Argo CD reconciles the change
+# onto the cluster (canary via Argo Rollouts when enabled). There is NO
+# kubectl/helm/aws here: the cluster is changed only by committing to git.
 #
-#   push to `prod` ─► wait for kortix/kortix-api:<VERSION> (retagged by ECS prod)
-#                  ─► helm upgrade --install kortix-api ─► rollout + health check
+#   prod release ─► wait for kortix/kortix-api:<VERSION> (retagged by deploy-prod)
+#                ─► [GitHub Environment "production" approval]
+#                ─► bump envs/prod/values.yaml ─► Argo CD syncs ─► EKS
+#   rollback = git revert the bump (Argo reconciles back).
 #
-# Auth: GitHub OIDC → role kortix-gha-eks-deploy (Terraform-managed in
-# environments/prod-eks/cluster). The role has write access ONLY in the
-# kortix-prod namespace. If the cluster isn't applied yet, the job no-ops.
+# Runs in parallel with deploy-prod.yml (which still rolls ECS + cuts the release
+# during the dual-run). At the api.kortix.com cutover, deploy-prod's ECS roll is
+# removed and this becomes the sole prod deploy. Replaces the old imperative
+# `helm upgrade` path.
 
 on:
   push:
@@ -23,23 +25,24 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  id-token: write # assume the AWS role via OIDC
-  contents: read
+  contents: write # push the values bump to the prod branch
 
 env:
-  AWS_REGION: us-west-2
-  CLUSTER_NAME: kortix-prod-eks
-  NAMESPACE: kortix-prod
-  RELEASE: kortix-api
-  API_HOST: api-eks.kortix.com
   IMAGE_REPO: kortix/kortix-api
+  VALUES_FILE: infra/k8s/envs/prod/values.yaml
 
 jobs:
-  deploy:
-    name: Deploy API to prod (EKS)
+  gitops-deploy:
+    name: Promote image to EKS prod (GitOps)
     runs-on: ubuntu-latest
+    # Approval gate: configure this Environment with required reviewers in repo
+    # Settings → Environments → production. Until then the job runs ungated.
+    environment: production
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: prod
+          fetch-depth: 0
 
       - name: Resolve version from VERSION
         id: v
@@ -47,119 +50,67 @@ jobs:
           set -euo pipefail
           V="$(tr -d '[:space:]' < VERSION)"
           echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "Deploying kortix-api:$V to EKS"
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
-          aws-region: ${{ env.AWS_REGION }}
-
-      # If the EKS stack hasn't been applied yet, skip cleanly — this parallel
-      # path must never fail the release while EKS is still being stood up.
-      - name: Check the cluster exists
-        id: guard
-        run: |
-          set -euo pipefail
-          if aws eks describe-cluster --name "$CLUSTER_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::EKS cluster $CLUSTER_NAME not found — skipping EKS deploy (stack not applied yet)."
-          fi
+          echo "EKS prod target: $IMAGE_REPO:$V"
 
       - name: Log in to Docker Hub
-        if: steps.guard.outputs.exists == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # The ECS prod pipeline retags dev → :VERSION. Wait for that tag so EKS
-      # ships the exact same image bytes (no rebuild) regardless of job ordering.
-      - name: Wait for image kortix/kortix-api:${{ steps.v.outputs.version }}
-        if: steps.guard.outputs.exists == 'true'
+      # deploy-prod.yml retags dev → :VERSION. Wait for it so Argo never points
+      # at a tag that doesn't exist yet (regardless of job ordering).
+      - name: Wait for image ${{ env.IMAGE_REPO }}:${{ steps.v.outputs.version }}
         run: |
           set -euo pipefail
           REF="$IMAGE_REPO:${{ steps.v.outputs.version }}"
           for i in $(seq 1 60); do
             if docker buildx imagetools inspect "$REF" >/dev/null 2>&1; then
-              echo "✓ $REF is available"; exit 0
+              echo "✓ $REF available"; exit 0
             fi
-            echo "($i/60) $REF not yet published — waiting 15s…"; sleep 15
+            echo "($i/60) $REF not published yet — waiting 15s…"; sleep 15
           done
-          echo "::error::Timed out waiting for $REF (15 min). ECS retag job may have failed."
-          exit 1
+          echo "::error::Timed out waiting for $REF (15 min)."; exit 1
 
-      - name: Set up kubectl + helm
-        if: steps.guard.outputs.exists == 'true'
-        uses: azure/setup-helm@v4
-        with:
-          version: v3.16.2
-
-      - name: Update kubeconfig
-        if: steps.guard.outputs.exists == 'true'
-        run: aws eks update-kubeconfig --name "$CLUSTER_NAME" --region "$AWS_REGION"
-
-      # Pull the two dynamic values from AWS (deterministic names set by Terraform)
-      # so no extra secrets/vars need wiring after `terraform apply`.
-      - name: Resolve IRSA role + ACM cert
-        if: steps.guard.outputs.exists == 'true'
-        id: refs
-        run: |
-          set -euo pipefail
-          ROLE_ARN=$(aws iam get-role --role-name "${CLUSTER_NAME}-app" \
-            --query 'Role.Arn' --output text)
-          CERT_ARN=$(aws acm list-certificates --region "$AWS_REGION" \
-            --query "CertificateSummaryList[?DomainName=='${API_HOST}'].CertificateArn | [0]" \
-            --output text)
-          if [ -z "$ROLE_ARN" ] || [ "$CERT_ARN" = "None" ] || [ -z "$CERT_ARN" ]; then
-            echo "::error::Could not resolve role ($ROLE_ARN) or cert ($CERT_ARN) — is the cluster layer applied?"
-            exit 1
-          fi
-          echo "role_arn=$ROLE_ARN" >> "$GITHUB_OUTPUT"
-          echo "cert_arn=$CERT_ARN" >> "$GITHUB_OUTPUT"
-
-      - name: Helm upgrade (rolling, zero-downtime)
-        if: steps.guard.outputs.exists == 'true'
+      - name: Bump prod values to the released tag
+        id: bump
         env:
           VERSION: ${{ steps.v.outputs.version }}
-          ROLE_ARN: ${{ steps.refs.outputs.role_arn }}
-          CERT_ARN: ${{ steps.refs.outputs.cert_arn }}
         run: |
           set -euo pipefail
-          helm upgrade --install "$RELEASE" ./infra/k8s/charts/kortix-api \
-            --namespace "$NAMESPACE" \
-            --set image.tag="$VERSION" \
-            --set kortixVersion="$VERSION" \
-            --set serviceAccount.roleArn="$ROLE_ARN" \
-            --set ingress.host="$API_HOST" \
-            --set ingress.certificateArn="$CERT_ARN" \
-            --wait --timeout 10m
+          # yq (mikefarah) is preinstalled on ubuntu-latest runners.
+          before="$(yq '.image.tag' "$VALUES_FILE")"
+          yq -i '.image.tag = strenv(VERSION) | .kortixVersion = strenv(VERSION)' "$VALUES_FILE"
+          after="$(yq '.image.tag' "$VALUES_FILE")"
+          echo "image.tag: $before → $after"
+          if git diff --quiet -- "$VALUES_FILE"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$VALUES_FILE already at $VERSION — nothing to deploy."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Wait for rollout
-        if: steps.guard.outputs.exists == 'true'
-        run: kubectl -n "$NAMESPACE" rollout status deploy/kortix-api --timeout=300s
-
-      # Best-effort external check — on the very first deploy the ALB + cert +
-      # Cloudflare record take a few minutes to converge, so a miss here warns
-      # rather than fails (the rollout above is the authoritative gate).
-      - name: Smoke test https://api-eks.kortix.com/v1/health
-        if: steps.guard.outputs.exists == 'true'
+      - name: Commit + push the deploy (Argo CD reconciles it)
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
         run: |
-          set -uo pipefail
-          for i in $(seq 1 20); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' "https://${API_HOST}/v1/health" || true)
-            if [ "$code" = "200" ]; then echo "✓ health 200"; exit 0; fi
-            echo "($i/20) health=$code — waiting 15s…"; sleep 15
-          done
-          echo "::warning::api-eks.kortix.com/v1/health not 200 yet (ALB/DNS may still be converging). Pods rolled out OK."
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$VALUES_FILE"
+          # [skip ci] so this commit doesn't re-trigger the prod pipelines.
+          git commit -m "deploy(eks-prod): kortix-api $VERSION [skip ci]"
+          git push origin HEAD:prod
 
       - name: Summary
-        if: always() && steps.guard.outputs.exists == 'true'
+        if: always()
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
         run: |
           {
-            echo "### Deployed API → **prod** (EKS)"
-            echo "kortix-api:${{ steps.v.outputs.version }} rolled onto EKS \`$CLUSTER_NAME\` (ns \`$NAMESPACE\`)"
-            echo "Endpoint: https://${API_HOST}/v1/health"
+            echo "### EKS prod deploy (GitOps)"
+            echo "Bumped \`$VALUES_FILE\` → \`$IMAGE_REPO:$VERSION\`."
+            echo "Argo CD reconciles \`kortix-prod\` to it (Rollouts canary when enabled)."
+            echo "Rollback: \`git revert\` the bump commit."
           } >> "$GITHUB_STEP_SUMMARY"
