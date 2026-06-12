@@ -337,6 +337,11 @@ export async function createProjectSession(input: {
           message: billingCheck.message,
           code: billingCheck.reason,
           balance: billingCheck.balance,
+          // The account that actually needs the upgrade — the project's owning
+          // (team) account, NOT the caller's primary account. The upgrade dialog
+          // scopes itself to this so a non-billing member sees the *team's*
+          // billing state (and a gated CTA), not their own personal account.
+          account_id: accountId,
         },
       },
     };

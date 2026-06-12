@@ -10,7 +10,7 @@
 // Hard guard: every call no-ops on legacy accounts. New seat behaviour only
 // engages when credit_accounts.billing_model = 'per_seat'.
 
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { accountMembers } from '@kortix/db';
 import { db } from '../../shared/db';
 import { getStripe } from '../../shared/stripe';
@@ -25,11 +25,33 @@ import {
 } from './tiers';
 
 export async function countActiveMembers(accountId: string): Promise<number> {
-  const rows = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(eq(accountMembers.accountId, accountId));
-  return rows.length;
+  // Count account members, EXCLUDING phantom self-memberships — a row where
+  // user_id == account_id whose user_id is not a real auth user. These are
+  // minted when a Kortix token (the auth middleware maps it to userId ==
+  // accountId) hits resolveAccountId; the account ends up "a member of itself"
+  // and must NOT be billed as a seat. A personal account's owner also has
+  // user_id == account_id but IS a real auth user, so the NOT EXISTS keeps it.
+  try {
+    const res = await db.execute<{ n: number }>(sql`
+      SELECT COUNT(*)::int AS n
+      FROM kortix.account_members am
+      WHERE am.account_id = ${accountId}::uuid
+        AND NOT (
+          am.user_id = am.account_id
+          AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = am.user_id)
+        )
+    `);
+    const rows = ((res as unknown) as { rows?: Array<{ n: number }> }).rows ?? (res as unknown as Array<{ n: number }>);
+    return Number(rows?.[0]?.n ?? 0);
+  } catch {
+    // auth schema not reachable (e.g. local dev without Supabase auth) — fall
+    // back to the plain member count rather than failing the seat count.
+    const rows = await db
+      .select({ userId: accountMembers.userId })
+      .from(accountMembers)
+      .where(eq(accountMembers.accountId, accountId));
+    return rows.length;
+  }
 }
 
 /**

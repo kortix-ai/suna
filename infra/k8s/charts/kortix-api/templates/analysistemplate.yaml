@@ -1,0 +1,75 @@
+{{- if and .Values.rollout.enabled .Values.rollout.analysis.enabled }}
+# CloudWatch analysis for the canary. Two metrics over the ALB target group —
+# 5xx error-rate and p95 target latency — each evaluated every minute; two
+# consecutive breaches (failureLimit) abort the rollout (auto-rollback). The ALB
+# dimensions come from rollout.analysis.{lb,tg}ArnSuffix (set once from the live
+# ALB). The Argo Rollouts controller reads CloudWatch via its IRSA role.
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: {{ include "kortix-api.name" . }}-success-rate
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kortix-api.labels" . | nindent 4 }}
+spec:
+  args:
+    - name: lb-arn-suffix
+    - name: tg-arn-suffix
+    - name: error-rate-threshold
+    - name: p95-latency-threshold
+  metrics:
+    - name: error-rate
+      interval: 1m
+      failureLimit: 2
+      successCondition: "len(result) == 0 || result[0] < {{`{{args.error-rate-threshold}}`}}"
+      provider:
+        cloudWatch:
+          metricDataQueries:
+            - id: errorRate
+              expression: "IF(requests > 0, 100 * errors / requests, 0)"
+              returnData: true
+            - id: errors
+              returnData: false
+              metricStat:
+                metric:
+                  namespace: AWS/ApplicationELB
+                  metricName: HTTPCode_Target_5XX_Count
+                  dimensions:
+                    - name: LoadBalancer
+                      value: "{{`{{args.lb-arn-suffix}}`}}"
+                    - name: TargetGroup
+                      value: "{{`{{args.tg-arn-suffix}}`}}"
+                period: 60
+                stat: Sum
+            - id: requests
+              returnData: false
+              metricStat:
+                metric:
+                  namespace: AWS/ApplicationELB
+                  metricName: RequestCountPerTarget
+                  dimensions:
+                    - name: TargetGroup
+                      value: "{{`{{args.tg-arn-suffix}}`}}"
+                period: 60
+                stat: Sum
+    - name: p95-latency
+      interval: 1m
+      failureLimit: 2
+      successCondition: "len(result) == 0 || result[0] < {{`{{args.p95-latency-threshold}}`}}"
+      provider:
+        cloudWatch:
+          metricDataQueries:
+            - id: latency
+              returnData: true
+              metricStat:
+                metric:
+                  namespace: AWS/ApplicationELB
+                  metricName: TargetResponseTime
+                  dimensions:
+                    - name: LoadBalancer
+                      value: "{{`{{args.lb-arn-suffix}}`}}"
+                    - name: TargetGroup
+                      value: "{{`{{args.tg-arn-suffix}}`}}"
+                period: 60
+                stat: p95
+{{- end }}

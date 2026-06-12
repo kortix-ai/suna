@@ -1,10 +1,16 @@
 /**
  * The Pipedream Connect `actions/run` wire format — specifically the
- * `configured_props` binding. Mocks global fetch (OAuth mint + actions/run) so
- * we assert exactly what we send. The account selector (keyed by the app slug,
- * e.g. `gmail`) MUST resolve to `{ authProvisionId }` and MUST NOT be
- * overwritable by a stray same-named arg — otherwise Pipedream can't resolve
- * the connected account and returns empty data (the "can't find any" bug).
+ * `configured_props` credential binding. Mocks global fetch (OAuth mint +
+ * component detail + actions/run) so we assert exactly what we send.
+ *
+ * The account selector must be bound under the component's REAL app-prop
+ * NAME, resolved from the component definition — components name it with an
+ * arbitrary variable, NOT the app slug (salesforce components use
+ * `salesforce`, slug `salesforce_rest_api`; google_drive uses `googleDrive`).
+ * Binding under the slug configures a nonexistent prop → the component runs
+ * with an EMPTY $auth and crashes inside its own code — the prod-wide
+ * named-action 502 incident of 2026-06-11. The binding must also never be
+ * overwritable by a stray same-named arg (the older "can't find any" bug).
  * Docs: https://pipedream.com/docs/connect/api-reference/run-action
  */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -15,16 +21,27 @@ const PD_PROJECT = process.env.PIPEDREAM_PROJECT_ID!;
 interface Captured { url: string; method: string; body?: string }
 
 const realFetch = globalThis.fetch;
-let calls: Captured[];
+let calls: Captured[]; // actions/run calls only
+let componentFetches: number;
+/** configurable_props served by GET /components/{key}; null → 404 (metadata unavailable). */
+let componentProps: Array<{ name: string; type: string }> | null;
 let runResponse: { status: number; body: string };
 
 beforeEach(() => {
   calls = [];
+  componentFetches = 0;
+  componentProps = [{ name: 'gmail', type: 'app' }, { name: 'q', type: 'string' }];
   runResponse = { status: 200, body: JSON.stringify({ ret: { messages: [{ id: 'm1' }] } }) };
   globalThis.fetch = (async (url: string, init: any) => {
     const u = String(url);
     if (u.includes('/v1/oauth/token')) {
       return new Response(JSON.stringify({ access_token: 'pd_tok', expires_in: 3600 }), { status: 200 });
+    }
+    if (u.includes('/components/')) {
+      componentFetches++;
+      return componentProps
+        ? new Response(JSON.stringify({ data: { configurable_props: componentProps } }), { status: 200 })
+        : new Response('not found', { status: 404 });
     }
     calls.push({ url: u, method: init.method, body: init.body });
     return new Response(runResponse.body, { status: runResponse.status });
@@ -36,7 +53,7 @@ afterEach(() => {
 });
 
 describe('actions/run configured_props', () => {
-  test('binds the account by authProvisionId under the app slug and returns ret', async () => {
+  test('binds the account by authProvisionId under the resolved app prop and returns ret', async () => {
     const res = await runPipedreamAction(
       'proj-x', 'gmail', 'gmail', 'gmail-find-email',
       { q: 'is:unread', withTextPayload: true },
@@ -54,7 +71,37 @@ describe('actions/run configured_props', () => {
     expect(body.configured_props.withTextPayload).toBe(true);
   });
 
-  test('a stray arg named like the app slug CANNOT clobber the credential binding', async () => {
+  test('the app prop name comes from the COMPONENT, not the app slug (salesforce ≠ salesforce_rest_api)', async () => {
+    componentProps = [{ name: 'salesforce', type: 'app' }, { name: 'query', type: 'string' }];
+    await runPipedreamAction(
+      'proj-x', 'salesforce_rest_api', 'salesforce_rest_api', 'salesforce_rest_api-soql-query',
+      { query: 'SELECT Id FROM Account' },
+      'apn_sf1', null,
+    );
+    const body = JSON.parse(calls[0]!.body!);
+    // Bound under the component's prop name — binding it under the slug runs
+    // the component with an empty $auth (the named-action 502 incident).
+    expect(body.configured_props.salesforce).toEqual({ authProvisionId: 'apn_sf1' });
+    expect(body.configured_props.salesforce_rest_api).toBeUndefined();
+    expect(body.configured_props.query).toBe('SELECT Id FROM Account');
+  });
+
+  test('the prop name is cached per actionKey — one component fetch across repeat calls', async () => {
+    componentProps = [{ name: 'salesforce', type: 'app' }];
+    await runPipedreamAction('p', 'salesforce_rest_api', 'salesforce_rest_api', 'salesforce_rest_api-list-objects', {}, 'apn_1');
+    await runPipedreamAction('p', 'salesforce_rest_api', 'salesforce_rest_api', 'salesforce_rest_api-list-objects', {}, 'apn_1');
+    expect(componentFetches).toBe(1);
+    expect(calls).toHaveLength(2);
+  });
+
+  test('component metadata unavailable → falls back to the app slug (never blocks the call)', async () => {
+    componentProps = null; // 404
+    await runPipedreamAction('p', 'gmail', 'gmail', 'gmail-send-email-fallback-case', { to: 'a@b.com' }, 'apn_9');
+    const body = JSON.parse(calls[0]!.body!);
+    expect(body.configured_props.gmail).toEqual({ authProvisionId: 'apn_9' });
+  });
+
+  test('a stray arg named like the app prop CANNOT clobber the credential binding', async () => {
     // This is exactly what the agent did when the selector leaked into the schema:
     // it passed `gmail: "me"`. The binding must still win.
     await runPipedreamAction(
@@ -85,6 +132,9 @@ describe('actions/run configured_props', () => {
       const u = String(url);
       if (u.includes('/v1/oauth/token')) {
         return new Response(JSON.stringify({ access_token: 'pd_tok', expires_in: 3600 }), { status: 200 });
+      }
+      if (u.includes('/components/')) {
+        return new Response(JSON.stringify({ data: { configurable_props: [{ name: 'gmail', type: 'app' }] } }), { status: 200 });
       }
       return new Response('boom', { status: 500 });
     }) as typeof fetch;

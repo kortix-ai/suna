@@ -122,6 +122,59 @@ flow(
 );
 
 /**
+ * BILL-9 — `billing.write` IAM gate. Billing *write* ops resolve the account by
+ * membership AND require `billing.write` (owners + the `billing_manager` policy
+ * only — see iam/role-perms.ts). A plain account MEMBER has `billing.read` only,
+ * so they're rejected with 403 BEFORE any Stripe call: a non-billing teammate
+ * can't subscribe / cancel / top-up on the whole account's behalf. ANON → 401.
+ * The OWNER-allowed path is covered by BILL-3b / BILL-4 (OWNER reaches the
+ * business logic, never a 403). No `stripe`/`funded` requirement — the gate
+ * fires before any Stripe interaction, mirroring BILL-4b's non-member 403.
+ */
+flow(
+  "BILL-9",
+  {
+    domain: "billing",
+    serial: true,
+    routes: [
+      "POST /v1/billing/create-per-seat-checkout",
+      "POST /v1/billing/cancel-subscription",
+      "POST /v1/billing/purchase-credits",
+    ],
+  },
+  async (ctx) => {
+    const team = await ctx.fixtures.team();
+    const member = await team.addMember("member");
+    const asMember = ctx.client.as(member);
+
+    await ctx.step("MEMBER cannot start a team subscription checkout → 403", async () => {
+      const r = await asMember.post("/v1/billing/create-per-seat-checkout", {
+        account_id: team.id,
+        success_url: "https://example.com/ok",
+        cancel_url: "https://example.com/cancel",
+      });
+      r.status(403);
+    });
+    await ctx.step("MEMBER cannot cancel the subscription → 403", async () => {
+      const r = await asMember.post("/v1/billing/cancel-subscription", { account_id: team.id });
+      r.status(403);
+    });
+    await ctx.step("MEMBER cannot buy credits → 403", async () => {
+      const r = await asMember.post("/v1/billing/purchase-credits", { account_id: team.id, amount: 10 });
+      r.status(403);
+    });
+    await ctx.step("ANON cannot start a team subscription checkout → 401", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).post("/v1/billing/create-per-seat-checkout", {
+        account_id: team.id,
+        success_url: "https://example.com/ok",
+        cancel_url: "https://example.com/cancel",
+      });
+      r.status(401);
+    });
+  },
+);
+
+/**
  * BILL-10 — per-seat (billing v2) management on an unfunded team. `sync-seat-quantity`
  * reconciles the Stripe seat count against account_members; with no per-seat sub it
  * has nothing to sync (200 no-op) or rejects (400). `claim-per-seat` runs the legacy

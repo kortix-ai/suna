@@ -1453,7 +1453,7 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
                             </p>
                         </div>
                         <Button
-                            onClick={() => openUpgradeDialog({ reason: 'subscription_required' })}
+                            onClick={() => openUpgradeDialog({ reason: 'subscription_required', accountId: billingAccountId })}
                             className="w-full shrink-0 sm:w-auto"
                         >
                             Subscribe to Team plan

@@ -12,6 +12,7 @@ import {
 } from '../repositories/transactions';
 import { BillingError } from '../../errors';
 import { resolveScopedAccountId } from '../../shared/resolve-account';
+import { resolveBillingWriteAccountId } from '../require-billing-write';
 import { makeOpenApiApp, json, auth, errors } from '../../openapi';
 
 export const paymentsRouter = makeOpenApiApp<AppEnv>();
@@ -46,9 +47,10 @@ paymentsRouter.openapi(
     },
   }),
   async (c) => {
-    // Manual parse: resolveScopedAccountId also reads account_id from the body,
-    // and the handler passes through opaque success/cancel URLs.
-    const accountId = await resolveScopedAccountId(c, 'body');
+    // Manual parse: resolveBillingWriteAccountId also reads account_id from the
+    // body, and the handler passes through opaque success/cancel URLs. Gated on
+    // billing.write — buying credits initiates a charge on the account.
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const email = c.get('userEmail');
     const body = await c.req.json();
     const amount = Number(body.amount);
@@ -269,7 +271,8 @@ paymentsRouter.openapi(
     },
   }),
   async (c) => {
-    const accountId = await resolveScopedAccountId(c, 'body');
+    // Gated on billing.write — auto-topup sets up recurring charges.
+    const accountId = await resolveBillingWriteAccountId(c, 'body');
     const body = await c.req.json();
     const { configureAutoTopup } = await import('../services/auto-topup');
 

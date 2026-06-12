@@ -1,0 +1,116 @@
+name: Deploy Prod (EKS / GitOps)
+
+# EKS prod deploy via GitOps. On a prod release, this bumps the image tag in
+# infra/k8s/envs/prod/values.yaml and pushes it — Argo CD reconciles the change
+# onto the cluster (canary via Argo Rollouts when enabled). There is NO
+# kubectl/helm/aws here: the cluster is changed only by committing to git.
+#
+#   prod release ─► wait for kortix/kortix-api:<VERSION> (retagged by deploy-prod)
+#                ─► [GitHub Environment "production" approval]
+#                ─► bump envs/prod/values.yaml ─► Argo CD syncs ─► EKS
+#   rollback = git revert the bump (Argo reconciles back).
+#
+# Runs in parallel with deploy-prod.yml (which still rolls ECS + cuts the release
+# during the dual-run). At the api.kortix.com cutover, deploy-prod's ECS roll is
+# removed and this becomes the sole prod deploy. Replaces the old imperative
+# `helm upgrade` path.
+
+on:
+  push:
+    branches: [prod]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-prod-eks
+  cancel-in-progress: false
+
+permissions:
+  contents: write # push the values bump to the prod branch
+
+env:
+  IMAGE_REPO: kortix/kortix-api
+  VALUES_FILE: infra/k8s/envs/prod/values.yaml
+
+jobs:
+  gitops-deploy:
+    name: Promote image to EKS prod (GitOps)
+    runs-on: ubuntu-latest
+    # Approval gate: configure this Environment with required reviewers in repo
+    # Settings → Environments → production. Until then the job runs ungated.
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: prod
+          fetch-depth: 0
+
+      - name: Resolve version from VERSION
+        id: v
+        run: |
+          set -euo pipefail
+          V="$(tr -d '[:space:]' < VERSION)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "EKS prod target: $IMAGE_REPO:$V"
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # deploy-prod.yml retags dev → :VERSION. Wait for it so Argo never points
+      # at a tag that doesn't exist yet (regardless of job ordering).
+      - name: Wait for image ${{ env.IMAGE_REPO }}:${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          REF="$IMAGE_REPO:${{ steps.v.outputs.version }}"
+          for i in $(seq 1 60); do
+            if docker buildx imagetools inspect "$REF" >/dev/null 2>&1; then
+              echo "✓ $REF available"; exit 0
+            fi
+            echo "($i/60) $REF not published yet — waiting 15s…"; sleep 15
+          done
+          echo "::error::Timed out waiting for $REF (15 min)."; exit 1
+
+      - name: Bump prod values to the released tag
+        id: bump
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          # yq (mikefarah) is preinstalled on ubuntu-latest runners.
+          before="$(yq '.image.tag' "$VALUES_FILE")"
+          yq -i '.image.tag = strenv(VERSION) | .kortixVersion = strenv(VERSION)' "$VALUES_FILE"
+          after="$(yq '.image.tag' "$VALUES_FILE")"
+          echo "image.tag: $before → $after"
+          if git diff --quiet -- "$VALUES_FILE"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$VALUES_FILE already at $VERSION — nothing to deploy."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Commit + push the deploy (Argo CD reconciles it)
+        if: steps.bump.outputs.changed == 'true'
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$VALUES_FILE"
+          # [skip ci] so this commit doesn't re-trigger the prod pipelines.
+          git commit -m "deploy(eks-prod): kortix-api $VERSION [skip ci]"
+          git push origin HEAD:prod
+
+      - name: Summary
+        if: always()
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          {
+            echo "### EKS prod deploy (GitOps)"
+            echo "Bumped \`$VALUES_FILE\` → \`$IMAGE_REPO:$VERSION\`."
+            echo "Argo CD reconciles \`kortix-prod\` to it (Rollouts canary when enabled)."
+            echo "Rollback: \`git revert\` the bump commit."
+          } >> "$GITHUB_STEP_SUMMARY"
