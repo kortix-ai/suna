@@ -70,6 +70,36 @@ variable "argo_rollouts_chart_version" {
   default = "2.37.3" # app v1.7.x
 }
 
+# ── Argo CD UI exposure (ops.kortix.com) ──────────────────────────────────────
+variable "argocd_ui_enabled" {
+  description = "Expose the Argo CD UI on its own ALB at argocd_domain. Gate it with Cloudflare Access (see infra/GITOPS.md) before adding the DNS record."
+  type        = bool
+  default     = false
+}
+
+variable "argocd_domain" {
+  description = "Public FQDN for the Argo CD UI."
+  type        = string
+  default     = "ops.kortix.com"
+}
+
+variable "argocd_certificate_arn" {
+  description = "ACM cert ARN for the Argo CD UI ALB (from the cluster layer)."
+  type        = string
+  default     = ""
+}
+
+variable "cloudflare_inbound_cidrs" {
+  description = "CIDRs allowed to hit the Argo CD ALB — locked to Cloudflare's ranges so the Cloudflare Access gate can't be bypassed via the raw ALB DNS."
+  type        = list(string)
+  default = [
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
+    "141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
+    "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+    "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+  ]
+}
+
 variable "tags" {
   type    = map(string)
   default = {}

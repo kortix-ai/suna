@@ -108,6 +108,21 @@ module "acm" {
   }
 }
 
+# ── TLS cert for the Argo CD UI (ops.kortix.com) ──────────────────────────────
+# The Argo CD admin UI is exposed via its own ALB (configured in the platform
+# layer). It is an admin control plane, so the public path MUST be gated by
+# Cloudflare Access + a Cloudflare-IP-locked ALB — see infra/GITOPS.md.
+module "acm_argocd" {
+  source      = "../../../modules/acm-cloudflare"
+  domain_name = var.argocd_domain
+  zone_id     = var.cloudflare_zone_id
+  tags        = local.tags
+  providers = {
+    aws        = aws
+    cloudflare = cloudflare
+  }
+}
+
 # ── App IRSA role: read the SAME Secrets Manager bundle ECS uses ───────────────
 # The app's ServiceAccount (kube ns/SA below) assumes this to let External
 # Secrets pull `var.app_secret_name` into the cluster. Scoped to that one secret.

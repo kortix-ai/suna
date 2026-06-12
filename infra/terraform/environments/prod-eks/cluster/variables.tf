@@ -73,6 +73,12 @@ variable "api_domain" {
   default     = "api-eks.kortix.com"
 }
 
+variable "argocd_domain" {
+  description = "Public FQDN for the Argo CD admin UI (gated by Cloudflare Access)."
+  type        = string
+  default     = "ops.kortix.com"
+}
+
 variable "cloudflare_zone_id" {
   description = "Cloudflare zone ID for kortix.com. Supply via TF_VAR_cloudflare_zone_id."
   type        = string

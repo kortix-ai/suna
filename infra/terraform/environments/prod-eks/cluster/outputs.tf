@@ -36,6 +36,15 @@ output "acm_certificate_arn" {
   value       = module.acm.certificate_arn
 }
 
+output "acm_argocd_certificate_arn" {
+  description = "Cert ARN for the Argo CD UI ALB (ops.kortix.com)."
+  value       = module.acm_argocd.certificate_arn
+}
+
+output "argocd_domain" {
+  value = var.argocd_domain
+}
+
 output "app_irsa_role_arn" {
   description = "IRSA role ARN for the app ServiceAccount (Secrets Manager read)."
   value       = module.app_irsa.role_arn

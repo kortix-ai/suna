@@ -92,6 +92,11 @@ module "platform" {
 
   cloudflare_api_token = var.cloudflare_api_token
 
+  # Argo CD UI (ops.kortix.com) — opt-in; gate with Cloudflare Access first.
+  argocd_ui_enabled      = var.argocd_ui_enabled
+  argocd_domain          = local.cluster.argocd_domain
+  argocd_certificate_arn = local.cluster.acm_argocd_certificate_arn
+
   tags = {
     Environment = "prod"
     Service     = "kortix-api"

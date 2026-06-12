@@ -43,12 +43,36 @@ takes over.
 
 ## Access Argo CD
 
+Quick (no setup):
+
 ```bash
-kubectl -n argocd port-forward svc/argocd-server 8080:443   # then https://localhost:8080
+kubectl -n argocd port-forward svc/argo-cd-argocd-server 8080:443   # https://localhost:8080
 kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d  # admin pw
 argocd app get kortix-prod        # Synced / Healthy
 argocd app history kortix-prod    # releases; `argocd app rollback` or git revert
 ```
+
+### Company domain — `ops.kortix.com` (gated)
+
+Argo CD is an admin control plane, so the public URL is **Cloudflare-Access
+gated** and the ALB is **locked to Cloudflare IPs** (so the gate can't be
+bypassed via the raw ALB DNS). Bring it up in this order so it's never reachable
+unauthenticated:
+
+1. **Apply the cert** — `environments/prod-eks/cluster` (adds the `ops.kortix.com`
+   ACM cert; validates via Cloudflare DNS).
+2. **Apply the ingress** — set `argocd_ui_enabled = true` in the `platform`
+   tfvars and apply. The ALB comes up; `ops.kortix.com` does NOT resolve yet.
+3. **Cloudflare Access** (Zero Trust dashboard → Access → Applications → Add):
+   - Type **Self-hosted**, Application domain `ops.kortix.com`.
+   - Policy: **Allow**, Include → *Emails ending in* `@kortix.com` (or a group).
+   - (Optional) shorter session duration for an admin app.
+4. **Add the DNS record** — proxied CNAME `ops.kortix.com` → the Argo CD ALB
+   hostname (`kubectl -n argocd get ingress`). Now it resolves AND is gated.
+5. (Recommended) wire **Argo CD GitHub-org SSO** so logins map to people, then
+   disable the shared `admin` account.
+
+CLI through the gateway uses gRPC-Web: `argocd login ops.kortix.com --grpc-web`.
 
 ## Release flow & the GitHub Actions
 
