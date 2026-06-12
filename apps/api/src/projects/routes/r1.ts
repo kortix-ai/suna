@@ -6,6 +6,7 @@ import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
 import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, type GitScope } from '../git-backends';
+import { cloneRepoContents } from '../git-backends/clone';
 import { seedRepoViaGitPush } from '../git-backends/seed';
 import { createRepo, getGitHubAppInstallation, listInstallationRepositories, verifyGitHubAppInstallStatePayload } from '../github';
 import { getProjectSecretValue } from '../secrets';
@@ -486,6 +487,214 @@ projectsApp.openapi(
       push_token: pushToken,
       repo_id: provisioned.externalRepoId,
       seeded,
+    },
+    201,
+  );
+},
+);
+
+// POST /v1/projects/:projectId/duplicate
+// Duplicate ("clone") an existing project: provision a fresh managed repo, copy
+// the source repo's default-branch tree into it as a single clean commit (no
+// history, no link back), and register it as a brand-new project under the same
+// account. Source can be any project the caller can read; the duplicate is
+// always a fresh MANAGED repo regardless of how the source is hosted.
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/duplicate',
+    tags: ['projects'],
+    summary: 'POST /:projectId/duplicate',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        201: json(z.any(), 'OK'),
+        ...errors(400, 403, 404, 502, 503),
+    },
+  }),
+  async (c: any) => {
+  const sourceProjectId = c.req.param('projectId');
+  const body = await readBody(c);
+
+  // Caller must be able to READ the source, and CREATE projects in the account.
+  const loaded = await loadProjectForUser(c, sourceProjectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+  const source = loaded.row;
+  if (!(await authorize(loaded.userId, source.accountId, ACCOUNT_ACTIONS.PROJECT_CREATE)).allowed) {
+    return c.json({ error: 'Owner or admin role required' }, 403);
+  }
+
+  // Resolve the SOURCE upstream + a read credential up front so we fail fast
+  // (before provisioning anything) if we can't reach the source repo.
+  const sourceRemote = getProjectGitRemote(source, await getProjectGitConnection(source.projectId));
+  const sourceRef = buildConnectionRef(source, sourceRemote);
+  if (!sourceRef.upstreamUrl) {
+    return c.json({ error: 'Source project has no repository to duplicate' }, 400);
+  }
+  const sourceToken = (await resolveProjectGitAuth(source)).auth?.token ?? null;
+  const sourceBranch = source.defaultBranch || 'main';
+
+  // The duplicate always lands on the managed backend (provider-agnostic via the
+  // registry), same as POST /provision.
+  const provider =
+    normalizeString(body.provider) ??
+    (process.env.MANAGED_GIT_PROVIDER?.trim() || 'github');
+  if (!hasBackend(provider)) {
+    return c.json({ error: `Unsupported managed git provider "${provider}"` }, 400);
+  }
+  const backend = getBackend(provider);
+  if (!(await backend.isConfigured())) {
+    return c.json(
+      { error: `Managed git provider "${provider}" is not configured on this server` },
+      503,
+    );
+  }
+
+  // Default the duplicate's name to "<source> (copy)" unless the caller renames.
+  const name =
+    normalizeString(body.name) ??
+    normalizeString(body.project_name ?? body.projectName) ??
+    `${source.name} (copy)`;
+  if (!/^[a-zA-Z0-9._ -]+$/.test(name)) {
+    return c.json(
+      { error: 'name must contain only letters, numbers, spaces, hyphens, underscores or dots' },
+      400,
+    );
+  }
+
+  const projectId = randomUUID();
+  const baseSlug = (
+    name.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') ||
+    'kortix-project'
+  ).slice(0, 40);
+  const repoSlug = `${baseSlug}-${projectId}`;
+  const defaultBranch = sourceBranch;
+
+  const dupQuota = await enforceProjectQuota(c, source.accountId);
+  if (dupQuota) return dupQuota;
+
+  let provisioned: Awaited<ReturnType<typeof backend.createRepo>>;
+  try {
+    provisioned = await backend.createRepo({
+      accountId: source.accountId,
+      projectId,
+      slug: repoSlug,
+      defaultBranch,
+      isPrivate: true,
+    });
+  } catch (error) {
+    return c.json({ error: (error as Error).message || 'Failed to provision managed repo' }, 502);
+  }
+
+  const authMethod = provider === 'github' ? 'github_app' : 'managed';
+  const now = new Date();
+  const [row] = await db
+    .insert(projects)
+    .values({
+      projectId,
+      accountId: source.accountId,
+      name,
+      repoUrl: provisioned.upstreamUrl,
+      defaultBranch: provisioned.defaultBranch,
+      // Preserve the source's manifest path so the duplicate boots identically.
+      manifestPath: source.manifestPath || 'kortix.toml',
+      status: 'active',
+      metadata: {
+        git: {
+          url: provisioned.upstreamUrl,
+          upstream_url: provisioned.upstreamUrl,
+          default_branch: provisioned.defaultBranch,
+          provider,
+          managed: true,
+          auth: {
+            method: authMethod,
+            ref: provisioned.credentialRef,
+            installation_id: provisioned.installationId,
+          },
+          repo_id: provisioned.externalRepoId,
+          owner: provisioned.repoOwner,
+          name: provisioned.repoName,
+        },
+        duplicated_from: source.projectId,
+      },
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [projects.accountId, projects.repoUrl],
+      set: { name, defaultBranch: provisioned.defaultBranch, status: 'active', updatedAt: now },
+    })
+    .returning();
+
+  await grantProjectRole({
+    accountId: source.accountId,
+    projectId: row.projectId,
+    userId: loaded.userId,
+    role: 'manager',
+    grantedBy: loaded.userId,
+  });
+  await upsertProjectGitConnection({
+    accountId: source.accountId,
+    projectId: row.projectId,
+    provider,
+    repoUrl: provisioned.upstreamUrl,
+    upstreamUrl: provisioned.upstreamUrl,
+    managed: true,
+    repoOwner: provisioned.repoOwner,
+    repoName: provisioned.repoName,
+    externalRepoId: provisioned.externalRepoId,
+    defaultBranch: provisioned.defaultBranch,
+    authMethod,
+    installationId: provisioned.installationId,
+    credentialRef: provisioned.credentialRef,
+    visibility: 'private',
+    status: 'connected',
+    metadata: { seeded: false, duplicated_from: source.projectId },
+  });
+
+  // Resolve a push credential for the destination, then copy the source tree
+  // over. If the copy fails we roll back the orphan repo + project so we never
+  // leave a half-created duplicate behind.
+  let pushToken = provisioned.initialToken;
+  if (!pushToken) {
+    pushToken = (await resolveProjectGitAuth(row)).auth?.token ?? null;
+  }
+  const connRef = buildConnectionRef(row, getProjectGitRemote(row, await getProjectGitConnection(row.projectId)));
+  try {
+    if (!pushToken) throw new Error('no push credential resolved for duplication');
+    await cloneRepoContents({
+      sourceUrl: sourceRef.upstreamUrl,
+      sourceToken,
+      sourceBranch,
+      destUrl: connRef.upstreamUrl,
+      destToken: pushToken,
+      destBranch: provisioned.defaultBranch,
+      commitMessage: `chore: duplicate from ${source.name}`,
+    });
+  } catch (error) {
+    try { await backend.deleteRepo(connRef); } catch { /* best effort */ }
+    await db.delete(projects).where(eq(projects.projectId, row.projectId)).catch(() => {});
+    return c.json({ error: (error as Error).message || 'Failed to duplicate project repo' }, 502);
+  }
+
+  kickProjectTemplatePrebuilds(
+    {
+      projectId: row.projectId,
+      repoUrl: row.repoUrl,
+      defaultBranch: row.defaultBranch,
+      manifestPath: row.manifestPath,
+      gitAuthToken: pushToken,
+    },
+    { accountId: source.accountId, source: 'project-create' },
+  );
+
+  return c.json(
+    {
+      ...serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }),
+      duplicated_from: source.projectId,
     },
     201,
   );

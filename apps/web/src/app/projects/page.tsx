@@ -6,9 +6,11 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Copy,
   FolderPlus,
   Loader2,
   MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   Trash2,
@@ -18,12 +20,14 @@ import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
 import { ProjectCreateModal } from '@/components/projects/project-create-modal';
+import { RenameProjectDialog } from '@/components/projects/rename-project-dialog';
 import { LegacyMachineCard } from '@/components/projects/legacy-machine-card';
 import { SunaMigrationBanner } from '@/components/projects/suna-migration-banner';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { useLegacyMachines, useStartLegacyMigration } from '@/hooks/legacy/use-legacy-machine-migration';
 import {
   archiveProject,
+  duplicateProject,
   listAccounts,
   listProjectsForAccount,
   type KortixAccount,
@@ -71,12 +75,18 @@ function ProjectCard({
   project,
   onOpen,
   onArchive,
+  onRename,
+  onDuplicate,
   archiving,
+  duplicating,
 }: {
   project: KortixProject;
   onOpen: () => void;
   onArchive: () => void;
+  onRename: () => void;
+  onDuplicate: () => void;
   archiving: boolean;
+  duplicating: boolean;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const updatedLabel = relativeTime(project.updated_at);
@@ -122,6 +132,27 @@ function ProjectCard({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem onSelect={onOpen}>{tHardcodedUi.raw('appProjectsPage.line109JsxTextOpenProject')}</DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={onRename}
+              disabled={!canManageProject}
+              className="gap-2"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={onDuplicate}
+              disabled={duplicating || !canManageProject}
+              className="gap-2"
+            >
+              {duplicating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+              Duplicate
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onSelect={onArchive}
@@ -236,6 +267,8 @@ export default function ProjectsPage() {
   const { viewMode, setViewMode } = useProjectsViewStore();
   const [query, setQuery] = useState('');
   const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<KortixProject | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   // Which account a newly-created project lands in. In "all accounts" view the
   // user picks it via the New-project dropdown; otherwise it's the active one.
@@ -393,6 +426,25 @@ export default function ProjectsPage() {
     },
     onError: (error: Error) => {
       toast.error(error.message || 'Failed to archive project');
+    },
+  });
+
+  const duplicateMutation = useMutation({
+    mutationFn: (projectId: string) => duplicateProject(projectId),
+    onMutate: (projectId) => setDuplicatingId(projectId),
+    onSettled: () => setDuplicatingId(null),
+    onSuccess: (project) => {
+      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      toast.success('Project duplicated', {
+        description: `Created "${project.name}".`,
+        action: {
+          label: 'Open',
+          onClick: () => router.push(`/projects/${project.project_id}`),
+        },
+      });
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || 'Failed to duplicate project');
     },
   });
 
@@ -574,13 +626,16 @@ export default function ProjectsPage() {
                       onOpenProject={(projectId) => router.push(`/projects/${projectId}`)}
                     />
                   ))}
-                  {filtered.map((project) => (
+                   {filtered.map((project) => (
                     <ProjectCard
                       key={project.project_id}
                       project={project}
                       onOpen={() => router.push(`/projects/${project.project_id}`)}
                       onArchive={() => archiveMutation.mutate(project.project_id)}
+                      onRename={() => setRenameTarget(project)}
+                      onDuplicate={() => duplicateMutation.mutate(project.project_id)}
                       archiving={archivingId === project.project_id}
+                      duplicating={duplicatingId === project.project_id}
                     />
                   ))}
                 </div>
@@ -668,7 +723,10 @@ export default function ProjectsPage() {
                             router.push(`/projects/${project.project_id}`);
                           }}
                           onArchive={() => archiveMutation.mutate(project.project_id)}
+                          onRename={() => setRenameTarget(project)}
+                          onDuplicate={() => duplicateMutation.mutate(project.project_id)}
                           archiving={archivingId === project.project_id}
+                          duplicating={duplicatingId === project.project_id}
                         />
                       ))}
                     </div>
@@ -686,6 +744,15 @@ export default function ProjectsPage() {
           if (!o) setCreateAccountId(null);
         }}
         accountId={createAccountId ?? activeAccountId}
+      />
+
+      <RenameProjectDialog
+        projectId={renameTarget?.project_id ?? null}
+        currentName={renameTarget?.name}
+        open={!!renameTarget}
+        onOpenChange={(o) => {
+          if (!o) setRenameTarget(null);
+        }}
       />
 
       <PersonalOnboardingWelcome />

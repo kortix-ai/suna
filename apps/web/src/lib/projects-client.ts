@@ -2145,6 +2145,23 @@ export async function provisionProject(input: ProvisionProjectInput) {
   );
 }
 
+/**
+ * Duplicate ("clone") an existing project — provisions a fresh managed repo,
+ * copies the source's default-branch tree into it as a single clean commit, and
+ * returns the new project. Defaults the name to "<source> (copy)" when omitted.
+ */
+export async function duplicateProject(
+  projectId: string,
+  input?: { name?: string },
+) {
+  return unwrap(
+    await backendApi.post<KortixProject & { duplicated_from?: string }>(
+      `/projects/${projectId}/duplicate`,
+      input ?? {},
+    ),
+  );
+}
+
 export async function linkRepository(input: LinkRepositoryInput) {
   return unwrap(
     await backendApi.post<LinkRepositoryResponse>(
