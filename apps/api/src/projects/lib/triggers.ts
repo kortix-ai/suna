@@ -821,9 +821,6 @@ export async function commitManifest(
   } catch (err) {
     return { error: `Git auth unavailable: ${(err as Error).message || String(err)}`, status: 502 };
   }
-  if (!gitProject.gitAuthToken) {
-    return { error: 'No git credentials available to write to the project repo', status: 502 };
-  }
 
   try {
     await commitFileToBranch(gitProject, {
