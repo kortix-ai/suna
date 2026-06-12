@@ -1,0 +1,25 @@
+# App-of-apps: a single Application that syncs every per-env Application under
+# infra/k8s/argocd/applications/. Adding an environment = adding one file there;
+# Argo CD picks it up. Apply this once at bootstrap; thereafter it self-manages.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-apps
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: kortix
+  source:
+    repoURL: https://github.com/kortix-ai/suna.git
+    targetRevision: prod
+    path: infra/k8s/argocd/applications
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

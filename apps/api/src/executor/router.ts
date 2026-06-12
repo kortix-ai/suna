@@ -263,7 +263,11 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
         401: json(CallResponseSchema, 'Unauthorized'),
         403: json(CallResponseSchema, 'Denied'),
         404: json(CallResponseSchema, 'Connector or action not found'),
-        502: json(CallResponseSchema, 'Execution error'),
+        // 500, NOT 502: Cloudflare replaces origin 502/504 bodies with its own
+        // branded error page, which destroys the JSON `reason` before the
+        // sandbox SDK can read it — the agent then sees a bare "HTTP 502" and
+        // can't self-correct. 500 passes through with the body intact.
+        500: json(CallResponseSchema, 'Execution error'),
       },
     }),
     // Manual parse kept: original tolerates a missing/partial body (defaulting
@@ -308,7 +312,8 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
             result.reason === 'connector_not_found' || result.reason === 'action_not_found' ? 404 : 403,
           );
         default:
-          return c.json({ ok: false, status: 'error', reason: result.reason }, 502);
+          // 500, not 502 — see the route schema note (Cloudflare eats 502 bodies).
+          return c.json({ ok: false, status: 'error', reason: result.reason }, 500);
       }
     },
   );
