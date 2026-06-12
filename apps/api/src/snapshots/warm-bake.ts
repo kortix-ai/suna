@@ -67,6 +67,20 @@ const CREATE_TIMEOUT_S = 180;
 const SNAPSHOT_TIMEOUT_S = 300;
 const UPLOAD_TIMEOUT_S = 300;
 
+/** Spec the warm base is resized to before snapshotting — mirrors the platform
+ * default sandbox spec (snapshots/providers/daytona.ts DEFAULT_*), since warm
+ * boxes inherit the SNAPSHOT's resources and can't be sized at create time. */
+const WARM_SPEC = {
+  cpu: readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2),
+  memory: readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4),
+  disk: readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20),
+};
+
+function readPositiveIntEnv(name: string, fallback: number): number {
+  const raw = Number.parseInt(process.env[name] || '', 10);
+  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
+}
+
 // Static runtime env the normal sandbox bakes as Dockerfile `ENV` lines. The
 // imperative bake can't bake image ENV, so we export these when launching the
 // daemon (before sourcing the per-session env, which wins on overlap). Values
@@ -347,6 +361,30 @@ kortix --version`,
       300, onLog);
 
     const bakeMs = Date.now() - bakeStart;
+
+    // Resize the builder to the platform default spec BEFORE snapshotting.
+    // Sandboxes created from a snapshot inherit ITS resources and the SDK's
+    // create-from-snapshot takes no resources param — without this every warm
+    // session runs at the stock base's 1 vCPU / 1 GiB / 3 GiB instead of the
+    // 2 / 4 / 20 a cold session gets (verified live: nproc=1, 984 MB RAM).
+    // Disk resize requires a stopped sandbox, so stop → resize → start; on the
+    // VM-class region stop/start is pause/resume, and nothing session-specific
+    // is running yet, so this is safe mid-bake. Best-effort: a failure keeps
+    // the small spec (warm still works, just underpowered) — but the box MUST
+    // be running again before the memory snapshot.
+    try {
+      onLog?.(`[warm-bake] resizing builder to cpu=${WARM_SPEC.cpu} mem=${WARM_SPEC.memory}GiB disk=${WARM_SPEC.disk}GiB`);
+      await sb.stop(120);
+      await sb.resize({ cpu: WARM_SPEC.cpu, memory: WARM_SPEC.memory, disk: WARM_SPEC.disk }, 300);
+      await sb.start(180);
+      const check = await runScript(sb, `echo "nproc=$(nproc) mem_mb=$(free -m | awk '/^Mem:/{print $2}')"`, 30);
+      onLog?.(`[warm-bake] post-resize: ${check.out.trim()}`);
+    } catch (err) {
+      onLog?.(`[warm-bake] builder resize failed (continuing at base spec): ${err instanceof Error ? err.message : String(err)}`);
+      // The snapshot needs a RUNNING box — make sure we're back up.
+      await sb.start(180).catch(() => {});
+    }
+
     onLog?.(`[warm-bake] runtime installed in ${(bakeMs / 1000).toFixed(1)}s; snapshotting → ${opts.name}`);
     const snapStart = Date.now();
     await sb._experimental_createSnapshot(opts.name, SNAPSHOT_TIMEOUT_S);
@@ -399,6 +437,24 @@ export function noteWarmPathFailure(): void {
   warmPathPausedUntil = Date.now() + WARM_FAILURE_COOLDOWN_MS;
 }
 
+/** Snapshot state, lowercased ('' when null). */
+function snapState(snap: unknown): string {
+  return String((snap as { state?: string } | null)?.state ?? '').toLowerCase();
+}
+
+/**
+ * Usable = active AND bootable in the configured warm region. The name carries
+ * no region, so after a DAYTONA_WARM_TARGET switch the old-region snapshot
+ * still reads `active` — without this check no bake would ever kick and every
+ * warm create would fail into the cooldown loop forever. regionIds is read
+ * defensively (older API responses may omit it → assume ok).
+ */
+function warmBaseUsable(snap: unknown): boolean {
+  if (snapState(snap) !== 'active') return false;
+  const regions = (snap as { regionIds?: unknown } | null)?.regionIds;
+  return !Array.isArray(regions) || regions.includes(config.DAYTONA_WARM_TARGET);
+}
+
 /**
  * Is the warm base ready to boot sessions from? Returns its name if the snapshot
  * is active on the warm target; otherwise kicks a background bake (deduped) and
@@ -411,7 +467,7 @@ export async function ensureWarmBaseReady(onLog?: (l: string) => void): Promise<
   try {
     const name = await warmBaseSnapshotName();
     const snap = await getDaytonaWarm().snapshot.get(name);
-    if (String((snap as { state?: string })?.state ?? '').toLowerCase() === 'active') return name;
+    if (warmBaseUsable(snap)) return name;
   } catch {
     // fingerprint failed / not found / transient → fall through to bake
   }
@@ -427,9 +483,24 @@ export function kickWarmBaseBuild(onLog?: (l: string) => void): void {
     try {
       const name = await warmBaseSnapshotName();
       const existing = await getDaytonaWarm().snapshot.get(name).catch(() => null);
-      if (String((existing as { state?: string } | null)?.state ?? '').toLowerCase() === 'active') {
+      if (warmBaseUsable(existing)) {
         await reapStaleWarmBases(name, log);
         return;
+      }
+      const state = snapState(existing);
+      if (state === 'building' || state === 'pulling' || state === 'pending') {
+        // Another instance is mid-bake on this name — don't race or sabotage it.
+        log(`[warm-bake] warm base ${name} is ${state} elsewhere — waiting`);
+        return;
+      }
+      if (existing) {
+        // The CURRENT name exists but is unusable (wrong region after a target
+        // switch, or error/build_failed from a crashed bake). The re-bake would
+        // collide on the name, so clear it first.
+        log(`[warm-bake] warm base ${name} exists but is unusable (state=${state || 'unknown'}) — deleting before rebake`);
+        await getDaytonaWarm().snapshot.delete(existing as never).catch((err: unknown) =>
+          log(`[warm-bake] pre-bake delete failed: ${err instanceof Error ? err.message : String(err)}`),
+        );
       }
       log(`[warm-bake] baking warm base ${name} ...`);
       await bakeWarmSnapshot({ name, onLog: log });
