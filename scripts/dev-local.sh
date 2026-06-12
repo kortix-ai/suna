@@ -628,10 +628,49 @@ else
   # the auth redirect, so dummy ids are fine.
   (
     until curl -sf -o /dev/null -m 2 "http://localhost:${WEB_PORT:-3000}" 2>/dev/null; do sleep 2; done
+    # An UNAUTHED hit compiles the bundle but redirects before the page's
+    # module graph ever evaluates — the first real (authed) navigation then
+    # paid 4-6s of module eval anyway (measured: authed render #1 4.5s,
+    # #2 0.28s). Mint a real session via the local supabase admin API and
+    # warm WITH it; falls back to unauthed compile-only warming.
+    WARM_COOKIE=""
+    if [[ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
+      _email="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/users?per_page=1" \
+        -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+        | python3 -c 'import json,sys; us=json.load(sys.stdin).get("users",[]); print(us[0]["email"] if us else "")' 2>/dev/null || true)"
+      if [[ -n "$_email" ]]; then
+        _ht="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/generate_link" \
+          -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+          -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"email\":\"$_email\"}" \
+          | python3 -c 'import json,sys; print(json.load(sys.stdin).get("hashed_token",""))' 2>/dev/null || true)"
+        if [[ -n "$_ht" ]]; then
+          _anon="${SUPABASE_ANON_KEY:-${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}}"
+          curl -s -m 5 "http://127.0.0.1:54321/auth/v1/verify" -H "apikey: $_anon" \
+            -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"token_hash\":\"$_ht\"}" > /tmp/kortix-warm-session.json 2>/dev/null || true
+          WARM_COOKIE="$(python3 - <<'PYC' 2>/dev/null || true
+import json, base64
+d = json.load(open('/tmp/kortix-warm-session.json'))
+if 'access_token' in d:
+    s = {"access_token": d["access_token"], "token_type": "bearer", "expires_in": d.get("expires_in", 3600),
+         "expires_at": d.get("expires_at", 9999999999), "refresh_token": d["refresh_token"], "user": d.get("user", {})}
+    raw = json.dumps(s, separators=(',', ':'))
+    print('base64-' + base64.urlsafe_b64encode(raw.encode()).decode().rstrip('='))
+PYC
+)"
+          rm -f /tmp/kortix-warm-session.json
+        fi
+      fi
+    fi
+    _hdr=()
+    [[ -n "$WARM_COOKIE" ]] && _hdr=(-H "Cookie: sb-kortix-auth-token-${WEB_PORT:-3000}=$WARM_COOKIE")
     for p in "/projects" "/projects/warmup-id" "/projects/warmup-id/sessions/warmup-id" "/projects/warmup-id/files"; do
-      curl -s -o /dev/null -m 120 "http://localhost:${WEB_PORT:-3000}$p" || true
+      curl -s -o /dev/null -m 120 "${_hdr[@]}" "http://localhost:${WEB_PORT:-3000}$p" || true
     done
-    echo "[dev] ✅ frontend routes pre-compiled — first navigation will be fast"
+    if [[ -n "$WARM_COOKIE" ]]; then
+      echo "[dev] ✅ frontend routes pre-rendered AUTHED — first navigation ~0.3s"
+    else
+      echo "[dev] ✅ frontend routes pre-compiled (unauthed — first navigation still pays module eval)"
+    fi
   ) &
 
   start_tunnel_watchdog
