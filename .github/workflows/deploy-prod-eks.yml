@@ -1,12 +1,12 @@
 name: Deploy Prod (EKS / GitOps)
 
 # EKS prod is deployed by Argo CD (the promote PR merge bumps
-# infra/k8s/envs/prod/values.yaml; Argo reconciles the prod branch → canary
-# roll). This workflow does NOT deploy — it WATCHES the rollout and, once Argo's
-# Rollout is Healthy on the released version, announces it to Slack.
+# infra/k8s/envs/prod/values.yaml; Argo reconciles the prod branch → rolling
+# Deployment update). This workflow does NOT deploy — it WATCHES the Deployment
+# and, once it has rolled out the released version, announces it to Slack.
 #
-#   merge to prod ─► Argo CD canary roll ─► (this) wait for Rollout Healthy@vX.Y.Z
-#                                        ─► read live /v1/health ─► Slack release msg
+#   merge to prod ─► Argo CD rolling update ─► (this) wait for Deployment @vX.Y.Z
+#                                           ─► read live /v1/health ─► Slack release msg
 #
 # The Slack post is hardened: jq-built Block Kit (safe escaping), retries with
 # backoff, verifies ok:true, fails fast on auth/channel errors, and the message
@@ -30,13 +30,13 @@ env:
   AWS_REGION: us-west-2
   CLUSTER: kortix-prod-eks
   NAMESPACE: kortix-prod
-  ROLLOUT: kortix-api
+  APP: kortix-api
   API_HOST: api-eks.kortix.com
   ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
 
 jobs:
   watch-and-announce:
-    name: Watch EKS rollout + announce
+    name: Watch EKS deploy + announce
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -77,10 +77,12 @@ jobs:
         if: steps.guard.outputs.exists == 'true'
         run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
 
-      # Wait for Argo CD to reconcile the bump and the canary to fully promote:
-      # the Rollout is Healthy AND running exactly :VERSION. A bad release that
-      # auto-rolls-back never reaches this, so the success message never fires.
-      - name: Wait for rollout Healthy @ v${{ steps.meta.outputs.version }}
+      # Wait for Argo CD to reconcile the bump and the Deployment to finish its
+      # rolling update on exactly :VERSION — Argo has applied the new spec
+      # (observedGeneration caught up) AND every replica is updated + available.
+      # A release whose pods never go Ready (bad image, failing health) never
+      # satisfies this, so the success message never fires.
+      - name: Wait for Deployment rolled out @ v${{ steps.meta.outputs.version }}
         if: steps.guard.outputs.exists == 'true'
         id: wait
         env:
@@ -88,17 +90,23 @@ jobs:
         run: |
           set -uo pipefail
           for i in $(seq 1 80); do
-            phase="$(kubectl -n "$NAMESPACE" get rollout "$ROLLOUT" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
-            img="$(kubectl -n "$NAMESPACE" get rollout "$ROLLOUT" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
-            echo "($i/80) phase=${phase:-?} image=${img:-?}"
-            if [ "$phase" = "Healthy" ] && printf '%s' "$img" | grep -q ":${VERSION}$"; then
+            img="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+            gen="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.metadata.generation}' 2>/dev/null || true)"
+            obs="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.observedGeneration}' 2>/dev/null || true)"
+            desired="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+            updated="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.updatedReplicas}' 2>/dev/null || true)"
+            avail="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+            echo "($i/80) image=${img:-?} gen=${obs:-?}/${gen:-?} updated=${updated:-0}/${desired:-?} available=${avail:-0}"
+            if printf '%s' "$img" | grep -q ":${VERSION}$" \
+               && [ -n "$desired" ] && [ "${obs:-0}" -ge "${gen:-1}" ] \
+               && [ "${updated:-0}" = "$desired" ] && [ "${avail:-0}" = "$desired" ]; then
               echo "deployed=true" >> "$GITHUB_OUTPUT"
-              echo "✓ EKS rollout Healthy on :${VERSION}"
+              echo "✓ EKS Deployment rolled out on :${VERSION} (${avail}/${desired} ready)"
               exit 0
             fi
             sleep 15
           done
-          echo "::error::Rollout did not reach Healthy on :${VERSION} within ~20m (stuck, paused, or auto-rolled-back). No release announcement sent."
+          echo "::error::Deployment did not roll out to :${VERSION} within ~20m (stuck or pods never became Ready). No release announcement sent."
           exit 1
 
       # Source the truth from the running service (the commit field we bake in).
@@ -163,7 +171,7 @@ jobs:
                   { type:"mrkdwn", text: ("*Version*\n`" + $version + "`") },
                   { type:"mrkdwn", text: ("*Commit*\n<" + $commit_url + "|`" + $sha8 + "`>") },
                   { type:"mrkdwn", text: ("*Released by*\n" + $actor) },
-                  { type:"mrkdwn", text: "*Where*\nEKS (Argo CD canary) · CLI · Desktop · Web" }
+                  { type:"mrkdwn", text: "*Where*\nEKS (Argo CD) · CLI · Desktop · Web" }
                 ]},
                 { type:"actions", elements: [
                   { type:"button", text:{ type:"plain_text", text:"📦 Release notes", emoji:true }, url:$rel_url },
