@@ -391,9 +391,15 @@ export async function createProjectSession(input: {
   // Warm boxes boot from the platform default snapshot, so a session targeting
   // the default template (unset OR the reserved "default" slug — the UI's "New
   // session" button sends "default") can claim them. A *custom* template can't.
-  const wantsDefaultSandbox = !sandboxSlug || sandboxSlug === DEFAULT_SANDBOX_SLUG;
-  if (warmPoolEnabled() && providerName === config.getDefaultProvider() && wantsDefaultSandbox && !initialPrompt) {
-    const claimed = await claimWarmSandbox({ projectId, userId }).catch((err) => {
+  // Pool boxes record the template slug they were spawned for (the project's
+  // default — custom templates included), so a claim just matches slugs.
+  // Sessions with an env-delivered initial prompt (channels/triggers) still
+  // need a cold boot — the daemon reads KORTIX_INITIAL_PROMPT at startup. The
+  // dashboard's prompt-first flow is unaffected: the UI never sends
+  // initial_prompt (it delivers via sessionStorage after open).
+  const wantedPoolSlug = sandboxSlug?.trim() || DEFAULT_SANDBOX_SLUG;
+  if (warmPoolEnabled() && providerName === config.getDefaultProvider() && !initialPrompt) {
+    const claimed = await claimWarmSandbox({ projectId, userId, slug: wantedPoolSlug }).catch((err) => {
       console.warn(`[warm-pool] claim failed for ${projectId}:`, err instanceof Error ? err.message : err);
       return null;
     });

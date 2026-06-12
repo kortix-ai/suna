@@ -123,8 +123,13 @@ export async function getWarmPoolCounts(projectId: string): Promise<{ ready: num
 export async function claimWarmSandbox(input: {
   projectId: string;
   userId: string;
+  /** Template slug the session wants ('default' = platform default). Boxes
+   * record the slug they were spawned for — a claim only matches a box built
+   * for the SAME template. */
+  slug?: string;
 }): Promise<{ sandboxId: string; externalId: string | null; accountId: string; sandboxStatus: string; opencodeSessionId: string | null } | null> {
   if (!warmPoolEnabled()) return null;
+  const wantedSlug = (input.slug ?? '').trim() || 'default';
   // Single statement, locked with SKIP LOCKED so concurrent claims never
   // collide. Prefer parked over booting, and oldest-first (= most booted).
   // Clearing pool_state hands the box to the session (the idle sweep then
@@ -139,6 +144,7 @@ export async function claimWarmSandbox(input: {
         AND s.pool_state IN ('parked', 'booting')
         AND s.status <> 'error'
         AND (s.metadata->'warmPool'->>'ownerUserId') = ${input.userId}
+        AND coalesce(s.metadata->'warmPool'->>'slug', 'default') = ${wantedSlug}
       ORDER BY (s.pool_state = 'parked') DESC, s.created_at ASC
       LIMIT 1
       FOR UPDATE SKIP LOCKED
@@ -251,6 +257,12 @@ async function spawnWarmSandbox(project: {
   const ownerUserId = await getProjectOwnerUserId(project.accountId);
   if (!ownerUserId || !project.repoUrl) return false;
   const W = randomUUID();
+  // The project's default template ([sandbox] default, synced to metadata by
+  // the TOML sync). Pool boxes boot THAT template, so custom-template projects
+  // get warm claims too — previously the pool was platform-default only.
+  const projMeta = (project.metadata ?? {}) as Record<string, unknown>;
+  const rawSlug = typeof projMeta.default_sandbox_slug === 'string' ? projMeta.default_sandbox_slug.trim() : '';
+  const poolSlug = rawSlug || 'default';
   // Lazy import to avoid a load-time cycle with projects/index.ts.
   const { buildSessionSandboxEnvVars } = await import('../../projects');
   const extraEnvVars = await buildSessionSandboxEnvVars({
@@ -271,11 +283,15 @@ async function spawnWarmSandbox(project: {
     userId: ownerUserId,
     extraEnvVars,
     // Pool boxes ride the per-project warm snapshot too — the pool refills in
-    // seconds instead of paying the full clone+opencode boot.
-    projectWarmSnapshot: readProjectWarmPointer(project.metadata)?.name ?? null,
+    // seconds instead of paying the full clone+opencode boot. (Warm snapshots
+    // carry the platform-default runtime, so custom-template boxes skip them
+    // and boot their own template image via the normal path.)
+    projectWarmSnapshot: poolSlug === 'default' ? (readProjectWarmPointer(project.metadata)?.name ?? null) : null,
+    sandboxSlug: poolSlug === 'default' ? undefined : poolSlug,
     poolState: 'booting',
     metadata: {
       warmPool: {
+        slug: poolSlug,
         ownerUserId,
         secretRevision: extraEnvVars.KORTIX_PROJECT_SECRETS_REVISION ?? null,
         bootedAt: new Date().toISOString(),
