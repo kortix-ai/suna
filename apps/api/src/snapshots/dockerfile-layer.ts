@@ -29,6 +29,11 @@
  */
 const DEFAULT_AGENT_BROWSER_VERSION = '0.27.0';
 
+const DOCKERFILE_SYNTAX_IMAGE =
+  process.env.KORTIX_DOCKERFILE_SYNTAX_IMAGE?.trim() || 'docker/dockerfile:1.7';
+const PLATFORM_DEFAULT_BASE_IMAGE =
+  process.env.KORTIX_PLATFORM_DEFAULT_BASE_IMAGE?.trim() || 'ubuntu:24.04';
+
 /**
  * Hardcoded "platform default" Dockerfile. Used when a session boots from
  * Kortix's default template — no user customization, just Ubuntu plus the
@@ -38,11 +43,11 @@ const DEFAULT_AGENT_BROWSER_VERSION = '0.27.0';
  * Exposed so the snapshot identity hash treats it as a stable input.
  */
 export const PLATFORM_DEFAULT_USER_DOCKERFILE = [
-  '# syntax=docker/dockerfile:1.7',
+  `# syntax=${DOCKERFILE_SYNTAX_IMAGE}`,
   '# Kortix platform default sandbox base.',
   '# Sessions clone the project workspace at boot — nothing project-specific',
   '# is baked in here. Customize via `[[sandbox.templates]]` in kortix.toml.',
-  'FROM ubuntu:24.04',
+  `FROM ${PLATFORM_DEFAULT_BASE_IMAGE}`,
   '',
   'WORKDIR /workspace',
   '',

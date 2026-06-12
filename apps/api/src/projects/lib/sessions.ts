@@ -136,6 +136,7 @@ export async function buildSessionSandboxEnvVars(input: {
   sessionId: string;
   userId: string;
   repoUrl: string;
+  sandboxProvider?: SandboxProviderName;
   baseRef: string;
   agentName: string;
   initialPrompt?: string | null;
@@ -180,7 +181,7 @@ export async function buildSessionSandboxEnvVars(input: {
     // git proxy with its own KORTIX_TOKEN — a real host credential never lands
     // in the sandbox. The daemon's credential helper returns KORTIX_TOKEN for
     // the proxy host. OFF → direct clone of the real repo (legacy token flow).
-    KORTIX_REPO_URL: config.KORTIX_GIT_PROXY ? proxyGitUrl(input.projectId) : input.repoUrl,
+    KORTIX_REPO_URL: config.KORTIX_GIT_PROXY ? proxyGitUrl(input.projectId) : repoUrlForSandbox(input.repoUrl, input.sandboxProvider),
     KORTIX_DEFAULT_BRANCH: input.baseRef,
     KORTIX_BASE_REF: input.baseRef,
     KORTIX_BRANCH_NAME: input.sessionId,
@@ -215,6 +216,21 @@ export function deriveKortixApiBase(): string {
 
 export function proxyGitUrl(projectId: string): string {
   return `${deriveKortixApiRoot(config.KORTIX_URL)}/v1/git/${projectId}.git`;
+}
+
+function repoUrlForSandbox(repoUrl: string, provider?: SandboxProviderName): string {
+  try {
+    const parsed = new URL(repoUrl);
+    if (parsed.protocol !== 'git:') return repoUrl;
+    if (parsed.hostname !== '127.0.0.1' && parsed.hostname !== 'localhost') return repoUrl;
+    const fallbackHost = provider === 'local_docker'
+      ? 'host.docker.internal'
+      : config.MANAGED_GIT_LOCAL_HOST || '127.0.0.1';
+    parsed.hostname = config.MANAGED_GIT_LOCAL_CONTAINER_HOST || fallbackHost;
+    return parsed.toString();
+  } catch {
+    return repoUrl;
+  }
 }
 
 /**
@@ -487,6 +503,7 @@ export async function createProjectSession(input: {
         sessionId,
         userId,
         repoUrl: project.repoUrl,
+        sandboxProvider: providerName,
         baseRef,
         agentName,
         initialPrompt,

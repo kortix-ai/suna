@@ -55,6 +55,7 @@ function isSecureOrPrivateTarget(rawUrl: string): boolean {
   if (u.protocol !== 'http:') return false;
   const h = u.hostname;
   if (['localhost', '127.0.0.1', '0.0.0.0', '::1'].includes(h)) return true;
+  if (h.endsWith('.localhost')) return true; // Daytona self-host preview proxy.
   if (!h.includes('.')) return true; // single-label docker/service name on a private bridge
   if (/\.(local|internal|svc|cluster\.local)$/.test(h)) return true;
   // RFC1918 / link-local — anchored to full IPv4 literals so a public hostname
