@@ -350,7 +350,10 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
                   e.preventDefault();
                   e.stopPropagation();
                   setMenuOpen(false);
-                  onRename(session.session_id, userOverride ?? '');
+                  // Prefill with what the row SHOWS (auto title included), not
+                  // just the custom override — so the dialog opens with the
+                  // current name and clearing it reverts to the auto title.
+                  onRename(session.session_id, displayTitle);
                 }}
               >
                 <Pencil className="h-4 w-4" />
