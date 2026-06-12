@@ -135,6 +135,10 @@ export async function provisionSessionSandbox(opts: {
    * so a stale pointer just falls back. See snapshots/warm-project.ts.
    */
   projectWarmSnapshot?: string | null;
+  /** Skip the warm-snapshot paths entirely (boot the Dockerfile image). Used by
+   * pool spawns when KORTIX_WARM_POOL_FULL_SIZE is set — warm boxes are capped
+   * at 1 vCPU / 1 GiB by Daytona (see snapshots/warm-bake.ts). */
+  disableWarmSnapshot?: boolean;
   /**
    * Runs after the provider sandbox is created but BEFORE the row is flipped to
    * `active`. Used by legacy migration to restore the original opencode store
@@ -181,7 +185,7 @@ export async function provisionSessionSandbox(opts: {
   // must still boot its own per-project image.
   let warmBase: string | null = null;
   let warmIsProjectSnapshot = false;
-  if (providerName === 'daytona' && slug === DEFAULT_SANDBOX_SLUG) {
+  if (providerName === 'daytona' && slug === DEFAULT_SANDBOX_SLUG && !opts.disableWarmSnapshot) {
     if (opts.projectWarmSnapshot) {
       try {
         const { getDaytonaWarm, warmSnapshotsEnabled } = await import('../../shared/daytona');

@@ -201,6 +201,10 @@ const envSchema = z.object({
   KORTIX_WARM_SNAPSHOT_ENABLED: optBoolFalse,
   DAYTONA_WARM_TARGET:         optStr,
   DAYTONA_WARM_BASE_SNAPSHOT:  optStrDefault('daytonaio/sandbox:0.8.0'),
+  // Pool spawns default to warm snapshots (fast refills, but Daytona caps warm
+  // boxes at 1 vCPU / 1 GiB — see warm-bake.ts). Set true to boot pool boxes
+  // from the full-size Dockerfile image instead (slower refills, 2/4/20 spec).
+  KORTIX_WARM_POOL_FULL_SIZE:  optBoolFalse,
 
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
@@ -526,6 +530,7 @@ export const config = {
   KORTIX_WARM_SNAPSHOT_ENABLED: env.KORTIX_WARM_SNAPSHOT_ENABLED,
   DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
   DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
+  KORTIX_WARM_POOL_FULL_SIZE: env.KORTIX_WARM_POOL_FULL_SIZE,
 
   PLATINUM_API_KEY: env.PLATINUM_API_KEY,
   PLATINUM_API_URL: env.PLATINUM_API_URL,

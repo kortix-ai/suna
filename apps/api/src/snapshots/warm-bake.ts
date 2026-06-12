@@ -67,20 +67,6 @@ const CREATE_TIMEOUT_S = 180;
 export const SNAPSHOT_TIMEOUT_S = 300;
 const UPLOAD_TIMEOUT_S = 300;
 
-/** Spec the warm base is resized to before snapshotting — mirrors the platform
- * default sandbox spec (snapshots/providers/daytona.ts DEFAULT_*), since warm
- * boxes inherit the SNAPSHOT's resources and can't be sized at create time. */
-const WARM_SPEC = {
-  cpu: readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2),
-  memory: readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4),
-  disk: readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20),
-};
-
-function readPositiveIntEnv(name: string, fallback: number): number {
-  const raw = Number.parseInt(process.env[name] || '', 10);
-  return Number.isFinite(raw) && raw > 0 ? raw : fallback;
-}
-
 // Static runtime env the normal sandbox bakes as Dockerfile `ENV` lines. The
 // imperative bake can't bake image ENV, so we export these when launching the
 // daemon (before sourcing the per-session env, which wins on overlap). Values
@@ -365,28 +351,15 @@ kortix --version`,
 
     const bakeMs = Date.now() - bakeStart;
 
-    // Resize the builder to the platform default spec BEFORE snapshotting.
-    // Sandboxes created from a snapshot inherit ITS resources and the SDK's
-    // create-from-snapshot takes no resources param — without this every warm
-    // session runs at the stock base's 1 vCPU / 1 GiB / 3 GiB instead of the
-    // 2 / 4 / 20 a cold session gets (verified live: nproc=1, 984 MB RAM).
-    // Disk resize requires a stopped sandbox, so stop → resize → start; on the
-    // VM-class region stop/start is pause/resume, and nothing session-specific
-    // is running yet, so this is safe mid-bake. Best-effort: a failure keeps
-    // the small spec (warm still works, just underpowered) — but the box MUST
-    // be running again before the memory snapshot.
-    try {
-      onLog?.(`[warm-bake] resizing builder to cpu=${WARM_SPEC.cpu} mem=${WARM_SPEC.memory}GiB disk=${WARM_SPEC.disk}GiB`);
-      await sb.stop(120);
-      await sb.resize({ cpu: WARM_SPEC.cpu, memory: WARM_SPEC.memory, disk: WARM_SPEC.disk }, 300);
-      await sb.start(180);
-      const check = await runScript(sb, `echo "nproc=$(nproc) mem_mb=$(free -m | awk '/^Mem:/{print $2}')"`, 30);
-      onLog?.(`[warm-bake] post-resize: ${check.out.trim()}`);
-    } catch (err) {
-      onLog?.(`[warm-bake] builder resize failed (continuing at base spec): ${err instanceof Error ? err.message : String(err)}`);
-      // The snapshot needs a RUNNING box — make sure we're back up.
-      await sb.start(180).catch(() => {});
-    }
+    // NOTE — warm box resources are capped by Daytona, not by us. Verified live
+    // (2026-06-12): on the experimental region, resize() returns success but the
+    // VM keeps its original size (pause/resume restores the old hardware config),
+    // create-from-snapshot rejects explicit resources ("Cannot specify Sandbox
+    // resources when using a snapshot"), and the sized stock snapshots
+    // (daytona-medium/large) are not available in the region. Until Daytona
+    // fixes one of those, every warm box runs at the genesis size (1 vCPU /
+    // 1 GiB / 3 GiB). Speed-sensitive paths accept that; resource-sensitive
+    // pool fleets can opt out via KORTIX_WARM_POOL_FULL_SIZE.
 
     onLog?.(`[warm-bake] runtime installed in ${(bakeMs / 1000).toFixed(1)}s; snapshotting → ${opts.name}`);
     const snapStart = Date.now();

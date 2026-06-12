@@ -286,8 +286,14 @@ async function spawnWarmSandbox(project: {
     // seconds instead of paying the full clone+opencode boot. (Warm snapshots
     // carry the platform-default runtime, so custom-template boxes skip them
     // and boot their own template image via the normal path.)
-    projectWarmSnapshot: poolSlug === 'default' ? (readProjectWarmPointer(project.metadata)?.name ?? null) : null,
+    projectWarmSnapshot:
+      poolSlug === 'default' && !config.KORTIX_WARM_POOL_FULL_SIZE
+        ? (readProjectWarmPointer(project.metadata)?.name ?? null)
+        : null,
     sandboxSlug: poolSlug === 'default' ? undefined : poolSlug,
+    // Full-size opt-out: warm boxes are Daytona-capped at 1 vCPU / 1 GiB; this
+    // boots pool boxes from the 2/4/20 Dockerfile image instead (slower refill).
+    disableWarmSnapshot: config.KORTIX_WARM_POOL_FULL_SIZE,
     poolState: 'booting',
     metadata: {
       warmPool: {
