@@ -1,7 +1,7 @@
 import { deleteSlackInstall, loadSlackInstall, saveSlackInstall } from '../../channels/install-store';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import { postQuestionAndWait, relayTurnAnswer, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
+import { postQuestionAndWait, relayTurnAnswer, relayTurnEnd, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
 import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -425,9 +425,21 @@ projectsApp.openapi(
     return c.json({ error: 'Invalid JSON body' }, 400);
   }
   const sessionId = body.session_id?.trim();
+  if (!sessionId) {
+    return c.json({ error: 'session_id is required' }, 400);
+  }
+
+  // `end` carries no text — it just closes the live stream when the agent's turn
+  // went idle without sending a final answer (so a silent turn doesn't leave the
+  // "On it…" placeholder hanging until the watchdog).
+  if (body.kind === 'end') {
+    const ended = await relayTurnEnd(sessionId);
+    return c.json({ ok: ended });
+  }
+
   const text = (body.text ?? '').trim();
-  if (!sessionId || !text) {
-    return c.json({ error: 'session_id and text are required' }, 400);
+  if (!text) {
+    return c.json({ error: 'text is required' }, 400);
   }
 
   const detail = body.detail?.trim() || undefined;

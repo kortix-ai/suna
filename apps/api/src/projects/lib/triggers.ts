@@ -364,6 +364,9 @@ export async function fireGitTrigger(input: {
     project,
     userId: actor,
     enforceAccountCap: false,
+    // Trigger sessions are project automation, not the actor's personal chat —
+    // make them project-visible so the whole team can find them.
+    visibility: 'project',
     request: input.request,
     body: {
       agent_name: spec.agent,

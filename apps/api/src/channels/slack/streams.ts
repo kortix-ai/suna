@@ -134,17 +134,15 @@ export async function startTurnStream(
   if (!event.channel || !event.ts || !event.user) return null;
   const token = await loadSlackTokenForProject(projectId);
   if (!token) return null;
-  const threadTs = event.thread_ts ?? event.ts;
   await joinChannel(token, event.channel);
+  // The only eager feedback is a ⏳ reaction on the user's own message — a
+  // lightweight "received, working on it" signal that lives ON their message,
+  // not a standalone bot post. We deliberately DON'T post an "On it…" message:
+  // a turn that ends without `slack send` (e.g. nothing worth replying to) then
+  // leaves the thread untouched, and `session.idle` clears the reaction. The
+  // plan stream is opened lazily on the first `slack step`; the final answer is
+  // posted by `slack send`.
   await addReaction(token, event.channel, event.ts, WORKING_EMOJI);
-
-  const placeholderTs = await postMessage(
-    token,
-    event.channel,
-    '⏳  _On it…_',
-    threadTs,
-  );
-  if (!placeholderTs) return null;
 
   return {
     channel: event.channel,
@@ -156,10 +154,10 @@ export async function startTurnStream(
     sessionId: '',
     teamId,
     originatingEvent: event,
-    ts: placeholderTs,
+    ts: '',
     steps: [],
     streaming: false,
-    placeholderActive: true,
+    placeholderActive: false,
   };
 }
 
@@ -201,13 +199,20 @@ export function buildSlackTurnEnv(teamId: string, event: SlackEvent): Record<str
   return env;
 }
 
+// Close out a turn's live stream. Three shapes of finalization:
+//   • answer/error/blocks present → render that as the reply.
+//   • nothing present (a "silent" finalize, e.g. the agent ended its turn
+//     without `slack send`) → DON'T invent a "_Done._" message. If a plan was
+//     streaming, just close it cleanly; if nothing was ever posted, leave the
+//     thread untouched. This is what stops an orphaned "On it…" from lingering.
 export async function finalizeStream(
   handle: TurnStream,
   opts: { answer?: string; error?: string; blocks?: unknown[] },
 ): Promise<void> {
   if (handle.finalized) return;
   handle.finalized = true;
-  const body = (opts.answer ?? opts.error ?? '_Done._').slice(0, 11000);
+  const hasContent = Boolean(opts.answer || opts.error || (opts.blocks && opts.blocks.length > 0));
+  const body = (opts.answer ?? opts.error ?? '').slice(0, 11000);
   const ev = handle.originatingEvent;
   const threadRoot = ev.thread_ts ?? ev.ts ?? handle.triggerTs;
   if (handle.streaming) {
@@ -224,7 +229,7 @@ export async function finalizeStream(
     }
     if (opts.blocks && opts.blocks.length > 0) {
       chunks.push({ type: 'blocks', blocks: opts.blocks });
-    } else {
+    } else if (hasContent) {
       chunks.push({ type: 'markdown_text', text: body });
     }
     await stopStream(handle.token, handle.channel, handle.ts, chunks);
@@ -235,14 +240,22 @@ export async function finalizeStream(
       planTitleFor(opts),
       buildFinalPlanBlocks(handle, body, opts),
     );
-  } else if (handle.placeholderActive && handle.ts) {
-    await deleteMessage(handle.token, handle.channel, handle.ts);
-    handle.placeholderActive = false;
+  } else if (hasContent) {
+    // No plan was streamed, but there's a reply to deliver. Drop any legacy
+    // placeholder first, then post the answer in its place.
+    if (handle.placeholderActive && handle.ts) {
+      await deleteMessage(handle.token, handle.channel, handle.ts);
+      handle.placeholderActive = false;
+    }
     if (opts.blocks && opts.blocks.length > 0) {
       await postBlocks(handle.token, handle.channel, body, opts.blocks, threadRoot);
     } else {
       await postMessage(handle.token, handle.channel, body, threadRoot);
     }
+  } else if (handle.placeholderActive && handle.ts) {
+    // Silent finalize with a legacy placeholder still up → just remove it.
+    await deleteMessage(handle.token, handle.channel, handle.ts);
+    handle.placeholderActive = false;
   }
   await removeReaction(handle.token, handle.channel, handle.triggerTs, WORKING_EMOJI);
   if (opts.answer && !opts.error) {
@@ -291,7 +304,7 @@ function buildFinalPlanBlocks(
   ];
   if (opts.blocks && opts.blocks.length > 0) {
     for (const b of opts.blocks) blocks.push(b as Record<string, unknown>);
-  } else if (body && body !== '_Done._') {
+  } else if (body) {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: body } });
   }
   return blocks;

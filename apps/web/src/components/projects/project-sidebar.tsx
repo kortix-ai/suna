@@ -8,14 +8,22 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import {
+  CalendarClock,
+  Check,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  SquarePen,
-  Loader2,
-  SlidersHorizontal,
+  List,
   ListTree,
+  Loader2,
+  MessagesSquare,
+  Slack,
+  SlidersHorizontal,
+  SquarePen,
+  Users,
+  Webhook,
   X,
+  type LucideIcon,
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
@@ -26,7 +34,19 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
-import { directSubsessions, sessionDisplayLabel } from '@/components/projects/session-label';
+import {
+  directSubsessions,
+  matchesSessionFilter,
+  sessionDisplayLabel,
+  SESSION_FILTER_OPTIONS,
+  type SessionFilterValue,
+} from '@/components/projects/session-label';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 
@@ -82,6 +102,15 @@ const isMac =
 const modSymbol = isMac ? '⌘' : 'Ctrl';
 
 /** Hover-only keyboard hint chip used on the primary nav row. */
+const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon> = {
+  all: List,
+  mine: MessagesSquare,
+  shared: Users,
+  slack: Slack,
+  schedule: CalendarClock,
+  webhook: Webhook,
+};
+
 function KbdHint({ mod, letter }: { mod: string; letter: string }) {
   const chip =
     'inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/40 bg-foreground/[0.05] px-1 text-xs font-medium leading-none text-muted-foreground/70 select-none';
@@ -360,6 +389,31 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
 
+  // Session source filter — lives here so the SESSIONS header dropdown and the
+  // list below stay in sync. Defaults to All (never hide sessions by default);
+  // My Chats / Shared / Slack / Scheduled / Webhook narrow it down.
+  const [sessionFilter, setSessionFilter] = useState<SessionFilterValue>('all');
+  // Same query key as ProjectSessionList → shared cache, no extra fetch.
+  const { data: filterSessions } = useQuery({
+    queryKey: ['project-sessions', projectId],
+    queryFn: () => listProjectSessions(projectId),
+    staleTime: 10_000,
+    refetchOnWindowFocus: false,
+  });
+  const sessionFilterCounts = useMemo(() => {
+    const counts = new Map<SessionFilterValue, number>();
+    for (const option of SESSION_FILTER_OPTIONS) {
+      counts.set(
+        option.value,
+        (filterSessions ?? []).filter((s) => matchesSessionFilter(s, option.value)).length,
+      );
+    }
+    return counts;
+  }, [filterSessions]);
+  const activeFilterOption =
+    SESSION_FILTER_OPTIONS.find((option) => option.value === sessionFilter) ??
+    SESSION_FILTER_OPTIONS[0];
+
   const { data: adminRoleData } = useAdminRole();
   const isAdmin = adminRoleData?.isAdmin ?? false;
 
@@ -579,14 +633,55 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               defaultOpen
               className="group/sessions flex min-h-0 flex-col data-[state=open]:flex-1"
             >
-              <CollapsibleTrigger asChild>
-                <SidebarGroupLabel className="group/label mt-1 flex h-6 cursor-pointer items-center gap-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground/60 hover:text-sidebar-foreground">
-                  <span className="flex-1 text-left">Sessions</span>
-                  <ChevronDown className="size-3 transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
-                </SidebarGroupLabel>
-              </CollapsibleTrigger>
+              <SidebarGroupLabel className="group/label mt-1 flex h-6 items-center gap-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+                {/* Label opens the filter menu; the chevron keeps collapse. */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      className="flex flex-1 cursor-pointer items-center gap-1.5 text-left uppercase tracking-wider hover:text-sidebar-foreground"
+                    >
+                      <span>Sessions</span>
+                      {sessionFilter !== 'all' && (
+                        <span className="truncate normal-case tracking-normal text-muted-foreground/50">
+                          · {activeFilterOption.label}
+                        </span>
+                      )}
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="w-44 p-1">
+                    {SESSION_FILTER_OPTIONS.map((option) => {
+                      const OptionIcon = SESSION_FILTER_ICONS[option.value];
+                      const isActiveOption = sessionFilter === option.value;
+                      return (
+                        <DropdownMenuItem
+                          key={option.value}
+                          className="cursor-pointer"
+                          onClick={() => setSessionFilter(option.value)}
+                        >
+                          <OptionIcon className="h-4 w-4" />
+                          {option.label}
+                          <span className="ml-auto flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+                            {sessionFilterCounts.get(option.value) ?? 0}
+                            {isActiveOption && <Check className="h-3.5 w-3.5" />}
+                          </span>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    aria-label="Toggle sessions"
+                    className="cursor-pointer text-muted-foreground/60 hover:text-sidebar-foreground"
+                  >
+                    <ChevronDown className="size-3 transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
+                  </button>
+                </CollapsibleTrigger>
+              </SidebarGroupLabel>
               <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                <ProjectSessionList projectId={projectId} />
+                <ProjectSessionList projectId={projectId} filter={sessionFilter} />
               </CollapsibleContent>
             </Collapsible>
           </SidebarGroup>

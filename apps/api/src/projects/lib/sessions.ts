@@ -264,8 +264,16 @@ export async function createProjectSession(input: {
   metadata?: Record<string, unknown>;
   extraEnvVars?: Record<string, string>;
   request?: RequestAuditContext;
+  /**
+   * Sessions default to private (owner-only). Automation callers (triggers,
+   * Slack/Telegram channels) pass 'project' — those sessions belong to the
+   * project, not to the stand-in owner they're attributed to, and would
+   * otherwise be invisible to everyone but the account's first owner.
+   */
+  visibility?: 'private' | 'project';
 }): Promise<{ row?: ProjectSessionRow; error?: SessionCreateError; headers?: Record<string, string> }> {
   const { project, userId, body } = input;
+  const visibility = input.visibility ?? 'private';
   const projectId = project.projectId;
   const accountId = project.accountId;
 
@@ -410,7 +418,7 @@ export async function createProjectSession(input: {
             agentName,
             status: 'provisioning',
             createdBy: userId,
-            visibility: 'private',
+            visibility,
             // Pin the opencode session pre-created at park time so the client
             // skips the ensure-opencode round-trip → chat usable immediately.
             opencodeSessionId: claimed.opencodeSessionId ?? undefined,
@@ -453,7 +461,7 @@ export async function createProjectSession(input: {
         // Sessions are private to their creator by default; share via the
         // session-header control (visibility = project | restricted).
         createdBy: userId,
-        visibility: 'private',
+        visibility,
         metadata,
         updatedAt: new Date(),
       })

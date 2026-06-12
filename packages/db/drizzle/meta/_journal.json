@@ -29,6 +29,13 @@
       "when": 1780668459728,
       "tag": "20260605140739_whole_supernaut",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781269922394,
+      "tag": "20260612131202_trigger_channel_sessions_project_visibility",
+      "breakpoints": true
     }
   ]
 }

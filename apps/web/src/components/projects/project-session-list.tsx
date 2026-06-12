@@ -5,7 +5,19 @@ import { useTranslations } from 'next-intl';
 import { useState, memo } from 'react';
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { Loader2, MoreHorizontal, Pencil, RotateCcw, Share2, Trash2 } from 'lucide-react';
+import {
+  CalendarClock,
+  Loader2,
+  MoreHorizontal,
+  Pencil,
+  RotateCcw,
+  Send,
+  Share2,
+  Slack,
+  Trash2,
+  Webhook,
+  type LucideIcon,
+} from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { formatDistanceToNowStrict } from 'date-fns';
 
@@ -41,19 +53,35 @@ import {
 } from '@/lib/projects-client';
 import { SessionShareDialog } from '@/components/projects/session-share-dialog';
 import { RenameSessionDialog } from '@/components/projects/rename-session-dialog';
-import { directSubsessions, rootOpenCodeSession } from '@/components/projects/session-label';
+import {
+  directSubsessions,
+  matchesSessionFilter,
+  rootOpenCodeSession,
+  sessionSource,
+  type SessionFilterValue,
+  type SessionSourceKind,
+} from '@/components/projects/session-label';
 
 interface ProjectSessionListProps {
   projectId: string;
+  /** Active source filter — owned by the SESSIONS header dropdown. */
+  filter?: SessionFilterValue;
 }
 
 const LIVE_SESSION_STATUSES: ProjectSessionStatus[] = ['queued', 'branching', 'provisioning'];
+
+const SOURCE_ICONS: Record<Exclude<SessionSourceKind, 'chat'>, LucideIcon> = {
+  slack: Slack,
+  telegram: Send,
+  schedule: CalendarClock,
+  webhook: Webhook,
+};
 
 function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): boolean {
   return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
 }
 
-export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
+export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSessionListProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -120,10 +148,22 @@ export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
     );
   }
 
+  // Filtering itself lives in the SESSIONS header dropdown (project-sidebar);
+  // this list only applies the chosen filter.
+  const visibleSessions = sessions.filter((session) => matchesSessionFilter(session, filter));
+
+  if (visibleSessions.length === 0) {
+    return (
+      <div className="px-2 pb-2 pt-1 text-xs text-muted-foreground/60">
+        No sessions match this filter.
+      </div>
+    );
+  }
+
   return (
     <>
       <div className="space-y-px">
-        {sessions.map((session) => {
+        {visibleSessions.map((session) => {
           const href = `/projects/${session.project_id}/sessions/${session.session_id}`;
           const isActive = pathname?.includes(`/sessions/${session.session_id}`);
           const root = rootOpenCodeSession(session);
@@ -271,6 +311,9 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
     }
   })();
 
+  const source = sessionSource(session);
+  const SourceIcon = source.kind !== 'chat' ? SOURCE_ICONS[source.kind] : null;
+
   return (
     <Link
       href={href}
@@ -305,6 +348,19 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
         >
           {displayTitle}
         </span>
+
+        {SourceIcon && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center text-muted-foreground/70">
+                <SourceIcon className="h-3 w-3" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">
+              {source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label}
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         {childCount > 0 && (
           <span className="rounded-full bg-sidebar-accent/60 px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
