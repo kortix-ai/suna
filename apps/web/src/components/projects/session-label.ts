@@ -24,9 +24,11 @@ export function directSubsessions(session: ProjectSession): ProjectOpenCodeSessi
 }
 
 /**
- * Human display label for a session: live opencode root title → resolved
- * name (user rename / synced auto-title) → legacy metadata.session_name →
- * branch slice → short id.
+ * Human display label for a session. Precedence: the user-set rename
+ * (custom_name) is AUTHORITATIVE and always wins — even over the live
+ * opencode root title (which keeps serving the auto title after a rename).
+ * Then: live opencode root title → resolved name (synced auto-title) →
+ * legacy metadata.session_name → branch slice → short id.
  */
 export function sessionDisplayLabel(session: ProjectSession): string {
   const metadataName =
@@ -37,6 +39,7 @@ export function sessionDisplayLabel(session: ProjectSession): string {
     ? session.branch_name.slice(0, 14)
     : session.session_id.slice(0, 8);
   return (
+    session.custom_name?.trim() ||
     rootOpenCodeSession(session)?.title?.trim() ||
     session.name?.trim() ||
     metadataName?.trim() ||
