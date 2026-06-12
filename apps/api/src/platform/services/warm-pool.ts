@@ -18,12 +18,14 @@ import { accountMembers, projects, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
 import { getProvider } from '../providers';
+import { selectProvider } from './provider-balancer';
 import { provisionSessionSandbox } from './session-sandbox';
 
 const POOL_BOOT_TIMEOUT_MS = 8 * 60 * 1000; // booting longer than this → failed → reap
 const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle (snapshot drift)
 const READY_PROBE_TIMEOUT_MS = 5 * 60 * 1000;
 const READY_PROBE_INTERVAL_MS = 3000;
+const resumedPromotions = new Set<string>();
 
 // Warm pool is ON by default — there's no enable flag. The fleet-wide kill
 // switch is KORTIX_WARM_POOL_MAX_TOTAL=0. Each project can still opt in/out and
@@ -249,6 +251,7 @@ async function spawnWarmSandbox(project: {
   const ownerUserId = await getProjectOwnerUserId(project.accountId);
   if (!ownerUserId || !project.repoUrl) return false;
   const W = randomUUID();
+  const provider = await selectProvider();
   // Lazy import to avoid a load-time cycle with projects/index.ts.
   const { buildSessionSandboxEnvVars } = await import('../../projects');
   const extraEnvVars = await buildSessionSandboxEnvVars({
@@ -257,6 +260,7 @@ async function spawnWarmSandbox(project: {
     sessionId: W,
     userId: ownerUserId,
     repoUrl: project.repoUrl,
+    sandboxProvider: provider,
     baseRef: project.defaultBranch,
     agentName: 'default',
     initialPrompt: null,
@@ -266,6 +270,7 @@ async function spawnWarmSandbox(project: {
     accountId: project.accountId,
     projectId: project.projectId,
     userId: ownerUserId,
+    provider,
     extraEnvVars,
     poolState: 'booting',
     metadata: {
@@ -384,6 +389,14 @@ export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: num
     if (reason) {
       await reapWarmSandbox(row);
       reaped++;
+      continue;
+    }
+    if (row.poolState === 'booting' && row.status === 'active' && !resumedPromotions.has(row.sandboxId)) {
+      resumedPromotions.add(row.sandboxId);
+      void promoteWhenReady(row.sandboxId)
+        .catch(() => {})
+        .finally(() => resumedPromotions.delete(row.sandboxId));
+      console.log(`[warm-pool] resumed promotion ${row.sandboxId.slice(0, 8)}`);
     }
   }
 
