@@ -116,6 +116,44 @@ ALB=$(kubectl -n kortix-prod get ingress kortix-api -o jsonpath='{.status.loadBa
 
 Watch a canary: `kubectl argo rollouts get rollout kortix-api -n kortix-prod --watch`.
 
+## Branch = environment (why constant merges to main are safe)
+
+```
+PRs merge to main  ─►  DEV only        (dev Argo app tracks `main`)
+                       prod untouched
+
+Actions → Promote   ─►  merges main → `prod` branch (reviewed)
+   └─ deploy-prod-eks bumps image.tag in prod's envs/prod/values.yaml
+        (GitHub Environment `production` approval)
+                       └─►  prod Argo app (tracks `prod`) syncs ─► PROD
+```
+
+The **prod Application tracks the `prod` branch** — so nothing on `main` can
+touch prod. Prod moves *only* when someone runs **Promote** (merges to `prod`)
+and the image bump lands on `prod`. (Bootstrap note: the app currently tracks
+`main` until the first promote puts the GitOps manifests on `prod`; then repoint
+`spec.sources[].targetRevision` from `main` → `prod` — a one-line change.)
+
+## GitHub-org SSO + retiring admin
+
+1. **Create a GitHub OAuth App** (org `kortix-ai` → Settings → Developer settings
+   → OAuth Apps → New):
+   - Homepage `https://ops.kortix.com`
+   - Authorization callback `https://ops.kortix.com/api/dex/callback`
+   - copy the **Client ID**, generate a **Client Secret**.
+2. In the `platform` tfvars / env:
+   ```
+   argocd_github_sso_enabled = true
+   argocd_github_client_id   = "<client id>"
+   argocd_admin_team         = "<github team that gets admin>"   # e.g. eng
+   export TF_VAR_argocd_github_client_secret=<client secret>
+   ```
+   `terraform apply`. Org members can now **Log in via GitHub**; the admin team
+   gets admin, everyone else read-only.
+3. **Verify** GitHub login + that your admin team has admin in the UI.
+4. **Only then** retire the shared password: set `argocd_disable_admin = true`
+   and `terraform apply`. (Doing this before step 3 locks you out.)
+
 ## Environment profiles
 
 `envs/<env>/values.yaml` sets `env.internalKortixEnv` and `workers.enabled`.
