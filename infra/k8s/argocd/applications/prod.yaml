@@ -31,6 +31,17 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: kortix-prod
+  # External Secrets Operator's admission webhook injects defaults
+  # (conversionStrategy/decodingStrategy/metadataPolicy) into the ExternalSecret,
+  # which git doesn't carry — ignore those fields so the app isn't perpetually
+  # OutOfSync. ESO owns them; this changes diffing only, nothing in-cluster.
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jqPathExpressions:
+        - .spec.dataFrom[]?.extract.conversionStrategy
+        - .spec.dataFrom[]?.extract.decodingStrategy
+        - .spec.dataFrom[]?.extract.metadataPolicy
   syncPolicy:
     automated:
       prune: true
