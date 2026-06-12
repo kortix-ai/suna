@@ -29,6 +29,7 @@ import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, basename, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { SandboxState } from '@daytonaio/sdk';
 import { config } from '../config';
 import { getDaytonaWarm, warmSnapshotsEnabled } from '../shared/daytona';
 
@@ -226,6 +227,9 @@ export async function bakeWarmSnapshot(opts: {
           `${err instanceof Error ? err.message : String(err)}`,
       );
       if (box) await box.delete().catch(() => {});
+      // A create-throw leaves an error-state box behind org-side (we never got
+      // a handle). Sweep them so the dashboard doesn't fill with corpses.
+      void reapErroredWarmBoxes(baseSnapshot, onLog);
       await new Promise((r) => setTimeout(r, 2_000 * attempt));
     }
   }
@@ -431,6 +435,35 @@ export function kickWarmBaseBuild(onLog?: (l: string) => void): void {
       warmBaseBuildInFlight = null;
     }
   })();
+}
+
+/**
+ * Delete ERRORED sandboxes left behind by failed warm creates. When the
+ * experimental region fails a create ("Sandbox failed to start: internal
+ * error"), the SDK throws without ever handing us the box — but the box still
+ * exists org-side in `error` state and lingers in the dashboard forever.
+ * Targeted by snapshot name + error state so we never touch live sandboxes.
+ * Best-effort and bounded; safe to fire-and-forget.
+ */
+export async function reapErroredWarmBoxes(snapshotName: string, log?: (l: string) => void): Promise<number> {
+  if (!warmSnapshotsEnabled()) return 0;
+  let reaped = 0;
+  try {
+    const daytona = getDaytonaWarm();
+    for await (const box of daytona.list({ states: [SandboxState.ERROR], snapshots: [snapshotName] })) {
+      try {
+        await box.delete();
+        reaped++;
+      } catch {
+        /* already gone / transient — keep going */
+      }
+      if (reaped >= 25) break; // bound a single pass
+    }
+    if (reaped > 0) log?.(`[warm-bake] reaped ${reaped} errored warm box(es) for ${snapshotName}`);
+  } catch (err) {
+    log?.(`[warm-bake] errored-box reap skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return reaped;
 }
 
 /**

@@ -149,24 +149,37 @@ export class DaytonaProvider implements SandboxProvider {
   ): Promise<ProvisionResult> {
     const daytona = getDaytonaWarm();
 
-    // Daytona's experimental memory-snapshot restore is non-deterministic: ~half
-    // the boxes come up WITHOUT the baked runtime (the filesystem layer is
-    // dropped, leaving ~the bare base image). Verify the runtime is present; on
-    // a bad restore, delete + recreate. After the cap, give up so the caller
-    // falls back to the normal Dockerfile path rather than booting a broken box.
+    // Daytona's experimental region is non-deterministic in TWO ways: creates
+    // fail outright ("Sandbox failed to start: internal error"), and boxes that
+    // do start can come up WITHOUT the baked runtime (filesystem layer dropped).
+    // Retry through both; after the cap, give up so the caller falls back to the
+    // normal Dockerfile path rather than booting a broken box.
     const MAX_WARM_ATTEMPTS = 4;
     let sb: Awaited<ReturnType<typeof daytona.create>> | null = null;
+    let sawCreateFailure = false;
     for (let attempt = 1; attempt <= MAX_WARM_ATTEMPTS; attempt++) {
-      const box = await daytona.create(
-        {
-          snapshot: warmBaseSnapshot,
-          autoStopInterval: opts.autoStopInterval ?? 15,
-          autoArchiveInterval: 30,
-          autoDeleteInterval: -1,
-          public: false,
-        },
-        { timeout },
-      );
+      let box: Awaited<ReturnType<typeof daytona.create>> | null = null;
+      try {
+        box = await daytona.create(
+          {
+            snapshot: warmBaseSnapshot,
+            autoStopInterval: opts.autoStopInterval ?? 15,
+            autoArchiveInterval: 30,
+            autoDeleteInterval: -1,
+            public: false,
+          },
+          { timeout },
+        );
+      } catch (err) {
+        // The throw leaves an error-state box org-side that we have no handle
+        // to — swept below once the loop settles.
+        sawCreateFailure = true;
+        console.warn(
+          `[daytona] warm create attempt ${attempt}/${MAX_WARM_ATTEMPTS} failed:`,
+          err instanceof Error ? err.message : err,
+        );
+        continue;
+      }
       if (await DaytonaProvider.warmRuntimePresent(box)) {
         sb = box;
         break;
@@ -177,9 +190,16 @@ export class DaytonaProvider implements SandboxProvider {
       );
       await box.delete().catch(() => {});
     }
+    if (sawCreateFailure) {
+      // Fire-and-forget: clear the error-state corpses failed creates left in
+      // the org (targeted by warm-base snapshot name + error state).
+      void import('../../snapshots/warm-bake')
+        .then(({ reapErroredWarmBoxes }) => reapErroredWarmBoxes(warmBaseSnapshot, (l) => console.log(l)))
+        .catch(() => {});
+    }
     if (!sb) {
       throw new WarmRuntimeUnavailableError(
-        `warm base ${warmBaseSnapshot} restored without runtime after ${MAX_WARM_ATTEMPTS} attempts`,
+        `warm base ${warmBaseSnapshot} unavailable after ${MAX_WARM_ATTEMPTS} attempts (create failures and/or dropped-runtime restores)`,
       );
     }
 
