@@ -33,13 +33,6 @@ export type Step = {
   web: WebState;
 };
 
-export const SECTION = {
-  label: 'How it works',
-  title: 'One repo. One token. Six steps.',
-  description:
-    'init · dev · connect · ship · chat · self-host. Your whole company as code — on the agents and the API keys you already have, multi-tenant for the whole org, hosted wherever you want.',
-};
-
 export const STICKY = {
   terminal: { title: 'kortix cli', badge: 'live', prompt: '$' },
   web: {

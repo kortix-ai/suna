@@ -29,7 +29,7 @@ const Block = ({ tab }: { tab: string }) => {
         <div className="relative flex h-full min-h-full w-full items-center justify-center">
           <ProgressiveBlur height="20%" className="absolute top-0 z-20 rotate-180" />
           <div className="from-kortix-base via-kortix-green/30 dark:via-kortix-green to-kortix-base absolute inset-y-px left-1/2 z-10 w-5 -translate-x-1/2 bg-linear-to-b">
-            <div className="bg-card absolute top-1/2 right-0 left-0 h-[140px] -translate-y-1/2" />
+            <div className="bg-card absolute top-1/2 right-0 left-0 h-[80px] -translate-y-1/2" />
           </div>
 
           <svg
@@ -39,7 +39,7 @@ const Block = ({ tab }: { tab: string }) => {
             viewBox="0 0 512 512"
             height="200px"
             width="200px"
-            className="text-foreground relative z-20"
+            className="text-foreground relative z-20 size-30"
             xmlns="http://www.w3.org/2000/svg"
           >
             <path
@@ -67,18 +67,18 @@ const Block = ({ tab }: { tab: string }) => {
         <div className="relative flex h-full min-h-full w-full items-center justify-center">
           <ProgressiveBlur height="20%" className="absolute top-0 z-20 rotate-180" />
           <div className="from-kortix-base via-kortix-purple/30 dark:via-kortix-purple to-kortix-base absolute inset-y-px left-1/2 z-10 w-5 -translate-x-1/2 bg-linear-to-b">
-            <div className="bg-card absolute top-1/2 right-0 left-0 h-[140px] -translate-y-1/2" />
+            <div className="bg-card absolute top-1/2 right-0 left-0 h-[80px] -translate-y-1/2" />
           </div>
 
           <svg
             stroke="currentColor"
             fill="currentColor"
-            stroke-width="0"
+            strokeWidth="0"
             viewBox="0 0 24 24"
             height="200px"
             width="200px"
             xmlns="http://www.w3.org/2000/svg"
-            className="text-foreground relative z-20"
+            className="text-foreground relative z-20 size-30"
           >
             <path d="M11.998 2l.118 .007l.059 .008l.061 .013l.111 .034a.993 .993 0 0 1 .217 .112l.104 .082l.255 .218a11 11 0 0 0 7.189 2.537l.342 -.01a1 1 0 0 1 1.005 .717a13 13 0 0 1 -9.208 16.25a1 1 0 0 1 -.502 0a13 13 0 0 1 -9.209 -16.25a1 1 0 0 1 1.005 -.717a11 11 0 0 0 7.531 -2.527l.263 -.225l.096 -.075a.993 .993 0 0 1 .217 -.112l.112 -.034a.97 .97 0 0 1 .119 -.021l.115 -.007zm3.71 7.293a1 1 0 0 0 -1.415 0l-3.293 3.292l-1.293 -1.292l-.094 -.083a1 1 0 0 0 -1.32 1.497l2 2l.094 .083a1 1 0 0 0 1.32 -.083l4 -4l.083 -.094a1 1 0 0 0 -.083 -1.32z"></path>
           </svg>
@@ -162,7 +162,7 @@ const Security = () => {
       </div>
 
       <div className="border-border bg-card grid min-h-[390px] w-full overflow-hidden rounded-sm border lg:grid-cols-12">
-        <div className="relative w-full border-b lg:col-span-5 lg:border-r lg:border-b-0">
+        <div className="relative hidden w-full border-b lg:col-span-5 lg:block lg:border-r lg:border-b-0">
           <Block tab={activeId} />
         </div>
 

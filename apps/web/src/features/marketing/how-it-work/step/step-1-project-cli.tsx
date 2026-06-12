@@ -139,13 +139,13 @@ export function Step1ProjectCli() {
 
   return (
     <div ref={rootRef} className="relative aspect-19/22 w-full overflow-visible">
+      <WebPanel projects={director.projects} />
+
       <DraggableCliPanel containerRef={rootRef}>
         {({ dragHandleProps }) => (
           <StepCliTerminal director={director} dragHandleProps={dragHandleProps} />
         )}
       </DraggableCliPanel>
-
-      <WebPanel projects={director.projects} />
     </div>
   );
 }

@@ -4,8 +4,9 @@ import { Card } from '@/components/ui/card';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { cn } from '@/lib/utils';
 import { useInView } from 'motion/react';
+import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { SECTION, STEPS, type Step } from './how-it-works-content';
+import { STEPS, type Step } from './how-it-works-content';
 import { Step1ProjectCli } from './step/step-1-project-cli';
 import { Step2ConnectCli } from './step/step-2-connect-cli';
 import { Step3BuildCli } from './step/step-3-build-cli';
@@ -106,19 +107,19 @@ function StickyShowcasePanel({ steps, activeIndex }: { steps: Step[]; activeInde
 }
 
 export function HowItWorks() {
+  const tHome = useTranslations('hardcodedUi.appHomePage');
   const [activeIndex, setActiveIndex] = useState(0);
   const handleActive = useCallback((index: number) => setActiveIndex(index), []);
 
   return (
     <section className="mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">
       <div className="mb-16 max-w-2xl space-y-3">
-        <p className="text-muted-foreground font-mono text-xs tracking-wider uppercase">
-          {SECTION.label}
-        </p>
         <h2 className="text-foreground text-3xl font-medium tracking-tight sm:text-4xl">
-          {SECTION.title}
+          {tHome('howItWorksSectionTitle')}
         </h2>
-        <p className="text-muted-foreground text-base leading-relaxed">{SECTION.description}</p>
+        <p className="text-muted-foreground text-base leading-relaxed">
+          {tHome('howItWorksSectionDescription')}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-10 pt-10 lg:grid-cols-2 lg:gap-10">

@@ -9,6 +9,7 @@ export type CliDragHandleProps = HTMLAttributes<HTMLDivElement> & {
 };
 
 const ENTRANCE_DELAY_MS = 2000;
+const DESKTOP_DRAG_QUERY = '(min-width: 1024px)';
 
 const PANEL_W = 384; // max-w-[24rem]
 const PANEL_H = 480; // h-[30rem]
@@ -39,18 +40,30 @@ function clampPosition(x: number, y: number, containerW: number, containerH: num
 export function DraggableCliPanel({
   containerRef,
   children,
+  show = false,
 }: {
   containerRef: React.RefObject<HTMLElement | null>;
   children: (props: { dragHandleProps: CliDragHandleProps; dragging: boolean }) => React.ReactNode;
+  show?: boolean;
 }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [entranceReady, setEntranceReady] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const dragOffset = useRef({ x: 0, y: 0 });
+  const canDrag = isDesktop && !show;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setEntranceReady(true), ENTRANCE_DELAY_MS);
     return () => window.clearTimeout(timer);
+  }, []);
+  useEffect(() => {
+    const media = window.matchMedia(DESKTOP_DRAG_QUERY);
+    const syncIsDesktop = () => setIsDesktop(media.matches);
+
+    syncIsDesktop();
+    media.addEventListener('change', syncIsDesktop);
+    return () => media.removeEventListener('change', syncIsDesktop);
   }, []);
   useEffect(() => {
     const container = containerRef.current;
@@ -82,7 +95,7 @@ export function DraggableCliPanel({
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
-      if (!pos || e.button !== 0) return;
+      if (!canDrag || !pos || e.button !== 0) return;
       const container = containerRef.current;
       if (!container) return;
 
@@ -122,10 +135,10 @@ export function DraggableCliPanel({
       window.addEventListener('pointerup', onUp);
       window.addEventListener('pointercancel', onUp);
     },
-    [containerRef, pos],
+    [canDrag, containerRef, pos],
   );
 
-  if (pos === null || !entranceReady) return null;
+  if (!entranceReady || (!isDesktop && !show) || (canDrag && pos === null)) return null;
 
   return (
     <motion.div
@@ -133,17 +146,22 @@ export function DraggableCliPanel({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, ease: 'easeOut' }}
       className={cn(
-        'absolute z-50 hidden h-120 w-full max-w-[24rem] touch-none overflow-hidden rounded-md select-none lg:flex',
-        dragging
+        'z-50 flex h-120 w-full max-w-[24rem] overflow-hidden rounded-md select-none',
+        show ? 'absolute inset-x-4 bottom-4 mx-auto h-80 w-auto sm:h-120' : 'relative mx-auto',
+        canDrag && 'lg:absolute lg:mx-0 lg:touch-none',
+        canDrag && dragging
           ? 'ring-border/40 z-60 scale-[1.02] cursor-grabbing shadow-2xl ring-1'
-          : 'cursor-grab shadow-md transition-[transform,box-shadow] duration-150',
+          : cn(
+              'shadow-md transition-[transform,box-shadow] duration-150',
+              canDrag && 'cursor-grab',
+            ),
       )}
-      style={{ left: pos.x, top: pos.y }}
+      style={canDrag && pos ? { left: pos.x, top: pos.y } : undefined}
     >
       {children({
         dragHandleProps: {
           onPointerDown,
-          className: cn('cursor-grab touch-none', dragging && 'cursor-grabbing'),
+          className: cn('lg:cursor-grab lg:touch-none', dragging && 'lg:cursor-grabbing'),
         },
         dragging,
       })}

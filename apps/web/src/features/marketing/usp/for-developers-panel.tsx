@@ -4,16 +4,15 @@ import { Button } from '@/components/ui/marketing/button';
 import { useCopy } from '@/hooks/use-copy';
 import { cn } from '@/lib/utils';
 import { Check, Copy, GitBranch } from 'lucide-react';
-import { AnimatePresence, motion, useInView, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion, useInView } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { FOR_DEVELOPERS, type AuthorType, type Commit } from './section3-content';
 
-const { cloneCommand, commits } = FOR_DEVELOPERS;
+const { commits } = FOR_DEVELOPERS;
 
 const FEED_LEN = 6;
 const TICK_MS = 2400;
 const ENTER_EASE = [0.16, 1, 0.3, 1] as const;
-/** Rows settle with mass — a soft spring, not a tween. */
 const LAYOUT_SPRING = { type: 'spring', stiffness: 380, damping: 34 } as const;
 const HEX = 'abcdef0123456789';
 
@@ -257,8 +256,6 @@ function StaticFeed() {
 }
 
 export function ForDevelopersPanel({ title, description }: { title: string; description: string }) {
-  const reduceMotion = useReducedMotion();
-
   return (
     <div className="border-border bg-card grid w-full lg:grid-cols-12">
       <div className="flex flex-col gap-6 border-r p-8 lg:col-span-4">

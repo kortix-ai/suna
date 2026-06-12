@@ -2,9 +2,10 @@
 
 import { cn } from '@/lib/utils';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import { ForDevelopersPanel } from './for-developers-panel';
 import { ForYouPanel } from './for-you-panel';
-import { FOR_DEVELOPERS, FOR_YOU, SECTION3 } from './section3-content';
+import { FOR_YOU, SECTION3 } from './section3-content';
 
 function FlowCue({ label, direction }: { label: string; direction: 'in' | 'out' }) {
   return (
@@ -42,6 +43,8 @@ function HalfHeader({
 }
 
 export function USP() {
+  const tHome = useTranslations('hardcodedUi.appHomePage');
+
   return (
     <section className="mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">
       <div className="mb-12 max-w-2xl space-y-3">
@@ -57,7 +60,10 @@ export function USP() {
       <div className="border-border overflow-hidden rounded-sm border">
         <ForYouPanel title={FOR_YOU.title} description={FOR_YOU.description} />
 
-        <ForDevelopersPanel title={FOR_DEVELOPERS.title} description={FOR_DEVELOPERS.description} />
+        <ForDevelopersPanel
+          title={tHome('forDevelopersPanelTitle')}
+          description={tHome('forDevelopersPanelDescription')}
+        />
       </div>
     </section>
   );

@@ -1,32 +1,3 @@
-/**
- * section3-content.ts — "One product. One Git repo."
- *
- * DESIGN CONCEPT — the two halves are mirror images of the same repo:
- *
- *  ┌──────────────────────────── Section 3 ────────────────────────────┐
- *  │                    ONE PRODUCT. ONE GIT REPO.                     │
- *  │                                                                   │
- *  │  3a · FOR YOU (non-technical)        3b · FOR DEVELOPERS          │
- *  │  Work flows IN →                     ← Changes flow OUT           │
- *  │  use-case cards stream like a        live `git log`: every click, │
- *  │  bullet train INTO the agent         chat, and agent action lands │
- *  │  terminal (opencode/claude           as a commit; CRs merge to    │
- *  │  code/codex/cursor) and come         main. Same repo, dev's view. │
- *  │  out done                                                         │
- *  └───────────────────────────────────────────────────────────────────┘
- *
- *  3a mechanics: cards enter from the LEFT in 2 staggered marquee rows,
- *  accelerate toward the terminal, shrink+fade as they "enter" it; the
- *  terminal occasionally prints `✓ <card> → delivered`. Terminal title
- *  cycles through AGENT_NAMES every ~3s. Respect prefers-reduced-motion
- *  (static grid of 8 cards + terminal as fallback).
- *
- *  3b mechanics: panel = slim file tree (left) + commit feed (right).
- *  Commits tick in every ~1.5s, newest on top, color-coded by author
- *  type: human (default), web ui (blue), agent (purple), merge (green).
- *  `git clone` line sits pinned at the top — the invitation.
- */
-
 export type Dept = 'Sales' | 'HR' | 'Legal' | 'Finance' | 'Marketing' | 'Support' | 'Ops';
 
 export type AuthorType = 'human' | 'web' | 'agent' | 'merge';
@@ -51,10 +22,6 @@ export const SECTION3 = {
   description:
     'Your team chats. Your developers clone. Your agents commit. Everyone — technical, non-technical, and AI — improves the same company, in the same repo.',
 };
-
-/* ------------------------------------------------------------------ */
-/* 3a · Kortix, for you (non-technical)                                */
-/* ------------------------------------------------------------------ */
 
 export const FOR_YOU = {
   id: 'for-you',
@@ -103,20 +70,9 @@ export const FOR_YOU = {
   ] satisfies UseCaseCard[],
 } as const;
 
-/* ------------------------------------------------------------------ */
-/* 3b · Kortix, for developers                                         */
-/* ------------------------------------------------------------------ */
-
 export const FOR_DEVELOPERS = {
   id: 'for-developers',
-  eyebrow: 'Kortix, for developers',
-  flow: 'Changes flow out',
-  title: 'Each Kortix project is just a Git repo.',
-  description:
-    'One kortix.toml. One .kortix/opencode/ dir. Clone it into your IDE, extend anything, and watch every change — clicked, chatted, or run by an agent — land as a reviewable commit.',
-  /** Pinned at the top of the dev panel — the invitation */
-  cloneCommand: 'git clone git.kortix.com/acme/acme-ops',
-  /** Slim file tree on the panel's left */
+
   fileTree: {
     name: 'acme-ops',
     children: [
@@ -252,10 +208,6 @@ export const FOR_DEVELOPERS = {
     },
   ] satisfies Commit[],
 } as const;
-
-/* ------------------------------------------------------------------ */
-/* Shared: department → accent dot color (categorical, calm)           */
-/* ------------------------------------------------------------------ */
 
 export const DEPT_DOT: Record<Dept, string> = {
   Sales: 'bg-kortix-blue',

@@ -2010,7 +2010,12 @@
       "workforceMapPillDocs": "Configure",
       "workforceMapPillCode": "kortix deploy",
       "workforceMapPillCrm": "Slack",
-      "workforceMapPillData": "Data"
+      "workforceMapPillData": "Data",
+      "howItWorksSectionTitle": "How a company runs on Kortix.",
+      "howItWorksSectionDescription": "Your whole company as code — on the agents and the API keys you already have, multi-tenant for the whole org, hosted wherever you want.",
+      "forDevelopersPanelTitle": "Built on files you can actually open.",
+      "forDevelopersPanelDescription": "No SDK to learn, no API maze. Your agents, skills, and tools are plain files in a folder — clone the project, change what you want in your own editor, and ship it back.",
+      "howItWorksSectionLabel": "How it works"
     },
     "appHomePartnershipsPartnershipsClient": {
       "line46JsxTextWeWorkWithAHandfulOfSelectedCompanies": "We work with a handful of selected companies to build autonomous operations — the same way we build them for ourselves. Kortix leadership and engineers, embedded with your team.",
