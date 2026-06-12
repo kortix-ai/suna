@@ -162,9 +162,11 @@ function CloneBox() {
 
   return (
     <div className="border-border bg-background flex h-10 items-center gap-2 rounded-md border px-3 pr-1">
-      <code className="text-foreground text-xs">
-        <span className="text-kortix-green">curl</span> skills add index-how/vocabulary
-      </code>
+      <div className="flex min-w-0 flex-1 gap-3 overflow-hidden">
+        <span className="text-foreground min-w-0 truncate font-mono text-xs select-all">
+          {installCmd}
+        </span>
+      </div>
       <Button size="icon-sm" variant="ghost" onClick={() => copy(installCmd)}>
         {copied ? (
           <Check className="text-kortix-green size-4" />
