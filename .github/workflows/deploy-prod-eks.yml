@@ -1,19 +1,15 @@
 name: Deploy Prod (EKS / GitOps)
 
-# EKS prod deploy via GitOps. On a prod release, this bumps the image tag in
-# infra/k8s/envs/prod/values.yaml and pushes it — Argo CD reconciles the change
-# onto the cluster (canary via Argo Rollouts when enabled). There is NO
-# kubectl/helm/aws here: the cluster is changed only by committing to git.
+# EKS prod is deployed by Argo CD, NOT by this workflow. The release flow:
+#   promote.yml  → bumps infra/k8s/envs/prod/values.yaml in the reviewed PR
+#   merge to prod → Argo CD (tracks the prod branch) reconciles it → canary roll
 #
-#   prod release ─► wait for kortix/kortix-api:<VERSION> (retagged by deploy-prod)
-#                ─► [GitHub Environment "production" approval]
-#                ─► bump envs/prod/values.yaml ─► Argo CD syncs ─► EKS
-#   rollback = git revert the bump (Argo reconciles back).
-#
-# Runs in parallel with deploy-prod.yml (which still rolls ECS + cuts the release
-# during the dual-run). At the api.kortix.com cutover, deploy-prod's ECS roll is
-# removed and this becomes the sole prod deploy. Replaces the old imperative
-# `helm upgrade` path.
+# So there is nothing imperative to do here — the merge IS the deploy. This job
+# just (1) waits for the retagged image so we know Argo can pull it, and (2)
+# emits a pointer to where to watch the rollout. Rollback = git revert the bump
+# (or `argocd app rollback`). Runs alongside deploy-prod.yml (ECS) during the
+# dual-run; at the api.kortix.com cutover, deploy-prod's ECS roll is removed and
+# Argo CD is the sole prod deploy.
 
 on:
   push:
@@ -25,32 +21,22 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write # push the values bump to the prod branch
+  contents: read
 
 env:
   IMAGE_REPO: kortix/kortix-api
-  VALUES_FILE: infra/k8s/envs/prod/values.yaml
+  API_HOST: api-eks.kortix.com
 
 jobs:
-  gitops-deploy:
-    name: Promote image to EKS prod (GitOps)
+  verify:
+    name: EKS prod (GitOps via Argo CD)
     runs-on: ubuntu-latest
-    # Approval gate: configure this Environment with required reviewers in repo
-    # Settings → Environments → production. Until then the job runs ungated.
-    environment: production
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: prod
-          fetch-depth: 0
 
-      - name: Resolve version from VERSION
+      - name: Resolve version
         id: v
-        run: |
-          set -euo pipefail
-          V="$(tr -d '[:space:]' < VERSION)"
-          echo "version=$V" >> "$GITHUB_OUTPUT"
-          echo "EKS prod target: $IMAGE_REPO:$V"
+        run: echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
@@ -58,59 +44,35 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # deploy-prod.yml retags dev → :VERSION. Wait for it so Argo never points
-      # at a tag that doesn't exist yet (regardless of job ordering).
+      # Confirm the image Argo will pull is published (deploy-prod retags it).
       - name: Wait for image ${{ env.IMAGE_REPO }}:${{ steps.v.outputs.version }}
         run: |
           set -euo pipefail
           REF="$IMAGE_REPO:${{ steps.v.outputs.version }}"
           for i in $(seq 1 60); do
-            if docker buildx imagetools inspect "$REF" >/dev/null 2>&1; then
-              echo "✓ $REF available"; exit 0
-            fi
-            echo "($i/60) $REF not published yet — waiting 15s…"; sleep 15
+            docker buildx imagetools inspect "$REF" >/dev/null 2>&1 && { echo "✓ $REF published — Argo CD can pull it"; exit 0; }
+            echo "($i/60) waiting for $REF…"; sleep 15
           done
-          echo "::error::Timed out waiting for $REF (15 min)."; exit 1
+          echo "::warning::$REF not visible after 15 min; Argo will pull once it lands."
 
-      - name: Bump prod values to the released tag
-        id: bump
-        env:
-          VERSION: ${{ steps.v.outputs.version }}
+      # Best-effort: nudge that the new version is serving (canary takes a few min
+      # to promote, so this is informational, never a gate).
+      - name: Health glimpse (best-effort)
         run: |
-          set -euo pipefail
-          # yq (mikefarah) is preinstalled on ubuntu-latest runners.
-          before="$(yq '.image.tag' "$VALUES_FILE")"
-          yq -i '.image.tag = strenv(VERSION) | .kortixVersion = strenv(VERSION)' "$VALUES_FILE"
-          after="$(yq '.image.tag' "$VALUES_FILE")"
-          echo "image.tag: $before → $after"
-          if git diff --quiet -- "$VALUES_FILE"; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::$VALUES_FILE already at $VERSION — nothing to deploy."
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Commit + push the deploy (Argo CD reconciles it)
-        if: steps.bump.outputs.changed == 'true'
-        env:
-          VERSION: ${{ steps.v.outputs.version }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add "$VALUES_FILE"
-          # [skip ci] so this commit doesn't re-trigger the prod pipelines.
-          git commit -m "deploy(eks-prod): kortix-api $VERSION [skip ci]"
-          git push origin HEAD:prod
+          set -uo pipefail
+          for i in $(seq 1 8); do
+            v=$(curl -s --max-time 10 "https://${API_HOST}/v1/health" | grep -o '"version":"[^"]*"' || true)
+            echo "($i/8) api-eks $v"
+            echo "$v" | grep -q "${{ steps.v.outputs.version }}" && break
+            sleep 20
+          done
 
       - name: Summary
         if: always()
-        env:
-          VERSION: ${{ steps.v.outputs.version }}
         run: |
           {
-            echo "### EKS prod deploy (GitOps)"
-            echo "Bumped \`$VALUES_FILE\` → \`$IMAGE_REPO:$VERSION\`."
-            echo "Argo CD reconciles \`kortix-prod\` to it (Rollouts canary when enabled)."
-            echo "Rollback: \`git revert\` the bump commit."
+            echo "### EKS prod → Argo CD (GitOps)"
+            echo "v${{ steps.v.outputs.version }} deploys when the promote PR merges to \`prod\` (Argo reconciles \`envs/prod/values.yaml\`)."
+            echo "Watch the canary: **https://ops.kortix.com** → \`kortix-prod\`."
+            echo "Rollback: \`git revert\` the values bump, or \`argocd app rollback kortix-prod\`."
           } >> "$GITHUB_STEP_SUMMARY"
