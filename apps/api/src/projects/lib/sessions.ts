@@ -416,7 +416,13 @@ export async function createProjectSession(input: {
             sandboxProvider: providerName,
             sandboxId: W,
             agentName,
-            status: 'provisioning',
+            // A parked box is already booted (runtimeReady), so the session is
+            // born 'running' — the provisioning mirror that normally does this
+            // flip ran at pool-SPAWN time, before this row existed, and would
+            // never fire again (the sidebar spinner used to spin forever). For
+            // a greedy claim of a still-booting box keep 'provisioning'; the
+            // spawn IIFE's mirror now finds this row and flips it on readiness.
+            status: claimed.sandboxStatus === 'active' ? 'running' : 'provisioning',
             createdBy: userId,
             visibility,
             // Pin the opencode session pre-created at park time so the client
