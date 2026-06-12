@@ -121,7 +121,51 @@ ensure_dev_tunnel() {
   fi
 
   export KORTIX_URL="$url"
+  TUNNEL_URL_FILE="${TUNNEL_URL_FILE:-$(mktemp -t kortix-tunnel-url.XXXXXX)}"
+  printf '%s' "$url" > "$TUNNEL_URL_FILE"
   echo "[dev] ✅ Cloud sandbox callback ready: KORTIX_URL=$KORTIX_URL"
+}
+
+# Quick tunnels rot silently every few hours (the URL dies while cloudflared
+# keeps running) — every death looks like "kortix is broken" until someone
+# restarts the stack by hand. This watchdog probes the tunnel URL each minute;
+# two consecutive failures WHILE the local API is healthy means the tunnel is
+# dead: rotate cloudflared, write the fresh URL, and bounce the supervised API
+# (its KORTIX_URL is baked at spawn). Sessions created on the old URL can't be
+# saved (their baked env is gone with it) — but everything new just works.
+start_tunnel_watchdog() {
+  (
+    while :; do
+      sleep 60
+      url="$(cat "$TUNNEL_URL_FILE" 2>/dev/null)" || continue
+      curl -fsS -m 8 "$url/health" >/dev/null 2>&1 && continue
+      # API itself down? Then it's not the tunnel — don't rotate.
+      curl -fsS -m 2 "http://localhost:${PORT:-8008}/health" >/dev/null 2>&1 || continue
+      sleep 5
+      curl -fsS -m 8 "$url/health" >/dev/null 2>&1 && continue
+      echo "[dev] ⚠️  tunnel $url is DEAD — rotating cloudflared + restarting API..."
+      [[ -n "${TUNNEL_PID:-}" ]] && kill "$TUNNEL_PID" 2>/dev/null || true
+      pkill -f 'cloudflared tunnel --no-autoupdate' 2>/dev/null || true
+      TUNNEL_LOG="$(mktemp -t kortix-tunnel.XXXXXX)"
+      cloudflared tunnel --no-autoupdate --url "http://localhost:${PORT:-8008}" >"$TUNNEL_LOG" 2>&1 &
+      TUNNEL_PID=$!
+      newurl=""
+      for i in $(seq 1 30); do
+        newurl="$(grep -oE 'https://[a-z0-9.-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1 || true)"
+        [[ -n "$newurl" ]] && break
+        sleep 1
+      done
+      if [[ -z "$newurl" ]]; then
+        echo "[dev] ⚠️  tunnel rotation FAILED — will retry next minute"
+        continue
+      fi
+      printf '%s' "$newurl" > "$TUNNEL_URL_FILE"
+      touch "$TUNNEL_URL_FILE.rotated"
+      echo "[dev] ✅ tunnel rotated: KORTIX_URL=$newurl (API restarting)"
+      pkill -f 'bun run --hot src/index.ts' 2>/dev/null || true
+    done
+  ) &
+  WATCHDOG_PID=$!
 }
 
 # Forward Stripe webhooks to the local API so billing flows (checkout →
@@ -294,6 +338,10 @@ cleanup() {
 
   if [[ -n "${TUNNEL_PID:-}" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
     kill "$TUNNEL_PID" 2>/dev/null || true
+  fi
+
+  if [[ -n "${WATCHDOG_PID:-}" ]] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
+    kill "$WATCHDOG_PID" 2>/dev/null || true
   fi
 
   if [[ -n "${STRIPE_PID:-}" ]] && kill -0 "$STRIPE_PID" 2>/dev/null; then
@@ -474,6 +522,15 @@ echo "[dev] Starting frontend..."
 pnpm --filter Kortix-Computer-Frontend dev &
 FRONTEND_PID=$!
 
-echo "[dev] Starting API..."
+start_tunnel_watchdog
+
+echo "[dev] Starting API (supervised — auto-restarts on tunnel rotation)..."
 cd "$ROOT_DIR"
-KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api dev
+while :; do
+  KORTIX_SKIP_ENSURE_SCHEMA=1 KORTIX_URL="$(cat "$TUNNEL_URL_FILE")" pnpm --filter kortix-api dev || true
+  # Restart only when the watchdog rotated the tunnel; a plain exit (ctrl-C,
+  # crash without rotation) leaves the loop so the script terminates normally.
+  [[ -f "$TUNNEL_URL_FILE.rotated" ]] || break
+  rm -f "$TUNNEL_URL_FILE.rotated"
+  echo "[dev] ♻️  API restarting with rotated KORTIX_URL=$(cat "$TUNNEL_URL_FILE")"
+done
