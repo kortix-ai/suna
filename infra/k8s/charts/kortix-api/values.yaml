@@ -132,3 +132,7 @@ rollout:
     tgArnSuffix: "" # targetgroup/<tg-name>/<hex>
     errorRatePercentThreshold: "1" # fail canary if 5xx rate >= this %
     p95LatencySecondsThreshold: "1.5" # fail canary if p95 target latency >= this
+    # Only ASSESS the thresholds once the window has this many requests — below
+    # it the sample is too small to judge (a single 5xx = huge rate %), so it
+    # passes. Keeps a low-traffic env (pre-cutover) from false-aborting.
+    minRequests: "20"
