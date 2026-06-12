@@ -620,6 +620,20 @@ else
   pnpm --filter Kortix-Computer-Frontend dev &
   FRONTEND_PID=$!
 
+  # Pre-compile the heavy routes so the FIRST human navigation doesn't pay
+  # Turbopack's on-demand compile (measured: /projects/[id] 16.1s,
+  # /projects/[id]/sessions/[sessionId] 5.2s — which read as "creating a
+  # session takes 6+ seconds" when it was the ROUTE compiling, not the
+  # sandbox). Unauthenticated requests still compile the route bundle before
+  # the auth redirect, so dummy ids are fine.
+  (
+    until curl -sf -o /dev/null -m 2 "http://localhost:${WEB_PORT:-3000}" 2>/dev/null; do sleep 2; done
+    for p in "/projects" "/projects/warmup-id" "/projects/warmup-id/sessions/warmup-id" "/projects/warmup-id/files"; do
+      curl -s -o /dev/null -m 120 "http://localhost:${WEB_PORT:-3000}$p" || true
+    done
+    echo "[dev] ✅ frontend routes pre-compiled — first navigation will be fast"
+  ) &
+
   start_tunnel_watchdog
 
   echo "[dev] Starting API (supervised — auto-restarts on tunnel rotation)..."
