@@ -1,12 +1,18 @@
 import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
+import { projectSessions } from '@kortix/db';
+import { db } from '../../shared/db';
 import { appendStream, postBlocks, updateBlocks, type StreamTaskChunk } from '../slack-api';
 import { ASK_TTL_MS, STREAM_TTL_MS } from './app';
 import {
   claimFinalize,
   deleteStream,
   finalizeStream,
+  isDeadStream,
   loadStream,
+  markStreamDead,
   openStreamWithFirstStep,
+  repaintLivePlan,
   saveStream,
   startTurnStream,
 } from './streams';
@@ -149,7 +155,7 @@ export async function relayTurnStep(
     return false;
   }
 
-  if (!handle.streaming) {
+  if (!handle.streaming && !isDeadStream(handle)) {
     const firstStep: StreamTaskChunk = {
       type: 'task_update',
       id: 'step-0',
@@ -194,7 +200,18 @@ export async function relayTurnStep(
   handle.steps.push(next);
   chunks.push(next);
   handle.expiry = Date.now() + STREAM_TTL_MS;
-  await appendStream(handle.token, handle.channel, handle.ts, chunks);
+  if (handle.streaming) {
+    const appended = await appendStream(handle.token, handle.channel, handle.ts, chunks);
+    if (!appended.ok) {
+      // Slack auto-completed the stream mid-turn (inactivity). Without this the
+      // step would silently vanish and the message would keep Slack's
+      // "Something went wrong" rendering. Drop to repaint mode instead.
+      markStreamDead(handle);
+      await repaintLivePlan(handle);
+    }
+  } else {
+    await repaintLivePlan(handle);
+  }
   await saveStream(handle);
   return true;
 }
@@ -214,17 +231,41 @@ export async function relayTurnAnswer(
   return true;
 }
 
-// Called when the agent's turn goes idle (opencode `session.idle` on the root
-// session). If the agent already delivered its reply via `slack send`, the
-// stream is gone and there's nothing to do. If it ended WITHOUT sending — e.g.
-// it judged the message needed no reply — we silently close the live stream so
-// the "On it…" placeholder / streaming plan doesn't hang until the 15-min
-// watchdog. No "_Done._" filler is posted (see finalizeStream's silent path).
-export async function relayTurnEnd(sessionId: string): Promise<boolean> {
+// Called when the agent's turn ends — opencode `session.idle` (finished) or
+// `session.error` (died) on the root session, relayed by the sandbox. If the
+// agent already delivered its reply via `slack send`, the stream is gone and
+// there's nothing to do. If it ended WITHOUT sending — e.g. it judged the
+// message needed no reply — close the live stream so the streaming plan / ⏳
+// reaction doesn't hang until a timeout paints it as a failure. Idle closes
+// silently (no "_Done._" filler — see finalizeStream's silent path); error
+// surfaces an honest failure line.
+export async function relayTurnEnd(
+  sessionId: string,
+  status: 'idle' | 'error' = 'idle',
+  opencodeSessionId?: string,
+): Promise<boolean> {
   const handle = await loadStream(sessionId);
   if (!handle || handle.finalized) return false;
+
+  // Subagents emit idle/error for their own opencode sessions too. The sandbox
+  // already filters to the root session, but when the relay names a session,
+  // re-check it against the canonical pin as the server-side guard.
+  if (opencodeSessionId) {
+    const [row] = await db
+      .select({ pinned: projectSessions.opencodeSessionId })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1);
+    if (row?.pinned && row.pinned !== opencodeSessionId) return false;
+  }
+
   if (!(await claimFinalize(sessionId))) return false;
-  await finalizeStream(handle, {});
+  await finalizeStream(
+    handle,
+    status === 'error'
+      ? { error: '_The run hit an error — open the session for details._' }
+      : {},
+  );
   await deleteStream(sessionId);
   return true;
 }

@@ -418,6 +418,8 @@ projectsApp.openapi(
     output?: string;
     sources?: Array<{ url?: string; text?: string }>;
     blocks?: unknown[];
+    status?: string;
+    opencode_session_id?: string;
   };
   try {
     body = (await c.req.json()) as typeof body;
@@ -429,12 +431,15 @@ projectsApp.openapi(
     return c.json({ error: 'session_id is required' }, 400);
   }
 
-  // `end` carries no text — it just closes the live stream when the agent's turn
-  // went idle without sending a final answer (so a silent turn doesn't leave the
-  // "On it…" placeholder hanging until the watchdog).
-  if (body.kind === 'end') {
-    const ended = await relayTurnEnd(sessionId);
-    return c.json({ ok: ended });
+  // `end` / `turn_end` carry no text — the sandbox observed the opencode turn
+  // finish (idle) or die (error) without the agent closing its Slack message;
+  // finalize it gracefully instead of letting it rot into a timeout failure.
+  // (`turn_end` is the alias newer sandboxes send, with status + the opencode
+  // session id for the server-side root-session guard.)
+  if (body.kind === 'end' || body.kind === 'turn_end') {
+    const status = body.status === 'error' ? 'error' : 'idle';
+    const ok = await relayTurnEnd(sessionId, status, body.opencode_session_id?.trim() || undefined);
+    return c.json({ ok });
   }
 
   const text = (body.text ?? '').trim();
