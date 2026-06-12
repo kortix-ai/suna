@@ -624,8 +624,12 @@ let runtimeFingerprintInflight: Promise<string> | null = null;
  *
  * Concurrent first-callers share the same in-flight promise so a session-boot
  * burst doesn't spawn N parallel tree walks.
+ *
+ * Exported for the warm-snapshot baker (snapshots/warm-bake.ts), which derives
+ * the warm-base name from this fingerprint so a new release (SANDBOX_VERSION
+ * bump / runtime source change) automatically gets a fresh warm base.
  */
-async function currentRuntimeArtifactFingerprint(): Promise<string> {
+export async function currentRuntimeArtifactFingerprint(): Promise<string> {
   const key = `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
   if (runtimeFingerprintCache?.key === key) return runtimeFingerprintCache.value;
   if (runtimeFingerprintInflight) return runtimeFingerprintInflight;

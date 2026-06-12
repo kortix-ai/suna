@@ -82,15 +82,45 @@ function isFarFromBottom(el: HTMLDivElement, spacerHeight: number): boolean {
   return distFromBottom >= 300;
 }
 
-export function useAutoScroll({ working, hasContent = false }: UseAutoScrollOptions): UseAutoScrollReturn {
+/**
+ * Grace period (ms) before the scroll physics accept a working → idle flip.
+ * The busy signal hands off across sources (optimistic send → server busy
+ * status → stream events) and can flap false for a few hundred ms right as
+ * the assistant starts answering. Reacting instantly collapses the spacer
+ * (IDLE_SPACER_CAP) + fires the idle re-anchor — yanking the freshly-anchored
+ * user bubble to the bottom of the screen. Only scroll behavior is debounced;
+ * the caller's loader visuals use the raw signal.
+ */
+const WORKING_IDLE_GRACE_MS = 1500;
+
+export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAutoScrollOptions): UseAutoScrollReturn {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const spacerElRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
 
+  // Sticky working: true edges apply immediately; false edges only after the
+  // grace period, so a mid-handoff flap never disturbs the scroll position.
+  const [working, setWorking] = useState(workingRaw);
+  const idleGraceTimerRef = useRef<ReturnType<typeof setTimeout>>(0 as any);
+  // True once anything has streamed while this view is mounted. After that,
+  // idle keeps the FULL spacer (last turn stays anchored at top, whitespace
+  // below — ChatGPT style); the idle cap only applies to fresh loads of an
+  // existing conversation, where trailing whitespace would just look broken.
+  const hadStreamedRef = useRef(false);
+  useEffect(() => {
+    if (workingRaw) {
+      clearTimeout(idleGraceTimerRef.current);
+      hadStreamedRef.current = true;
+      setWorking(true);
+      return;
+    }
+    idleGraceTimerRef.current = setTimeout(() => setWorking(false), WORKING_IDLE_GRACE_MS);
+    return () => clearTimeout(idleGraceTimerRef.current);
+  }, [workingRaw]);
+
   const userScrolledRef = useRef(false);
   const rafIdRef = useRef<number>(0);
-  const prevWorkingRef = useRef(working);
   const workingRef = useRef(working);
   workingRef.current = working;
   // Current spacer value for the RAF loop's contentH calculation.
@@ -115,9 +145,12 @@ export function useAutoScroll({ working, hasContent = false }: UseAutoScrollOpti
       ? Math.max(0, vh - last.offsetHeight - TURN_TOP_OFFSET)
       : vh;
 
-    // When idle, cap the spacer so short responses don't leave a huge
-    // blank area below the conversation.
-    if (!workingRef.current) {
+    // Cap the spacer ONLY on fresh loads of an existing conversation (no
+    // streaming yet this mount) — there the whitespace would look broken.
+    // Once a turn has streamed, the full spacer persists through idle so the
+    // completed turn stays anchored at the top instead of the whole
+    // conversation dropping to the bottom of the screen.
+    if (!workingRef.current && !hadStreamedRef.current) {
       h = Math.min(h, IDLE_SPACER_CAP);
     }
 
@@ -227,20 +260,12 @@ export function useAutoScroll({ working, hasContent = false }: UseAutoScrollOpti
     programmaticScrollTimer.current = setTimeout(() => { programmaticScrollRef.current = false; }, 500);
   }, [recalcSpacer]);
 
-  // ── On working → idle: re-anchor after DOM settles ────────────────
-  useEffect(() => {
-    const was = prevWorkingRef.current;
-    prevWorkingRef.current = working;
-    if (was && !working && !userScrolledRef.current) {
-      // Spacer is already correct (MO keeps it updated).
-      // Re-anchor to the absolute bottom so the user sees the end of
-      // the response (for long responses) or the user bubble (for short
-      // ones where the spacer fills the gap).
-      const t1 = setTimeout(scrollToAbsoluteBottom, 100);
-      const t2 = setTimeout(scrollToAbsoluteBottom, 500);
-      return () => { clearTimeout(t1); clearTimeout(t2); };
-    }
-  }, [working, scrollToAbsoluteBottom]);
+  // On working → idle: deliberately NO re-anchor. The spacer keeps its full
+  // height (see recalcSpacer), so the completed turn stays exactly where it
+  // was — user bubble + response anchored at the top, whitespace below. For
+  // long responses the RAF loop already followed growth to the end while
+  // streaming. Re-anchoring to the absolute bottom here is what used to yank
+  // the whole conversation to the bottom of the screen on completion.
 
   // ── RAF auto-scroll during streaming ──────────────────────────────
   // Phase 1 (spacer > 0): scrollHeight is constant, no scrolling needed.

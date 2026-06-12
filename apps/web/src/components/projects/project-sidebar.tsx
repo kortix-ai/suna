@@ -25,7 +25,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { listProjectSessions, type ProjectOpenCodeSession, type ProjectSession } from '@/lib/projects-client';
+import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
+import { directSubsessions, sessionDisplayLabel } from '@/components/projects/session-label';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useCustomizeStore } from '@/stores/customize-store';
 
@@ -230,21 +231,6 @@ function shortFlyoutRelative(text: string): string {
     .replace(/\syears?/, 'y');
 }
 
-function rootOpenCodeSession(session: ProjectSession): ProjectOpenCodeSession | null {
-  const opencodeSessions = session.opencode_sessions ?? [];
-  const rootId = session.opencode_session_id;
-  if (rootId) return opencodeSessions.find((item) => item.id === rootId) ?? null;
-  return opencodeSessions.find((item) => !item.parent_id) ?? null;
-}
-
-function directSubsessions(session: ProjectSession): ProjectOpenCodeSession[] {
-  const root = rootOpenCodeSession(session);
-  if (!root) return [];
-  return (session.opencode_sessions ?? [])
-    .filter((item) => item.parent_id === root.id && !item.archived_at)
-    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
-}
-
 function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const pathname = usePathname();
@@ -285,16 +271,8 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
         sessions.map((session) => {
           const href = `/projects/${projectId}/sessions/${session.session_id}`;
           const active = pathname?.startsWith(href) ?? false;
-          const root = rootOpenCodeSession(session);
           const children = directSubsessions(session);
-          const metadataName =
-            typeof session.metadata?.session_name === 'string'
-              ? (session.metadata.session_name as string)
-              : null;
-          const fallback = session.branch_name
-            ? session.branch_name.slice(0, 14)
-            : session.session_id.slice(0, 8);
-          const label = root?.title?.trim() || session.name?.trim() || metadataName?.trim() || fallback;
+          const label = sessionDisplayLabel(session);
           const relative = (() => {
             try {
               return shortFlyoutRelative(
