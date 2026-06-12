@@ -1,8 +1,6 @@
 'use client';
 
 import { useAuth } from '@/components/AuthProvider';
-import { navigateToPlatformHash } from '@/components/home/platform-hash';
-import { PLATFORM_PRODUCT_ITEMS, ProductMegaMenu } from '@/components/home/product-menu';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import {
   ContextMenu,
@@ -13,7 +11,6 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import { Button } from '@/components/ui/marketing/button';
 import { Icon } from '@/features/icon/icon';
 import { useIsMobile } from '@/hooks/utils';
@@ -79,8 +76,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  // Portal target only exists after mount (SSR has no document).
-  const [mounted, setMounted] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -100,7 +95,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   const handleScroll = useCallback(() => {
     const currentScrollY = window.scrollY;
 
-    // Hysteresis: different thresholds for scrolling up vs down
     if (!hasScrolled && currentScrollY > SCROLL_THRESHOLD_DOWN) {
       setHasScrolled(true);
     } else if (hasScrolled && currentScrollY < SCROLL_THRESHOLD_UP) {
@@ -111,15 +105,11 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   }, [hasScrolled]);
 
   useEffect(() => {
-    // Use passive listener for better scroll performance
     window.addEventListener('scroll', handleScroll, { passive: true });
-    handleScroll(); // Initial check
+    handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
   }, [handleScroll]);
 
-  useEffect(() => setMounted(true), []);
-
-  // Lock background scroll while the full-screen drawer is open.
   useEffect(() => {
     if (!isDrawerOpen) return;
     const prev = document.body.style.overflow;
@@ -130,7 +120,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
   }, [isDrawerOpen]);
 
   const toggleDrawer = () => setIsDrawerOpen((prev) => !prev);
-  const handleOverlayClick = () => setIsDrawerOpen(false);
 
   return (
     <>
@@ -247,7 +236,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             </ContextMenu>
 
             <nav className="hidden items-center justify-center gap-2 md:flex">
-              <ProductMegaMenu />
               {filteredNavLinks.map((item) => (
                 <Button
                   key={item.id}
@@ -377,44 +365,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                     </motion.li>
                   ))}
                 </ul>
-
-                <motion.div variants={drawerMenuVariants}>
-                  <Disclosure className="group">
-                    <DisclosureTrigger>
-                      <button
-                        type="button"
-                        className="group text-muted-foreground group-data-[state=open]:text-foreground flex w-full items-center justify-between text-2xl"
-                      >
-                        Product
-                        <ChevronRight className="size-8 shrink-0 transition-transform group-data-[state=open]:rotate-90" />
-                      </button>
-                    </DisclosureTrigger>
-                    <DisclosureContent>
-                      <ul className="flex flex-col pt-2">
-                        {PLATFORM_PRODUCT_ITEMS.map((item) => {
-                          const Icon = item.icon;
-                          return (
-                            <li key={item.title}>
-                              <Link
-                                href={item.href}
-                                onClick={(event) => {
-                                  if (navigateToPlatformHash(item.href, pathname)) {
-                                    event.preventDefault();
-                                  }
-                                  setIsDrawerOpen(false);
-                                }}
-                                className="text-muted-foreground hover:text-foreground flex items-center gap-3 py-2.5 text-xl font-medium transition-colors"
-                              >
-                                <Icon className="size-5 shrink-0" />
-                                {item.title}
-                              </Link>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    </DisclosureContent>
-                  </Disclosure>
-                </motion.div>
               </motion.nav>
 
               <motion.div

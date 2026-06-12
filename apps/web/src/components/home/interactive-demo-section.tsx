@@ -1,13 +1,6 @@
 'use client';
 
 import { Badge } from '@/components/ui/badge';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -43,6 +36,7 @@ import { RiCpuLine, RiFolder3Fill, RiRobot3Fill } from 'react-icons/ri';
 import { KortixLogo } from '../sidebar/kortix-logo';
 import { Composer } from './interactive-demo/chat/composer';
 import { type DemoConversation } from './interactive-demo/chat/use-demo-conversation';
+import { CliTerminal } from './interactive-demo/cli/cli-terminal';
 import { DraggableCliPanel } from './interactive-demo/cli/draggable-cli-panel';
 import { useDemoDirector } from './interactive-demo/cli/use-demo-director';
 import { VISIBLE_DEMO_PAGES } from './interactive-demo/page-flags';
@@ -1246,40 +1240,6 @@ function TabScallopEdge({ side }: { side: 'left' | 'right' }) {
   );
 }
 
-/* ─── Top bar (browser chrome) ──────────────────────────────────────────── */
-
-function TopBar({ label, embedded }: { label: string; embedded: boolean }) {
-  return (
-    <div
-      className={cn(
-        'border-border/60 bg-background dark:bg-primary/7 flex shrink-0 items-center gap-3 border-b px-4',
-        embedded ? 'h-9 px-3' : 'h-12',
-      )}
-    >
-      <Breadcrumb className="ml-2 min-w-0">
-        <BreadcrumbList className="text-sm">
-          <BreadcrumbItem>
-            <BreadcrumbPage className="text-foreground font-medium">
-              <span className="inline-flex items-center gap-1.5">
-                <KortixLogo size={12} />
-                kortix
-              </span>
-            </BreadcrumbPage>
-          </BreadcrumbItem>
-          <BreadcrumbSeparator className="text-muted-foreground/40 [&>svg]:size-3" />
-          <BreadcrumbItem className="min-w-0">
-            <BreadcrumbPage className="text-muted-foreground truncate font-normal">
-              {label}
-            </BreadcrumbPage>
-          </BreadcrumbItem>
-        </BreadcrumbList>
-      </Breadcrumb>
-    </div>
-  );
-}
-
-/* ─── Main ──────────────────────────────────────────────────────────────── */
-
 export function InteractiveDemoSection({
   gradientbg = true,
   embedded = false,
@@ -1387,7 +1347,13 @@ export function InteractiveDemoSection({
       ref={rootRef}
       className={cn('relative w-full overflow-visible', embedded && 'h-full max-w-none', className)}
     >
-      {!embedded && <DraggableCliPanel containerRef={rootRef} director={director} />}
+      {!embedded && (
+        <DraggableCliPanel containerRef={rootRef}>
+          {({ dragHandleProps }) => (
+            <CliTerminal director={director} dragHandleProps={dragHandleProps} />
+          )}
+        </DraggableCliPanel>
+      )}
       <div
         className={cn(
           'relative -mx-1.5 overflow-hidden p-4 sm:mx-0 md:p-0',

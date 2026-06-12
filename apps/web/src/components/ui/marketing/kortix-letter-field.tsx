@@ -119,9 +119,8 @@ export function KortixLetterField({ seed = 3382, className }: KortixLetterFieldP
               className={cn(
                 'block min-w-0 whitespace-nowrap',
                 token.kind === 'kortix' &&
-                  'text-foreground/80 dark:text-foreground/50 hyper-text font-medium',
-                token.kind === 'proper' &&
-                  'text-foreground/30 dark:text-foreground/35 overflow-hidden',
+                  'text-foreground/90 dark:text-foreground/50 hyper-text font-medium',
+                token.kind === 'proper' && 'text-foreground/35 overflow-hidden',
                 token.kind === 'scrambled' &&
                   'text-foreground/20 dark:text-foreground/14 overflow-hidden',
               )}

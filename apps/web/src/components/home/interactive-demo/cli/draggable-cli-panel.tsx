@@ -2,9 +2,11 @@
 
 import { cn } from '@/lib/utils';
 import { motion } from 'motion/react';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { CliTerminal } from './cli-terminal';
-import type { DemoDirector } from './use-demo-director';
+import { useCallback, useEffect, useRef, useState, type HTMLAttributes } from 'react';
+
+export type CliDragHandleProps = HTMLAttributes<HTMLDivElement> & {
+  onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+};
 
 const ENTRANCE_DELAY_MS = 2000;
 
@@ -36,10 +38,10 @@ function clampPosition(x: number, y: number, containerW: number, containerH: num
 
 export function DraggableCliPanel({
   containerRef,
-  director,
+  children,
 }: {
   containerRef: React.RefObject<HTMLElement | null>;
-  director: DemoDirector;
+  children: (props: { dragHandleProps: CliDragHandleProps; dragging: boolean }) => React.ReactNode;
 }) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [entranceReady, setEntranceReady] = useState(false);
@@ -138,13 +140,13 @@ export function DraggableCliPanel({
       )}
       style={{ left: pos.x, top: pos.y }}
     >
-      <CliTerminal
-        director={director}
-        dragHandleProps={{
+      {children({
+        dragHandleProps: {
           onPointerDown,
-          className: cn('cursor-grab touch-none ', dragging && 'cursor-grabbing'),
-        }}
-      />
+          className: cn('cursor-grab touch-none', dragging && 'cursor-grabbing'),
+        },
+        dragging,
+      })}
     </motion.div>
   );
 }

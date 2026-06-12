@@ -70,7 +70,7 @@ export function LineView({ line }: { line: Line }) {
               <span
                 key={i}
                 aria-hidden
-                className="bg-foreground/70 ml-px inline-block h-[1.05em] w-[0.5em] translate-y-[0.12em] animate-pulse"
+                className="bg-background/70 ml-px inline-block h-[1.05em] w-[0.5em] translate-y-[0.12em] animate-pulse"
               />
             ) : (
               <span key={i} className={s.c ? COLOR[s.c] : undefined}>

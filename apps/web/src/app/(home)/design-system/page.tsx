@@ -492,6 +492,37 @@ const SPACING_SCALE = [
   { token: '16', px: 64 },
 ] as const;
 
+const SHADOW_SCALE: ReadonlyArray<{
+  label: string;
+  cssVar: string;
+  use: string;
+  twClass?: string;
+}> = [
+  {
+    label: 'shadow-sm',
+    twClass: 'shadow-sm',
+    cssVar: '--shadow-sm',
+    use: 'Tabs, sticky bars, subtle lift',
+  },
+  {
+    label: 'shadow-md',
+    twClass: 'shadow-md',
+    cssVar: '--shadow-md',
+    use: 'Select menus, dropdowns',
+  },
+  {
+    label: 'shadow-lg',
+    twClass: 'shadow-lg',
+    cssVar: '--shadow-lg',
+    use: 'Modals, dialogs, floating panels',
+  },
+  {
+    label: 'popover',
+    cssVar: '--cds-shadow-popover',
+    use: 'Popovers and elevated overlays',
+  },
+];
+
 const TOC_SECTIONS = [
   { id: 'hero', label: 'Overview' },
   { id: 'logo', label: 'Logo' },
@@ -499,6 +530,7 @@ const TOC_SECTIONS = [
   { id: 'typography', label: 'Typography' },
   { id: 'motion', label: 'Motion' },
   { id: 'spacing', label: 'Spacing' },
+  { id: 'shadows', label: 'Shadows' },
   {
     id: 'components',
     label: 'Components',
@@ -1203,6 +1235,43 @@ export default function BrandPage() {
                       <span className="text-muted-foreground font-mono text-xs">{s.px}px</span>
                     </div>
                   ))}
+                </div>
+              </DemoContainer>
+            </section>
+
+            {/* ═══════════════ Shadows ═══════════════ */}
+            <section id="shadows">
+              <SectionDivider />
+              <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
+                Shadows
+              </h2>
+              <p className="text-muted-foreground mb-6 text-base leading-relaxed">
+                Subtle elevation tokens for floating surfaces. Most app chrome stays flat — use
+                shadows only when depth helps hierarchy. Never add colored, glow, or custom{' '}
+                <code className="bg-muted rounded px-1 font-mono text-xs">box-shadow</code> values.
+              </p>
+
+              <DemoContainer>
+                <div className="bg-muted/40 rounded-2xl p-8">
+                  <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+                    {SHADOW_SCALE.map((s) => (
+                      <div key={s.label} className="flex flex-col gap-3">
+                        <div
+                          className={cn(
+                            'bg-card border-border/50 flex h-28 items-center justify-center rounded-2xl border',
+                            s.twClass,
+                          )}
+                          style={s.twClass ? undefined : { boxShadow: `var(${s.cssVar})` }}
+                        >
+                          <span className="text-muted-foreground font-mono text-xs">{s.label}</span>
+                        </div>
+                        <div>
+                          <p className="font-mono text-xs">{s.cssVar}</p>
+                          <p className="text-muted-foreground mt-0.5 text-xs">{s.use}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </DemoContainer>
             </section>

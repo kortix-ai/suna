@@ -392,40 +392,6 @@
 }
 
 :root {
-  /* --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.962 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.879 0.169 91.605);
-  --chart-2: oklch(0.769 0.188 70.08);
-  --chart-3: oklch(0.666 0.179 58.318);
-  --chart-4: oklch(0.555 0.163 48.998);
-  --chart-5: oklch(0.473 0.137 46.201);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0); */
-
   --background: oklch(1 0 0);
   --foreground: oklch(0.1448 0 0);
   --card: oklch(0.9651 0 0);
@@ -466,26 +432,15 @@
   --shadow-blur: 2px;
   --shadow-spread: 0px;
   --shadow-opacity: 0.04;
-  --shadow-color: #1a1f2e;
 
-  --shadow-2xs: 0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.02);
-  --shadow-xs: 0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.02);
+  --shadow-color: hsl(from var(--color-gray-900) h s l / 8%);
+
   --shadow-sm:
-    0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04),
-    0px 1px 2px -1px hsl(225 27.7778% 14.1176% / 0.04);
-  --shadow:
-    0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04),
-    0px 1px 2px -1px hsl(225 27.7778% 14.1176% / 0.04);
+    0 1px 2px 0 hsl(from var(--color-gray-900) h s l / 6%), 0 2px 8px 0 var(--shadow-color);
   --shadow-md:
-    0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04),
-    0px 2px 4px -1px hsl(225 27.7778% 14.1176% / 0.04);
+    0 2px 4px 0 hsl(from var(--color-gray-900) h s l / 7%), 0 6px 16px 0 var(--shadow-color);
   --shadow-lg:
-    0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04),
-    0px 4px 6px -1px hsl(225 27.7778% 14.1176% / 0.04);
-  --shadow-xl:
-    0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.04),
-    0px 8px 10px -1px hsl(225 27.7778% 14.1176% / 0.04);
-  --shadow-2xl: 0px 1px 2px 0px hsl(225 27.7778% 14.1176% / 0.1);
+    0 4px 8px 0 hsl(from var(--color-gray-900) h s l / 8%), 0 12px 28px -2px var(--shadow-color);
 
   --tracking-normal: 0em;
   --spacing: 0.23rem;
@@ -511,39 +466,6 @@
 }
 
 .dark {
-  /* --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.879 0.169 91.605);
-  --chart-2: oklch(0.769 0.188 70.08);
-  --chart-3: oklch(0.666 0.179 58.318);
-  --chart-4: oklch(0.555 0.163 48.998);
-  --chart-5: oklch(0.473 0.137 46.201);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0); */
-
   --background: oklch(0.1448 0 0);
   --foreground: oklch(0.9851 0 0);
   --card: oklch(0.2046 0 0);
@@ -584,16 +506,15 @@
   --shadow-blur: 2px;
   --shadow-spread: 0px;
   --shadow-opacity: 0.04;
-  --shadow-color: #000000;
 
-  --shadow-2xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.02);
-  --shadow-xs: 0px 1px 2px 0px hsl(0 0% 0% / 0.02);
-  --shadow-sm: 0px 1px 2px 0px hsl(0 0% 0% / 0.04), 0px 1px 2px -1px hsl(0 0% 0% / 0.04);
-  --shadow: 0px 1px 2px 0px hsl(0 0% 0% / 0.04), 0px 1px 2px -1px hsl(0 0% 0% / 0.04);
-  --shadow-md: 0px 1px 2px 0px hsl(0 0% 0% / 0.04), 0px 2px 4px -1px hsl(0 0% 0% / 0.04);
-  --shadow-lg: 0px 1px 2px 0px hsl(0 0% 0% / 0.04), 0px 4px 6px -1px hsl(0 0% 0% / 0.04);
-  --shadow-xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.04), 0px 8px 10px -1px hsl(0 0% 0% / 0.04);
-  --shadow-2xl: 0px 1px 2px 0px hsl(0 0% 0% / 0.1);
+  --shadow-color: hsl(from var(--color-gray-900) h s l / 8%);
+
+  --shadow-sm:
+    0 1px 2px 0 hsl(from var(--color-gray-900) h s l / 6%), 0 2px 8px 0 var(--shadow-color);
+  --shadow-md:
+    0 2px 4px 0 hsl(from var(--color-gray-900) h s l / 7%), 0 6px 16px 0 var(--shadow-color);
+  --shadow-lg:
+    0 4px 8px 0 hsl(from var(--color-gray-900) h s l / 8%), 0 12px 28px -2px var(--shadow-color);
 
   --kortix-base: var(--color-ring);
   --kortix-blue: oklch(0.652 0.177 252.624);
@@ -1133,7 +1054,7 @@ html[data-desktop-platform='macos'] {
    cluster), instead of indenting the header sideways. Keeps the breadcrumb
    left-aligned and the page content at full width. `py-4` (1rem) is preserved
    on top of the title-bar inset. */
-html[data-desktop="true"] .kx-app-header {
+html[data-desktop='true'] .kx-app-header {
   padding-top: calc(var(--kx-titlebar-inset) + 1rem);
 }
 
@@ -1144,7 +1065,7 @@ html[data-desktop="true"] .kx-app-header {
 .kx-titlebar-spacer {
   display: none;
 }
-html[data-desktop="true"] .kx-titlebar-spacer {
+html[data-desktop='true'] .kx-titlebar-spacer {
   display: block;
   height: var(--kx-titlebar-inset);
   -webkit-app-region: drag;
@@ -1154,7 +1075,7 @@ html[data-desktop="true"] .kx-titlebar-spacer {
 /* Customize overlay header: indent the title past the OS window controls on
    desktop (macOS traffic lights on the left; Win/Linux min/max/close on the
    right) WITHOUT adding any vertical space — keeps the bar flush like the web. */
-html[data-desktop-platform="macos"] .kx-customize-header {
+html[data-desktop-platform='macos'] .kx-customize-header {
   padding-left: 96px;
 }
 html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-header {

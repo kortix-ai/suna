@@ -31,7 +31,7 @@ function createRng(seed: number) {
 
 export default function KortixGrid({
   count,
-  cols = 10,
+  cols = 9,
   rows = 12,
   words = ['kortix'],
   seed = 1,
