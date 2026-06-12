@@ -113,17 +113,19 @@ topologySpread:
 # (auto-rollback to stable) on breach. Per-env (prod enables it post-adoption).
 rollout:
   enabled: false
+  # FAST canary: a brief soak at each weight while the background analysis watches
+  # 5xx/latency. ~1 min total. At prod traffic, 30s yields plenty of metric data;
+  # lengthen the pauses if you ever want a longer soak window for a risky release.
   steps:
-    - setWeight: 10
-    - pause: { duration: 2m }
     - setWeight: 25
-    - pause: { duration: 2m }
+    - pause: { duration: 30s }
     - setWeight: 50
-    - pause: { duration: 3m }
+    - pause: { duration: 30s }
     - setWeight: 100
   analysis:
     enabled: false
     startingStep: 1 # begin analysis after the first setWeight
+    interval: 30s # how often the analysis samples CloudWatch
     # ALB CloudWatch dimensions — set once from the live ALB/target group (stable
     # for the life of the ingress). See infra/GITOPS.md.
     lbArnSuffix: "" # app/<alb-name>/<hex>
