@@ -82,6 +82,8 @@ const EXEMPT_FRAGMENTS = [
   '/suna-migration',          // OG Suna → opencode migration runs
   '/legacy-migration',        // legacy VM → project migration runs
   '/sync-opencode-sessions',  // cross-sandbox session sweep (observed ~26s)
+  '/chatgpt/headless',        // ChatGPT/Codex OAuth device flow — `complete`
+                              // long-polls until the user finishes in the browser
 ];
 
 // Long synchronous creates that can't be matched by fragment without
