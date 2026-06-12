@@ -80,9 +80,13 @@ ARG SERVICE
 # SANDBOX_VERSION (which is load-bearing for snapshot content-hashing — changing
 # that on every release would rebuild every project's sandbox image).
 ARG KORTIX_VERSION=dev
+# Exact source commit (baked once at build; never overridden at deploy, so it
+# survives the prod retag and lets /v1/health report precisely which code is live).
+ARG KORTIX_COMMIT=unknown
 
 ENV NODE_ENV=production
 ENV KORTIX_VERSION=${KORTIX_VERSION}
+ENV KORTIX_COMMIT=${KORTIX_COMMIT}
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
