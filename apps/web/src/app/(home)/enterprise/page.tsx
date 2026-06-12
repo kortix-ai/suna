@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { cn } from '@/lib/utils';
-import { GitBranch, Server } from 'lucide-react';
+import { Box, Building2, GitBranch, KeyRound, Server } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { useState } from 'react';
@@ -17,7 +17,7 @@ import { MdShield } from 'react-icons/md';
 
 const DIFFERENTIATORS = [
   {
-    icon: FaUsers,
+    icon: KeyRound,
     eyebrowKey: 'differentiatorAgentGovernanceEyebrow',
     titleKey: 'differentiatorAgentGovernanceTitle',
     descriptionKey: 'differentiatorAgentGovernanceDescription',
@@ -54,12 +54,30 @@ const CHECKLIST = [
     descriptionKey: 'checklistAuditDescription',
   },
   {
-    titleKey: 'checklistSandboxesTitle',
-    descriptionKey: 'checklistSandboxesDescription',
-  },
-  {
     titleKey: 'checklistSecretsTitle',
     descriptionKey: 'checklistSecretsDescription',
+  },
+  {
+    titleKey: 'checklistGatewayTitle',
+    descriptionKey: 'checklistGatewayDescription',
+  },
+] as const;
+
+const ARCHITECTURE = [
+  {
+    icon: Box,
+    titleKey: 'architectureSandboxTitle',
+    descriptionKey: 'architectureSandboxDescription',
+  },
+  {
+    icon: GitBranch,
+    titleKey: 'architectureBranchTitle',
+    descriptionKey: 'architectureBranchDescription',
+  },
+  {
+    icon: Building2,
+    titleKey: 'architectureTenantTitle',
+    descriptionKey: 'architectureTenantDescription',
   },
 ] as const;
 
@@ -103,7 +121,6 @@ const EnterprisePage = () => {
           </div>
           <div className="mx-auto max-w-6xl">
             <Reveal>
-              <Eyebrow>{t('heroEyebrow')}</Eyebrow>
               <h1 className="text-foreground mt-5 max-w-4xl text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
                 {t('heroTitle')}
               </h1>
@@ -128,7 +145,6 @@ const EnterprisePage = () => {
         <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
-              <Eyebrow>{t('whyEyebrow')}</Eyebrow>
               <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
                 {t('whyTitle')}
               </h2>
@@ -188,7 +204,37 @@ const EnterprisePage = () => {
         <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
-              <Eyebrow>{t('securityEyebrow')}</Eyebrow>
+              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+                {t('architectureTitle')}
+              </h2>
+              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
+                {t('architectureDescription')}
+              </p>
+            </div>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {ARCHITECTURE.map(({ icon: Icon, titleKey, descriptionKey }) => (
+                <div
+                  key={titleKey}
+                  className="border-border bg-card flex h-full flex-col rounded-sm border p-6 sm:p-8"
+                >
+                  <Icon className="text-foreground size-5" />
+                  <h3 className="text-foreground mt-5 text-lg leading-tight font-medium">
+                    {t(titleKey)}
+                  </h3>
+                  <p className="text-muted-foreground mt-3 text-sm leading-relaxed">
+                    {t(descriptionKey)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+        </section>
+
+        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
+          <Reveal>
+            <div className="mb-12 max-w-2xl">
               <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
                 {t('securityTitle')}
               </h2>
@@ -253,7 +299,6 @@ const EnterprisePage = () => {
         <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
           <Reveal>
             <div className="mb-12 max-w-2xl">
-              <Eyebrow>{t('deploymentEyebrow')}</Eyebrow>
               <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
                 {t('deploymentTitle')}
               </h2>
