@@ -9,6 +9,7 @@ import {
   FolderPlus,
   Loader2,
   MoreHorizontal,
+  Pencil,
   Plus,
   Search,
   Trash2,
@@ -18,6 +19,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/components/layout/app-header';
 import { ProjectCreateModal } from '@/components/projects/project-create-modal';
+import { RenameProjectDialog } from '@/components/projects/rename-project-dialog';
 import { LegacyMachineCard } from '@/components/projects/legacy-machine-card';
 import { SunaMigrationBanner } from '@/components/projects/suna-migration-banner';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
@@ -70,11 +72,13 @@ function relativeTime(input: string) {
 function ProjectCard({
   project,
   onOpen,
+  onRename,
   onArchive,
   archiving,
 }: {
   project: KortixProject;
   onOpen: () => void;
+  onRename: () => void;
   onArchive: () => void;
   archiving: boolean;
 }) {
@@ -122,6 +126,14 @@ function ProjectCard({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-44">
             <DropdownMenuItem onSelect={onOpen}>{tHardcodedUi.raw('appProjectsPage.line109JsxTextOpenProject')}</DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={onRename}
+              disabled={!canManageProject}
+              className="gap-2"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              Rename
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
               onSelect={onArchive}
@@ -236,6 +248,7 @@ export default function ProjectsPage() {
   const { viewMode, setViewMode } = useProjectsViewStore();
   const [query, setQuery] = useState('');
   const [archivingId, setArchivingId] = useState<string | null>(null);
+  const [renameTarget, setRenameTarget] = useState<KortixProject | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   // Which account a newly-created project lands in. In "all accounts" view the
   // user picks it via the New-project dropdown; otherwise it's the active one.
@@ -579,6 +592,7 @@ export default function ProjectsPage() {
                       key={project.project_id}
                       project={project}
                       onOpen={() => router.push(`/projects/${project.project_id}`)}
+                      onRename={() => setRenameTarget(project)}
                       onArchive={() => archiveMutation.mutate(project.project_id)}
                       archiving={archivingId === project.project_id}
                     />
@@ -667,6 +681,7 @@ export default function ProjectsPage() {
                             setSelectedAccountId(group.account.account_id);
                             router.push(`/projects/${project.project_id}`);
                           }}
+                          onRename={() => setRenameTarget(project)}
                           onArchive={() => archiveMutation.mutate(project.project_id)}
                           archiving={archivingId === project.project_id}
                         />
@@ -686,6 +701,15 @@ export default function ProjectsPage() {
           if (!o) setCreateAccountId(null);
         }}
         accountId={createAccountId ?? activeAccountId}
+      />
+
+      <RenameProjectDialog
+        projectId={renameTarget?.project_id ?? null}
+        currentName={renameTarget?.name}
+        open={!!renameTarget}
+        onOpenChange={(o) => {
+          if (!o) setRenameTarget(null);
+        }}
       />
 
       <PersonalOnboardingWelcome />
