@@ -21,6 +21,24 @@ function wantedSessionBranch(): string {
   return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
 }
 
+/**
+ * Whether THIS sandbox's session expects a repo — from the host-written env
+ * file, NOT the frozen process env. A warm-snapshot fork resumes a daemon
+ * whose process booted as a repo-less generic spare (autoClone unset), so
+ * cfg.autoClone said "no repo required" and health reported ready ~100ms
+ * after fork while the claim was still fetching the repo — the frontend then
+ * stormed a mid-claim runtime and stuck (caught live 2026-06-12, second
+ * variant of the same class as wantedSessionBranch).
+ */
+function sessionWantsRepo(cfgAutoClone: boolean): boolean {
+  if (cfgAutoClone) return true
+  try {
+    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync('/etc/dnah-env', 'utf8'))
+  } catch {
+    return false
+  }
+}
+
 export type BootMark = { label: string; atMs: number }
 
 export type SandboxBootState = {
@@ -67,7 +85,7 @@ export function createHealthRouter(
   router.get('/', async (c) => {
     const repoInfo = await readRepoInfo(cfg.projectTarget).catch(() => null)
     const opencodeState = opencode.getState()
-    const repoRequired = cfg.autoClone
+    const repoRequired = sessionWantsRepo(cfg.autoClone)
     // A repo on disk isn't ready until it's on the SESSION branch: the clone
     // path renames the repo into place BEFORE the branch checkout (which can
     // wait seconds on a remote-branch fetch), and warm-seed forks resume on
