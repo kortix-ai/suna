@@ -38,7 +38,6 @@ import {
 } from '../../snapshots/builder';
 import { config } from '../../config';
 import { selectProvider } from './provider-balancer';
-import { resolveProjectSeed } from './platinum-seed';
 import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
 import type { GitBackedProject } from '../../projects/git';
@@ -311,15 +310,12 @@ export async function provisionSessionSandbox(opts: {
       // kicked off in parallel with the token round-trip; heal-retries re-resolve
       // from scratch (the prior snapshot was just deleted).
       let image: EnsureSandboxImageResult;
-      let imageGitProject: GitBackedProject;
       if (firstImagePromise) {
-        const first = await firstImagePromise;
-        image = first;
-        imageGitProject = first.gitProject;
+        image = await firstImagePromise;
         firstImagePromise = null;
       } else {
-        imageGitProject = await resolveGitProject();
-        image = await ensureSandboxImage(imageGitProject, {
+        const gitProject = await resolveGitProject();
+        image = await ensureSandboxImage(gitProject, {
           slug,
           accountId,
           source: 'session-start',
@@ -333,28 +329,10 @@ export async function provisionSessionSandbox(opts: {
         isDefault: image.isDefault,
       };
       tl.mark(image.built ? 'image-built' : 'image-cached');
-      // Platinum warm-seed fast path: boot from the per-project STATEFUL seed
-      // (repo + runtime baked into a warm snapshot → CoW-fork, ~0.9s to
-      // runtimeReady) when a seed matching the current default-branch HEAD
-      // exists. Misses fall back to the default template and kick a background
-      // derive so the NEXT session is fast. Only for default-template sessions
-      // based on the default branch — custom Dockerfile templates and non-main
-      // baseRefs keep the plain path. See platform/services/platinum-seed.ts.
-      let seedTemplate: string | null = null;
-      if (providerName === 'platinum' && image.isDefault && !opts.poolState
-          && branch === opts.gitProject.defaultBranch) {
-        seedTemplate = await resolveProjectSeed({
-          project: imageGitProject,
-          projectId,
-          envVars: providerCreateInput.envVars ?? {},
-          defaultTemplate: image.snapshotName,
-        });
-        if (seedTemplate) tl.mark('seed-hit');
-      }
-      providerCreateInput.snapshot = seedTemplate ?? image.snapshotName;
+      providerCreateInput.snapshot = image.snapshotName;
       console.log(
-        `[session-sandbox] Booting ${sandbox.sandboxId} from ${seedTemplate ?? image.snapshotName} ` +
-        `(template "${image.slug}"${seedTemplate ? ' [warm seed]' : image.isDefault ? ' [platform default]' : ''}, ` +
+        `[session-sandbox] Booting ${sandbox.sandboxId} from ${image.snapshotName} ` +
+        `(template "${image.slug}"${image.isDefault ? ' [platform default]' : ''}, ` +
         `branch ${branch}, ${image.built ? 'fresh build' : 'cache hit'})`,
       );
 
