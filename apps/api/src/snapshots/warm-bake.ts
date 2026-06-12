@@ -467,17 +467,35 @@ export async function reapErroredWarmBoxes(snapshotName: string, log?: (l: strin
 }
 
 /**
- * Delete warm bases from PREVIOUS runtime identities. Names are namespaced
- * under `kortix-warm-runtime-`, so anything in that namespace that isn't the
- * current name is a stale release's base — without this, every deploy leaks one
- * snapshot into the 100/org quota. Best-effort: skipped entirely when the org
- * listing fails (never delete based on a partial view).
+ * Age a warm base must reach before it can be reaped by an environment that
+ * doesn't own it. Several environments share one Daytona org (laptops, dev,
+ * prod) and each computes its OWN content-addressed base name — without a
+ * grace window they'd delete each other's bases on every boot, forcing
+ * pointless rebakes. A week comfortably outlives any active base while still
+ * draining truly dead releases from the 100/org snapshot quota.
+ */
+const WARM_BASE_REAP_MIN_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Delete warm bases from OLD runtime identities. Names are namespaced under
+ * `kortix-warm-runtime-`, so anything in that namespace that isn't the current
+ * name AND is older than the grace window is a dead release's base. Best-effort:
+ * skipped entirely when the org listing fails (never delete based on a partial
+ * view).
  */
 async function reapStaleWarmBases(currentName: string, log: (l: string) => void): Promise<void> {
   try {
     const { listDaytonaSnapshots, deleteDaytonaSnapshotById } = await import('../shared/daytona');
     const all = await listDaytonaSnapshots();
-    const stale = all.filter((s) => s.name.startsWith(WARM_BASE_PREFIX) && s.name !== currentName);
+    const cutoff = Date.now() - WARM_BASE_REAP_MIN_AGE_MS;
+    const stale = all.filter(
+      (s) =>
+        s.name.startsWith(WARM_BASE_PREFIX) &&
+        s.name !== currentName &&
+        // No createdAt → can't prove it's old → keep it.
+        !!s.createdAt &&
+        new Date(s.createdAt).getTime() < cutoff,
+    );
     for (const snap of stale) {
       const ok = await deleteDaytonaSnapshotById(snap.id);
       log(`[warm-bake] reaped stale warm base ${snap.name}: ${ok ? 'ok' : 'failed'}`);
