@@ -11,10 +11,6 @@ import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import { HiArrowRight } from 'react-icons/hi2';
 
-const DEMO_URL = '/contact';
-const GITHUB_URL = 'https://github.com/kortix-ai/suna';
-
-const favicon = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 const DEFAULT_INSTALL_HOST = 'kortix.com';
 
 const Hero = () => {
@@ -81,7 +77,7 @@ const Hero = () => {
               <HiArrowRight className="size-4" />
             </Button>
             <Button size="xl" variant="secondary" asChild>
-              <Link href={DEMO_URL}>{tHome('line149JsxTextTalkToSales')}</Link>
+              <Link href={'/enterprise'}>{tHome('line149JsxTextTalkToSales')}</Link>
             </Button>
           </div>
         </section>

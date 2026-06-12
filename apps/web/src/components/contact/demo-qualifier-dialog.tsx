@@ -271,7 +271,10 @@ export function DemoQualifierDialog({
                   Company size <span className="text-destructive">*</span>
                 </Label>
                 <Select value={size ?? undefined} onValueChange={(v) => setSize(v as CompanySize)}>
-                  <SelectTrigger id="dq-size" className="w-full">
+                  <SelectTrigger
+                    id="dq-size"
+                    className="border-border bg-input text-foreground w-full"
+                  >
                     <SelectValue placeholder="Select company size" />
                   </SelectTrigger>
                   <SelectContent>

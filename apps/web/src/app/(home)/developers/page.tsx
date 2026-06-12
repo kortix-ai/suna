@@ -10,7 +10,6 @@ import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { Icon } from '@/features/icon/icon';
 import { useCopy } from '@/hooks/use-copy';
-import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { cn } from '@/lib/utils';
 import {
   ArrowRight,
@@ -27,8 +26,9 @@ import {
   Terminal as TerminalIcon,
   Workflow,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { AiOutlineCheck } from 'react-icons/ai';
 import { HiArrowRight } from 'react-icons/hi';
 
@@ -325,7 +325,11 @@ function Step({
 export default function DevelopersPage() {
   const { copied, copy } = useCopy();
   const [installHost, setInstallHost] = useState(DEFAULT_INSTALL_HOST);
-  const { formattedStars } = useGitHubStars('kortix-ai', 'kortix');
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const tHome = useCallback(
+    (key: string) => tHardcodedUi.raw(`appHomePage.${key}`),
+    [tHardcodedUi],
+  );
 
   const installCmd = `curl -fsSL https://${installHost}/install | bash`;
 
@@ -344,7 +348,7 @@ export default function DevelopersPage() {
         </div>
         <div className="relative z-10 mx-auto max-w-6xl px-6 lg:px-0">
           <section className="w-full">
-            <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
+            {/* <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
               Build internal agents
               <br />
               <span className="text-muted-foreground">from your coding agent.</span>
@@ -352,6 +356,14 @@ export default function DevelopersPage() {
             <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">
               Use Claude Code, Codex, Cursor, or opencode locally. Package the agent as code. Deploy
               it to Slack with Kortix.
+            </p> */}
+            <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
+              {tHome('heroCommandCenter')}
+              <br />
+              <span className="text-muted-foreground">{tHome('heroAiWorkforce')}</span>
+            </h1>
+            <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">
+              {tHome('heroDescription')}
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <div className="bg-card flex items-center gap-4 rounded-sm border p-3 px-5">

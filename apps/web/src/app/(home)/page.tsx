@@ -16,8 +16,6 @@ import Link from 'next/link';
 import { useCallback } from 'react';
 import { HiArrowRight } from 'react-icons/hi2';
 
-const DEMO_URL = '/contact';
-
 export default function Home() {
   const { user } = useAuth();
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -85,7 +83,7 @@ export default function Home() {
                       <HiArrowRight className="size-4" />
                     </Button>
                     <Button asChild size="lg" className="w-full" variant="accent">
-                      <Link href={DEMO_URL}>{tHome('line338JsxTextTalkToSales')}</Link>
+                      <Link href={'/enterprise'}>{tHome('line338JsxTextTalkToSales')}</Link>
                     </Button>
                   </div>
                 </div>

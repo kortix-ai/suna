@@ -51,6 +51,30 @@
   --color-fd-muted-foreground: oklch(0.6 0 0);
 }
 
+/* Fumadocs docs layout — fumadocs-ui builds these via cn() in layouts/docs,
+   so Tailwind's scanner never emits the md/lg arbitrary property utilities. */
+#nd-docs-layout {
+  --fd-sidebar-width: 0px;
+}
+
+@media (min-width: 768px) {
+  /* Desktop: navbar is md:hidden, so zero the nav-height offset that drives
+     pt-(--fd-nav-height) on #nd-docs-layout and --fd-sidebar-top on #nd-sidebar. */
+  :root:has(#nd-docs-layout) {
+    --fd-nav-height: 0px;
+  }
+
+  #nd-docs-layout {
+    --fd-sidebar-width: 268px;
+  }
+}
+
+@media (min-width: 1024px) {
+  #nd-docs-layout {
+    --fd-sidebar-width: 286px;
+  }
+}
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
