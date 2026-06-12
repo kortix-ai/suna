@@ -218,6 +218,41 @@ resource "helm_release" "argo_cd" {
   atomic           = true
   timeout          = 900
 
+  # Expose the UI on its own ALB (ops.kortix.com) when enabled. server.insecure
+  # = the server speaks HTTP behind the TLS-terminating ALB; the ALB only accepts
+  # Cloudflare IPs so the Cloudflare Access gate can't be bypassed.
+  values = var.argocd_ui_enabled ? [yamlencode({
+    configs = {
+      params = {
+        "server.insecure" = true
+      }
+    }
+    server = {
+      ingress = {
+        enabled          = true
+        ingressClassName = "alb"
+        hostname         = var.argocd_domain
+        path             = "/"
+        pathType         = "Prefix"
+        tls              = false
+        annotations = {
+          "alb.ingress.kubernetes.io/scheme"                    = "internet-facing"
+          "alb.ingress.kubernetes.io/target-type"               = "ip"
+          "alb.ingress.kubernetes.io/listen-ports"              = "[{\"HTTP\":80},{\"HTTPS\":443}]"
+          "alb.ingress.kubernetes.io/ssl-redirect"              = "443"
+          "alb.ingress.kubernetes.io/ssl-policy"                = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+          "alb.ingress.kubernetes.io/certificate-arn"           = var.argocd_certificate_arn
+          "alb.ingress.kubernetes.io/backend-protocol"          = "HTTP"
+          "alb.ingress.kubernetes.io/healthcheck-path"          = "/healthz"
+          "alb.ingress.kubernetes.io/success-codes"             = "200"
+          "alb.ingress.kubernetes.io/inbound-cidrs"             = join(",", var.cloudflare_inbound_cidrs)
+          "external-dns.alpha.kubernetes.io/hostname"           = var.argocd_domain
+          "external-dns.alpha.kubernetes.io/cloudflare-proxied" = "true"
+        }
+      }
+    }
+  })] : []
+
   # Run the core controllers with 2 replicas where the chart supports it (HA-lite).
   set {
     name  = "redis-ha.enabled"
