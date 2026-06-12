@@ -1,0 +1,46 @@
+# Prod environment values for the kortix-api chart, deployed by Argo CD
+# (infra/k8s/argocd/applications/prod.yaml). This is the GitOps source of truth
+# for what runs on EKS prod — a PR that bumps `image.tag` here IS the deploy;
+# `git revert` is the rollback. Verified by `argocd app get kortix-prod`.
+
+# Immutable release tag (promote bumps this). NOT :latest / :dev-latest in GitOps.
+image:
+  tag: "0.9.39"
+kortixVersion: "0.9.39"
+env:
+  internalKortixEnv: prod
+# PRE-CUTOVER: api-eks is the candidate while api.kortix.com is still served by
+# ECS, so EKS runs API-only and ECS keeps ownership of the singleton workers
+# (one Postgres leader lease is shared across both). At cutover, flip this to
+# true here AND disable the ECS service — EKS then owns the background work.
+workers:
+  enabled: false
+# Prod sizing / HA (chart defaults are already prod-tuned; pinned here explicitly).
+replicas: 3
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 12
+serviceAccount:
+  name: kortix-api
+  roleArn: arn:aws:iam::935064898258:role/kortix-prod-eks-app
+externalSecrets:
+  enabled: true
+  region: us-west-2
+  secretName: kortix-prod-env
+  targetSecretName: kortix-api-env
+ingress:
+  enabled: true
+  host: api-eks.kortix.com
+  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/2b74aa18-1fe1-4cc8-a6c1-7012a0823d27
+  cloudflareProxied: true
+# Argo Rollouts canary + CloudWatch auto-rollback. Health-based abort works now;
+# the load-based 5xx/latency analysis becomes meaningful once api-eks serves real
+# traffic (at the api.kortix.com cutover). ALB dimensions captured from the live
+# target group (stable for the life of the ingress).
+rollout:
+  enabled: true
+  analysis:
+    enabled: true
+    lbArnSuffix: "app/k8s-kortixpr-kortixap-b24c15d61b/a294c0dfce97d54d"
+    tgArnSuffix: "targetgroup/k8s-kortixpr-kortixap-0d85bef361/b3b73cd646a9caf2"

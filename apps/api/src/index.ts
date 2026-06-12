@@ -246,6 +246,14 @@ app.use('/v1/*', requestDeadline);
 // that drives snapshot content-hashing and must stay constant across releases.
 // Falls back to 'dev' for local development.
 const API_VERSION = process.env.KORTIX_VERSION || 'dev';
+// Exact source commit the image was built from (baked at build, preserved across
+// the prod retag — unlike KORTIX_VERSION which prod overrides to the clean tag).
+// Lets the team verify precisely which code is live. 'unknown' for local dev.
+const API_COMMIT = process.env.KORTIX_COMMIT || 'unknown';
+// When this process booted — confirms a deploy actually rolled fresh pods.
+const STARTED_AT = new Date().toISOString();
+// Which replica answered (pod name in k8s, task/container id in ECS).
+const API_INSTANCE = process.env.HOSTNAME || 'unknown';
 
 // OpenAPI spec (/v1/openapi.json) + Scalar API reference (/v1/docs). Typed routes
 // register into the spec as each sub-router is migrated to @hono/zod-openapi.
@@ -256,6 +264,11 @@ const HealthSchema = z
     status: z.string(),
     service: z.string(),
     version: z.string(),
+    commit: z.string(),
+    environment: z.string(),
+    instance: z.string(),
+    started_at: z.string(),
+    uptime_seconds: z.number(),
     timestamp: z.string(),
     billing_enabled: z.boolean(),
     tunnel: z.any(),
@@ -268,6 +281,11 @@ const healthHandler = (c: any) =>
     status: 'ok',
     service: 'kortix-api',
     version: API_VERSION,
+    commit: API_COMMIT,
+    environment: config.INTERNAL_KORTIX_ENV,
+    instance: API_INSTANCE,
+    started_at: STARTED_AT,
+    uptime_seconds: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     tunnel: getTunnelServiceStatus(),

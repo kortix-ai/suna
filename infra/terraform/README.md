@@ -6,11 +6,20 @@ separate root module under `environments/` with its own state.
 ```
 infra/terraform/
   modules/
-    api-host/          # reusable: a Lightsail box that serves the kortix-api
+    api-host/          # legacy: a Lightsail box that serves the kortix-api
+    network/           # shared VPC (public/private subnets + NAT)
+    ecs-api/           # ECS Fargate API service behind an ALB
+    acm-cloudflare/    # ACM cert validated via Cloudflare DNS
+    cloudflare-dns/    # Cloudflare DNS records
+    eks/               # EKS prod (cluster / platform / irsa) — see infra/EKS.md
   environments/
-    dev/               # dev-api.kortix.com  (Lightsail kortix-dev, us-west-2)
-    prod/              # prod (api.kortix.com) — added after dev is proven
+    dev/               # dev-api.kortix.com  (ECS, us-west-2)
+    prod/              # api-prod.kortix.com (ECS)
+    prod-eks/          # api-eks.kortix.com  (EKS, parallel to prod) — infra/EKS.md
 ```
+
+> The EKS prod stack runs **in parallel** with ECS and never touches it. Full
+> architecture + bring-up + switch-back runbook: **`infra/EKS.md`**.
 
 ## Why Lightsail (today) → ECS (later)
 

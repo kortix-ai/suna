@@ -132,17 +132,27 @@ accountsRouter.openapi(
   }
 
   return c.json(
-    rows.map((r) => ({
-      user_id: r.userId,
-      email: emails.get(r.userId) ?? null,
-      account_role: r.accountRole,
-      is_super_admin: r.isSuperAdmin,
-      explicit_project_count: projectGrantCountByUser.get(r.userId) ?? 0,
-      groups: groupsByUser.get(r.userId) ?? [],
-      active_pat_count: patCountByUser.get(r.userId) ?? 0,
-      has_verified_mfa: mfaByUser.get(r.userId) ?? false,
-      joined_at: r.joinedAt.toISOString(),
-    })),
+    rows
+      // Hide phantom self-memberships: a row where user_id == account_id whose
+      // user_id has no auth user (no email). These are minted when a Kortix
+      // token — which the auth middleware maps to userId == accountId — hits
+      // resolveAccountId; they're the account added as a member of itself and
+      // show as a bare UUID. A personal account's owner also has
+      // user_id == account_id but resolves to a real email, so it's kept. The
+      // email==null guard is narrow (real members have user_id != account_id),
+      // so a transient email-lookup miss never hides a real teammate.
+      .filter((r) => !(r.userId === accountId && (emails.get(r.userId) ?? null) === null))
+      .map((r) => ({
+        user_id: r.userId,
+        email: emails.get(r.userId) ?? null,
+        account_role: r.accountRole,
+        is_super_admin: r.isSuperAdmin,
+        explicit_project_count: projectGrantCountByUser.get(r.userId) ?? 0,
+        groups: groupsByUser.get(r.userId) ?? [],
+        active_pat_count: patCountByUser.get(r.userId) ?? 0,
+        has_verified_mfa: mfaByUser.get(r.userId) ?? false,
+        joined_at: r.joinedAt.toISOString(),
+      })),
   );
   },
 );
