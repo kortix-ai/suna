@@ -42,7 +42,14 @@ export function clearOpencodeEnsureGuard(): void {
   ensuredForServer.clear();
 }
 
+/** Fast retries before backing off to the slow heartbeat. */
 const MAX_ENSURE_ATTEMPTS = 8;
+/** After the fast retries are spent, keep trying at this slow cadence forever
+ *  (until unmount / server switch). A snapshot-restored box on the flaky
+ *  experimental region can take longer than the fast window to become
+ *  reachable through the proxy; without this the pin would never resolve and
+ *  the chat would spin permanently even after the box goes healthy. */
+const ENSURE_HEARTBEAT_MS = 15_000;
 
 export interface CanonicalOpenCodeSession {
   /** The authoritative pinned root id (server-managed), or null while resolving. */
@@ -95,33 +102,36 @@ export function useCanonicalOpenCodeSession(params: {
     if (ensuredForServer.has(serverId)) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Fresh fast-retry budget for this (server, readiness) cycle — a new
+    // sandbox shouldn't inherit a previous one's exhausted attempts.
+    attemptsRef.current = 0;
+
+    // Schedule the next attempt — fast exponential backoff for the first
+    // MAX_ENSURE_ATTEMPTS, then a slow steady heartbeat that NEVER gives up
+    // (cancelled only on unmount / server switch). Giving up permanently is
+    // what left snapshot-restored boxes spinning forever after a flaky proxy
+    // warm-up window — the box goes healthy seconds later but nothing retries.
+    const scheduleRetry = () => {
+      if (cancelled || !serverId) return;
+      ensuredForServer.delete(serverId);
+      const delay =
+        attemptsRef.current < MAX_ENSURE_ATTEMPTS
+          ? Math.min(800 * 2 ** attemptsRef.current, 8_000)
+          : ENSURE_HEARTBEAT_MS;
+      attemptsRef.current += 1;
+      timer = setTimeout(run, delay);
+    };
 
     const run = () => {
       if (cancelled || !serverId) return;
       ensuredForServer.add(serverId);
       ensureMutation.mutate(undefined, {
         onSuccess: (updated) => {
-          const reason = updated.ensure?.reason;
-          const mapped = !!updated.opencode_session_id;
-          // Sandbox/opencode still warming → release the guard and retry.
-          if (
-            !mapped &&
-            (reason === 'not_ready' || reason === 'unreachable') &&
-            attemptsRef.current < MAX_ENSURE_ATTEMPTS &&
-            !cancelled
-          ) {
-            attemptsRef.current += 1;
-            ensuredForServer.delete(serverId);
-            timer = setTimeout(run, Math.min(800 * 2 ** attemptsRef.current, 8_000));
-          }
+          // Mapped → done; the pin is written and the guard stays set. Anything
+          // else (still warming, unreachable, or a transient null) → retry.
+          if (!updated.opencode_session_id) scheduleRetry();
         },
-        onError: () => {
-          if (attemptsRef.current < MAX_ENSURE_ATTEMPTS && !cancelled) {
-            attemptsRef.current += 1;
-            ensuredForServer.delete(serverId);
-            timer = setTimeout(run, Math.min(800 * 2 ** attemptsRef.current, 8_000));
-          }
-        },
+        onError: scheduleRetry,
       });
     };
     run();
