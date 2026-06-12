@@ -1,15 +1,17 @@
 name: Deploy Prod (EKS / GitOps)
 
-# EKS prod is deployed by Argo CD, NOT by this workflow. The release flow:
-#   promote.yml  → bumps infra/k8s/envs/prod/values.yaml in the reviewed PR
-#   merge to prod → Argo CD (tracks the prod branch) reconciles it → canary roll
+# EKS prod is deployed by Argo CD (the promote PR merge bumps
+# infra/k8s/envs/prod/values.yaml; Argo reconciles the prod branch → canary
+# roll). This workflow does NOT deploy — it WATCHES the rollout and, once Argo's
+# Rollout is Healthy on the released version, announces it to Slack.
 #
-# So there is nothing imperative to do here — the merge IS the deploy. This job
-# just (1) waits for the retagged image so we know Argo can pull it, and (2)
-# emits a pointer to where to watch the rollout. Rollback = git revert the bump
-# (or `argocd app rollback`). Runs alongside deploy-prod.yml (ECS) during the
-# dual-run; at the api.kortix.com cutover, deploy-prod's ECS roll is removed and
-# Argo CD is the sole prod deploy.
+#   merge to prod ─► Argo CD canary roll ─► (this) wait for Rollout Healthy@vX.Y.Z
+#                                        ─► read live /v1/health ─► Slack release msg
+#
+# The Slack post is hardened: jq-built Block Kit (safe escaping), retries with
+# backoff, verifies ok:true, fails fast on auth/channel errors, and the message
+# carries the COMMIT that is actually serving (from /v1/health), not an assumed
+# one. ECS's deploy-prod.yml stays separate (and is removed at the cutover).
 
 on:
   push:
@@ -21,58 +23,173 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
+  id-token: write # OIDC → read the cluster
   contents: read
 
 env:
-  IMAGE_REPO: kortix/kortix-api
+  AWS_REGION: us-west-2
+  CLUSTER: kortix-prod-eks
+  NAMESPACE: kortix-prod
+  ROLLOUT: kortix-api
   API_HOST: api-eks.kortix.com
+  ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
 
 jobs:
-  verify:
-    name: EKS prod (GitOps via Argo CD)
+  watch-and-announce:
+    name: Watch EKS rollout + announce
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Resolve version
-        id: v
-        run: echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          ref: prod
+          fetch-depth: 0
 
-      # Confirm the image Argo will pull is published (deploy-prod retags it).
-      - name: Wait for image ${{ env.IMAGE_REPO }}:${{ steps.v.outputs.version }}
+      - name: Resolve release metadata
+        id: meta
         run: |
           set -euo pipefail
-          REF="$IMAGE_REPO:${{ steps.v.outputs.version }}"
-          for i in $(seq 1 60); do
-            docker buildx imagetools inspect "$REF" >/dev/null 2>&1 && { echo "✓ $REF published — Argo CD can pull it"; exit 0; }
-            echo "($i/60) waiting for $REF…"; sleep 15
-          done
-          echo "::warning::$REF not visible after 15 min; Argo will pull once it lands."
+          V="$(tr -d '[:space:]' < VERSION)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "tag=v$V" >> "$GITHUB_OUTPUT"
+          [ -f RELEASE_SOURCE_SHA ] && echo "sha=$(tr -d '[:space:]' < RELEASE_SOURCE_SHA)" >> "$GITHUB_OUTPUT" || true
+          if [ -f RELEASE_NOTES.md ]; then
+            echo "title=$(head -n1 RELEASE_NOTES.md)" >> "$GITHUB_OUTPUT"
+            { echo 'notes<<RN_EOF'; tail -n +3 RELEASE_NOTES.md | head -c 1200; echo; echo 'RN_EOF'; } >> "$GITHUB_OUTPUT"
+          fi
 
-      # Best-effort: nudge that the new version is serving (canary takes a few min
-      # to promote, so this is informational, never a gate).
-      - name: Health glimpse (best-effort)
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Guard — cluster exists
+        id: guard
+        run: |
+          if aws eks describe-cluster --name "$CLUSTER" --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::EKS cluster not found — skipping (not applied yet)."
+          fi
+
+      - name: Update kubeconfig
+        if: steps.guard.outputs.exists == 'true'
+        run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
+
+      # Wait for Argo CD to reconcile the bump and the canary to fully promote:
+      # the Rollout is Healthy AND running exactly :VERSION. A bad release that
+      # auto-rolls-back never reaches this, so the success message never fires.
+      - name: Wait for rollout Healthy @ v${{ steps.meta.outputs.version }}
+        if: steps.guard.outputs.exists == 'true'
+        id: wait
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
           set -uo pipefail
-          for i in $(seq 1 8); do
-            v=$(curl -s --max-time 10 "https://${API_HOST}/v1/health" | grep -o '"version":"[^"]*"' || true)
-            echo "($i/8) api-eks $v"
-            echo "$v" | grep -q "${{ steps.v.outputs.version }}" && break
-            sleep 20
+          for i in $(seq 1 80); do
+            phase="$(kubectl -n "$NAMESPACE" get rollout "$ROLLOUT" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
+            img="$(kubectl -n "$NAMESPACE" get rollout "$ROLLOUT" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+            echo "($i/80) phase=${phase:-?} image=${img:-?}"
+            if [ "$phase" = "Healthy" ] && printf '%s' "$img" | grep -q ":${VERSION}$"; then
+              echo "deployed=true" >> "$GITHUB_OUTPUT"
+              echo "✓ EKS rollout Healthy on :${VERSION}"
+              exit 0
+            fi
+            sleep 15
           done
+          echo "::error::Rollout did not reach Healthy on :${VERSION} within ~20m (stuck, paused, or auto-rolled-back). No release announcement sent."
+          exit 1
 
-      - name: Summary
-        if: always()
+      # Source the truth from the running service (the commit field we bake in).
+      - name: Read live /v1/health
+        if: steps.guard.outputs.exists == 'true' && steps.wait.outputs.deployed == 'true'
+        id: health
         run: |
-          {
-            echo "### EKS prod → Argo CD (GitOps)"
-            echo "v${{ steps.v.outputs.version }} deploys when the promote PR merges to \`prod\` (Argo reconciles \`envs/prod/values.yaml\`)."
-            echo "Watch the canary: **https://ops.kortix.com** → \`kortix-prod\`."
-            echo "Rollback: \`git revert\` the values bump, or \`argocd app rollback kortix-prod\`."
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -uo pipefail
+          h="$(curl -s --max-time 10 "https://${API_HOST}/v1/health" || true)"
+          echo "commit=$(printf '%s' "$h" | jq -r '.commit // ""' 2>/dev/null)" >> "$GITHUB_OUTPUT"
+          echo "live_version=$(printf '%s' "$h" | jq -r '.version // ""' 2>/dev/null)" >> "$GITHUB_OUTPUT"
+
+      - name: Announce to Slack
+        if: steps.guard.outputs.exists == 'true' && steps.wait.outputs.deployed == 'true'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_RELEASE_CHANNEL: ${{ secrets.SLACK_RELEASE_CHANNEL }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          TITLE: ${{ steps.meta.outputs.title }}
+          NOTES: ${{ steps.meta.outputs.notes }}
+          META_SHA: ${{ steps.meta.outputs.sha }}
+          LIVE_COMMIT: ${{ steps.health.outputs.commit }}
+          ACTOR: ${{ github.actor }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [ -z "${SLACK_BOT_TOKEN:-}" ] || [ -z "${SLACK_RELEASE_CHANNEL:-}" ]; then
+            echo "::notice::SLACK_BOT_TOKEN / SLACK_RELEASE_CHANNEL not set — skipping Slack."
+            exit 0
+          fi
+
+          # Prefer the commit actually serving (/v1/health); fall back to the
+          # promoted source SHA.
+          SHA="${LIVE_COMMIT:-$META_SHA}"
+          SHA8="${SHA:0:8}"
+          [ -n "$SHA8" ] || SHA8="unknown"
+          REL_URL="${SERVER}/${REPO}/releases/tag/${TAG}"
+          COMMIT_URL="${SERVER}/${REPO}/commit/${SHA}"
+
+          payload="$(jq -n \
+            --arg channel "$SLACK_RELEASE_CHANNEL" \
+            --arg header "🚀 Kortix ${TAG} is live (EKS)" \
+            --arg title "${TITLE:-Release $TAG}" \
+            --arg notes "${NOTES:-}" \
+            --arg version "$VERSION" \
+            --arg sha8 "$SHA8" \
+            --arg commit_url "$COMMIT_URL" \
+            --arg actor "$ACTOR" \
+            --arg rel_url "$REL_URL" \
+            --arg run_url "$RUN_URL" \
+            '{
+              channel: $channel,
+              text: $header,
+              blocks: [
+                { type:"header", text:{ type:"plain_text", text:$header, emoji:true } },
+                ( { type:"section", text:{ type:"mrkdwn",
+                    text: ("*" + $title + "*" + (if $notes == "" then "" else ("\n" + $notes) end)) } } ),
+                { type:"section", fields: [
+                  { type:"mrkdwn", text: ("*Version*\n`" + $version + "`") },
+                  { type:"mrkdwn", text: ("*Commit*\n<" + $commit_url + "|`" + $sha8 + "`>") },
+                  { type:"mrkdwn", text: ("*Released by*\n" + $actor) },
+                  { type:"mrkdwn", text: "*Where*\nEKS (Argo CD canary) · CLI · Desktop · Web" }
+                ]},
+                { type:"actions", elements: [
+                  { type:"button", text:{ type:"plain_text", text:"📦 Release notes", emoji:true }, url:$rel_url },
+                  { type:"button", text:{ type:"plain_text", text:"🚢 Argo CD", emoji:true }, url:"https://ops.kortix.com" },
+                  { type:"button", text:{ type:"plain_text", text:"🔧 Pipeline", emoji:true }, url:$run_url }
+                ]}
+              ]
+            }')"
+
+          for attempt in 1 2 3 4 5; do
+            resp="$(curl -sS --max-time 30 \
+              -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+              -H "Content-type: application/json; charset=utf-8" \
+              --data "$payload" \
+              https://slack.com/api/chat.postMessage || true)"
+            ok="$(printf '%s' "$resp" | jq -r '.ok // false' 2>/dev/null || echo false)"
+            if [ "$ok" = "true" ]; then
+              echo "✓ Slack notified (${SLACK_RELEASE_CHANNEL})"; exit 0
+            fi
+            err="$(printf '%s' "$resp" | jq -r '.error // "no_response"' 2>/dev/null || echo no_response)"
+            echo "::warning::Slack attempt ${attempt}/5 failed: ${err}"
+            case "$err" in
+              invalid_auth|not_authed|account_inactive|token_revoked|channel_not_found|not_in_channel|is_archived|missing_scope)
+                echo "::error::Slack permanent error '${err}'. Check SLACK_BOT_TOKEN (xoxb + chat:write), SLACK_RELEASE_CHANNEL (channel ID), and that the bot is invited to the channel."
+                exit 1 ;;
+            esac
+            sleep $((attempt * 3))
+          done
+          echo "::error::Slack failed after 5 attempts (last: ${err})."; exit 1
