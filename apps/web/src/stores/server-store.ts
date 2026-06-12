@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { createSafeJSONStorage } from '@/lib/storage/managed-storage';
 
 import { authenticatedFetch, getSupabaseAccessToken } from '@/lib/auth-token';
+import { resetForServerSwitch } from '@/stores/sandbox-connection-store';
 import { isBillingEnabled } from '@/lib/config';
 import { getEnv } from '@/lib/env-config';
 import {
@@ -486,6 +487,13 @@ export const useServerStore = create<ServerStore>()(
 
         // Force SDK client to recreate for the new server URL
         resetSDKClient();
+        // Reset the connection store SYNCHRONOUSLY with the switch: its
+        // status/healthy belonged to the PREVIOUS server, and every consumer
+        // that reads it before the next health poll (runtime-ready marks, the
+        // ensure/opencode query gates) was acting on another sandbox's health
+        // — observed live as runtime-ready firing 1ms BEFORE server-switched
+        // and the chat wedging against a mid-claim runtime.
+        resetForServerSwitch();
         syncActiveInstanceCookie(target);
 
         set({
