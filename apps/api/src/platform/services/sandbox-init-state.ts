@@ -1,3 +1,4 @@
+import { WarmRuntimeUnavailableError } from '../providers';
 import type { CreateSandboxOpts, ProvisionResult, SandboxProvider } from '../providers';
 
 export type SandboxInitStatus = 'pending' | 'provisioning' | 'retrying' | 'ready' | 'failed';
@@ -227,6 +228,13 @@ export async function retrySandboxProvisionCreate(
       return { result, attempts: attempt };
     } catch (error) {
       lastError = error;
+      // Warm path gave up (experimental restore kept dropping the runtime). Not
+      // retryable here — the caller falls back to the normal snapshot path;
+      // retrying would just spin up more flaky warm boxes.
+      if (error instanceof WarmRuntimeUnavailableError) {
+        await hooks.onAttemptFailure?.(attempt, error, false);
+        throw error;
+      }
       const snapshotStillBuilding = isSnapshotStillBuilding(error);
       const capacityLimited = !snapshotStillBuilding && isProviderCapacityLimited(error);
       const maxAttempts = snapshotStillBuilding

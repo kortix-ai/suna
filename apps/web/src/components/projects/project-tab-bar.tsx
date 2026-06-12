@@ -22,6 +22,7 @@ import {
 } from '@/lib/projects-client';
 import { Button } from '@/components/ui/button';
 import { SessionShareDialog, SessionVisibilityBadge } from '@/components/projects/session-share-dialog';
+import { sessionDisplayLabel } from '@/components/projects/session-label';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
 
@@ -234,9 +235,11 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
       <div className="flex-1 flex items-stretch overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {openTabIds.map((tabId) => {
           const isActive = isTabActive(tabId);
-          // Sessions don't carry a user-set name yet (API model is branch-only).
-          // Fall back to a short id slice until naming ships.
-          const label = `session ${tabId.slice(0, 8)}`;
+          // Same label the sidebar shows (sessionDisplayLabel) so a session is
+          // called one thing everywhere; short-id fallback until the sessions
+          // query lands.
+          const tabSession = sessionById.get(tabId);
+          const label = tabSession ? sessionDisplayLabel(tabSession) : `session ${tabId.slice(0, 8)}`;
 
           return (
             <div

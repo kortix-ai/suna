@@ -37,11 +37,11 @@ import {
   listProjectSessions,
   restartProjectSession,
   type ProjectSession,
-  type ProjectOpenCodeSession,
   type ProjectSessionStatus,
 } from '@/lib/projects-client';
 import { SessionShareDialog } from '@/components/projects/session-share-dialog';
 import { RenameSessionDialog } from '@/components/projects/rename-session-dialog';
+import { directSubsessions, rootOpenCodeSession } from '@/components/projects/session-label';
 
 interface ProjectSessionListProps {
   projectId: string;
@@ -51,23 +51,6 @@ const LIVE_SESSION_STATUSES: ProjectSessionStatus[] = ['queued', 'branching', 'p
 
 function shouldPollProjectSessions(sessions: ProjectSession[] | undefined): boolean {
   return (sessions ?? []).some((session) => LIVE_SESSION_STATUSES.includes(session.status));
-}
-
-function rootOpenCodeSession(session: ProjectSession): ProjectOpenCodeSession | null {
-  const opencodeSessions = session.opencode_sessions ?? [];
-  const rootId = session.opencode_session_id;
-  if (rootId) {
-    return opencodeSessions.find((item) => item.id === rootId) ?? null;
-  }
-  return opencodeSessions.find((item) => !item.parent_id) ?? null;
-}
-
-function directSubsessions(session: ProjectSession): ProjectOpenCodeSession[] {
-  const root = rootOpenCodeSession(session);
-  if (!root) return [];
-  return (session.opencode_sessions ?? [])
-    .filter((item) => item.parent_id === root.id && !item.archived_at)
-    .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
 }
 
 export function ProjectSessionList({ projectId }: ProjectSessionListProps) {
@@ -367,7 +350,10 @@ const ProjectSessionRow = memo(function ProjectSessionRow({
                   e.preventDefault();
                   e.stopPropagation();
                   setMenuOpen(false);
-                  onRename(session.session_id, userOverride ?? '');
+                  // Prefill with what the row SHOWS (auto title included), not
+                  // just the custom override — so the dialog opens with the
+                  // current name and clearing it reverts to the auto title.
+                  onRename(session.session_id, displayTitle);
                 }}
               >
                 <Pencil className="h-4 w-4" />

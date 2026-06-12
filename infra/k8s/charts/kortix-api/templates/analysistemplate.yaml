@@ -21,7 +21,9 @@ spec:
     - name: error-rate
       interval: 1m
       failureLimit: 2
-      successCondition: "len(result) == 0 || result[0] < {{`{{args.error-rate-threshold}}`}}"
+      # CloudWatch provider returns result as []MetricDataResult; the value is in
+      # .Values. No datapoints (e.g. no traffic) = pass.
+      successCondition: "len(result) == 0 || len(result[0].Values) == 0 || result[0].Values[0] < {{`{{args.error-rate-threshold}}`}}"
       provider:
         cloudWatch:
           metricDataQueries:
@@ -55,7 +57,7 @@ spec:
     - name: p95-latency
       interval: 1m
       failureLimit: 2
-      successCondition: "len(result) == 0 || result[0] < {{`{{args.p95-latency-threshold}}`}}"
+      successCondition: "len(result) == 0 || len(result[0].Values) == 0 || result[0].Values[0] < {{`{{args.p95-latency-threshold}}`}}"
       provider:
         cloudWatch:
           metricDataQueries:
