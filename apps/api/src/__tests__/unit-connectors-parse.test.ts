@@ -149,6 +149,29 @@ url = "https://mcp.example.com"
     expect(specs[0]).toMatchObject({ transport: 'http' });
   });
 
+  test('mcp /sse URL infers sse transport', () => {
+    const { specs } = parseAndExtract(`
+[[connectors]]
+slug = "vault"
+provider = "mcp"
+url = "https://mcp.example.com/sse"
+`);
+    expect(specs[0]).toMatchObject({ transport: 'sse' });
+  });
+
+  test('mcp URL normalizes scheme whitespace before transport inference', () => {
+    const { specs } = parseAndExtract(`
+[[connectors]]
+slug = "vault"
+provider = "mcp"
+url = "https ://mcp.example.com/sse"
+`);
+    expect(specs[0]).toMatchObject({
+      url: 'https://mcp.example.com/sse',
+      transport: 'sse',
+    });
+  });
+
   test('http — base_url + custom query auth + prefix', () => {
     const { specs, errors } = parseAndExtract(`
 [[connectors]]

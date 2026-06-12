@@ -30,6 +30,8 @@ export interface GatewayConnector {
   provider: 'pipedream' | 'mcp' | 'openapi' | 'graphql' | 'http';
   /** server / base_url / endpoint / url, per provider (null for some). */
   baseUrl: string | null;
+  /** MCP transport. Non-MCP connectors leave this unset. */
+  mcpTransport?: 'http' | 'sse' | null;
   auth: ExecutorAuth;
   /** Whether this connector needs a credential at all (false = public/no-auth). */
   hasAuth: boolean;
@@ -229,6 +231,7 @@ export async function handleCall(deps: GatewayDeps, input: CallInput): Promise<C
         secret: usable.secret,
         args: input.args ?? {},
         paramHints: paramHintsFromSchema(action.inputSchema),
+        mcpTransport: connector.mcpTransport,
         fetchImpl: deps.fetchImpl,
       });
     }

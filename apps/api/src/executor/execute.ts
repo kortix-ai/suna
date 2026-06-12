@@ -33,6 +33,7 @@ export interface ExecResult {
 }
 
 const NO_AUTH: ExecutorAuth = { type: 'none', in: 'header', name: null, prefix: null };
+export type McpTransport = 'http' | 'sse';
 
 /** Attach a credential to a request per the connector's auth method. */
 export function applyAuth(
@@ -196,6 +197,46 @@ export function buildGraphqlRequest(opts: {
   return { url, method: 'POST', headers, body: JSON.stringify({ query }) };
 }
 
+function withAuth(
+  url: string,
+  headers: Record<string, string>,
+  auth: ExecutorAuth,
+  secret: string | null,
+): { url: string; headers: Record<string, string> } {
+  const query = new URLSearchParams();
+  const nextHeaders = { ...headers };
+  applyAuth(nextHeaders, query, auth, secret);
+  const qs = query.toString();
+  return {
+    url: qs ? `${url}${url.includes('?') ? '&' : '?'}${qs}` : url,
+    headers: nextHeaders,
+  };
+}
+
+/** Build a JSON-RPC request for an MCP streamable-HTTP connector. */
+export function buildMcpJsonRpcRequest(opts: {
+  url: string;
+  auth?: ExecutorAuth;
+  secret?: string | null;
+  id?: number;
+  method: string;
+  params?: Record<string, unknown>;
+}): BuiltRequest {
+  const req = withAuth(
+    opts.url,
+    { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    opts.auth ?? NO_AUTH,
+    opts.secret ?? null,
+  );
+  const body = JSON.stringify({
+    jsonrpc: '2.0',
+    id: opts.id ?? 1,
+    method: opts.method,
+    params: opts.params ?? {},
+  });
+  return { url: req.url, method: 'POST', headers: req.headers, body };
+}
+
 /** Build a JSON-RPC `tools/call` request for an MCP (http transport) connector. */
 export function buildMcpRequest(opts: {
   url: string;
@@ -204,22 +245,13 @@ export function buildMcpRequest(opts: {
   toolName: string;
   args?: Record<string, unknown>;
 }): BuiltRequest {
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'application/json, text/event-stream',
-  };
-  const query = new URLSearchParams();
-  applyAuth(headers, query, opts.auth ?? NO_AUTH, opts.secret ?? null);
-  let url = opts.url;
-  const qs = query.toString();
-  if (qs) url += (url.includes('?') ? '&' : '?') + qs;
-  const body = JSON.stringify({
-    jsonrpc: '2.0',
-    id: 1,
+  return buildMcpJsonRpcRequest({
+    url: opts.url,
+    auth: opts.auth,
+    secret: opts.secret,
     method: 'tools/call',
     params: { name: opts.toolName, arguments: opts.args ?? {} },
   });
-  return { url, method: 'POST', headers, body };
 }
 
 export type FetchImpl = (url: string, init: { method: string; headers: Record<string, string>; body?: string }) => Promise<{
@@ -259,6 +291,201 @@ export async function performRequest(req: BuiltRequest, fetchImpl: FetchImpl): P
   return { status: res.status, ok: res.ok, data: parseResponseBody(text) };
 }
 
+interface SseState {
+  buffer: string;
+}
+
+interface SseFrame {
+  event: string;
+  data: string;
+}
+
+function shiftSseFrame(state: SseState): SseFrame | null {
+  const match = state.buffer.match(/\r?\n\r?\n/);
+  if (!match || match.index === undefined) return null;
+  const raw = state.buffer.slice(0, match.index);
+  state.buffer = state.buffer.slice(match.index + match[0].length);
+
+  const frame: SseFrame = { event: 'message', data: '' };
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.startsWith('event:')) frame.event = line.slice(6).trim();
+    if (line.startsWith('data:')) {
+      frame.data += `${frame.data ? '\n' : ''}${line.slice(5).trim()}`;
+    }
+  }
+  return frame;
+}
+
+async function readSseFrame(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  decoder: TextDecoder,
+  state: SseState,
+  timeoutMs: number,
+): Promise<SseFrame> {
+  const queued = shiftSseFrame(state);
+  if (queued) return queued;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const chunk = await Promise.race([
+      reader.read(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timed out waiting for MCP SSE response')), timeoutMs);
+      }),
+    ]);
+    if (chunk.done) throw new Error('MCP SSE stream closed');
+    state.buffer += decoder.decode(chunk.value, { stream: true });
+    const frame = shiftSseFrame(state);
+    if (frame) return frame;
+    return readSseFrame(reader, decoder, state, timeoutMs);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function waitForSseJsonRpc(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  decoder: TextDecoder,
+  state: SseState,
+  id: number,
+  timeoutMs: number,
+): Promise<any> {
+  for (;;) {
+    const frame = await readSseFrame(reader, decoder, state, timeoutMs);
+    if (!frame.data) continue;
+    try {
+      const parsed = JSON.parse(frame.data);
+      if (parsed?.id === id) return parsed;
+    } catch {
+      // Ignore non-JSON keepalive/data frames.
+    }
+  }
+}
+
+async function waitForSseEndpoint(
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  decoder: TextDecoder,
+  state: SseState,
+  timeoutMs: number,
+): Promise<string> {
+  for (;;) {
+    const frame = await readSseFrame(reader, decoder, state, timeoutMs);
+    if (frame.event === 'endpoint' && frame.data) return frame.data;
+  }
+}
+
+async function postSseJsonRpc(
+  endpointUrl: string,
+  auth: ExecutorAuth,
+  secret: string | null,
+  message: Record<string, unknown>,
+): Promise<void> {
+  const req = withAuth(
+    endpointUrl,
+    { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
+    auth,
+    secret,
+  );
+  const res = await fetch(req.url, {
+    method: 'POST',
+    headers: req.headers,
+    body: JSON.stringify(message),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`MCP SSE message POST failed (${res.status}): ${text || res.statusText}`);
+  }
+}
+
+async function performMcpSseJsonRpc(opts: {
+  url: string;
+  auth?: ExecutorAuth;
+  secret?: string | null;
+  method: string;
+  params?: Record<string, unknown>;
+  timeoutMs?: number;
+}): Promise<ExecResult> {
+  const timeoutMs = opts.timeoutMs ?? 30_000;
+  const auth = opts.auth ?? NO_AUTH;
+  const secret = opts.secret ?? null;
+  const controller = new AbortController();
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+
+  try {
+    timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const sseReq = withAuth(opts.url, { Accept: 'text/event-stream' }, auth, secret);
+    const sse = await fetch(sseReq.url, { method: 'GET', headers: sseReq.headers, signal: controller.signal });
+    if (!sse.ok) {
+      const text = await sse.text().catch(() => '');
+      return { status: sse.status, ok: false, data: parseResponseBody(text) };
+    }
+    if (!sse.body) throw new Error('MCP SSE response had no body');
+
+    reader = sse.body.getReader();
+    const decoder = new TextDecoder();
+    const state: SseState = { buffer: '' };
+    const endpointPath = await waitForSseEndpoint(reader, decoder, state, timeoutMs);
+    const endpointUrl = new URL(endpointPath, sseReq.url).href;
+
+    await postSseJsonRpc(endpointUrl, auth, secret, {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: 'kortix-executor', version: '1' },
+      },
+    });
+    await waitForSseJsonRpc(reader, decoder, state, 1, timeoutMs);
+    await postSseJsonRpc(endpointUrl, auth, secret, {
+      jsonrpc: '2.0',
+      method: 'notifications/initialized',
+      params: {},
+    });
+    await postSseJsonRpc(endpointUrl, auth, secret, {
+      jsonrpc: '2.0',
+      id: 2,
+      method: opts.method,
+      params: opts.params ?? {},
+    });
+    const data = await waitForSseJsonRpc(reader, decoder, state, 2, timeoutMs);
+    return { status: 200, ok: !data?.error, data };
+  } catch (err) {
+    const message = err instanceof Error && err.name === 'AbortError'
+      ? 'MCP SSE request timed out'
+      : (err as Error).message;
+    return { status: 0, ok: false, data: message };
+  } finally {
+    if (timeout) clearTimeout(timeout);
+    await reader?.cancel().catch(() => undefined);
+    controller.abort();
+  }
+}
+
+export async function performMcpJsonRpc(opts: {
+  url: string;
+  auth?: ExecutorAuth;
+  secret?: string | null;
+  method: string;
+  params?: Record<string, unknown>;
+  transport?: McpTransport | null;
+  fetchImpl: FetchImpl;
+}): Promise<ExecResult> {
+  if ((opts.transport ?? 'http') === 'sse') {
+    return performMcpSseJsonRpc(opts);
+  }
+  const req = buildMcpJsonRpcRequest({
+    url: opts.url,
+    auth: opts.auth,
+    secret: opts.secret,
+    method: opts.method,
+    params: opts.params,
+  });
+  return performRequest(req, opts.fetchImpl);
+}
+
 /**
  * Top-level execute — dispatch by binding kind, build the request, perform it.
  * `secret` is the resolved plaintext credential (server-side only).
@@ -270,6 +497,7 @@ export async function executeCall(opts: {
   secret?: string | null;
   args?: Record<string, unknown>;
   paramHints?: Record<string, ParamLoc>;
+  mcpTransport?: McpTransport | null;
   fetchImpl: FetchImpl;
 }): Promise<ExecResult> {
   const { binding } = opts;
@@ -305,14 +533,15 @@ export async function executeCall(opts: {
 
   if (binding.kind === 'mcp') {
     if (!opts.baseUrl) throw new Error('mcp connector has no url');
-    const req = buildMcpRequest({
+    return performMcpJsonRpc({
       url: opts.baseUrl,
       auth: opts.auth,
       secret: opts.secret,
-      toolName: binding.tool,
-      args: opts.args,
+      method: 'tools/call',
+      params: { name: binding.tool, arguments: opts.args ?? {} },
+      transport: opts.mcpTransport,
+      fetchImpl: opts.fetchImpl,
     });
-    return performRequest(req, opts.fetchImpl);
   }
 
   if (binding.kind === 'graphql') {

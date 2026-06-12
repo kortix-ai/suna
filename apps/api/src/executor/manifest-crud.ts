@@ -9,7 +9,14 @@ import { and, eq } from 'drizzle-orm';
 import { executorConnectors, projects } from '@kortix/db';
 import { db } from '../shared/db';
 import { commitManifest, loadManifestForEdit } from '../projects/index';
-import { extractConnectors, type ConnectorPolicySpec, type ConnectorPolicyAction, type ConnectorSpec } from '../projects/connectors';
+import {
+  extractConnectors,
+  inferMcpTransport,
+  normalizeMcpUrl,
+  type ConnectorPolicySpec,
+  type ConnectorPolicyAction,
+  type ConnectorSpec,
+} from '../projects/connectors';
 import { isValidMatcher } from './policy';
 import {
   extractProjectPolicies,
@@ -50,8 +57,10 @@ function draftToEntry(d: ConnectorDraft): Record<string, unknown> {
     if (d.app) entry.app = d.app;
     if (d.account) entry.account = d.account;
   } else if (d.provider === 'mcp') {
-    if (d.url) entry.url = d.url;
+    const url = d.url ? normalizeMcpUrl(d.url) : null;
+    if (url) entry.url = url;
     if (d.transport) entry.transport = d.transport;
+    else if (url && inferMcpTransport(url) === 'sse') entry.transport = 'sse';
   } else if (d.provider === 'graphql') {
     if (d.endpoint) entry.endpoint = d.endpoint;
     if (d.spec) entry.spec = d.spec;

@@ -115,6 +115,19 @@ export interface LoadedConnectors {
 
 const NO_AUTH: ConnectorAuthSpec = { type: 'none', in: 'header', name: null, prefix: null, secret: null };
 
+export function inferMcpTransport(url: string): 'http' | 'sse' {
+  try {
+    const parsed = new URL(url);
+    return /(^|\/)sse\/?$/i.test(parsed.pathname) ? 'sse' : 'http';
+  } catch {
+    return /\/sse\/?(?:[?#]|$)/i.test(url) ? 'sse' : 'http';
+  }
+}
+
+export function normalizeMcpUrl(url: string): string {
+  return url.trim().replace(/^([a-z][a-z0-9+.-]*)\s*:\s*\/\//i, '$1://');
+}
+
 /**
  * Pull `[[connectors]]` out of a parsed manifest. Never throws.
  */
@@ -340,9 +353,10 @@ function parseProviderFields(
   }
 
   if (provider === 'mcp') {
-    const url = str(row.url);
-    if (!url) return err(slug, 'provider="mcp" requires `url` (the MCP server endpoint)');
-    const t = typeof row.transport === 'string' ? row.transport.trim().toLowerCase() : 'http';
+    const rawUrl = str(row.url);
+    if (!rawUrl) return err(slug, 'provider="mcp" requires `url` (the MCP server endpoint)');
+    const url = normalizeMcpUrl(rawUrl);
+    const t = typeof row.transport === 'string' ? row.transport.trim().toLowerCase() : inferMcpTransport(url);
     if (t !== 'http' && t !== 'sse') {
       return err(slug, `transport must be "http" or "sse" (got "${t}")`);
     }

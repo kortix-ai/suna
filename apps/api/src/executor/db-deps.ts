@@ -94,6 +94,12 @@ function baseUrlOf(row: ConnectorRow): string | null {
   }
 }
 
+function mcpTransportOf(row: ConnectorRow): 'http' | 'sse' | null {
+  if (row.providerType !== 'mcp') return null;
+  const cfg = (row.config ?? {}) as Record<string, any>;
+  return cfg.transport === 'sse' ? 'sse' : 'http';
+}
+
 function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof loadConnectorGrants>>): GatewayConnector {
   const { auth, hasAuth } = authOf(row);
   return {
@@ -101,6 +107,7 @@ function toGatewayConnector(row: ConnectorRow, grants: Awaited<ReturnType<typeof
     slug: row.slug,
     provider: row.providerType,
     baseUrl: baseUrlOf(row),
+    mcpTransport: mcpTransportOf(row),
     auth,
     hasAuth,
     shareScope: row.shareScope as 'project' | 'restricted',

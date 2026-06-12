@@ -31,7 +31,7 @@ import {
   normalizePipedream,
 } from './normalize';
 import type { NormalizedAction, HttpRouteSpec } from './types';
-import { parseResponseBody } from './execute';
+import { performMcpJsonRpc, type FetchImpl, type McpTransport } from './execute';
 import { connectorConfig, toPolicyRows, toProjectPolicyRows } from './materialize';
 import { pipedreamCatalog, pipedreamConfigured } from './pipedream';
 
@@ -228,7 +228,7 @@ export async function resolveCatalog(project: GitBackedProject, spec: ConnectorS
         return { actions: normalizeGraphql(introspection), server: spec.endpoint };
       }
       case 'mcp': {
-        const tools = await listMcpTools(spec.url!);
+        const tools = await listMcpTools(spec.url!, spec.transport ?? 'http');
         return { actions: normalizeMcp(tools), server: spec.url };
       }
       case 'pipedream': {
@@ -303,13 +303,24 @@ async function reconcileProjectPolicies(
     });
 }
 
-async function listMcpTools(url: string): Promise<any[]> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }),
+const nodeFetch: FetchImpl = async (url, init) => {
+  const res = await fetch(url, { method: init.method, headers: init.headers, body: init.body });
+  return { status: res.status, ok: res.ok, text: () => res.text() };
+};
+
+async function listMcpTools(url: string, transport: McpTransport): Promise<any[]> {
+  const result = await performMcpJsonRpc({
+    url,
+    method: 'tools/list',
+    params: {},
+    transport,
+    fetchImpl: nodeFetch,
   });
-  // Streamable-HTTP MCP responds with SSE-framed JSON, not plain JSON.
-  const json: any = parseResponseBody(await res.text());
-  return json?.result?.tools ?? [];
+  if (!result.ok) {
+    const reason = typeof result.data === 'string'
+      ? result.data
+      : JSON.stringify(result.data ?? {});
+    throw new Error(reason || `MCP tools/list failed (${result.status})`);
+  }
+  return (result.data as any)?.result?.tools ?? [];
 }
