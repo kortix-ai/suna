@@ -41,6 +41,7 @@ import {
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
 import { kickWarmBaseBuild } from './snapshots/warm-bake';
+import { warmSnapshotsEnabled } from './shared/daytona';
 import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
 import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
@@ -272,6 +273,7 @@ const HealthSchema = z
     uptime_seconds: z.number(),
     timestamp: z.string(),
     billing_enabled: z.boolean(),
+    warm_snapshots: z.boolean(),
     tunnel: z.any(),
     leader: z.boolean(),
   })
@@ -289,6 +291,10 @@ const healthHandler = (c: any) =>
     uptime_seconds: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
+    // Whether the Daytona warm-snapshot path is live in this env (flag + key +
+    // warm target all present) — see snapshots/warm-bake.ts. Surfaced here so a
+    // misconfigured env var is visible remotely instead of failing silently.
+    warm_snapshots: warmSnapshotsEnabled(),
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
   });
