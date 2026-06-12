@@ -82,11 +82,36 @@ function isFarFromBottom(el: HTMLDivElement, spacerHeight: number): boolean {
   return distFromBottom >= 300;
 }
 
-export function useAutoScroll({ working, hasContent = false }: UseAutoScrollOptions): UseAutoScrollReturn {
+/**
+ * Grace period (ms) before the scroll physics accept a working → idle flip.
+ * The busy signal hands off across sources (optimistic send → server busy
+ * status → stream events) and can flap false for a few hundred ms right as
+ * the assistant starts answering. Reacting instantly collapses the spacer
+ * (IDLE_SPACER_CAP) + fires the idle re-anchor — yanking the freshly-anchored
+ * user bubble to the bottom of the screen. Only scroll behavior is debounced;
+ * the caller's loader visuals use the raw signal.
+ */
+const WORKING_IDLE_GRACE_MS = 1500;
+
+export function useAutoScroll({ working: workingRaw, hasContent = false }: UseAutoScrollOptions): UseAutoScrollReturn {
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const spacerElRef = useRef<HTMLDivElement>(null);
   const [showScrollButton, setShowScrollButton] = useState(false);
+
+  // Sticky working: true edges apply immediately; false edges only after the
+  // grace period, so a mid-handoff flap never disturbs the scroll position.
+  const [working, setWorking] = useState(workingRaw);
+  const idleGraceTimerRef = useRef<ReturnType<typeof setTimeout>>(0 as any);
+  useEffect(() => {
+    if (workingRaw) {
+      clearTimeout(idleGraceTimerRef.current);
+      setWorking(true);
+      return;
+    }
+    idleGraceTimerRef.current = setTimeout(() => setWorking(false), WORKING_IDLE_GRACE_MS);
+    return () => clearTimeout(idleGraceTimerRef.current);
+  }, [workingRaw]);
 
   const userScrolledRef = useRef(false);
   const rafIdRef = useRef<number>(0);
