@@ -117,9 +117,16 @@ jobs:
           #      the same name (e.g. a `cancelled` CodeQL "Analyze" next to a
           #      later `success`). Keep only the latest run per name (max
           #      started_at) so a stale cancelled/failed attempt can't block.
+          #   3. NON-CI noise that has nothing to do with releasability:
+          #      - "Dependabot*" — GitHub's background dependency-update jobs,
+          #        which fail routinely (lockfile/monorepo) and are irrelevant.
+          #      - "Open review-gated release PR" — a PRIOR promote attempt's own
+          #        check (the current run is already excluded via run_id, but an
+          #        earlier failed attempt would otherwise self-block the retry).
           NOT_GREEN="$(RID="${{ github.run_id }}" gh api "repos/${{ github.repository }}/commits/$SHA/check-runs?per_page=100" --paginate \
             --jq '[ .check_runs[]
-                    | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not) ]
+                    | select((.details_url // "") | contains("/runs/" + env.RID + "/") | not)
+                    | select(((.name | ascii_downcase | startswith("dependabot")) or (.name == "Open review-gated release PR")) | not) ]
                   | group_by(.name) | map(max_by(.started_at // ""))
                   | .[]
                   | select((.status != "completed") or (((.conclusion // "") | IN("success","skipped","neutral")) | not))
