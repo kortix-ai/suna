@@ -30,9 +30,9 @@ export type AccordionIcon = 'stack-2' | 'key' | 'eye' | 'shield' | 'server';
 export type AccordionEntry = {
   id: string;
   icon: AccordionIcon;
-  titleKey: string;
-  teaserKey: string;
-  bodyKey: string;
+  title: string;
+  teaser: string;
+  body: string;
   visual: StageVisual;
 };
 
@@ -40,25 +40,25 @@ export const ACCORDION = [
   {
     id: 'isolation',
     icon: 'stack-2',
-    titleKey: 'enterpriseAccordionIsolationTitle',
-    teaserKey: 'enterpriseAccordionIsolationTeaser',
-    bodyKey: 'enterpriseAccordionIsolationBody',
+    title: 'enterpriseAccordionIsolationTitle',
+    teaser: 'enterpriseAccordionIsolationTeaser',
+    body: 'enterpriseAccordionIsolationBody',
     visual: 'isolation',
   },
   {
     id: 'soc2',
     icon: 'shield',
-    titleKey: 'enterpriseAccordionSoc2Title',
-    teaserKey: 'enterpriseAccordionSoc2Teaser',
-    bodyKey: 'enterpriseAccordionSoc2Body',
+    title: 'enterpriseAccordionSoc2Title',
+    teaser: 'enterpriseAccordionSoc2Teaser',
+    body: 'enterpriseAccordionSoc2Body',
     visual: 'soc2',
   },
   {
     id: 'selfhost',
     icon: 'server',
-    titleKey: 'enterpriseAccordionSelfhostTitle',
-    teaserKey: 'enterpriseAccordionSelfhostTeaser',
-    bodyKey: 'enterpriseAccordionSelfhostBody',
+    title: 'enterpriseAccordionSelfhostTitle',
+    teaser: 'enterpriseAccordionSelfhostTeaser',
+    body: 'enterpriseAccordionSelfhostBody',
     visual: 'selfhost',
   },
 ] as const satisfies readonly AccordionEntry[];
@@ -67,8 +67,8 @@ export const ACCORDION = [
 export const STAGE_DATA = {
   isolation: { sandboxes: ['s_1a', 's_7f', 's_3c'], spine: 'main' },
   token: {
-    rejectedKey: 'enterpriseStageTokenRejected',
-    acceptedKey: 'enterpriseStageTokenAccepted',
+    rejected: 'enterpriseStageTokenRejected',
+    accepted: 'enterpriseStageTokenAccepted',
   },
   audit: {
     rowKeys: [
@@ -85,7 +85,7 @@ export const STAGE_DATA = {
       'enterpriseStageSoc2Control2',
       'enterpriseStageSoc2Control3',
     ],
-    badgeKey: 'enterpriseStageSoc2Badge',
+    badge: 'enterpriseStageSoc2Badge',
   },
   selfhost: {
     hostKeys: [
@@ -94,11 +94,11 @@ export const STAGE_DATA = {
       'enterpriseStageSelfhostHost2',
       'enterpriseStageSelfhostHost3',
     ],
-    commandKey: 'enterpriseStageSelfhostCommand',
+    command: 'enterpriseStageSelfhostCommand',
   },
 } as const;
 
 export const CTA = {
-  primary: { labelKey: 'enterpriseCtaPrimary', href: '/enterprise' },
-  secondary: { labelKey: 'enterpriseCtaSecondary', href: '/docs/security' },
+  primary: { label: 'enterpriseCtaPrimary', href: '/enterprise' },
+  secondary: { label: 'enterpriseCtaSecondary', href: '/docs/security' },
 } as const;

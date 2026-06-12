@@ -177,10 +177,10 @@ const Security = () => {
             {ACCORDION.map((item) => (
               <AccordionItem key={item.id} value={item.id} className="px-4 py-2 lg:last:border-b">
                 <AccordionTrigger className="group/trigger [&[data-state=open]>svg]:text-primary text-foreground px-4 py-5 text-lg font-medium hover:no-underline lg:text-xl">
-                  {tHome(item.titleKey)}
+                  {tHome(item.title)}
                 </AccordionTrigger>
                 <AccordionContent className="text-muted-foreground pl-4 text-base leading-relaxed">
-                  {tHome(item.bodyKey)}
+                  {tHome(item.body)}
                 </AccordionContent>
               </AccordionItem>
             ))}

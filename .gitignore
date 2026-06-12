@@ -130,3 +130,5 @@ infra/terraform/**/*.tfstate.*
 infra/terraform/**/*.tfvars
 .cursor
 docs
+
+apps/mobile/.env.example

@@ -76,7 +76,7 @@ function IsolationScene({ reduceMotion }: { reduceMotion: boolean }) {
 }
 
 function TokenScene({ t, reduceMotion }: { t: (key: string) => string; reduceMotion: boolean }) {
-  const { rejectedKey, acceptedKey } = STAGE_DATA.token;
+  const { rejected, accepted } = STAGE_DATA.token;
 
   return (
     <SceneShell>
@@ -91,7 +91,7 @@ function TokenScene({ t, reduceMotion }: { t: (key: string) => string; reduceMot
           animate={reduceMotion ? { x: 0, opacity: 1 } : { x: [0, 52, 0], opacity: [1, 0.5, 1] }}
           transition={{ duration: 1.6, repeat: reduceMotion ? 0 : Infinity, ease: 'easeInOut' }}
         >
-          {t(rejectedKey)}
+          {t(rejected)}
         </motion.span>
 
         <motion.span
@@ -104,7 +104,7 @@ function TokenScene({ t, reduceMotion }: { t: (key: string) => string; reduceMot
             ease: 'easeOut',
           }}
         >
-          {t(acceptedKey)}
+          {t(accepted)}
         </motion.span>
       </div>
     </SceneShell>
@@ -157,7 +157,7 @@ function Soc2Scene({ t, reduceMotion }: { t: (key: string) => string; reduceMoti
           animate={reduceMotion ? { opacity: 1 } : { opacity: [0.7, 1, 0.7] }}
           transition={{ duration: 1.8, repeat: reduceMotion ? 0 : Infinity }}
         >
-          {t(STAGE_DATA.soc2.badgeKey)}
+          {t(STAGE_DATA.soc2.badge)}
         </motion.div>
 
         <ul className="space-y-2.5">
@@ -205,9 +205,7 @@ function SelfhostScene({ t, reduceMotion }: { t: (key: string) => string; reduce
             {hosts[hostIndex]}
           </p>
         </div>
-        <p className="text-muted-foreground font-mono text-xs">
-          {t(STAGE_DATA.selfhost.commandKey)}
-        </p>
+        <p className="text-muted-foreground font-mono text-xs">{t(STAGE_DATA.selfhost.command)}</p>
       </div>
     </SceneShell>
   );
