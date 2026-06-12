@@ -36,6 +36,8 @@ spec:
             value: {{ .Values.rollout.analysis.errorRatePercentThreshold | quote }}
           - name: p95-latency-threshold
             value: {{ .Values.rollout.analysis.p95LatencySecondsThreshold | quote }}
+          - name: min-requests
+            value: {{ .Values.rollout.analysis.minRequests | quote }}
       {{- end }}
       steps:
 {{ toYaml .Values.rollout.steps | indent 8 }}
