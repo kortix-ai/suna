@@ -4,6 +4,7 @@ import { supabaseAuth } from '../../middleware/auth';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
+import { kickProjectWarmBake } from '../../snapshots/warm-project';
 import { isAccountManager, type ProjectRole } from '../access';
 import { getBackend, hasBackend, type GitScope } from '../git-backends';
 import { seedRepoViaGitPush } from '../git-backends/seed';
@@ -273,6 +274,11 @@ projectsApp.openapi(
     },
     { accountId: scope.accountId, source: 'project-create' },
   );
+
+  // Bake the project's warm snapshot (repo pre-cloned at tip + warm opencode
+  // caches) so even the FIRST session skips the clone. No-op unless warm
+  // snapshots are enabled.
+  kickProjectWarmBake(row);
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 },

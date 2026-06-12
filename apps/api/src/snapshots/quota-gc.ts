@@ -10,7 +10,7 @@
  * days, at which point every build org-wide starts failing.
  *
  * Deletion criteria (ALL must hold):
- *   1. Name is in our template namespaces (`kortix-default-` / `kortix-tpl-`).
+ *   1. Name is in our managed namespaces (`kortix-default-` / `kortix-tpl-` / `kortix-wproj-`).
  *      Warm bases have their own age-gated reaper; stock images are untouched.
  *   2. Not referenced by any local `sandbox_templates.provider_snapshot_name`
  *      (the row a session would boot from on the trust-the-row / graceful
@@ -28,8 +28,8 @@
  * view).
  */
 
-import { isNotNull } from 'drizzle-orm';
-import { sandboxTemplates } from '@kortix/db';
+import { isNotNull, sql } from 'drizzle-orm';
+import { projects, sandboxTemplates } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   deleteDaytonaSnapshotById,
@@ -37,7 +37,7 @@ import {
   listDaytonaSnapshots,
 } from '../shared/daytona';
 
-const TEMPLATE_PREFIXES = ['kortix-default-', 'kortix-tpl-'] as const;
+const TEMPLATE_PREFIXES = ['kortix-default-', 'kortix-tpl-', 'kortix-wproj-'] as const;
 /** Start deleting only when our namespace holds this many snapshots. */
 const QUOTA_GC_PRESSURE_THRESHOLD = 60;
 /** A snapshot must be unused this long before it is eligible. */
@@ -90,6 +90,14 @@ export async function reconcileSnapshotQuota(
         .where(isNotNull(sandboxTemplates.providerSnapshotName))
     ).map((r) => r.name as string),
   );
+  // Per-project warm snapshots are referenced via projects.metadata, not the
+  // templates table — protect the current pointer of every project.
+  for (const r of await db
+    .select({ name: sql<string>`${projects.metadata} -> 'warm_snapshot' ->> 'name'` })
+    .from(projects)
+    .where(sql`${projects.metadata} -> 'warm_snapshot' ->> 'name' IS NOT NULL`)) {
+    if (r.name) referenced.add(r.name);
+  }
 
   const now = opts.now ?? Date.now();
   const lastTouch = (s: { lastUsedAt?: string | null; createdAt: string | null }) => {

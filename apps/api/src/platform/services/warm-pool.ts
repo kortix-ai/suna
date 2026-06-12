@@ -245,6 +245,7 @@ async function spawnWarmSandbox(project: {
   repoUrl: string | null;
   defaultBranch: string;
   manifestPath: string | null;
+  metadata?: unknown;
 }): Promise<boolean> {
   const ownerUserId = await getProjectOwnerUserId(project.accountId);
   if (!ownerUserId || !project.repoUrl) return false;
@@ -261,12 +262,16 @@ async function spawnWarmSandbox(project: {
     agentName: 'default',
     initialPrompt: null,
   });
+  const { readProjectWarmPointer } = await import('../../snapshots/warm-project');
   await provisionSessionSandbox({
     sandboxId: W,
     accountId: project.accountId,
     projectId: project.projectId,
     userId: ownerUserId,
     extraEnvVars,
+    // Pool boxes ride the per-project warm snapshot too — the pool refills in
+    // seconds instead of paying the full clone+opencode boot.
+    projectWarmSnapshot: readProjectWarmPointer(project.metadata)?.name ?? null,
     poolState: 'booting',
     metadata: {
       warmPool: {

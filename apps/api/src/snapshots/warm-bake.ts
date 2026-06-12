@@ -55,8 +55,8 @@ const OPENCODE_VERSION = '1.15.10';
 const AGENT_BROWSER_VERSION = '0.27.0';
 
 const RUNTIME_HOME = '/opt/kortix/home';
-const OPENCODE_PORT = 4096;
-const XDG_EXPORTS =
+export const OPENCODE_PORT = 4096;
+export const XDG_EXPORTS =
   `export HOME=${RUNTIME_HOME} ` +
   `XDG_DATA_HOME=${RUNTIME_HOME}/.local/share ` +
   `XDG_CONFIG_HOME=${RUNTIME_HOME}/.config ` +
@@ -64,7 +64,7 @@ const XDG_EXPORTS =
   `PATH=/usr/local/bin:/usr/bin:/bin`;
 
 const CREATE_TIMEOUT_S = 180;
-const SNAPSHOT_TIMEOUT_S = 300;
+export const SNAPSHOT_TIMEOUT_S = 300;
 const UPLOAD_TIMEOUT_S = 300;
 
 /** Spec the warm base is resized to before snapshotting — mirrors the platform
@@ -102,22 +102,70 @@ export class WarmBakeError extends Error {
   }
 }
 
-type Sandbox = Awaited<ReturnType<ReturnType<typeof getDaytonaWarm>['create']>>;
+export type WarmSandbox = Awaited<ReturnType<ReturnType<typeof getDaytonaWarm>['create']>>;
+type Sandbox = WarmSandbox;
 
 /** Run a multi-line script in the sandbox, base64-piped to dodge shell quoting. */
-async function runScript(sb: Sandbox, script: string, timeoutS: number): Promise<{ exitCode: number; out: string }> {
+export async function runScript(sb: Sandbox, script: string, timeoutS: number): Promise<{ exitCode: number; out: string }> {
   const b64 = Buffer.from(script, 'utf8').toString('base64');
   const cmd = `echo ${b64} | base64 -d > /tmp/_kortix_bake.sh && bash /tmp/_kortix_bake.sh`;
   const r = await sb.process.executeCommand(cmd, undefined, undefined, timeoutS);
   return { exitCode: r.exitCode ?? 0, out: (r.result ?? '').trim() };
 }
 
-async function step(sb: Sandbox, label: string, script: string, timeoutS: number, onLog?: (l: string) => void): Promise<string> {
+export async function step(sb: Sandbox, label: string, script: string, timeoutS: number, onLog?: (l: string) => void): Promise<string> {
   const t = Date.now();
   const { exitCode, out } = await runScript(sb, script, timeoutS);
   onLog?.(`[warm-bake] ${label}: exit=${exitCode} (${((Date.now() - t) / 1000).toFixed(1)}s) ${out.split('\n').slice(-3).join(' | ')}`);
   if (exitCode !== 0) throw new WarmBakeError(`warm-bake step "${label}" failed (exit ${exitCode}): ${out.split('\n').slice(-4).join(' | ')}`);
   return out;
+}
+
+/**
+ * Create a builder/restore box from a warm snapshot, retrying through the
+ * experimental region's flakiness (creates fail outright with "internal error"
+ * ~half the time, and restored boxes occasionally come up with broken egress
+ * that would hang any later network step for minutes). Egress-gated; failed
+ * attempts are cleaned up and their error-state corpses swept. Shared by the
+ * runtime-base bake and the per-project bake.
+ */
+export async function createHealthyBuilder(baseSnapshot: string, onLog?: (l: string) => void): Promise<Sandbox> {
+  const daytona = getDaytonaWarm();
+  const BUILDER_ATTEMPTS = 6;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= BUILDER_ATTEMPTS; attempt++) {
+    let box: Sandbox | null = null;
+    try {
+      box = await daytona.create({ snapshot: baseSnapshot }, { timeout: CREATE_TIMEOUT_S });
+      // Health-gate the box before committing to a multi-minute bake: cheap
+      // probe — outbound HTTPS to the npm registry must answer.
+      const probe = await box.process.executeCommand(
+        `curl -s -o /dev/null -m 8 -w '%{http_code}' https://registry.npmjs.org/ || echo 000`,
+        undefined,
+        undefined,
+        20,
+      );
+      if (!(probe.result ?? '').includes('200')) {
+        throw new Error(`builder egress unhealthy (npm registry probe: ${(probe.result ?? '').trim() || 'no response'})`);
+      }
+      return box;
+    } catch (err) {
+      lastErr = err;
+      onLog?.(
+        `[warm-bake] builder attempt ${attempt}/${BUILDER_ATTEMPTS} failed: ` +
+          `${err instanceof Error ? err.message : String(err)}`,
+      );
+      if (box) await box.delete().catch(() => {});
+      // A create-throw leaves an error-state box behind org-side (we never got
+      // a handle). Sweep them so the dashboard doesn't fill with corpses.
+      void reapErroredWarmBoxes(baseSnapshot, onLog);
+      await new Promise((r) => setTimeout(r, 2_000 * attempt));
+    }
+  }
+  throw new WarmBakeError(
+    `builder create failed after ${BUILDER_ATTEMPTS} attempts: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
+    lastErr,
+  );
 }
 
 /** Gzip a file at max compression (same as the Dockerfile-snapshot builder). */
@@ -213,52 +261,7 @@ export async function bakeWarmSnapshot(opts: {
   onLog?.(`[warm-bake] staged build context (${(statSync(tarball).size / 1048576).toFixed(1)} MB)`);
 
   onLog?.(`[warm-bake] booting builder from ${baseSnapshot} on target "${config.DAYTONA_WARM_TARGET}"`);
-  // The experimental region's create is flaky ("failed to start: internal
-  // error", dropped filesystems). The bake is a background job, so just retry;
-  // a builder that lost the base filesystem is still fine — every install step
-  // below recreates the runtime from scratch.
-  // ~half of experimental-region creates currently fail with "internal error";
-  // 6 tries puts a full streak of bad luck under 2%. Background job — patience
-  // is free.
-  const BUILDER_ATTEMPTS = 6;
-  let sb: Awaited<ReturnType<typeof daytona.create>> | null = null;
-  let lastErr: unknown;
-  for (let attempt = 1; attempt <= BUILDER_ATTEMPTS && !sb; attempt++) {
-    let box: Awaited<ReturnType<typeof daytona.create>> | null = null;
-    try {
-      box = await daytona.create({ snapshot: baseSnapshot }, { timeout: CREATE_TIMEOUT_S });
-      // Health-gate the box before committing to a multi-minute bake: a flaky
-      // restore can come up with broken egress (npm/apt then hang for minutes).
-      // Cheap probe: outbound HTTPS to the npm registry must answer.
-      const probe = await box.process.executeCommand(
-        `curl -s -o /dev/null -m 8 -w '%{http_code}' https://registry.npmjs.org/ || echo 000`,
-        undefined,
-        undefined,
-        20,
-      );
-      if (!(probe.result ?? '').includes('200')) {
-        throw new Error(`builder egress unhealthy (npm registry probe: ${(probe.result ?? '').trim() || 'no response'})`);
-      }
-      sb = box;
-    } catch (err) {
-      lastErr = err;
-      onLog?.(
-        `[warm-bake] builder attempt ${attempt}/${BUILDER_ATTEMPTS} failed: ` +
-          `${err instanceof Error ? err.message : String(err)}`,
-      );
-      if (box) await box.delete().catch(() => {});
-      // A create-throw leaves an error-state box behind org-side (we never got
-      // a handle). Sweep them so the dashboard doesn't fill with corpses.
-      void reapErroredWarmBoxes(baseSnapshot, onLog);
-      await new Promise((r) => setTimeout(r, 2_000 * attempt));
-    }
-  }
-  if (!sb) {
-    throw new WarmBakeError(
-      `builder create failed after ${BUILDER_ATTEMPTS} attempts: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`,
-      lastErr,
-    );
-  }
+  const sb = await createHealthyBuilder(baseSnapshot, onLog);
 
   try {
     const bakeStart = Date.now();
@@ -449,7 +452,7 @@ function snapState(snap: unknown): string {
  * warm create would fail into the cooldown loop forever. regionIds is read
  * defensively (older API responses may omit it → assume ok).
  */
-function warmBaseUsable(snap: unknown): boolean {
+export function warmBaseUsable(snap: unknown): boolean {
   if (snapState(snap) !== 'active') return false;
   const regions = (snap as { regionIds?: unknown } | null)?.regionIds;
   return !Array.isArray(regions) || regions.includes(config.DAYTONA_WARM_TARGET);

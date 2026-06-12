@@ -129,6 +129,13 @@ export async function provisionSessionSandbox(opts: {
    */
   sandboxSlug?: string;
   /**
+   * The project's per-project warm snapshot (projects.metadata.warm_snapshot
+   * .name — repo baked at tip + warm opencode caches). Preferred over the
+   * generic warm base when usable; verified against the provider before use,
+   * so a stale pointer just falls back. See snapshots/warm-project.ts.
+   */
+  projectWarmSnapshot?: string | null;
+  /**
    * Runs after the provider sandbox is created but BEFORE the row is flipped to
    * `active`. Used by legacy migration to restore the original opencode store
    * into the sandbox before the frontend's `ensure-opencode` pin runs (which
@@ -162,15 +169,36 @@ export async function provisionSessionSandbox(opts: {
   // already exists. On the warm path this overlaps the ~200ms token round-trip
   // with the ~100-300ms cache-check, taking the smaller off the critical path.
   type FirstImage = EnsureSandboxImageResult & { gitProject: GitBackedProject };
-  // Experimental warm path: if a memory-state warm base is ready, boot from it
-  // instead of resolving/building the per-project Dockerfile snapshot. Fully
-  // inert unless KORTIX_WARM_SNAPSHOT_ENABLED + DAYTONA_WARM_TARGET are set;
-  // ensureWarmBaseReady returns null (→ normal path) when not ready or on error.
-  // Restricted to the platform-default slug: the warm base carries only the
+  // Experimental warm path. Preference order:
+  //   1. The PROJECT's warm snapshot (repo already cloned at tip + opencode
+  //      caches warm — skips the clone entirely; commits since bake are
+  //      fast-forwarded post-boot via /kortix/refresh).
+  //   2. The generic warm runtime base (skips the cold create; clone still runs).
+  //   3. null → the normal Dockerfile-snapshot path.
+  // Fully inert unless KORTIX_WARM_SNAPSHOT_ENABLED + DAYTONA_WARM_TARGET are
+  // set. Restricted to the platform-default slug: warm snapshots carry only the
   // default runtime, so a project with a custom [[sandbox.templates]] Dockerfile
-  // must still boot its own per-project snapshot.
-  let warmBase =
-    providerName === 'daytona' && slug === DEFAULT_SANDBOX_SLUG ? await ensureWarmBaseReady() : null;
+  // must still boot its own per-project image.
+  let warmBase: string | null = null;
+  let warmIsProjectSnapshot = false;
+  if (providerName === 'daytona' && slug === DEFAULT_SANDBOX_SLUG) {
+    if (opts.projectWarmSnapshot) {
+      try {
+        const { getDaytonaWarm, warmSnapshotsEnabled } = await import('../../shared/daytona');
+        if (warmSnapshotsEnabled()) {
+          const { warmBaseUsable } = await import('../../snapshots/warm-bake');
+          const snap = await getDaytonaWarm().snapshot.get(opts.projectWarmSnapshot);
+          if (warmBaseUsable(snap)) {
+            warmBase = opts.projectWarmSnapshot;
+            warmIsProjectSnapshot = true;
+          }
+        }
+      } catch {
+        // pointer is stale (snapshot gone) — fall through to the generic base
+      }
+    }
+    if (!warmBase) warmBase = await ensureWarmBaseReady();
+  }
   let firstImagePromise: Promise<FirstImage> | null = warmBase
     ? null
     : (async () => {
@@ -497,6 +525,15 @@ export async function provisionSessionSandbox(opts: {
         .where(eq(projectSessions.sessionId, sandbox.sandboxId))
         .catch(() => {});
 
+      // Project warm snapshot: the baked workspace is at BAKE-time tip. Fast-
+      // forward it to the CURRENT base tip in the background (same fast-forward
+      // a warm-pool claim does) so commits merged since the bake are present.
+      if (warmIsProjectSnapshot && result.externalId) {
+        void import('../../snapshots/warm-project')
+          .then(({ refreshRestoredWorkspace }) => refreshRestoredWorkspace(result.externalId, userId))
+          .catch(() => {});
+      }
+
       tl.mark('row-active');
       tl.log({ provider: providerName, attempts });
 
@@ -533,6 +570,7 @@ export async function provisionSessionSandbox(opts: {
         const { noteWarmPathFailure } = await import('../../snapshots/warm-bake');
         noteWarmPathFailure();
         warmBase = null;
+        warmIsProjectSnapshot = false;
         providerCreateInput.warmBaseSnapshot = undefined;
         if (bgExternalId) {
           await provider.remove(bgExternalId).catch(() => {});

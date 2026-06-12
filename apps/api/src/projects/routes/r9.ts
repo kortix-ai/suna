@@ -1,6 +1,7 @@
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
 import { kickProjectTemplatePrebuilds } from '../../snapshots/builder';
+import { kickProjectWarmBake } from '../../snapshots/warm-project';
 import { getCrById, serializeChangeRequest } from '../change-requests';
 import { invalidateProjectMirror, mergeBranches, readRepoFile } from '../git';
 import { MANIFEST_FILENAME } from '../triggers';
@@ -119,6 +120,11 @@ projectsApp.openapi(
     accountId: loaded.row.accountId,
     source: 'cr-merge',
   });
+
+  // Re-bake the project's WARM snapshot at the new tip (repo pre-cloned +
+  // opencode caches) so the next session boots commit-fresh with no clone.
+  // No-op unless warm snapshots are enabled. Best-effort, never blocks.
+  kickProjectWarmBake(projectForGit);
 
   // A merged CR may have edited kortix.toml's [[connectors]]. The connector DB
   // cache (what the gateway + dashboard read) is derived from the manifest, so

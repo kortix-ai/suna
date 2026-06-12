@@ -5,6 +5,7 @@ import { auth, json } from '../../openapi';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { claimWarmSandbox, refillProjectPool, syncClaimedBoxToBase, warmPoolEnabled } from '../../platform/services/warm-pool';
+import { readProjectWarmPointer } from '../../snapshots/warm-project';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/account-limits';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
@@ -566,6 +567,9 @@ export async function createProjectSession(input: {
         resolveGitAuthToken: async () => (await gitAuthPromise).auth?.token ?? null,
         baseRef,
         sandboxSlug,
+        // Per-project warm snapshot pointer (repo baked at tip) — verified
+        // against the provider inside provisionSessionSandbox before use.
+        projectWarmSnapshot: readProjectWarmPointer(project.metadata)?.name ?? null,
       });
 
       // provisionSessionSandbox returns once its row is inserted; provider
