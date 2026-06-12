@@ -41,6 +41,13 @@ ingress:
   certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/2b74aa18-1fe1-4cc8-a6c1-7012a0823d27
   cloudflareProxied: true
 
-# Phase 2 flips this to true (Argo Rollouts canary + CloudWatch analysis).
+# Argo Rollouts canary + CloudWatch auto-rollback. Health-based abort works now;
+# the load-based 5xx/latency analysis becomes meaningful once api-eks serves real
+# traffic (at the api.kortix.com cutover). ALB dimensions captured from the live
+# target group (stable for the life of the ingress).
 rollout:
-  enabled: false
+  enabled: true
+  analysis:
+    enabled: true
+    lbArnSuffix: "app/k8s-kortixpr-kortixap-b24c15d61b/a294c0dfce97d54d"
+    tgArnSuffix: "targetgroup/k8s-kortixpr-kortixap-0d85bef361/b3b73cd646a9caf2"
