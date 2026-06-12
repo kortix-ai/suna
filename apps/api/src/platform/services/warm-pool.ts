@@ -260,7 +260,6 @@ async function spawnWarmSandbox(project: {
     sessionId: W,
     userId: ownerUserId,
     repoUrl: project.repoUrl,
-    sandboxProvider: provider,
     baseRef: project.defaultBranch,
     agentName: 'default',
     initialPrompt: null,
