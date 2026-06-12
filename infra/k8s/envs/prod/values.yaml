@@ -35,11 +35,14 @@ ingress:
   certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/2b74aa18-1fe1-4cc8-a6c1-7012a0823d27
   cloudflareProxied: true
 # Argo Rollouts canary + CloudWatch auto-rollback. Health-based abort works now;
-# the load-based 5xx/latency analysis becomes meaningful once api-eks serves real
-# traffic (at the api.kortix.com cutover). ALB dimensions captured from the live
-# target group (stable for the life of the ingress).
+# Plain rolling Deployment (no canary). The EKS wins we actually want —
+# auto-healing (probes restart hung/stale pods), autoscaling (HPA + cluster
+# autoscaler), zero-downtime rolling deploys — all come from the Deployment, not
+# the canary. Progressive delivery (Argo Rollouts canary + CloudWatch analysis)
+# is fragile without real traffic and isn't needed now; flip enabled=true to
+# bring it back (the template + min-request guard are kept + ready).
 rollout:
-  enabled: true
+  enabled: false
   analysis:
     # CloudWatch 5xx + p95-latency, auto-rollback on breach. successCondition
     # short-circuits cleanly on no-data (pre-cutover api-eks has ~no traffic →
