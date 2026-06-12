@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, count, eq } from 'drizzle-orm';
+import { and, count, eq, sql } from 'drizzle-orm';
 import { json, errors, auth } from '../../openapi';
 import { accountMembers, accounts, accountUser, projects } from '@kortix/db';
 import { db } from '../../shared/db';
@@ -213,10 +213,31 @@ accountsRouter.openapi(
   const membership = await getMembership(userId, accountId);
   if (!membership) return c.json({ error: 'Forbidden' }, 403);
 
-  const [memberCountRow] = await db
-    .select({ n: count() })
-    .from(accountMembers)
-    .where(eq(accountMembers.accountId, accountId));
+  // Member count EXCLUDING phantom self-memberships (user_id == account_id with
+  // no auth user) — same definition as billing/countActiveMembers and the
+  // members-list filter, so the "Members" counter matches the visible list and
+  // the billed seat count. Personal-account owners (user_id == account_id but a
+  // real auth user) are kept; falls back to a plain count if auth is unreachable.
+  let memberCount = 0;
+  try {
+    const res = await db.execute<{ n: number }>(sql`
+      SELECT COUNT(*)::int AS n
+      FROM kortix.account_members am
+      WHERE am.account_id = ${accountId}::uuid
+        AND NOT (
+          am.user_id = am.account_id
+          AND NOT EXISTS (SELECT 1 FROM auth.users u WHERE u.id = am.user_id)
+        )
+    `);
+    const countRows = ((res as unknown) as { rows?: Array<{ n: number }> }).rows ?? (res as unknown as Array<{ n: number }>);
+    memberCount = Number(countRows?.[0]?.n ?? 0);
+  } catch {
+    const [memberCountRow] = await db
+      .select({ n: count() })
+      .from(accountMembers)
+      .where(eq(accountMembers.accountId, accountId));
+    memberCount = Number(memberCountRow?.n ?? 0);
+  }
   const [projectCountRow] = await db
     .select({ n: count() })
     .from(projects)
@@ -225,7 +246,7 @@ accountsRouter.openapi(
   return c.json({
     account_id: row.accountId,
     name: row.name,
-    member_count: Number(memberCountRow?.n ?? 0),
+    member_count: memberCount,
     project_count: Number(projectCountRow?.n ?? 0),
     role: membership.accountRole,
     created_at: row.createdAt.toISOString(),
