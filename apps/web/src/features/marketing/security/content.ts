@@ -49,8 +49,8 @@ export const ACCORDION = [
     id: 'soc2',
     icon: 'shield',
     title: 'enterpriseAccordionSoc2Title',
-    teaser: 'enterpriseAccordionSoc2Teaser',
-    body: 'enterpriseAccordionSoc2Body',
+    teaser: 'enterpriseAccordionSocTeaserLabel',
+    body: 'enterpriseAccordionSocBody',
     visual: 'soc2',
   },
   {
@@ -85,7 +85,7 @@ export const STAGE_DATA = {
       'enterpriseStageSoc2Control2',
       'enterpriseStageSoc2Control3',
     ],
-    badge: 'enterpriseStageSoc2Badge',
+    badge: 'enterpriseStageSocBadge',
   },
   selfhost: {
     hostKeys: [
