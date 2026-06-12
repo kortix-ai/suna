@@ -37,7 +37,9 @@ export function formatCredits(credits: number | null | undefined, options?: { sh
     return '0';
   }
   
-  const rounded = Math.round(credits);
+  // `+ 0` normalizes negative zero (e.g. Math.round(-0.4) === -0) so it never
+  // renders as the string "-0".
+  const rounded = Math.round(credits) + 0;
   
   if (options?.showDecimals) {
     // Format with decimals and thousand separators
@@ -64,7 +66,10 @@ export function formatCreditsWithSign(credits: number | null | undefined, option
   }
   
   const formatted = formatCredits(Math.abs(credits), options);
-  return credits >= 0 ? `+${formatted}` : `-${formatted}`;
+  // Base the sign on the displayed magnitude: a tiny negative that rounds to 0
+  // (e.g. -0.4) should read "+0", never "-0".
+  const isNegative = credits < 0 && parseFloat(formatted.replace(/,/g, '')) !== 0;
+  return isNegative ? `-${formatted}` : `+${formatted}`;
 }
 
 /**
