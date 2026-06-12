@@ -1,3 +1,3 @@
-CI/CD — traffic-aware canary analysis (internal, no user-facing changes)
+EKS prod: rolling Deployment delivery (canary retired)
 
-Internal pipeline release — no product or API behavior changes.
+EKS prod now ships as a plain rolling Deployment via Argo CD

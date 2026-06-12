@@ -5,8 +5,8 @@
 
 # Immutable release tag (promote bumps this). NOT :latest / :dev-latest in GitOps.
 image:
-  tag: "0.9.43"
-kortixVersion: "0.9.43"
+  tag: "0.9.44"
+kortixVersion: "0.9.44"
 env:
   internalKortixEnv: prod
 # PRE-CUTOVER: api-eks is the candidate while api.kortix.com is still served by
@@ -34,7 +34,6 @@ ingress:
   host: api-eks.kortix.com
   certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/2b74aa18-1fe1-4cc8-a6c1-7012a0823d27
   cloudflareProxied: true
-# Argo Rollouts canary + CloudWatch auto-rollback. Health-based abort works now;
 # Plain rolling Deployment (no canary). The EKS wins we actually want —
 # auto-healing (probes restart hung/stale pods), autoscaling (HPA + cluster
 # autoscaler), zero-downtime rolling deploys — all come from the Deployment, not
