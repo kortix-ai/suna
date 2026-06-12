@@ -203,11 +203,84 @@ resource "helm_release" "cluster_autoscaler" {
   }
 }
 
+# ── Argo CD values (built up: HA + optional UI ingress + optional GitHub SSO) ──
+locals {
+  argocd_alb_annotations = {
+    "alb.ingress.kubernetes.io/scheme"                    = "internet-facing"
+    "alb.ingress.kubernetes.io/target-type"               = "ip"
+    "alb.ingress.kubernetes.io/listen-ports"              = "[{\"HTTP\":80},{\"HTTPS\":443}]"
+    "alb.ingress.kubernetes.io/ssl-redirect"              = "443"
+    "alb.ingress.kubernetes.io/ssl-policy"                = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+    "alb.ingress.kubernetes.io/certificate-arn"           = var.argocd_certificate_arn
+    "alb.ingress.kubernetes.io/backend-protocol"          = "HTTP"
+    "alb.ingress.kubernetes.io/healthcheck-path"          = "/healthz"
+    "alb.ingress.kubernetes.io/success-codes"             = "200"
+    "alb.ingress.kubernetes.io/inbound-cidrs"             = join(",", var.cloudflare_inbound_cidrs)
+    "external-dns.alpha.kubernetes.io/hostname"           = var.argocd_domain
+    "external-dns.alpha.kubernetes.io/cloudflare-proxied" = "true"
+  }
+
+  # Dex GitHub-org connector: log in with GitHub, restricted to the org. The
+  # client secret is referenced from argocd-secret ($dex.github.clientSecret).
+  argocd_dex_config = <<-EOT
+    connectors:
+      - type: github
+        id: github
+        name: GitHub
+        config:
+          clientID: ${var.argocd_github_client_id}
+          clientSecret: $dex.github.clientSecret
+          orgs:
+            - name: ${var.argocd_github_org}
+  EOT
+
+  argocd_values = {
+    "redis-ha"     = { enabled = false }
+    applicationSet = { replicas = 2 }
+    repoServer     = { replicas = 2 }
+    server = merge(
+      { replicas = 2 },
+      var.argocd_ui_enabled ? {
+        ingress = {
+          enabled          = true
+          ingressClassName = "alb"
+          hostname         = var.argocd_domain
+          path             = "/"
+          pathType         = "Prefix"
+          tls              = false
+          annotations      = local.argocd_alb_annotations
+        }
+      } : {}
+    )
+    configs = {
+      # server.insecure: HTTP behind the TLS-terminating ALB (UI mode).
+      params = var.argocd_ui_enabled ? { "server.insecure" = true } : {}
+      cm = merge(
+        var.argocd_ui_enabled ? { url = "https://${var.argocd_domain}" } : {},
+        var.argocd_github_sso_enabled ? {
+          "dex.config"    = local.argocd_dex_config
+          "admin.enabled" = tostring(!var.argocd_disable_admin)
+        } : {}
+      )
+      # Org members get read-only; the admin team gets full admin. Dex returns
+      # GitHub groups as "org:team" in the groups claim (Argo's default scope),
+      # so the admin team maps via "org:team". Tighten/expand later.
+      rbac = var.argocd_github_sso_enabled ? {
+        "policy.default" = "role:readonly"
+        "policy.csv"     = "g, ${var.argocd_github_org}:${var.argocd_admin_team}, role:admin\n"
+      } : {}
+      secret = var.argocd_github_sso_enabled ? {
+        extra = { "dex.github.clientSecret" = var.argocd_github_client_secret }
+      } : {}
+    }
+  }
+}
+
 # ── Argo CD (GitOps deploy engine) ────────────────────────────────────────────
 # The single deploy engine: it reconciles the cluster to the manifests in
 # infra/k8s/ (app-of-apps), replacing imperative `helm upgrade`/`aws ecs` calls.
-# Installed once here; thereafter it self-manages via the app-of-apps. Server is
-# ClusterIP (reach it with `kubectl -n argocd port-forward svc/argocd-server`).
+# UI at ops.kortix.com (Cloudflare-Access gated) when argocd_ui_enabled; GitHub-
+# org SSO + admin retirement when argocd_github_sso_enabled.
 resource "helm_release" "argo_cd" {
   name             = "argo-cd"
   repository       = "https://argoproj.github.io/argo-helm"
@@ -218,58 +291,7 @@ resource "helm_release" "argo_cd" {
   atomic           = true
   timeout          = 900
 
-  # Expose the UI on its own ALB (ops.kortix.com) when enabled. server.insecure
-  # = the server speaks HTTP behind the TLS-terminating ALB; the ALB only accepts
-  # Cloudflare IPs so the Cloudflare Access gate can't be bypassed.
-  values = var.argocd_ui_enabled ? [yamlencode({
-    configs = {
-      params = {
-        "server.insecure" = true
-      }
-    }
-    server = {
-      ingress = {
-        enabled          = true
-        ingressClassName = "alb"
-        hostname         = var.argocd_domain
-        path             = "/"
-        pathType         = "Prefix"
-        tls              = false
-        annotations = {
-          "alb.ingress.kubernetes.io/scheme"                    = "internet-facing"
-          "alb.ingress.kubernetes.io/target-type"               = "ip"
-          "alb.ingress.kubernetes.io/listen-ports"              = "[{\"HTTP\":80},{\"HTTPS\":443}]"
-          "alb.ingress.kubernetes.io/ssl-redirect"              = "443"
-          "alb.ingress.kubernetes.io/ssl-policy"                = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-          "alb.ingress.kubernetes.io/certificate-arn"           = var.argocd_certificate_arn
-          "alb.ingress.kubernetes.io/backend-protocol"          = "HTTP"
-          "alb.ingress.kubernetes.io/healthcheck-path"          = "/healthz"
-          "alb.ingress.kubernetes.io/success-codes"             = "200"
-          "alb.ingress.kubernetes.io/inbound-cidrs"             = join(",", var.cloudflare_inbound_cidrs)
-          "external-dns.alpha.kubernetes.io/hostname"           = var.argocd_domain
-          "external-dns.alpha.kubernetes.io/cloudflare-proxied" = "true"
-        }
-      }
-    }
-  })] : []
-
-  # Run the core controllers with 2 replicas where the chart supports it (HA-lite).
-  set {
-    name  = "redis-ha.enabled"
-    value = "false"
-  }
-  set {
-    name  = "applicationSet.replicas"
-    value = "2"
-  }
-  set {
-    name  = "server.replicas"
-    value = "2"
-  }
-  set {
-    name  = "repoServer.replicas"
-    value = "2"
-  }
+  values = [yamlencode(local.argocd_values)]
 }
 
 # ── Argo Rollouts (progressive delivery) ──────────────────────────────────────

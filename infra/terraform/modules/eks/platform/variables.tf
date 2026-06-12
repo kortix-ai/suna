@@ -89,6 +89,44 @@ variable "argocd_certificate_arn" {
   default     = ""
 }
 
+# ── Argo CD GitHub-org SSO ────────────────────────────────────────────────────
+variable "argocd_github_sso_enabled" {
+  description = "Enable GitHub-org SSO (Dex) for Argo CD login."
+  type        = bool
+  default     = false
+}
+
+variable "argocd_github_org" {
+  description = "GitHub org whose members may log in to Argo CD."
+  type        = string
+  default     = "kortix-ai"
+}
+
+variable "argocd_admin_team" {
+  description = "GitHub team (within the org) granted Argo CD admin; everyone else in the org is read-only."
+  type        = string
+  default     = "eng"
+}
+
+variable "argocd_github_client_id" {
+  description = "GitHub OAuth App client ID for Argo CD SSO."
+  type        = string
+  default     = ""
+}
+
+variable "argocd_github_client_secret" {
+  description = "GitHub OAuth App client secret. Supply via TF_VAR_argocd_github_client_secret."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "argocd_disable_admin" {
+  description = "Disable the built-in Argo CD admin account (do this ONLY after SSO login is verified, or you'll lock yourself out)."
+  type        = bool
+  default     = false
+}
+
 variable "cloudflare_inbound_cidrs" {
   description = "CIDRs allowed to hit the Argo CD ALB — locked to Cloudflare's ranges so the Cloudflare Access gate can't be bypassed via the raw ALB DNS."
   type        = list(string)

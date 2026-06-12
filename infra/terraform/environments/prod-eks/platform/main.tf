@@ -97,6 +97,14 @@ module "platform" {
   argocd_domain          = local.cluster.argocd_domain
   argocd_certificate_arn = local.cluster.acm_argocd_certificate_arn
 
+  # GitHub-org SSO for Argo CD login.
+  argocd_github_sso_enabled   = var.argocd_github_sso_enabled
+  argocd_github_org           = var.argocd_github_org
+  argocd_admin_team           = var.argocd_admin_team
+  argocd_github_client_id     = var.argocd_github_client_id
+  argocd_github_client_secret = var.argocd_github_client_secret
+  argocd_disable_admin        = var.argocd_disable_admin
+
   tags = {
     Environment = "prod"
     Service     = "kortix-api"
