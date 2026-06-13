@@ -6,10 +6,10 @@ name: Deploy Dev
 # release tag (see the dev-version job). So dev tracks prod automatically and
 # `main` carries no release-version bump.
 #
-#   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest. Deploying it to
-#                   the dev EKS cluster is a SEPARATE workflow (deploy-dev-eks.yml):
-#                   on this workflow's success it bumps envs/dev/values.yaml to
-#                   :dev-<sha8> and Argo CD rolls the dev Deployment (GitOps).
+#   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest, then deployed to
+#                   the dev EKS cluster via GitOps (the deploy-api job bumps
+#                   infra/k8s/envs/dev/values.yaml to :dev-<sha8> and Argo CD
+#                   rolls the dev Deployment; this workflow waits for the roll).
 #   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest (image is for
 #                   self-hosters). dev.kortix.com itself is deployed by Vercel
 #                   from `main` via Vercel's own Git integration — no deploy step.
@@ -175,6 +175,112 @@ jobs:
             --tag "kortix/kortix-api:dev-${SHA8}" \
             "kortix/kortix-api:dev-latest"
           echo "image=kortix/kortix-api:dev-${SHA8}" >> "$GITHUB_OUTPUT"
+
+  # ── Deploy the freshly-built image to the dev EKS cluster (GitOps) ──────────
+  # Bump infra/k8s/envs/dev/values.yaml to the immutable :dev-<sha8> tag and
+  # commit it to main ([skip ci] so this push doesn't re-trigger the workflow);
+  # Argo CD on the dev-eks cluster reconciles it → rolling Deployment. Then wait
+  # for the roll to finish on exactly that tag. (Replaces the old ECS roll.)
+  deploy-api:
+    name: Deploy API to dev (EKS / GitOps)
+    needs: [detect-changes, tag-api]
+    if: needs.detect-changes.outputs.api == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # OIDC → read the dev cluster
+      contents: write # push the values bump to main
+    env:
+      AWS_REGION: us-west-2
+      CLUSTER: kortix-dev-eks
+      NAMESPACE: kortix-dev
+      APP: kortix-api
+      API_HOST: dev-api-eks.kortix.com
+      VALUES: infra/k8s/envs/dev/values.yaml
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy-dev
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump dev image tag + commit
+        id: bump
+        run: |
+          set -euo pipefail
+          TAG="dev-${GITHUB_SHA::8}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          if [ "$(yq '.image.tag' "$VALUES")" = "$TAG" ]; then
+            echo "values already at $TAG — no commit needed."
+          else
+            TAG="$TAG" yq -i '.image.tag = strenv(TAG)' "$VALUES"
+            git config user.name  "kortix-ci[bot]"
+            git config user.email "kortix-ci[bot]@users.noreply.github.com"
+            git add "$VALUES"
+            git commit -m "chore(dev-eks): deploy ${TAG} [skip ci]"
+            # main moves fast; rebase onto any concurrent pushes before pushing.
+            for attempt in 1 2 3; do
+              git pull --rebase --autostash origin main && git push origin main && break
+              echo "push attempt ${attempt} lost a race — retrying"; sleep 3
+            done
+          fi
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Guard — cluster exists
+        id: guard
+        run: |
+          if aws eks describe-cluster --name "$CLUSTER" --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::dev-eks cluster not found — bump committed, skipping watch."
+          fi
+
+      - name: Update kubeconfig
+        if: steps.guard.outputs.exists == 'true'
+        run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
+
+      # Wait for Argo to reconcile the bump and the Deployment to finish rolling
+      # out exactly :dev-<sha8> — Argo applied the new spec (observedGeneration
+      # caught up) AND every replica is updated + available.
+      - name: Wait for Deployment rolled out @ ${{ steps.bump.outputs.tag }}
+        if: steps.guard.outputs.exists == 'true'
+        env:
+          TAG: ${{ steps.bump.outputs.tag }}
+        run: |
+          set -uo pipefail
+          for i in $(seq 1 60); do
+            img="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+            gen="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.metadata.generation}' 2>/dev/null || true)"
+            obs="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.observedGeneration}' 2>/dev/null || true)"
+            desired="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+            updated="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.updatedReplicas}' 2>/dev/null || true)"
+            avail="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+            echo "($i/60) image=${img:-?} gen=${obs:-?}/${gen:-?} updated=${updated:-0}/${desired:-?} available=${avail:-0}"
+            if printf '%s' "$img" | grep -q ":${TAG}$" \
+               && [ -n "$desired" ] && [ "${obs:-0}" -ge "${gen:-1}" ] \
+               && [ "${updated:-0}" = "$desired" ] && [ "${avail:-0}" = "$desired" ]; then
+              echo "✓ EKS dev rolled out on :${TAG} (${avail}/${desired} ready)"; exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::dev Deployment did not roll out to :${TAG} within ~15m (Argo lag, stuck, or pods never Ready)."
+          exit 1
+
+      - name: Summary
+        if: always() && steps.guard.outputs.exists == 'true'
+        run: |
+          h="$(curl -s --max-time 10 "https://${API_HOST}/v1/health" || true)"
+          {
+            echo "### Deployed API → **dev** (EKS / Argo CD GitOps)"
+            echo "Image \`kortix/kortix-api:${{ steps.bump.outputs.tag }}\` → \`infra/k8s/envs/dev/values.yaml\` → Argo CD rolled the dev Deployment."
+            echo "Live: \`$(printf '%s' "$h" | jq -c '{version,commit,environment}' 2>/dev/null || echo '?')\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Build + push the multi-arch frontend image ──────────────────────────────
   # dev.kortix.com is served by Vercel (auto-deploys from `main`); this image is
