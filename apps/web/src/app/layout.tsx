@@ -17,8 +17,8 @@ import { headers } from 'next/headers';
 import { connection } from 'next/server';
 import { Suspense, lazy } from 'react';
 import { Toaster } from 'sonner';
-import { roobert } from './fonts/roobert';
-import { roobertMono } from './fonts/roobert-mono';
+import { roobert } from './(system)/fonts/roobert';
+import { roobertMono } from './(system)/fonts/roobert-mono';
 import './globals.css';
 import { ReactQueryProvider } from './react-query-provider';
 
