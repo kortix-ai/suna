@@ -40,9 +40,11 @@ export async function ensureSchema(): Promise<void> {
     return;
   }
 
-  // Production: schema managed externally (CI/CD migrations)
-  if (config.INTERNAL_KORTIX_ENV === 'prod') {
-    console.log('[schema] Production mode — skipping auto-push (managed externally)');
+  // Production: schema managed externally (CI/CD migrations). Preview: ephemeral
+  // per-PR API shares the dev DB and must NEVER migrate it — schema changes are
+  // applied to dev deliberately, not by every preview pod at boot.
+  if (config.INTERNAL_KORTIX_ENV === 'prod' || config.INTERNAL_KORTIX_ENV === 'preview') {
+    console.log(`[schema] ${config.INTERNAL_KORTIX_ENV} mode — skipping auto-push (DB managed elsewhere)`);
     return;
   }
 

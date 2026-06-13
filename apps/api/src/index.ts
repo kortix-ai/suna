@@ -127,10 +127,23 @@ const corsOrigins = [
   ]),
 ];
 
+// Preview env (ephemeral per-PR API): also allow the matching preview frontends.
+// Their origins are dynamic per PR (Vercel deploy URLs + *.preview.kortix.com
+// aliases) so they can't be enumerated above. Scoped to INTERNAL_KORTIX_ENV=preview
+// only — dev/prod keep the strict static allowlist.
+const allowPreviewOrigins = config.INTERNAL_KORTIX_ENV === 'preview';
+const PREVIEW_ORIGIN = /^https:\/\/[a-z0-9-]+\.(vercel\.app|preview\.kortix\.com)$/i;
+
 app.use(
   '*',
   cors({
-    origin: corsOrigins,
+    origin: (origin) => {
+      // No Origin header (same-origin, curl, server-to-server) → not a CORS request.
+      if (!origin) return origin;
+      if (corsOrigins.includes(origin)) return origin;
+      if (allowPreviewOrigins && PREVIEW_ORIGIN.test(origin)) return origin;
+      return null; // not allowed → no Access-Control-Allow-Origin
+    },
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Kortix-Token', 'X-Api-Key', 'Accept', 'X-Kortix-Signature', 'X-Hub-Signature-256', 'traceparent', 'tracestate', 'X-Request-Id'],
     credentials: true,
@@ -280,6 +293,7 @@ const HealthSchema = z
     instance: z.string(),
     started_at: z.string(),
     uptime_seconds: z.number(),
+    memory_mb: z.number(),
     timestamp: z.string(),
     billing_enabled: z.boolean(),
     warm_snapshots: z.boolean(),
@@ -298,6 +312,9 @@ const healthHandler = (c: any) =>
     instance: API_INSTANCE,
     started_at: STARTED_AT,
     uptime_seconds: Math.round(process.uptime()),
+    // Resident memory (MB) for this pod — a quick leak/OOM-risk signal against
+    // the container's memory limit, without needing metrics-server/dashboards.
+    memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     // Whether the Daytona warm-snapshot path is live in this env (flag + key +
