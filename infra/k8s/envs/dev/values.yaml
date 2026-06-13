@@ -42,9 +42,7 @@ externalSecrets:
 ingress:
   enabled: true
   host: dev-api-eks.kortix.com
-  # FILL AFTER `terraform apply` of dev-eks/cluster:
-  #   terraform -chdir=infra/terraform/environments/dev-eks/cluster output acm_certificate_arn
-  certificateArn: REPLACE_WITH_dev-eks_acm_certificate_arn
+  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/57eed8f4-cba4-4d6a-94ea-1b948708989b
   cloudflareProxied: true
 
 # Plain rolling Deployment (no canary) — same delivery model as prod-eks:
