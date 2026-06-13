@@ -280,6 +280,7 @@ const HealthSchema = z
     instance: z.string(),
     started_at: z.string(),
     uptime_seconds: z.number(),
+    memory_mb: z.number(),
     timestamp: z.string(),
     billing_enabled: z.boolean(),
     warm_snapshots: z.boolean(),
@@ -298,6 +299,9 @@ const healthHandler = (c: any) =>
     instance: API_INSTANCE,
     started_at: STARTED_AT,
     uptime_seconds: Math.round(process.uptime()),
+    // Resident memory (MB) for this pod — a quick leak/OOM-risk signal against
+    // the container's memory limit, without needing metrics-server/dashboards.
+    memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
     // Whether the Daytona warm-snapshot path is live in this env (flag + key +
