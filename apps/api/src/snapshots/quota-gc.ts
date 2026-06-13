@@ -29,7 +29,7 @@
  */
 
 import { isNotNull, sql } from 'drizzle-orm';
-import { projects, sandboxTemplates } from '@kortix/db';
+import { sandboxTemplates } from '@kortix/db';
 import { db } from '../shared/db';
 import {
   deleteDaytonaSnapshotById,

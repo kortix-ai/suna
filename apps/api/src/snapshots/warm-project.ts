@@ -31,7 +31,6 @@
 import { createHash } from 'node:crypto';
 import { eq, sql } from 'drizzle-orm';
 import { projects } from '@kortix/db';
-import { config } from '../config';
 import { db } from '../shared/db';
 import { getDaytonaWarm, warmSnapshotsEnabled } from '../shared/daytona';
 import {
