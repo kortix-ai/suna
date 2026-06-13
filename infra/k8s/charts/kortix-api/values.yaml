@@ -96,6 +96,12 @@ ingress:
   host: api-eks.kortix.com
   # ACM cert ARN for the ALB HTTPS listener (from TF output acm_certificate_arn).
   certificateArn: ""
+  # Extra hostnames this ALB should also serve (each gets an Ingress rule), and
+  # the extra ACM cert ARNs to attach for them (ALB picks the right cert by SNI).
+  # Used for cutover: serve the real domain (e.g. dev-api.kortix.com) alongside
+  # the EKS-direct name (dev-api-eks.kortix.com). Empty = single-host (default).
+  extraHosts: []
+  extraCertificateArns: []
   # Cloudflare proxies the record (orange cloud) — external-dns sets this.
   cloudflareProxied: true
   # ALB idle timeout (s) — raise for long-lived/streaming requests (matches ECS).
