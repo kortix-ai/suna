@@ -12,7 +12,7 @@ export const SANDBOX_VERSION = process.env.SANDBOX_VERSION || 'unknown';
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type SandboxProviderName = 'daytona' | 'local_docker' | 'platinum';
-type InternalKortixEnv = 'dev' | 'staging' | 'prod';
+type InternalKortixEnv = 'dev' | 'staging' | 'prod' | 'preview';
 
 // ─── Zod Helpers ────────────────────────────────────────────────────────────
 
@@ -67,7 +67,9 @@ const envSchema = z.object({
   API_KEY_SECRET: z.string().min(1, 'API_KEY_SECRET is required — API key hashing will fail'),
 
   // ── Internal Deployment Controls (optional, safe defaults for self-hosted) ─
-  INTERNAL_KORTIX_ENV:              z.enum(['dev', 'staging', 'prod']).optional().default('dev'),
+  // `preview` = ephemeral per-PR API on EKS (shares the dev data plane, never
+  // migrates it, workers off, allows preview frontends in CORS). See ensure-schema.ts + the CORS block in index.ts.
+  INTERNAL_KORTIX_ENV:              z.enum(['dev', 'staging', 'prod', 'preview']).optional().default('dev'),
   // Master switch: turns on real billing (Stripe + credit ledger), makes
   // KORTIX_URL fatal-required, mounts the proxy-auth gate, hides /v1/setup.
   // Set to true on managed/cloud deployments; leave false for self-host + dev.
