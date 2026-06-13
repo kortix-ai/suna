@@ -306,6 +306,7 @@ const healthHandler = (c: any) =>
     warm_snapshots: warmSnapshotsEnabled(),
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
+    e2e_check: 'eks-pipeline-1', // TEMP: verify the dev EKS deploy pipeline e2e; revert after
   });
 
 app.openapi(
