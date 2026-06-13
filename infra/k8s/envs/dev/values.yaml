@@ -41,8 +41,15 @@ externalSecrets:
 
 ingress:
   enabled: true
-  host: dev-api-eks.kortix.com
-  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/57eed8f4-cba4-4d6a-94ea-1b948708989b
+  # Primary = the real dev domain (cutover target), reusing the existing ACM cert
+  # the ECS dev ALB uses (a9af6fd8). The EKS-direct name dev-api-eks stays served
+  # too (its own cert) as a stable test endpoint independent of the cutover.
+  host: dev-api.kortix.com
+  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/a9af6fd8-d214-4cbe-a525-107a44e893fb
+  extraHosts:
+    - dev-api-eks.kortix.com
+  extraCertificateArns:
+    - arn:aws:acm:us-west-2:935064898258:certificate/57eed8f4-cba4-4d6a-94ea-1b948708989b
   cloudflareProxied: true
 
 # Plain rolling Deployment (no canary) — same delivery model as prod-eks:
