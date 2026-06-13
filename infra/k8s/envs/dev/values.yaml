@@ -1,0 +1,53 @@
+# Dev environment values for the kortix-api chart, deployed by Argo CD
+# (infra/k8s/argocd/applications/dev.yaml) onto the dev-eks cluster. GitOps
+# source of truth for what runs on EKS dev — deploy-dev-eks.yml bumps `image.tag`
+# on every push to `main`; `git revert` is the rollback.
+
+# Immutable dev tag (CI bumps to dev-<sha8> on each main push). Bootstrap value
+# is :dev-latest until the first deploy-dev-eks run pins an immutable sha.
+image:
+  tag: "dev-latest"
+kortixVersion: ""
+
+env:
+  internalKortixEnv: dev
+
+# PRE-CUTOVER: dev-api-eks is the candidate while dev-api.kortix.com is still
+# served by ECS, so EKS runs API-only and ECS keeps ownership of the dev-tier
+# singleton workers (one Postgres leader lease is shared across both on the dev
+# data plane). At cutover, flip this to true here AND disable the ECS dev service.
+workers:
+  enabled: false
+
+# Dev sizing (smaller than prod's 3-replica / 3→12 HPA).
+replicas: 2
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 4
+
+serviceAccount:
+  name: kortix-api
+  # IRSA role from the dev-eks cluster layer (module.app_irsa, name
+  # "kortix-dev-eks-app"). Predictable from the role name; verify with
+  # `terraform -chdir=infra/terraform/environments/dev-eks/cluster output app_irsa_role_arn`.
+  roleArn: arn:aws:iam::935064898258:role/kortix-dev-eks-app
+
+externalSecrets:
+  enabled: true
+  region: us-west-2
+  secretName: kortix-dev-env
+  targetSecretName: kortix-api-env
+
+ingress:
+  enabled: true
+  host: dev-api-eks.kortix.com
+  # FILL AFTER `terraform apply` of dev-eks/cluster:
+  #   terraform -chdir=infra/terraform/environments/dev-eks/cluster output acm_certificate_arn
+  certificateArn: REPLACE_WITH_dev-eks_acm_certificate_arn
+  cloudflareProxied: true
+
+# Plain rolling Deployment (no canary) — same delivery model as prod-eks:
+# probe-based auto-healing, HPA autoscaling, zero-downtime rolling deploys.
+rollout:
+  enabled: false

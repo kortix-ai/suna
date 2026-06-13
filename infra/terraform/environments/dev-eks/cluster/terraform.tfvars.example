@@ -1,0 +1,12 @@
+# Copy to terraform.tfvars (gitignored: infra/terraform/**/*.tfvars) and fill in.
+# Cloudflare creds are better supplied via the environment so they never touch
+# disk:
+#   export TF_VAR_cloudflare_api_token=...   # scoped token, DNS:Edit on kortix.com
+#   export TF_VAR_cloudflare_zone_id=...     # kortix.com zone id
+#
+# All dev-specific config (VPC 10.40/16, kortix-dev namespace, kortix-dev-env
+# bundle, dev-api-eks.kortix.com, kortix-gha-eks-deploy-dev) is defaulted in
+# variables.tf — this file only needs the Cloudflare zone + token.
+
+cloudflare_zone_id   = ""
+cloudflare_api_token = ""
