@@ -1389,8 +1389,8 @@ export const Icon = {
   //   );
   // },
 
-  Close: ({ className }: { className?: string }) => {
-    return <CgClose className={cn("size-4 stroke-1", className)} />;
+  Close: ({ className, ...props }: React.ComponentProps<typeof CgClose>) => {
+    return <CgClose className={cn("size-4 stroke-1", className)} {...props} />;
   },
 
   Facebook: ({ className }: { className?: string }) => {

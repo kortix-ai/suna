@@ -22,7 +22,7 @@ const buttonVariants = cva(
           'border border-border bg-transparent text-foreground hover:bg-foreground/5 hover:text-foreground',
         'outline-ghost': 'border border-primary/10 hover:bg-background/50 hover:text-foreground',
         secondary:
-          'bg-secondary text-primary hover:bg-secondary  border border-border  text-foreground ',
+          'bg-secondary text-primary hover:bg-secondary    text-foreground ',
         'outline-secondary': 'bg-secondary text-primary hover:bg-secondary ',
         sidebar:
           'text-sidebar-foreground hover:bg-sidebar-accent/80 flex items-center justify-start gap-2.5 w-full transition-colors duration-150 font-normal !h-8 !text-sm !px-2.5 !py-1.5 [&_svg]:!size-3.5',
@@ -34,8 +34,6 @@ const buttonVariants = cva(
         foreground: 'bg-foreground text-foreground-foreground hover:bg-foreground/90',
         'outline-foreground':
           'border border-foreground/10 bg-foreground/80 hover:bg-foreground/90 text-foreground/80 hover:text-foreground',
-        success: 'bg-emerald-500/60 text-foreground hover:bg-emerald-500/65',
-        info: 'border border-blue-800 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800',
         inverse:
           'w-fit dark:bg-[#0a0a0a] dark:hover:bg-[#0a0a0a]/95 dark:text-[#fafafa] bg-[#fafafa] hover:bg-[#fafafa]/95 text-[#0a0a0a]',
         'invert-outline-foreground':
@@ -46,6 +44,11 @@ const buttonVariants = cva(
         'ghost-sidebar': 'bg-transparent hover:bg-sidebar hover:text-sidebar-accent-foreground',
         'outline-sidebar':
           'border border-border bg-transparent hover:bg-sidebar hover:text-sidebar-accent-foreground',
+
+        success: 'bg-kortix-green/80 text-background hover:bg-kortix-green/85',
+        error: 'bg-kortix-red/80 text-background hover:bg-kortix-red/85',
+        info: 'bg-kortix-blue/80 text-background hover:bg-kortix-blue/85',
+        warning: 'bg-kortix-yellow/80 text-background hover:bg-kortix-yellow/85',
       },
       size: {
         default: 'h-9 px-4 py-2 has-[>svg]:px-3',

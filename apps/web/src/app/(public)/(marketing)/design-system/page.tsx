@@ -27,7 +27,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   Accordion,
@@ -72,7 +72,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
+import { CheckboxGroup, CheckboxGroupItem } from '@/components/ui/checkbox-group';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { DefinitionList, DefinitionRow } from '@/components/ui/definition-list';
 import {
@@ -94,6 +94,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { EmptyState } from '@/components/ui/empty-state';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
 import { Input } from '@/components/ui/input';
@@ -157,12 +158,17 @@ import {
   TabsTriggerCompact,
 } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  errorToast,
+  infoToast,
+  loadingToast,
+  successToast,
+  warningToast,
+} from '@/components/ui/toast';
 import { Toggle } from '@/components/ui/toggle';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { Cable, Plug, Radio, Zap } from 'lucide-react';
-
-/* ─────────────────────── Data ─────────────────────── */
 
 const BRAND_COLORS = [
   { name: 'Black', hex: '#000000', oklch: 'oklch(0 0 0)', light: false },
@@ -541,7 +547,7 @@ const TOC_SECTIONS = [
       { id: 'comp-input', label: 'Input' },
       { id: 'comp-textarea', label: 'Textarea' },
       { id: 'comp-select', label: 'Select' },
-      { id: 'comp-checkbox', label: 'Checkbox' },
+      { id: 'comp-checkbox', label: 'Checkbox Group' },
       { id: 'comp-switch', label: 'Switch' },
       { id: 'comp-toggle', label: 'Toggle' },
       { id: 'comp-radio', label: 'Radio Group' },
@@ -553,6 +559,7 @@ const TOC_SECTIONS = [
       { id: 'comp-tooltip', label: 'Tooltip' },
       { id: 'comp-popover', label: 'Popover' },
       { id: 'comp-alert', label: 'Alert' },
+      { id: 'comp-toast', label: 'Toast' },
       { id: 'comp-alert-dialog', label: 'Alert Dialog' },
       { id: 'comp-accordion', label: 'Accordion' },
       { id: 'comp-collapsible', label: 'Collapsible' },
@@ -561,9 +568,9 @@ const TOC_SECTIONS = [
       { id: 'comp-progress', label: 'Progress' },
       { id: 'comp-slider', label: 'Slider' },
       { id: 'comp-label', label: 'Label' },
+      { id: 'comp-kbd', label: 'Kbd' },
       { id: 'comp-breadcrumb', label: 'Breadcrumb' },
       { id: 'comp-table', label: 'Table' },
-      { id: 'comp-kbd', label: 'Kbd' },
       { id: 'comp-calendar', label: 'Calendar' },
       { id: 'comp-scrollarea', label: 'Scroll Area' },
     ],
@@ -603,8 +610,6 @@ const ALL_SECTION_IDS = TOC_SECTIONS.flatMap((s) =>
   'children' in s && s.children ? [s.id, ...s.children.map((c) => c.id)] : [s.id],
 );
 
-/* ─────────────────── Helper Components ─────────────────── */
-
 function Hex({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -641,8 +646,8 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
           'relative flex aspect-[3/2] items-center justify-center overflow-hidden rounded-lg transition-colors',
           isWordmark ? 'px-6 py-8' : 'p-10',
           asset.dark
-            ? 'bg-neutral-950 ring-1 ring-white/[0.06]'
-            : 'bg-white ring-1 ring-black/[0.06]',
+            ? 'border border-white/[0.06] bg-neutral-950'
+            : 'border bg-white ring-black/[0.06]',
         )}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -703,7 +708,9 @@ function FormatToggle({
 
 function DemoContainer({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn('ring-border/50 bg-card/30 rounded-xl p-6 ring-1', className)}>
+    <div
+      className={cn('border-border bg-card/10 max-w-full min-w-0 rounded-lg border p-6', className)}
+    >
       {children}
     </div>
   );
@@ -722,8 +729,6 @@ function ComponentLabel({ children }: { children: React.ReactNode }) {
 function ComponentDesc({ children }: { children: React.ReactNode }) {
   return <p className="text-muted-foreground mb-4 text-sm leading-relaxed">{children}</p>;
 }
-
-/* ─── Motion Demo ─── */
 
 function MotionBar({
   label,
@@ -774,8 +779,6 @@ function MotionBar({
   );
 }
 
-/* ─── Anti-Pattern Code Block ─── */
-
 function AntiPatternBlock({
   title,
   bad,
@@ -789,7 +792,7 @@ function AntiPatternBlock({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="ring-border/50 overflow-hidden rounded-xl ring-1">
+    <div className="border-border overflow-hidden rounded-xl border">
       <div className="border-border/30 border-b px-5 py-4">
         <h4 className="text-foreground text-sm font-medium">{title}</h4>
         <p className="text-muted-foreground mt-1 text-xs">{description}</p>
@@ -802,7 +805,7 @@ function AntiPatternBlock({
               {tHardcodedUi.raw('appHomeDesignSystemPage.line566JsxTextDonAposT')}
             </span>
           </div>
-          <pre className="text-muted-foreground bg-muted/30 overflow-x-auto rounded-lg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+          <pre className="text-muted-foreground bg-muted/30 max-w-full min-w-0 overflow-x-auto rounded-lg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
             {bad}
           </pre>
         </div>
@@ -813,7 +816,7 @@ function AntiPatternBlock({
               Do
             </span>
           </div>
-          <pre className="text-muted-foreground bg-muted/30 overflow-x-auto rounded-lg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+          <pre className="text-muted-foreground bg-muted/30 max-w-full min-w-0 overflow-x-auto rounded-lg p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
             {good}
           </pre>
         </div>
@@ -822,30 +825,88 @@ function AntiPatternBlock({
   );
 }
 
-/* ─── TOC Sidebar ─── */
+const TOC_SCROLL_OFFSET = 96;
+const TOC_NAV_EDGE_OFFSET = 40;
+
+function scrollActiveTocLinkIntoView(nav: HTMLElement, link: HTMLElement) {
+  const navRect = nav.getBoundingClientRect();
+  const linkRect = link.getBoundingClientRect();
+  const linkTop = linkRect.top - navRect.top + nav.scrollTop;
+  const linkBottom = linkTop + linkRect.height;
+  const viewTop = nav.scrollTop + TOC_NAV_EDGE_OFFSET;
+  const viewBottom = nav.scrollTop + nav.clientHeight - TOC_NAV_EDGE_OFFSET;
+
+  if (linkTop < viewTop) {
+    nav.scrollTo({ top: linkTop - TOC_NAV_EDGE_OFFSET, behavior: 'smooth' });
+  } else if (linkBottom > viewBottom) {
+    nav.scrollTo({
+      top: linkBottom - nav.clientHeight + TOC_NAV_EDGE_OFFSET,
+      behavior: 'smooth',
+    });
+  }
+}
 
 function TocSidebar() {
   const [activeId, setActiveId] = useState('hero');
+  const navRef = useRef<HTMLDivElement>(null);
+  const isClickNavigating = useRef(false);
 
   useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            setActiveId(entry.target.id);
-          }
-        }
-      },
-      { rootMargin: '-20% 0px -70% 0px', threshold: 0 },
-    );
+    let ticking = false;
 
-    for (const id of ALL_SECTION_IDS) {
-      const el = document.getElementById(id);
-      if (el) observer.observe(el);
+    const updateActiveSection = () => {
+      if (isClickNavigating.current) return;
+
+      let next = ALL_SECTION_IDS[0];
+      for (const id of ALL_SECTION_IDS) {
+        const el = document.getElementById(id);
+        if (el && el.getBoundingClientRect().top <= TOC_SCROLL_OFFSET) {
+          next = id;
+        }
+      }
+
+      setActiveId((prev) => (prev === next ? prev : next));
+    };
+
+    const onScroll = () => {
+      if (ticking) return;
+      ticking = true;
+      requestAnimationFrame(() => {
+        updateActiveSection();
+        ticking = false;
+      });
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+    updateActiveSection();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (isClickNavigating.current) return;
+    const nav = navRef.current;
+    if (!nav) return;
+
+    const link = nav.querySelector<HTMLButtonElement>(`button[data-toc-id="${activeId}"]`);
+    if (!link) return;
+
+    scrollActiveTocLinkIntoView(nav, link);
+  }, [activeId]);
+
+  const handleNavClick = (id: string) => {
+    isClickNavigating.current = true;
+    setActiveId(id);
+
+    const el = document.getElementById(id);
+    if (el) {
+      const top = el.getBoundingClientRect().top + window.scrollY - TOC_SCROLL_OFFSET;
+      window.scrollTo({ top, behavior: 'smooth' });
     }
 
-    return () => observer.disconnect();
-  }, []);
+    window.setTimeout(() => {
+      isClickNavigating.current = false;
+    }, 800);
+  };
 
   /* Determine which parent section is active based on the current activeId */
   const activeParentId = TOC_SECTIONS.find((s) => {
@@ -857,39 +918,40 @@ function TocSidebar() {
   })?.id;
 
   return (
-    <nav className="sticky top-20 hidden w-48 shrink-0 self-start pt-2 lg:block">
-      <ul className="space-y-0.5">
+    <FadedScrollArea
+      fadeColor="from-background"
+      ref={navRef}
+      className="scrollbar-hide max-h-[calc(100vh-5rem)] w-full scroll-py-10 overflow-y-auto overscroll-y-contain pt-2"
+    >
+      <ul className="space-y-0.5 pb-32">
         {TOC_SECTIONS.map((s) => {
           const isParentActive = s.id === activeParentId;
           const hasChildren = 'children' in s && s.children;
           return (
             <li key={s.id}>
-              <a
-                href={`#${s.id}`}
-                className={cn(
-                  'block py-1 text-sm transition-colors',
-                  activeId === s.id || isParentActive
-                    ? 'text-foreground font-medium'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
+              <Button
+                type="button"
+                variant={activeId === s.id ? 'secondary' : 'ghost'}
+                data-toc-id={s.id}
+                onClick={() => handleNavClick(s.id)}
+                className="flex w-full items-center justify-start text-left"
               >
                 {s.label}
-              </a>
-              {hasChildren && isParentActive && (
+              </Button>
+              {hasChildren && (
                 <ul className="border-border/30 mt-0.5 mb-1 ml-2.5 space-y-0 border-l pl-2.5">
                   {s.children.map((c) => (
                     <li key={c.id}>
-                      <a
-                        href={`#${c.id}`}
-                        className={cn(
-                          'block py-0.5 text-sm transition-colors',
-                          activeId === c.id
-                            ? 'text-foreground font-medium'
-                            : 'text-muted-foreground hover:text-foreground',
-                        )}
+                      <Button
+                        type="button"
+                        variant={activeId === c.id ? 'secondary' : 'ghost'}
+                        size="sm"
+                        data-toc-id={c.id}
+                        onClick={() => handleNavClick(c.id)}
+                        className="flex w-full items-center justify-start text-left"
                       >
                         {c.label}
-                      </a>
+                      </Button>
                     </li>
                   ))}
                 </ul>
@@ -898,16 +960,14 @@ function TocSidebar() {
           );
         })}
       </ul>
-    </nav>
+    </FadedScrollArea>
   );
 }
-
-/* ───────────────────── Page ───────────────────── */
 
 export default function BrandPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [logoFmt, setLogoFmt] = useState<LogoFormat>('svg');
-  const [checkboxChecked, setCheckboxChecked] = useState(true);
+  const [checkboxGroupValue, setCheckboxGroupValue] = useState<string[]>(['a']);
   const [switchOn, setSwitchOn] = useState(true);
   const [switchOff, setSwitchOff] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
@@ -916,15 +976,14 @@ export default function BrandPage() {
   const [collapsibleOpen, setCollapsibleOpen] = useState(false);
 
   return (
-    <main className="bg-background min-h-screen">
-      <div className="mx-auto max-w-5xl px-6 pt-24 pb-24 sm:pt-32 sm:pb-32">
-        <div className="flex gap-16">
-          {/* TOC sidebar — desktop only */}
-          <TocSidebar />
+    <main className="bg-background min-h-screen w-full">
+      <div className="mx-auto w-full max-w-6xl min-w-0 px-6 pt-24 pb-24 sm:pt-20 sm:pb-32 lg:px-0">
+        <div className="grid w-full min-w-0 grid-cols-1 items-start gap-14 lg:grid-cols-12">
+          <aside className="sticky top-20 hidden max-h-[calc(100vh-5rem)] self-start lg:col-span-3 lg:block">
+            <TocSidebar />
+          </aside>
 
-          {/* Main content */}
-          <div className="max-w-3xl flex-1">
-            {/* ═══════════════ Hero ═══════════════ */}
+          <div className="w-full min-w-0 overflow-x-clip lg:col-span-9">
             <section id="hero">
               <div className="mb-3">
                 <Badge variant="outline" className="font-mono text-xs">
@@ -955,7 +1014,6 @@ export default function BrandPage() {
               </div>
             </section>
 
-            {/* ═══════════════ Logo ═══════════════ */}
             <section id="logo" className="mt-14">
               <div className="mb-5 flex items-center justify-between">
                 <h2 className="text-muted-foreground text-xs tracking-widest uppercase">Logo</h2>
@@ -982,7 +1040,6 @@ export default function BrandPage() {
               </p>
             </section>
 
-            {/* ═══════════════ Colors ═══════════════ */}
             <section id="colors">
               <SectionDivider />
               <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
@@ -994,7 +1051,6 @@ export default function BrandPage() {
                 )}
               </p>
 
-              {/* Foundation */}
               <div className="mb-8">
                 <p className="text-muted-foreground mb-3 text-xs">Foundation</p>
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -1019,9 +1075,6 @@ export default function BrandPage() {
                 </div>
               </div>
 
-              {/* Core palette — every token from globals.css (:root + .dark),
-                    rendered with both light and dark swatches so the whole
-                    theme is visible at a glance regardless of the current mode. */}
               <div>
                 <div className="mb-3 flex items-baseline justify-between">
                   <p className="text-muted-foreground text-xs">
@@ -1075,7 +1128,6 @@ export default function BrandPage() {
               </div>
             </section>
 
-            {/* ═══════════════ Typography ═══════════════ */}
             <section id="typography">
               <SectionDivider />
               <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
@@ -1087,7 +1139,6 @@ export default function BrandPage() {
                 )}
               </p>
 
-              {/* Weight showcase */}
               <div className="space-y-6">
                 {[
                   { label: 'Medium · 500', cls: 'font-medium' },
@@ -1104,7 +1155,6 @@ export default function BrandPage() {
                 ))}
               </div>
 
-              {/* Mono showcase */}
               <div className="mt-6 rounded-lg bg-neutral-950 p-5 text-neutral-100 md:p-6">
                 <span className="mb-3 block font-mono text-xs tracking-widest text-neutral-500">
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line880JsxTextRoobertMono')}
@@ -1119,7 +1169,6 @@ export default function BrandPage() {
                 </p>
               </div>
 
-              {/* Type scale table */}
               <div className="mt-8">
                 <p className="text-muted-foreground mb-4 text-xs">
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line894JsxTextTypeScale')}
@@ -1157,7 +1206,6 @@ export default function BrandPage() {
               </div>
             </section>
 
-            {/* ═══════════════ Motion ═══════════════ */}
             <section id="motion">
               <SectionDivider />
               <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
@@ -1169,7 +1217,6 @@ export default function BrandPage() {
                 )}
               </p>
 
-              {/* Duration scale */}
               <div className="mb-8">
                 <p className="text-muted-foreground mb-4 text-xs">
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line946JsxTextDurationScale')}
@@ -1188,7 +1235,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* Easing curves */}
               <div>
                 <p className="text-muted-foreground mb-4 text-xs">
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line964JsxTextEasingCurves')}
@@ -1209,7 +1255,6 @@ export default function BrandPage() {
               </div>
             </section>
 
-            {/* ═══════════════ Spacing ═══════════════ */}
             <section id="spacing">
               <SectionDivider />
               <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
@@ -1239,7 +1284,6 @@ export default function BrandPage() {
               </DemoContainer>
             </section>
 
-            {/* ═══════════════ Shadows ═══════════════ */}
             <section id="shadows">
               <SectionDivider />
               <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
@@ -1276,7 +1320,6 @@ export default function BrandPage() {
               </DemoContainer>
             </section>
 
-            {/* ═══════════════ Components ═══════════════ */}
             <section id="components">
               <SectionDivider />
               <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
@@ -1288,7 +1331,6 @@ export default function BrandPage() {
                 )}
               </p>
 
-              {/* ─── Button ─── */}
               <div id="comp-button" className="mb-12">
                 <ComponentLabel>Button</ComponentLabel>
                 <ComponentDesc>
@@ -1320,7 +1362,6 @@ export default function BrandPage() {
                 </ComponentDesc>
                 <DemoContainer>
                   <div className="space-y-6">
-                    {/* Base Variants */}
                     <div>
                       <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
                         {tHardcodedUi.raw('appHomeDesignSystemPage.line1039JsxTextBaseVariants')}
@@ -1334,7 +1375,6 @@ export default function BrandPage() {
                         <Button variant="link">Link</Button>
                       </div>
                     </div>
-                    {/* Kortix Variants */}
                     <div>
                       <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
                         {tHardcodedUi.raw('appHomeDesignSystemPage.line1051JsxTextKortixVariants')}
@@ -1346,7 +1386,6 @@ export default function BrandPage() {
                         <Button variant="success">Success</Button>
                       </div>
                     </div>
-                    {/* Standard Sizes */}
                     <div>
                       <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
                         {tHardcodedUi.raw('appHomeDesignSystemPage.line1061JsxTextStandardSizes')}
@@ -1360,7 +1399,6 @@ export default function BrandPage() {
                         </Button>
                       </div>
                     </div>
-                    {/* Compact Sizes */}
                     <div>
                       <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
                         {tHardcodedUi.raw('appHomeDesignSystemPage.line1071JsxTextCompactSizes')}
@@ -1380,7 +1418,6 @@ export default function BrandPage() {
                         </Button>
                       </div>
                     </div>
-                    {/* With Icons */}
                     <div>
                       <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
                         {tHardcodedUi.raw('appHomeDesignSystemPage.line1081JsxTextWithIcons')}
@@ -1407,7 +1444,6 @@ export default function BrandPage() {
                         </Button>
                       </div>
                     </div>
-                    {/* States */}
                     <div>
                       <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
                         States
@@ -1428,7 +1464,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Badge ─── */}
               <div id="comp-badge" className="mb-12">
                 <ComponentLabel>Badge</ComponentLabel>
                 <ComponentDesc>
@@ -1526,7 +1561,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Card ─── */}
               <div id="comp-card" className="mb-12">
                 <ComponentLabel>Card</ComponentLabel>
                 <ComponentDesc>
@@ -1588,7 +1622,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Input ─── */}
               <div id="comp-input" className="mb-12">
                 <ComponentLabel>Input</ComponentLabel>
                 <ComponentDesc>
@@ -1625,7 +1658,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Textarea ─── */}
               <div id="comp-textarea" className="mb-12">
                 <ComponentLabel>Textarea</ComponentLabel>
                 <ComponentDesc>
@@ -1650,7 +1682,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Select ─── */}
               <div id="comp-select" className="mb-12">
                 <ComponentLabel>Select</ComponentLabel>
                 <ComponentDesc>
@@ -1679,39 +1710,22 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Checkbox ─── */}
               <div id="comp-checkbox" className="mb-12">
-                <ComponentLabel>Checkbox</ComponentLabel>
+                <ComponentLabel>Checkbox Group</ComponentLabel>
                 <ComponentDesc>
                   {tHardcodedUi.raw(
                     'appHomeDesignSystemPage.line1276JsxTextToggleForBooleanValues',
                   )}
                 </ComponentDesc>
-                <DemoContainer>
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-2">
-                      <Checkbox
-                        id="check-1"
-                        checked={checkboxChecked}
-                        onCheckedChange={(v) => setCheckboxChecked(v as boolean)}
-                      />
-                      <Label htmlFor="check-1">Checked</Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Checkbox id="check-2" />
-                      <Label htmlFor="check-2">Unchecked</Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Checkbox id="check-3" disabled />
-                      <Label htmlFor="check-3" className="text-muted-foreground">
-                        Disabled
-                      </Label>
-                    </div>
-                  </div>
+                <DemoContainer className="max-w-xs">
+                  <CheckboxGroup value={checkboxGroupValue} onValueChange={setCheckboxGroupValue}>
+                    <CheckboxGroupItem value="a" id="check-a" label="Option A" />
+                    <CheckboxGroupItem value="b" id="check-b" label="Option B" />
+                    <CheckboxGroupItem value="c" id="check-c" label="Option C" disabled />
+                  </CheckboxGroup>
                 </DemoContainer>
               </div>
 
-              {/* ─── Switch ─── */}
               <div id="comp-switch" className="mb-12">
                 <ComponentLabel>Switch</ComponentLabel>
                 <ComponentDesc>
@@ -1739,7 +1753,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Toggle ─── */}
               <div id="comp-toggle" className="mb-12">
                 <ComponentLabel>Toggle</ComponentLabel>
                 <ComponentDesc>
@@ -1811,7 +1824,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Radio Group ─── */}
               <div id="comp-radio" className="mb-12">
                 <ComponentLabel>
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line1369JsxTextRadioGroup')}
@@ -1821,25 +1833,15 @@ export default function BrandPage() {
                     'appHomeDesignSystemPage.line1371JsxTextSingleSelectionFromASetOfOptions',
                   )}
                 </ComponentDesc>
-                <DemoContainer>
-                  <RadioGroup defaultValue="comfortable">
-                    <div className="flex items-center gap-2">
-                      <RadioGroupItem value="default" id="r1" />
-                      <Label htmlFor="r1">Default</Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <RadioGroupItem value="comfortable" id="r2" />
-                      <Label htmlFor="r2">Comfortable</Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <RadioGroupItem value="compact" id="r3" />
-                      <Label htmlFor="r3">Compact</Label>
-                    </div>
+                <DemoContainer className="max-w-xs">
+                  <RadioGroup defaultValue="default">
+                    <RadioGroupItem value="default" id="r1" label="Default" />
+                    <RadioGroupItem value="comfortable" id="r2" label="Comfortable" />
+                    <RadioGroupItem value="compact" id="r3" label="Compact" />
                   </RadioGroup>
                 </DemoContainer>
               </div>
 
-              {/* ─── Tabs ─── */}
               <div id="comp-tabs" className="mb-12">
                 <ComponentLabel>Tabs</ComponentLabel>
                 <ComponentDesc>
@@ -1915,7 +1917,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Dialog ─── */}
               <div id="comp-dialog" className="mb-12">
                 <ComponentLabel>Dialog</ComponentLabel>
                 <ComponentDesc>
@@ -1957,7 +1958,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Modal ─── */}
               <div id="comp-modal" className="mb-12">
                 <ComponentLabel>Modal</ComponentLabel>
                 <ComponentDesc>
@@ -1990,7 +1990,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Sheet ─── */}
               <div id="comp-sheet" className="mb-12">
                 <ComponentLabel>Sheet</ComponentLabel>
                 <ComponentDesc>
@@ -2028,7 +2027,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Dropdown Menu ─── */}
               <div id="comp-dropdown" className="mb-12">
                 <ComponentLabel>
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line1526JsxTextDropdownMenu')}
@@ -2063,7 +2061,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Tooltip ─── */}
               <div id="comp-tooltip" className="mb-12">
                 <ComponentLabel>Tooltip</ComponentLabel>
                 <ComponentDesc>
@@ -2109,7 +2106,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Popover ─── */}
               <div id="comp-popover" className="mb-12">
                 <ComponentLabel>Popover</ComponentLabel>
                 <ComponentDesc>
@@ -2140,7 +2136,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Alert ─── */}
               <div id="comp-alert" className="mb-12">
                 <ComponentLabel>Alert</ComponentLabel>
                 <ComponentDesc>
@@ -2195,7 +2190,110 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Alert Dialog ─── */}
+              <div id="comp-toast" className="mb-12">
+                <ComponentLabel>Toast</ComponentLabel>
+                <ComponentDesc>
+                  Ephemeral notifications for async outcomes and feedback. Use{' '}
+                  <code>successToast</code>, <code>errorToast</code>, <code>infoToast</code>,{' '}
+                  <code>warningToast</code>, and <code>loadingToast</code> from{' '}
+                  <code>@/components/ui/toast</code> — not raw sonner calls.
+                </ComponentDesc>
+                <DemoContainer>
+                  <div className="space-y-6">
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        Variants
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          onClick={() =>
+                            successToast('Saved', {
+                              description: 'Your changes were saved.',
+                            })
+                          }
+                          variant="success"
+                        >
+                          Success
+                        </Button>
+                        <Button
+                          onClick={() =>
+                            errorToast('Could not save', {
+                              description: 'Try again in a moment.',
+                            })
+                          }
+                          variant="error"
+                        >
+                          Error
+                        </Button>
+                        <Button
+                          onClick={() =>
+                            infoToast('Heads up', {
+                              description: 'This only affects your local workspace.',
+                            })
+                          }
+                          variant="info"
+                        >
+                          Info
+                        </Button>
+                        <Button
+                          onClick={() =>
+                            warningToast('Check your input', {
+                              description: 'Some fields need attention.',
+                            })
+                          }
+                          variant="warning"
+                        >
+                          Warning
+                        </Button>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        Promise
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          variant="secondary"
+                          onClick={() =>
+                            loadingToast(
+                              'Saving…',
+                              () =>
+                                new Promise<string>((resolve) => {
+                                  setTimeout(() => resolve('Saved'), 2000);
+                                }),
+                              {
+                                description: 'Hang tight while we sync.',
+                                success: (data) => data,
+                              },
+                            )
+                          }
+                        >
+                          Loading → Success
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() =>
+                            loadingToast(
+                              'Saving…',
+                              () =>
+                                new Promise<never>((_resolve, reject) => {
+                                  setTimeout(() => reject(new Error('Network error')), 2000);
+                                }),
+                              {
+                                description: 'This request will fail.',
+                                showErrorToast: true,
+                              },
+                            ).catch(() => undefined)
+                          }
+                        >
+                          Loading → Error
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </DemoContainer>
+              </div>
+
               <div id="comp-alert-dialog" className="mb-12">
                 <ComponentLabel>
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line1653JsxTextAlertDialog')}
@@ -2232,7 +2330,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Accordion ─── */}
               <div id="comp-accordion" className="mb-12">
                 <ComponentLabel>Accordion</ComponentLabel>
                 <ComponentDesc>
@@ -2278,7 +2375,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Collapsible ─── */}
               <div id="comp-collapsible" className="mb-12">
                 <ComponentLabel>Collapsible</ComponentLabel>
                 <ComponentDesc>
@@ -2324,7 +2420,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Separator ─── */}
               <div id="comp-separator" className="mb-12">
                 <ComponentLabel>Separator</ComponentLabel>
                 <ComponentDesc>
@@ -2345,7 +2440,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Skeleton ─── */}
               <div id="comp-skeleton" className="mb-12">
                 <ComponentLabel>Skeleton</ComponentLabel>
                 <ComponentDesc>
@@ -2389,7 +2483,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Progress ─── */}
               <div id="comp-progress" className="mb-12">
                 <ComponentLabel>Progress</ComponentLabel>
                 <ComponentDesc>
@@ -2409,7 +2502,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Slider ─── */}
               <div id="comp-slider" className="mb-12">
                 <ComponentLabel>Slider</ComponentLabel>
                 <ComponentDesc>
@@ -2427,7 +2519,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Label ─── */}
               <div id="comp-label" className="mb-12">
                 <ComponentLabel>Label</ComponentLabel>
                 <ComponentDesc>
@@ -2451,7 +2542,77 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Breadcrumb ─── */}
+              <div id="comp-kbd" className="mb-12">
+                <ComponentLabel>Kbd</ComponentLabel>
+                <ComponentDesc>
+                  {tHardcodedUi.raw(
+                    'appHomeDesignSystemPage.line1968JsxTextKeyboardShortcutIndicatorsThemeAwareIncludingAutomaticStyling',
+                  )}
+                </ComponentDesc>
+                <DemoContainer>
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs">
+                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1975JsxTextIndividualKeys')}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Kbd>⌘</Kbd>
+                        <Kbd>K</Kbd>
+                        <Kbd>Shift</Kbd>
+                        <Kbd>Enter</Kbd>
+                        <Kbd>Esc</Kbd>
+                        <Kbd>Tab</Kbd>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs">
+                        {tHardcodedUi.raw(
+                          'appHomeDesignSystemPage.line1988JsxTextKeyGroupsShortcuts',
+                        )}
+                      </p>
+                      <div className="flex flex-wrap items-center gap-4">
+                        <KbdGroup>
+                          <Kbd>⌘</Kbd>
+                          <span className="text-muted-foreground text-xs">+</span>
+                          <Kbd>K</Kbd>
+                        </KbdGroup>
+                        <KbdGroup>
+                          <Kbd>⌘</Kbd>
+                          <span className="text-muted-foreground text-xs">+</span>
+                          <Kbd>Shift</Kbd>
+                          <span className="text-muted-foreground text-xs">+</span>
+                          <Kbd>P</Kbd>
+                        </KbdGroup>
+                        <KbdGroup>
+                          <Kbd>Ctrl</Kbd>
+                          <span className="text-muted-foreground text-xs">+</span>
+                          <Kbd>C</Kbd>
+                        </KbdGroup>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-muted-foreground mb-3 text-xs tracking-wider uppercase">
+                        In tooltips
+                      </p>
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button variant="outline">Command palette</Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p>Search</p>
+                            <KbdGroup>
+                              <Kbd>⌘</Kbd>
+                              <Kbd>K</Kbd>
+                            </KbdGroup>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    </div>
+                  </div>
+                </DemoContainer>
+              </div>
+
               <div id="comp-breadcrumb" className="mb-12">
                 <ComponentLabel>Breadcrumb</ComponentLabel>
                 <ComponentDesc>
@@ -2480,7 +2641,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Table ─── */}
               <div id="comp-table" className="mb-12">
                 <ComponentLabel>Table</ComponentLabel>
                 <ComponentDesc>
@@ -2544,60 +2704,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Kbd ─── */}
-              <div id="comp-kbd" className="mb-12">
-                <ComponentLabel>Kbd</ComponentLabel>
-                <ComponentDesc>
-                  {tHardcodedUi.raw(
-                    'appHomeDesignSystemPage.line1968JsxTextKeyboardShortcutIndicatorsThemeAwareIncludingAutomaticStyling',
-                  )}
-                </ComponentDesc>
-                <DemoContainer>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-muted-foreground mb-3 text-xs">
-                        {tHardcodedUi.raw('appHomeDesignSystemPage.line1975JsxTextIndividualKeys')}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Kbd>⌘</Kbd>
-                        <Kbd>K</Kbd>
-                        <Kbd>Shift</Kbd>
-                        <Kbd>Enter</Kbd>
-                        <Kbd>Esc</Kbd>
-                        <Kbd>Tab</Kbd>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground mb-3 text-xs">
-                        {tHardcodedUi.raw(
-                          'appHomeDesignSystemPage.line1988JsxTextKeyGroupsShortcuts',
-                        )}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-4">
-                        <KbdGroup>
-                          <Kbd>⌘</Kbd>
-                          <span className="text-muted-foreground text-xs">+</span>
-                          <Kbd>K</Kbd>
-                        </KbdGroup>
-                        <KbdGroup>
-                          <Kbd>⌘</Kbd>
-                          <span className="text-muted-foreground text-xs">+</span>
-                          <Kbd>Shift</Kbd>
-                          <span className="text-muted-foreground text-xs">+</span>
-                          <Kbd>P</Kbd>
-                        </KbdGroup>
-                        <KbdGroup>
-                          <Kbd>Ctrl</Kbd>
-                          <span className="text-muted-foreground text-xs">+</span>
-                          <Kbd>C</Kbd>
-                        </KbdGroup>
-                      </div>
-                    </div>
-                  </div>
-                </DemoContainer>
-              </div>
-
-              {/* ─── Calendar ─── */}
               <div id="comp-calendar" className="mb-12">
                 <ComponentLabel>Calendar</ComponentLabel>
                 <ComponentDesc>
@@ -2615,7 +2721,6 @@ export default function BrandPage() {
                 </DemoContainer>
               </div>
 
-              {/* ─── Scroll Area ─── */}
               <div id="comp-scrollarea" className="mb-12">
                 <ComponentLabel>
                   {tHardcodedUi.raw('appHomeDesignSystemPage.line2040JsxTextScrollArea')}
@@ -2648,7 +2753,6 @@ export default function BrandPage() {
               </div>
             </section>
 
-            {/* ═══════════════ Page Patterns ═══════════════ */}
             <section id="page-patterns">
               <SectionDivider />
               <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
@@ -2690,7 +2794,7 @@ export default function BrandPage() {
                     </PageHeader>
                   </div>
                 </DemoContainer>
-                <pre className="text-muted-foreground bg-muted/20 mt-3 overflow-x-auto rounded-lg px-4 py-3 font-mono text-xs">{`<div className="container mx-auto max-w-7xl px-3 sm:px-4 py-3 sm:py-4">
+                <pre className="text-muted-foreground bg-muted/20 mt-3 max-w-full min-w-0 overflow-x-auto rounded-lg px-4 py-3 font-mono text-xs">{`<div className="container mx-auto max-w-7xl px-3 sm:px-4 py-3 sm:py-4">
   <PageHeader icon={Zap}>
     <div className="text-2xl sm:text-3xl md:text-4xl font-semibold tracking-tight">
       <span className="text-primary">Scheduled Tasks</span>
@@ -2794,7 +2898,7 @@ export default function BrandPage() {
                   <code className="font-mono text-xs">delay-150</code>.
                 </ComponentDesc>
                 <DemoContainer>
-                  <pre className="text-muted-foreground bg-muted/20 overflow-x-auto rounded-lg px-4 py-3 font-mono text-xs leading-relaxed">{`// Page header
+                  <pre className="text-muted-foreground bg-muted/20 max-w-full min-w-0 overflow-x-auto rounded-lg px-4 py-3 font-mono text-xs leading-relaxed">{`// Page header
 <div className="... animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
 
 // Search + action bar
@@ -2806,7 +2910,6 @@ export default function BrandPage() {
               </div>
             </section>
 
-            {/* ═══════════════ Primitives ═══════════════ */}
             <section id="patterns">
               <SectionDivider />
               <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
@@ -3337,7 +3440,6 @@ export default function BrandPage() {
               </div>
             </section>
 
-            {/* ═══════════════ Anti-Patterns ═══════════════ */}
             <section id="anti-patterns">
               <SectionDivider />
               <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
@@ -3423,7 +3525,6 @@ export default function BrandPage() {
               </div>
             </section>
 
-            {/* ═══════════════ Usage ═══════════════ */}
             <section id="usage">
               <SectionDivider />
               <h2 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">

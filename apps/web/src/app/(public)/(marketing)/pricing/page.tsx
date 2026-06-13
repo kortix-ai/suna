@@ -146,6 +146,7 @@ export default function PricingPage() {
             )}
           </p>
         </div>
+
         <div className="@container space-y-8 pt-16">
           <div className="mx-auto max-w-sm rounded-xl border @4xl:max-w-full">
             <div className="grid *:p-8 @4xl:grid-cols-3">

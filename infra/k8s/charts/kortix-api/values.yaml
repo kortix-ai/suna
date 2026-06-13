@@ -102,6 +102,10 @@ ingress:
   # the EKS-direct name (dev-api-eks.kortix.com). Empty = single-host (default).
   extraHosts: []
   extraCertificateArns: []
+  # Join a shared ALB by group name (one LB host-routed across many Ingresses).
+  # Empty = a dedicated ALB per Ingress (default). PR previews set this so all
+  # ephemeral envs share one ALB instead of one-per-PR.
+  albGroup: ""
   # Cloudflare proxies the record (orange cloud) — external-dns sets this.
   cloudflareProxied: true
   # ALB idle timeout (s) — raise for long-lived/streaming requests (matches ECS).
