@@ -50,9 +50,8 @@ externalSecrets:
 ingress:
   enabled: true
   host: preview.preview-api.kortix.com # overridden per-PR by the ApplicationSet
-  # Wildcard cert *.preview-api.kortix.com (TF module.acm_preview). FILL from:
-  #   terraform -chdir=infra/terraform/environments/dev-eks/cluster output -raw acm_preview_certificate_arn
-  certificateArn: REPLACE_WITH_preview_wildcard_acm_arn
+  # Wildcard cert *.preview-api.kortix.com (TF module.acm_preview).
+  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/8e5ec220-77d9-450f-abe9-21d5322afa78
   # All previews share ONE host-routed ALB (no ALB-per-PR cost/latency).
   albGroup: kortix-previews
   cloudflareProxied: true
