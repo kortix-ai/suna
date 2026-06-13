@@ -1,0 +1,99 @@
+# Ephemeral per-PR preview environments on the dev-eks cluster.
+#
+# Applied to the hub Argo CD (ops.kortix.com). The PullRequest generator watches
+# kortix-ai/suna for OPEN PRs labeled `preview` and creates one Application per
+# PR; when the PR closes/merges it deletes the Application, which prunes the
+# namespace + everything in it (truly ephemeral).
+#
+# Each preview = the kortix-api chart rendered at the PR's head commit with the
+# preview base values, overlaid with the PR's image (pr-<head_sha>, built by
+# .github/workflows/preview-build.yml) and host (pr-<n>.preview-api.kortix.com,
+# served off the shared `kortix-previews` ALB + the *.preview-api wildcard cert).
+#
+# Requires (one-time): a GitHub token secret `preview-pr-generator-github` in the
+# argocd namespace, and the dev-eks cluster registered in the hub as `kortix-dev-eks`.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: preview
+  namespace: argocd
+spec:
+  description: Ephemeral per-PR preview APIs on dev-eks.
+  sourceRepos:
+    - https://github.com/kortix-ai/suna.git
+  destinations:
+    - name: kortix-dev-eks
+      namespace: 'kortix-pr-*'
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: kortix-previews
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - pullRequest:
+        github:
+          owner: kortix-ai
+          repo: suna
+          tokenRef:
+            secretName: preview-pr-generator-github
+            key: token
+          # Only PRs carrying the `preview` label spin up an environment.
+          labels:
+            - preview
+        requeueAfterSeconds: 120
+  template:
+    metadata:
+      name: 'kortix-pr-{{.number}}'
+      labels:
+        env: preview
+        pr-number: '{{.number}}'
+    spec:
+      project: preview
+      source:
+        repoURL: https://github.com/kortix-ai/suna.git
+        targetRevision: '{{.head_sha}}'
+        path: infra/k8s/charts/kortix-api
+        helm:
+          releaseName: kortix-api
+          valueFiles:
+            - ../../envs/preview/values.yaml
+          parameters:
+            - name: image.tag
+              value: 'pr-{{.head_sha}}'
+            - name: ingress.host
+              value: 'pr-{{.number}}.preview-api.kortix.com'
+      destination:
+        name: kortix-dev-eks
+        namespace: 'kortix-pr-{{.number}}'
+      # ESO's admission webhook injects defaults into the ExternalSecret that git
+      # doesn't carry — ignore them so previews aren't perpetually OutOfSync.
+      ignoreDifferences:
+        - group: external-secrets.io
+          kind: ExternalSecret
+          jqPathExpressions:
+            - .spec.dataFrom[]?.extract.conversionStrategy
+            - .spec.dataFrom[]?.extract.decodingStrategy
+            - .spec.dataFrom[]?.extract.metadataPolicy
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true   # the kortix-pr-<n> namespace is made on the fly
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 3m

@@ -1,0 +1,62 @@
+# Base values for an ephemeral per-PR preview API on dev-eks. The Argo CD
+# ApplicationSet (infra/k8s/argocd/applicationsets/preview.yaml) overlays the
+# per-PR bits: image.tag (pr-<head_sha>) and ingress.host
+# (pr-<number>.preview-api.kortix.com).
+#
+# Shares the DEV data plane via the kortix-preview-env bundle and NEVER migrates
+# it (INTERNAL_KORTIX_ENV=preview → ensureSchema skipped in code). API-only,
+# workers off, single tiny replica. A PR that needs a schema change applies the
+# migration to dev deliberately (it's the shared dev DB).
+
+image:
+  tag: preview # overridden per-PR by the ApplicationSet → pr-<head_sha>
+
+env:
+  internalKortixEnv: preview
+
+# API-only — an ephemeral preview must never run the dev-tier singleton workers.
+workers:
+  enabled: false
+
+# Ephemeral + low-traffic: one small replica, no HPA/PDB/spread.
+replicas: 1
+autoscaling:
+  enabled: false
+pdb:
+  enabled: false
+topologySpread:
+  enabled: false
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1"
+    memory: "1Gi"
+
+serviceAccount:
+  name: kortix-api
+  # Preview IRSA (TF: aws_iam_role.preview_app, name kortix-dev-eks-preview-app)
+  # — trusts any kortix-pr-*/kortix-api SA to read kortix-preview-env. Predictable
+  # from the role name; verify with `terraform output preview_app_irsa_role_arn`.
+  roleArn: arn:aws:iam::935064898258:role/kortix-dev-eks-preview-app
+
+externalSecrets:
+  enabled: true
+  region: us-west-2
+  secretName: kortix-preview-env
+  targetSecretName: kortix-api-env
+
+ingress:
+  enabled: true
+  host: preview.preview-api.kortix.com # overridden per-PR by the ApplicationSet
+  # Wildcard cert *.preview-api.kortix.com (TF module.acm_preview). FILL from:
+  #   terraform -chdir=infra/terraform/environments/dev-eks/cluster output -raw acm_preview_certificate_arn
+  certificateArn: REPLACE_WITH_preview_wildcard_acm_arn
+  # All previews share ONE host-routed ALB (no ALB-per-PR cost/latency).
+  albGroup: kortix-previews
+  cloudflareProxied: true
+
+# Plain rolling Deployment (no canary).
+rollout:
+  enabled: false
