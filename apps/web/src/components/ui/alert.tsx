@@ -4,14 +4,14 @@ import * as React from 'react';
 import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { cn } from '@/lib/utils';
 
-const alertVariants = cva('w-full rounded-xl', {
+const alertVariants = cva('w-full rounded-lg', {
   variants: {
     variant: {
       default: 'bg-card text-card-foreground',
       destructive:
         'text-destructive bg-card [&_[data-slot=item-media]_svg]:text-current [&_[data-slot=item-description]]:text-destructive/90',
       warning:
-        'text-kortix-orange border-kortix-orange border-[0.5px] bg-kortix-orange/10 [&_[data-slot=item-media]_svg]:text-current [&_[data-slot=item-description]]:text-kortix-orange/90',
+        'text-kortix-orange   bg-kortix-orange/10 [&_[data-slot=item-media]_svg]:text-current [&_[data-slot=item-description]]:text-kortix-orange/90',
     },
   },
   defaultVariants: {

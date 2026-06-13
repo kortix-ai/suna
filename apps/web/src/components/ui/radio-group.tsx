@@ -1,44 +1,77 @@
 'use client';
 
-import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
-import { CircleIcon } from 'lucide-react';
+import { RadioGroup as RadioGroupPrimitive } from 'radix-ui';
 import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-const RadioGroup = React.forwardRef<
-  React.ElementRef<typeof RadioGroupPrimitive.Root>,
-  React.ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Root>
->(({ className, ...props }, ref) => {
+function RadioGroup({
+  className,
+  ...props
+}: React.ComponentProps<typeof RadioGroupPrimitive.Root>) {
   return (
     <RadioGroupPrimitive.Root
-      className={cn('grid gap-2', className)}
+      data-slot="radio-group"
+      className={cn('grid gap-1', className)}
       {...props}
-      ref={ref}
     />
   );
-});
-RadioGroup.displayName = RadioGroupPrimitive.Root.displayName;
+}
 
-const RadioGroupItem = React.forwardRef<
-  React.ElementRef<typeof RadioGroupPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Item>
->(({ className, ...props }, ref) => {
-  return (
+type RadioGroupItemProps = React.ComponentProps<typeof RadioGroupPrimitive.Item> & {
+  label?: React.ReactNode;
+};
+
+const radioControlClassName = cn(
+  'peer aspect-square size-4 shrink-0 rounded-full border border-muted-foreground/60 bg-transparent',
+  'transition-[color,box-shadow,border-color,background-color]',
+  'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+  'disabled:cursor-not-allowed disabled:opacity-50',
+  'data-[state=checked]:border-foreground data-[state=checked]:bg-background data-[state=checked]:border-kortix-blue data-[state=checked]:border-4 ',
+  'aria-invalid:border-destructive',
+);
+
+function RadioGroupItem({ className, label, id, ...props }: RadioGroupItemProps) {
+  const generatedId = React.useId();
+  const itemId = id ?? generatedId;
+
+  const control = (
     <RadioGroupPrimitive.Item
-      ref={ref}
+      data-slot="radio-group-item"
+      id={itemId}
+      className={cn(radioControlClassName, !label && className)}
+      {...props}
+    />
+  );
+
+  if (!label) {
+    return control;
+  }
+
+  return (
+    <label
+      htmlFor={itemId}
       className={cn(
-        'border-primary text-primary ring-offset-background focus-visible:ring-ring aspect-square size-4 rounded-full border focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50',
+        'flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-1.5 transition-colors',
+        'hover:bg-foreground/3',
+        'has-data-[state=checked]:bg-foreground/6 has-data-[state=checked]:hover:bg-foreground/6',
+        'has-focus-visible:ring-ring has-focus-visible:ring-offset-background has-focus-visible:ring-2 has-focus-visible:ring-offset-2',
         className,
       )}
-      {...props}
     >
-      <RadioGroupPrimitive.Indicator className="flex items-center justify-center">
-        <CircleIcon className="h-2.5 w-2.5 fill-current text-current" />
-      </RadioGroupPrimitive.Indicator>
-    </RadioGroupPrimitive.Item>
+      {control}
+      <span
+        className={cn(
+          'text-sm transition-[color,font-weight]',
+          'text-muted-foreground',
+          'peer-data-[state=checked]:text-foreground peer-data-[state=checked]:font-medium',
+        )}
+      >
+        {label}
+      </span>
+    </label>
   );
-});
-RadioGroupItem.displayName = RadioGroupPrimitive.Item.displayName;
+}
 
 export { RadioGroup, RadioGroupItem };
+export type { RadioGroupItemProps };
