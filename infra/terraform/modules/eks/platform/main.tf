@@ -101,6 +101,13 @@ resource "helm_release" "external_secrets" {
 # records IT created (tagged with the TXT owner), and domainFilters confines it
 # to api-eks.kortix.com — so it can never disturb api.kortix.com, api-ecs, or any
 # other record in the shared zone.
+#
+# zoneIdFilters pins the kortix.com hosted zone by ID. This is REQUIRED: the
+# domainFilters are subdomains (api-eks / preview-api), and external-dns's zone
+# discovery only matches a zone whose NAME equals or is a parent of a filter —
+# "kortix.com" is neither, so without the zone-id pin external-dns finds no
+# hosted zone, logs "no hosted zone matching record DNS Name", and silently
+# manages nothing. The domainFilters still scope which records it may write.
 resource "helm_release" "external_dns" {
   name       = "external-dns"
   repository = "https://kubernetes-sigs.github.io/external-dns/"
@@ -124,6 +131,7 @@ resource "helm_release" "external_dns" {
       }
     }]
     domainFilters = concat([var.api_domain], var.extra_domain_filters)
+    zoneIdFilters = var.cloudflare_zone_id != "" ? [var.cloudflare_zone_id] : []
     policy        = "sync"
     registry      = "txt"
     txtOwnerId    = var.cluster_name
