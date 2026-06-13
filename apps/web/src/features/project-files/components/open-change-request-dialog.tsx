@@ -362,7 +362,7 @@ export function OpenChangeRequestDialog({
               </div>
             </div>
 
-            <DialogFooter variant="bar">
+            <DialogFooter>
               <Button
                 variant="ghost"
                 onClick={() => onOpenChange(false)}

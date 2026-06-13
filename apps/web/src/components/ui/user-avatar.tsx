@@ -10,9 +10,9 @@
  * differs (round vs square). No colored backgrounds: simplicity is the brand.
  */
 
-import * as React from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import * as React from 'react';
 
 function initialsFromIdentity(name: string | undefined, email: string): string {
   const source = (name || '').trim();
@@ -33,7 +33,7 @@ function initialsFromIdentity(name: string | undefined, email: string): string {
 const SIZE_MAP = {
   xs: 'size-5 text-xs',
   sm: 'size-6 text-xs',
-  md: 'size-8 text-xs',
+  md: 'size-8 rounded-md text-xs',
   lg: 'size-10 text-sm',
   xl: 'size-14 text-base',
 } as const;
@@ -73,7 +73,7 @@ export function UserAvatar({
       )}
     >
       {avatarUrl ? <AvatarImage src={avatarUrl} alt={name || email} /> : null}
-      <AvatarFallback className="border border-border/70 bg-muted/40 font-semibold text-foreground/80">
+      <AvatarFallback className="border-border/70 bg-muted/40 text-foreground/80 border font-semibold">
         {initials || '?'}
       </AvatarFallback>
     </Avatar>

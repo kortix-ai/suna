@@ -11,30 +11,61 @@ import { roobert } from './fonts/roobert';
 import { roobertMono } from './fonts/roobert-mono';
 import { Suspense, lazy } from 'react';
 import { I18nProvider } from '@/components/i18n-provider';
-import { serializeRuntimeConfigScript } from '@/lib/public-env-server';
-import { ClientErrorBoundary } from '@/components/common/error-boundary';
+import { getServerPublicEnv } from '@/lib/public-env-server';
 import { featureFlags } from '@/lib/feature-flags';
 import { connection } from 'next/server';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
+import { cn } from '@/lib/utils';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { headers } from 'next/headers';
 
 // Lazy load non-critical analytics and global components
-const Analytics = lazy(() => import('@vercel/analytics/react').then(mod => ({ default: mod.Analytics })));
-const SpeedInsights = lazy(() => import('@vercel/speed-insights/next').then(mod => ({ default: mod.SpeedInsights })));
-const GoogleTagManager = lazy(() => import('@next/third-parties/google').then(mod => ({ default: mod.GoogleTagManager })));
-const PostHogIdentify = lazy(() => import('@/components/posthog-identify').then(mod => ({ default: mod.PostHogIdentify })));
-const AnnouncementDialog = lazy(() => import('@/components/announcements/announcement-dialog').then(mod => ({ default: mod.AnnouncementDialog })));
-const RouteChangeTracker = lazy(() => import('@/components/analytics/route-change-tracker').then(mod => ({ default: mod.RouteChangeTracker })));
-const AuthEventTracker = lazy(() => import('@/components/analytics/auth-event-tracker').then(mod => ({ default: mod.AuthEventTracker })));
-const LocalhostLinkInterceptor = lazy(() => import('@/components/localhost-link-interceptor').then(mod => ({ default: mod.LocalhostLinkInterceptor })));
+const Analytics = lazy(() =>
+  import('@vercel/analytics/react').then((mod) => ({ default: mod.Analytics })),
+);
+const SpeedInsights = lazy(() =>
+  import('@vercel/speed-insights/next').then((mod) => ({
+    default: mod.SpeedInsights,
+  })),
+);
+const GoogleTagManager = lazy(() =>
+  import('@next/third-parties/google').then((mod) => ({
+    default: mod.GoogleTagManager,
+  })),
+);
+const PostHogIdentify = lazy(() =>
+  import('@/components/posthog-identify').then((mod) => ({
+    default: mod.PostHogIdentify,
+  })),
+);
+const AnnouncementDialog = lazy(() =>
+  import('@/components/announcements/announcement-dialog').then((mod) => ({
+    default: mod.AnnouncementDialog,
+  })),
+);
+const RouteChangeTracker = lazy(() =>
+  import('@/components/analytics/route-change-tracker').then((mod) => ({
+    default: mod.RouteChangeTracker,
+  })),
+);
+const AuthEventTracker = lazy(() =>
+  import('@/components/analytics/auth-event-tracker').then((mod) => ({
+    default: mod.AuthEventTracker,
+  })),
+);
+const LocalhostLinkInterceptor = lazy(() =>
+  import('@/components/localhost-link-interceptor').then((mod) => ({
+    default: mod.LocalhostLinkInterceptor,
+  })),
+);
 
 export const viewport: Viewport = {
   themeColor: [
     { media: '(prefers-color-scheme: light)', color: 'white' },
-    { media: '(prefers-color-scheme: dark)', color: 'black' }
+    { media: '(prefers-color-scheme: dark)', color: 'black' },
   ],
   width: 'device-width',
   initialScale: 1,
@@ -93,7 +124,11 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: '/favicon.png', sizes: '32x32' },
-      { url: '/favicon-light.png', sizes: '32x32', media: '(prefers-color-scheme: dark)' },
+      {
+        url: '/favicon-light.png',
+        sizes: '32x32',
+        media: '(prefers-color-scheme: dark)',
+      },
     ],
     shortcut: '/favicon.png',
     apple: [{ url: '/logo_black.png', sizes: '180x180' }],
@@ -111,6 +146,7 @@ export default async function RootLayout({
   // Opt into dynamic rendering so process.env is evaluated at request time,
   // not baked at build time. Critical for Docker images with runtime env vars.
   await connection();
+  const runtimeEnv = getServerPublicEnv();
 
   // Suppress marketing/visitor-tracking scripts inside the desktop app. The
   // Tauri webview sends a `KortixDesktop` user-agent (see lib/desktop.ts); the
@@ -120,13 +156,18 @@ export default async function RootLayout({
   const isDesktopApp = (await headers()).get('user-agent')?.includes(DESKTOP_UA_TOKEN) ?? false;
 
   return (
-    <html lang="en" translate="no" suppressHydrationWarning className={`notranslate ${roobert.variable} ${roobertMono.variable}`}>
+    <html
+      lang="en"
+      translate="no"
+      suppressHydrationWarning
+      className={cn('notranslate ', roobert.variable, roobertMono.variable)}
+    >
       <head>
         {/* Runtime config — evaluated at request time via connection() above.
             Docker images get correct env vars regardless of build-time defaults. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: serializeRuntimeConfigScript(),
+            __html: `window.__KORTIX_RUNTIME_CONFIG=${JSON.stringify(runtimeEnv)};window.__RUNTIME_ENV=window.__KORTIX_RUNTIME_CONFIG;`,
           }}
         />
 
@@ -204,28 +245,68 @@ export default async function RootLayout({
         />
 
         {/* Static SEO meta tags - rendered in initial HTML */}
-        <title>{tHardcodedUi.raw('appLayout.line196JsxTextKortixTheAutonomousCompanyOperatingSystem')}</title>
-        <meta name="description" content={tHardcodedUi.raw('appLayout.line197JsxAttrContentACloudComputerWhereAiAgentsRunYour')} />
-        <meta name="keywords" content={tHardcodedUi.raw('appLayout.line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf')} />
-        <meta property="og:title" content={tHardcodedUi.raw('appLayout.line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem')} />
-        <meta property="og:description" content={tHardcodedUi.raw('appLayout.line200JsxAttrContentACloudComputerWhereAiAgentsRunYour')} />
+        <title>
+          {tHardcodedUi.raw(
+            'appLayout.line196JsxTextKortixTheAutonomousCompanyOperatingSystem',
+          )}
+        </title>
+        <meta
+          name="description"
+          content={tHardcodedUi.raw(
+            'appLayout.line197JsxAttrContentACloudComputerWhereAiAgentsRunYour',
+          )}
+        />
+        <meta
+          name="keywords"
+          content={tHardcodedUi.raw(
+            'appLayout.line198JsxAttrContentKortixAutonomousCompanyOperatingSystemAiAgentsSelf',
+          )}
+        />
+        <meta
+          property="og:title"
+          content={tHardcodedUi.raw(
+            'appLayout.line199JsxAttrContentKortixTheAutonomousCompanyOperatingSystem',
+          )}
+        />
+        <meta
+          property="og:description"
+          content={tHardcodedUi.raw(
+            'appLayout.line200JsxAttrContentACloudComputerWhereAiAgentsRunYour',
+          )}
+        />
         <meta property="og:image" content="https://kortix.com/banner.png" />
         <meta property="og:url" content="https://kortix.com" />
         <meta property="og:type" content="website" />
         <meta property="og:site_name" content="Kortix" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content={tHardcodedUi.raw('appLayout.line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem')} />
-        <meta name="twitter:description" content={tHardcodedUi.raw('appLayout.line207JsxAttrContentACloudComputerWhereAiAgentsRunYour')} />
+        <meta
+          name="twitter:title"
+          content={tHardcodedUi.raw(
+            'appLayout.line206JsxAttrContentKortixTheAutonomousCompanyOperatingSystem',
+          )}
+        />
+        <meta
+          name="twitter:description"
+          content={tHardcodedUi.raw(
+            'appLayout.line207JsxAttrContentACloudComputerWhereAiAgentsRunYour',
+          )}
+        />
         <meta name="twitter:image" content="https://kortix.com/banner.png" />
-        <meta name="twitter:site" content={tHardcodedUi.raw('appLayout.line209JsxAttrContentKortix')} />
+        <meta
+          name="twitter:site"
+          content={tHardcodedUi.raw('appLayout.line209JsxAttrContentKortix')}
+        />
         <link rel="canonical" href="https://kortix.com" />
 
         {/* iOS Smart App Banner - shows native install banner in Safari */}
         {!featureFlags.disableMobileAdvertising ? (
-          <meta name="apple-itunes-app" content={tHardcodedUi.raw('appLayout.line214JsxAttrContentAppId6754448524AppArgumentKortix')} />
+          <meta
+            name="apple-itunes-app"
+            content={tHardcodedUi.raw(
+              'appLayout.line214JsxAttrContentAppId6754448524AppArgumentKortix',
+            )}
+          />
         ) : null}
-
-
 
         <script
           type="application/ld+json"
@@ -234,7 +315,11 @@ export default async function RootLayout({
               '@context': 'https://schema.org',
               '@type': 'Organization',
               name: siteMetadata.name,
-              alternateName: ['Kortix', 'Kortix AI', 'Kortix – The AI Command Center for Your Company'],
+              alternateName: [
+                'Kortix',
+                'Kortix AI',
+                'Kortix – The AI Command Center for Your Company',
+              ],
               url: siteMetadata.url,
               logo: `${siteMetadata.url}/favicon.png`,
               description: siteMetadata.description,
@@ -288,7 +373,7 @@ export default async function RootLayout({
           warning is purely cosmetic but pollutes the dev overlay. */}
       <body
         translate="no"
-        className="notranslate antialiased font-sans bg-background"
+        className="notranslate antialiased min-h-screen w-full scroll-smooth font-medium font-sans text-foreground bg-background"
         suppressHydrationWarning
       >
         <ThemeProvider
@@ -297,48 +382,43 @@ export default async function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <BrowserNoiseGuard />
-          <DesktopChrome />
-          <DesktopUrlPrompt />
+          <TooltipProvider delayDuration={300}>
+            <BrowserNoiseGuard />
+            <DesktopChrome />
+            <DesktopUrlPrompt />
           <AuthProvider>
-            <I18nProvider>
-              <ReactQueryProvider>
-                <ClientErrorBoundary>
+              <I18nProvider>
+                <ReactQueryProvider>
+                  <Toaster />
                   {children}
-                </ClientErrorBoundary>
-                <Toaster />
-              </ReactQueryProvider>
-            </I18nProvider>
-          </AuthProvider>
-          {/* Non-critical lazy widgets — wrap in a boundary so a failed chunk
-              load reports to Sentry and renders nothing, instead of escalating
-              to global-error and blanking the whole app. */}
-          <ClientErrorBoundary silent>
-          {/* Analytics - lazy loaded to not block FCP */}
-          <Suspense fallback={null}>
-            <Analytics />
-          </Suspense>
-          {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
+                </ReactQueryProvider>
+              </I18nProvider>
+            </AuthProvider>
+            {/* Analytics - lazy loaded to not block FCP */}
             <Suspense fallback={null}>
-              <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
+              <Analytics />
             </Suspense>
-          )}
-          <Suspense fallback={null}>
-            <SpeedInsights />
-          </Suspense>
-          <Suspense fallback={null}>
-            <PostHogIdentify />
-          </Suspense>
-          <Suspense fallback={null}>
-            <RouteChangeTracker />
-          </Suspense>
-          <Suspense fallback={null}>
-            <AuthEventTracker />
-          </Suspense>
-          <Suspense fallback={null}>
-            <LocalhostLinkInterceptor />
-          </Suspense>
-          </ClientErrorBoundary>
+            {process.env.NEXT_PUBLIC_GTM_ID && !isDesktopApp && (
+              <Suspense fallback={null}>
+                <GoogleTagManager gtmId={process.env.NEXT_PUBLIC_GTM_ID} />
+              </Suspense>
+            )}
+            <Suspense fallback={null}>
+              <SpeedInsights />
+            </Suspense>
+            <Suspense fallback={null}>
+              <PostHogIdentify />
+            </Suspense>
+            <Suspense fallback={null}>
+              <RouteChangeTracker />
+            </Suspense>
+            <Suspense fallback={null}>
+              <AuthEventTracker />
+            </Suspense>
+            <Suspense fallback={null}>
+              <LocalhostLinkInterceptor />
+            </Suspense>
+          </TooltipProvider>
         </ThemeProvider>
       </body>
     </html>

@@ -1,7 +1,7 @@
 'use client';
 
+import Footer from '@/components/home/footer';
 import { Navbar } from '@/components/home/navbar';
-import { SimpleFooter } from '@/components/home/simple-footer';
 import { ConsentGate } from '@/components/consent-gate';
 import { Children } from 'react';
 
@@ -13,13 +13,13 @@ export default function HomeLayout({
   const routedChildren = Children.toArray(children);
 
   return (
-    <div className="w-full min-h-dvh relative">
+    <div className="relative min-h-dvh w-full">
       <ConsentGate />
-      <div className="fixed top-0 left-0 right-0 z-50">
+      <div className="fixed top-0 right-0 left-0 z-50">
         <Navbar isAbsolute />
       </div>
       {routedChildren}
-      <SimpleFooter />
+      <Footer />
     </div>
   );
 }

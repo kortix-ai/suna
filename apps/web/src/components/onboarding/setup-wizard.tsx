@@ -15,7 +15,7 @@ import { useTranslations } from 'next-intl';
 
 import { useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import {
   Settings2,
   Check,

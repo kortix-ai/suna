@@ -1,8 +1,8 @@
-import React, { ComponentPropsWithoutRef, CSSProperties } from "react";
+import React, { ComponentPropsWithoutRef, CSSProperties } from 'react';
 
-import { cn } from "@/lib/utils";
+import { cn } from '@/lib/utils';
 
-interface RippleProps extends ComponentPropsWithoutRef<"div"> {
+interface RippleProps extends ComponentPropsWithoutRef<'div'> {
   mainCircleSize?: number;
   mainCircleOpacity?: number;
   numCircles?: number;
@@ -18,8 +18,8 @@ export const Ripple = React.memo(function Ripple({
   return (
     <div
       className={cn(
-        "scale-150 pointer-events-none absolute inset-0 select-none [mask-image:linear-gradient(to_bottom,white,transparent)]",
-        className
+        'scale-150 pointer-events-none absolute inset-0 select-none [mask-image:linear-gradient(to_bottom,white,transparent)]',
+        className,
       )}
       {...props}
     >
@@ -27,7 +27,7 @@ export const Ripple = React.memo(function Ripple({
         const size = mainCircleSize + i * 70;
         const opacity = mainCircleOpacity - i * 0.03;
         const animationDelay = `${i * 0.06}s`;
-        const borderStyle = "solid";
+        const borderStyle = 'solid';
 
         return (
           <div
@@ -35,17 +35,17 @@ export const Ripple = React.memo(function Ripple({
             className={`absolute animate-ripple rounded-full border bg-foreground/25 shadow-xl`}
             style={
               {
-                "--i": i,
+                '--i': i,
                 width: `${size}px`,
                 height: `${size}px`,
                 opacity,
                 animationDelay,
                 borderStyle,
-                borderWidth: "1px",
+                borderWidth: '1px',
                 borderColor: `var(--foreground)`,
-                top: "50%",
-                left: "50%",
-                transform: "translate(-50%, -50%) scale(1)",
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%) scale(1)',
               } as CSSProperties
             }
           />
@@ -55,4 +55,4 @@ export const Ripple = React.memo(function Ripple({
   );
 });
 
-Ripple.displayName = "Ripple";
+Ripple.displayName = 'Ripple';

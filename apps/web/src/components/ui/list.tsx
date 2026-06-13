@@ -1,7 +1,7 @@
 'use client';
 
-import * as React from 'react';
 import { cn } from '@/lib/utils';
+import * as React from 'react';
 
 /**
  * Kortix <List> / <ListRow> — the one standard list.
@@ -30,17 +30,8 @@ import { cn } from '@/lib/utils';
  * handler so they don't trigger the row's onClick).
  */
 
-export function List({
-  className,
-  ...props
-}: React.ComponentProps<'ul'>) {
-  return (
-    <ul
-      data-slot="list"
-      className={cn('divide-y divide-border/60', className)}
-      {...props}
-    />
-  );
+export function List({ className, ...props }: React.ComponentProps<'ul'>) {
+  return <ul data-slot="list" className={cn('divide-border/60 divide-y', className)} {...props} />;
 }
 
 export interface ListRowProps {
@@ -90,21 +81,28 @@ export function ListRow({
         className={cn(
           'group flex items-center gap-3 px-6 py-3',
           interactive &&
-            'cursor-pointer transition-colors hover:bg-muted/40 focus-visible:bg-muted/40 focus-visible:outline-none',
+            'hover:bg-muted/40 focus-visible:bg-muted/40 cursor-pointer transition-colors focus-visible:outline-none',
           className,
         )}
       >
         {leading ? <div className="shrink-0">{leading}</div> : null}
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className={cn('truncate text-sm font-medium text-foreground', compact && 'leading-none')}>{title}</span>
+            <span
+              className={cn(
+                'text-foreground truncate text-sm font-medium',
+                compact && 'leading-none',
+              )}
+            >
+              {title}
+            </span>
             {badges}
           </div>
-          {subtitle ? <div className={cn(compact ? 'text-xs leading-none' : 'mt-0.5')}>{subtitle}</div> : null}
+          {subtitle ? (
+            <div className={cn(compact ? 'text-xs leading-none' : 'mt-0.5')}>{subtitle}</div>
+          ) : null}
         </div>
-        {trailing ? (
-          <div className="flex shrink-0 items-center gap-1.5">{trailing}</div>
-        ) : null}
+        {trailing ? <div className="flex shrink-0 items-center gap-1.5">{trailing}</div> : null}
       </div>
     </li>
   );

@@ -385,7 +385,7 @@ function ConnectorRail({
   return (
     <nav aria-label="Connectors" className="flex w-72 shrink-0 flex-col border-r border-border/60 bg-muted/20">
       <div className="space-y-2 border-b border-border/60 p-3">
-        <Button size="sm" className="w-full justify-start gap-2" variant={selection.kind === 'add' ? 'subtle' : 'default'} onClick={() => onSelect({ kind: 'add' })}>
+        <Button size="sm" className="w-full justify-start gap-2" variant={selection.kind === 'add' ? 'secondary' : 'default'} onClick={() => onSelect({ kind: 'add' })}>
           <Plus className="h-4 w-4" />Add app
         </Button>
         <div className="relative">

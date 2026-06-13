@@ -10,7 +10,7 @@ import { useTranslations } from 'next-intl';
  * landed on directly from an email link rather than unlocked.
  */
 
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 
