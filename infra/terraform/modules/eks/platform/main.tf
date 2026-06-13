@@ -123,7 +123,7 @@ resource "helm_release" "external_dns" {
         }
       }
     }]
-    domainFilters = [var.api_domain]
+    domainFilters = concat([var.api_domain], var.extra_domain_filters)
     policy        = "sync"
     registry      = "txt"
     txtOwnerId    = var.cluster_name
