@@ -9,7 +9,7 @@ import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/a
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
-import { createRemoteSessionBranch } from '../git';
+import { createRemoteSessionBranch, resolveCommitSha } from '../git';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -140,6 +140,20 @@ export async function buildSessionSandboxEnvVars(input: {
   agentName: string;
   initialPrompt?: string | null;
   opencodeModel?: string | null;
+  /** New session (brand-new branch == base, no remote commits). Lets the
+   *  daemon create the session branch LOCALLY instead of a redundant network
+   *  fetch of a branch that's identical to base — that fetch cost up to ~10s
+   *  through the dev tunnel (2026-06-13). Restart/resume omit it (their branch
+   *  may carry the agent's pushed commits → real fetch needed). */
+  freshSession?: boolean;
+  /** The project's base-branch tip SHA, resolved server-side (no tunnel). When
+   *  it equals the image-baked scaffold's root SHA — true for a fresh project
+   *  seeded from the starter with no per-project commit — the daemon skips the
+   *  in-guest `git fetch` ENTIRELY (the baked scaffold already IS base), turning
+   *  repo materialization into a pure-local op. That fetch is a zero-object
+   *  negotiation round-trip that still hung for 34s through the flaky dev tunnel
+   *  (2026-06-13). Omitted → daemon delta-fetches as before. */
+  baseSha?: string;
 }): Promise<Record<string, string>> {
   // Only user runtime secrets belong here. The sandbox-scoped KORTIX_TOKEN is
   // minted by provisionSessionSandbox() and injected at the provider boundary,
@@ -186,6 +200,8 @@ export async function buildSessionSandboxEnvVars(input: {
     KORTIX_BRANCH_NAME: input.sessionId,
     KORTIX_PROJECT_ID: input.projectId,
     KORTIX_SESSION_ID: input.sessionId,
+    ...(input.freshSession ? { KORTIX_SESSION_FRESH: '1' } : {}),
+    ...(input.baseSha ? { KORTIX_BASE_SHA: input.baseSha } : {}),
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_API_URL: deriveKortixApiBase(),
@@ -481,17 +497,30 @@ export async function createProjectSession(input: {
         ...project,
         gitAuthToken: gitAuth.auth?.token ?? null,
       }));
-      const envPromise = buildSessionSandboxEnvVars({
-        accountId,
-        projectId,
-        sessionId,
-        userId,
-        repoUrl: project.repoUrl,
-        baseRef,
-        agentName,
-        initialPrompt,
-        opencodeModel,
-      }).then((envVars) => {
+      // Resolve the base-branch tip SHA server-side (no tunnel) so the daemon
+      // can skip the in-guest fetch when the baked scaffold already IS base.
+      // Best-effort + timeout-guarded (never block create): on failure/timeout
+      // the hint is omitted → daemon delta-fetches as before. Runs CONCURRENTLY
+      // with gitAuth (folded into the env-build chain, not awaited inline).
+      const baseShaPromise = Promise.race([
+        resolveCommitSha(project, baseRef).catch(() => undefined),
+        new Promise<undefined>((r) => setTimeout(() => r(undefined), 2000)),
+      ]);
+      const envPromise = baseShaPromise.then((baseSha) =>
+        buildSessionSandboxEnvVars({
+          accountId,
+          projectId,
+          sessionId,
+          userId,
+          repoUrl: project.repoUrl,
+          baseRef,
+          agentName,
+          initialPrompt,
+          opencodeModel,
+          freshSession: true,
+          baseSha,
+        }),
+      ).then((envVars) => {
         tl.mark('env-vars');
         return envVars;
       });

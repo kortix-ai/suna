@@ -453,6 +453,10 @@ projectsApp.openapi(
         await backend.seedFiles(connRef, pushToken, starter, {
           branch: provisioned.defaultBranch,
           message: 'chore: scaffold Kortix project',
+          // Share the deterministic root with the baked scaffold so fresh
+          // sessions delta-fetch one tiny per-project commit (shared base) —
+          // instead of full-cloning through the tunnel. See baseFiles above.
+          baseFiles: starterBase,
         });
       } else {
         await seedRepoViaGitPush({
