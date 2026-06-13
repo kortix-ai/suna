@@ -1,0 +1,17 @@
+# Copy to terraform.tfvars (gitignored: infra/terraform/**/*.tfvars) and fill in.
+# Cloudflare token is better supplied via the environment:
+#   export TF_VAR_cloudflare_api_token=...   # DNS:Edit on kortix.com (external-dns)
+#
+# Dev runs Argo CD headless — the UI + GitHub SSO are OFF (no OAuth app needed).
+# Access Argo with:  kubectl -n argocd port-forward svc/argocd-server 8080:443
+# To expose a dev Argo UI later, set argocd_ui_enabled + the SSO block (mirror
+# prod-eks/platform/terraform.tfvars) AFTER wiring a Cloudflare Access gate.
+
+cloudflare_api_token = ""
+
+# argocd_ui_enabled           = false
+# argocd_github_sso_enabled   = false
+# argocd_github_client_id     = ""
+# argocd_github_client_secret = ""
+# argocd_admin_team           = "ops"
+# argocd_disable_admin        = false

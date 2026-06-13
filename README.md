@@ -4,7 +4,7 @@
 
 # Kortix
 
-### The AI command center for your company
+**The AI command center for your company**
 
 **One repo. One config. A workforce of AI agents that does the real work — and everything is code you own.**
 
@@ -85,7 +85,7 @@ Work runs three ways: **on-demand** (ask in chat, get it now), **human-assisted*
 
 ---
 
-## Why Kortix
+### [`apps/web/`](apps/web/) — Dashboard & marketing
 
 - **Open & yours.** Open source and self-hostable — your data, your models, your infrastructure. No lock-in, fully auditable.
 - **A workforce, not one assistant.** Org-scale specialist agents that run in parallel and compound a shared memory.
@@ -118,7 +118,10 @@ Built to survive a security review, not slip past one: microVM isolation · memb
 
 ## Contributing
 
-Monorepo managed with **pnpm 8** (Docker required for sandboxes).
+- **Open & yours.** Source-available and self-hostable — your data, your models, your infrastructure. No lock-in, fully auditable.
+- **A workforce, not one assistant.** Org-scale specialist agents that run in parallel and compound a shared memory.
+- **Real work, not chat.** Agents run on real computers and return finished deliverables — and take real actions in your tools.
+- **Everything is code.** Versioned, reviewable, portable, governable — never a black box.
 
 ```bash
 pnpm install

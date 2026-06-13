@@ -445,7 +445,7 @@ function DialogInstanceRow({
           {sandboxUpdate?.updateAvailable && !sandboxUpdate.isUpdating && (
             <Button
               type="button"
-              variant="subtle"
+              variant="secondary"
               size="xs"
               className="rounded-full"
               onClick={(e) => { e.stopPropagation(); sandboxUpdate.update(); }}

@@ -19,7 +19,8 @@ metadata:
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
     alb.ingress.kubernetes.io/ssl-policy: ELBSecurityPolicy-TLS13-1-2-2021-06
-    alb.ingress.kubernetes.io/certificate-arn: {{ .Values.ingress.certificateArn | quote }}
+    # Primary cert + any extra certs (multi-host ALB serves the right one via SNI).
+    alb.ingress.kubernetes.io/certificate-arn: {{ prepend (.Values.ingress.extraCertificateArns | default list) .Values.ingress.certificateArn | join "," | quote }}
     alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
     alb.ingress.kubernetes.io/healthcheck-path: {{ .Values.health.path | quote }}
     alb.ingress.kubernetes.io/healthcheck-interval-seconds: "15"
@@ -32,20 +33,22 @@ metadata:
     {{- if .Values.ingress.inboundCidrs }}
     alb.ingress.kubernetes.io/inbound-cidrs: {{ .Values.ingress.inboundCidrs | quote }}
     {{- end }}
-    # external-dns: create the proxied Cloudflare record for this host -> the ALB.
-    external-dns.alpha.kubernetes.io/hostname: {{ .Values.ingress.host | quote }}
+    # external-dns: create the proxied Cloudflare record(s) for these host(s) -> the ALB.
+    external-dns.alpha.kubernetes.io/hostname: {{ prepend (.Values.ingress.extraHosts | default list) .Values.ingress.host | join "," | quote }}
     external-dns.alpha.kubernetes.io/cloudflare-proxied: {{ .Values.ingress.cloudflareProxied | quote }}
 spec:
   ingressClassName: alb
   rules:
-    - host: {{ .Values.ingress.host | quote }}
+    {{- range prepend (.Values.ingress.extraHosts | default list) .Values.ingress.host }}
+    - host: {{ . | quote }}
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: {{ include "kortix-api.name" . }}
+                name: {{ include "kortix-api.name" $ }}
                 port:
                   name: http
+    {{- end }}
 {{- end }}

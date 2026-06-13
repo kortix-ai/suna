@@ -1,5 +1,5 @@
 import { eq, and, inArray, sql } from 'drizzle-orm';
-import { projectSessions } from '@kortix/db';
+import { projectSessions, sandboxes } from '@kortix/db';
 import {
   getCreditAccount,
   getSubscriptionInfo,
@@ -95,9 +95,6 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
   // User's instances (sandboxes)
   let instances: any[] = [];
   try {
-    const { db } = await import('../../shared/db');
-    const { sandboxes } = await import('@kortix/db');
-
     const sandboxRows = await db
       .select()
       .from(sandboxes)

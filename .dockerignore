@@ -61,3 +61,5 @@ node_modules
 !apps/web/.next/static/**
 apps/web/.next/cache
 apps/web/.next/cache/**
+
+apps/mobile/.env.example

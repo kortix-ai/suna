@@ -34,7 +34,10 @@ const bannerVariants = cva(
   },
 );
 
-const ICON_TONE: Record<NonNullable<VariantProps<typeof bannerVariants>['tone']>, string> = {
+const ICON_TONE: Record<
+  NonNullable<VariantProps<typeof bannerVariants>['tone']>,
+  string
+> = {
   neutral: 'text-muted-foreground',
   info: 'text-blue-600 dark:text-blue-400',
   success: 'text-emerald-600 dark:text-emerald-400',
@@ -43,7 +46,8 @@ const ICON_TONE: Record<NonNullable<VariantProps<typeof bannerVariants>['tone']>
 };
 
 export interface InfoBannerProps
-  extends Omit<React.ComponentProps<'div'>, 'title'>,
+  extends
+    Omit<React.ComponentProps<'div'>, 'title'>,
     VariantProps<typeof bannerVariants> {
   icon?: Icon;
   title?: React.ReactNode;
@@ -53,24 +57,32 @@ export interface InfoBannerProps
 
 export function InfoBanner({
   tone = 'neutral',
-  icon,
+  icon: IconComponent,
   title,
   action,
   className,
   children,
   ...props
 }: InfoBannerProps) {
-  const IconComponent = icon as React.ElementType | undefined;
   const safeTone = tone ?? 'neutral';
   return (
     <div className={cn(bannerVariants({ tone }), className)} {...props}>
       {IconComponent && (
-        <IconComponent className={cn('mt-0.5 h-4 w-4 shrink-0', ICON_TONE[safeTone])} />
+        <IconComponent
+          className={cn('mt-0.5 h-4 w-4 shrink-0', ICON_TONE[safeTone])}
+        />
       )}
       <div className="min-w-0 flex-1">
-        {title != null && <p className="font-medium text-foreground">{title}</p>}
+        {title != null && (
+          <p className="font-medium text-foreground">{title}</p>
+        )}
         {children != null && (
-          <div className={cn('text-xs text-muted-foreground', title != null && 'mt-0.5')}>
+          <div
+            className={cn(
+              'text-xs text-muted-foreground',
+              title != null && 'mt-0.5',
+            )}
+          >
             {children}
           </div>
         )}

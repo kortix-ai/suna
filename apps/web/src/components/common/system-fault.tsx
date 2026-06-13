@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import * as Sentry from '@sentry/nextjs';
 import { shouldIgnoreBrowserRuntimeNoise } from '@/lib/browser-error-noise';
+import * as Sentry from '@sentry/nextjs';
+import { useEffect, useState } from 'react';
 
 type Diag = {
   url: string;
@@ -325,9 +325,7 @@ export function SystemFaultView({
       language: nav?.language || EMPTY,
       viewport,
       online: typeof nav?.onLine === 'boolean' ? (nav.onLine ? 'yes' : 'no') : EMPTY,
-      env:
-        process.env.NEXT_PUBLIC_KORTIX_ENV ||
-        'dev',
+      env: process.env.NEXT_PUBLIC_KORTIX_ENV || 'dev',
       sentryEventId: eventId,
       errorName: error.name || 'Error',
       errorDigest: error.digest || EMPTY,
@@ -340,14 +338,19 @@ export function SystemFaultView({
     : 'An unrecoverable error occurred.';
 
   const envLine = diag
-    ? [diag.env, diag.viewport, diag.language, diag.online === 'yes' ? 'online' : diag.online === 'no' ? 'offline' : null]
+    ? [
+        diag.env,
+        diag.viewport,
+        diag.language,
+        diag.online === 'yes' ? 'online' : diag.online === 'no' ? 'offline' : null,
+      ]
         .filter(Boolean)
         .join(' · ')
     : EMPTY;
 
   return (
     <div className="fault-root">
-      <style dangerouslySetInnerHTML={{ __html: STYLES }} />
+      {/* <style dangerouslySetInnerHTML={{ __html: STYLES }} /> */}
       <div className="fault-overlay fault-scan" aria-hidden="true" />
       <div className="fault-overlay fault-vignette" aria-hidden="true" />
 
@@ -396,9 +399,7 @@ export function SystemFaultView({
             <dt>env</dt>
             <dd>{envLine}</dd>
             <dt>time</dt>
-            <dd className="mono">
-              {diag ? `${diag.timestampUtc} (${diag.timezone})` : EMPTY}
-            </dd>
+            <dd className="mono">{diag ? `${diag.timestampUtc} (${diag.timezone})` : EMPTY}</dd>
             <dt>agent</dt>
             <dd className="mono">{diag ? truncate(diag.userAgent, 180) : EMPTY}</dd>
           </dl>
@@ -411,7 +412,9 @@ export function SystemFaultView({
             </button>
           ) : (
             // eslint-disable-next-line @next/next/no-html-link-for-pages
-            <a className="fault-btn primary" href="/">Return home</a>
+            <a className="fault-btn primary" href="/">
+              Return home
+            </a>
           )}
           <button
             type="button"
@@ -424,8 +427,8 @@ export function SystemFaultView({
           </button>
         </div>
 
-        <p className="fault-support">If this persists, contact{' '}
-          <a href="mailto:support@kortix.ai">support@kortix.ai</a>
+        <p className="fault-support">
+          If this persists, contact <a href="mailto:support@kortix.ai">support@kortix.ai</a>
         </p>
       </main>
     </div>

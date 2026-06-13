@@ -7,6 +7,7 @@ import {
   type OpencodePart,
 } from '../api/sandbox-proxy.ts';
 import { loadAuthForHost, loadAuth, type Auth } from '../api/auth.ts';
+import { hasEnvTokenHost } from '../api/config.ts';
 import { loadLink } from '../project-link.ts';
 import {
   resolveProjectContext,
@@ -80,7 +81,8 @@ export async function loadSessionForChat(
 
   // Pick the same auth the project context resolved with so the sandbox
   // proxy auth header matches the host the session lives on.
-  const hostFromLink = !opts.hostArg ? loadLink()?.host ?? undefined : undefined;
+  const hostFromLink =
+    !opts.hostArg && !hasEnvTokenHost() ? loadLink()?.host ?? undefined : undefined;
   const hostName = opts.hostArg ?? hostFromLink;
   const auth = hostName ? loadAuthForHost(hostName) : loadAuth();
   if (!auth) {

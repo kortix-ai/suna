@@ -1,3 +1,3 @@
-EKS prod: rolling Deployment delivery (canary retired)
+Add memory_mb to /health
 
-EKS prod now ships as a plain rolling Deployment via Argo CD
+Health endpoint now shows memory of a pod

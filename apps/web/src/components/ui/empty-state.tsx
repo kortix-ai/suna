@@ -42,11 +42,19 @@ export function EmptyState({
   const maxW = size === 'sm' ? 'max-w-[240px]' : 'max-w-[320px]';
 
   return (
-    <div className={cn('flex flex-1 items-center justify-center px-6 py-12', className)}>
+    <div
+      className={cn(
+        'flex flex-1 items-center justify-center px-6 py-12',
+        className,
+      )}
+    >
       <div className={cn('text-center', maxW)}>
         {IconComponent && (
           <div className="flex justify-center mb-4">
-            <IconComponent className={cn(iconSize, 'text-muted-foreground/20')} strokeWidth={1.25} />
+            <IconComponent
+              className={cn(iconSize, 'text-muted-foreground/20')}
+              strokeWidth={1.25}
+            />
           </div>
         )}
         <h3 className="text-sm font-semibold text-foreground tracking-tight">

@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { activeHost } from '../api/config.ts';
 import { createApiClient } from '../api/client.ts';
+import { resolveProjectContext } from '../command-helpers.ts';
 import { resolveProjectId } from '../project-link.ts';
 
 // These tests pin the contract the platform relies on when it injects auth
@@ -66,6 +70,62 @@ describe('in-sandbox auth resolution', () => {
   it('reads the project id from KORTIX_PROJECT_ID', () => {
     process.env.KORTIX_PROJECT_ID = 'proj-xyz';
     expect(resolveProjectId()).toBe('proj-xyz');
+  });
+});
+
+describe('env token vs .kortix/link.json host', () => {
+  // A repo may carry a committed link.json naming a host (per-repo binding).
+  // Inside a session sandbox that named host has no stored credentials, so
+  // the platform-injected env token must outrank it — otherwise every
+  // project-scoped command dies with "host not logged in".
+  let dir: string;
+  let savedCwd: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'kortix-cli-link-'));
+    mkdirSync(join(dir, '.kortix'), { recursive: true });
+    writeFileSync(
+      join(dir, '.kortix', 'link.json'),
+      JSON.stringify({
+        project_id: 'proj-from-link',
+        account_id: 'acct',
+        host: 'kortix-internal-dev',
+        linked_at: '2026-01-01T00:00:00.000Z',
+      }),
+    );
+    savedCwd = process.cwd();
+    process.chdir(dir);
+  });
+
+  afterEach(() => {
+    process.chdir(savedCwd);
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('resolveProjectContext uses the env token even when link.json names a host', () => {
+    process.env.KORTIX_CLI_TOKEN = 'kortix_pat_cli';
+    process.env.KORTIX_API_URL = 'https://tunnel.example/v1';
+    const ctx = resolveProjectContext();
+    expect(ctx).not.toBeNull();
+    expect(ctx?.auth.token).toBe('kortix_pat_cli');
+    expect(ctx?.auth.api_base).toBe('https://tunnel.example/v1');
+    // Project still comes from the link — only the HOST binding is overridden.
+    expect(ctx?.projectId).toBe('proj-from-link');
+  });
+
+  it('without an env token the link host is still honored (and fails logged-out)', () => {
+    // Config file points at a nonexistent path → the named host has no token →
+    // the pre-existing behavior (refuse with "not logged in") is preserved.
+    const ctx = resolveProjectContext();
+    expect(ctx).toBeNull();
+  });
+
+  it('an explicit --host override still wins over the env token', () => {
+    process.env.KORTIX_CLI_TOKEN = 'kortix_pat_cli';
+    // 'nonexistent-host' has no credentials → context resolution must fail
+    // rather than silently falling back to the env token the caller did not ask for.
+    const ctx = resolveProjectContext({ hostArg: 'nonexistent-host' });
+    expect(ctx).toBeNull();
   });
 });
 

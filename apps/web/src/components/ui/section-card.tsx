@@ -72,7 +72,10 @@ export function SectionCard({
               <h2 className="text-base font-semibold text-foreground">
                 {title}
                 {count != null && (
-                  <span className="font-normal text-muted-foreground"> ({count})</span>
+                  <span className="font-normal text-muted-foreground">
+                    {' '}
+                    ({count})
+                  </span>
                 )}
               </h2>
             )}
@@ -85,7 +88,11 @@ export function SectionCard({
           {action != null && <div className="shrink-0">{action}</div>}
         </div>
       )}
-      {flush ? children : <div className={cn('px-6 py-5', bodyClassName)}>{children}</div>}
+      {flush ? (
+        children
+      ) : (
+        <div className={cn('px-6 py-5', bodyClassName)}>{children}</div>
+      )}
     </Card>
   );
 }

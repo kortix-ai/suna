@@ -4,19 +4,28 @@ import { memo } from 'react';
 import dynamic from 'next/dynamic';
 import { useTheme } from 'next-themes';
 
-const Shader = dynamic(() => import('@/lib/shaders-react').then((m) => m.Shader), {
-  ssr: false,
-});
-const Ascii = dynamic(() => import('@/lib/shaders-react').then((m) => m.Ascii), {
-  ssr: false,
-});
+const Shader = dynamic(
+  () => import('@/lib/shaders-react').then((m) => m.Shader),
+  {
+    ssr: false,
+  },
+);
+const Ascii = dynamic(
+  () => import('@/lib/shaders-react').then((m) => m.Ascii),
+  {
+    ssr: false,
+  },
+);
 const FallingLines = dynamic(
   () => import('@/lib/shaders-react').then((m) => m.FallingLines),
   { ssr: false },
 );
-const Form3D = dynamic(() => import('@/lib/shaders-react').then((m) => m.Form3D), {
-  ssr: false,
-});
+const Form3D = dynamic(
+  () => import('@/lib/shaders-react').then((m) => m.Form3D),
+  {
+    ssr: false,
+  },
+);
 const RadialGradient = dynamic(
   () => import('@/lib/shaders-react').then((m) => m.RadialGradient),
   { ssr: false },

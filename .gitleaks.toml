@@ -20,3 +20,16 @@ paths = [
   '''apps/web/\.env\.dev$''',
   '''apps/web/\.env\.prod$''',
 ]
+
+[[allowlists]]
+description = "False-positive i18n content keys in the marketing security accordion (apps/web/src/features/marketing/security/content.ts). The generic-api-key rule matched on field names ending in 'Key' (titleKey/teaserKey/bodyKey/badgeKey) whose VALUES are i18n message keys like 'enterpriseAccordionSoc2Teaser' — not secrets. The fields were later renamed (teaser/body/badge), but the PR scan walks commit history so the original commit still trips."
+# condition=AND => a finding is exempt only if it is BOTH in this file AND the
+# matched value looks like an enterprise* i18n key. A real random-entropy secret
+# committed to this same file would still fail the scan.
+condition = "AND"
+paths = [
+  '''apps/web/src/features/marketing/security/content\.ts$''',
+]
+regexes = [
+  '''enterprise[A-Za-z0-9]+''',
+]

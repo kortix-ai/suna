@@ -4502,7 +4502,9 @@ export function SessionChat({
   // Goes true immediately, stays visible briefly after going idle so the
   // UI doesn't flicker between agentic steps. NOT a 2s debounce.
   const [isBusy, setIsBusy] = useState(effectiveBusy);
-  const busyTimerRef = useRef<ReturnType<typeof setTimeout>>();
+  const busyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   useEffect(() => {
     if (effectiveBusy) {
       clearTimeout(busyTimerRef.current);
@@ -6209,8 +6211,8 @@ export function SessionChat({
           {/* Chat Minimap */}
           <ChatMinimap
             turns={turns}
-            scrollRef={scrollRef}
-            contentRef={contentRef}
+            scrollRef={scrollRef as React.RefObject<HTMLDivElement>}
+            contentRef={contentRef as React.RefObject<HTMLDivElement>}
             messages={messages || []}
           />
 

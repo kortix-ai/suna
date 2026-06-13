@@ -40,9 +40,9 @@ interface UseAutoScrollOptions {
 }
 
 interface UseAutoScrollReturn {
-  scrollRef: React.RefObject<HTMLDivElement>;
-  contentRef: React.RefObject<HTMLDivElement>;
-  spacerElRef: React.RefObject<HTMLDivElement>;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  contentRef: React.RefObject<HTMLDivElement | null>;
+  spacerElRef: React.RefObject<HTMLDivElement | null>;
   showScrollButton: boolean;
   scrollToBottom: () => void;
   scrollToLastTurn: () => void;

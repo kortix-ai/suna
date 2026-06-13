@@ -10,15 +10,29 @@ import { accountGithubInstallationStates, accountGithubInstallations, accountMem
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { grantProjectRole } from './access';
+import { ttlMemo } from '../../shared/ttl-memo';
 import { ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, deriveProjectName, normalizeJsonObject, normalizeString } from './serializers';
 
+// Memoized briefly (positive hits only): this runs on every project-scoped
+// request, and prod pays a cross-region roundtrip per DB statement. A revoked
+// membership lingers for at most one TTL window; a fresh grant is visible
+// immediately because null results are never cached.
+const loadAccountMembership = ttlMemo({
+  ttlMs: 15_000,
+  keyFn: (userId: string, accountId: string) => `${userId}|${accountId}`,
+  loader: async (userId: string, accountId: string) => {
+    const [membership] = await db
+      .select({ accountId: accountMembers.accountId, accountRole: accountMembers.accountRole })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
+      .limit(1);
+    return membership ?? null;
+  },
+  shouldCache: (membership) => membership !== null,
+});
+
 export async function getAccountMembership(userId: string, accountId: string) {
-  const [membership] = await db
-    .select({ accountId: accountMembers.accountId, accountRole: accountMembers.accountRole })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
-    .limit(1);
-  return membership ?? null;
+  return loadAccountMembership(userId, accountId);
 }
 
 

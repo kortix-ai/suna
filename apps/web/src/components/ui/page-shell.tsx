@@ -29,8 +29,8 @@ type Width = 'reading' | 'default' | 'wide' | 'full';
 const WIDTH_CLASS: Record<Width, string> = {
   reading: 'max-w-[720px]',
   default: 'max-w-7xl',
-  wide:    'max-w-[1400px]',
-  full:    'max-w-none',
+  wide: 'max-w-[1400px]',
+  full: 'max-w-none',
 };
 
 export interface PageShellProps extends HTMLAttributes<HTMLDivElement> {

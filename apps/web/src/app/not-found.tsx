@@ -1,12 +1,9 @@
 'use client';
 
+import { NotFoundCard, NotFoundNoise } from '@/components/common/not-found-state';
+import Footer from '@/components/home/footer';
 import { Navbar } from '@/components/home/navbar';
-import { SimpleFooter } from '@/components/home/simple-footer';
 import { AnimatedBg } from '@/components/ui/animated-bg';
-import {
-  NotFoundCard,
-  NotFoundNoise,
-} from '@/components/common/not-found-state';
 
 /**
  * The general 404 — rendered inside the marketing chrome (Navbar +
@@ -33,7 +30,7 @@ export default function NotFound() {
         <NotFoundCard />
       </main>
 
-      <SimpleFooter />
+      <Footer />
     </div>
   );
 }
