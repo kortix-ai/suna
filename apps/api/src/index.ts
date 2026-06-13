@@ -299,7 +299,6 @@ const HealthSchema = z
     warm_snapshots: z.boolean(),
     tunnel: z.any(),
     leader: z.boolean(),
-    demo_marker: z.string().optional(),
   })
   .openapi('Health');
 
@@ -324,7 +323,6 @@ const healthHandler = (c: any) =>
     warm_snapshots: warmSnapshotsEnabled(),
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
-    demo_marker: 'fullstack-preview-demo',
   });
 
 app.openapi(

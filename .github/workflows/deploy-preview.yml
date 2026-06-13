@@ -151,12 +151,12 @@ jobs:
           done
 
           # Best-effort: resolve this branch's Vercel preview URL.
-          fline="wired → it calls https://${HOST}/v1 (see Vercel's preview comment for the URL)"
+          fline="see Vercel's preview comment for the URL"
           if [ -n "${VERCEL_TOKEN:-}" ] && [ -n "${PROJECT_ID:-}" ] && [ -n "${TEAM_ID:-}" ]; then
             url=$(curl -s "https://api.vercel.com/v6/deployments?projectId=${PROJECT_ID}&teamId=${TEAM_ID}&target=preview&limit=50" \
                   -H "Authorization: Bearer ${VERCEL_TOKEN}" \
                   | jq -r --arg b "$BRANCH" '[.deployments[]|select(.meta.githubCommitRef==$b)]|sort_by(.created)|last|.url // empty' 2>/dev/null || true)
-            [ -n "$url" ] && fline="https://${url} · open /preview-demo to see the wired backend"
+            [ -n "$url" ] && fline="https://${url}"
           fi
 
           comment "$status" "$detail" "$fline"
