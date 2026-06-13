@@ -67,7 +67,8 @@ export default function PresentationPage() {
         case 'j':
         case 'l':
           e.preventDefault();
-          overview ? setOverview(false) : next();
+          if (overview) setOverview(false);
+          else next();
           break;
         case 'ArrowLeft':
         case 'PageUp':
