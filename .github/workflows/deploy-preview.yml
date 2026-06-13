@@ -1,28 +1,36 @@
-name: Preview Frontend (PR)
+name: Deploy Preview (PR)
 
-# Points a PR's Vercel preview frontend at its OWN backend
-# (pr-<n>.preview-api.kortix.com) instead of the default dev API.
+# ONE workflow that runs a per-PR preview environment end to end — the preview
+# analogue of deploy-dev.yml / deploy-prod.yml. Gated on the `preview` label, so
+# only opted-in PRs build + deploy; every other PR is untouched.
 #
-# NEXT_PUBLIC_BACKEND_URL is baked at build time, and Vercel previews are keyed
-# by branch — so on a `preview`-labeled PR we set a BRANCH-SCOPED Vercel env for
-# that PR's branch and trigger a fresh preview build. Only labeled PRs are
-# rewired; every other PR keeps the normal dev backend. On close/unlabel we
-# delete the branch env (the deployments are GC'd by Vercel).
+#   build-api  → builds kortix/kortix-api:pr-<head-sha> (FULL head SHA — matches
+#                the Argo CD ApplicationSet PullRequest generator's {{.head_sha}},
+#                which deploys it into an ephemeral kortix-pr-<number> namespace
+#                on dev-eks at pr-<number>.preview-api.kortix.com). amd64-only:
+#                dev-eks nodes are x86 (m6i). Internal-branch PRs only (needs
+#                Docker Hub secrets, unavailable to forks).
+#   wire        → points the PR's Vercel preview frontend at its OWN backend
+#                (NEXT_PUBLIC_BACKEND_URL=https://pr-<n>.preview-api.kortix.com/v1)
+#                via a branch-scoped Vercel env + a fresh preview build.
+#   teardown    → on close/unlabel, deletes the Vercel branch env. The backend
+#                image + namespace are pruned automatically by the ApplicationSet.
 #
-# Pairs with: preview-build.yml (builds :pr-<sha>) + the Argo ApplicationSet
-# (deploys the backend) + the API's preview-aware CORS.
+# The preview runs API-only against the shared dev data plane (kortix-preview-env):
+# workers off, ensureSchema skipped (INTERNAL_KORTIX_ENV=preview), preview-aware CORS.
 #
 # Secrets/vars required:
-#   secret VERCEL_TOKEN       — Vercel API token (Kortix team scope)
-#   vars   VERCEL_PROJECT_ID  — the apps/web Vercel project id (prj_…)
-#   vars   VERCEL_TEAM_ID     — the Vercel team id (team_…)
+#   secrets DOCKERHUB_USERNAME / DOCKERHUB_TOKEN  — push the preview API image
+#   secret  VERCEL_TOKEN                          — Vercel API token (Kortix team)
+#   vars    VERCEL_PROJECT_ID                      — apps/web Vercel project id (prj_…)
+#   vars    VERCEL_TEAM_ID                         — Vercel team id (team_…)
 
 on:
   pull_request:
-    types: [labeled, unlabeled, synchronize, closed]
+    types: [labeled, unlabeled, opened, synchronize, reopened, closed]
 
 concurrency:
-  group: preview-frontend-${{ github.event.pull_request.number }}
+  group: deploy-preview-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
@@ -36,6 +44,46 @@ env:
   BRANCH: ${{ github.event.pull_request.head.ref }}
 
 jobs:
+  # ── Build the preview API image (Argo CD deploys it) ────────────────────────
+  build-api:
+    name: Build preview API image
+    if: >-
+      contains(github.event.pull_request.labels.*.name, 'preview') &&
+      contains(fromJSON('["labeled","opened","synchronize","reopened"]'), github.event.action)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          submodules: false
+      - run: git submodule sync --recursive && git submodule update --init --recursive --remote
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push :pr-<head-sha> (amd64)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            SERVICE=apps/api
+            KORTIX_VERSION=pr-${{ github.event.pull_request.number }}
+            KORTIX_COMMIT=${{ github.event.pull_request.head.sha }}
+          tags: |
+            kortix/kortix-api:pr-${{ github.event.pull_request.head.sha }}
+      - name: Summary
+        run: |
+          {
+            echo "### Preview API image built"
+            echo "Image: \`kortix/kortix-api:pr-${{ github.event.pull_request.head.sha }}\`"
+            echo "Argo CD deploys it to \`kortix-pr-${{ github.event.pull_request.number }}\` → \`pr-${{ github.event.pull_request.number }}.preview-api.kortix.com\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # ── Point the PR's preview frontend at its preview backend ──────────────────
   wire:
     name: Wire preview frontend → preview backend
@@ -97,7 +145,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Remove the branch override when the PR closes or loses the label ────────
-  unwire:
+  teardown:
     name: Unwire preview frontend
     if: >-
       github.event.action == 'closed' ||
