@@ -15,6 +15,11 @@ metadata:
     {{- include "kortix-api.labels" . | nindent 4 }}
   annotations:
     alb.ingress.kubernetes.io/scheme: internet-facing
+    {{- if .Values.ingress.albGroup }}
+    # Join a shared ALB (one LB, host-routed) instead of provisioning one per
+    # Ingress — used by PR previews so N ephemeral envs share a single ALB.
+    alb.ingress.kubernetes.io/group.name: {{ .Values.ingress.albGroup | quote }}
+    {{- end }}
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
     alb.ingress.kubernetes.io/ssl-redirect: "443"
