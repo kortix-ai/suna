@@ -37,7 +37,7 @@ import {
   DEFAULT_SANDBOX_SLUG,
   type EnsureSandboxImageResult,
 } from '../../snapshots/builder';
-import { ensureWarmBaseReady } from '../../snapshots/warm-bake';
+import { ensureWarmBaseReady, warmPathPaused } from '../../snapshots/warm-bake';
 import { config } from '../../config';
 import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
@@ -185,20 +185,36 @@ export async function provisionSessionSandbox(opts: {
   // must still boot its own per-project image.
   let warmBase: string | null = null;
   let warmIsProjectSnapshot = false;
-  if (providerName === 'daytona' && slug === DEFAULT_SANDBOX_SLUG && !opts.disableWarmSnapshot) {
+  // Skip ALL warm routes while the warm path is in post-failure cooldown — a
+  // degraded warm region (experimental "internal error" streaks) must not make
+  // every session pay a doomed warm attempt before falling back to cold. The
+  // generic base path already honors this; the per-project branch must too.
+  if (
+    providerName === 'daytona' &&
+    slug === DEFAULT_SANDBOX_SLUG &&
+    !opts.disableWarmSnapshot &&
+    !warmPathPaused()
+  ) {
     if (opts.projectWarmSnapshot) {
       try {
         const { getDaytonaWarm, warmSnapshotsEnabled } = await import('../../shared/daytona');
         if (warmSnapshotsEnabled()) {
           const { warmBaseUsable } = await import('../../snapshots/warm-bake');
-          const snap = await getDaytonaWarm().snapshot.get(opts.projectWarmSnapshot);
+          // Bound the provider lookup — a degraded region must not hang the
+          // (request-blocking) provision path waiting on snapshot.get.
+          const snap = await Promise.race([
+            getDaytonaWarm().snapshot.get(opts.projectWarmSnapshot),
+            new Promise((_, reject) =>
+              setTimeout(() => reject(new Error('snapshot.get timeout')), 4_000),
+            ),
+          ]);
           if (warmBaseUsable(snap)) {
             warmBase = opts.projectWarmSnapshot;
             warmIsProjectSnapshot = true;
           }
         }
       } catch {
-        // pointer is stale (snapshot gone) — fall through to the generic base
+        // pointer is stale / lookup slow → fall through to the generic base
       }
     }
     if (!warmBase) warmBase = await ensureWarmBaseReady();
