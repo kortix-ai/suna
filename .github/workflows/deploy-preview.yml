@@ -119,39 +119,44 @@ jobs:
             fi
           }
 
-          comment() { # $1=status line  $2=backend detail  $3=frontend line
-            upsert "$(printf '%s\n' \
+          # printf -v (direct assignment) — NOT upsert "$(printf …)": nesting a
+          # command substitution with quoted args inside the outer quotes trips
+          # bash's parser. Plain URLs (GitHub auto-links); no backticks.
+          comment() { # $1=status  $2=backend detail  $3=frontend line
+            local body
+            printf -v body '%s\n' \
               "$MARKER" \
               "## 🔭 Preview environment — $1" \
               "" \
-              "- **Backend:** \`https://${HOST}\` — $2" \
+              "- **Backend:** https://${HOST} — $2" \
               "- **Frontend:** $3" \
               "- **Health:** https://${HOST}/v1/health" \
               "" \
-              "_Ephemeral; torn down automatically when this PR closes._")
+              "_Ephemeral; torn down automatically when this PR closes._"
+            upsert "$body"
           }
 
           comment "⏳ deploying" "building image + Argo CD rollout…" "wiring to the preview backend…"
 
-          status="⚠️ still rolling out after ~12m — check Argo CD (ops.kortix.com)"
+          status="⚠️ still rolling out after ~12m — check Argo CD at ops.kortix.com"
           detail="not serving yet"
           for i in $(seq 1 36); do
             j=$(curl -s --max-time 8 "https://${HOST}/v1/health" 2>/dev/null || true)
             envv=$(printf '%s' "$j" | jq -r '.environment // empty' 2>/dev/null || true)
             if [ "$envv" = "preview" ]; then
               ver=$(printf '%s' "$j" | jq -r '.version // "?"')
-              status="✅ live"; detail="serving \`${ver}\`"; break
+              status="✅ live"; detail="serving version ${ver}"; break
             fi
             sleep 20
           done
 
           # Best-effort: resolve this branch's Vercel preview URL.
-          fline="wired → it calls \`https://${HOST}/v1\` (see Vercel's preview comment for the URL)"
+          fline="wired → it calls https://${HOST}/v1 (see Vercel's preview comment for the URL)"
           if [ -n "${VERCEL_TOKEN:-}" ] && [ -n "${PROJECT_ID:-}" ] && [ -n "${TEAM_ID:-}" ]; then
             url=$(curl -s "https://api.vercel.com/v6/deployments?projectId=${PROJECT_ID}&teamId=${TEAM_ID}&target=preview&limit=50" \
                   -H "Authorization: Bearer ${VERCEL_TOKEN}" \
                   | jq -r --arg b "$BRANCH" '[.deployments[]|select(.meta.githubCommitRef==$b)]|sort_by(.created)|last|.url // empty' 2>/dev/null || true)
-            [ -n "$url" ] && fline="https://${url}  ·  \`/preview-demo\` shows the wired backend"
+            [ -n "$url" ] && fline="https://${url} · open /preview-demo to see the wired backend"
           fi
 
           comment "$status" "$detail" "$fline"
