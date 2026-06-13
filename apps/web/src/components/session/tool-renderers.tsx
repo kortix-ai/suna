@@ -132,6 +132,10 @@ import {
   DiffStat,
 } from '@/components/ui/status';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
+import {
+  extractReadableHtml,
+  stripMarkupForToolOutput,
+} from '@/components/session/tool-renderers-sanitization';
 
 import {
   type ApplyPatchFile,
@@ -2921,11 +2925,7 @@ function PtyKillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const cleanOutput = useMemo(() => {
     if (!output) return '';
-    return (
-      output
-        .replace(/<\/?[\w_]+(?:\s[^>]*)?>[\s\S]*?(?:<\/[\w_]+>)?/g, '')
-        .trim() || output.replace(/<\/?[\w_]+[^>]*>/g, '').trim()
-    );
+    return stripMarkupForToolOutput(output);
   }, [output]);
 
   return (
@@ -3842,36 +3842,6 @@ function looksLikeHtml(s: string): boolean {
   const head = s.slice(0, 600).toLowerCase();
   if (head.includes('<!doctype html') || head.includes('<html')) return true;
   return /<\/(body|head|div|p|span|table)>/i.test(s.slice(0, 3000));
-}
-
-/** Strip an HTML document down to its <title> + readable text. */
-function extractReadableHtml(html: string): { title?: string; text: string } {
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  const title = titleMatch ? decodeEntities(titleMatch[1].trim()) : undefined;
-  const text = decodeEntities(
-    html
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<head[\s\S]*?<\/head>/gi, ' ')
-      .replace(/<!--[\s\S]*?-->/g, ' ')
-      .replace(/<\/(p|div|section|article|li|h[1-6]|br|tr|ul|ol)\s*>/gi, '\n')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/[ \t]+/g, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim(),
-  );
-  return { title, text };
-}
-
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/&apos;/g, "'");
 }
 
 function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
