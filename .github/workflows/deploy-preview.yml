@@ -22,8 +22,8 @@ name: Deploy Preview (PR)
 # Secrets/vars required:
 #   secrets DOCKERHUB_USERNAME / DOCKERHUB_TOKEN  — push the preview API image
 #   secret  VERCEL_TOKEN                          — Vercel API token (Kortix team)
-#   vars    VERCEL_PROJECT_ID                      — apps/web Vercel project id (prj_…)
-#   vars    VERCEL_TEAM_ID                         — Vercel team id (team_…)
+#   secret  VERCEL_PROJECT_ID                      — apps/web Vercel project id (prj_…)
+#   secret  VERCEL_TEAM_ID                         — Vercel team id (team_…)
 
 on:
   pull_request:
@@ -38,8 +38,8 @@ permissions:
 
 env:
   VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-  PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
-  TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+  PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
   ENV_KEY: NEXT_PUBLIC_BACKEND_URL
   BRANCH: ${{ github.event.pull_request.head.ref }}
 
