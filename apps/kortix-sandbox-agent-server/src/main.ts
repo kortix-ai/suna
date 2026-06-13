@@ -8,6 +8,7 @@ import {
   configureGlobalGitIdentity,
   configureRepoCredentialHelper,
   materializeRepo,
+  materializeScaffoldSeed,
   runGitCredentialHelper,
 } from './git'
 import { logger } from './logger'
@@ -361,14 +362,57 @@ async function runPoolMode(
 ): Promise<void> {
   const projectEnv = createProjectEnvStore()
   writeAgentEnvFile(projectEnv)
-  await ensureOpencodeConfigDeps(cfg.defaultOpencodeConfigDir).catch(() => {})
-  const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv)
+
+  // Scaffold-warm the seed: materialize the image-baked scaffold at /workspace
+  // (zero-network) so opencode pays its per-directory project init (git scan +
+  // file index + LSP + sqlite) ONCE here, FROZEN into the snapshot. Without this
+  // every fork paid that ~3.2s init on its own hot path (the runtime-ready
+  // wall). Resolve opencode's config from the scaffold's .kortix/opencode so the
+  // seed (and every fork) runs the real agents/plugins, not the baked default.
+  const scaffolded = await materializeScaffoldSeed(cfg.projectTarget, cfg.defaultBranch)
+  bootMark('pool-scaffold-materialized')
+  const opencodeConfigDir = scaffolded
+    ? await resolveOpencodeConfigDir(cfg)
+    : cfg.defaultOpencodeConfigDir
+  await ensureOpencodeConfigDeps(opencodeConfigDir).catch(() => {})
+  const opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
   await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
   bootMark('pool-opencode-spawned')
   const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
   installShutdownHandlers(opencode, server, staticWeb)
   bootMark('pool-ready')
-  logger.info('[pool] warm spare ready; awaiting claim', { timeline: bootState.timeline })
+
+  // PRE-WARM before the snapshot: drive opencode's /workspace init to completion
+  // and pre-create + pin the root session, so the frozen image has opencode
+  // genuinely 'ok' for /workspace AND a listed root session. The platinum
+  // capture condition gates on the pin file existing, so the snapshot is taken
+  // only AFTER this — making forks resume with runtime-ready instant and the
+  // backend ensure resolving 'healed' (no first-session init). Only when the
+  // scaffold materialized; otherwise the seed stays the old repo-less spare.
+  if (scaffolded) {
+    void (async () => {
+      const deadline = Date.now() + 5 * 60_000
+      let ok = false
+      while (!ok && Date.now() < deadline) ok = await waitForOpencodeReady(opencode, cfg.projectTarget)
+      if (!ok) { logger.warn('[pool] opencode never warmed; capture will not trigger'); return }
+      bootMark('pool-opencode-ready')
+      try {
+        const res = await waitForInitialSessionCreate(`http://127.0.0.1:${cfg.opencodeInternalPort}`, cfg.projectTarget)
+        const session = (await res.json()) as { id?: string }
+        if (session.id) {
+          mkdirSync(dirname(OPENCODE_SESSION_PIN_PATH), { recursive: true })
+          writeFileSync(OPENCODE_SESSION_PIN_PATH, session.id, 'utf8')
+          bootMark('pool-seed-session')
+          logger.info('[pool] pre-created + pinned root opencode session', { sessionId: session.id })
+        }
+      } catch (err) {
+        logger.warn('[pool] root session pre-create failed', { err: err instanceof Error ? err.message : String(err) })
+      }
+      logger.info('[pool] warm seed ready; awaiting claim', { timeline: bootState.timeline })
+    })()
+  } else {
+    logger.info('[pool] repo-less spare ready; awaiting claim', { timeline: bootState.timeline })
+  }
 
   let claimed = false
   const claim = (trigger: string) => {

@@ -501,25 +501,28 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   await mkdir(dirname(target), { recursive: true })
 
   if (await pathExists(`${target}/.git`)) {
-    logger.info('[git] using baked repo checkout', { target })
     await configureSafeDirectory(target)
-    const setUrl = await execGit([
-      '-C',
-      target,
-      'remote',
-      'set-url',
-      'origin',
-      cfg.repoUrl,
-    ])
-    if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
-
-    if (cfg.branchName) {
-      await checkoutLocalSessionBranch(target, cfg.branchName)
+    // The warm seed bakes the canonical SCAFFOLD at /workspace so opencode is
+    // already project-initialized in the snapshot. A fork may reuse it ONLY when
+    // the baked content IS this session's base — i.e. a fresh scaffold-rooted
+    // project (baked HEAD == the server-resolved KORTIX_BASE_SHA). When it isn't
+    // (an imported repo / diverged project), the baked scaffold is the WRONG
+    // content: discard it and re-materialize the real repo below. Restart/resume
+    // (no baseSha) keep the old "reuse whatever's baked" behaviour unchanged.
+    const bakedHead = (await execGit(['-C', target, 'rev-parse', 'HEAD'])).stdout.trim()
+    const mismatched = cfg.sessionFresh && !!cfg.baseSha && bakedHead !== cfg.baseSha
+    if (!mismatched) {
+      logger.info('[git] using baked repo checkout (warm)', { target, head: bakedHead })
+      const setUrl = await execGit(['-C', target, 'remote', 'set-url', 'origin', cfg.repoUrl])
+      if (setUrl.code !== 0) throw new Error(`git remote set-url failed: ${setUrl.stderr}`)
+      if (cfg.branchName) await checkoutLocalSessionBranch(target, cfg.branchName)
+      await configureRepoGitIdentity(cfg, target)
+      return
     }
-
-    await configureRepoGitIdentity(cfg, target)
-    return
-  } else {
+    logger.info('[git] baked checkout != session base; re-materializing real repo', { bakedHead, baseSha: cfg.baseSha })
+    await rm(target, { recursive: true, force: true })
+  }
+  {
     const cloneToken = await resolveCloneToken(cfg)
     // Scaffold fast path: the image bakes the canonical starter repo at
     // /opt/kortix/scaffold.git whose root commit is SHARED with every project
@@ -624,6 +627,41 @@ export async function materializeRepo(cfg: Config): Promise<void> {
 }
 
 const SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
+
+/**
+ * Seed-only: materialize the image-baked scaffold at `target` with ZERO network,
+ * for the warm-snapshot builder. The seed has no project repo — it clones the
+ * canonical scaffold so opencode can pay its per-directory project init (git
+ * scan / file index / LSP / sqlite) ONCE, frozen into the snapshot. Every fresh
+ * session shares the scaffold root, so a fork resumes with opencode already
+ * 'ok' for /workspace (kills the runtime-ready wall). Returns true on success;
+ * false (no scaffold baked) → caller leaves /workspace empty (degrades to the
+ * old behaviour, never breaks). `base` is checked out as a local branch so the
+ * working tree matches what a fresh session expects.
+ */
+export async function materializeScaffoldSeed(target: string, base: string): Promise<boolean> {
+  if (!existsSync(SCAFFOLD_REPO_PATH)) return false
+  const tmp = join(dirname(target), `.kortix-seed-${process.pid}-${Date.now()}`)
+  const t0 = Date.now()
+  try {
+    await mkdir(dirname(target), { recursive: true })
+    await rm(tmp, { recursive: true, force: true })
+    const cloned = await execGit(['clone', '-q', SCAFFOLD_REPO_PATH, tmp])
+    if (cloned.code !== 0) throw new Error(`seed scaffold clone: ${cloned.stderr}`)
+    const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'HEAD'])
+    if (co.code !== 0) throw new Error(`seed checkout base: ${co.stderr}`)
+    await rm(target, { recursive: true, force: true })
+    await rename(tmp, target)
+    logger.info('[git] seed scaffold materialized (zero-network)', { ms: Date.now() - t0, base })
+    return true
+  } catch (err) {
+    logger.warn('[git] seed scaffold materialize failed; warm seed will boot repo-less', {
+      err: err instanceof Error ? err.message.slice(0, 200) : String(err),
+    })
+    await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    return false
+  }
+}
 
 // Materialize `target` from the image-baked scaffold + a delta fetch from the
 // project origin. Returns true when target is ready on `base` tip; false →
