@@ -5,6 +5,7 @@ import { auth, json } from '../../openapi';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { claimWarmSandbox, refillProjectPool, syncClaimedBoxToBase, warmPoolEnabled } from '../../platform/services/warm-pool';
+import { readProjectWarmPointer } from '../../snapshots/warm-project';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/account-limits';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
@@ -390,9 +391,15 @@ export async function createProjectSession(input: {
   // Warm boxes boot from the platform default snapshot, so a session targeting
   // the default template (unset OR the reserved "default" slug — the UI's "New
   // session" button sends "default") can claim them. A *custom* template can't.
-  const wantsDefaultSandbox = !sandboxSlug || sandboxSlug === DEFAULT_SANDBOX_SLUG;
-  if (warmPoolEnabled() && providerName === config.getDefaultProvider() && wantsDefaultSandbox && !initialPrompt) {
-    const claimed = await claimWarmSandbox({ projectId, userId }).catch((err) => {
+  // Pool boxes record the template slug they were spawned for (the project's
+  // default — custom templates included), so a claim just matches slugs.
+  // Sessions with an env-delivered initial prompt (channels/triggers) still
+  // need a cold boot — the daemon reads KORTIX_INITIAL_PROMPT at startup. The
+  // dashboard's prompt-first flow is unaffected: the UI never sends
+  // initial_prompt (it delivers via sessionStorage after open).
+  const wantedPoolSlug = sandboxSlug?.trim() || DEFAULT_SANDBOX_SLUG;
+  if (warmPoolEnabled() && providerName === config.getDefaultProvider() && !initialPrompt) {
+    const claimed = await claimWarmSandbox({ projectId, userId, slug: wantedPoolSlug }).catch((err) => {
       console.warn(`[warm-pool] claim failed for ${projectId}:`, err instanceof Error ? err.message : err);
       return null;
     });
@@ -415,7 +422,13 @@ export async function createProjectSession(input: {
             sandboxProvider: providerName,
             sandboxId: W,
             agentName,
-            status: 'provisioning',
+            // A parked box is already booted (runtimeReady), so the session is
+            // born 'running' — the provisioning mirror that normally does this
+            // flip ran at pool-SPAWN time, before this row existed, and would
+            // never fire again (the sidebar spinner used to spin forever). For
+            // a greedy claim of a still-booting box keep 'provisioning'; the
+            // spawn IIFE's mirror now finds this row and flips it on readiness.
+            status: claimed.sandboxStatus === 'active' ? 'running' : 'provisioning',
             createdBy: userId,
             visibility,
             // Pin the opencode session pre-created at park time so the client
@@ -574,6 +587,9 @@ export async function createProjectSession(input: {
         resolveGitAuthToken: async () => (await gitAuthPromise).auth?.token ?? null,
         baseRef,
         sandboxSlug,
+        // Per-project warm snapshot pointer (repo baked at tip) — verified
+        // against the provider inside provisionSessionSandbox before use.
+        projectWarmSnapshot: readProjectWarmPointer(project.metadata)?.name ?? null,
       });
 
       // provisionSessionSandbox returns once its row is inserted; provider

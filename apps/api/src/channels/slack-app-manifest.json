@@ -17,7 +17,7 @@
     },
     "slash_commands": [
       {
-        "command": "/kortix",
+        "command": "/kortix-dev",
         "url": "https://dev-api.kortix.com/v1/webhooks/slack/commands",
         "description": "Manage your Kortix project from Slack",
         "usage_hint": "[projects | switch | unbind | sessions | whoami | help]",

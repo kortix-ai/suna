@@ -25,6 +25,15 @@ import { setupApp } from './setup';
 import { serversApp } from './servers';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { requestDeadline } from './middleware/request-deadline';
+// Statically imported (NOT await import() in the handlers): on a long-running
+// `bun --hot` dev process, dynamic import() can wedge permanently after enough
+// hot reloads — the promise never settles, the handler hangs, and Bun's
+// idleTimeout kills the socket with an empty reply. Frontend-polled routes
+// (maintenance banner, user-roles) must never sit behind a dynamic import.
+import { db, hasDatabase } from './shared/db';
+import { getPlatformRole } from './shared/platform-roles';
+import { platformSettings } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
@@ -388,10 +397,7 @@ app.openapi(
     responses: { 200: json(MaintenanceSchema, 'Maintenance config') },
   }),
   async (c: any) => {
-  const { hasDatabase, db } = await import('./shared/db');
   if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
-  const { platformSettings } = await import('@kortix/db');
-  const { eq } = await import('drizzle-orm');
   const [row] = await db
     .select({ value: platformSettings.value })
     .from(platformSettings)
@@ -413,16 +419,13 @@ app.openapi(
   }),
   async (c: any) => {
   const accountId = c.get('userId') as string;
-  const { getPlatformRole } = await import('./shared/platform-roles');
   const role = await getPlatformRole(accountId);
   if (role !== 'admin' && role !== 'super_admin') {
     return c.json({ error: 'Admin access required' }, 403);
   }
-  const { hasDatabase, db } = await import('./shared/db');
   if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
   const body = await c.req.json().catch(() => ({}));
   const config = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
-  const { platformSettings } = await import('@kortix/db');
   await db
     .insert(platformSettings)
     .values({ key: MAINTENANCE_KEY, value: config, updatedAt: new Date() })
@@ -477,8 +480,6 @@ app.openapi(
     },
   }),
   async (c: any) => {
-  const { getPlatformRole } = await import('./shared/platform-roles');
-
   const accountId = c.get('userId') as string;
   const role = await getPlatformRole(accountId);
   const isAdmin = role === 'admin' || role === 'super_admin';
@@ -880,6 +881,15 @@ import { matchPreviewWsPath, preparePreviewWsUpgrade, previewWsHandlers } from '
 
 export default {
   port: config.PORT,
+
+  // Bun's default HTTP idleTimeout is 10s: a handler that hasn't written any
+  // bytes by then gets its socket closed with an EMPTY reply — no status, no
+  // body — which clients report as a bare network error and Better Stack as a
+  // URL-only timeout. Raise it above the 25s request deadline so a genuinely
+  // stuck request surfaces as the middleware's clean 503 (with Retry-After)
+  // instead of a socket kill. Long-poll/SSE surfaces opt out per-request via
+  // server.timeout(req, 0) below.
+  idleTimeout: 30,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
     const url = getRequestUrl(req, config.PORT);

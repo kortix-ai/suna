@@ -27,6 +27,12 @@ function makeApp() {
   app.get('/v1/p/sandbox/3000/index.html', slow);  // exempt prefix
   app.get('/v1/projects/x/turn-stream', slow);      // exempt fragment
   app.get('/v1/router/chat/completions', slow);      // exempt prefix
+  app.get('/v1/llm/chat/completions', slow);          // exempt prefix (LLM streaming)
+  app.post('/v1/billing/webhooks/stripe', slow);      // exempt prefix (webhook)
+  app.post('/v1/projects/x/sessions/y/wake', slow);   // exempt fragment (long sync op)
+  app.post('/v1/projects/x/providers/openai/chatgpt/headless/complete', slow); // exempt fragment (OAuth device-flow long-poll)
+  app.post('/v1/projects', slow);                      // exempt method+path (provision)
+  app.get('/v1/projects', slow);                       // bounded — only POST is exempt
   app.get('/v1/projects/x/fast', (c) => c.json({ ok: true })); // bounded, fast
   return app;
 }
@@ -63,5 +69,32 @@ describe('requestDeadline', () => {
       headers: { accept: 'text/event-stream' },
     });
     expect(res.status).toBe(200); // exempted despite being slow
+  });
+
+  it('exempts the LLM completions prefix from the deadline', async () => {
+    const res = await makeApp().request('/v1/llm/chat/completions');
+    expect(res.status).toBe(200);
+  });
+
+  it('exempts billing webhooks from the deadline', async () => {
+    const res = await makeApp().request('/v1/billing/webhooks/stripe', { method: 'POST' });
+    expect(res.status).toBe(200);
+  });
+
+  it('exempts long sync sandbox ops (wake) via fragment', async () => {
+    const res = await makeApp().request('/v1/projects/x/sessions/y/wake', { method: 'POST' });
+    expect(res.status).toBe(200);
+  });
+
+  it('exempts the ChatGPT headless OAuth device flow (long-polls past the deadline)', async () => {
+    const res = await makeApp().request('/v1/projects/x/providers/openai/chatgpt/headless/complete', { method: 'POST' });
+    expect(res.status).toBe(200);
+  });
+
+  it('exempts POST /v1/projects (provision) but keeps GET /v1/projects bounded', async () => {
+    const post = await makeApp().request('/v1/projects', { method: 'POST' });
+    expect(post.status).toBe(200);
+    const get = await makeApp().request('/v1/projects');
+    expect(get.status).toBe(503);
   });
 });

@@ -14,6 +14,8 @@
  */
 
 export type SnapshotErrorCategory =
+  /** The Daytona org hit its snapshot quota — builds fail org-wide until GC frees slots. */
+  | 'quota'
   /** User's Dockerfile / build steps failed (RUN, COPY, apt-get, npm…). Fixable by an agent. */
   | 'dockerfile'
   /** Kortix callback URL (KORTIX_URL) unreachable — usually a down dev tunnel. */
@@ -44,6 +46,12 @@ export interface SnapshotErrorInfo {
 }
 
 const RULES: Array<{ category: SnapshotErrorCategory; test: RegExp }> = [
+  // Org snapshot quota exhausted — most specific, must outrank 'provider'
+  // (the raw message usually contains 'daytona'/'snapshot' too).
+  {
+    category: 'quota',
+    test: /quota|snapshot limit|limit of \d+ snapshots|maximum number of snapshots|too many snapshots|snapshot count/i,
+  },
   // Our packaging is missing an artifact the layered Dockerfile COPYs in.
   {
     category: 'runtime',
@@ -87,6 +95,11 @@ export function classifySnapshotError(raw: string | null | undefined): SnapshotE
 }
 
 const INFO: Record<SnapshotErrorCategory, Omit<SnapshotErrorInfo, 'category'>> = {
+  quota: {
+    title: 'Snapshot quota reached',
+    hint: 'The Daytona organization hit its snapshot limit. Superseded snapshots are garbage-collected automatically by the maintenance sweep — retry in a few minutes, or delete unused sandbox templates.',
+    fixableByAgent: false,
+  },
   dockerfile: {
     title: 'Dockerfile build failed',
     hint: 'A step in the project Dockerfile failed. An agent can inspect the build error and fix the Dockerfile.',

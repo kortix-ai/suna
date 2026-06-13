@@ -8,7 +8,7 @@ import type { SlashResponse } from './types';
 export async function handleSlashCommand(
   sub: string,
   arg: string,
-  ctx: { teamId: string; channelId: string },
+  ctx: { teamId: string; channelId: string; command: string },
 ): Promise<SlashResponse> {
   void arg; // reserved for future subcommands that take an argument
   switch (sub) {
@@ -28,16 +28,16 @@ export async function handleSlashCommand(
       return slashWhoami(ctx);
     case 'help':
     case '':
-      return slashHelp();
+      return slashHelp(ctx.command);
     default:
       return {
         response_type: 'ephemeral',
-        text: `Unknown subcommand \`${sub}\`. Try \`/kortix help\`.`,
+        text: `Unknown subcommand \`${sub}\`. Try \`${ctx.command} help\`.`,
       };
   }
 }
 
-function slashHelp(): SlashResponse {
+function slashHelp(command: string): SlashResponse {
   return {
     response_type: 'ephemeral',
     blocks: [
@@ -54,12 +54,12 @@ function slashHelp(): SlashResponse {
       },
       { type: 'divider' },
       ...[
-        { cmd: '/kortix projects', desc: 'List every Kortix project connected to this workspace.' },
-        { cmd: '/kortix switch',   desc: 'Bind this channel to a different project (opens a picker).' },
-        { cmd: '/kortix unbind',   desc: 'Clear this channel\'s project binding.' },
-        { cmd: '/kortix sessions', desc: 'Show the last 5 sessions started in this workspace.' },
-        { cmd: '/kortix whoami',   desc: 'What project is currently bound to this channel.' },
-        { cmd: '/kortix help',     desc: 'This message.' },
+        { cmd: `${command} projects`, desc: 'List every Kortix project connected to this workspace.' },
+        { cmd: `${command} switch`,   desc: 'Bind this channel to a different project (opens a picker).' },
+        { cmd: `${command} unbind`,   desc: 'Clear this channel\'s project binding.' },
+        { cmd: `${command} sessions`, desc: 'Show the last 5 sessions started in this workspace.' },
+        { cmd: `${command} whoami`,   desc: 'What project is currently bound to this channel.' },
+        { cmd: `${command} help`,     desc: 'This message.' },
       ].map((r) => ({
         type: 'section',
         text: { type: 'mrkdwn', text: `\`${r.cmd}\`\n${r.desc}` },
@@ -307,7 +307,7 @@ async function slashSessions(ctx: { teamId: string; channelId: string }): Promis
   };
 }
 
-async function slashWhoami(ctx: { teamId: string; channelId: string }): Promise<SlashResponse> {
+async function slashWhoami(ctx: { teamId: string; channelId: string; command: string }): Promise<SlashResponse> {
   const currentId = await currentChannelProjectId(ctx);
   const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
   if (!currentId) {
@@ -318,7 +318,7 @@ async function slashWhoami(ctx: { teamId: string; channelId: string }): Promise<
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '*No project bound to this channel.*\nRun `/kortix switch` to pick one.',
+            text: `*No project bound to this channel.*\nRun \`${ctx.command} switch\` to pick one.`,
           },
         },
       ],
@@ -335,7 +335,7 @@ async function slashWhoami(ctx: { teamId: string; channelId: string }): Promise<
       blocks: [
         {
           type: 'section',
-          text: { type: 'mrkdwn', text: '*This channel\'s bound project no longer exists.*\nRun `/kortix switch` to rebind.' },
+          text: { type: 'mrkdwn', text: `*This channel's bound project no longer exists.*\nRun \`${ctx.command} switch\` to rebind.` },
         },
       ],
     };

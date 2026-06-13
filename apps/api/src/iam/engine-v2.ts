@@ -24,6 +24,7 @@ import {
   projects,
 } from '@kortix/db';
 import { db } from '../shared/db';
+import { ttlMemo } from '../shared/ttl-memo';
 import type {
   AuthorizeResult,
   AuthorizeTarget,
@@ -96,6 +97,20 @@ export function deriveEffectiveProjectRole(
 }
 
 // ─── DB lookups ────────────────────────────────────────────────────────────
+//
+// LATENCY NOTE (prod incident, 2026-06-12): every DB statement from the prod
+// fleet pays a cross-region roundtrip, and these principal lookups run on
+// every single authed request — often 10+ times in parallel during one page
+// load. Two levers keep that off the floor of every request:
+//   1. Independent queries run via Promise.all (depth, not count, costs time).
+//   2. Results are memoized for a short TTL (IAM_CACHE_TTL_MS, default 15s) —
+//      *positive* results only, so a freshly granted member sees access
+//      immediately while a revoked one keeps it for at most one TTL window.
+
+const IAM_CACHE_TTL_MS = (() => {
+  const raw = Number(process.env.IAM_CACHE_TTL_MS);
+  return Number.isFinite(raw) && raw >= 0 ? Math.floor(raw) : 15_000;
+})();
 
 type ResolvedActorV2 = {
   isSuperAdmin: boolean;
@@ -104,26 +119,28 @@ type ResolvedActorV2 = {
   accountMfaRequired: boolean;
 };
 
-async function resolveActorV2(
+async function resolveActorV2Uncached(
   userId: string,
   accountId: string,
 ): Promise<ResolvedActorV2 | null> {
-  const [member] = await db
-    .select({
-      isSuperAdmin: accountMembers.isSuperAdmin,
-      accountRole: accountMembers.accountRole,
-      mfaRequired: accounts.mfaRequired,
-    })
-    .from(accountMembers)
-    .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
-    .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
-    .limit(1);
+  const [memberRows, groups] = await Promise.all([
+    db
+      .select({
+        isSuperAdmin: accountMembers.isSuperAdmin,
+        accountRole: accountMembers.accountRole,
+        mfaRequired: accounts.mfaRequired,
+      })
+      .from(accountMembers)
+      .innerJoin(accounts, eq(accounts.accountId, accountMembers.accountId))
+      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
+      .limit(1),
+    db
+      .select({ groupId: accountGroupMembers.groupId })
+      .from(accountGroupMembers)
+      .where(eq(accountGroupMembers.userId, userId)),
+  ]);
+  const member = memberRows[0];
   if (!member) return null;
-
-  const groups = await db
-    .select({ groupId: accountGroupMembers.groupId })
-    .from(accountGroupMembers)
-    .where(eq(accountGroupMembers.userId, userId));
 
   return {
     isSuperAdmin: member.isSuperAdmin,
@@ -133,12 +150,70 @@ async function resolveActorV2(
   };
 }
 
+const resolveActorV2 = ttlMemo({
+  ttlMs: IAM_CACHE_TTL_MS,
+  keyFn: (userId: string, accountId: string) => `${userId}|${accountId}`,
+  loader: resolveActorV2Uncached,
+  shouldCache: (actor) => actor !== null,
+});
+
 /**
  * Look up the actor's effective role on a specific project. Combines
  * the direct project_members row (if any) with every project_group_grants
  * row for any group the user belongs to. Returns null when there's no
  * path at all and the actor isn't an account admin/owner.
  */
+// Time-bounded grants: a row whose expires_at is in the past is
+// effectively gone. Filter at the SQL layer so the row is invisible
+// to every authorize() call the moment the clock crosses the line —
+// no waiting on the sweeper. (The sweeper just emits the audit
+// event afterwards; correctness doesn't depend on it.)
+const loadProjectRoleRows = ttlMemo({
+  ttlMs: IAM_CACHE_TTL_MS,
+  keyFn: (userId: string, projectId: string, groupIds: string[]) =>
+    `${userId}|${projectId}|${groupIds.join(',')}`,
+  loader: async (userId: string, projectId: string, groupIds: string[]) => {
+    const [directRows, grantRows] = await Promise.all([
+      db
+        .select({ role: projectMembers.projectRole })
+        .from(projectMembers)
+        .where(
+          and(
+            eq(projectMembers.projectId, projectId),
+            eq(projectMembers.userId, userId),
+            or(
+              isNull(projectMembers.expiresAt),
+              gt(projectMembers.expiresAt, sql`now()`),
+            ),
+          ),
+        )
+        .limit(1),
+      groupIds.length > 0
+        ? db
+            .select({ role: projectGroupGrants.role })
+            .from(projectGroupGrants)
+            .where(
+              and(
+                eq(projectGroupGrants.projectId, projectId),
+                inArray(projectGroupGrants.groupId, groupIds),
+                or(
+                  isNull(projectGroupGrants.expiresAt),
+                  gt(projectGroupGrants.expiresAt, sql`now()`),
+                ),
+              ),
+            )
+        : Promise.resolve([] as Array<{ role: string }>),
+    ]);
+    return {
+      directRole: (directRows[0]?.role as ProjectRole | undefined) ?? null,
+      groupRoles: grantRows.map((r) => r.role as ProjectRole),
+    };
+  },
+  // Never cache "no path to this project" — a freshly granted member must
+  // see access on their next request, not after a TTL window.
+  shouldCache: (v) => v.directRole !== null || v.groupRoles.length > 0,
+});
+
 async function loadEffectiveProjectRole(
   actor: ResolvedActorV2,
   userId: string,
@@ -146,49 +221,12 @@ async function loadEffectiveProjectRole(
 ): Promise<ProjectRole | null> {
   const accountRole = actor.accountRole ?? 'member';
 
-  // Time-bounded grants: a row whose expires_at is in the past is
-  // effectively gone. Filter at the SQL layer so the row is invisible
-  // to every authorize() call the moment the clock crosses the line —
-  // no waiting on the sweeper. (The sweeper just emits the audit
-  // event afterwards; correctness doesn't depend on it.)
-  const [direct] = await db
-    .select({ role: projectMembers.projectRole })
-    .from(projectMembers)
-    .where(
-      and(
-        eq(projectMembers.projectId, projectId),
-        eq(projectMembers.userId, userId),
-        or(
-          isNull(projectMembers.expiresAt),
-          gt(projectMembers.expiresAt, sql`now()`),
-        ),
-      ),
-    )
-    .limit(1);
+  // Owner/admin carry implicit Manager — the per-project rows can only tie,
+  // never exceed it (manager is the top rank), so skip the lookups entirely.
+  if (implicitProjectRoleForAccount(accountRole)) return 'manager';
 
-  let groupRoles: ProjectRole[] = [];
-  if (actor.groupIds.length > 0) {
-    const rows = await db
-      .select({ role: projectGroupGrants.role })
-      .from(projectGroupGrants)
-      .where(
-        and(
-          eq(projectGroupGrants.projectId, projectId),
-          inArray(projectGroupGrants.groupId, actor.groupIds),
-          or(
-            isNull(projectGroupGrants.expiresAt),
-            gt(projectGroupGrants.expiresAt, sql`now()`),
-          ),
-        ),
-      );
-    groupRoles = rows.map((r) => r.role as ProjectRole);
-  }
-
-  return deriveEffectiveProjectRole(
-    accountRole,
-    (direct?.role as ProjectRole | undefined) ?? null,
-    groupRoles,
-  );
+  const rows = await loadProjectRoleRows(userId, projectId, actor.groupIds);
+  return deriveEffectiveProjectRole(accountRole, rows.directRole, rows.groupRoles);
 }
 
 /**
@@ -197,16 +235,29 @@ async function loadEffectiveProjectRole(
  * on account-level requests entirely. Returns true when the PAT is in
  * scope for this request, false when it should be denied.
  */
+// A token's project binding is immutable after mint, so caching it is safe;
+// "token row missing" is never cached (a just-minted token must work, and
+// revocation is enforced upstream by validateAccountToken at auth time).
+const loadTokenProjectBinding = ttlMemo({
+  ttlMs: IAM_CACHE_TTL_MS,
+  keyFn: (tokenId: string) => tokenId,
+  loader: async (tokenId: string): Promise<{ projectId: string | null } | null> => {
+    const [row] = await db
+      .select({ projectId: accountTokens.projectId })
+      .from(accountTokens)
+      .where(eq(accountTokens.tokenId, tokenId))
+      .limit(1);
+    return row ?? null;
+  },
+  shouldCache: (row) => row !== null,
+});
+
 async function tokenInScope(
   actingTokenId: string,
   scope: ActionScopeV2,
   target: AuthorizeTarget,
 ): Promise<boolean> {
-  const [row] = await db
-    .select({ projectId: accountTokens.projectId })
-    .from(accountTokens)
-    .where(eq(accountTokens.tokenId, actingTokenId))
-    .limit(1);
+  const row = await loadTokenProjectBinding(actingTokenId);
   if (!row) return false;
   if (!row.projectId) return true; // unscoped PAT — falls through to user perms
   // Project-scoped PAT.
@@ -234,16 +285,20 @@ export async function authorizeV2(
   const scope = scopeForActionV2(action);
   const effectiveTarget: AuthorizeTarget = target ?? { type: 'account' };
 
-  const actor = await resolveActorV2(userId, accountId);
+  // Actor resolve and PAT scope check are independent — overlap them so a
+  // token-authed request pays one roundtrip of latency, not two.
+  const [actor, patInScope] = await Promise.all([
+    resolveActorV2(userId, accountId),
+    actingTokenId
+      ? tokenInScope(actingTokenId, scope, effectiveTarget)
+      : Promise.resolve(true),
+  ]);
   if (!actor) return { allowed: false, reason: 'not_a_member' };
 
   // PAT scope short-circuit. If the token is project-bound and this
   // request isn't on that project, deny before we even look at perms.
-  if (actingTokenId) {
-    const inScope = await tokenInScope(actingTokenId, scope, effectiveTarget);
-    if (!inScope) {
-      return { allowed: false, reason: 'token_out_of_scope' };
-    }
+  if (!patInScope) {
+    return { allowed: false, reason: 'token_out_of_scope' };
   }
 
   // Super-admin bypasses everything else (including MFA gate — flipping
