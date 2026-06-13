@@ -323,6 +323,7 @@ const healthHandler = (c: any) =>
     warm_snapshots: warmSnapshotsEnabled(),
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
+    preview_smoke: 'v2', // TEMP preview-env smoke test (do not merge)
   });
 
 app.openapi(
