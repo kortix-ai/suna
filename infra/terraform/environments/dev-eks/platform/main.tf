@@ -94,6 +94,7 @@ module "platform" {
   extra_domain_filters = ["preview-api.kortix.com"]
 
   cloudflare_api_token = var.cloudflare_api_token
+  cloudflare_zone_id   = var.cloudflare_zone_id
 
   # Argo CD UI (dev-ops.kortix.com) — OFF by default for dev (headless).
   argocd_ui_enabled      = var.argocd_ui_enabled
