@@ -324,7 +324,7 @@ const healthHandler = (c: any) =>
     warm_snapshots: warmSnapshotsEnabled(),
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
-    demo_marker: 'fullstack-preview-demo',
+    demo_marker: 'throwaway-status-test',
   });
 
 app.openapi(
