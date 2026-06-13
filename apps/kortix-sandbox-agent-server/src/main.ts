@@ -405,7 +405,7 @@ async function runPoolMode(
     let txt = ''
     try { txt = readFileSync('/etc/dnah-env', 'utf8') } catch { return }
     if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); claim('env-poll') }
-  }, 1000)
+  }, 200)  // tight: the warm daemon idles until env lands; a slow poll just delays adoption ~1s
 }
 
 async function maybeCreateInitialOpencodeSession(
