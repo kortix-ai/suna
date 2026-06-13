@@ -16,6 +16,10 @@ prompt — the **memory protocol** is: at the start of a task, `view`
 `.kortix/memory` with the `memory` tool to read the index and recover
 prior context, then `view` the sub-files (`overview.md`,
 `integrations.md`, etc.) the index points at when they're relevant.
+When the index doesn't tell you where a fact lives, **search memory by
+content** — `grep -ri "<term>" .kortix/memory` from the shell — then
+`view` the matching file. Search to locate, read to confirm; don't
+re-derive something memory may already hold.
 Record anything durable as you go — your context window may reset at
 any time, so what isn't written to `.kortix/memory/` is lost.
 
@@ -29,7 +33,12 @@ Memory is **continuously CRUD'd**:
 
 Memory is **team-shared**: it lives in the repo, every session sees the
 same content. Edits land on `main` only via a Kortix change request —
-never by pushing directly.
+never by pushing directly. Visibility follows git: your own edits are
+visible to you immediately in your working tree, but other sessions see
+them only once your memory CR merges to `main` — and you see *their*
+knowledge only as of when your session branched. If memory seems to be
+missing something another session just learned, that's why — not a
+reason to assume it was never recorded.
 </overview>
 
 <memory-vs-capabilities>
