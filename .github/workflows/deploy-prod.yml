@@ -3,18 +3,22 @@ name: Deploy Prod
 # PROD pipeline. Runs when `prod` advances — i.e. when a reviewed promote PR is
 # MERGED (promote.yml opens it) — or on manual dispatch. This is the ONLY place
 # a version is published: the tag `vX.Y.Z`, the GitHub Release, the image retag,
-# the ECS roll, and the frontend all happen here, never before the prod merge.
+# the EKS deploy, and the frontend all happen here, never before the prod merge.
 # The root VERSION on `prod` is the clean version `X.Y.Z`.
 #
 #   1. Retag the dev images (kortix/kortix-*:dev-latest) → :X.Y.Z + :latest
 #      (multi-arch manifest copy, zero rebuilds).
 #   2. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
 #      installers and cut a single GitHub Release `vX.Y.Z`.
-#   3. Roll the `kortix-prod` ECS Fargate service onto the new image (OIDC).
+#   3. EKS deploy: the promote PR merge already bumped infra/k8s/envs/prod, so
+#      Argo CD rolls the prod Deployment — this job WATCHES it reach vX.Y.Z and
+#      announces to Slack. (Replaces the old imperative ECS roll.)
 #   4. Deploy the prod frontend on Vercel (the `prod` branch → kortix.com).
 #
-# The prod stack is api-prod.kortix.com (ECS) + kortix.com (Vercel). The legacy
-# new.kortix.com Vercel domain was retired in the apex cutover — same pipeline.
+# The prod stack is api.kortix.com → EKS + kortix.com (Vercel). api.kortix.com is
+# routed to the EKS backend by the Cloudflare Worker (ACTIVE_BACKEND) and deployed
+# by Argo CD GitOps; ECS prod is the retired fallback. The EKS deploy lives inline
+# here (no separate workflow), so the whole release reads top to bottom in one file.
 
 on:
   push:
@@ -454,69 +458,170 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── Roll the prod ECS service onto the freshly-tagged image ─────────────────
-  # The kortix-prod task definition pins kortix/kortix-api:latest (retagged
-  # above), so force-new-deployment re-pulls it and rolls the service. Auth via
-  # OIDC (no long-lived keys). The stack is already applied + validated.
+  # ── Deploy API to prod (EKS / Argo CD GitOps) ───────────────────────────────
+  # The promote PR merge already bumped infra/k8s/envs/prod/values.yaml (image tag
+  # + kortixVersion), so Argo CD on the prod-eks cluster rolls the Deployment.
+  # This job WATCHES that roll finish on exactly :VERSION, then announces to Slack.
+  # kortixVersion comes from the values bump, so /v1/health reports the clean
+  # X.Y.Z — no task-def version stamping like the old ECS roll needed.
   deploy-api:
-    name: Deploy API to prod (ECS)
+    name: Deploy API to prod (EKS / GitOps)
     needs: [version, retag-images]
     runs-on: ubuntu-latest
     permissions:
-      id-token: write # assume the AWS role via GitHub OIDC
+      id-token: write # OIDC → read the cluster
       contents: read
+    env:
+      AWS_REGION: us-west-2
+      CLUSTER: kortix-prod-eks
+      NAMESPACE: kortix-prod
+      APP: kortix-api
+      API_HOST: api-eks.kortix.com
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-eks-deploy
     steps:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
-          aws-region: us-west-2
-      - name: Roll the prod ECS service (with clean version stamped)
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Guard — cluster exists
+        id: guard
+        run: |
+          if aws eks describe-cluster --name "$CLUSTER" --region "$AWS_REGION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::EKS cluster not found — skipping (not applied yet)."
+          fi
+
+      - name: Update kubeconfig
+        if: steps.guard.outputs.exists == 'true'
+        run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
+
+      # Wait for Argo CD to reconcile the promote bump and the Deployment to finish
+      # rolling out exactly :VERSION — Argo applied the new spec (observedGeneration
+      # caught up) AND every replica is updated + available. A release whose pods
+      # never go Ready never satisfies this, so the success message never fires.
+      - name: Wait for Deployment rolled out @ v${{ needs.version.outputs.version }}
+        if: steps.guard.outputs.exists == 'true'
+        id: wait
         env:
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          set -euo pipefail
-          CLUSTER=kortix-prod; SERVICE=kortix-prod
+          set -uo pipefail
+          for i in $(seq 1 80); do
+            img="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)"
+            gen="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.metadata.generation}' 2>/dev/null || true)"
+            obs="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.observedGeneration}' 2>/dev/null || true)"
+            desired="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.spec.replicas}' 2>/dev/null || true)"
+            updated="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.updatedReplicas}' 2>/dev/null || true)"
+            avail="$(kubectl -n "$NAMESPACE" get deploy "$APP" -o jsonpath='{.status.availableReplicas}' 2>/dev/null || true)"
+            echo "($i/80) image=${img:-?} gen=${obs:-?}/${gen:-?} updated=${updated:-0}/${desired:-?} available=${avail:-0}"
+            if printf '%s' "$img" | grep -q ":${VERSION}$" \
+               && [ -n "$desired" ] && [ "${obs:-0}" -ge "${gen:-1}" ] \
+               && [ "${updated:-0}" = "$desired" ] && [ "${avail:-0}" = "$desired" ]; then
+              echo "deployed=true" >> "$GITHUB_OUTPUT"
+              echo "✓ EKS Deployment rolled out on :${VERSION} (${avail}/${desired} ready)"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Deployment did not roll out to :${VERSION} within ~20m (stuck or pods never became Ready). No release announcement sent."
+          exit 1
 
-          # The image is retagged (not rebuilt), so it carries the promoted DEV
-          # build's KORTIX_VERSION default. Register a new task-def revision that
-          # sets the container env KORTIX_VERSION to the clean X.Y.Z, so prod
-          # /v1/health reports e.g. 0.9.1 (not 0.9.1-dev.<sha>). Everything else
-          # in the task def is preserved verbatim.
-          echo "Stamping KORTIX_VERSION=$VERSION onto a new kortix-prod task-def revision…"
-          CURRENT_TD=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
-            --query 'services[0].taskDefinition' --output text)
-          aws ecs describe-task-definition --task-definition "$CURRENT_TD" \
-            --query 'taskDefinition' --output json > td.json
-
-          # Drop read-only fields, then upsert KORTIX_VERSION into each container's
-          # env (jq — no heredoc, robust inside the YAML run block).
-          jq --arg v "$VERSION" '
-            del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
-                .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
-            | .containerDefinitions |= map(
-                .environment = ((.environment // []) | map(select(.name != "KORTIX_VERSION"))
-                                 + [{name: "KORTIX_VERSION", value: $v}]))
-          ' td.json > td-new.json
-
-          NEW_TD=$(aws ecs register-task-definition --cli-input-json file://td-new.json \
-            --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "Registered $NEW_TD"
-
-          echo "Rolling $SERVICE onto v$VERSION…"
-          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
-            --task-definition "$NEW_TD" --force-new-deployment >/dev/null
-          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
-          aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
-            --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
-            --output table
-      - name: Summary
-        if: always()
+      # Source the truth from the running service (the commit field we bake in).
+      - name: Read live /v1/health
+        if: steps.guard.outputs.exists == 'true' && steps.wait.outputs.deployed == 'true'
+        id: health
         run: |
-          {
-            echo "### Deployed API → **prod** (ECS Fargate)"
-            echo "v${{ needs.version.outputs.version }} rolled onto ECS service \`kortix-prod\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          set -uo pipefail
+          h="$(curl -s --max-time 10 "https://${API_HOST}/v1/health" || true)"
+          echo "commit=$(printf '%s' "$h" | jq -r '.commit // ""' 2>/dev/null)" >> "$GITHUB_OUTPUT"
+
+      - name: Announce to Slack
+        if: steps.guard.outputs.exists == 'true' && steps.wait.outputs.deployed == 'true'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_RELEASE_CHANNEL: ${{ secrets.SLACK_RELEASE_CHANNEL }}
+          VERSION: ${{ needs.version.outputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          TITLE: ${{ needs.version.outputs.title }}
+          NOTES: ${{ needs.version.outputs.notes }}
+          META_SHA: ${{ needs.version.outputs.source_sha }}
+          LIVE_COMMIT: ${{ steps.health.outputs.commit }}
+          ACTOR: ${{ github.actor }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -uo pipefail
+          if [ -z "${SLACK_BOT_TOKEN:-}" ] || [ -z "${SLACK_RELEASE_CHANNEL:-}" ]; then
+            echo "::notice::SLACK_BOT_TOKEN / SLACK_RELEASE_CHANNEL not set — skipping Slack."
+            exit 0
+          fi
+
+          # Prefer the commit actually serving (/v1/health); fall back to the
+          # promoted source SHA. Truncate notes to a Slack-safe length.
+          SHA="${LIVE_COMMIT:-$META_SHA}"
+          SHA8="${SHA:0:8}"
+          [ -n "$SHA8" ] || SHA8="unknown"
+          NOTES="$(printf '%s' "${NOTES:-}" | head -c 1200)"
+          REL_URL="${SERVER}/${REPO}/releases/tag/${TAG}"
+          COMMIT_URL="${SERVER}/${REPO}/commit/${SHA}"
+
+          payload="$(jq -n \
+            --arg channel "$SLACK_RELEASE_CHANNEL" \
+            --arg header "🚀 Kortix ${TAG} is live (EKS)" \
+            --arg title "${TITLE:-Release $TAG}" \
+            --arg notes "${NOTES:-}" \
+            --arg version "$VERSION" \
+            --arg sha8 "$SHA8" \
+            --arg commit_url "$COMMIT_URL" \
+            --arg actor "$ACTOR" \
+            --arg rel_url "$REL_URL" \
+            --arg run_url "$RUN_URL" \
+            '{
+              channel: $channel,
+              text: $header,
+              blocks: [
+                { type:"header", text:{ type:"plain_text", text:$header, emoji:true } },
+                ( { type:"section", text:{ type:"mrkdwn",
+                    text: ("*" + $title + "*" + (if $notes == "" then "" else ("\n" + $notes) end)) } } ),
+                { type:"section", fields: [
+                  { type:"mrkdwn", text: ("*Version*\n`" + $version + "`") },
+                  { type:"mrkdwn", text: ("*Commit*\n<" + $commit_url + "|`" + $sha8 + "`>") },
+                  { type:"mrkdwn", text: ("*Released by*\n" + $actor) },
+                  { type:"mrkdwn", text: "*Where*\nEKS (Argo CD) · CLI · Desktop · Web" }
+                ]},
+                { type:"actions", elements: [
+                  { type:"button", text:{ type:"plain_text", text:"📦 Release notes", emoji:true }, url:$rel_url },
+                  { type:"button", text:{ type:"plain_text", text:"🚢 Argo CD", emoji:true }, url:"https://ops.kortix.com" },
+                  { type:"button", text:{ type:"plain_text", text:"🔧 Pipeline", emoji:true }, url:$run_url }
+                ]}
+              ]
+            }')"
+
+          for attempt in 1 2 3 4 5; do
+            resp="$(curl -sS --max-time 30 \
+              -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+              -H "Content-type: application/json; charset=utf-8" \
+              --data "$payload" \
+              https://slack.com/api/chat.postMessage || true)"
+            ok="$(printf '%s' "$resp" | jq -r '.ok // false' 2>/dev/null || echo false)"
+            if [ "$ok" = "true" ]; then
+              echo "✓ Slack notified (${SLACK_RELEASE_CHANNEL})"; exit 0
+            fi
+            err="$(printf '%s' "$resp" | jq -r '.error // "no_response"' 2>/dev/null || echo no_response)"
+            echo "::warning::Slack attempt ${attempt}/5 failed: ${err}"
+            case "$err" in
+              invalid_auth|not_authed|account_inactive|token_revoked|channel_not_found|not_in_channel|is_archived|missing_scope)
+                echo "::error::Slack permanent error '${err}'. Check SLACK_BOT_TOKEN (xoxb + chat:write), SLACK_RELEASE_CHANNEL (channel ID), and that the bot is invited to the channel."
+                exit 1 ;;
+            esac
+            sleep $((attempt * 3))
+          done
+          echo "::error::Slack failed after 5 attempts (last: ${err})."; exit 1
 
   # ── Prod frontend (Vercel) ──────────────────────────────────────────────────
   # No job here: the Vercel project is git-connected and auto-deploys the `prod`
