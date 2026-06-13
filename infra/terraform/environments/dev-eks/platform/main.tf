@@ -89,6 +89,9 @@ module "platform" {
   oidc_provider_arn = local.cluster.oidc_provider_arn
   oidc_provider_url = local.cluster.oidc_provider_url
   api_domain        = local.cluster.api_domain
+  # Let external-dns also auto-manage per-PR preview records
+  # (pr-<n>.preview-api.kortix.com) — created/deleted with each preview Ingress.
+  extra_domain_filters = ["preview-api.kortix.com"]
 
   cloudflare_api_token = var.cloudflare_api_token
 
