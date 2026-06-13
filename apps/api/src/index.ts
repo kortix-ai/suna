@@ -127,10 +127,23 @@ const corsOrigins = [
   ]),
 ];
 
+// Preview env (ephemeral per-PR API): also allow the matching preview frontends.
+// Their origins are dynamic per PR (Vercel deploy URLs + *.preview.kortix.com
+// aliases) so they can't be enumerated above. Scoped to INTERNAL_KORTIX_ENV=preview
+// only — dev/prod keep the strict static allowlist.
+const allowPreviewOrigins = config.INTERNAL_KORTIX_ENV === 'preview';
+const PREVIEW_ORIGIN = /^https:\/\/[a-z0-9-]+\.(vercel\.app|preview\.kortix\.com)$/i;
+
 app.use(
   '*',
   cors({
-    origin: corsOrigins,
+    origin: (origin) => {
+      // No Origin header (same-origin, curl, server-to-server) → not a CORS request.
+      if (!origin) return origin;
+      if (corsOrigins.includes(origin)) return origin;
+      if (allowPreviewOrigins && PREVIEW_ORIGIN.test(origin)) return origin;
+      return null; // not allowed → no Access-Control-Allow-Origin
+    },
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Kortix-Token', 'X-Api-Key', 'Accept', 'X-Kortix-Signature', 'X-Hub-Signature-256', 'traceparent', 'tracestate', 'X-Request-Id'],
     credentials: true,
