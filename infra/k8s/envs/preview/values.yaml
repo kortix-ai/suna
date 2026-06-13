@@ -54,7 +54,11 @@ ingress:
   certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/8e5ec220-77d9-450f-abe9-21d5322afa78
   # All previews share ONE host-routed ALB (no ALB-per-PR cost/latency).
   albGroup: kortix-previews
-  cloudflareProxied: true
+  # DNS-only (grey cloud): external-dns creates pr-<n>.preview-api.kortix.com →
+  # the shared preview ALB, which serves the *.preview-api ACM cert directly.
+  # NOT proxied — Cloudflare Universal SSL doesn't cover the multi-level
+  # *.preview-api wildcard, so proxying would fail the edge TLS handshake.
+  cloudflareProxied: false
 
 # Plain rolling Deployment (no canary).
 rollout:

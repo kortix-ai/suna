@@ -28,6 +28,12 @@ variable "api_domain" {
   type        = string
 }
 
+variable "extra_domain_filters" {
+  description = "Extra external-dns domain filters beyond api_domain — e.g. preview-api.kortix.com so external-dns auto-manages per-PR preview records. Empty by default (single-host)."
+  type        = list(string)
+  default     = []
+}
+
 variable "cloudflare_api_token" {
   description = "Cloudflare API token external-dns uses to manage the record (DNS edit on the kortix.com zone)."
   type        = string
