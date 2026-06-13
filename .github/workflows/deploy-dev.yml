@@ -6,8 +6,10 @@ name: Deploy Dev
 # release tag (see the dev-version job). So dev tracks prod automatically and
 # `main` carries no release-version bump.
 #
-#   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest, then rolled onto
-#                   the ECS Fargate dev service (kortix-dev) via GitHub OIDC.
+#   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest. Deploying it to
+#                   the dev EKS cluster is a SEPARATE workflow (deploy-dev-eks.yml):
+#                   on this workflow's success it bumps envs/dev/values.yaml to
+#                   :dev-<sha8> and Argo CD rolls the dev Deployment (GitOps).
 #   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest (image is for
 #                   self-hosters). dev.kortix.com itself is deployed by Vercel
 #                   from `main` via Vercel's own Git integration — no deploy step.
@@ -173,41 +175,6 @@ jobs:
             --tag "kortix/kortix-api:dev-${SHA8}" \
             "kortix/kortix-api:dev-latest"
           echo "image=kortix/kortix-api:dev-${SHA8}" >> "$GITHUB_OUTPUT"
-
-  # ── Roll the dev ECS service onto the freshly-built image ───────────────────
-  # The task definition pins kortix/kortix-api:dev-latest; force-new-deployment
-  # re-pulls that tag and rolls the service. Auth via OIDC (no long-lived keys).
-  deploy-api:
-    name: Deploy API to dev (ECS)
-    needs: [detect-changes, tag-api]
-    if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
-    environment: dev
-    permissions:
-      id-token: write # assume the AWS role via GitHub OIDC
-      contents: read
-    steps:
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
-          aws-region: us-west-2
-      - name: Roll the ECS service onto the freshly-built image
-        run: |
-          set -euo pipefail
-          echo "Rolling ECS service kortix-dev (image ${{ needs.tag-api.outputs.image }} via :dev-latest)…"
-          aws ecs update-service --cluster kortix-dev --service kortix-dev --force-new-deployment >/dev/null
-          aws ecs wait services-stable --cluster kortix-dev --services kortix-dev
-          aws ecs describe-services --cluster kortix-dev --services kortix-dev \
-            --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
-            --output table
-      - name: Summary
-        if: always()
-        run: |
-          {
-            echo "### Deployed API → **dev** (ECS Fargate)"
-            echo "Image: \`${{ needs.tag-api.outputs.image }}\` rolled onto ECS service \`kortix-dev\`"
-          } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Build + push the multi-arch frontend image ──────────────────────────────
   # dev.kortix.com is served by Vercel (auto-deploys from `main`); this image is
