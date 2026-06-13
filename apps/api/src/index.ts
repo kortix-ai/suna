@@ -323,6 +323,7 @@ const healthHandler = (c: any) =>
     warm_snapshots: warmSnapshotsEnabled(),
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
+    preview_smoke: true, // TEMP smoke test for PR preview envs — this PR is not merged
   });
 
 app.openapi(
