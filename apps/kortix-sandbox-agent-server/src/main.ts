@@ -207,10 +207,16 @@ async function startSessionRuntime(
     )
   }
   const onSessionIdle = (opencodeSessionId: string) => {
-    void relayTurnEndToApi(opencodeSessionId, opencode, cfg).catch((err) =>
+    void relayTurnEndToApi(opencodeSessionId, 'idle', opencode, cfg).catch((err) =>
       logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
     )
   }
+  const onSessionError = (opencodeSessionId: string) => {
+    void relayTurnEndToApi(opencodeSessionId, 'error', opencode, cfg).catch((err) =>
+      logger.warn('[opencode-events] turn-end relay failed', { err: (err as Error).message }),
+    )
+  }
+  const eventHandlers = { onQuestionAsked, onSessionIdle, onSessionError }
   if (bootState.initialOpenCodeSessionRequired) {
     await maybeCreateInitialOpencodeSession(cfg.opencodeInternalPort, bootState, bootMark).catch((err) => {
       bootState.initialOpenCodeSessionError = err instanceof Error ? err.message : String(err)
@@ -220,7 +226,7 @@ async function startSessionRuntime(
       opencode.markReady()
       bootMark('opencode-ready')
       logger.info('[boot] opencode ready via initial session', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
-      startOpencodeEventLoop(opencode, cfg, { onQuestionAsked, onSessionIdle })
+      startOpencodeEventLoop(opencode, cfg, eventHandlers)
       return
     }
   }
@@ -228,7 +234,7 @@ async function startSessionRuntime(
   if (ready) {
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
-    startOpencodeEventLoop(opencode, cfg, { onQuestionAsked, onSessionIdle })
+    startOpencodeEventLoop(opencode, cfg, eventHandlers)
   } else {
     logger.warn('[boot] opencode did not become ready within deadline; supervisor still retrying', { opencodePid: opencode.getPid() })
   }
@@ -468,17 +474,24 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
   }
 }
 
-// Relay an opencode `session.idle` for the ROOT turn to apps/api so the Slack
-// live stream gets closed even when the agent ends without `slack send`. opencode
-// fires session.idle for every session — including subagent (Task tool) children —
-// so we ignore any idle whose sessionID isn't the pinned root turn session.
+// Relay a turn ending (opencode `session.idle` / `session.error`) for the ROOT
+// turn to apps/api so the Slack live stream gets closed even when the agent
+// ends without `slack send`. Without this, abandoned streams sit until Slack's
+// inactivity timeout paints them as "Something went wrong" — a finished turn
+// that looks like a failed one. opencode fires these events for every session —
+// including subagent (Task tool) children — so we ignore any whose sessionID
+// isn't the root turn session. Only relevant for Slack-originated sessions
+// (SLACK_* env is injected by the Slack dispatcher); a no-op everywhere else.
 async function relayTurnEndToApi(
   opencodeSessionId: string,
+  status: 'idle' | 'error',
   opencode: Pick<Opencode, 'getInternalUrl'>,
   cfg: Config,
 ): Promise<void> {
+  if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return
   // Only the root turn closes the Slack stream. A subagent going idle mid-task
-  // must NOT finalize the user-facing stream.
+  // must NOT finalize the user-facing stream. apps/api re-checks the relayed
+  // opencode session id against its canonical pin as the server-side guard.
   if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
 
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
@@ -493,12 +506,20 @@ async function relayTurnEndToApi(
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ session_id: sessionId, kind: 'end' }),
+      body: JSON.stringify({
+        session_id: sessionId,
+        kind: 'end',
+        status,
+        opencode_session_id: opencodeSessionId,
+      }),
       signal: AbortSignal.timeout(15_000),
     })
     if (!res.ok) {
       logger.warn('[opencode-events] turn-end relay non-ok', { status: res.status })
+      return
     }
+    const data = (await res.json().catch(() => null)) as { ok?: boolean } | null
+    if (data?.ok) logger.info('[opencode-events] turn end relayed', { status, opencodeSessionId })
   } catch (err) {
     logger.warn('[opencode-events] turn-end relay fetch failed', { err: (err as Error).message })
   }

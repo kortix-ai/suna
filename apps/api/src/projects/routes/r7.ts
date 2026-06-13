@@ -370,15 +370,41 @@ projectsApp.openapi(
     .where(and(eq(projectSessions.projectId, projectId), eq(projectSessions.accountId, loaded.row.accountId)))
     .orderBy(desc(projectSessions.updatedAt));
 
+  const resumableStoppedSessionIds = rows.length
+    ? new Set(
+        (
+          await db
+            .select({ sessionId: sessionSandboxes.sessionId })
+            .from(sessionSandboxes)
+            .where(
+              and(
+                eq(sessionSandboxes.projectId, projectId),
+                eq(sessionSandboxes.accountId, loaded.row.accountId),
+                eq(sessionSandboxes.status, 'stopped'),
+                inArray(sessionSandboxes.sessionId, rows.map((r) => r.sessionId)),
+              ),
+            )
+        )
+          .map((r) => r.sessionId)
+          .filter((id): id is string => !!id),
+      )
+    : new Set<string>();
+
+  const listableRows = rows.filter((r) => {
+    const meta = (r.metadata ?? {}) as Record<string, unknown>;
+    if (typeof meta.deletedAt === 'string') return false;
+    return r.status !== 'stopped' || resumableStoppedSessionIds.has(r.sessionId);
+  });
+
   // Filter to sessions the viewer may see: their own, project-wide, or ones
   // shared with them (restricted + grant). Then surface owner + sharing so the
   // list can show "shared by X".
   const subject = await resolveShareSubject(loaded.userId);
   const canManageProject = roleAllows(loaded.effectiveRole, 'manage');
   const grantsBySession = await loadSessionGrants(
-    rows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
+    listableRows.filter((r) => r.visibility === 'restricted').map((r) => r.sessionId),
   );
-  const visible = rows.filter((r) =>
+  const visible = listableRows.filter((r) =>
     isSessionVisibleTo(
       r.visibility as 'private' | 'project' | 'restricted',
       r.createdBy,
@@ -755,6 +781,13 @@ projectsApp.openapi(
   // kickProvisionOnOpen) guards against re-kicking on subsequent 404 polls.
   const usable = row && (row.status === 'provisioning' || row.status === 'active');
   if (!usable) {
+    if (['failed', 'stopped', 'completed'].includes(sandboxVisible.row.status)) {
+      return c.json({
+        error: `Session is ${sandboxVisible.row.status}`,
+        session_status: sandboxVisible.row.status,
+        retriable: false,
+      }, 409);
+    }
     if (sandboxVisible.row.status !== 'provisioning') {
       if (row) {
         await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sessionId)).catch(() => {});
@@ -826,9 +859,18 @@ projectsApp.openapi(
     ))
     .limit(1);
 
+  const deletedAt = new Date();
   const [row] = await db
     .update(projectSessions)
-    .set({ status: 'stopped', updatedAt: new Date() })
+    .set({
+      status: 'stopped',
+      metadata: {
+        ...(visible.row.metadata ?? {}),
+        deletedAt: deletedAt.toISOString(),
+        deletedBy: loaded.userId,
+      },
+      updatedAt: deletedAt,
+    })
     .where(and(
       eq(projectSessions.sessionId, sessionId),
       eq(projectSessions.projectId, projectId),
@@ -851,7 +893,7 @@ projectsApp.openapi(
         status: 'archived',
         metadata: {
           ...(sandbox.metadata ?? {}),
-          stoppedAt: new Date().toISOString(),
+          stoppedAt: deletedAt.toISOString(),
           initStatus: sandbox.status === 'active' ? 'ready' : 'failed',
           ...(sandbox.status === 'active'
             ? {}

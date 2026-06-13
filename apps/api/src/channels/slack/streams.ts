@@ -1,9 +1,10 @@
-import { and, eq, lt } from 'drizzle-orm';
+import { and, eq, gt, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
 import { loadSlackTokenForProject } from '../install-store';
 import {
   addReaction,
+  appendStream,
   deleteMessage,
   joinChannel,
   postBlocks,
@@ -92,8 +93,20 @@ export async function claimFinalize(sessionId: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-// Watchdog: finalize streams whose agent died/never sent, and GC expired dedup
-// rows. Every replica runs it; claimFinalize makes the work single-winner.
+// Slack auto-completes a stream after a few minutes without appends and paints
+// it as a failure ("Something went wrong" + error badge on the in-progress
+// task) even though the agent is fine — it just hasn't hit its next checkpoint
+// yet. Heartbeat any live stream quiet for this long to reset Slack's timer.
+const HEARTBEAT_AFTER_MS = 3 * 60 * 1000;
+
+// Plan title shown while the turn is still running (heartbeats + dead-stream
+// repaints). The finalize pass overwrites it with "Task complete"/"Run failed".
+const LIVE_PLAN_TITLE = 'Working on it…';
+
+// Watchdog: finalize streams whose agent died/never sent, keep live streams
+// from being auto-failed by Slack's inactivity timeout, and GC expired dedup
+// rows. Every replica runs it; claimFinalize / the updated_at heartbeat claim
+// make each unit of work single-winner.
 setInterval(() => {
   void (async () => {
     try {
@@ -115,12 +128,46 @@ setInterval(() => {
         }
         await deleteStream(row.sessionId);
       }
+      await heartbeatLiveStreams(now);
       await db.delete(chatEventDedup).where(lt(chatEventDedup.expiresAt, now));
     } catch (err) {
       console.warn('[slack-webhook] stream watchdog tick failed', err);
     }
   })();
 }, 60_000).unref();
+
+// Touch quiet-but-alive streams so Slack doesn't auto-fail them. The UPDATE is
+// the cross-replica claim: it only matches rows whose updated_at is still old,
+// so concurrent replicas can't double-heartbeat the same row.
+async function heartbeatLiveStreams(now: Date): Promise<void> {
+  const claimed = await db
+    .update(chatTurnStreams)
+    .set({ updatedAt: now })
+    .where(
+      and(
+        eq(chatTurnStreams.finalized, false),
+        eq(chatTurnStreams.streaming, true),
+        gt(chatTurnStreams.expiresAt, now),
+        lt(chatTurnStreams.updatedAt, new Date(now.getTime() - HEARTBEAT_AFTER_MS)),
+      ),
+    )
+    .returning();
+  for (const row of claimed) {
+    const token = await loadSlackTokenForProject(row.projectId);
+    if (!token || !row.messageTs) continue;
+    const handle = rowToHandle(row, token);
+    const r = await appendStream(token, handle.channel, handle.ts, [
+      { type: 'plan_update', title: LIVE_PLAN_TITLE },
+    ]);
+    if (!r.ok) {
+      // Slack already killed the stream — flip to dead-stream mode and repaint
+      // the message via chat.update so it stops showing Slack's failure state.
+      markStreamDead(handle);
+      await repaintLivePlan(handle);
+      await saveStream(handle);
+    }
+  }
+}
 
 export async function startTurnStream(
   projectId: string,
@@ -189,6 +236,29 @@ export async function openStreamWithFirstStep(handle: TurnStream, firstStep: Str
   return true;
 }
 
+// Slack force-completed the stream (inactivity timeout) but the turn is still
+// going. Keep the message ts and drop to chat.update mode: streaming=false +
+// placeholderActive=false + ts set is the marker relayTurnStep/finalizeStream
+// read as "render via repaint, not stream chunks".
+export function markStreamDead(handle: TurnStream): void {
+  handle.streaming = false;
+  handle.placeholderActive = false;
+}
+
+export function isDeadStream(handle: TurnStream): boolean {
+  return !handle.streaming && !handle.placeholderActive && !!handle.ts && handle.steps.length > 0;
+}
+
+// Repaint a dead-stream message with the current plan state via chat.update —
+// clears Slack's "Something went wrong" auto-fail rendering and keeps later
+// checkpoints visible even though the stream itself can't be appended to.
+export async function repaintLivePlan(handle: TurnStream): Promise<void> {
+  if (!handle.ts) return;
+  await updateBlocks(handle.token, handle.channel, handle.ts, LIVE_PLAN_TITLE, [
+    { type: 'plan', title: LIVE_PLAN_TITLE, tasks: buildPlanTasks(handle.steps) },
+  ]);
+}
+
 export function buildSlackTurnEnv(teamId: string, event: SlackEvent): Record<string, string> {
   const env: Record<string, string> = {};
   if (teamId) env.SLACK_TEAM_ID = teamId;
@@ -215,24 +285,24 @@ export async function finalizeStream(
   const body = (opts.answer ?? opts.error ?? '').slice(0, 11000);
   const ev = handle.originatingEvent;
   const threadRoot = ev.thread_ts ?? ev.ts ?? handle.triggerTs;
-  if (handle.streaming) {
-    const chunks: StreamChunk[] = [];
+  if (handle.streaming || isDeadStream(handle)) {
     const last = handle.steps[handle.steps.length - 1];
-    if (last && last.status === 'in_progress') {
-      last.status = opts.error ? 'error' : 'complete';
-      chunks.push({
-        type: 'task_update',
-        id: last.id,
-        title: last.title,
-        status: last.status,
-      });
+    const closeLast = !!last && last.status === 'in_progress';
+    if (closeLast) last.status = opts.error ? 'error' : 'complete';
+    if (handle.streaming) {
+      const chunks: StreamChunk[] = [];
+      if (closeLast && last) {
+        chunks.push({ type: 'task_update', id: last.id, title: last.title, status: last.status });
+      }
+      if (opts.blocks && opts.blocks.length > 0) {
+        chunks.push({ type: 'blocks', blocks: opts.blocks });
+      } else if (hasContent) {
+        chunks.push({ type: 'markdown_text', text: body });
+      }
+      await stopStream(handle.token, handle.channel, handle.ts, chunks);
     }
-    if (opts.blocks && opts.blocks.length > 0) {
-      chunks.push({ type: 'blocks', blocks: opts.blocks });
-    } else if (hasContent) {
-      chunks.push({ type: 'markdown_text', text: body });
-    }
-    await stopStream(handle.token, handle.channel, handle.ts, chunks);
+    // Repaint unconditionally — also the recovery path when Slack had already
+    // auto-failed the message (stopStream is a no-op there, chat.update isn't).
     await updateBlocks(
       handle.token,
       handle.channel,
@@ -268,12 +338,10 @@ function planTitleFor(opts: { answer?: string; error?: string }): string {
   return 'Task complete';
 }
 
-function buildFinalPlanBlocks(
-  handle: TurnStream,
-  body: string,
-  opts: { answer?: string; error?: string; blocks?: unknown[] },
-): unknown[] {
-  const tasks = handle.steps.map((s) => {
+// Render stream task chunks as `plan` block tasks for chat.update repaints
+// (both the mid-run dead-stream repaint and the final close).
+function buildPlanTasks(steps: StreamTaskChunk[]): Array<Record<string, unknown>> {
+  return steps.map((s) => {
     const task: Record<string, unknown> = {
       task_id: s.id,
       title: s.title,
@@ -294,12 +362,18 @@ function buildFinalPlanBlocks(
     if (s.sources && s.sources.length > 0) task.sources = s.sources;
     return task;
   });
+}
 
+function buildFinalPlanBlocks(
+  handle: TurnStream,
+  body: string,
+  opts: { answer?: string; error?: string; blocks?: unknown[] },
+): unknown[] {
   const blocks: Array<Record<string, unknown>> = [
     {
       type: 'plan',
       title: planTitleFor(opts),
-      tasks,
+      tasks: buildPlanTasks(handle.steps),
     },
   ];
   if (opts.blocks && opts.blocks.length > 0) {

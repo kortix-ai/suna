@@ -6,6 +6,7 @@ import { notePoolPresence } from '../../platform/services/warm-pool';
 import { db } from '../../shared/db';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
+import { ttlMemo } from '../../shared/ttl-memo';
 import { effectiveProjectRole, roleAllows, type AccountRole, type ProjectAccessAction, type ProjectRole } from '../access';
 import { accountMembers, projectMembers, projectSessions, projects } from '@kortix/db';
 import { and, eq, sql } from 'drizzle-orm';
@@ -93,13 +94,25 @@ export async function loadVisibleSession(
 }
 
 
+// Memoized briefly (positive hits only) — same rationale and trade-off as
+// getAccountMembership: runs on every project request, cross-region roundtrip
+// per statement, revocations lag at most one TTL window, grants are instant.
+const loadProjectMemberRole = ttlMemo({
+  ttlMs: 15_000,
+  keyFn: (projectId: string, userId: string) => `${projectId}|${userId}`,
+  loader: async (projectId: string, userId: string): Promise<ProjectRole | null> => {
+    const [row] = await db
+      .select({ projectRole: projectMembers.projectRole })
+      .from(projectMembers)
+      .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
+      .limit(1);
+    return (row?.projectRole as ProjectRole | undefined) ?? null;
+  },
+  shouldCache: (role) => role !== null,
+});
+
 export async function getProjectMemberRole(projectId: string, userId: string): Promise<ProjectRole | null> {
-  const [row] = await db
-    .select({ projectRole: projectMembers.projectRole })
-    .from(projectMembers)
-    .where(and(eq(projectMembers.projectId, projectId), eq(projectMembers.userId, userId)))
-    .limit(1);
-  return (row?.projectRole as ProjectRole | undefined) ?? null;
+  return loadProjectMemberRole(projectId, userId);
 }
 
 
@@ -247,33 +260,38 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
     .limit(1);
   if (!row || row.status === 'archived') return null;
 
-  const membership = await getAccountMembership(userId, row.accountId);
-  if (!membership) {
-    throw new HTTPException(403, { message: 'You do not have access to this account' });
-  }
-
-  const accountRole = membership.accountRole as AccountRole;
-  const projectRole = await getProjectMemberRole(projectId, userId);
-
-  // Ask the IAM engine for the real verdict. The engine consults
-  // super-admin bypass, direct + group policies, project_groups, AND
-  // the legacy account_role / project_members bridges (in non-strict
-  // mode), so it's strictly a superset of the old role-only check.
-  // Passing requestCtx is required for IP-allowlist / require-MFA
-  // policy conditions to evaluate against the current request.
   const actingTokenId =
     ((c as unknown as { get(k: string): unknown }).get('iamTokenId') as
       | string
       | undefined) ?? undefined;
   const requestCtx = deriveRequestContext(c);
-  const verdict = await authorize(
-    userId,
-    row.accountId,
-    iamActionForProjectAccess(action),
-    { type: 'project', id: projectId },
-    actingTokenId,
-    requestCtx,
-  );
+
+  // Membership, project role and the IAM verdict are independent lookups —
+  // overlap them. Every project-scoped request runs this path and each DB
+  // statement costs a cross-region roundtrip in prod, so depth matters.
+  // The engine consults super-admin bypass, direct + group policies,
+  // project_groups, AND the legacy account_role / project_members bridges
+  // (in non-strict mode), so it's strictly a superset of the old role-only
+  // check. Passing requestCtx is required for IP-allowlist / require-MFA
+  // policy conditions to evaluate against the current request.
+  const [membership, projectRole, verdict] = await Promise.all([
+    getAccountMembership(userId, row.accountId),
+    getProjectMemberRole(projectId, userId),
+    authorize(
+      userId,
+      row.accountId,
+      iamActionForProjectAccess(action),
+      { type: 'project', id: projectId },
+      actingTokenId,
+      requestCtx,
+    ),
+  ]);
+
+  if (!membership) {
+    throw new HTTPException(403, { message: 'You do not have access to this account' });
+  }
+
+  const accountRole = membership.accountRole as AccountRole;
   if (!verdict.allowed) {
     // Distinguish "no access at all" from "has access but not for this
     // action" so the UI can show a meaningful message. A Viewer can see

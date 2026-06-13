@@ -357,6 +357,16 @@ flow(
         .post("/v1/projects/:projectId/turn-stream", { session_id: "bogus" }, { params: { projectId: p.id } });
       r.status(400);
     });
+    await ctx.step("kind=turn_end needs no text; no live stream → ok:false", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/turn-stream",
+          { session_id: "bogus", kind: "turn_end", status: "idle" },
+          { params: { projectId: p.id } },
+        );
+      r.status(200).body().has("$.ok", false);
+    });
     await ctx.step("NONMEMBER → 403/404", async () => {
       const r = await ctx.client
         .as(ctx.P.NONMEMBER)

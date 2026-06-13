@@ -161,13 +161,14 @@ slackWebhookApp.openapi(
   const text = (params.get('text') ?? '').trim();
   const teamId = params.get('team_id') ?? '';
   const channelId = params.get('channel_id') ?? '';
+  const command = params.get('command') || '/kortix';
 
   const [sub, ...rest] = text.split(/\s+/);
   const arg = rest.join(' ').trim();
   const subLower = (sub || 'help').toLowerCase();
 
   try {
-    const response = await handleSlashCommand(subLower, arg, { teamId, channelId });
+    const response = await handleSlashCommand(subLower, arg, { teamId, channelId, command });
     return c.json(response);
   } catch (err) {
     console.error('[slack-webhook] slash command failed', err);

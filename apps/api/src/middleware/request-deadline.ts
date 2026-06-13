@@ -26,21 +26,25 @@ import { HTTPException } from 'hono/http-exception';
 //    Upgrade header defensively.
 //  - Fully env-tunable: REQUEST_DEADLINE_MS sets the budget; 0 disables it.
 //
-// DEFAULT OFF (0): the DB-layer fix (pool sizing + statement_timeout) is the
-// proven incident fix and resolves the cascade on its own. This deadline is
-// defense-in-depth, but several endpoints are legitimately long *synchronous*
-// operations — /v1/projects/provision (creates a managed git repo + boots a
-// sandbox), session create / wake, deployments, migrations — and force-503'ing
-// those at a fixed deadline would be a regression. Enabling it safely requires
-// enumerating + exempting every such endpoint first. Until that analysis is
-// done, ship it inert; enable per-env with REQUEST_DEADLINE_MS=<ms> once the
-// long-op exemptions are confirmed.
+// DEFAULT ON (25s) since the 2026-06-12 investigation: the DB-layer fix from
+// 06-08 (pool sizing + statement_timeout) did NOT stop the hangs — postgres.js
+// has no acquire-queue timeout, so under sustained pool saturation requests
+// queued for HOURS (06-11 saw ~1,050 requests complete with 1min–3h10m
+// durations, all flushing at once when load subsided) while clients had long
+// given up at their 30s abort. statement_timeout never fires in that mode
+// because each individual statement is fast — it's the unbounded FIFO wait in
+// front of the pool that grows. A wall-clock deadline is the only layer that
+// bounds the *total* wait. Long synchronous operations (provision, session
+// create/wake, deployments, migrations, webhooks) are enumerated below as
+// exemptions; everything else answers a browser whose own abort fires at 30s,
+// so a 25s server bound changes nothing for successful requests and turns
+// eternal hangs into clean, retryable 503s.
 
 const DEADLINE_MS = (() => {
   const raw = process.env.REQUEST_DEADLINE_MS;
-  if (raw === undefined) return 0; // default OFF — see note above
+  if (raw === undefined) return 25_000; // default ON — see note above
   const n = Number(raw);
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 25_000;
 })();
 
 const ENABLED = DEADLINE_MS > 0;
@@ -52,12 +56,41 @@ const EXEMPT_PREFIXES = [
   '/v1/tunnel',   // tunnel SSE (permission-requests) + ws
   '/v1/git',      // git smart-HTTP (large packfile up/download)
   '/v1/router',   // LLM gateway — streamed chat completions
+  '/v1/llm',      // LLM chat completions (streamed; p99 >10s is normal)
   '/v1/executor', // connector proxy — forwards to arbitrary upstream APIs
+  '/v1/webhooks', // inbound webhooks (Slack, …) — callers retry, don't truncate
+  '/v1/billing/webhooks',   // Stripe webhook processing (observed >60s, legit)
+  '/v1/billing/revenuecat', // RevenueCat sync — batch reconcile, legit-long
+  '/v1/admin',    // operator maintenance endpoints — deliberate long ops
 ];
 
-// Path fragments for streaming endpoints that live under otherwise-bounded
-// prefixes (e.g. /v1/projects/:id/turn-stream).
-const EXEMPT_FRAGMENTS = ['/turn-stream', '/turn-question', '/provision-stream'];
+// Path fragments for streaming or legitimately long *synchronous* endpoints
+// that live under otherwise-bounded prefixes (e.g. /v1/projects/:id/...).
+// These either boot sandboxes, push git repos, or sweep batches — work that
+// can exceed the deadline while behaving correctly. Enumerated from 7 days of
+// prod duration data (2026-06-12).
+const EXEMPT_FRAGMENTS = [
+  '/turn-stream',
+  '/turn-question',
+  '/provision-stream',
+  '/provision',               // managed repo create + sandbox boot
+  '/wake',                    // cold sandbox resume
+  '/ensure-opencode',         // in-sandbox runtime (re)start
+  '/commit-push',             // host-driven git commit+push
+  '/deployments',             // app deploys (build + upload)
+  '/snapshots',               // sandbox template builds
+  '/suna-migration',          // OG Suna → opencode migration runs
+  '/legacy-migration',        // legacy VM → project migration runs
+  '/sync-opencode-sessions',  // cross-sandbox session sweep (observed ~26s)
+  '/chatgpt/headless',        // ChatGPT/Codex OAuth device flow — `complete`
+                              // long-polls until the user finishes in the browser
+];
+
+// Long synchronous creates that can't be matched by fragment without
+// catching unrelated routes: method + exact path (or path prefix) pairs.
+const EXEMPT_METHOD_PATHS: Array<{ method: string; path: string }> = [
+  { method: 'POST', path: '/v1/projects' },          // create + seed + provision
+];
 
 function isExempt(c: Context): boolean {
   // WebSocket upgrade (defensive — these are handled before app.fetch).
@@ -72,6 +105,9 @@ function isExempt(c: Context): boolean {
   }
   for (const f of EXEMPT_FRAGMENTS) {
     if (path.includes(f)) return true;
+  }
+  for (const mp of EXEMPT_METHOD_PATHS) {
+    if (c.req.method === mp.method && path === mp.path) return true;
   }
   return false;
 }
