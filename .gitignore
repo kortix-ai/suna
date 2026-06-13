@@ -59,7 +59,8 @@ pnpm-debug.log*
 **/.DS_Store
 
 # IDE
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .idea/
 *.swp
 *.swo
@@ -132,3 +133,4 @@ infra/terraform/**/*.tfvars
 docs
 
 apps/mobile/.env.example
+.cursorignore

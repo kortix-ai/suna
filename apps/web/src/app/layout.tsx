@@ -1,26 +1,26 @@
-import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
-import { ThemeProvider } from '@/components/home/theme-provider';
-import { siteMetadata } from '@/lib/site-metadata';
-import type { Metadata, Viewport } from 'next';
-import './globals.css';
 import { AuthProvider } from '@/components/AuthProvider';
-import { ReactQueryProvider } from './react-query-provider';
-import { Toaster } from '@/components/ui/sonner';
-import '@/lib/polyfills';
-import { roobert } from './fonts/roobert';
-import { roobertMono } from './fonts/roobert-mono';
-import { Suspense, lazy } from 'react';
-import { I18nProvider } from '@/components/i18n-provider';
-import { getServerPublicEnv } from '@/lib/public-env-server';
-import { featureFlags } from '@/lib/feature-flags';
-import { connection } from 'next/server';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
-import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
-import { cn } from '@/lib/utils';
+import { ThemeProvider } from '@/components/home/theme-provider';
+import { I18nProvider } from '@/components/i18n-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
+import { featureFlags } from '@/lib/feature-flags';
+import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';
+import '@/lib/polyfills';
+import { getServerPublicEnv } from '@/lib/public-env-server';
+import { siteMetadata } from '@/lib/site-metadata';
+import { cn } from '@/lib/utils';
+import type { Metadata, Viewport } from 'next';
 import { headers } from 'next/headers';
+import { connection } from 'next/server';
+import { Suspense, lazy } from 'react';
+import { Toaster } from 'sonner';
+import { roobert } from './fonts/roobert';
+import { roobertMono } from './fonts/roobert-mono';
+import './globals.css';
+import { ReactQueryProvider } from './react-query-provider';
 
 // Lazy load non-critical analytics and global components
 const Analytics = lazy(() =>
@@ -139,9 +139,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default async function RootLayout({
-  children,
-}: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const tHardcodedUi = { raw: getHardcodedUiServerText };
   // Opt into dynamic rendering so process.env is evaluated at request time,
   // not baked at build time. Critical for Docker images with runtime env vars.
@@ -160,7 +158,7 @@ export default async function RootLayout({
       lang="en"
       translate="no"
       suppressHydrationWarning
-      className={cn('notranslate ', roobert.variable, roobertMono.variable)}
+      className={cn('notranslate', roobert.variable, roobertMono.variable)}
     >
       <head>
         {/* Runtime config — evaluated at request time via connection() above.
@@ -246,9 +244,7 @@ export default async function RootLayout({
 
         {/* Static SEO meta tags - rendered in initial HTML */}
         <title>
-          {tHardcodedUi.raw(
-            'appLayout.line196JsxTextKortixTheAutonomousCompanyOperatingSystem',
-          )}
+          {tHardcodedUi.raw('appLayout.line196JsxTextKortixTheAutonomousCompanyOperatingSystem')}
         </title>
         <meta
           name="description"
@@ -373,7 +369,7 @@ export default async function RootLayout({
           warning is purely cosmetic but pollutes the dev overlay. */}
       <body
         translate="no"
-        className="notranslate antialiased min-h-screen w-full scroll-smooth font-medium font-sans text-foreground bg-background"
+        className="notranslate text-foreground bg-background min-h-screen w-full scroll-smooth font-sans font-medium antialiased"
         suppressHydrationWarning
       >
         <ThemeProvider
@@ -386,7 +382,7 @@ export default async function RootLayout({
             <BrowserNoiseGuard />
             <DesktopChrome />
             <DesktopUrlPrompt />
-          <AuthProvider>
+            <AuthProvider>
               <I18nProvider>
                 <ReactQueryProvider>
                   <Toaster />

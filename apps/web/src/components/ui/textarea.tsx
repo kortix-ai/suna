@@ -138,7 +138,7 @@ export const Textarea = React.forwardRef<AutosizeTextAreaRef, AutosizeTextAreaPr
         ref={textAreaRef}
         className={cn(
           'border-border bg-input text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground flex w-full rounded-lg border px-3 py-2 text-sm font-medium transition-[color] outline-none disabled:cursor-not-allowed disabled:opacity-50',
-          'focus:ring-primary/50 resize-none focus:ring-1 focus:outline-none',
+          'focus:border-kortix-blue focus:border resize-none focus:outline-none',
           variant === 'secondary' && 'bg-input text-secondary-foreground resize-none border-none',
           className,
         )}
