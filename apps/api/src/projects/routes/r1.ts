@@ -445,6 +445,10 @@ projectsApp.openapi(
     try {
       if (!pushToken) throw new Error('no push credential resolved for seeding');
       const starter = buildStarterFiles({ projectName: name, repoFullName: repoSlug, template: starterTemplate });
+      // Constant-var render of the same starter → identical root commit across
+      // all projects of this template (see seedRepoViaGitPush.baseFiles +
+      // snapshots/build-context.ts baked scaffold).
+      const starterBase = buildStarterFiles({ projectName: 'kortix-project', repoFullName: 'kortix/kortix-project', template: starterTemplate });
       if (backend.seedFiles) {
         await backend.seedFiles(connRef, pushToken, starter, {
           branch: provisioned.defaultBranch,
@@ -457,6 +461,7 @@ projectsApp.openapi(
           files: starter,
           branch: provisioned.defaultBranch,
           commitMessage: 'chore: scaffold Kortix project',
+          baseFiles: starterBase,
         });
       }
       seeded = true;

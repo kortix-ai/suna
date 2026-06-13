@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
@@ -519,11 +520,23 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     await configureRepoGitIdentity(cfg, target)
     return
   } else {
-    // Clone into a tmp sibling, then `rm target + rename`. This preserves any
-    // existing content under `target` until we have a known-good clone — if
-    // the network drops mid-clone we don't wipe a workspace that's still on
-    // disk from a previous boot.
     const cloneToken = await resolveCloneToken(cfg)
+    // Scaffold fast path: the image bakes the canonical starter repo at
+    // /opt/kortix/scaffold.git whose root commit is SHARED with every project
+    // seeded from the starter (deterministic root — comp git-backends/seed.ts).
+    // A local clone is ~50ms and the follow-up fetch transfers only the
+    // project's delta beyond that shared root (a fresh project = ~one tiny
+    // commit) instead of the whole repo over the slow git path (9s through the
+    // dev tunnel, 2026-06-13). Imported repos / other starters share no
+    // ancestor → the fetch degrades to a full pack (same as a clone); ANY
+    // failure falls through to the battle-tested clone path below.
+    if (await tryScaffoldDeltaFetch(cfg, target, base, cloneToken)) {
+      if (cfg.branchName) {
+        await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
+      }
+      await configureRepoGitIdentity(cfg, target)
+      return
+    }
     const tmpTarget = join(dirname(target), `.kortix-clone-${process.pid}-${Date.now()}`)
     await rm(tmpTarget, { recursive: true, force: true })
     logger.info('[git] cloning repo', {
@@ -600,6 +613,47 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   }
 
   await configureRepoGitIdentity(cfg, target)
+}
+
+const SCAFFOLD_REPO_PATH = '/opt/kortix/scaffold.git'
+
+// Materialize `target` from the image-baked scaffold + a delta fetch from the
+// project origin. Returns true when target is ready on `base` tip; false →
+// caller runs the normal network clone (never leaves a partial target behind).
+async function tryScaffoldDeltaFetch(
+  cfg: Config,
+  target: string,
+  base: string,
+  cloneToken: string | undefined,
+): Promise<boolean> {
+  if (!existsSync(SCAFFOLD_REPO_PATH) || !cfg.repoUrl) return false
+  const tmp = join(dirname(target), `.kortix-scaffold-${process.pid}-${Date.now()}`)
+  const t0 = Date.now()
+  try {
+    await rm(tmp, { recursive: true, force: true })
+    const local = await execGit(['clone', '-q', SCAFFOLD_REPO_PATH, tmp])
+    if (local.code !== 0) throw new Error(`local scaffold clone: ${local.stderr}`)
+    const su = await execGit(['-C', tmp, 'remote', 'set-url', 'origin', cfg.repoUrl])
+    if (su.code !== 0) throw new Error(`set-url: ${su.stderr}`)
+    const fetched = await gitWithAuth(cloneToken, cfg.repoUrl, [
+      '-C', tmp,
+      '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',
+      'fetch', '-q', 'origin', base,
+    ], { timeoutMs: 35_000 })
+    if (fetched.code !== 0) throw new Error(`fetch: ${fetched.stderr}`)
+    const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'FETCH_HEAD'])
+    if (co.code !== 0) throw new Error(`checkout base: ${co.stderr}`)
+    await rm(target, { recursive: true, force: true })
+    await rename(tmp, target)
+    logger.info('[git] repo materialized via scaffold delta-fetch', { ms: Date.now() - t0, base })
+    return true
+  } catch (err) {
+    logger.info('[git] scaffold fast path unavailable; falling back to clone', {
+      err: err instanceof Error ? err.message.slice(0, 200) : String(err),
+    })
+    await rm(tmp, { recursive: true, force: true }).catch(() => {})
+    return false
+  }
 }
 
 export type RepoInfo = {

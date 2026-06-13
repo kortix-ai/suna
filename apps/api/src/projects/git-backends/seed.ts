@@ -25,6 +25,15 @@ export async function seedRepoViaGitPush(input: {
   commitMessage?: string;
   authorName?: string;
   authorEmail?: string;
+  /**
+   * Optional DETERMINISTIC base layer, committed FIRST with pinned identity +
+   * dates so every project of the same starter shares an identical root SHA.
+   * `files` then lands as a second (normal) commit. That shared root lets a
+   * sandbox materialize the repo as image-baked-scaffold clone + delta-fetch
+   * instead of a full clone through the (slow, in dev) git path — the dominant
+   * per-session cost (measured 9s through the cloudflared tunnel, 2026-06-13).
+   */
+  baseFiles?: SeedFile[];
 }): Promise<void> {
   const branch = input.branch || 'main';
   const name = input.authorName || 'Kortix';
@@ -35,17 +44,40 @@ export async function seedRepoViaGitPush(input: {
   const run = (args: string[], extra: string[] = []) =>
     execFileAsync('git', [...extra, ...args], { cwd: dir, env, timeout: 60_000 });
 
-  try {
-    await run(['init', '-b', branch]);
-    await run(['config', 'user.name', name]);
-    await run(['config', 'user.email', email]);
-    for (const file of input.files) {
+  const writeFiles = async (files: SeedFile[]) => {
+    for (const file of files) {
       const full = join(dir, file.path);
       await mkdir(dirname(full), { recursive: true });
       await writeFile(full, file.content, 'utf8');
     }
+  };
+  // Pinned identity + dates → deterministic commit SHA across projects.
+  const PINNED = {
+    GIT_AUTHOR_NAME: 'Kortix', GIT_AUTHOR_EMAIL: 'noreply@kortix.ai',
+    GIT_COMMITTER_NAME: 'Kortix', GIT_COMMITTER_EMAIL: 'noreply@kortix.ai',
+    GIT_AUTHOR_DATE: '2026-01-01T00:00:00Z', GIT_COMMITTER_DATE: '2026-01-01T00:00:00Z',
+  };
+
+  try {
+    await run(['init', '-b', branch]);
+    await run(['config', 'user.name', name]);
+    await run(['config', 'user.email', email]);
+    if (input.baseFiles?.length) {
+      await writeFiles(input.baseFiles);
+      await run(['add', '-A']);
+      await execFileAsync('git', ['commit', '-m', 'chore: scaffold Kortix project'],
+        { cwd: dir, timeout: 60_000, env: { ...env, ...PINNED } });
+    }
+    await writeFiles(input.files);
     await run(['add', '-A']);
-    await run(['commit', '-m', input.commitMessage || 'chore: scaffold Kortix project']);
+    // Commit only if the per-project files differ from the base (avoids an
+    // empty second commit when baseFiles === files).
+    const status = await run(['status', '--porcelain']);
+    if (status.stdout.toString().trim().length > 0) {
+      await run(['commit', '-m', input.baseFiles?.length ? 'chore: project setup' : (input.commitMessage || 'chore: scaffold Kortix project')]);
+    } else if (!input.baseFiles?.length) {
+      await run(['commit', '-m', input.commitMessage || 'chore: scaffold Kortix project']);
+    }
 
     const host = new URL(input.upstreamUrl).host;
     const encoded = Buffer.from(`x-access-token:${input.token}`).toString('base64');

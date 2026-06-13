@@ -189,6 +189,10 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     // Keep the repo-relative layout so CLIs can import shared packages.
     `COPY ${agentCliPath}/ /opt/kortix/apps/sandbox/agent-cli/`,
     `COPY ${executorSdkPath}/ /opt/kortix/packages/executor-sdk/`,
+    // Canonical scaffold repo (bare). Its root commit matches every seeded
+    // project's root (pinned dates, seed.ts), enabling local-clone +
+    // delta-fetch repo materialization in the daemon (git.ts).
+    `COPY scaffold.git /opt/kortix/scaffold.git`,
     'RUN gunzip -c /tmp/kortix-agent.gz > /usr/local/bin/kortix-agent \\',
     '    && gunzip -c /tmp/kortix.gz > /usr/local/bin/kortix \\',
     '    && rm /tmp/kortix-agent.gz /tmp/kortix.gz \\',
