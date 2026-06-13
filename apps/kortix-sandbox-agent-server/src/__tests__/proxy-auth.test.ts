@@ -40,6 +40,8 @@ function baseConfig(over: Partial<Config> = {}): Config {
     apiUrl: undefined,
     repoUrl: undefined,
     branchName: undefined,
+    sessionFresh: false,
+    baseSha: undefined,
     kortixToken: TEST_TOKEN,
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
@@ -231,6 +233,8 @@ describe('daemon proxy auth gate', () => {
         repoUrl: remote,
         defaultBranch: 'main',
         branchName: 'session-branch',
+        sessionFresh: false,
+    baseSha: undefined,
       }))
 
       // Baked checkout means no clone-credential fetch should happen.
@@ -470,6 +474,8 @@ describe('daemon proxy auth gate', () => {
           repoUrl: remote,
           defaultBranch: 'main',
           branchName: 'main',
+          sessionFresh: false,
+    baseSha: undefined,
         }),
         fakeOpencode('ok', { restart: () => { restartCalls += 1 } }),
         Date.now(),

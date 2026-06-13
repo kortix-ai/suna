@@ -532,7 +532,10 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     // failure falls through to the battle-tested clone path below.
     if (await tryScaffoldDeltaFetch(cfg, target, base, cloneToken)) {
       if (cfg.branchName) {
-        await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
+        // Fresh session → branch == base, create it LOCALLY (zero network).
+        // Restart/resume → the remote branch may carry the agent's commits.
+        if (cfg.sessionFresh) await checkoutLocalSessionBranch(target, cfg.branchName)
+        else await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
       }
       await configureRepoGitIdentity(cfg, target)
       return
@@ -607,9 +610,14 @@ export async function materializeRepo(cfg: Config): Promise<void> {
   }
 
   if (cfg.branchName) {
-    // resolveCloneToken is memoized — this second call is now ~free.
-    const cloneToken = await resolveCloneToken(cfg)
-    await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
+    if (cfg.sessionFresh) {
+      // Fresh session → branch == freshly-cloned base; local, no extra fetch.
+      await checkoutLocalSessionBranch(target, cfg.branchName)
+    } else {
+      // resolveCloneToken is memoized — this second call is now ~free.
+      const cloneToken = await resolveCloneToken(cfg)
+      await checkoutSessionBranch(cfg, target, cfg.branchName, cloneToken)
+    }
   }
 
   await configureRepoGitIdentity(cfg, target)
@@ -635,6 +643,22 @@ async function tryScaffoldDeltaFetch(
     if (local.code !== 0) throw new Error(`local scaffold clone: ${local.stderr}`)
     const su = await execGit(['-C', tmp, 'remote', 'set-url', 'origin', cfg.repoUrl])
     if (su.code !== 0) throw new Error(`set-url: ${su.stderr}`)
+    // ZERO-NETWORK fast path: the image-baked scaffold's root commit is shared,
+    // byte-for-byte, with every project seeded from the starter. When the
+    // project's base tip (resolved server-side, passed as KORTIX_BASE_SHA) IS
+    // that root — a fresh project with no per-project commit — the local clone
+    // already holds the exact base tree, so `git fetch` would transfer ZERO
+    // objects: a pure negotiation round-trip that still hung ~34s through the
+    // flaky dev tunnel (2026-06-13). Skip it: just branch off the local HEAD.
+    const localHead = (await execGit(['-C', tmp, 'rev-parse', 'HEAD'])).stdout.trim()
+    if (cfg.sessionFresh && cfg.baseSha && localHead === cfg.baseSha) {
+      const co = await execGit(['-C', tmp, 'checkout', '-q', '-B', base, 'HEAD'])
+      if (co.code !== 0) throw new Error(`checkout base (local): ${co.stderr}`)
+      await rm(target, { recursive: true, force: true })
+      await rename(tmp, target)
+      logger.info('[git] repo materialized via scaffold (zero-network: baked scaffold == base tip)', { ms: Date.now() - t0, base, head: localHead })
+      return true
+    }
     const fetched = await gitWithAuth(cloneToken, cfg.repoUrl, [
       '-C', tmp,
       '-c', 'http.lowSpeedLimit=1000', '-c', 'http.lowSpeedTime=12',

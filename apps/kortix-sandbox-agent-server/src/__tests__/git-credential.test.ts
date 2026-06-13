@@ -31,6 +31,8 @@ function baseConfig(over: Partial<Config> = {}): Config {
     apiUrl: undefined,
     repoUrl: 'https://git.freestyle.sh/repo-abc',
     branchName: 'session-xyz',
+    sessionFresh: false,
+    baseSha: undefined,
     kortixToken: 'kortix_sb_secret',
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',

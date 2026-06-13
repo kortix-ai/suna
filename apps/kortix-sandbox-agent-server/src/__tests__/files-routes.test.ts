@@ -31,6 +31,8 @@ function baseConfig(): Config {
     apiUrl: 'http://api.test/v1',
     repoUrl: undefined,
     branchName: undefined,
+    sessionFresh: false,
+    baseSha: undefined,
     kortixToken: TEST_TOKEN,
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
