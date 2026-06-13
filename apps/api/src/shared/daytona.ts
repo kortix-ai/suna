@@ -74,6 +74,8 @@ export interface DaytonaSnapshotSummary {
   name: string;
   state: string;
   createdAt: string | null;
+  /** Last time a sandbox was created from this snapshot (null = never). */
+  lastUsedAt: string | null;
   /** Regions the snapshot is bootable in (e.g. ['us','eu'] or ['experimental']). */
   regionIds: string[];
 }
@@ -103,7 +105,7 @@ export async function listDaytonaSnapshots(): Promise<DaytonaSnapshotSummary[]> 
       throw new Error(`Daytona list snapshots failed: HTTP ${res.status}`);
     }
     const body = (await res.json()) as {
-      items?: Array<{ id: string; name: string; state?: string; createdAt?: string; created?: string; regionIds?: string[] }>;
+      items?: Array<{ id: string; name: string; state?: string; createdAt?: string; created?: string; lastUsedAt?: string; regionIds?: string[] }>;
       totalPages?: number;
     };
     for (const it of body.items ?? []) {
@@ -112,6 +114,7 @@ export async function listDaytonaSnapshots(): Promise<DaytonaSnapshotSummary[]> 
         name: it.name,
         state: it.state ?? 'unknown',
         createdAt: it.createdAt ?? it.created ?? null,
+        lastUsedAt: it.lastUsedAt ?? null,
         regionIds: Array.isArray(it.regionIds) ? it.regionIds : [],
       });
     }
