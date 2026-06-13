@@ -233,17 +233,18 @@ export function useOpenCodeSessions() {
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
-    // Poll TIGHT during the expected opencode-ready window, then back off
-    // exponentially for the rare genuinely-stuck case. opencode's /session
-    // lags /kortix/health (runtimeReady) by ~0.4-4s while it loads the repo;
-    // the old 3-retry 1/2/4s backoff erred out at 7s and re-rounded → ~14s to
-    // notice ready (observed). Tight first (8 x 400ms = ~3.2s) catches the
-    // common case in <1s; exponential tail (cap 10s) avoids hammering a stuck
-    // session. Trivial load (a handful of light /session checks).
+    // With the scaffold-warm seed, opencode is ALREADY 'ok' for /workspace and a
+    // root session is pinned the moment runtimeReady flips — so the first list
+    // normally returns the pinned session in one shot. The only misses left are
+    // the server-switch client race + the ~350ms health-poll enable lag, both of
+    // which clear in one fast retry. So poll TIGHT (16 x 150ms = ~2.4s) to land
+    // the first success in <300ms instead of mid-400ms-window; exponential tail
+    // (cap 10s) covers the rare genuinely-stuck case. The old 8x400ms backoff
+    // (~3.2s) was the entire 'opencode-listed' wall in the browser trace.
     retry: (failureCount, error) =>
-      !isOpenCodeConfigInvalidError(error) && failureCount < 12,
+      !isOpenCodeConfigInvalidError(error) && failureCount < 16,
     retryDelay: (attempt) =>
-      attempt < 8 ? 400 : Math.min(400 * Math.pow(2, attempt - 8), 10000),
+      attempt < 16 ? 150 : Math.min(150 * Math.pow(2, attempt - 16), 10000),
   });
 }
 
