@@ -1,0 +1,123 @@
+name: Preview Frontend (PR)
+
+# Points a PR's Vercel preview frontend at its OWN backend
+# (pr-<n>.preview-api.kortix.com) instead of the default dev API.
+#
+# NEXT_PUBLIC_BACKEND_URL is baked at build time, and Vercel previews are keyed
+# by branch — so on a `preview`-labeled PR we set a BRANCH-SCOPED Vercel env for
+# that PR's branch and trigger a fresh preview build. Only labeled PRs are
+# rewired; every other PR keeps the normal dev backend. On close/unlabel we
+# delete the branch env (the deployments are GC'd by Vercel).
+#
+# Pairs with: preview-build.yml (builds :pr-<sha>) + the Argo ApplicationSet
+# (deploys the backend) + the API's preview-aware CORS.
+#
+# Secrets/vars required:
+#   secret VERCEL_TOKEN       — Vercel API token (Kortix team scope)
+#   vars   VERCEL_PROJECT_ID  — the apps/web Vercel project id (prj_…)
+#   vars   VERCEL_TEAM_ID     — the Vercel team id (team_…)
+
+on:
+  pull_request:
+    types: [labeled, unlabeled, synchronize, closed]
+
+concurrency:
+  group: preview-frontend-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+  PROJECT_ID: ${{ vars.VERCEL_PROJECT_ID }}
+  TEAM_ID: ${{ vars.VERCEL_TEAM_ID }}
+  ENV_KEY: NEXT_PUBLIC_BACKEND_URL
+  BRANCH: ${{ github.event.pull_request.head.ref }}
+
+jobs:
+  # ── Point the PR's preview frontend at its preview backend ──────────────────
+  wire:
+    name: Wire preview frontend → preview backend
+    if: >-
+      (github.event.action == 'labeled' && github.event.label.name == 'preview') ||
+      (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'preview'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Guard — Vercel creds present
+        run: |
+          if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${PROJECT_ID:-}" ] || [ -z "${TEAM_ID:-}" ]; then
+            echo "::warning::VERCEL_TOKEN / VERCEL_PROJECT_ID / VERCEL_TEAM_ID not set — skipping frontend wiring."
+            exit 0
+          fi
+          echo "ok=true" >> "$GITHUB_ENV"
+      - name: Upsert branch-scoped NEXT_PUBLIC_BACKEND_URL + redeploy
+        if: env.ok == 'true'
+        env:
+          NUM: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          set -uo pipefail
+          AUTH=(-H "Authorization: Bearer ${VERCEL_TOKEN}")
+          API="https://api.vercel.com"
+          BACKEND="https://pr-${NUM}.preview-api.kortix.com/v1"
+          echo "Wiring branch '${BRANCH}' → ${BACKEND}"
+
+          # 1) Upsert the branch-scoped Preview env var (overwrites if it exists).
+          code=$(curl -sS -o /tmp/env.json -w '%{http_code}' -X POST \
+            "${API}/v10/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}&upsert=true" \
+            "${AUTH[@]}" -H "Content-Type: application/json" \
+            -d "$(jq -n --arg v "$BACKEND" --arg b "$BRANCH" --arg k "$ENV_KEY" \
+                  '{key:$k,value:$v,type:"plain",target:["preview"],gitBranch:$b}')")
+          echo "env upsert HTTP $code"; [ "$code" = "200" ] || [ "$code" = "201" ] || { cat /tmp/env.json; exit 1; }
+
+          # 2) On the LABEL event only, trigger a fresh preview build so the env is
+          #    baked immediately. On `synchronize` the env is already set and
+          #    Vercel's own auto-build for the push inherits it — no extra build.
+          if [ "$ACTION" = "labeled" ]; then
+            PROJ="$(curl -sS "${API}/v9/projects/${PROJECT_ID}?teamId=${TEAM_ID}" "${AUTH[@]}")"
+            NAME="$(printf '%s' "$PROJ" | jq -r '.name')"
+            REPO_ID="$(printf '%s' "$PROJ" | jq -r '.link.repoId // empty')"
+            if [ -n "$REPO_ID" ] && [ "$NAME" != "null" ]; then
+              rc=$(curl -sS -o /tmp/dep.json -w '%{http_code}' -X POST \
+                "${API}/v13/deployments?teamId=${TEAM_ID}&forceNew=1&skipAutoDetectionConfirmation=1" \
+                "${AUTH[@]}" -H "Content-Type: application/json" \
+                -d "$(jq -n --arg n "$NAME" --argjson r "$REPO_ID" --arg b "$BRANCH" \
+                      '{name:$n,target:"preview",gitSource:{type:"github",repoId:$r,ref:$b}}')")
+              echo "redeploy HTTP $rc → $(jq -r '.url // .error.message // "?"' /tmp/dep.json 2>/dev/null)"
+            else
+              echo "::notice::Couldn't resolve project repoId — env is set; the next push rebuilds with it."
+            fi
+          else
+            echo "synchronize — env re-asserted; Vercel's auto-build for this push uses it."
+          fi
+          {
+            echo "### Preview frontend wired"
+            echo "Branch \`${BRANCH}\` preview → \`${BACKEND}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── Remove the branch override when the PR closes or loses the label ────────
+  unwire:
+    name: Unwire preview frontend
+    if: >-
+      github.event.action == 'closed' ||
+      (github.event.action == 'unlabeled' && github.event.label.name == 'preview')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the branch-scoped env var
+        run: |
+          set -uo pipefail
+          if [ -z "${VERCEL_TOKEN:-}" ] || [ -z "${PROJECT_ID:-}" ] || [ -z "${TEAM_ID:-}" ]; then
+            echo "::notice::Vercel creds not set — nothing to unwire."; exit 0
+          fi
+          AUTH=(-H "Authorization: Bearer ${VERCEL_TOKEN}")
+          API="https://api.vercel.com"
+          ID="$(curl -sS "${API}/v9/projects/${PROJECT_ID}/env?teamId=${TEAM_ID}" "${AUTH[@]}" \
+                | jq -r --arg k "$ENV_KEY" --arg b "$BRANCH" \
+                  '.envs[] | select(.key==$k and .gitBranch==$b) | .id' | head -1)"
+          if [ -n "$ID" ]; then
+            curl -sS -X DELETE "${API}/v9/projects/${PROJECT_ID}/env/${ID}?teamId=${TEAM_ID}" "${AUTH[@]}" >/dev/null
+            echo "deleted branch env for ${BRANCH}"
+          else
+            echo "no branch env for ${BRANCH} — nothing to delete"
+          fi
