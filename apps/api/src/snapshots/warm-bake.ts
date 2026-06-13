@@ -413,6 +413,13 @@ export function noteWarmPathFailure(): void {
   warmPathPausedUntil = Date.now() + WARM_FAILURE_COOLDOWN_MS;
 }
 
+/** True while the warm path is in its post-failure cooldown — callers must skip
+ *  EVERY warm route (generic base AND per-project snapshot) so a degraded region
+ *  doesn't make each session pay a doomed warm attempt before falling back. */
+export function warmPathPaused(): boolean {
+  return Date.now() < warmPathPausedUntil;
+}
+
 /** Snapshot state, lowercased ('' when null). */
 function snapState(snap: unknown): string {
   return String((snap as { state?: string } | null)?.state ?? '').toLowerCase();
