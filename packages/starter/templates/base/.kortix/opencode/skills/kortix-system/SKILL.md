@@ -59,13 +59,26 @@ Kortix cloud state — not just files in the repo. Examples:
 | "list / read project secrets" | `kortix secrets ls` |
 | "set / unset a secret" | `kortix secrets set NAME=VALUE`, `kortix secrets unset NAME` |
 | "pull / push my `.env`" | `kortix env pull`, `kortix env push --from .env` |
-| "what sessions are running right now?" | `kortix sessions ls` |
-| "spawn another session to do X" | `kortix sessions new --prompt "X"` |
+| "what sessions are running right now?" | `kortix sessions ls` *(add `--json` to parse)* |
+| "show all parallel agents at a glance — what's everyone doing?" | `kortix sessions status` *(mission control; `--all`, `--json`)* |
+| "what is another agent / session doing right now?" | `kortix sessions log <id>` *(read-only peek; `--json`)* |
+| "talk to / pick a session to interact with" | `kortix sessions chat` *(picker)* · `kortix sessions chat <id> --prompt "…"` *(one-shot)* |
+| "spawn another session / subagent to do X" | `kortix sessions new --prompt "X" --json --wait` *(capture session_id)* |
 | "restart / kill session `<id>`" | `kortix sessions restart <id>` / `kortix sessions rm <id>` |
 | "fire the daily-digest trigger" | `kortix triggers fire daily-digest` |
 | "show open change requests" | `kortix cr ls` |
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
 | "deploy the marketing app" | `kortix apps deploy marketing-site` (when `[[apps]]` is enabled) |
+
+**Everything is scriptable — drive Kortix like the dashboard.** Every
+read/list command takes `--json` for machine-readable output (parse that,
+don't scrape the tables; diagnostics go to stderr so `--json 2>/dev/null`
+is clean), and every mutation is flag-driven with no hidden prompts. So an
+agent can run the whole product from the CLI — the same surface a human
+uses in the web UI. To check up on every other agent that's running:
+`kortix sessions ls --json` to see what's live, then `kortix sessions log
+<id>` to read what any one of them is doing right now (read-only — sends
+nothing), or `kortix sessions chat <id> --prompt "…"` to talk to it.
 
 **Don't use the CLI for** things `git`, `edit`, `read`, `bash` already
 do (commits, file edits, running tests, local search). The CLI is the

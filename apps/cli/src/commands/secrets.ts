@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import {
+  emitJson,
   resolveProjectContext,
   surfaceApiError,
+  takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import { loadLocalManifest } from '../manifest.ts';
@@ -19,6 +21,7 @@ at boot.
 
 Subcommands:
   ls                                List secret names + manifest [env] spec.
+                                    --json.
   set NAME=VALUE [NAME=VALUE …]     Upsert one or more secrets.
                                     Use \`NAME=-\` to read VALUE from stdin.
   unset NAME [NAME …]               Remove one or more secrets.
@@ -37,6 +40,7 @@ export async function runSecrets(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
+  const json = takeFlagBool(rest, ['--json']);
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   try {
@@ -51,7 +55,7 @@ export async function runSecrets(argv: string[]): Promise<number> {
   switch (sub) {
     case 'ls':
     case 'list':
-      return secretsLs(ctxOpts);
+      return secretsLs(ctxOpts, json);
     case 'set':
       return secretsSet(rest, ctxOpts);
     case 'unset':
@@ -66,7 +70,7 @@ export async function runSecrets(argv: string[]): Promise<number> {
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-async function secretsLs(opts: CtxOpts): Promise<number> {
+async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
@@ -99,6 +103,28 @@ async function secretsLs(opts: CtxOpts): Promise<number> {
   const requiredMissing = required.filter((n) => !setNames.has(n));
   const declared = new Set([...required, ...optional]);
   const undeclared = resp.items.filter((s) => !declared.has(s.name));
+
+  if (json) {
+    const requiredSet = new Set(required);
+    const optionalSet = new Set(optional);
+    emitJson({
+      secrets: resp.items.map((s) => ({
+        name: s.name,
+        has_value: true,
+        source: requiredSet.has(s.name)
+          ? 'required'
+          : optionalSet.has(s.name)
+            ? 'optional'
+            : 'undeclared',
+      })),
+      manifest: {
+        status: usingLocal ? 'local' : resp.manifest_status,
+        required,
+        optional,
+      },
+    });
+    return 0;
+  }
 
   process.stdout.write('\n');
   if (usingLocal) {

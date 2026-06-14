@@ -1,6 +1,8 @@
 import {
+  emitJson,
   resolveProjectContext,
   surfaceApiError,
+  takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import {
@@ -54,9 +56,9 @@ resources); a build produces the actual snapshot the platform boots sessions
 from. Templates also come from \`[[sandbox.templates]]\` in kortix.toml.
 
 Subcommands:
-  ls                                List templates + live provider state.
-  builds                            Recent build log (last 25).
-  health                            Primary template readiness (quick check).
+  ls [--json]                       List templates + live provider state.
+  builds [--json]                   Recent build log (last 25).
+  health [--json]                   Primary template readiness (quick check).
   add <slug> (--image <i> | --dockerfile <p>) [--name ...] [--cpu n] [--memory n] [--disk n]
                                     Create a custom template (kicks a build).
   update <slug> [--name ...] [--image ...] [--dockerfile ...] [--cpu n] [--memory n] [--disk n]
@@ -86,7 +88,9 @@ export async function runSandboxes(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
   const f: Record<string, string | undefined> = {};
+  let json = false;
   try {
+    json = takeFlagBool(rest, ['--json']);
     f.project = takeFlagValue(rest, ['--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.image = takeFlagValue(rest, ['--image']);
@@ -125,6 +129,10 @@ export async function runSandboxes(argv: string[]): Promise<number> {
         const resp = await ctx.client.get<{ items: SandboxTemplate[]; default_slug: string | null }>(
           `${base}/sandbox-templates`,
         );
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         const slugW = Math.max(...resp.items.map((t) => t.slug.length), 4);
         process.stdout.write('\n');
         process.stdout.write(
@@ -143,6 +151,10 @@ export async function runSandboxes(argv: string[]): Promise<number> {
       case 'builds':
       case 'log': {
         const resp = await ctx.client.get<{ builds: SnapshotBuild[] }>(`${base}/snapshots`);
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         if (resp.builds.length === 0) {
           process.stdout.write(`  ${C.dim}No builds yet.${C.reset}\n`);
           return 0;
@@ -168,6 +180,10 @@ export async function runSandboxes(argv: string[]): Promise<number> {
           building: boolean;
           latest_failure: SnapshotBuild | null;
         }>(`${base}/sandbox-health`);
+        if (json) {
+          emitJson(h);
+          return 0;
+        }
         const state = h.ready ? `${C.green}ready${C.reset}` : h.building ? `${C.yellow}building${C.reset}` : `${C.red}not ready${C.reset}`;
         process.stdout.write(`\n  primary ${C.bold}${h.primary_slug ?? '—'}${C.reset}  ${state}\n`);
         if (h.latest_failure) {
