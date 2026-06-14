@@ -4,7 +4,6 @@ import { db } from '../../shared/db';
 import { loadSlackTokenForProject } from '../install-store';
 import { updateMessage } from '../slack-api';
 import { dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
-import { handleAskSubmit } from './questions';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
 
 // Agent-emitted button click (carousel cards, actions blocks). Routes the
@@ -132,17 +131,6 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
 
   if (action.action_id.startsWith('switch_project_')) {
     await handleSwitchProject(payload, action.value ?? '');
-    return;
-  }
-
-  if (action.action_id === 'ask_submit') {
-    await handleAskSubmit(payload, action.value ?? '');
-    return;
-  }
-
-  if (action.action_id === 'value') {
-    // No-op: live input/select element clicks before Submit. Slack still POSTs
-    // here so we can preview/validate; we just don't act until ask_submit fires.
     return;
   }
 
