@@ -380,7 +380,11 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                 </div>
               </ModalBody>
               <ModalFooter>
-                <Button type="submit" disabled={submitting || !accountId}>
+                <Button
+                  type="submit"
+                  className="w-full sm:w-auto"
+                  disabled={submitting || !accountId}
+                >
                   {submitting ? <Loading /> : <Icon.Plus />}
                   {tHardcodedUi.raw(
                     'componentsProjectsProjectCreateModal.line320JsxTextCreateProject',
@@ -509,7 +513,7 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
                                 </SelectContent>
                               </Select>
                             </FormControl>
-                             
+
                             <FormMessage />
                           </FormItem>
                         )}
@@ -604,14 +608,20 @@ export const ProjectCreateModal = ({ open, onOpenChange, accountId }: ProjectCre
               </ModalBody>
 
               <ModalFooter className="w-full sm:justify-between">
-                <Button type="button" variant="ghost" onClick={switchToManagedMode}>
+                <Button
+                  type="button"
+                  variant="outline-ghost"
+                  className="w-full sm:w-auto"
+                  onClick={switchToManagedMode}
+                >
                   Go back
                 </Button>
                 <Button
                   type="submit"
                   disabled={submitting || !accountId || !selectedInstallationId || !selectedRepo}
+                  className="w-full sm:w-auto"
                 >
-                  {submitting ? <Loading  /> : <Icon.Github />}
+                  {submitting ? <Loading /> : <Icon.Github />}
                   {tHardcodedUi.raw(
                     'componentsProjectsProjectCreateModal.line549JsxTextImportRepo',
                   )}

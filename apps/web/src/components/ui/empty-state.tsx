@@ -15,12 +15,14 @@
  *   />
  */
 
-import type { Icon } from '@/components/ui/kortix-icons';
 import { cn } from '@/lib/utils';
+import { Icon as IconMynauiType } from '@mynaui/icons-react';
+import { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { IconType } from 'react-icons/lib';
 
 export interface EmptyStateProps {
-  icon?: Icon;
+  icon?: LucideIcon | IconMynauiType | IconType;
   title: string;
   description?: ReactNode;
   action?: ReactNode;

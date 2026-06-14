@@ -35,8 +35,9 @@ import {
 } from '@/lib/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useProjectsViewStore, type ProjectsViewMode } from '@/stores/projects-view-store';
+import { Search } from '@mynaui/icons-react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
-import { FolderPlus, Search } from 'lucide-react';
+import { FolderPlus } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -305,7 +306,7 @@ export default function ProjectsPage() {
                     placeholder={tHardcodedUi.raw(
                       'appProjectsPage.line225JsxAttrPlaceholderSearchProjects',
                     )}
-                    className="w-full pl-9 text-sm"
+                    className="bg-foreground/10 w-full pl-9 text-sm"
                   />
                 </div>
                 <NewProjectControl
