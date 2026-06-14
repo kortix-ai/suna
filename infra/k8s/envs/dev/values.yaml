@@ -22,6 +22,11 @@ autoscaling:
   enabled: true
   minReplicas: 1
   maxReplicas: 2
+# No PDB on a 1-replica dev: minAvailable 50% rounds to 1 → 0 allowed disruptions,
+# which blocks node drain (cluster-autoscaler can't consolidate, upgrades stall).
+# A 1-replica deploy has no HA to protect anyway; brief restart on drain is fine.
+pdb:
+  enabled: false
 # Smaller pod envelope than prod (500m/1Gi) — light dev load packs onto fewer
 # nodes. ephemeral-storage (2Gi/8Gi) is inherited from the chart base.
 resources:
