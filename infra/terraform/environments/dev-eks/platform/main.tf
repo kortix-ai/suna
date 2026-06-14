@@ -96,6 +96,10 @@ module "platform" {
   cloudflare_api_token = var.cloudflare_api_token
   cloudflare_zone_id   = var.cloudflare_zone_id
 
+  # Low-traffic dev: let the autoscaler consolidate to a single node when idle
+  # (it otherwise never drains — every node has a local-storage/system pod).
+  autoscaler_aggressive_scaledown = true
+
   # Argo CD UI (dev-ops.kortix.com) — OFF by default for dev (headless).
   argocd_ui_enabled      = var.argocd_ui_enabled
   argocd_domain          = local.cluster.argocd_domain
