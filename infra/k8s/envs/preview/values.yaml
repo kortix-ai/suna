@@ -11,6 +11,11 @@
 image:
   tag: preview # overridden per-PR by the ApplicationSet → pr-<head_sha>
 
+# Own the kortix-pr-<n> namespace as a chart resource so Argo prunes it when the
+# PR closes (no orphaned empty namespace). Replaces the ApplicationSet's
+# CreateNamespace=true sync option.
+createNamespace: true
+
 env:
   internalKortixEnv: preview
 
