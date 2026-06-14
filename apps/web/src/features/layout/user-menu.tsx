@@ -240,16 +240,18 @@ export function UserMenu({
           </DropdownMenuItem>
         )}
 
-        <div className="focus:bg-foreground/10 focus:text-foreground relative flex cursor-default items-center justify-between gap-2 rounded-sm px-2 py-[0.3rem] text-sm transition-colors outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0">
-          Theme
-          <ThemeToggle variant="compact" />
-        </div>
-
         <DropdownMenuItem variant="destructive" onSelect={openLogoutConfirm}>
           <LogOut />
 
           {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
         </DropdownMenuItem>
+
+        <DropdownMenuSeparator />
+
+        <div className="focus:bg-foreground/10 focus:text-foreground relative flex cursor-default items-center justify-between gap-2 rounded-sm px-2 py-[0.3rem] text-sm transition-colors outline-none select-none data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0">
+          Theme
+          <ThemeToggle variant="compact" />
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
