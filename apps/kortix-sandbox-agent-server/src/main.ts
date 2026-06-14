@@ -424,9 +424,25 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
   logger.info('[opencode-events] relaying question.asked', {
     requestId: req.id, questions: req.questions.length,
   })
-  let answers: string[][] | null = null
+  // A Slack thread is ASYNC: we must NEVER block the agent waiting for an inline
+  // answer. The old flow waited up to 15 min and — on any failure path — returned
+  // WITHOUT replying to opencode, leaving the `question` tool hung forever until a
+  // human killed it in the web UI. Instead: post the question into the thread
+  // (best-effort) and resume the tool IMMEDIATELY with a sentinel that tells the
+  // agent to end its turn. The user's reply lands as a normal follow-up message
+  // (a new turn) — the natural Slack model.
+  const sentinel =
+    '(Posted to the Slack thread. In Slack, questions are async — the user replies ' +
+    'as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
+    'wait for an answer here; finish this turn now. Next time, just ask with ' +
+    '`slack send` rather than the question tool.)'
+  const answers: string[][] = req.questions.map(() => [sentinel])
+
+  // Best-effort: surface the question(s) in the thread so the user sees them even
+  // when the agent used the (discouraged) question tool. Short timeout; the agent
+  // is resumed regardless of whether this succeeds.
   try {
-    const res = await fetch(url, {
+    await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
@@ -435,25 +451,14 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
         opencode_session_id: req.sessionID,
         questions: req.questions,
       }),
-      signal: AbortSignal.timeout(15 * 60_000),
+      signal: AbortSignal.timeout(15_000),
     })
-    if (!res.ok) {
-      const body = (await res.text()).slice(0, 300)
-      logger.warn('[opencode-events] turn-question relay non-ok', { status: res.status, body })
-      return
-    }
-    const data = (await res.json()) as { ok?: boolean; answers?: string[][] }
-    if (!data.ok || !Array.isArray(data.answers)) {
-      logger.warn('[opencode-events] turn-question malformed response', data)
-      return
-    }
-    answers = data.answers
   } catch (err) {
-    logger.warn('[opencode-events] turn-question fetch failed', { err: (err as Error).message })
-    return
+    logger.warn('[opencode-events] turn-question post failed (non-fatal)', { err: (err as Error).message })
   }
 
-  // Post the answers back into opencode so the question tool resumes.
+  // ALWAYS reply to opencode so the question tool can never hang — this is the
+  // core fix for "stuck until I kill it manually".
   const replyUrl = `http://127.0.0.1:${cfg.opencodeInternalPort}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
   try {
     const r = await fetch(replyUrl, {
@@ -468,7 +473,7 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
       })
       return
     }
-    logger.info('[opencode-events] question replied to opencode', { requestId: req.id })
+    logger.info('[opencode-events] question resolved async (sentinel)', { requestId: req.id })
   } catch (err) {
     logger.warn('[opencode-events] opencode question.reply failed', { err: (err as Error).message })
   }
