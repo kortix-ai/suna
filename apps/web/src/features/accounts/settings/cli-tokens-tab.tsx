@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
+import { Separator } from '@/components/ui/separator';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { Icon } from '@/features/icon/icon';
@@ -14,9 +16,11 @@ import {
   type AccountToken,
   type CreatedAccountToken,
 } from '@/lib/api/account-tokens';
+import { cn } from '@/lib/utils';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
+import { ShieldSolid, TrashSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, KeyRound, Loader2, Shield, Trash2, X } from 'lucide-react';
+import { Check, Copy, KeyRound, Loader2, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
@@ -69,22 +73,23 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
   });
 
   return (
-    <div className="bg-card rounded-2xl border transition-colors">
+    <div className="bg-card rounded-lg border transition-colors">
       <div className="flex items-center justify-between gap-4 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <span className={`truncate font-medium ${revoked ? 'text-muted-foreground' : ''}`}>
+            <span
+              className={cn(
+                'truncate text-sm font-medium',
+                revoked ? 'text-muted-foreground' : 'text-foreground',
+              )}
+            >
               {token.name}
             </span>
-            {revoked && (
-              <Badge variant="outline" className="text-muted-foreground">
-                {token.status}
-              </Badge>
-            )}
+            {revoked && <Badge variant="destructive">{token.status}</Badge>}
           </div>
-          <div className="text-muted-foreground mt-1 flex items-center gap-3 text-xs">
+          <div className="text-muted-foreground mt-1 flex items-center gap-2 text-xs">
             <span>Created {formatRelative(token.created_at)}</span>
-            <span>·</span>
+            <span>&bull;</span>
             <span>
               {tHardcodedUi.raw('componentsSettingsCliTokensTab.line94JsxTextLastUsed')}{' '}
               {formatRelative(token.last_used_at)}
@@ -106,7 +111,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
                   router.push(`/accounts/${selectedAccountId}/tokens/${token.token_id}`)
                 }
               >
-                <Shield className="text-muted-foreground hover:text-foreground size-4" />
+                <ShieldSolid className="text-muted-foreground hover:text-foreground size-4" />
               </Button>
             )}
             <Button
@@ -115,7 +120,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
               aria-label={`Revoke ${token.name}`}
               onClick={() => setConfirming(true)}
             >
-              <Trash2 className="text-muted-foreground hover:text-foreground size-4" />
+              <TrashSolid />
             </Button>
           </div>
         )}
@@ -124,7 +129,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
       {confirming && !revoked && (
         <div className="bg-muted/40 flex items-center justify-between gap-3 border-t px-4 py-3 text-sm">
           <span className="text-muted-foreground">
-            Revoke <strong className="text-foreground">{token.name}</strong>
+            Revoke <span className="text-foreground">{token.name}</span>
             {tHardcodedUi.raw(
               'componentsSettingsCliTokensTab.line128JsxTextAnyCliUsingItWillBeSignedOut',
             )}
@@ -144,7 +149,7 @@ function TokenRow({ token, onChange }: { token: AccountToken; onChange: () => vo
               onClick={() => mutation.mutate()}
               disabled={mutation.isPending}
             >
-              {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : 'Revoke'}
+              {mutation.isPending ? <Loading /> : 'Revoke'}
             </Button>
           </div>
         </div>
@@ -172,7 +177,7 @@ export function CliTokensTab() {
   const revoked = tokens.filter((t) => t.status !== 'active');
 
   return (
-    <div className="px-6 py-6 sm:px-8 sm:py-8">
+    <div className="scrollbar-hide w-full max-w-full min-w-0 space-y-6 overflow-x-hidden px-6 py-5">
       {creating && (
         <div className="mb-4">
           <InlineCreate onClose={() => setCreating(false)} onCreated={invalidate} />
@@ -216,23 +221,25 @@ export function CliTokensTab() {
             <TokenRow key={t.token_id} token={t} onChange={invalidate} />
           ))}
           {revoked.length > 0 && (
-            <>
-              <div className="text-muted-foreground mt-6 mb-2 text-xs font-medium tracking-wide uppercase">
-                Revoked
-              </div>
+            <div className="space-y-3">
+              <label className="text-muted-foreground text-sm font-medium">Revoked</label>
               {revoked.map((t) => (
                 <TokenRow key={t.token_id} token={t} onChange={invalidate} />
               ))}
-            </>
+            </div>
           )}
         </div>
       )}
 
-      <div className="bg-muted/30 mt-8 rounded-2xl border p-4 text-sm">
-        <div className="font-medium">
-          {tHardcodedUi.raw('componentsSettingsCliTokensTab.line235JsxTextUsingTheCli')}
+      <Separator />
+
+      <div className="bg-foreground/5 overflow-hidden rounded-lg border text-sm">
+        <div className="px-4 py-2">
+          <span className="font-medium">
+            {tHardcodedUi.raw('componentsSettingsCliTokensTab.line235JsxTextUsingTheCli')}
+          </span>
         </div>
-        <pre className="bg-background mt-2 overflow-x-auto rounded px-3 py-2 font-mono text-xs">
+        <pre className="bg-foreground text-background overflow-x-auto rounded-t-lg px-4 py-3 font-mono text-xs">
           {`kortix login --token <paste-from-above>
 kortix whoami
 kortix projects ls`}
@@ -242,9 +249,6 @@ kortix projects ls`}
   );
 }
 
-/** A self-contained inline create flow: form → reveal → dismiss. Lives
- *  inside the tab; no nested dialogs. The parent controls visibility via
- *  the `creating` boolean. */
 function InlineCreate({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [name, setName] = useState('');

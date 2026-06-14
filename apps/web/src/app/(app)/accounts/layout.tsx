@@ -1,8 +1,8 @@
 'use client';
 
-import { useAuth } from '@/features/providers/auth-provider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AppHeader } from '@/features/layout/app-header';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useRouter } from 'next/navigation';
 import React, { useEffect } from 'react';
 
@@ -21,7 +21,7 @@ const Layout = ({ children }: LayoutProps) => {
   }
 
   return (
-    <div className="bg-secondary flex min-h-screen flex-col">
+    <div className="bg-foreground/5 flex min-h-screen flex-col">
       <AppHeader user={user} breadcrumb="Accounts" />
       <main className="ring-input bg-background flex-1 rounded-t-3xl px-4 py-10 shadow-[0_-8px_24px_0_rgba(0,0,0,0.04)] ring sm:py-12">
         {children}

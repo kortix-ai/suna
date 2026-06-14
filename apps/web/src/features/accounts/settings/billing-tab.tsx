@@ -6,6 +6,7 @@ import { ClaimPerSeatCard } from '@/components/billing/claim-per-seat-card';
 import { SeatManagementCard } from '@/components/billing/seat-management-card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast } from '@/components/ui/toast';
@@ -152,33 +153,31 @@ export function BillingTab({ returnUrl, isActive }: { returnUrl: string; isActiv
   const showTeamCheckout = isBillingEnabled() && !hasActiveSubscription;
 
   return (
-    <div className="max-w-full min-w-0 space-y-6 overflow-x-hidden p-4 sm:p-6">
-      <div>
-        <h1 className="text-lg font-medium tracking-tight">Billing</h1>
-        <p className="text-muted-foreground mt-0.5 text-sm">
-          {showTeamCheckout ? 'Put your whole team on Kortix.' : 'Your plan, wallet, and usage.'}
-        </p>
-      </div>
-
+    <div className="scrollbar-hide w-full max-w-full min-w-0 space-y-6 overflow-x-hidden px-6 py-5">
       {showTeamCheckout ? (
         <>
-          <div className="bg-card flex flex-col items-start gap-4 rounded-2xl border p-6 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="text-base font-semibold">Kortix Team</h3>
-              <p className="text-muted-foreground mt-0.5 text-sm">
+          <Card className="gap-4">
+            <CardHeader>
+              <CardTitle>Kortix Team</CardTitle>
+              <CardDescription>
                 Subscribe to put your whole team on Kortix — LLM compute and AI Computers, one
                 wallet.
-              </p>
-            </div>
-            <Button
-              onClick={() =>
-                openUpgradeDialog({ reason: 'subscription_required', accountId: billingAccountId })
-              }
-              className="w-full shrink-0 sm:w-auto"
-            >
-              Subscribe to Team plan
-            </Button>
-          </div>
+              </CardDescription>
+            </CardHeader>
+            <CardFooter>
+              <Button
+                onClick={() =>
+                  openUpgradeDialog({
+                    reason: 'subscription_required',
+                    accountId: billingAccountId,
+                  })
+                }
+                className="w-full shrink-0 sm:w-auto"
+              >
+                Subscribe to Team plan
+              </Button>
+            </CardFooter>
+          </Card>
           <div className="flex justify-center">
             <Button
               variant="link"

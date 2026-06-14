@@ -1,29 +1,5 @@
 'use client';
 
-/**
- * ProjectOnboardingWizard — the guided multi-step setup flow that auto-opens
- * for newly-created projects.
- *
- * Step list is wizard-specific (NOT derived from the sidebar's setup
- * checklist): we deliberately drop "connect a repo" (every project already
- * has one) and re-order around real first-day value — connect tools → invite
- * the team → try a request → save it as an agent → automate it. Step 1 is a
- * personal "want help from Marko?" offer (cal embed), gated by
- * useShowPersonalContact() — cloud build flag AND a paid plan, so self-hosters
- * and free accounts never see the founder's face.
- *
- * Navigation is local (`currentIndex`) — user explicitly clicks Back/Continue;
- * pre-done steps still get shown, with an "Already set up" pill instead of
- * a primary CTA. Footer dots track WIZARD progress (past vs current vs
- * future), not project state — earlier "random tick" bug came from mixing
- * the two. Auto-advance only fires when THIS step's id transitions from
- * undone→done (user just configured it in customize).
- *
- * Persistence is localStorage via {@link useProjectOnboarding}; server-side
- * column is the documented follow-up — swap the hook's body, the wizard
- * doesn't change.
- */
-
 import { DemoQualifierDialog } from '@/components/contact/demo-qualifier-dialog';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
@@ -350,7 +326,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
               aria-modal="true"
               aria-label="Project onboarding"
             >
-              <div className="border-border/60 bg-card overflow-hidden rounded-3xl border shadow-[0_2px_4px_rgba(0,0,0,0.04),0_32px_80px_-16px_rgba(0,0,0,0.32)]">
+              <div className="border-border bg-card overflow-hidden rounded-xl border">
                 <Header
                   index={currentIndex}
                   total={totalSteps}

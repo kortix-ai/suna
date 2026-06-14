@@ -6,20 +6,21 @@ import { Switch } from '@/components/ui/switch';
 import { isNotificationSupported, sendWebNotification } from '@/lib/web-notifications';
 import { useWebNotificationStore } from '@/stores/web-notification-store';
 import {
-  AlertTriangle,
-  Bell,
-  CheckCircle2,
-  EyeOff,
-  HelpCircle,
-  ShieldCheck,
-  Volume2,
-  type LucideIcon,
-} from 'lucide-react';
+  BellSolid,
+  CheckCircleSolid,
+  DangerTriangleSolid,
+  EyeOffSolid,
+  Icon as MynaIcon,
+  QuestionCircleSolid,
+  ShieldCheckSolid,
+} from '@mynaui/icons-react';
+import { Volume2, type LucideIcon } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useEffect } from 'react';
+import { IconType } from 'react-icons/lib';
 
 interface NotificationToggleProps {
-  icon: LucideIcon;
+  icon: LucideIcon | MynaIcon | IconType;
   label: string;
   description: string;
   enabled: boolean;
@@ -38,7 +39,7 @@ function NotificationToggle({
   return (
     <div className="flex items-start justify-between gap-4 px-4 py-3">
       <div className="flex flex-1 items-start gap-3">
-        <Icon className="text-muted-foreground mt-0.5 h-4 w-4" />
+        <Icon className="text-muted-foreground mt-1 size-4" />
         <div className="flex-1 space-y-0.5">
           <Label htmlFor={label} className="cursor-pointer text-sm font-medium">
             {label}
@@ -78,18 +79,9 @@ export function NotificationsTab() {
   };
 
   return (
-    <div className="space-y-6 p-6">
-      <div>
-        <h3 className="text-lg font-semibold">Notifications</h3>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {tHardcodedUi.raw(
-            'componentsSettingsUserSettingsModal.line1075JsxTextConfigureHowAndWhenYouReceiveNotifications',
-          )}
-        </p>
-      </div>
-
+    <div className="scrollbar-hide w-full max-w-full min-w-0 space-y-6 overflow-x-hidden px-6 py-5">
       {!supported ? (
-        <div className="rounded-2xl border p-4">
+        <div className="rounded-lg border p-4">
           <p className="text-muted-foreground text-sm">
             {tHardcodedUi.raw(
               'componentsSettingsUserSettingsModal.line1082JsxTextYourBrowserDoesNotSupportNotifications',
@@ -98,9 +90,9 @@ export function NotificationsTab() {
         </div>
       ) : (
         <div className="space-y-6">
-          <div className="rounded-2xl border p-4">
+          <div className="rounded-lg border">
             <NotificationToggle
-              icon={Bell}
+              icon={BellSolid}
               label={tHardcodedUi.raw(
                 'componentsSettingsUserSettingsModal.line1091JsxAttrLabelEnableNotifications',
               )}
@@ -118,15 +110,15 @@ export function NotificationsTab() {
 
           {preferences.enabled && (
             <>
-              <div>
-                <h4 className="mb-3 text-sm font-medium">
+              <div className="flex flex-col space-y-3">
+                <label className="text-muted-foreground text-sm font-medium">
                   {tHardcodedUi.raw(
                     'componentsSettingsUserSettingsModal.line1108JsxTextNotificationTypes',
                   )}
-                </h4>
-                <div className="divide-y rounded-2xl border">
+                </label>
+                <div className="divide-y rounded-lg border">
                   <NotificationToggle
-                    icon={CheckCircle2}
+                    icon={CheckCircleSolid}
                     label={tHardcodedUi.raw(
                       'componentsSettingsUserSettingsModal.line1112JsxAttrLabelTaskCompletions',
                     )}
@@ -137,7 +129,7 @@ export function NotificationsTab() {
                     onToggle={(v) => setPreference('onCompletion', v)}
                   />
                   <NotificationToggle
-                    icon={AlertTriangle}
+                    icon={DangerTriangleSolid}
                     label="Errors"
                     description={tHardcodedUi.raw(
                       'componentsSettingsUserSettingsModal.line1120JsxAttrDescriptionWhenASessionEncountersAnError',
@@ -146,7 +138,7 @@ export function NotificationsTab() {
                     onToggle={(v) => setPreference('onError', v)}
                   />
                   <NotificationToggle
-                    icon={HelpCircle}
+                    icon={QuestionCircleSolid}
                     label="Questions"
                     description={tHardcodedUi.raw(
                       'componentsSettingsUserSettingsModal.line1127JsxAttrDescriptionWhenKortixNeedsYourInputToContinue',
@@ -155,7 +147,7 @@ export function NotificationsTab() {
                     onToggle={(v) => setPreference('onQuestion', v)}
                   />
                   <NotificationToggle
-                    icon={ShieldCheck}
+                    icon={ShieldCheckSolid}
                     label={tHardcodedUi.raw(
                       'componentsSettingsUserSettingsModal.line1133JsxAttrLabelPermissionRequests',
                     )}
@@ -168,11 +160,11 @@ export function NotificationsTab() {
                 </div>
               </div>
 
-              <div>
-                <h4 className="mb-3 text-sm font-medium">Behavior</h4>
-                <div className="divide-y rounded-2xl border">
+              <div className="flex flex-col space-y-3">
+                <label className="text-muted-foreground text-sm font-medium">Behavior</label>
+                <div className="divide-y rounded-lg border">
                   <NotificationToggle
-                    icon={EyeOff}
+                    icon={EyeOffSolid}
                     label={tHardcodedUi.raw(
                       'componentsSettingsUserSettingsModal.line1147JsxAttrLabelOnlyWhenTabIsHidden',
                     )}

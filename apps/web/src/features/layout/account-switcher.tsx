@@ -26,7 +26,6 @@ import { cn } from '@/lib/utils';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import {
-  ArrowUpRight,
   CheckCircleSolid,
   ChevronsUpDown,
   CogOneSolid,
@@ -113,7 +112,7 @@ export function AccountSwitcher({
         )}
       >
         {tile}
-        <span className="  max-w-40 truncate text-sm font-medium sm:inline">{label}</span>
+        <span className="max-w-40 truncate text-sm font-medium sm:inline">{label}</span>
         <ChevronsUpDown className="text-muted-foreground hidden size-3 shrink-0 lg:block" />
       </Button>
     ) : (
@@ -199,13 +198,13 @@ export function AccountSwitcher({
               close();
               router.push(`/accounts/${activeAccount.account_id}`);
             }}
-            // className="[&_svg]:!text-muted-foreground/70 flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0"
           >
             <CogOneSolid className="size-3.5" />
             <span className="flex-1 truncate text-sm font-medium">Account settings</span>
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem
+
+        {/* <DropdownMenuItem
           onSelect={() => {
             close();
             router.push('/accounts');
@@ -215,7 +214,8 @@ export function AccountSwitcher({
           <span className="flex-1 truncate text-sm font-medium">
             {tHardcodedUi.raw('componentsLayoutAccountSwitcher.line277JsxTextAllAccounts')}
           </span>
-        </DropdownMenuItem>
+        </DropdownMenuItem> */}
+
         <DropdownMenuItem onSelect={() => deferAfterClose(() => setCreateOpen(true))}>
           <Icon.Plus className="size-3.5" />
           <span className="flex-1 truncate text-sm font-medium">

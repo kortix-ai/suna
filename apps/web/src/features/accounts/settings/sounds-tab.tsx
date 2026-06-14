@@ -85,7 +85,9 @@ export function SoundsTab() {
                 return (
                   <Field key={event.id} orientation="horizontal" className="group px-3.5 py-2.5">
                     <FieldContent className="gap-0">
-                      <FieldTitle>{event.label}</FieldTitle>
+                      <FieldTitle>
+                        <label htmlFor={`event-${event.id}`}>{event.label}</label>
+                      </FieldTitle>
                       <FieldDescription>{event.description}</FieldDescription>
                     </FieldContent>
                     <div className="flex shrink-0 items-center gap-2">
@@ -100,6 +102,7 @@ export function SoundsTab() {
                         </Button>
                       </Hint>
                       <Switch
+                        id={`event-${event.id}`}
                         checked={enabled}
                         onCheckedChange={(v) => setEventEnabled(event.id, v)}
                       />

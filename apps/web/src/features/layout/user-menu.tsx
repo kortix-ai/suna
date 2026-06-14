@@ -2,7 +2,17 @@
 
 import { ThemeToggle } from '@/components/home/theme-toggle';
 import { ReferralModal } from '@/components/referrals/referral-modal';
-import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -73,6 +83,7 @@ export function UserMenu({
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>('general');
   const [supportOpen, setSupportOpen] = useState(false);
   const [downloadOpen, setDownloadOpen] = useState(false);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState(false);
 
   const accountsQuery = useQuery({
     queryKey: ['accounts'],
@@ -103,19 +114,20 @@ export function UserMenu({
       setSettingsOpen(true);
     });
 
-  const handleLogout = () =>
-    deferAfterClose(async () => {
-      const supabase = createClient();
-      await supabase.auth.signOut();
-      await resetClientState();
-      router.push('/auth');
-    });
+  const openLogoutConfirm = () => deferAfterClose(() => setLogoutConfirmOpen(true));
+
+  const performLogout = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    await resetClientState();
+    router.push('/auth');
+  };
 
   const trigger =
     variant === 'header' ? (
       <Button
         size="icon"
-        className="m-0 border-none p-0 bg-background dark:bg-foreground"
+        className="bg-background hover:bg-background dark:hover:bg-foreground dark:bg-foreground m-0 border-none p-0"
         aria-label={tHardcodedUi.raw('componentsLayoutUserMenu.line142JsxAttrAriaLabelYourMenu')}
       >
         <UserAvatar
@@ -233,7 +245,7 @@ export function UserMenu({
           <ThemeToggle variant="compact" />
         </div>
 
-        <DropdownMenuItem variant="destructive" onSelect={handleLogout}>
+        <DropdownMenuItem variant="destructive" onSelect={openLogoutConfirm}>
           <LogOut />
 
           {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
@@ -262,6 +274,25 @@ export function UserMenu({
       <SupportModal open={supportOpen} onOpenChange={setSupportOpen} />
       <DownloadAppsModal open={downloadOpen} onOpenChange={setDownloadOpen} />
       <ReferralModal open={referralOpen} onOpenChange={closeReferral} />
+      <AlertDialog open={logoutConfirmOpen} onOpenChange={setLogoutConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Log out of your account?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You&apos;ll need to sign in again to continue.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className={buttonVariants({ variant: 'destructive' })}
+              onClick={performLogout}
+            >
+              {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

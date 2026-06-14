@@ -19,6 +19,7 @@
 
 import { Icon } from '@/features/icon/icon';
 import {
+  CogOne,
   CogOneSolid,
   CreditCardSolid,
   Icon as IconMynauiType,
@@ -762,7 +763,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'pref-general',
     label: 'General',
-    icon: CogOneSolid,
+    icon: CogOne,
     group: 'preferences',
     showIn: ['commandPalette', 'userMenu'],
     kind: 'settings',
@@ -976,7 +977,7 @@ export function getPreferenceTabs(): SettingsTab[] {
     const item = menuRegistry.find((i) => i.kind === 'settings' && i.settingsTab === tabId);
     if (!item) {
       // Fallback — should not happen if registry is complete
-      return { id: tabId, label: tabId, icon: CogOneSolid };
+      return { id: tabId, label: tabId, icon: CogOne };
     }
     return { id: tabId, label: item.label, icon: item.icon };
   });

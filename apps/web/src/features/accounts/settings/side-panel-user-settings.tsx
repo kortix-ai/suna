@@ -172,10 +172,10 @@ function SidePanelUserSettings({
     <Modal open={open} onOpenChange={onOpenChange}>
       <ModalContent
         showCloseButton={false}
-        className="min-h-[90%] w-full border-none space-y-0 md:min-h-fit lg:max-w-4xl"
+        className="min-h-[90%] w-full space-y-0 border-none md:min-h-fit lg:max-w-4xl"
       >
         <div className="grid h-[650px] grid-cols-12">
-          <div className="border-ring/10 bg-background dark:bg-sidebar-border/5 col-span-12 hidden flex-col border-r p-2 lg:col-span-3 lg:flex">
+          <div className="border-border bg-background dark:bg-sidebar-border/2 col-span-12 hidden flex-col border-r p-2 lg:col-span-3 lg:flex">
             <div className="flex-grow">
               <div className="space-y-2">
                 <ModalClose className="ring-0 focus:ring-0">
@@ -198,7 +198,7 @@ function SidePanelUserSettings({
                             {group.skeleton ? (
                               <Skeleton className="h-3 w-20 rounded" />
                             ) : (
-                              <span className="text-muted-foreground  font-medium tracking-wider text-xs">
+                              <span className="text-muted-foreground text-xs font-medium tracking-wider">
                                 {group.label}
                               </span>
                             )}

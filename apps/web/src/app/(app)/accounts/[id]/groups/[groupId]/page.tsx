@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, FolderOpen, Loader2, Plus, Trash2, Users } from 'lucide-react';
+import { FolderOpen, Loader2, Plus, Trash2, Users } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
@@ -44,7 +44,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { UserAvatar } from '@/components/ui/user-avatar';
-import { AppHeader } from '@/features/layout/app-header';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   addGroupMembers,
@@ -112,112 +111,65 @@ export default function GroupDetailPage() {
   const group = groupQuery.data;
 
   return (
-    <div className="bg-background flex min-h-screen flex-col">
-      <AppHeader user={user} />
-      <main className="flex-1 px-4 py-8">
-        <div className="mx-auto w-full max-w-4xl space-y-8">
-          <div className="space-y-3">
-            <button
-              type="button"
-              onClick={() => router.push('/projects')}
-              className="text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line99JsxTextBackToProjects')}
-            </button>
-            <div className="text-muted-foreground flex items-center gap-2 text-sm">
-              <button
-                type="button"
-                onClick={() => router.push('/accounts')}
-                className="hover:text-foreground cursor-pointer transition-colors"
-              >
-                Accounts
-              </button>
-              <span className="text-muted-foreground/40">/</span>
-              <button
-                type="button"
-                onClick={() => router.push(`/accounts/${accountId}`)}
-                className="hover:text-foreground cursor-pointer transition-colors"
-              >
-                Groups
-              </button>
-              <span className="text-muted-foreground/40">/</span>
-              {groupQuery.isLoading ? (
-                <Skeleton className="h-4 w-24" />
-              ) : (
-                <span className="text-foreground truncate font-medium">
-                  {group?.name ?? 'Group'}
-                </span>
-              )}
-            </div>
-            <div>
-              <h1 className="text-foreground text-2xl font-semibold tracking-tight">
-                {groupQuery.isLoading ? <Skeleton className="h-7 w-48" /> : group?.name}
-              </h1>
-              {group?.description && (
-                <p className="text-muted-foreground mt-1 text-sm">{group.description}</p>
-              )}
-            </div>
-          </div>
+    <main className="w-full flex-1 px-4 py-8">
+      <div className="mx-auto w-full max-w-6xl space-y-8">
+        {groupQuery.isError && (
+          <InfoBanner
+            tone="destructive"
+            title={tHardcodedUi.raw(
+              'appAccountsIdGroupsGroupidPage.line139JsxAttrTitleFailedToLoadGroup',
+            )}
+            action={
+              <Button variant="outline" size="sm" onClick={() => groupQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          >
+            {(groupQuery.error as Error).message}
+          </InfoBanner>
+        )}
 
-          {groupQuery.isError && (
-            <InfoBanner
-              tone="destructive"
-              title={tHardcodedUi.raw(
-                'appAccountsIdGroupsGroupidPage.line139JsxAttrTitleFailedToLoadGroup',
-              )}
-              action={
-                <Button variant="outline" size="sm" onClick={() => groupQuery.refetch()}>
-                  Retry
-                </Button>
-              }
-            >
-              {(groupQuery.error as Error).message}
-            </InfoBanner>
-          )}
+        {group && account && (
+          <Tabs defaultValue="members" className="space-y-6">
+            <TabsList>
+              <TabsTrigger value="members">
+                {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line157JsxTextGroupMembers')}
+              </TabsTrigger>
+              <TabsTrigger value="projects">Project access</TabsTrigger>
+              <TabsTrigger value="settings">Settings</TabsTrigger>
+            </TabsList>
 
-          {group && account && (
-            <Tabs defaultValue="members" className="space-y-6">
-              <TabsList>
-                <TabsTrigger value="members">
-                  {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line157JsxTextGroupMembers')}
-                </TabsTrigger>
-                <TabsTrigger value="projects">Project access</TabsTrigger>
-                <TabsTrigger value="settings">Settings</TabsTrigger>
-              </TabsList>
+            <TabsContent value="members">
+              <GroupMembersCard
+                accountId={account.account_id}
+                groupId={group.group_id}
+                canManage={canManageMembers}
+              />
+            </TabsContent>
 
-              <TabsContent value="members">
-                <GroupMembersCard
-                  accountId={account.account_id}
-                  groupId={group.group_id}
-                  canManage={canManageMembers}
-                />
-              </TabsContent>
+            <TabsContent value="projects">
+              <GroupProjectGrantsCard
+                accountId={account.account_id}
+                groupId={group.group_id}
+                groupName={group.name}
+              />
+            </TabsContent>
 
-              <TabsContent value="projects">
-                <GroupProjectGrantsCard
-                  accountId={account.account_id}
-                  groupId={group.group_id}
-                  groupName={group.name}
-                />
-              </TabsContent>
-
-              <TabsContent value="settings">
-                <GroupSettingsCard
-                  accountId={account.account_id}
-                  groupId={group.group_id}
-                  initialName={group.name}
-                  initialDescription={group.description ?? ''}
-                  canEdit={canEditGroup}
-                  canDelete={canDeleteGroup}
-                  onDeleted={() => router.push(`/accounts/${account.account_id}`)}
-                />
-              </TabsContent>
-            </Tabs>
-          )}
-        </div>
-      </main>
-    </div>
+            <TabsContent value="settings">
+              <GroupSettingsCard
+                accountId={account.account_id}
+                groupId={group.group_id}
+                initialName={group.name}
+                initialDescription={group.description ?? ''}
+                canEdit={canEditGroup}
+                canDelete={canDeleteGroup}
+                onDeleted={() => router.push(`/accounts/${account.account_id}`)}
+              />
+            </TabsContent>
+          </Tabs>
+        )}
+      </div>
+    </main>
   );
 }
 

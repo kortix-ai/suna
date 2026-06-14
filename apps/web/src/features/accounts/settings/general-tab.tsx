@@ -240,23 +240,23 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
             type="button"
             onClick={openFilePicker}
             disabled={isUploadingAvatar}
-            className="group focus-visible:ring-ring relative shrink-0 rounded-full focus-visible:ring-2 focus-visible:outline-none"
+            className="group focus-visible:ring-ring relative shrink-0 cursor-pointer overflow-hidden rounded-md focus-visible:ring-2 focus-visible:outline-none"
             aria-label={t('profilePicture.upload')}
           >
-            <Avatar className="border-border size-14 rounded-full border">
+            <Avatar className="border-border size-14 border">
               <AvatarImage src={avatarPreview || avatarUrl} alt={userName} />
               <AvatarFallback className="bg-muted text-sm font-medium">
                 {getInitials(userName)}
               </AvatarFallback>
             </Avatar>
             {isUploadingAvatar ? (
-              <span className="bg-foreground/40 absolute inset-0 flex items-center justify-center rounded-full">
+              <span className="bg-foreground/20 absolute inset-0 flex items-center justify-center">
                 <KortixLoader size="small" variant="white" />
               </span>
             ) : (
               <span
                 className={cn(
-                  'bg-foreground/40 duration-normal absolute inset-0 rounded-full opacity-0 transition-opacity ease-out',
+                  'bg-foreground/20 duration-normal absolute inset-0 opacity-0 transition-opacity ease-out',
                   'group-hover:opacity-100 group-focus-visible:opacity-100',
                 )}
                 aria-hidden
@@ -353,7 +353,7 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
       </div>
 
       <div className="mt-auto flex flex-col-reverse gap-2 px-6 py-4 sm:flex-row sm:justify-end">
-        <Button variant="ghost" onClick={onClose} className="w-full sm:w-auto">
+        <Button variant="outline-ghost" onClick={onClose} className="w-full sm:w-auto">
           {tCommon('cancel')}
         </Button>
         <Button onClick={handleSave} disabled={isSaving} className="w-full sm:w-auto">
@@ -456,7 +456,7 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                   </motion.div>
                 </MotionConfig>
               </ModalBody>
-              <ModalFooter className="sm:justify-between">
+              <ModalFooter className="w-full sm:justify-between">
                 <Button
                   variant="outline-ghost"
                   onClick={() => {
@@ -464,6 +464,7 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                     setDeleteConfirmText('');
                     setDeletionType('grace-period');
                   }}
+                  className="w-full sm:w-auto"
                 >
                   {t('deleteAccount.keepAccount')}
                 </Button>
@@ -475,6 +476,7 @@ export function GeneralTab({ onClose }: { onClose: () => void }) {
                     deleteImmediately.isPending ||
                     deleteConfirmText !== 'delete'
                   }
+                  className="w-full sm:w-auto"
                 >
                   {requestDeletion.isPending || deleteImmediately.isPending
                     ? tCommon('processing')

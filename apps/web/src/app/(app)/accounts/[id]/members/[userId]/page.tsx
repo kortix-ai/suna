@@ -2,7 +2,7 @@
 
 import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Check, Eye, FolderOpen, Shield, ShieldOff, Users, X } from 'lucide-react';
+import { Check, Eye, FolderOpen, Users, X } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
@@ -21,8 +21,6 @@ import {
 import { InfoBanner } from '@/components/ui/info-banner';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { UserAvatar } from '@/components/ui/user-avatar';
-import { AppHeader } from '@/features/layout/app-header';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   listMemberGroups,
@@ -110,212 +108,103 @@ export default function MemberDetailPage() {
   const memberLabel = member?.email ?? memberUserId ?? 'Member';
 
   return (
-    <div className="bg-background flex min-h-screen flex-col">
-      <AppHeader user={user} />
-      <main className="flex-1 px-4 py-8">
-        <div className="mx-auto w-full max-w-4xl space-y-8">
-          <div className="space-y-3">
-            <button
-              type="button"
-              onClick={() => router.push('/projects')}
-              className="text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line120JsxTextBackToProjects')}
-            </button>
-            <div className="text-muted-foreground flex items-center gap-2 text-sm">
-              <button
-                type="button"
-                onClick={() => router.push('/accounts')}
-                className="hover:text-foreground cursor-pointer transition-colors"
-              >
-                Accounts
-              </button>
-              <span className="text-muted-foreground/40">/</span>
-              <button
-                type="button"
-                onClick={() => router.push(`/accounts/${accountId}`)}
-                className="hover:text-foreground cursor-pointer transition-colors"
-              >
-                Members
-              </button>
-              <span className="text-muted-foreground/40">/</span>
-              {membersQuery.isLoading ? (
-                <Skeleton className="h-4 w-32" />
-              ) : (
-                <span className="text-foreground truncate font-medium">{memberLabel}</span>
-              )}
-            </div>
-            <div className="flex items-start justify-between gap-4">
-              <div className="flex items-start gap-3">
-                <UserAvatar
-                  email={member?.email ?? memberLabel}
-                  name={member?.email ?? undefined}
-                  size="lg"
-                  className="mt-0.5"
-                />
-                <div>
-                  <h1 className="text-foreground text-2xl font-semibold tracking-tight">
-                    {memberLabel}
-                  </h1>
-                  {member && (
-                    <div className="mt-1 flex items-center gap-2">
-                      <Badge variant="outline" size="sm">
-                        {ROLE_LABEL[member.account_role] ?? member.account_role}
-                      </Badge>
-                      {member.is_super_admin && (
-                        <Badge variant="secondary" size="sm" className="gap-1">
-                          <Shield className="h-2.5 w-2.5" />
-                          Super-admin
-                        </Badge>
-                      )}
-                      <span className="text-muted-foreground text-xs">
-                        Joined {new Date(member.joined_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                {member && memberUserId !== user.id && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setViewAsOpen(true)}
-                    className="gap-1.5"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                    View as
-                  </Button>
-                )}
-                {canPromoteSuperAdmin && memberUserId !== user.id && member?.is_super_admin && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setRevokeConfirmOpen(true)}
-                    className="gap-1.5"
-                    disabled={setSuperAdminMutation.isPending}
-                  >
-                    <ShieldOff className="h-3.5 w-3.5" />
-                    {tHardcodedUi.raw(
-                      'appAccountsIdMembersUserIdPage.line184JsxTextRevokeSuperAdmin',
-                    )}
-                  </Button>
-                )}
-                {canPromoteSuperAdmin && memberUserId !== user.id && !member?.is_super_admin && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setGrantConfirmOpen(true)}
-                    className="gap-1.5"
-                    disabled={setSuperAdminMutation.isPending}
-                  >
-                    <Shield className="h-3.5 w-3.5" />
-                    {tHardcodedUi.raw(
-                      'appAccountsIdMembersUserIdPage.line196JsxTextGrantSuperAdmin',
-                    )}
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
+    <main className="w-full flex-1 px-4 py-8">
+      <div className="mx-auto w-full max-w-6xl space-y-8">
+        {membersQuery.isError && (
+          <InfoBanner
+            tone="destructive"
+            title={tHardcodedUi.raw(
+              'appAccountsIdMembersUserIdPage.line203JsxAttrTitleFailedToLoadMember',
+            )}
+          >
+            {(membersQuery.error as Error).message}
+          </InfoBanner>
+        )}
 
-          {membersQuery.isError && (
-            <InfoBanner
-              tone="destructive"
-              title={tHardcodedUi.raw(
-                'appAccountsIdMembersUserIdPage.line203JsxAttrTitleFailedToLoadMember',
-              )}
-            >
-              {(membersQuery.error as Error).message}
-            </InfoBanner>
+        {!membersQuery.isLoading && !member && memberUserId && (
+          <InfoBanner tone="neutral">
+            {tHardcodedUi.raw(
+              'appAccountsIdMembersUserIdPage.line210JsxTextThisUserIsNotAMemberOfThis',
+            )}
+          </InfoBanner>
+        )}
+
+        {account && member && (
+          <MemberGroupsCard
+            accountId={account.account_id}
+            memberGroups={memberGroupsQuery.data ?? []}
+            isLoading={memberGroupsQuery.isLoading}
+          />
+        )}
+
+        {account && member && (
+          <MemberProjectAccessCard
+            accountId={account.account_id}
+            memberUserId={member.user_id}
+            accountRole={member.account_role}
+          />
+        )}
+
+        {account && member && (
+          <CapabilitiesCard accountId={account.account_id} memberUserId={member.user_id} />
+        )}
+
+        <ConfirmDialog
+          open={grantConfirmOpen}
+          onOpenChange={setGrantConfirmOpen}
+          title={tHardcodedUi.raw(
+            'appAccountsIdMembersUserIdPage.line250JsxAttrTitleGrantSuperAdmin',
           )}
-
-          {!membersQuery.isLoading && !member && memberUserId && (
-            <InfoBanner tone="neutral">
+          description={
+            <span>
               {tHardcodedUi.raw(
-                'appAccountsIdMembersUserIdPage.line210JsxTextThisUserIsNotAMemberOfThis',
+                'appAccountsIdMembersUserIdPage.line253JsxTextSuperAdminBypassesEveryIAMCheck',
               )}
-            </InfoBanner>
+              <strong>{memberLabel}</strong>{' '}
+              {tHardcodedUi.raw(
+                'appAccountsIdMembersUserIdPage.line253JsxTextWillBeAbleToDoAnythingInThis',
+              )}
+            </span>
+          }
+          confirmLabel={tHardcodedUi.raw(
+            'appAccountsIdMembersUserIdPage.line258JsxAttrConfirmLabelGrantSuperAdmin',
           )}
+          isPending={setSuperAdminMutation.isPending}
+          onConfirm={() => setSuperAdminMutation.mutate(true)}
+        />
 
-          {account && member && (
-            <MemberGroupsCard
-              accountId={account.account_id}
-              memberGroups={memberGroupsQuery.data ?? []}
-              isLoading={memberGroupsQuery.isLoading}
-            />
+        <ConfirmDialog
+          open={revokeConfirmOpen}
+          onOpenChange={setRevokeConfirmOpen}
+          title={tHardcodedUi.raw(
+            'appAccountsIdMembersUserIdPage.line266JsxAttrTitleRevokeSuperAdmin',
           )}
-
-          {account && member && (
-            <MemberProjectAccessCard
-              accountId={account.account_id}
-              memberUserId={member.user_id}
-              accountRole={member.account_role}
-            />
+          description={
+            <span>
+              <strong>{memberLabel}</strong>{' '}
+              {tHardcodedUi.raw(
+                'appAccountsIdMembersUserIdPage.line269JsxTextWillLoseTheBypassFromNowOnEvery',
+              )}
+            </span>
+          }
+          confirmLabel={tHardcodedUi.raw(
+            'appAccountsIdMembersUserIdPage.line274JsxAttrConfirmLabelRevokeSuperAdmin',
           )}
+          isPending={setSuperAdminMutation.isPending}
+          onConfirm={() => setSuperAdminMutation.mutate(false)}
+        />
 
-          {account && member && (
-            <CapabilitiesCard accountId={account.account_id} memberUserId={member.user_id} />
-          )}
-
-          <ConfirmDialog
-            open={grantConfirmOpen}
-            onOpenChange={setGrantConfirmOpen}
-            title={tHardcodedUi.raw(
-              'appAccountsIdMembersUserIdPage.line250JsxAttrTitleGrantSuperAdmin',
-            )}
-            description={
-              <span>
-                {tHardcodedUi.raw(
-                  'appAccountsIdMembersUserIdPage.line253JsxTextSuperAdminBypassesEveryIAMCheck',
-                )}
-                <strong>{memberLabel}</strong>{' '}
-                {tHardcodedUi.raw(
-                  'appAccountsIdMembersUserIdPage.line253JsxTextWillBeAbleToDoAnythingInThis',
-                )}
-              </span>
-            }
-            confirmLabel={tHardcodedUi.raw(
-              'appAccountsIdMembersUserIdPage.line258JsxAttrConfirmLabelGrantSuperAdmin',
-            )}
-            isPending={setSuperAdminMutation.isPending}
-            onConfirm={() => setSuperAdminMutation.mutate(true)}
+        {account && member && (
+          <ViewAsUserDialog
+            open={viewAsOpen}
+            onOpenChange={setViewAsOpen}
+            accountId={account.account_id}
+            memberUserId={member.user_id}
+            memberLabel={memberLabel}
           />
-
-          <ConfirmDialog
-            open={revokeConfirmOpen}
-            onOpenChange={setRevokeConfirmOpen}
-            title={tHardcodedUi.raw(
-              'appAccountsIdMembersUserIdPage.line266JsxAttrTitleRevokeSuperAdmin',
-            )}
-            description={
-              <span>
-                <strong>{memberLabel}</strong>{' '}
-                {tHardcodedUi.raw(
-                  'appAccountsIdMembersUserIdPage.line269JsxTextWillLoseTheBypassFromNowOnEvery',
-                )}
-              </span>
-            }
-            confirmLabel={tHardcodedUi.raw(
-              'appAccountsIdMembersUserIdPage.line274JsxAttrConfirmLabelRevokeSuperAdmin',
-            )}
-            isPending={setSuperAdminMutation.isPending}
-            onConfirm={() => setSuperAdminMutation.mutate(false)}
-          />
-
-          {account && member && (
-            <ViewAsUserDialog
-              open={viewAsOpen}
-              onOpenChange={setViewAsOpen}
-              accountId={account.account_id}
-              memberUserId={member.user_id}
-              memberLabel={memberLabel}
-            />
-          )}
-        </div>
-      </main>
-    </div>
+        )}
+      </div>
+    </main>
   );
 }
 

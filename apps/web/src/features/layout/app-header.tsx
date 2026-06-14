@@ -7,7 +7,6 @@ import {
   BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
-  BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { AccountSwitcher } from '@/features/layout/account-switcher';
 import { UserMenu } from '@/features/layout/user-menu';
@@ -16,7 +15,8 @@ import { cn } from '@/lib/utils';
 import type { User } from '@supabase/supabase-js';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
+import { DownloadAppsModal } from './download-apps-modal';
 
 const CommandPalette = lazy(() =>
   import('@/components/command-palette').then((mod) => ({
@@ -48,6 +48,7 @@ export function AppHeader({
     (user.user_metadata?.avatar_url as string | undefined) ||
     (user.user_metadata?.picture as string | undefined) ||
     '';
+  const [downloadOpen, setDownloadOpen] = useState(false);
 
   return (
     <>
@@ -64,7 +65,7 @@ export function AppHeader({
           )}
         >
           <Breadcrumb className="min-w-0 flex-1 overflow-hidden">
-            <BreadcrumbList className="min-w-0 flex-nowrap gap-2.5 sm:flex-wrap">
+            <BreadcrumbList className="min-w-0 flex-nowrap gap-2.5 sm:flex-wrap sm:gap-6">
               <BreadcrumbItem className="shrink-0">
                 <BreadcrumbLink asChild>
                   <Link
@@ -81,13 +82,11 @@ export function AppHeader({
                   </Link>
                 </BreadcrumbLink>
               </BreadcrumbItem>
-              <BreadcrumbSeparator className="hidden sm:inline-flex" />
               <BreadcrumbItem className="min-w-0 shrink">
                 <AccountSwitcher variant="header" />
               </BreadcrumbItem>
               {breadcrumb != null && (
                 <div className="hidden lg:block">
-                  <BreadcrumbSeparator className="hidden sm:inline-flex" />
                   <BreadcrumbItem className="min-w-0 overflow-hidden">
                     <BreadcrumbPage className="block max-w-20 truncate font-medium select-none sm:max-w-none">
                       {breadcrumb}
@@ -106,6 +105,7 @@ export function AppHeader({
           )}
         >
           {actions}
+
           <UserMenu
             user={{ name: displayName, email: displayEmail, avatar: avatarUrl }}
             variant="header"
@@ -116,6 +116,8 @@ export function AppHeader({
       <Suspense fallback={null}>
         <CommandPalette />
       </Suspense>
+
+      <DownloadAppsModal open={downloadOpen} onOpenChange={setDownloadOpen} />
     </>
   );
 }

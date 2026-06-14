@@ -12,7 +12,6 @@ import { Badge } from '@/components/ui/badge';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Skeleton } from '@/components/ui/skeleton';
-import { AppHeader } from '@/features/layout/app-header';
 import { useAuth } from '@/features/providers/auth-provider';
 import { accountTokensApi } from '@/lib/api/account-tokens';
 import { getAccount } from '@/lib/projects-client';
@@ -66,95 +65,88 @@ export default function TokenDetailPage() {
   }
 
   return (
-    <div className="bg-background flex min-h-screen flex-col">
-      <AppHeader user={user} />
-      <main className="flex-1 px-4 py-8">
-        <div className="mx-auto w-full max-w-4xl space-y-8">
-          <div className="space-y-3">
+    <main className="w-full flex-1 px-4 py-8">
+      <div className="mx-auto w-full max-w-6xl space-y-8">
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => router.push('/projects')}
+            className="text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            {tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line78JsxTextBackToProjects')}
+          </button>
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
             <button
               type="button"
-              onClick={() => router.push('/projects')}
-              className="text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
+              onClick={() => router.push('/accounts')}
+              className="hover:text-foreground cursor-pointer transition-colors"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />
-              {tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line78JsxTextBackToProjects')}
+              Accounts
             </button>
-            <div className="text-muted-foreground flex items-center gap-2 text-sm">
-              <button
-                type="button"
-                onClick={() => router.push('/accounts')}
-                className="hover:text-foreground cursor-pointer transition-colors"
-              >
-                Accounts
-              </button>
-              <span className="text-muted-foreground/40">/</span>
-              <button
-                type="button"
-                onClick={() => router.push(`/accounts/${accountId}`)}
-                className="hover:text-foreground cursor-pointer transition-colors"
-              >
-                {accountQuery.data?.name ?? 'Account'}
-              </button>
-              <span className="text-muted-foreground/40">/</span>
-              <span>
-                {tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line97JsxTextCliTokens')}
-              </span>
-              <span className="text-muted-foreground/40">/</span>
-              {tokensQuery.isLoading ? (
-                <Skeleton className="h-4 w-24" />
-              ) : (
-                <span className="text-foreground truncate font-medium">
-                  {token?.name ?? 'Token'}
-                </span>
-              )}
-            </div>
-            <div className="flex items-start gap-3">
-              <EntityAvatar icon={KeyRound} size="lg" />
-              <div>
-                <h1 className="text-foreground text-2xl font-semibold tracking-tight">
-                  {tokensQuery.isLoading ? (
-                    <Skeleton className="h-7 w-48" />
-                  ) : (
-                    (token?.name ?? 'Token not found')
-                  )}
-                </h1>
-                {token && (
-                  <div className="text-muted-foreground mt-1 flex items-center gap-2 text-xs">
-                    <Badge
-                      variant={token.status === 'active' ? 'outline' : 'destructive'}
-                      size="sm"
-                      className="font-normal capitalize"
-                    >
-                      {token.status}
-                    </Badge>
-                    <span>Created {formatDate(token.created_at)}</span>
-                    <span className="text-muted-foreground/40">·</span>
-                    <span>
-                      {tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line128JsxTextLastUsed')}{' '}
-                      {formatDate(token.last_used_at)}
-                    </span>
-                  </div>
+            <span className="text-muted-foreground/40">/</span>
+            <button
+              type="button"
+              onClick={() => router.push(`/accounts/${accountId}`)}
+              className="hover:text-foreground cursor-pointer transition-colors"
+            >
+              {accountQuery.data?.name ?? 'Account'}
+            </button>
+            <span className="text-muted-foreground/40">/</span>
+            <span>{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line97JsxTextCliTokens')}</span>
+            <span className="text-muted-foreground/40">/</span>
+            {tokensQuery.isLoading ? (
+              <Skeleton className="h-4 w-24" />
+            ) : (
+              <span className="text-foreground truncate font-medium">{token?.name ?? 'Token'}</span>
+            )}
+          </div>
+          <div className="flex items-start gap-3">
+            <EntityAvatar icon={KeyRound} size="lg" />
+            <div>
+              <h1 className="text-foreground text-2xl font-semibold tracking-tight">
+                {tokensQuery.isLoading ? (
+                  <Skeleton className="h-7 w-48" />
+                ) : (
+                  (token?.name ?? 'Token not found')
                 )}
-              </div>
+              </h1>
+              {token && (
+                <div className="text-muted-foreground mt-1 flex items-center gap-2 text-xs">
+                  <Badge
+                    variant={token.status === 'active' ? 'outline' : 'destructive'}
+                    size="sm"
+                    className="font-normal capitalize"
+                  >
+                    {token.status}
+                  </Badge>
+                  <span>Created {formatDate(token.created_at)}</span>
+                  <span className="text-muted-foreground/40">·</span>
+                  <span>
+                    {tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line128JsxTextLastUsed')}{' '}
+                    {formatDate(token.last_used_at)}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
-
-          {!tokensQuery.isLoading && !token && tokenId && (
-            <InfoBanner tone="neutral">
-              {tHardcodedUi.raw(
-                'appAccountsIdTokensTokenidPage.line137JsxTextThisTokenDoesnAposTExistOrHas',
-              )}
-            </InfoBanner>
-          )}
-
-          {token && accountId && (
-            <InfoBanner tone="info" title="Token permissions">
-              Tokens inherit their creator&apos;s account-role and group memberships at request
-              time. To narrow what a token can reach, scope it to a single project when minting.
-            </InfoBanner>
-          )}
         </div>
-      </main>
-    </div>
+
+        {!tokensQuery.isLoading && !token && tokenId && (
+          <InfoBanner tone="neutral">
+            {tHardcodedUi.raw(
+              'appAccountsIdTokensTokenidPage.line137JsxTextThisTokenDoesnAposTExistOrHas',
+            )}
+          </InfoBanner>
+        )}
+
+        {token && accountId && (
+          <InfoBanner tone="info" title="Token permissions">
+            Tokens inherit their creator&apos;s account-role and group memberships at request time.
+            To narrow what a token can reach, scope it to a single project when minting.
+          </InfoBanner>
+        )}
+      </div>
+    </main>
   );
 }
