@@ -89,7 +89,9 @@ spec:
           prune: true
           selfHeal: true
         syncOptions:
-          - CreateNamespace=true   # the kortix-pr-<n> namespace is made on the fly
+          # The kortix-pr-<n> namespace is rendered BY the chart (createNamespace:
+          # true in envs/preview/values.yaml), so Argo owns + prunes it on PR
+          # close. NOT CreateNamespace=true, which leaves an orphaned empty shell.
           - ServerSideApply=true
         retry:
           limit: 5

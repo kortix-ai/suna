@@ -91,6 +91,7 @@ module "platform" {
   api_domain        = local.cluster.api_domain
 
   cloudflare_api_token = var.cloudflare_api_token
+  cloudflare_zone_id   = var.cloudflare_zone_id
 
   # Argo CD UI (ops.kortix.com) — opt-in; gate with Cloudflare Access first.
   argocd_ui_enabled      = var.argocd_ui_enabled

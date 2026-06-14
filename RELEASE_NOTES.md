@@ -1,3 +1,3 @@
-Bring docs back
+ArgoCD bug in HPAs
 
-- fix(web): bring docs back
+ArgoCD bug in HPAs

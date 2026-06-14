@@ -34,6 +34,12 @@ variable "extra_domain_filters" {
   default     = []
 }
 
+variable "cloudflare_zone_id" {
+  description = "Cloudflare hosted zone ID for kortix.com. Pins external-dns zone discovery by ID so subdomain domainFilters (api-eks / preview-api) don't cause it to discard the zone and manage nothing. Empty = unset (no zone-id filter)."
+  type        = string
+  default     = ""
+}
+
 variable "cloudflare_api_token" {
   description = "Cloudflare API token external-dns uses to manage the record (DNS edit on the kortix.com zone)."
   type        = string

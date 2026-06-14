@@ -196,5 +196,12 @@ describe('GitHub App project repository auth', () => {
     expect((repoCreate?.init?.headers as Record<string, string>).Authorization).toBe('Bearer installation-token');
     expect((readFile?.init?.headers as Record<string, string>).Authorization).toBe('Bearer installation-token');
     expect((writeFile?.init?.headers as Record<string, string>).Authorization).toBe('Bearer installation-token');
+
+    // Contents-API commits MUST pin the Kortix identity explicitly. Otherwise
+    // GitHub attributes the commit to whoever owns the token (a personal PAT
+    // surfaces "<user> committed" instead of Kortix).
+    const writeBody = JSON.parse(String(writeFile?.init?.body));
+    expect(writeBody.author).toEqual({ name: 'Kortix', email: 'noreply@kortix.ai' });
+    expect(writeBody.committer).toEqual({ name: 'Kortix', email: 'noreply@kortix.ai' });
   });
 });
