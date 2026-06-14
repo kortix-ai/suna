@@ -1,0 +1,15 @@
+{{- /*
+Optional self-managed namespace. OFF by default (dev/prod deploy into a namespace
+that already exists). Ephemeral previews turn this ON so the namespace is a chart
+resource Argo OWNS — and therefore PRUNES on PR close, instead of the orphaned
+empty shell left by the ApplicationSet's CreateNamespace=true sync option.
+*/ -}}
+{{- if .Values.createNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Release.Namespace }}
+  annotations:
+    # Create the namespace before everything that lands in it.
+    argocd.argoproj.io/sync-wave: "-1"
+{{- end }}

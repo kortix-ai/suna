@@ -12,6 +12,11 @@ image:
 # Reported by GET /v1/health (matches the ECS task-def KORTIX_VERSION stamp).
 kortixVersion: ""
 
+# Render the destination Namespace as a chart resource. OFF for dev/prod (the
+# namespace pre-exists). Previews set this true so Argo owns + prunes it on PR
+# close (see templates/namespace.yaml).
+createNamespace: false
+
 containerPort: 8000
 
 # HA + autoscaling. replicas is the floor the HPA scales from.
