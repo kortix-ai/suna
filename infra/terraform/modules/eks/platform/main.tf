@@ -209,6 +209,19 @@ resource "helm_release" "cluster_autoscaler" {
     name  = "extraArgs.expander"
     value = "least-waste"
   }
+  # Aggressive scale-down (dev): also reclaim nodes whose only blockers are pods
+  # with local storage (emptyDir caches: argo-cd/argo-rollouts/metrics-server) or
+  # kube-system pods without a PDB (external-dns). Without this the autoscaler
+  # NEVER drains a node — every node has such a pod — so a low-traffic cluster is
+  # pinned at its initial size. Conservative (true) by default; prod keeps it.
+  set {
+    name  = "extraArgs.skip-nodes-with-local-storage"
+    value = var.autoscaler_aggressive_scaledown ? "false" : "true"
+  }
+  set {
+    name  = "extraArgs.skip-nodes-with-system-pods"
+    value = var.autoscaler_aggressive_scaledown ? "false" : "true"
+  }
 }
 
 # ── Argo CD values (built up: HA + optional UI ingress + optional GitHub SSO) ──

@@ -1,5 +1,6 @@
 import { ApiError } from '../api/client.ts';
 import {
+  emitJson,
   resolveProjectContext,
   surfaceApiError,
   takeFlagValue,
@@ -38,13 +39,13 @@ Apps are declared in \`[[apps]]\` in kortix.toml and deployed to a provider
 (Freestyle). Requires the platform flag KORTIX_APPS_EXPERIMENTAL.
 
 Subcommands:
-  ls                                List apps + latest deployment status.
+  ls [--json]                       List apps + latest deployment status.
   add <slug> --repo <url> [...]     Create an app in kortix.toml.
   update <slug> [...]               Update an app's fields.
   rm <slug>                         Remove an app from the manifest.
   deploy <slug>                     Deploy now (bypasses the drift check).
   stop <slug>                       Tear down the latest deployment.
-  logs <slug>                       Fetch provider logs for the latest deploy.
+  logs <slug> [--json]              Fetch provider logs for the latest deploy.
 
 Add/update options:
   --name <label>           Display name.
@@ -74,6 +75,7 @@ export async function runApps(argv: string[]): Promise<number> {
   const rest = argv.slice(1);
   const f: Record<string, string | undefined> = {};
   let disable = false;
+  let json = false;
   try {
     f.project = takeFlagValue(rest, ['--project']);
     f.host = takeFlagValue(rest, ['--host']);
@@ -87,6 +89,7 @@ export async function runApps(argv: string[]): Promise<number> {
     f.outDir = takeFlagValue(rest, ['--out-dir']);
     f.domains = takeFlagValue(rest, ['--domains']);
     disable = takeFlagBool(rest, ['--disable']);
+    json = takeFlagBool(rest, ['--json']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -118,6 +121,10 @@ export async function runApps(argv: string[]): Promise<number> {
       case 'ls':
       case 'list': {
         const resp = await ctx.client.get<{ apps: ProjectApp[]; errors: { slug: string; error: string }[] }>(base);
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         for (const e of resp.errors) process.stderr.write(`  ${status.warn(`${e.slug}: ${e.error}`)}\n`);
         if (resp.apps.length === 0) {
           process.stdout.write(`  ${C.dim}No apps. Add one: ${C.reset}${C.cyan}kortix apps add <slug> --repo <url> --framework next${C.reset}\n`);
@@ -194,6 +201,10 @@ export async function runApps(argv: string[]): Promise<number> {
         const resp = await ctx.client.get<{ ok: boolean; data?: unknown; error?: string }>(
           `${base}/${encodeURIComponent(slug)}/logs`,
         );
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         if (!resp.ok) {
           process.stderr.write(`${status.err(resp.error ?? 'No logs available.')}\n`);
           return 1;

@@ -3,8 +3,10 @@ import { createInterface } from 'node:readline';
 
 import { ApiError } from '../api/client.ts';
 import {
+  emitJson,
   resolveProjectContext,
   surfaceApiError,
+  takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import { C, pad, status } from '../style.ts';
@@ -28,7 +30,7 @@ Configure LLM providers for the linked Kortix project. Two paths:
     sessions at boot, picked up by opencode's provider lookup.
 
 Subcommands:
-  ls                                List configured providers (OAuth +
+  ls [--json]                       List configured providers (OAuth +
                                     API-key secrets that map to known
                                     providers).
   login <provider>                  Run the OAuth device-code flow.
@@ -85,10 +87,12 @@ export async function runProviders(argv: string[]): Promise<number> {
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   let enterpriseFlag: string | undefined;
+  let json = false;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     enterpriseFlag = takeFlagValue(rest, ['--enterprise']);
+    json = takeFlagBool(rest, ['--json']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -98,7 +102,7 @@ export async function runProviders(argv: string[]): Promise<number> {
   switch (sub) {
     case 'ls':
     case 'list':
-      return providersLs(ctxOpts);
+      return providersLs(ctxOpts, json);
     case 'login':
     case 'oauth':
       return providersLogin(rest[0], enterpriseFlag, ctxOpts);
@@ -114,7 +118,7 @@ export async function runProviders(argv: string[]): Promise<number> {
   }
 }
 
-async function providersLs(opts: CtxOpts): Promise<number> {
+async function providersLs(opts: CtxOpts, json = false): Promise<number> {
   const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
@@ -127,6 +131,11 @@ async function providersLs(opts: CtxOpts): Promise<number> {
     ]);
   } catch (err) {
     return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson({ oauth: oauthList.items, secrets: secrets.items });
+    return 0;
   }
 
   process.stdout.write('\n');

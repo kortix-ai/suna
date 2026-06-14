@@ -66,6 +66,16 @@ export function resolveProjectContext(
   return { client: clientFromAuth(auth), projectId, auth };
 }
 
+/**
+ * Emit a value as pretty JSON to stdout — the machine-readable output mode
+ * for read commands (`--json`). Agents parse this instead of scraping the
+ * human-formatted tables. Keep it dumb: print what the command already has
+ * (ideally the raw API payload) so the JSON shape tracks the REST API.
+ */
+export function emitJson(data: unknown): void {
+  process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
+}
+
 /** Print an HTTP error in a consistent style + return exit code 1. */
 export function surfaceApiError(err: unknown): number {
   if (err instanceof ApiError) {

@@ -11,6 +11,11 @@
 image:
   tag: preview # overridden per-PR by the ApplicationSet → pr-<head_sha>
 
+# Own the kortix-pr-<n> namespace as a chart resource so Argo prunes it when the
+# PR closes (no orphaned empty namespace). Replaces the ApplicationSet's
+# CreateNamespace=true sync option.
+createNamespace: true
+
 env:
   internalKortixEnv: preview
 
@@ -26,13 +31,15 @@ pdb:
   enabled: false
 topologySpread:
   enabled: false
+# Tiny, throwaway env: pack many previews per node. ephemeral-storage (2Gi/8Gi)
+# is inherited from the chart base.
 resources:
   requests:
-    cpu: "250m"
-    memory: "512Mi"
+    cpu: "100m"
+    memory: "256Mi"
   limits:
-    cpu: "1"
-    memory: "1Gi"
+    cpu: "500m"
+    memory: "512Mi"
 
 serviceAccount:
   name: kortix-api

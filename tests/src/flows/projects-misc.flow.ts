@@ -187,44 +187,44 @@ flow(
   },
 );
 
-// PROJ-13 — ChatGPT headless provider auth. `start` spins a local OpenCode
-// device flow on the API host (no sandbox needed): 200 when the binary +
-// network cooperate, 500 otherwise. `complete` requires `auth_id` (400) and,
-// given a bogus one, fails because no job exists (500). We assert the
-// boundary — there are no real ChatGPT creds in the harness.
+// PROJ-13 — ChatGPT subscription connect. The OpenAI Codex device flow runs as
+// a single Server-Sent Events stream on the API host (no sandbox needed): emit
+// the device challenge, long-poll until the user authorizes in the browser,
+// then save CODEX_AUTH_JSON. We assert only the pre-stream guards — opening the
+// real stream needs a live ChatGPT login the harness can't drive:
+// invalid sharing → 400 (before the stream opens), NONMEMBER → 404, ANON → 401.
 flow(
   "PROJ-13",
   {
     domain: "projects",
     serial: true,
     routes: [
-      "POST /v1/projects/:projectId/providers/openai/chatgpt/headless/start",
-      "POST /v1/projects/:projectId/providers/openai/chatgpt/headless/complete",
+      "POST /v1/projects/:projectId/providers/openai/chatgpt/connect",
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step("start headless auth → 200 or 500", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/providers/openai/chatgpt/headless/start", {}, { params: { projectId: p.id } });
-      r.status([200, 500]);
-    });
-    await ctx.step("complete without auth_id → 400", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/providers/openai/chatgpt/headless/complete", {}, { params: { projectId: p.id } });
-      r.status(400);
-    });
-    await ctx.step("complete with bogus auth_id → 500 (no started flow)", async () => {
+    await ctx.step("invalid sharing → 400 (rejected before the stream opens)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/providers/openai/chatgpt/headless/complete",
-          { auth_id: "00000000-0000-4000-a000-000000000000" },
+          "/v1/projects/:projectId/providers/openai/chatgpt/connect",
+          { sharing: { mode: "bogus" } },
           { params: { projectId: p.id } },
         );
-      r.status([400, 404, 409, 500]);
+      r.status(400);
+    });
+    await ctx.step("NONMEMBER → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post("/v1/projects/:projectId/providers/openai/chatgpt/connect", {}, { params: { projectId: p.id } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON → 401", async () => {
+      const r = await ctx.client
+        .as(ctx.P.ANON)
+        .post("/v1/projects/:projectId/providers/openai/chatgpt/connect", {}, { params: { projectId: p.id } });
+      r.status(401);
     });
   },
 );

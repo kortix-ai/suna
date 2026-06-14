@@ -1,22 +1,24 @@
-import { randomUUID } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
-type Job = {
-  id: string;
-  projectId: string;
-  userId: string;
-  proc: ReturnType<typeof Bun.spawn>;
-  baseUrl: string;
-  home: string;
-  authPath: string;
-  createdAt: number;
-  timeout: ReturnType<typeof setTimeout>;
-};
+// The OpenAI Codex login is an OAuth 2.0 device grant: `authorize` returns a
+// verification URL + short user code, and `callback` then LONG-POLLS OpenAI's
+// token endpoint until the user finishes in the browser. Both calls hit a
+// private `opencode serve` subprocess that holds the device code + the poll
+// loop in its own memory — so the entire flow MUST run inside a single API
+// request on a single replica. (The old start/complete split kept the job in a
+// per-process Map and broke the instant `complete` load-balanced to a different
+// pod — "ChatGPT authorization session expired" on ~2/3 of attempts in prod.)
 
-const JOB_TTL_MS = 10 * 60 * 1000;
-const jobs = new Map<string, Job>();
+export type ChatGptChallenge = {
+  /** Verification URL the user opens (https://auth.openai.com/codex/device). */
+  url: string;
+  /** Raw instruction text from opencode, e.g. "Enter code: MN3B-DIF51". */
+  instructions: string;
+  /** The short user code parsed out of `instructions`, when present. */
+  code: string | null;
+};
 
 function opencodeBin(): string {
   const here = dirname(new URL(import.meta.url).pathname);
@@ -40,12 +42,13 @@ async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function waitForReady(baseUrl: string) {
+async function waitForReady(baseUrl: string, signal?: AbortSignal) {
   const deadline = Date.now() + 20_000;
   let lastError: unknown;
   while (Date.now() < deadline) {
+    if (signal?.aborted) throw new Error('ChatGPT authorization was cancelled');
     try {
-      const res = await fetch(`${baseUrl}/provider/auth`);
+      const res = await fetch(`${baseUrl}/provider/auth`, { signal });
       if (res.ok) return;
       lastError = new Error(`OpenCode auth endpoint returned ${res.status}`);
     } catch (err) {
@@ -58,21 +61,27 @@ async function waitForReady(baseUrl: string) {
     : new Error('OpenCode did not become ready');
 }
 
-function cleanupJob(job: Job) {
-  jobs.delete(job.id);
-  clearTimeout(job.timeout);
-  try {
-    job.proc.kill();
-  } catch {
-    // already exited
-  }
-  rmSync(job.home, { recursive: true, force: true });
-}
+const USER_CODE_RE = /\b[A-Z0-9]{4,}(?:-[A-Z0-9]{4,})+\b/;
 
-export async function startChatGptHeadlessAuth(input: {
-  projectId: string;
-  userId: string;
-}): Promise<{ authId: string; url: string; instructions: string; code: string | null }> {
+/**
+ * Drives the OpenAI Codex device-auth flow end-to-end on THIS process and
+ * returns the resulting `auth.json` (verbatim, as a string) for the caller to
+ * persist as the project's `CODEX_AUTH_JSON` secret.
+ *
+ * Lifecycle, all on one replica:
+ *   1. spawn a private, isolated `opencode serve`
+ *   2. `authorize` → device challenge (url + user code); handed to `onChallenge`
+ *   3. `callback` → blocks until the user authorizes in the browser
+ *   4. read `auth.json` and return it
+ *
+ * `signal` (client disconnect and/or an overall timeout) aborts the in-flight
+ * poll; the subprocess + temp HOME are always cleaned up.
+ */
+export async function runChatGptHeadlessAuth(input: {
+  signal?: AbortSignal;
+  onChallenge: (challenge: ChatGptChallenge) => void | Promise<void>;
+}): Promise<string> {
+  const { signal } = input;
   const home = mkdtempSync(join(tmpdir(), 'kortix-chatgpt-auth-'));
   const dataHome = join(home, '.local/share');
   const configHome = join(home, '.config');
@@ -105,34 +114,19 @@ export async function startChatGptHeadlessAuth(input: {
     stderr: 'ignore',
   });
 
-  const authId = randomUUID();
-  const job: Job = {
-    id: authId,
-    projectId: input.projectId,
-    userId: input.userId,
-    proc,
-    baseUrl,
-    home,
-    authPath,
-    createdAt: Date.now(),
-    timeout: setTimeout(() => {
-      const current = jobs.get(authId);
-      if (current) cleanupJob(current);
-    }, JOB_TTL_MS),
-  };
-  jobs.set(authId, job);
-
   try {
-    await waitForReady(baseUrl);
+    await waitForReady(baseUrl, signal);
+
     const authRes = await fetch(`${baseUrl}/provider/openai/oauth/authorize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ method: 1 }),
+      signal,
     });
     if (!authRes.ok) {
       throw new Error(`OpenCode headless auth failed to start (${authRes.status})`);
     }
-    const auth = await authRes.json() as {
+    const auth = (await authRes.json()) as {
       url?: unknown;
       instructions?: unknown;
       method?: unknown;
@@ -141,34 +135,16 @@ export async function startChatGptHeadlessAuth(input: {
       throw new Error('OpenCode did not return a headless auth challenge');
     }
     const instructions = typeof auth.instructions === 'string' ? auth.instructions : '';
-    const code = instructions.match(/\b[A-Z0-9]{4,}(?:-[A-Z0-9]{4,})+\b/)?.[0] ?? null;
-    return {
-      authId,
-      url: auth.url,
-      instructions,
-      code,
-    };
-  } catch (err) {
-    cleanupJob(job);
-    throw err;
-  }
-}
+    const code = instructions.match(USER_CODE_RE)?.[0] ?? null;
+    await input.onChallenge({ url: auth.url, instructions, code });
 
-export async function completeChatGptHeadlessAuth(input: {
-  authId: string;
-  projectId: string;
-  userId: string;
-}): Promise<string> {
-  const job = jobs.get(input.authId);
-  if (!job || job.projectId !== input.projectId || job.userId !== input.userId) {
-    throw new Error('ChatGPT authorization session expired. Start the connection again.');
-  }
-
-  try {
-    const callbackRes = await fetch(`${job.baseUrl}/provider/openai/oauth/callback`, {
+    // Blocks until the user completes the device authorization in the browser
+    // (or `signal` aborts / times out). opencode polls OpenAI internally.
+    const callbackRes = await fetch(`${baseUrl}/provider/openai/oauth/callback`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ method: 1 }),
+      signal,
     });
     if (!callbackRes.ok) {
       const detail = await callbackRes.text().catch(() => '');
@@ -178,16 +154,20 @@ export async function completeChatGptHeadlessAuth(input: {
     if (ok !== true) {
       throw new Error('OpenCode did not confirm the ChatGPT authorization');
     }
-    if (!existsSync(job.authPath)) {
-      throw new Error(`OpenCode completed authorization but did not write ${job.authPath}`);
+    if (!existsSync(authPath)) {
+      throw new Error(`OpenCode completed authorization but did not write ${authPath}`);
     }
-    const authJson = readFileSync(job.authPath, 'utf8');
-    const parsed = JSON.parse(authJson);
+    const parsed = JSON.parse(readFileSync(authPath, 'utf8'));
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('OpenCode wrote invalid auth data');
     }
     return JSON.stringify(parsed, null, 2);
   } finally {
-    cleanupJob(job);
+    try {
+      proc.kill();
+    } catch {
+      // already exited
+    }
+    rmSync(home, { recursive: true, force: true });
   }
 }

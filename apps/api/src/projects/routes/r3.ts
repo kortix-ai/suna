@@ -6,7 +6,7 @@ import { kickPreBuild } from '../../snapshots/builder';
 import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
-import { completeChatGptHeadlessAuth, startChatGptHeadlessAuth } from '../opencode-chatgpt-auth';
+import { runChatGptHeadlessAuth } from '../opencode-chatgpt-auth';
 import { encryptProjectSecret, isValidSecretName } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { createRoute, z } from '@hono/zod-openapi';
@@ -520,132 +520,70 @@ projectsApp.openapi(
 },
 );
 
-// POST /v1/projects/:projectId/providers/openai/chatgpt/headless/start
-// Starts the OpenCode ChatGPT Pro/Plus headless device-code flow on the API
-// server. This deliberately does not require a running sandbox: provider
-// credentials are project configuration, and sandboxes only consume the saved
-// CODEX_AUTH_JSON secret later.
+// POST /v1/projects/:projectId/providers/openai/chatgpt/connect  (SSE)
+//
+// Connects a ChatGPT Plus/Pro subscription via the OpenAI Codex device grant
+// and saves the resulting login as the project's CODEX_AUTH_JSON secret.
+//
+// The whole device flow runs inside THIS one streaming request so it stays
+// pinned to a single replica — opencode holds the device code + the token poll
+// loop in-process, so a second request (the old `/complete`) could land on a
+// different pod and never find the in-flight job. The response is a
+// Server-Sent Events stream:
+//   event: challenge → { url, instructions, code }   (open the URL, enter code)
+//   event: done      → { secret }                     (CODEX_AUTH_JSON saved)
+//   event: error     → { message }
+//   : keep-alive                                      (heartbeat, beats ALB idle)
+//
+// No sandbox is required: provider credentials are project configuration that
+// session sandboxes consume from the saved secret on boot.
 
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/providers/openai/chatgpt/headless/start',
-    tags: ['secrets'],
-    summary: 'POST /:projectId/providers/openai/chatgpt/headless/start',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404, 500),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+// Bound the in-flight device poll so a never-finished login eventually frees
+// the subprocess. OpenAI device codes expire well before this; heartbeats keep
+// the connection alive past the 300s ALB idle timeout in the meantime.
+const CHATGPT_DEVICE_FLOW_TIMEOUT_MS = 10 * 60 * 1000;
 
-  try {
-    return c.json(await startChatGptHeadlessAuth({
-      projectId,
-      userId: loaded.userId,
-    }));
-  } catch (err) {
-    return c.json({
-      error: err instanceof Error ? err.message : 'Failed to start ChatGPT authorization',
-    }, 500);
-  }
-},
-);
+// Persists the Codex auth.json as the CODEX_AUTH_JSON project secret with the
+// requested sharing, then returns the caller's view of it. Codex-specific on
+// purpose: a generic OPENCODE_AUTH_JSON row is never overwritten by this.
+async function writeCodexAuthSecret(input: {
+  projectId: string;
+  userId: string;
+  value: string;
+  sharing?: ReturnType<typeof parseSharingIntent>;
+}) {
+  const { projectId, userId, value, sharing } = input;
+  const now = new Date();
 
-// POST /v1/projects/:projectId/providers/openai/chatgpt/headless/complete
-// Waits for the server-side OpenCode device flow to complete, then writes the
-// resulting auth.json into project_secrets as CODEX_AUTH_JSON. This is
-// intentionally Codex-specific; generic OpenCode auth can keep using its own
-// OPENCODE_AUTH_JSON row without being overwritten by subscription onboarding.
-
-projectsApp.openapi(
-  createRoute({
-    method: 'post',
-    path: '/{projectId}/providers/openai/chatgpt/headless/complete',
-    tags: ['secrets'],
-    summary: 'POST /:projectId/providers/openai/chatgpt/headless/complete',
-    ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 403, 404, 500),
-    },
-  }),
-  async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-
-  const authId = normalizeString(body.auth_id);
-  if (!authId) return c.json({ error: 'auth_id is required' }, 400);
-
-  let sharing: ReturnType<typeof parseSharingIntent> | undefined;
-  if (body.sharing != null) {
-    sharing = parseSharingIntent(body.sharing, loaded.userId);
-    if (!sharing) {
-      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
-    }
-  }
-  if (sharing?.mode !== 'private' && !roleAllows(loaded.effectiveRole, 'manage')) {
-    return c.json({ error: 'Only project managers can configure shared provider credentials' }, 403);
-  }
-
-  try {
-    const value = await completeChatGptHeadlessAuth({
-      authId,
-      projectId,
-      userId: loaded.userId,
-    });
-
-    const now = new Date();
-    if (sharing?.mode === 'private') {
-      await db
-        .insert(projectSecrets)
-        .values({
-          projectId,
-          name: CODEX_AUTH_JSON_SECRET_NAME,
-          valueEnc: encryptProjectSecret(projectId, value),
-          ownerUserId: loaded.userId,
-          active: true,
-          createdBy: loaded.userId,
-          updatedAt: now,
-        })
-        .onConflictDoUpdate({
-          target: [projectSecrets.projectId, projectSecrets.name, projectSecrets.ownerUserId],
-          targetWhere: sql`${projectSecrets.ownerUserId} is not null`,
-          set: {
-            valueEnc: encryptProjectSecret(projectId, value),
-            active: true,
-            updatedAt: now,
-          },
-        });
-
-      void propagateProjectSecretsToActiveSandboxes(projectId);
-
-      const subject = await resolveShareSubject(loaded.userId);
-      const views = await loadSecretViewsForUser(projectId, subject, true);
-      const view = views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME);
-      return c.json(view ?? { name: CODEX_AUTH_JSON_SECRET_NAME }, 200);
-    }
-
+  if (sharing?.mode === 'private') {
     await db
       .insert(projectSecrets)
       .values({
         projectId,
         name: CODEX_AUTH_JSON_SECRET_NAME,
         valueEnc: encryptProjectSecret(projectId, value),
-        createdBy: loaded.userId,
+        ownerUserId: userId,
+        active: true,
+        createdBy: userId,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [projectSecrets.projectId, projectSecrets.name, projectSecrets.ownerUserId],
+        targetWhere: sql`${projectSecrets.ownerUserId} is not null`,
+        set: {
+          valueEnc: encryptProjectSecret(projectId, value),
+          active: true,
+          updatedAt: now,
+        },
+      });
+  } else {
+    await db
+      .insert(projectSecrets)
+      .values({
+        projectId,
+        name: CODEX_AUTH_JSON_SECRET_NAME,
+        valueEnc: encryptProjectSecret(projectId, value),
+        createdBy: userId,
         updatedAt: now,
       })
       .onConflictDoUpdate({
@@ -667,18 +605,124 @@ projectsApp.openapi(
       ))
       .limit(1);
     if (sharing && row) await setSecretSharing(row.secretId, sharing);
-
-    void propagateProjectSecretsToActiveSandboxes(projectId);
-
-    const subject = await resolveShareSubject(loaded.userId);
-    const views = await loadSecretViewsForUser(projectId, subject, true);
-    const view = views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME);
-    return c.json(view ?? { name: CODEX_AUTH_JSON_SECRET_NAME }, 200);
-  } catch (err) {
-    return c.json({
-      error: err instanceof Error ? err.message : 'Failed to complete ChatGPT authorization',
-    }, 500);
   }
+
+  void propagateProjectSecretsToActiveSandboxes(projectId);
+
+  const subject = await resolveShareSubject(userId);
+  const views = await loadSecretViewsForUser(projectId, subject, true);
+  return views.find((v) => v.name === CODEX_AUTH_JSON_SECRET_NAME)
+    ?? { name: CODEX_AUTH_JSON_SECRET_NAME };
+}
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/providers/openai/chatgpt/connect',
+    tags: ['secrets'],
+    summary: 'POST /:projectId/providers/openai/chatgpt/connect',
+    ...auth,
+      request: {
+        params: z.object({ projectId: z.string() }),
+        body: { content: { 'application/json': { schema: AnyObject } } },
+      },
+    responses: {
+        200: {
+          description: 'Server-Sent Events stream of the ChatGPT device-auth flow',
+          content: { 'text/event-stream': { schema: z.any() } },
+        },
+        ...errors(400, 401, 403, 404),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const body = await readBody(c);
+  const loaded = await loadProjectForUser(c, projectId, 'read');
+  if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  let sharing: ReturnType<typeof parseSharingIntent> | undefined;
+  if (body.sharing != null) {
+    sharing = parseSharingIntent(body.sharing, loaded.userId);
+    if (!sharing) {
+      return c.json({ error: 'invalid sharing — mode must be project|private|members' }, 400);
+    }
+  }
+  // Sharing a credential across the project requires manage; a private
+  // (owner-only) credential just needs read access to the project.
+  if (sharing?.mode !== 'private' && !roleAllows(loaded.effectiveRole, 'manage')) {
+    return c.json({ error: 'Only project managers can configure shared provider credentials' }, 403);
+  }
+
+  const userId = loaded.userId;
+  const clientSignal = c.req.raw.signal as AbortSignal;
+  // Abort the device poll on client disconnect OR after the overall cap.
+  const flowSignal = AbortSignal.any([
+    clientSignal,
+    AbortSignal.timeout(CHATGPT_DEVICE_FLOW_TIMEOUT_MS),
+  ]);
+
+  const stream = new ReadableStream({
+    start(controller) {
+      const encoder = new TextEncoder();
+      let closed = false;
+
+      const send = (event: string, data: unknown) => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        } catch {
+          // controller already closed
+        }
+      };
+
+      const keepAlive = setInterval(() => {
+        if (closed) return;
+        try {
+          controller.enqueue(encoder.encode(': keep-alive\n\n'));
+        } catch {
+          clearInterval(keepAlive);
+        }
+      }, 25_000);
+
+      const finish = () => {
+        if (closed) return;
+        closed = true;
+        clearInterval(keepAlive);
+        try { controller.close(); } catch {}
+      };
+
+      clientSignal.addEventListener('abort', finish);
+
+      void (async () => {
+        try {
+          const value = await runChatGptHeadlessAuth({
+            signal: flowSignal,
+            onChallenge: (challenge) => send('challenge', challenge),
+          });
+          const secret = await writeCodexAuthSecret({ projectId, userId, value, sharing });
+          send('done', { secret });
+        } catch (err) {
+          // A client disconnect aborts the flow too — don't try to write to a
+          // stream the browser already walked away from.
+          if (!clientSignal.aborted) {
+            send('error', {
+              message: err instanceof Error ? err.message : 'Failed to connect ChatGPT subscription',
+            });
+          }
+        } finally {
+          finish();
+        }
+      })();
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  }) as any;
 },
 );
 

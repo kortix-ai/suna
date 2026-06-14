@@ -555,7 +555,7 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `PROJ-10` `POST /projects/:id/cli-token` → 201 project PAT; `GET` → 200; `DELETE /:tokenId` → 200; unknown → 404.
 `PROJ-11` `PATCH /projects/:id/onboarding {completed}` → 200; NONMEMBER → 403/404.
 `PROJ-12` `GET /projects/:id/version-diff?from&into` → 200; missing → 400; same ref → is_same_ref.
-`PROJ-13` `POST /projects/:id/providers/openai/chatgpt/headless/start|complete` → start 200/500; complete missing auth_id → 400.
+`PROJ-13` `POST /projects/:id/providers/openai/chatgpt/connect` → SSE Codex device-auth stream (challenge → poll → save CODEX_AUTH_JSON); invalid sharing → 400, NONMEMBER → 404, ANON → 401.
 `PROJ-14` `GET /projects/legacy-migration/eligibility` → 200; `status?sandbox_id` missing → 400; unknown → 404; ANON → 401.
 `PROJ-15` `POST /projects/legacy-migration/start {sandbox_id}` → missing → 400; unknown → 404; non-justavps → 400.
 `PROJ-16` `POST /projects/:id/turn-question {session_id,questions[]}` → missing → 400.
