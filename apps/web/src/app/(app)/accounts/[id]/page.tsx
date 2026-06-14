@@ -2,11 +2,9 @@
 
 import { useTranslations } from 'next-intl';
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  ArrowLeft,
   ChevronDown,
   Clock,
   ExternalLink,
@@ -24,20 +22,25 @@ import {
   UserPlus,
   X,
 } from 'lucide-react';
-import { toast } from '@/lib/toast';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useAuth } from '@/components/AuthProvider';
+import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { AppHeader } from '@/components/layout/app-header';
+import { AuditTab } from '@/components/iam/audit-tab';
+import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
+import { GroupsTab } from '@/components/iam/groups-tab';
+import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
+import { PatPolicyCard } from '@/components/iam/pat-policy-card';
+import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
+import { ScimCard } from '@/components/iam/scim-card';
+import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
+import { SessionControlsCard } from '@/components/iam/session-controls-card';
+import { SsoCard } from '@/components/iam/sso-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { EmptyState } from '@/components/ui/empty-state';
 import {
   Dialog,
   DialogContent,
@@ -54,11 +57,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { InlineMeta } from '@/components/ui/inline-meta';
+import { EmptyState } from '@/components/ui/empty-state';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
+import { InlineMeta } from '@/components/ui/inline-meta';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
+import { SectionCard } from '@/components/ui/section-card';
 import {
   Select,
   SelectContent,
@@ -67,24 +73,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
-import { SectionCard } from '@/components/ui/section-card';
-import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { GroupsTab } from '@/components/iam/groups-tab';
-import { AuditTab } from '@/components/iam/audit-tab';
-import { BillingTab, TransactionsTab } from '@/components/settings/user-settings-modal';
-import { BillingAccountProvider } from '@/stores/billing-account-context';
-import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
-import { MfaRequiredCard } from '@/components/iam/mfa-required-card';
-import { SsoCard } from '@/components/iam/sso-card';
-import { SessionControlsCard } from '@/components/iam/session-controls-card';
-import { PatPolicyCard } from '@/components/iam/pat-policy-card';
-import { ServiceAccountsCard } from '@/components/iam/service-accounts-card';
-import { ScimCard } from '@/components/iam/scim-card';
-import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
-import { PermissionsHelpPopover } from '@/components/iam/permissions-help-popover';
-import { usePermissions } from '@/lib/use-permission';
+import { UserAvatar } from '@/components/ui/user-avatar';
+import { BillingTab } from '@/features/accounts/settings/billing-tab';
+import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
+import { useAuth } from '@/features/providers/auth-provider';
+import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import {
   type AccountDetail,
   type AccountInvitation,
@@ -96,15 +90,16 @@ import {
   inviteAccountMember,
   leaveAccount,
   listAccountInvites,
-  listGitHubInstallations,
   listAccountMembers,
+  listGitHubInstallations,
   removeAccountMember,
   resendAccountInvite,
   updateAccountMemberRole,
   updateAccountName,
 } from '@/lib/projects-client';
-import { addGroupMembers, listGroups } from '@/lib/iam-client';
+import { usePermissions } from '@/lib/use-permission';
 import { cn } from '@/lib/utils';
+import { BillingAccountProvider } from '@/stores/billing-account-context';
 
 // Stable (module-level) probe list for the account-capabilities batch. Order
 // must match the destructure at the call site. Declared outside the component
@@ -131,8 +126,7 @@ const ROLE_LABEL: Record<AccountRole, string> = {
 // Workspace IdP wired up. Set NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY=true
 // in the environment to bring them back. Backend endpoints stay live
 // either way so existing configurations keep working.
-const ENABLE_ENTERPRISE_IDENTITY =
-  process.env.NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY === 'true';
+const ENABLE_ENTERPRISE_IDENTITY = process.env.NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY === 'true';
 
 function formatDate(input: string | null | undefined) {
   if (!input) return '—';
@@ -220,187 +214,151 @@ export default function AccountSettingsPage() {
   ] = usePermissions(accountId, ACCOUNT_PERMISSION_PROBES);
 
   if (authLoading || !user) {
-    return (
-      <ConnectingScreen
-        forceConnecting
-        overrideStage="auth"
-        hideWorkspacePicker
-      />
-    );
+    return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
   }
 
   const account = accountQuery.data;
   const members = membersQuery.data ?? [];
-  const VALID_TABS = ['members', 'groups', 'billing', 'transactions', 'git', 'audit', 'settings'] as const;
+  const VALID_TABS = [
+    'members',
+    'groups',
+    'billing',
+    'transactions',
+    'git',
+    'audit',
+    'settings',
+  ] as const;
   const rawTab = searchParams.get('tab');
   // Legacy callers pass tab=overview — the limits/wallet/spend panels now
   // live at the top of the Billing tab, so fold it.
   const tabParam = (rawTab === 'overview' ? 'billing' : rawTab) as
     | (typeof VALID_TABS)[number]
     | null;
-  const initialTab =
-    tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'members';
+  const initialTab = tabParam && VALID_TABS.includes(tabParam) ? tabParam : 'members';
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <AppHeader user={user} />
-      <main className="flex-1 px-4 py-8">
-        <div className="mx-auto w-full max-w-4xl space-y-8">
-          <div className="space-y-3">
-            <button
-              type="button"
-              onClick={() => router.push('/projects')}
-              className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <ArrowLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line197JsxTextBackToProjects')}</button>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <button
-                type="button"
-                onClick={() => router.push('/accounts')}
-                className="cursor-pointer transition-colors hover:text-foreground"
-              >
-                Accounts
-              </button>
-              <span className="text-muted-foreground/40">/</span>
-              {accountQuery.isLoading ? (
-                <Skeleton className="h-4 w-32" />
-              ) : (
-                <span className="truncate font-medium text-foreground">
-                  {account?.name ?? 'Account'}
-                </span>
+    <main className="w-full flex-1 px-4 py-8">
+      <div className="mx-auto w-full max-w-6xl space-y-8">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h1 className="text-foreground text-2xl font-semibold tracking-tight">
+                {accountQuery.isLoading ? <Skeleton className="h-7 w-48" /> : account?.name}
+              </h1>
+              {account && (
+                <p className="text-muted-foreground mt-1 text-sm">
+                  Manage account settings, members, and access.
+                </p>
               )}
             </div>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-                  {accountQuery.isLoading ? (
-                    <Skeleton className="h-7 w-48" />
-                  ) : (
-                    account?.name
-                  )}
-                </h1>
-                {account && (
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Manage account settings, members, and access.
-                  </p>
-                )}
-              </div>
-              {account && <PermissionsHelpPopover />}
-            </div>
+            {account && <PermissionsHelpPopover />}
           </div>
+        </div>
 
-          {accountQuery.isError && (
-            <InfoBanner
-              tone="destructive"
-              title={tHardcodedUi.raw('appAccountsIdPage.line237JsxAttrTitleFailedToLoadAccount')}
-              action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => accountQuery.refetch()}
-                >
-                  Retry
-                </Button>
-              }
-            >
-              {(accountQuery.error as Error).message}
-            </InfoBanner>
-          )}
+        {accountQuery.isError && (
+          <InfoBanner
+            tone="destructive"
+            title={tHardcodedUi.raw('appAccountsIdPage.line237JsxAttrTitleFailedToLoadAccount')}
+            action={
+              <Button variant="outline" size="sm" onClick={() => accountQuery.refetch()}>
+                Retry
+              </Button>
+            }
+          >
+            {(accountQuery.error as Error).message}
+          </InfoBanner>
+        )}
 
-          {accountQuery.isLoading && (
-            <>
-              <Skeleton className="h-48 w-full rounded-2xl" />
-              <Skeleton className="h-64 w-full rounded-2xl" />
-            </>
-          )}
+        {accountQuery.isLoading && (
+          <>
+            <Skeleton className="h-48 w-full rounded-2xl" />
+            <Skeleton className="h-64 w-full rounded-2xl" />
+          </>
+        )}
 
-          {account && (
-            <Tabs defaultValue={initialTab} className="space-y-6">
-              <TabsList>
-                <TabsTrigger value="members">{tHardcodedUi.raw('appAccountsIdPage.line262JsxTextAllMembers')}</TabsTrigger>
-                <TabsTrigger value="groups">Groups</TabsTrigger>
-                {/* Billing holds plan + limits + wallet + spend; Credits ledger
+        {account && (
+          <Tabs defaultValue={initialTab} className="space-y-6">
+            <TabsList>
+              <TabsTrigger value="members">
+                {tHardcodedUi.raw('appAccountsIdPage.line262JsxTextAllMembers')}
+              </TabsTrigger>
+              <TabsTrigger value="groups">Groups</TabsTrigger>
+              {/* Billing holds plan + limits + wallet + spend; Credits ledger
                     holds the per-transaction history. Both are gated on
                     account.write so non-admins don't see money surfaces. */}
-                {canWriteAccount && <TabsTrigger value="billing">Billing</TabsTrigger>}
-                {canWriteAccount && <TabsTrigger value="transactions">Credits ledger</TabsTrigger>}
-                {canWriteAccount && <TabsTrigger value="git">Git</TabsTrigger>}
-                {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
-                {canWriteAccount && <TabsTrigger value="settings">Settings</TabsTrigger>}
-              </TabsList>
+              {canWriteAccount && <TabsTrigger value="billing">Billing</TabsTrigger>}
+              {canWriteAccount && <TabsTrigger value="transactions">Credits ledger</TabsTrigger>}
+              {canWriteAccount && <TabsTrigger value="git">Git</TabsTrigger>}
+              {canReadAudit && <TabsTrigger value="audit">Audit</TabsTrigger>}
+              {canWriteAccount && <TabsTrigger value="settings">Settings</TabsTrigger>}
+            </TabsList>
 
-              {canWriteAccount && (
-                <TabsContent value="billing" className="space-y-6">
-                  {/* Scope every billing hook nested below to this account so a
+            {canWriteAccount && (
+              <TabsContent value="billing" className="space-y-6">
+                {/* Scope every billing hook nested below to this account so a
                       multi-account user doesn't see (or mutate) their primary
                       account by accident. */}
-                  <BillingAccountProvider accountId={account.account_id}>
-                    <BillingTab
-                      // Stripe Billing Portal requires an absolute return_url —
-                      // a bare path 500s with "Not a valid URL". Build from origin.
-                      returnUrl={
-                        typeof window !== 'undefined'
-                          ? `${window.location.origin}/accounts/${account.account_id}?tab=billing`
-                          : `/accounts/${account.account_id}?tab=billing`
-                      }
-                      isActive={initialTab === 'billing'}
-                    />
-                    {/* The "Subscribe to Team plan" button opens the global
+                <BillingAccountProvider accountId={account.account_id}>
+                  <BillingTab
+                    // Stripe Billing Portal requires an absolute return_url —
+                    // a bare path 500s with "Not a valid URL". Build from origin.
+                    returnUrl={
+                      typeof window !== 'undefined'
+                        ? `${window.location.origin}/accounts/${account.account_id}?tab=billing`
+                        : `/accounts/${account.account_id}?tab=billing`
+                    }
+                    isActive={initialTab === 'billing'}
+                  />
+                  {/* The "Subscribe to Team plan" button opens the global
                         upgrade-dialog store; mount its renderer here (the global
                         one lives only on share pages) so the dialog actually
                         appears, scoped to THIS account via the provider above. */}
-                    <GlobalUpgradeDialog />
-                  </BillingAccountProvider>
-                </TabsContent>
-              )}
-
-              {canWriteAccount && (
-                <TabsContent value="transactions" className="space-y-6">
-                  <BillingAccountProvider accountId={account.account_id}>
-                    <TransactionsTab />
-                  </BillingAccountProvider>
-                </TabsContent>
-              )}
-
-              <TabsContent value="members" className="space-y-6">
-                <MembersCard
-                  account={account}
-                  members={members}
-                  isLoading={membersQuery.isLoading}
-                  isError={membersQuery.isError}
-                  error={membersQuery.error as Error | null}
-                  onRetry={() => membersQuery.refetch()}
-                  queryClient={queryClient}
-                  currentUserId={user.id}
-                  canInvite={canInviteMember}
-                  canRemove={canRemoveMember}
-                  canUpdateRole={canUpdateMember}
-                />
+                  <GlobalUpgradeDialog />
+                </BillingAccountProvider>
               </TabsContent>
+            )}
 
-              <TabsContent value="groups" className="space-y-6">
-                <GroupsTab
-                  accountId={account.account_id}
-                  canCreate={canCreateGroup}
-                />
+            {canWriteAccount && (
+              <TabsContent value="transactions" className="space-y-6">
+                <BillingAccountProvider accountId={account.account_id}>
+                  <TransactionsTab />
+                </BillingAccountProvider>
               </TabsContent>
+            )}
 
-              {canReadAudit && (
-                <TabsContent value="audit" className="space-y-6">
-                  <AuditTab accountId={account.account_id} />
-                </TabsContent>
-              )}
+            <TabsContent value="members" className="space-y-6">
+              <MembersCard
+                account={account}
+                members={members}
+                isLoading={membersQuery.isLoading}
+                isError={membersQuery.isError}
+                error={membersQuery.error as Error | null}
+                onRetry={() => membersQuery.refetch()}
+                queryClient={queryClient}
+                currentUserId={user.id}
+                canInvite={canInviteMember}
+                canRemove={canRemoveMember}
+                canUpdateRole={canUpdateMember}
+              />
+            </TabsContent>
 
-              {canWriteAccount && (
-                <TabsContent value="git" className="space-y-6">
-                  <GitHubConnectionCard
-                    account={account}
-                    canManage={canWriteAccount}
-                  />
-                </TabsContent>
-              )}
+            <TabsContent value="groups" className="space-y-6">
+              <GroupsTab accountId={account.account_id} canCreate={canCreateGroup} />
+            </TabsContent>
 
-              {canWriteAccount && (
+            {canReadAudit && (
+              <TabsContent value="audit" className="space-y-6">
+                <AuditTab accountId={account.account_id} />
+              </TabsContent>
+            )}
+
+            {canWriteAccount && (
+              <TabsContent value="git" className="space-y-6">
+                <GitHubConnectionCard account={account} canManage={canWriteAccount} />
+              </TabsContent>
+            )}
+
+            {canWriteAccount && (
               <TabsContent value="settings" className="space-y-8">
                 {/* ── General ────────────────────────────────────── */}
                 <SettingsGroup title="General">
@@ -421,22 +379,17 @@ export default function AccountSettingsPage() {
                   title="Security"
                   description="Account-wide gates that apply to every member."
                 >
-                  <MfaRequiredCard
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
+                  <MfaRequiredCard accountId={account.account_id} canManage={canWriteAccount} />
                   <Collapsible>
-                    <CollapsibleTrigger className="group flex w-full items-center justify-between rounded-2xl border border-dashed border-border/60 bg-card/30 px-4 py-3 text-left text-sm transition hover:border-border hover:bg-card/60">
+                    <CollapsibleTrigger className="group border-border/60 bg-card/30 hover:border-border hover:bg-card/60 flex w-full items-center justify-between rounded-2xl border border-dashed px-4 py-3 text-left text-sm transition">
                       <div>
-                        <div className="font-medium text-foreground">
-                          Advanced security
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          Session lifetimes, idle timeouts, and force-logout.
-                          Defaults are fine for most teams.
+                        <div className="text-foreground font-medium">Advanced security</div>
+                        <div className="text-muted-foreground text-xs">
+                          Session lifetimes, idle timeouts, and force-logout. Defaults are fine for
+                          most teams.
                         </div>
                       </div>
-                      <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+                      <ChevronDown className="text-muted-foreground h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
                     </CollapsibleTrigger>
                     <CollapsibleContent className="space-y-6 pt-4">
                       <SessionControlsCard
@@ -460,14 +413,8 @@ export default function AccountSettingsPage() {
                     title="Identity & directory"
                     description="Bring members in from your IdP. Group memberships sync; admin still picks project access."
                   >
-                    <SsoCard
-                      accountId={account.account_id}
-                      canManage={canWriteAccount}
-                    />
-                    <ScimCard
-                      accountId={account.account_id}
-                      canManage={canWriteAccount}
-                    />
+                    <SsoCard accountId={account.account_id} canManage={canWriteAccount} />
+                    <ScimCard accountId={account.account_id} canManage={canWriteAccount} />
                   </SettingsGroup>
                 )}
 
@@ -476,14 +423,8 @@ export default function AccountSettingsPage() {
                   title="Tokens & automation"
                   description="Programmatic access for CI/CD and headless agents."
                 >
-                  <PatPolicyCard
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
-                  <ServiceAccountsCard
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
+                  <PatPolicyCard accountId={account.account_id} canManage={canWriteAccount} />
+                  <ServiceAccountsCard accountId={account.account_id} canManage={canWriteAccount} />
                 </SettingsGroup>
 
                 {/* ── Observability ─────────────────────────────── */}
@@ -491,10 +432,7 @@ export default function AccountSettingsPage() {
                   title="Observability"
                   description="Forward audit events to your own pipeline."
                 >
-                  <AuditWebhooksCard
-                    accountId={account.account_id}
-                    canManage={canWriteAccount}
-                  />
+                  <AuditWebhooksCard accountId={account.account_id} canManage={canWriteAccount} />
                 </SettingsGroup>
 
                 {canDeleteAccount && (
@@ -503,12 +441,11 @@ export default function AccountSettingsPage() {
                   </SettingsGroup>
                 )}
               </TabsContent>
-              )}
-            </Tabs>
-          )}
-        </div>
-      </main>
-    </div>
+            )}
+          </Tabs>
+        )}
+      </div>
+    </main>
   );
 }
 
@@ -548,8 +485,7 @@ function GitHubConnectionCard({
         queryKey: ['github-repositories', account.account_id],
       });
     },
-    onError: (err: Error) =>
-      toast.error(err.message || 'Failed to disconnect GitHub'),
+    onError: (err: Error) => toast.error(err.message || 'Failed to disconnect GitHub'),
   });
 
   async function handleConnect() {
@@ -583,7 +519,9 @@ function GitHubConnectionCard({
       <SectionCard
         title={tHardcodedUi.raw('appAccountsIdPage.line397JsxAttrTitleGitConnections')}
         count={installations.length}
-        description={tHardcodedUi.raw('appAccountsIdPage.line399JsxAttrDescriptionConnectOneOrMoreGithubUsersOrOrganizations')}
+        description={tHardcodedUi.raw(
+          'appAccountsIdPage.line399JsxAttrDescriptionConnectOneOrMoreGithubUsersOrOrganizations',
+        )}
         action={
           <Button
             type="button"
@@ -591,11 +529,7 @@ function GitHubConnectionCard({
             className="gap-1.5"
             disabled={!canManage || isConnecting}
             onClick={handleConnect}
-            title={
-              canManage
-                ? undefined
-                : 'You do not have permission to connect GitHub.'
-            }
+            title={canManage ? undefined : 'You do not have permission to connect GitHub.'}
           >
             {isConnecting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -622,7 +556,9 @@ function GitHubConnectionCard({
             <InfoBanner
               tone="warning"
               icon={Github}
-              title={tHardcodedUi.raw('appAccountsIdPage.line438JsxAttrTitleGithubStatusUnavailable')}
+              title={tHardcodedUi.raw(
+                'appAccountsIdPage.line438JsxAttrTitleGithubStatusUnavailable',
+              )}
             >
               {(installationsQuery.error as Error).message}
             </InfoBanner>
@@ -631,7 +567,9 @@ function GitHubConnectionCard({
           <EmptyState
             icon={Github}
             title={tHardcodedUi.raw('appAccountsIdPage.line446JsxAttrTitleNoGithubConnections')}
-            description={tHardcodedUi.raw('appAccountsIdPage.line447JsxAttrDescriptionConnectTheKortixGithubAppToImportRepositories')}
+            description={tHardcodedUi.raw(
+              'appAccountsIdPage.line447JsxAttrDescriptionConnectTheKortixGithubAppToImportRepositories',
+            )}
             action={
               <Button
                 type="button"
@@ -644,15 +582,15 @@ function GitHubConnectionCard({
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Github className="h-4 w-4" />
-                )}{tHardcodedUi.raw('appAccountsIdPage.line461JsxTextConnectGithub')}</Button>
+                )}
+                {tHardcodedUi.raw('appAccountsIdPage.line461JsxTextConnectGithub')}
+              </Button>
             }
           />
         ) : (
           <List>
             {installations.map((installation) => {
-              const contentsPermission = permissionLabel(
-                installation.permissions?.contents,
-              );
+              const contentsPermission = permissionLabel(installation.permissions?.contents);
               const repoSelection =
                 installation.repository_selection === 'selected'
                   ? 'Selected repositories'
@@ -672,24 +610,15 @@ function GitHubConnectionCard({
                   }
                   subtitle={
                     <InlineMeta>
-                      {installation.owner_type ? (
-                        <span>{installation.owner_type}</span>
-                      ) : null}
+                      {installation.owner_type ? <span>{installation.owner_type}</span> : null}
                       {repoSelection ? <span>{repoSelection}</span> : null}
-                      {contentsPermission ? (
-                        <span>{contentsPermission}</span>
-                      ) : null}
+                      {contentsPermission ? <span>{contentsPermission}</span> : null}
                     </InlineMeta>
                   }
                   trailing={
                     <>
                       {installation.installation_url ? (
-                        <Button
-                          asChild
-                          variant="outline"
-                          size="sm"
-                          className="gap-1.5"
-                        >
+                        <Button asChild variant="outline" size="sm" className="gap-1.5">
                           <a
                             href={installation.installation_url}
                             target="_blank"
@@ -729,8 +658,14 @@ function GitHubConnectionCard({
       <InfoBanner
         tone="neutral"
         icon={Shield}
-        title={tHardcodedUi.raw('appAccountsIdPage.line547JsxAttrTitleGitCredentialsArePlatformCredentials')}
-      >{tHardcodedUi.raw('appAccountsIdPage.line549JsxTextKortixStoresTheGithubAppInstallationOnThe')}</InfoBanner>
+        title={tHardcodedUi.raw(
+          'appAccountsIdPage.line547JsxAttrTitleGitCredentialsArePlatformCredentials',
+        )}
+      >
+        {tHardcodedUi.raw(
+          'appAccountsIdPage.line549JsxTextKortixStoresTheGithubAppInstallationOnThe',
+        )}
+      </InfoBanner>
 
       <ConfirmDialog
         open={Boolean(disconnectTarget)}
@@ -772,12 +707,10 @@ function SettingsGroup({
   return (
     <section className="space-y-3">
       <div className="space-y-0.5 px-1">
-        <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+        <h3 className="text-muted-foreground/70 text-[10px] font-semibold tracking-[0.08em] uppercase">
           {title}
         </h3>
-        {description && (
-          <p className="text-[11px] text-muted-foreground/80">{description}</p>
-        )}
+        {description && <p className="text-muted-foreground/80 text-[11px]">{description}</p>}
       </div>
       <div className="space-y-4">{children}</div>
     </section>
@@ -807,8 +740,7 @@ function GeneralCard({
       queryClient.setQueryData(['account', account.account_id], updated);
       queryClient.invalidateQueries({ queryKey: ['accounts'] });
     },
-    onError: (err: Error) =>
-      toast.error(err.message || 'Failed to update account'),
+    onError: (err: Error) => toast.error(err.message || 'Failed to update account'),
   });
 
   const trimmed = name.trim();
@@ -823,12 +755,16 @@ function GeneralCard({
   return (
     <SectionCard
       title="General"
-      description={tHardcodedUi.raw('appAccountsIdPage.line615JsxAttrDescriptionBasicInformationAboutThisAccount')}
+      description={tHardcodedUi.raw(
+        'appAccountsIdPage.line615JsxAttrDescriptionBasicInformationAboutThisAccount',
+      )}
       flush
     >
-      <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4 px-6 py-5">
         <div className="space-y-1.5">
-          <Label htmlFor="account-name">{tHardcodedUi.raw('appAccountsIdPage.line620JsxTextAccountName')}</Label>
+          <Label htmlFor="account-name">
+            {tHardcodedUi.raw('appAccountsIdPage.line620JsxTextAccountName')}
+          </Label>
           <Input
             id="account-name"
             value={name}
@@ -836,29 +772,25 @@ function GeneralCard({
             disabled={!canWrite || renameMutation.isPending}
             maxLength={120}
             className="max-w-md"
-            title={
-              canWrite
-                ? undefined
-                : 'You do not have permission to rename this account.'
-            }
+            title={canWrite ? undefined : 'You do not have permission to rename this account.'}
           />
           {!canWrite && (
-            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line636JsxTextYouDoNotHavePermissionToRenameThis')}</p>
+            <p className="text-muted-foreground text-xs">
+              {tHardcodedUi.raw(
+                'appAccountsIdPage.line636JsxTextYouDoNotHavePermissionToRenameThis',
+              )}
+            </p>
           )}
         </div>
 
-        <div className="flex items-center justify-between border-t border-border/60 pt-4">
-          <p className="text-xs text-muted-foreground">
-            Created {formatDate(account.created_at)}
-          </p>
+        <div className="border-border/60 flex items-center justify-between border-t pt-4">
+          <p className="text-muted-foreground text-xs">Created {formatDate(account.created_at)}</p>
           <Button
             type="submit"
             disabled={!canSubmit || renameMutation.isPending}
             className="gap-1.5"
           >
-            {renameMutation.isPending && (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            )}
+            {renameMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             Save
           </Button>
         </div>
@@ -900,11 +832,8 @@ function MembersCard({
   // Set rather than scalar so multiple per-row mutations (remove + role
   // change on different rows) can fly in parallel without their spinners
   // hopping between rows. Helpers below add/remove on mutate/settle.
-  const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(
-    () => new Set(),
-  );
-  const markPending = (userId: string) =>
-    setPendingUserIds((prev) => new Set(prev).add(userId));
+  const [pendingUserIds, setPendingUserIds] = useState<Set<string>>(() => new Set());
+  const markPending = (userId: string) => setPendingUserIds((prev) => new Set(prev).add(userId));
   const clearPending = (userId: string) =>
     setPendingUserIds((prev) => {
       const next = new Set(prev);
@@ -920,9 +849,7 @@ function MembersCard({
   // Bulk-select state. Users can't bulk-modify themselves (would let an
   // admin lock themselves out by demoting their own row in a sweep).
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [bulkDialog, setBulkDialog] = useState<
-    'add_to_group' | 'set_role' | 'remove' | null
-  >(null);
+  const [bulkDialog, setBulkDialog] = useState<'add_to_group' | 'set_role' | 'remove' | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
 
   // canInvite/canRemove/canUpdateRole come in as props (driven by usePermission
@@ -959,8 +886,7 @@ function MembersCard({
   };
 
   const removeMutation = useMutation({
-    mutationFn: (userId: string) =>
-      removeAccountMember(account.account_id, userId),
+    mutationFn: (userId: string) => removeAccountMember(account.account_id, userId),
     onMutate: (userId) => markPending(userId),
     onSettled: (_data, _error, userId) => clearPending(userId),
     onSuccess: () => {
@@ -968,8 +894,7 @@ function MembersCard({
       invalidateMembers();
       setRemoveTarget(null);
     },
-    onError: (err: Error) =>
-      toast.error(err.message || 'Failed to remove member'),
+    onError: (err: Error) => toast.error(err.message || 'Failed to remove member'),
   });
 
   const roleMutation = useMutation({
@@ -981,8 +906,7 @@ function MembersCard({
       toast.success('Role updated');
       invalidateMembers();
     },
-    onError: (err: Error) =>
-      toast.error(err.message || 'Failed to update role'),
+    onError: (err: Error) => toast.error(err.message || 'Failed to update role'),
   });
 
   const leaveMutation = useMutation({
@@ -1018,14 +942,11 @@ function MembersCard({
   // not just the visible row.
   const effectiveSelectedIds = useMemo(() => {
     const eligibleIds = new Set(bulkEligible.map((m) => m.user_id));
-    return new Set(
-      Array.from(selectedIds).filter((id) => eligibleIds.has(id)),
-    );
+    return new Set(Array.from(selectedIds).filter((id) => eligibleIds.has(id)));
   }, [selectedIds, bulkEligible]);
   const selectedCount = effectiveSelectedIds.size;
   const allEligibleSelected =
-    bulkEligible.length > 0 &&
-    bulkEligible.every((m) => selectedIds.has(m.user_id));
+    bulkEligible.length > 0 && bulkEligible.every((m) => selectedIds.has(m.user_id));
   function toggleOne(userId: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -1077,9 +998,7 @@ function MembersCard({
           userId,
           email: member?.email ?? userId,
           reason:
-            r.reason instanceof Error
-              ? r.reason.message
-              : String(r.reason ?? 'Unknown error'),
+            r.reason instanceof Error ? r.reason.message : String(r.reason ?? 'Unknown error'),
         });
       }
     });
@@ -1098,12 +1017,8 @@ function MembersCard({
     // First failure is shown inline; rest summarised. Trim long
     // messages so a 500-char stack trace doesn't blow up the toast.
     const first = failures[0];
-    const reasonShort =
-      first.reason.length > 140 ? `${first.reason.slice(0, 137)}…` : first.reason;
-    const tail =
-      failures.length > 1
-        ? ` (+${failures.length - 1} more — see console)`
-        : '';
+    const reasonShort = first.reason.length > 140 ? `${first.reason.slice(0, 137)}…` : first.reason;
+    const tail = failures.length > 1 ? ` (+${failures.length - 1} more — see console)` : '';
     toast.error(
       `${label}: ${ids.length - failures.length} succeeded, ${failures.length} failed. ${first.email}: ${reasonShort}${tail}`,
     );
@@ -1121,9 +1036,7 @@ function MembersCard({
       const ids = Array.from(effectiveSelectedIds);
       const res = await addGroupMembers(account.account_id, groupId, ids);
       invalidateMembers();
-      toast.success(
-        `Added ${res.added} member${res.added === 1 ? '' : 's'} to group`,
-      );
+      toast.success(`Added ${res.added} member${res.added === 1 ? '' : 's'} to group`);
       clearSelection();
       setBulkDialog(null);
     } catch (err) {
@@ -1137,15 +1050,15 @@ function MembersCard({
     <SectionCard
       title="Members"
       count={account.member_count}
-      description={tHardcodedUi.raw('appAccountsIdPage.line761JsxAttrDescriptionPeopleWithAccessToThisAccount')}
+      description={tHardcodedUi.raw(
+        'appAccountsIdPage.line761JsxAttrDescriptionPeopleWithAccessToThisAccount',
+      )}
       action={
         canInvite && (
-          <Button
-            onClick={() => setInviteOpen(true)}
-            size="sm"
-            className="gap-1.5"
-          >
-            <UserPlus className="h-4 w-4" />{tHardcodedUi.raw('appAccountsIdPage.line770JsxTextInviteMember')}</Button>
+          <Button onClick={() => setInviteOpen(true)} size="sm" className="gap-1.5">
+            <UserPlus className="h-4 w-4" />
+            {tHardcodedUi.raw('appAccountsIdPage.line770JsxTextInviteMember')}
+          </Button>
         )
       }
       flush
@@ -1185,9 +1098,9 @@ function MembersCard({
           "@foo.com" shouldn't care whether the person has accepted yet;
           they're all people you're trying to find. */}
       {!isLoading && !isError && (
-        <div className="flex flex-wrap items-center gap-3 border-b border-border/60 px-6 py-3">
+        <div className="border-border/60 flex flex-wrap items-center gap-3 border-b px-6 py-3">
           <div className="relative max-w-sm flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -1196,17 +1109,15 @@ function MembersCard({
             />
           </div>
           {canBulk && bulkEligible.length > 0 && (
-            <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+            <label className="text-muted-foreground flex cursor-pointer items-center gap-2 text-xs">
               <input
                 type="checkbox"
                 checked={allEligibleSelected}
                 onChange={toggleAllEligible}
-                className="h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
+                className="border-border accent-primary h-3.5 w-3.5 cursor-pointer rounded"
               />
               {allEligibleSelected ? 'Deselect all' : 'Select all'}{' '}
-              {bulkEligible.length !== sorted.length && (
-                <span>(visible)</span>
-              )}
+              {bulkEligible.length !== sorted.length && <span>(visible)</span>}
             </label>
           )}
         </div>
@@ -1221,10 +1132,8 @@ function MembersCard({
       )}
 
       {selectedCount > 0 && canBulk && (
-        <div className="flex flex-wrap items-center gap-2 border-b border-border/60 bg-primary/[0.04] px-6 py-2.5 text-sm">
-          <span className="font-medium text-foreground">
-            {selectedCount} selected
-          </span>
+        <div className="border-border/60 bg-primary/[0.04] flex flex-wrap items-center gap-2 border-b px-6 py-2.5 text-sm">
+          <span className="text-foreground font-medium">{selectedCount} selected</span>
           <span className="text-muted-foreground/40">·</span>
           {canInvite && (
             <Button
@@ -1262,7 +1171,7 @@ function MembersCard({
             variant="ghost"
             onClick={clearSelection}
             disabled={bulkBusy}
-            className="ml-auto text-muted-foreground"
+            className="text-muted-foreground ml-auto"
           >
             Clear
           </Button>
@@ -1270,7 +1179,7 @@ function MembersCard({
       )}
 
       {!isLoading && !isError && members.length > 0 && sorted.length === 0 && (
-        <div className="px-6 py-8 text-center text-sm text-muted-foreground">
+        <div className="text-muted-foreground px-6 py-8 text-center text-sm">
           No members match &quot;{search.trim()}&quot;.
         </div>
       )}
@@ -1303,7 +1212,7 @@ function MembersCard({
                         onChange={() => toggleOne(member.user_id)}
                         onClick={(e) => e.stopPropagation()}
                         aria-label={`Select ${memberLabel(member)}`}
-                        className="h-3.5 w-3.5 cursor-pointer rounded border-border accent-primary"
+                        className="border-border accent-primary h-3.5 w-3.5 cursor-pointer rounded"
                       />
                     ) : (
                       // Spacer so avatars align across selectable + self rows.
@@ -1343,7 +1252,9 @@ function MembersCard({
                         <Badge
                           variant="outline"
                           className="h-5 rounded-2xl border-amber-500/40 bg-amber-500/10 px-1.5 text-[10px] font-normal text-amber-700 dark:text-amber-300"
-                          title={tHardcodedUi.raw('appAccountsIdPage.line924JsxAttrTitleSuperAdminBypassesEveryIAMCheck')}
+                          title={tHardcodedUi.raw(
+                            'appAccountsIdPage.line924JsxAttrTitleSuperAdminBypassesEveryIAMCheck',
+                          )}
                         >
                           super
                         </Badge>
@@ -1371,7 +1282,9 @@ function MembersCard({
                         <Badge
                           variant="outline"
                           className="h-5 rounded-2xl border-emerald-500/40 bg-emerald-500/10 px-1.5 text-[10px] font-normal text-emerald-700 dark:text-emerald-300"
-                          title={tHardcodedUi.raw('appAccountsIdPage.line952JsxAttrTitleMFAEnrolled')}
+                          title={tHardcodedUi.raw(
+                            'appAccountsIdPage.line952JsxAttrTitleMFAEnrolled',
+                          )}
                         >
                           2FA
                         </Badge>
@@ -1380,14 +1293,14 @@ function MembersCard({
                     <RoleBadge role={member.account_role} />
                     <div className="ml-1 w-7 shrink-0">
                       {pending ? (
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                        <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
                       ) : showKebab ? (
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                              className="text-muted-foreground hover:text-foreground h-7 w-7"
                               aria-label={`Actions for ${memberLabel(member)}`}
                             >
                               <MoreHorizontal className="h-3.5 w-3.5" />
@@ -1402,14 +1315,18 @@ function MembersCard({
                               }
                               className="gap-2"
                             >
-                              <KeyRound className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line883JsxTextViewAmpEditPermissionPolicies')}</DropdownMenuItem>
+                              <KeyRound className="h-3.5 w-3.5" />
+                              {tHardcodedUi.raw(
+                                'appAccountsIdPage.line883JsxTextViewAmpEditPermissionPolicies',
+                              )}
+                            </DropdownMenuItem>
                             {canUpdateRole && !isSelf && (
                               <>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuLabel className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line889JsxTextChangeRole')}</DropdownMenuLabel>
-                                {(
-                                  ['owner', 'admin', 'member'] as AccountRole[]
-                                ).map((role) => (
+                                <DropdownMenuLabel className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+                                  {tHardcodedUi.raw('appAccountsIdPage.line889JsxTextChangeRole')}
+                                </DropdownMenuLabel>
+                                {(['owner', 'admin', 'member'] as AccountRole[]).map((role) => (
                                   <DropdownMenuItem
                                     key={role}
                                     disabled={role === member.account_role}
@@ -1424,7 +1341,7 @@ function MembersCard({
                                     <Shield className="h-3.5 w-3.5" />
                                     {ROLE_LABEL[role]}
                                     {role === member.account_role && (
-                                      <span className="ml-auto text-xs text-muted-foreground">
+                                      <span className="text-muted-foreground ml-auto text-xs">
                                         Current
                                       </span>
                                     )}
@@ -1440,7 +1357,11 @@ function MembersCard({
                                   disabled={isLastOwner}
                                   className="gap-2"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line925JsxTextRemoveFromTeam')}</DropdownMenuItem>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  {tHardcodedUi.raw(
+                                    'appAccountsIdPage.line925JsxTextRemoveFromTeam',
+                                  )}
+                                </DropdownMenuItem>
                               </>
                             )}
                             {isSelf && (
@@ -1451,7 +1372,9 @@ function MembersCard({
                                   disabled={isLastOwner}
                                   className="gap-2"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line938JsxTextLeaveTeam')}</DropdownMenuItem>
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  {tHardcodedUi.raw('appAccountsIdPage.line938JsxTextLeaveTeam')}
+                                </DropdownMenuItem>
                               </>
                             )}
                           </DropdownMenuContent>
@@ -1464,7 +1387,9 @@ function MembersCard({
             );
           })}
           {sorted.length === 0 && (
-            <li className="px-6 py-8 text-center text-sm text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line953JsxTextNoMembersYet')}</li>
+            <li className="text-muted-foreground px-6 py-8 text-center text-sm">
+              {tHardcodedUi.raw('appAccountsIdPage.line953JsxTextNoMembersYet')}
+            </li>
           )}
         </List>
       )}
@@ -1485,16 +1410,15 @@ function MembersCard({
         description={
           <span>
             Remove{' '}
-            <span className="font-medium text-foreground">
+            <span className="text-foreground font-medium">
               {removeTarget ? memberLabel(removeTarget) : ''}
             </span>{' '}
-            from{' '}
-            <span className="font-medium text-foreground">{account.name}</span>{tHardcodedUi.raw('appAccountsIdPage.line979JsxTextTheyWillLoseAccessImmediately')}</span>
+            from <span className="text-foreground font-medium">{account.name}</span>
+            {tHardcodedUi.raw('appAccountsIdPage.line979JsxTextTheyWillLoseAccessImmediately')}
+          </span>
         }
         confirmLabel="Remove"
-        onConfirm={() =>
-          removeTarget && removeMutation.mutate(removeTarget.user_id)
-        }
+        onConfirm={() => removeTarget && removeMutation.mutate(removeTarget.user_id)}
         isPending={removeMutation.isPending}
       />
 
@@ -1503,8 +1427,11 @@ function MembersCard({
         onOpenChange={setLeaveConfirmOpen}
         title={tHardcodedUi.raw('appAccountsIdPage.line993JsxAttrTitleLeaveTeam')}
         description={
-          <span>{tHardcodedUi.raw('appAccountsIdPage.line996JsxTextYouAposLlLoseAccessTo')}{' '}
-            <span className="font-medium text-foreground">{account.name}</span>{' '}{tHardcodedUi.raw('appAccountsIdPage.line998JsxTextAndItsProjects')}</span>
+          <span>
+            {tHardcodedUi.raw('appAccountsIdPage.line996JsxTextYouAposLlLoseAccessTo')}{' '}
+            <span className="text-foreground font-medium">{account.name}</span>{' '}
+            {tHardcodedUi.raw('appAccountsIdPage.line998JsxTextAndItsProjects')}
+          </span>
         }
         confirmLabel="Leave"
         onConfirm={() => leaveMutation.mutate()}
@@ -1526,9 +1453,7 @@ function MembersCard({
         selectedCount={selectedCount}
         busy={bulkBusy}
         onConfirm={(role) =>
-          bulkRun('Role changed', (uid) =>
-            updateAccountMemberRole(account.account_id, uid, role),
-          )
+          bulkRun('Role changed', (uid) => updateAccountMemberRole(account.account_id, uid, role))
         }
       />
 
@@ -1539,21 +1464,16 @@ function MembersCard({
         description={
           <span>
             Remove{' '}
-            <span className="font-medium text-foreground">
+            <span className="text-foreground font-medium">
               {selectedCount} member{selectedCount === 1 ? '' : 's'}
             </span>{' '}
-            from{' '}
-            <span className="font-medium text-foreground">{account.name}</span>?
-            They lose access immediately.
+            from <span className="text-foreground font-medium">{account.name}</span>? They lose
+            access immediately.
           </span>
         }
         confirmLabel={`Remove ${selectedCount}`}
         isPending={bulkBusy}
-        onConfirm={() =>
-          bulkRun('Removed', (uid) =>
-            removeAccountMember(account.account_id, uid),
-          )
-        }
+        onConfirm={() => bulkRun('Removed', (uid) => removeAccountMember(account.account_id, uid))}
       />
     </SectionCard>
   );
@@ -1627,20 +1547,15 @@ function InviteMemberModal({
           // Email delivery was skipped (e.g. Mailtrap not configured locally).
           // Surface the link so the admin can share it manually.
           const inviteUrl = r.res.invite_url;
-          toast.warning(
-            `Invite created — email skipped. Share the link manually.`,
-            {
-              action: {
-                label: 'Copy link',
-                onClick: () => copyInviteLink(inviteUrl),
-              },
-              duration: 10_000,
+          toast.warning(`Invite created — email skipped. Share the link manually.`, {
+            action: {
+              label: 'Copy link',
+              onClick: () => copyInviteLink(inviteUrl),
             },
-          );
+            duration: 10_000,
+          });
         } else if (r.res.status === 'pending') {
-          toast.success(
-            `Invite sent to ${r.res.email} — they'll see it when they sign up`,
-          );
+          toast.success(`Invite sent to ${r.res.email} — they'll see it when they sign up`);
         } else {
           toast.success(`Added ${r.res.email}`);
         }
@@ -1713,10 +1628,7 @@ function InviteMemberModal({
       else valid.push(t);
     }
     if (valid.length > 0) {
-      setEmails((prev) => [
-        ...prev,
-        ...valid.filter((v) => !prev.includes(v)),
-      ]);
+      setEmails((prev) => [...prev, ...valid.filter((v) => !prev.includes(v))]);
     }
     if (invalid.length > 0) {
       setInputValue(invalid.join(', '));
@@ -1743,11 +1655,7 @@ function InviteMemberModal({
     ) {
       event.preventDefault();
       commitInput(inputValue);
-    } else if (
-      event.key === 'Backspace' &&
-      inputValue === '' &&
-      emails.length > 0
-    ) {
+    } else if (event.key === 'Backspace' && inputValue === '' && emails.length > 0) {
       setEmails((prev) => prev.slice(0, -1));
     }
   }
@@ -1796,86 +1704,96 @@ function InviteMemberModal({
         onOpenChange(o);
       }}
     >
-      <DialogContent className="sm:max-w-md p-0 overflow-hidden gap-0">
-        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border/60">
-          <DialogTitle className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('appAccountsIdPage.line1109JsxTextInviteMember')}</DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line1112JsxTextInviteByEmailIfTheyDonAposT')}</DialogDescription>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
+        <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
+          <DialogTitle className="text-lg font-semibold tracking-tight">
+            {tHardcodedUi.raw('appAccountsIdPage.line1109JsxTextInviteMember')}
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground text-sm">
+            {tHardcodedUi.raw('appAccountsIdPage.line1112JsxTextInviteByEmailIfTheyDonAposT')}
+          </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <div className="px-6 py-5 space-y-4">
-          <div className="space-y-1.5">
-            <Label htmlFor="invite-email">Emails</Label>
-            <div
-              className="flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-2xl border bg-card px-3 py-1.5 text-sm transition-[color] focus-within:outline-none focus-within:ring-2 focus-within:ring-primary/50"
-              onClick={() => inputRef.current?.focus()}
-            >
-              <Mail className="pointer-events-none h-4 w-4 shrink-0 text-muted-foreground" />
-              {emails.map((addr) => (
-                <Badge key={addr} variant="secondary" className="gap-1 pr-1">
-                  {addr}
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeEmail(addr);
-                    }}
-                    className="text-muted-foreground transition-colors hover:text-foreground"
-                    aria-label={`Remove ${addr}`}
-                    disabled={mutation.isPending}
-                  >
-                    <X className="size-3" />
-                  </button>
-                </Badge>
-              ))}
-              <input
-                ref={inputRef}
-                id="invite-email"
-                type="text"
-                value={inputValue}
-                onChange={(e) => {
-                  setInputValue(e.target.value);
-                  if (inlineError) setInlineError(null);
-                }}
-                onKeyDown={handleInputKeyDown}
-                onPaste={handlePaste}
-                placeholder={
-                  emails.length === 0
-                    ? tHardcodedUi.raw('appAccountsIdPage.line1130JsxAttrPlaceholderTeammateCompanyCom')
-                    : 'Add another…'
-                }
-                autoFocus
-                className="min-w-[8rem] flex-1 bg-transparent font-medium outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={mutation.isPending}
-              />
+          <div className="space-y-4 px-6 py-5">
+            <div className="space-y-1.5">
+              <Label htmlFor="invite-email">Emails</Label>
+              <div
+                className="bg-card focus-within:ring-primary/50 flex min-h-11 w-full flex-wrap items-center gap-1.5 rounded-2xl border px-3 py-1.5 text-sm transition-[color] focus-within:ring-2 focus-within:outline-none"
+                onClick={() => inputRef.current?.focus()}
+              >
+                <Mail className="text-muted-foreground pointer-events-none h-4 w-4 shrink-0" />
+                {emails.map((addr) => (
+                  <Badge key={addr} variant="secondary" className="gap-1 pr-1">
+                    {addr}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeEmail(addr);
+                      }}
+                      className="text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label={`Remove ${addr}`}
+                      disabled={mutation.isPending}
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </Badge>
+                ))}
+                <input
+                  ref={inputRef}
+                  id="invite-email"
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => {
+                    setInputValue(e.target.value);
+                    if (inlineError) setInlineError(null);
+                  }}
+                  onKeyDown={handleInputKeyDown}
+                  onPaste={handlePaste}
+                  placeholder={
+                    emails.length === 0
+                      ? tHardcodedUi.raw(
+                          'appAccountsIdPage.line1130JsxAttrPlaceholderTeammateCompanyCom',
+                        )
+                      : 'Add another…'
+                  }
+                  autoFocus
+                  className="placeholder:text-muted-foreground min-w-[8rem] flex-1 bg-transparent font-medium outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={mutation.isPending}
+                />
+              </div>
+              <p className="text-muted-foreground text-xs">
+                Add several at once — separate with commas, spaces, or Enter.
+              </p>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Add several at once — separate with commas, spaces, or Enter.
-            </p>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="invite-role">Role</Label>
+              <Select
+                value={role}
+                onValueChange={(v) => setRole(v as AccountRole)}
+                disabled={mutation.isPending}
+              >
+                <SelectTrigger id="invite-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="member">
+                    {tHardcodedUi.raw(
+                      'appAccountsIdPage.line1150JsxTextMemberCanUseAssignedProjects',
+                    )}
+                  </SelectItem>
+                  <SelectItem value="admin">
+                    {tHardcodedUi.raw('appAccountsIdPage.line1153JsxTextAdminCanInviteMembers')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {inlineError && <InfoBanner tone="destructive">{inlineError}</InfoBanner>}
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="invite-role">Role</Label>
-            <Select
-              value={role}
-              onValueChange={(v) => setRole(v as AccountRole)}
-              disabled={mutation.isPending}
-            >
-              <SelectTrigger id="invite-role">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="member">{tHardcodedUi.raw('appAccountsIdPage.line1150JsxTextMemberCanUseAssignedProjects')}</SelectItem>
-                <SelectItem value="admin">{tHardcodedUi.raw('appAccountsIdPage.line1153JsxTextAdminCanInviteMembers')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          {inlineError && (
-            <InfoBanner tone="destructive">{inlineError}</InfoBanner>
-          )}
-          </div>
-
-          <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+          <div className="border-border/60 bg-muted/30 flex items-center justify-end gap-2 border-t px-6 py-3">
             <Button
               type="button"
               variant="ghost"
@@ -1911,19 +1829,29 @@ function DangerZoneCard() {
     <SectionCard
       tone="destructive"
       title={tHardcodedUi.raw('appAccountsIdPage.line1198JsxAttrTitleDangerZone')}
-      description={tHardcodedUi.raw('appAccountsIdPage.line1199JsxAttrDescriptionIrreversibleActionsForThisTeam')}
+      description={tHardcodedUi.raw(
+        'appAccountsIdPage.line1199JsxAttrDescriptionIrreversibleActionsForThisTeam',
+      )}
     >
       <div className="flex items-center justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('appAccountsIdPage.line1203JsxTextDeleteAccount')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line1205JsxTextPermanentlyDeleteThisAccountAndAllAssociatedProjects')}</p>
+          <p className="text-foreground text-sm font-medium">
+            {tHardcodedUi.raw('appAccountsIdPage.line1203JsxTextDeleteAccount')}
+          </p>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            {tHardcodedUi.raw(
+              'appAccountsIdPage.line1205JsxTextPermanentlyDeleteThisAccountAndAllAssociatedProjects',
+            )}
+          </p>
         </div>
         <Button
           variant="outline"
           disabled
           title={tHardcodedUi.raw('appAccountsIdPage.line1211JsxAttrTitleComingSoon')}
           className="shrink-0"
-        >{tHardcodedUi.raw('appAccountsIdPage.line1214JsxTextComingSoon')}</Button>
+        >
+          {tHardcodedUi.raw('appAccountsIdPage.line1214JsxTextComingSoon')}
+        </Button>
       </div>
     </SectionCard>
   );
@@ -1948,17 +1876,14 @@ function PendingInvitesSection({
   // invite + cancelling another (or rapid clicks across rows) don't
   // make the spinner jump between rows.
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
-  const markPending = (id: string) =>
-    setPendingIds((prev) => new Set(prev).add(id));
+  const markPending = (id: string) => setPendingIds((prev) => new Set(prev).add(id));
   const clearPending = (id: string) =>
     setPendingIds((prev) => {
       const next = new Set(prev);
       next.delete(id);
       return next;
     });
-  const [cancelTarget, setCancelTarget] = useState<AccountInvitation | null>(
-    null,
-  );
+  const [cancelTarget, setCancelTarget] = useState<AccountInvitation | null>(null);
 
   const invitesQuery = useQuery({
     queryKey: ['account-invites', accountId],
@@ -1989,8 +1914,7 @@ function PendingInvitesSection({
       }
       invalidate();
     },
-    onError: (err: Error) =>
-      toast.error(err.message || 'Failed to resend invite'),
+    onError: (err: Error) => toast.error(err.message || 'Failed to resend invite'),
   });
 
   const cancelMutation = useMutation({
@@ -2001,8 +1925,7 @@ function PendingInvitesSection({
       toast.success('Invite cancelled');
       invalidate();
     },
-    onError: (err: Error) =>
-      toast.error(err.message || 'Failed to cancel invite'),
+    onError: (err: Error) => toast.error(err.message || 'Failed to cancel invite'),
   });
 
   const allInvites = invitesQuery.data ?? [];
@@ -2018,8 +1941,10 @@ function PendingInvitesSection({
   if (!invites.length) return null;
 
   return (
-    <div className="border-b border-border/60 bg-muted/20">
-      <div className="px-6 pt-3 pb-1.5 text-xs font-medium uppercase tracking-wider text-muted-foreground">{tHardcodedUi.raw('appAccountsIdPage.line1287JsxTextPendingInvites')}{invites.length}
+    <div className="border-border/60 bg-muted/20 border-b">
+      <div className="text-muted-foreground px-6 pt-3 pb-1.5 text-xs font-medium tracking-wider uppercase">
+        {tHardcodedUi.raw('appAccountsIdPage.line1287JsxTextPendingInvites')}
+        {invites.length}
       </div>
       <List>
         {invites.map((invite) => {
@@ -2047,14 +1972,14 @@ function PendingInvitesSection({
                   <RoleBadge role={invite.initial_role} />
                   <div className="ml-1 w-7 shrink-0">
                     {busy ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
                     ) : canManage ? (
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button
                             variant="ghost"
                             size="icon"
-                            className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                            className="text-muted-foreground hover:text-foreground h-7 w-7"
                             aria-label={`Actions for ${invite.email}`}
                           >
                             <MoreHorizontal className="h-3.5 w-3.5" />
@@ -2062,23 +1987,29 @@ function PendingInvitesSection({
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-52">
                           <DropdownMenuItem
-                            onSelect={() =>
-                              resendMutation.mutate(invite.invite_id)
-                            }
+                            onSelect={() => resendMutation.mutate(invite.invite_id)}
                             className="gap-2"
                           >
-                            <RefreshCw className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line1336JsxTextResendInvite')}</DropdownMenuItem>
+                            <RefreshCw className="h-3.5 w-3.5" />
+                            {tHardcodedUi.raw('appAccountsIdPage.line1336JsxTextResendInvite')}
+                          </DropdownMenuItem>
                           <DropdownMenuItem
                             onSelect={() => copyInviteLink(invite.invite_url)}
                             className="gap-2"
                           >
-                            <LinkIcon className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line1343JsxTextCopyInvitationLink')}</DropdownMenuItem>
+                            <LinkIcon className="h-3.5 w-3.5" />
+                            {tHardcodedUi.raw(
+                              'appAccountsIdPage.line1343JsxTextCopyInvitationLink',
+                            )}
+                          </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onSelect={() => setCancelTarget(invite)}
                             className="gap-2"
                           >
-                            <X className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdPage.line1351JsxTextCancelInvite')}</DropdownMenuItem>
+                            <X className="h-3.5 w-3.5" />
+                            {tHardcodedUi.raw('appAccountsIdPage.line1351JsxTextCancelInvite')}
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     ) : null}
@@ -2152,8 +2083,8 @@ function BulkAddToGroupDialog({
             Add {selectedCount} member{selectedCount === 1 ? '' : 's'} to a group
           </DialogTitle>
           <DialogDescription>
-            Pick the group these members should join. Members already in the
-            group are skipped — re-adding is a no-op.
+            Pick the group these members should join. Members already in the group are skipped —
+            re-adding is a no-op.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5 py-1">
@@ -2161,15 +2092,11 @@ function BulkAddToGroupDialog({
           {groupsQuery.isLoading ? (
             <Skeleton className="h-9 w-full" />
           ) : groups.length === 0 ? (
-            <p className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
-              No groups exist on this account yet. Create one from the Groups
-              tab first.
+            <p className="border-border/60 bg-muted/20 text-muted-foreground rounded-2xl border px-3 py-2.5 text-xs">
+              No groups exist on this account yet. Create one from the Groups tab first.
             </p>
           ) : (
-            <Select
-              value={groupId ?? ''}
-              onValueChange={(v) => setGroupId(v || undefined)}
-            >
+            <Select value={groupId ?? ''} onValueChange={(v) => setGroupId(v || undefined)}>
               <SelectTrigger id="bulk-group">
                 <SelectValue placeholder="Choose a group…" />
               </SelectTrigger>
@@ -2227,8 +2154,8 @@ function BulkSetRoleDialog({
             Change role for {selectedCount} member{selectedCount === 1 ? '' : 's'}
           </DialogTitle>
           <DialogDescription>
-            Owners and admins have implicit Manager on every project. Members
-            get access only via direct grants or group membership.
+            Owners and admins have implicit Manager on every project. Members get access only via
+            direct grants or group membership.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-1.5 py-1">

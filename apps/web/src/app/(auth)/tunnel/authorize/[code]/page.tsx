@@ -2,22 +2,22 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Suspense, useEffect, useState, useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { useAuth } from '@/components/AuthProvider';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { CAPABILITY_REGISTRY } from '@/components/tunnel/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { Check, X, Clock, Monitor } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useAuth } from '@/features/providers/auth-provider';
 import {
-  useDeviceAuthInfo,
   useApproveDeviceAuth,
   useDenyDeviceAuth,
+  useDeviceAuthInfo,
 } from '@/hooks/tunnel/use-tunnel';
-import { CAPABILITY_REGISTRY } from '@/components/tunnel/types';
+import { cn } from '@/lib/utils';
+import { Check, Clock, Monitor, X } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 
 const EXPIRED_STATUS_ICON_CLASS = 'bg-amber-500/10 border-amber-500/20';
 
@@ -25,7 +25,7 @@ export default function DeviceAuthorizePage() {
   return (
     <Suspense
       fallback={
-        <div className="fixed inset-0 bg-background flex items-center justify-center">
+        <div className="bg-background fixed inset-0 flex items-center justify-center">
           <KortixLoader size="medium" />
         </div>
       }
@@ -47,9 +47,7 @@ function DeviceAuthorize() {
   const deny = useDenyDeviceAuth();
 
   const [name, setName] = useState('');
-  const [selectedCaps, setSelectedCaps] = useState<Set<string>>(
-    new Set(['filesystem', 'shell']),
-  );
+  const [selectedCaps, setSelectedCaps] = useState<Set<string>>(new Set(['filesystem', 'shell']));
   const [done, setDone] = useState<'approved' | 'denied' | null>(null);
 
   useEffect(() => {
@@ -104,7 +102,7 @@ function DeviceAuthorize() {
   // ── Loading ──
   if (authLoading || isLoading) {
     return (
-      <div className="fixed inset-0 bg-background flex items-center justify-center">
+      <div className="bg-background fixed inset-0 flex items-center justify-center">
         <KortixLoader size="medium" />
       </div>
     );
@@ -114,9 +112,11 @@ function DeviceAuthorize() {
   if (error || !info) {
     return (
       <StatusScreen
-        icon={<X className="h-6 w-6 text-foreground/50" />}
+        icon={<X className="text-foreground/50 h-6 w-6" />}
         title={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line113JsxAttrTitleRequestNotFound')}
-        description={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line114JsxAttrDescriptionThisAuthorizationRequestDoesnTExistOrHas')}
+        description={tHardcodedUi.raw(
+          'appTunnelAuthorizeCodePage.line114JsxAttrDescriptionThisAuthorizationRequestDoesnTExistOrHas',
+        )}
       />
     );
   }
@@ -128,7 +128,9 @@ function DeviceAuthorize() {
         icon={<Clock className="h-6 w-6 text-amber-600 dark:text-amber-400" />}
         iconClassName={EXPIRED_STATUS_ICON_CLASS}
         title={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line125JsxAttrTitleRequestExpired')}
-        description={tHardcodedUi.raw('appTunnelAuthorizeCodePage.line126JsxAttrDescriptionThisAuthorizationRequestHasExpiredRunTheConnect')}
+        description={tHardcodedUi.raw(
+          'appTunnelAuthorizeCodePage.line126JsxAttrDescriptionThisAuthorizationRequestHasExpiredRunTheConnect',
+        )}
       />
     );
   }
@@ -138,18 +140,23 @@ function DeviceAuthorize() {
     const isApproved = done === 'approved' || info.status === 'approved';
     return (
       <StatusScreen
-        icon={isApproved
-          ? <Check className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
-          : <X className="h-6 w-6 text-destructive" />
+        icon={
+          isApproved ? (
+            <Check className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+          ) : (
+            <X className="text-destructive h-6 w-6" />
+          )
         }
-        iconClassName={isApproved
-          ? 'bg-emerald-500/10 border-emerald-500/20'
-          : 'bg-destructive/10 border-destructive/20'
+        iconClassName={
+          isApproved
+            ? 'bg-emerald-500/10 border-emerald-500/20'
+            : 'bg-destructive/10 border-destructive/20'
         }
         title={isApproved ? 'Device Authorized' : 'Request Denied'}
-        description={isApproved
-          ? 'The device is now connecting. You can close this tab.'
-          : 'The authorization request was denied.'
+        description={
+          isApproved
+            ? 'The device is now connecting. You can close this tab.'
+            : 'The authorization request was denied.'
         }
       />
     );
@@ -160,33 +167,35 @@ function DeviceAuthorize() {
     <div className="fixed inset-0 overflow-hidden">
       <WallpaperBackground />
 
-      <div className="absolute inset-0 bg-background/20 backdrop-blur-[2px]" />
+      <div className="bg-background/20 absolute inset-0 backdrop-blur-[2px]" />
 
-      <div className="relative z-10 flex flex-col items-center justify-center h-full px-4">
+      <div className="relative z-10 flex h-full flex-col items-center justify-center px-4">
         <div className="w-full max-w-[380px]">
-          <div className="bg-background/80 dark:bg-background/75 backdrop-blur-2xl border border-foreground/[0.06] rounded-2xl px-7 py-8">
+          <div className="bg-background/80 dark:bg-background/75 border-foreground/[0.06] rounded-2xl border px-7 py-8 backdrop-blur-2xl">
             {/* Header */}
-            <div className="flex flex-col items-center gap-1 mb-6">
+            <div className="mb-6 flex flex-col items-center gap-1">
               <KortixLogo size={24} />
-              <p className="text-xs text-foreground/30 tracking-[0.2em] uppercase mt-3">{tHardcodedUi.raw('appTunnelAuthorizeCodePage.line167JsxTextAuthorizeDevice')}</p>
+              <p className="text-foreground/30 mt-3 text-xs tracking-[0.2em] uppercase">
+                {tHardcodedUi.raw('appTunnelAuthorizeCodePage.line167JsxTextAuthorizeDevice')}
+              </p>
             </div>
 
             {/* Device code hero */}
-            <div className="flex items-center justify-between rounded-2xl bg-foreground/[0.04] border border-foreground/[0.06] px-4 py-3 mb-6">
+            <div className="bg-foreground/[0.04] border-foreground/[0.06] mb-6 flex items-center justify-between rounded-2xl border px-4 py-3">
               <div className="flex items-center gap-3">
-                <div className="size-2 rounded-full bg-amber-500 animate-pulse" />
+                <div className="size-2 animate-pulse rounded-full bg-amber-500" />
                 <span className="font-mono text-lg font-medium tracking-[0.15em]">
                   {info.deviceCode}
                 </span>
               </div>
-              <span className="text-xs text-foreground/30 tabular-nums font-mono">
+              <span className="text-foreground/30 font-mono text-xs tabular-nums">
                 {minutes}:{seconds.toString().padStart(2, '0')}
               </span>
             </div>
 
             {/* Machine info */}
             {info.machineHostname && (
-              <div className="flex items-center gap-2 text-sm text-foreground/40 mb-5">
+              <div className="text-foreground/40 mb-5 flex items-center gap-2 text-sm">
                 <Monitor className="h-3.5 w-3.5" />
                 <span>{info.machineHostname}</span>
               </div>
@@ -205,18 +214,20 @@ function DeviceAuthorize() {
             {/* Divider */}
             <div className="relative mb-4">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-foreground/[0.06]" />
+                <div className="border-foreground/[0.06] w-full border-t" />
               </div>
               <div className="relative flex justify-center">
-                <span className="px-3 bg-background/80 dark:bg-background/75 text-xs text-foreground/20 tracking-[0.15em] uppercase">
+                <span className="bg-background/80 dark:bg-background/75 text-foreground/20 px-3 text-xs tracking-[0.15em] uppercase">
                   Permissions
                 </span>
               </div>
             </div>
 
             {/* Capabilities */}
-            <div className="space-y-1 mb-6">
-              {CAPABILITY_REGISTRY.filter((cap) => cap.key === 'filesystem' || cap.key === 'shell').map((cap) => {
+            <div className="mb-6 space-y-1">
+              {CAPABILITY_REGISTRY.filter(
+                (cap) => cap.key === 'filesystem' || cap.key === 'shell',
+              ).map((cap) => {
                 const Icon = cap.icon;
                 const selected = selectedCaps.has(cap.key);
                 return (
@@ -225,23 +236,31 @@ function DeviceAuthorize() {
                     type="button"
                     onClick={() => toggleCap(cap.key)}
                     className={cn(
-                      'flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-left transition-colors',
-                      selected
-                        ? 'bg-foreground/[0.06]'
-                        : 'hover:bg-foreground/[0.03]',
+                      'flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors',
+                      selected ? 'bg-foreground/[0.06]' : 'hover:bg-foreground/[0.03]',
                     )}
                   >
-                    <div className={cn(
-                      'flex h-4 w-4 shrink-0 items-center justify-center rounded border-[1.5px] transition-colors',
-                      selected
-                        ? 'border-foreground bg-foreground'
-                        : 'border-foreground/20',
-                    )}>
-                      {selected && <Check className="h-3 w-3 text-background" />}
+                    <div
+                      className={cn(
+                        'flex h-4 w-4 shrink-0 items-center justify-center rounded border-[1.5px] transition-colors',
+                        selected ? 'border-foreground bg-foreground' : 'border-foreground/20',
+                      )}
+                    >
+                      {selected && <Check className="text-background h-3 w-3" />}
                     </div>
-                    <Icon className={cn('h-4 w-4 shrink-0', selected ? 'text-foreground/70' : 'text-foreground/25')} />
-                    <div className="flex-1 min-w-0">
-                      <span className={cn('text-sm', selected ? 'text-foreground/80' : 'text-foreground/40')}>
+                    <Icon
+                      className={cn(
+                        'h-4 w-4 shrink-0',
+                        selected ? 'text-foreground/70' : 'text-foreground/25',
+                      )}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <span
+                        className={cn(
+                          'text-sm',
+                          selected ? 'text-foreground/80' : 'text-foreground/40',
+                        )}
+                      >
                         {cap.label}
                       </span>
                     </div>
@@ -263,13 +282,19 @@ function DeviceAuthorize() {
               <button
                 onClick={handleDeny}
                 disabled={deny.isPending || approve.isPending}
-                className="w-full text-xs text-foreground/30 hover:text-foreground/50 transition-colors py-2"
-              >{tHardcodedUi.raw('appTunnelAuthorizeCodePage.line265JsxTextDenyRequest')}</button>
+                className="text-foreground/30 hover:text-foreground/50 w-full py-2 text-xs transition-colors"
+              >
+                {tHardcodedUi.raw('appTunnelAuthorizeCodePage.line265JsxTextDenyRequest')}
+              </button>
             </div>
           </div>
 
           {/* Footer hint */}
-          <p className="text-xs text-center text-foreground/20 mt-4">{tHardcodedUi.raw('appTunnelAuthorizeCodePage.line272JsxTextConfirmTheCodeAboveMatchesYourTerminal')}</p>
+          <p className="text-foreground/20 mt-4 text-center text-xs">
+            {tHardcodedUi.raw(
+              'appTunnelAuthorizeCodePage.line272JsxTextConfirmTheCodeAboveMatchesYourTerminal',
+            )}
+          </p>
         </div>
       </div>
     </div>
@@ -290,21 +315,19 @@ function StatusScreen({
   return (
     <div className="fixed inset-0">
       <WallpaperBackground />
-      <div className="relative z-10 flex flex-col items-center justify-center h-full px-4 gap-6">
+      <div className="relative z-10 flex h-full flex-col items-center justify-center gap-6 px-4">
         <KortixLogo size={28} />
-        <div className={cn(
-          'flex h-14 w-14 items-center justify-center rounded-full border',
-          iconClassName || 'bg-foreground/[0.06] border-foreground/[0.08]',
-        )}>
+        <div
+          className={cn(
+            'flex h-14 w-14 items-center justify-center rounded-full border',
+            iconClassName || 'bg-foreground/[0.06] border-foreground/[0.08]',
+          )}
+        >
           {icon}
         </div>
-        <div className="text-center space-y-1">
-          <h1 className="text-3xl font-extralight tracking-tight text-foreground/80">
-            {title}
-          </h1>
-          <p className="text-sm text-foreground/50 max-w-[280px]">
-            {description}
-          </p>
+        <div className="space-y-1 text-center">
+          <h1 className="text-foreground/80 text-3xl font-extralight tracking-tight">{title}</h1>
+          <p className="text-foreground/50 max-w-[280px] text-sm">{description}</p>
         </div>
       </div>
     </div>

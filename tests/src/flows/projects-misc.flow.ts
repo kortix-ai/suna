@@ -187,44 +187,78 @@ flow(
   },
 );
 
-// PROJ-13 — ChatGPT headless provider auth. `start` spins a local OpenCode
-// device flow on the API host (no sandbox needed): 200 when the binary +
-// network cooperate, 500 otherwise. `complete` requires `auth_id` (400) and,
-// given a bogus one, fails because no job exists (500). We assert the
-// boundary — there are no real ChatGPT creds in the harness.
+// PROJ-13 — provider OAuth device flow (poll-based). `start` kicks the device
+// flow and returns a challenge; the client polls `poll` until it resolves; the
+// resulting login is saved as CODEX_AUTH_JSON. `list`/`delete` manage it. We
+// assert the boundaries only — completing a real device login needs a live
+// ChatGPT account the harness can't drive, and calling `start` for a real
+// provider would spawn a server-side OpenCode flow, so we exercise `start`'s
+// unknown-provider guard instead.
 flow(
   "PROJ-13",
   {
     domain: "projects",
     serial: true,
     routes: [
-      "POST /v1/projects/:projectId/providers/openai/chatgpt/headless/start",
-      "POST /v1/projects/:projectId/providers/openai/chatgpt/headless/complete",
+      "POST /v1/projects/:projectId/oauth/:provider/start",
+      "POST /v1/projects/:projectId/oauth/:provider/poll",
+      "GET /v1/projects/:projectId/oauth",
+      "DELETE /v1/projects/:projectId/oauth/:provider",
     ],
   },
   async (ctx) => {
     const p = await ctx.fixtures.project();
-    await ctx.step("start headless auth → 200 or 500", async () => {
+    await ctx.step("start unknown provider → 400 (no flow spawned)", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/providers/openai/chatgpt/headless/start", {}, { params: { projectId: p.id } });
-      r.status([200, 500]);
-    });
-    await ctx.step("complete without auth_id → 400", async () => {
-      const r = await ctx.client
-        .as(ctx.P.OWNER)
-        .post("/v1/projects/:projectId/providers/openai/chatgpt/headless/complete", {}, { params: { projectId: p.id } });
+        .post("/v1/projects/:projectId/oauth/:provider/start", {}, { params: { projectId: p.id, provider: "nope" } });
       r.status(400);
     });
-    await ctx.step("complete with bogus auth_id → 500 (no started flow)", async () => {
+    await ctx.step("start invalid sharing → 400", async () => {
       const r = await ctx.client
         .as(ctx.P.OWNER)
         .post(
-          "/v1/projects/:projectId/providers/openai/chatgpt/headless/complete",
-          { auth_id: "00000000-0000-4000-a000-000000000000" },
-          { params: { projectId: p.id } },
+          "/v1/projects/:projectId/oauth/:provider/start",
+          { sharing: { mode: "bogus" } },
+          { params: { projectId: p.id, provider: "openai" } },
         );
-      r.status([400, 404, 409, 500]);
+      r.status(400);
+    });
+    await ctx.step("poll missing flow_id → 400", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post("/v1/projects/:projectId/oauth/:provider/poll", {}, { params: { projectId: p.id, provider: "openai" } });
+      r.status(400);
+    });
+    await ctx.step("poll bogus flow_id → 200 expired", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .post(
+          "/v1/projects/:projectId/oauth/:provider/poll",
+          { flow_id: "00000000-0000-4000-a000-000000000000" },
+          { params: { projectId: p.id, provider: "openai" } },
+        );
+      r.status(200).body().has("$.status", "expired");
+    });
+    await ctx.step("list configured OAuth → 200 items", async () => {
+      const r = await ctx.client.as(ctx.P.OWNER).get("/v1/projects/:projectId/oauth", { params: { projectId: p.id } });
+      r.status(200).body().exists("$.items");
+    });
+    await ctx.step("delete unknown provider → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.OWNER)
+        .del("/v1/projects/:projectId/oauth/:provider", { params: { projectId: p.id, provider: "nope" } });
+      r.status(404);
+    });
+    await ctx.step("NONMEMBER start → 404", async () => {
+      const r = await ctx.client
+        .as(ctx.P.NONMEMBER)
+        .post("/v1/projects/:projectId/oauth/:provider/start", {}, { params: { projectId: p.id, provider: "openai" } });
+      r.status([403, 404]);
+    });
+    await ctx.step("ANON list → 401", async () => {
+      const r = await ctx.client.as(ctx.P.ANON).get("/v1/projects/:projectId/oauth", { params: { projectId: p.id } });
+      r.status(401);
     });
   },
 );

@@ -1,6 +1,6 @@
-import { useQuery, UseQueryOptions, type QueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/features/providers/auth-provider';
 import { backendApi } from '@/lib/api-client';
-import { useAuth } from '@/components/AuthProvider';
+import { useQuery, UseQueryOptions, type QueryClient } from '@tanstack/react-query';
 
 interface AdminRoleResponse {
   isAdmin: boolean;
@@ -38,9 +38,7 @@ export function isAdminRevokedError(err: unknown): boolean {
   return ADMIN_REVOKED_RE.test(err instanceof Error ? err.message : '');
 }
 
-export const useAdminRole = (
-  options?: Partial<UseQueryOptions<AdminRoleResponse>>
-) => {
+export const useAdminRole = (options?: Partial<UseQueryOptions<AdminRoleResponse>>) => {
   const { user } = useAuth();
 
   return useQuery<AdminRoleResponse>({
@@ -61,7 +59,7 @@ export const useAdminRole = (
 
       return response.data || { isAdmin: false, role: null };
     },
-    enabled: !!user && (options?.enabled !== false),
+    enabled: !!user && options?.enabled !== false,
     // Previously: staleTime 5min + refetchOnMount:false + refetchOnFocus:false
     // meant a `{isAdmin:true}` value cached once was served for 5 minutes
     // regardless of route changes, which caused every admin-gated hook to

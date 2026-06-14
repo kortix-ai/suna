@@ -2,17 +2,14 @@
 
 import { useTranslations } from 'next-intl';
 
-import * as React from 'react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import Link from 'next/link';
-import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { formatDistanceToNowStrict } from 'date-fns';
 import {
   CalendarClock,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronDown,
   List,
   ListTree,
   Loader2,
@@ -25,20 +22,17 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { formatDistanceToNowStrict } from 'date-fns';
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import * as React from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
 import {
   directSubsessions,
   matchesSessionFilter,
-  sessionDisplayLabel,
   SESSION_FILTER_OPTIONS,
+  sessionDisplayLabel,
   type SessionFilterValue,
 } from '@/components/projects/session-label';
 import {
@@ -47,29 +41,24 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
 import { useCustomizeStore } from '@/stores/customize-store';
+import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { UserMenu } from '@/components/layout/user-menu';
-import { ProjectSwitcher } from '@/components/layout/project-switcher';
-import { ProjectSessionList } from '@/components/projects/project-session-list';
-import {
-  ProjectSetupNavItem,
-  ProjectSetupRailItem,
-} from '@/components/projects/project-setup';
-import {
-  ProjectSandboxAlertNavItem,
-  ProjectSandboxAlertRailItem,
-} from '@/components/projects/sandbox-health-alert';
+import { ProjectAppsNavItem, ProjectAppsRailItem } from '@/components/projects/apps/apps-nav';
 import {
   ProjectChangeRequestsNavItem,
   ProjectChangeRequestsRailItem,
 } from '@/components/projects/change-requests-nav';
+import { ProjectSessionList } from '@/components/projects/project-session-list';
+import { ProjectSetupNavItem, ProjectSetupRailItem } from '@/components/projects/project-setup';
 import {
-  ProjectAppsNavItem,
-  ProjectAppsRailItem,
-} from '@/components/projects/apps/apps-nav';
+  ProjectSandboxAlertNavItem,
+  ProjectSandboxAlertRailItem,
+} from '@/components/projects/sandbox-health-alert';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Sidebar,
   SidebarContent,
@@ -83,22 +72,17 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
-import { useIsMobile } from '@/hooks/utils';
-import { cn } from '@/lib/utils';
+import { ProjectSwitcher } from '@/features/layout/project-switcher';
+import { UserMenu } from '@/features/layout/user-menu';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin';
-import { useAuth } from '@/components/AuthProvider';
+import { useIsMobile } from '@/hooks/utils';
 import { createProjectSession } from '@/lib/projects-client';
-import { toast } from '@/lib/toast';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 
-const isMac =
-  typeof navigator !== 'undefined' &&
-  /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
 const modSymbol = isMac ? '⌘' : 'Ctrl';
 
 /** Hover-only keyboard hint chip used on the primary nav row. */
@@ -157,9 +141,17 @@ function CollapsedIconButton({
     timer.current = setTimeout(() => setFlyoutOpen(false), 180);
   }, []);
   const cancelClose = useCallback(() => {
-    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
   }, []);
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
 
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
   useLayoutEffect(() => {
@@ -171,7 +163,9 @@ function CollapsedIconButton({
 
   useEffect(() => {
     if (!flyoutOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFlyoutOpen(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFlyoutOpen(false);
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [flyoutOpen]);
@@ -179,7 +173,11 @@ function CollapsedIconButton({
   useEffect(() => {
     if (!flyoutOpen) return;
     const onDown = (e: PointerEvent) => {
-      if (btnRef.current?.contains(e.target as Node) || flyoutRef.current?.contains(e.target as Node)) return;
+      if (
+        btnRef.current?.contains(e.target as Node) ||
+        flyoutRef.current?.contains(e.target as Node)
+      )
+        return;
       setFlyoutOpen(false);
     };
     window.addEventListener('pointerdown', onDown, true);
@@ -203,23 +201,28 @@ function CollapsedIconButton({
           onClick={onClick}
           disabled={disabled}
           className={btnClass}
-          onMouseEnter={() => { cancelClose(); setFlyoutOpen(true); }}
+          onMouseEnter={() => {
+            cancelClose();
+            setFlyoutOpen(true);
+          }}
           onMouseLeave={scheduleClose}
         >
           {icon}
         </button>
-        {flyoutOpen && typeof document !== 'undefined' && createPortal(
-          <div
-            ref={flyoutRef}
-            style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 10001 }}
-            className="w-[260px] max-h-[60vh] overflow-hidden flex flex-col rounded-xl border bg-popover text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-[0.98] slide-in-from-left-1 duration-100"
-            onMouseEnter={cancelClose}
-            onMouseLeave={scheduleClose}
-          >
-            {flyoutContent}
-          </div>,
-          document.body,
-        )}
+        {flyoutOpen &&
+          typeof document !== 'undefined' &&
+          createPortal(
+            <div
+              ref={flyoutRef}
+              style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 10001 }}
+              className="bg-popover text-popover-foreground animate-in fade-in-0 zoom-in-[0.98] slide-in-from-left-1 flex max-h-[60vh] w-[260px] flex-col overflow-hidden rounded-xl border shadow-lg duration-100"
+              onMouseEnter={cancelClose}
+              onMouseLeave={scheduleClose}
+            >
+              {flyoutContent}
+            </div>,
+            document.body,
+          )}
       </>
     );
   }
@@ -227,12 +230,7 @@ function CollapsedIconButton({
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
-          ref={btnRef}
-          onClick={onClick}
-          disabled={disabled}
-          className={btnClass}
-        >
+        <button ref={btnRef} onClick={onClick} disabled={disabled} className={btnClass}>
           {icon}
         </button>
       </TooltipTrigger>
@@ -291,11 +289,15 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
   }, [data]);
 
   return (
-    <div className="overflow-y-auto py-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+    <div className="[scrollbar-width:none] overflow-y-auto py-1 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
       {isLoading ? (
-        <div className="px-3 py-6 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectSidebar.line259JsxTextLoading')}</div>
+        <div className="text-muted-foreground px-3 py-6 text-center text-xs">
+          {tHardcodedUi.raw('componentsProjectsProjectSidebar.line259JsxTextLoading')}
+        </div>
       ) : sessions.length === 0 ? (
-        <div className="px-3 py-8 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectSidebar.line261JsxTextNoSessionsYet')}</div>
+        <div className="text-muted-foreground px-3 py-8 text-center text-xs">
+          {tHardcodedUi.raw('componentsProjectsProjectSidebar.line261JsxTextNoSessionsYet')}
+        </div>
       ) : (
         sessions.map((session) => {
           const href = `/projects/${projectId}/sessions/${session.session_id}`;
@@ -319,7 +321,7 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
                   router.push(href);
                 }}
                 className={cn(
-                  'flex items-center gap-2 w-full px-3 py-1.5 text-sm cursor-pointer transition-colors duration-100',
+                  'flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-sm transition-colors duration-100',
                   active && !activeOpenCodeSessionId
                     ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
                     : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
@@ -327,23 +329,27 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
               >
                 <span className="flex-1 truncate text-left">{label}</span>
                 {children.length > 0 && (
-                  <span className="rounded-full bg-sidebar-accent/60 px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
+                  <span className="bg-sidebar-accent/60 text-muted-foreground rounded-full px-1.5 py-0.5 text-xs tabular-nums">
                     {children.length}
                   </span>
                 )}
                 {relative && (
-                  <span className="flex-shrink-0 text-xs tabular-nums text-muted-foreground/60">
+                  <span className="text-muted-foreground/60 flex-shrink-0 text-xs tabular-nums">
                     {relative}
                   </span>
                 )}
               </button>
               {children.length > 0 && active && (
-                <div className="ml-4 border-l border-border/30 pl-1">
+                <div className="border-border/30 ml-4 border-l pl-1">
                   {children.map((child) => {
                     const childHref = `${href}?oc=${encodeURIComponent(child.id)}`;
                     const childActive = active && activeOpenCodeSessionId === child.id;
                     const childRelative = child.updated_at
-                      ? shortFlyoutRelative(formatDistanceToNowStrict(new Date(child.updated_at), { addSuffix: false }))
+                      ? shortFlyoutRelative(
+                          formatDistanceToNowStrict(new Date(child.updated_at), {
+                            addSuffix: false,
+                          }),
+                        )
                       : '';
                     return (
                       <button
@@ -359,10 +365,12 @@ function ProjectSessionsFlyout({ projectId }: { projectId: string }) {
                             : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
                         )}
                       >
-                        <span className="h-1 w-1 flex-shrink-0 rounded-full bg-muted-foreground/40" />
-                        <span className="flex-1 truncate text-left">{child.title || 'Sub-session'}</span>
+                        <span className="bg-muted-foreground/40 h-1 w-1 flex-shrink-0 rounded-full" />
+                        <span className="flex-1 truncate text-left">
+                          {child.title || 'Sub-session'}
+                        </span>
                         {childRelative && (
-                          <span className="flex-shrink-0 text-xs tabular-nums text-muted-foreground/60">
+                          <span className="text-muted-foreground/60 flex-shrink-0 text-xs tabular-nums">
                             {childRelative}
                           </span>
                         )}
@@ -424,15 +432,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const { user: authUser } = useAuth();
   const user = useMemo(
     () => ({
-      name:
-        authUser?.user_metadata?.name ||
-        authUser?.email?.split('@')[0] ||
-        'User',
+      name: authUser?.user_metadata?.name || authUser?.email?.split('@')[0] || 'User',
       email: authUser?.email ?? '',
-      avatar:
-        authUser?.user_metadata?.avatar_url ||
-        authUser?.user_metadata?.picture ||
-        '',
+      avatar: authUser?.user_metadata?.avatar_url || authUser?.user_metadata?.picture || '',
       isAdmin,
     }),
     [authUser, isAdmin],
@@ -458,7 +460,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     markSessionClick();
     createSession.mutate();
   }, [createSession]);
-
 
   // CMD/CTRL+J — global project "new session" accelerator.
   useEffect(() => {
@@ -491,14 +492,14 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   return (
     <Sidebar
       collapsible="icon"
-      className="bg-sidebar [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
+      className="bg-sidebar [scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
     >
       {/* ====================================================================
           HEADER — logo + collapse toggle, with the ProjectSwitcher pinned
           directly below. Account switching + user identity + settings live in
           the footer Account·You menu (see UserMenu).
          ==================================================================== */}
-      <SidebarHeader className="pb-1 pt-[max(0.75rem,env(safe-area-inset-top,0px))]">
+      <SidebarHeader className="pt-[max(0.75rem,env(safe-area-inset-top,0px))] pb-1">
         <div className="relative flex h-7 shrink-0 items-center justify-between px-2 group-data-[collapsible=icon]:justify-center">
           <Link
             href="/projects"
@@ -512,14 +513,14 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           {effectiveState === 'collapsed' && (
             <button
               type="button"
-              className="group/collapsed absolute inset-0 flex items-center justify-center cursor-pointer"
+              className="group/collapsed absolute inset-0 flex cursor-pointer items-center justify-center"
               onClick={() => (isMobile ? setOpenMobile(true) : setOpen(true))}
               aria-label="Expand sidebar"
             >
               <span className="flex items-center justify-center group-hover/collapsed:hidden">
                 <KortixLogo variant="symbol" size={20} className="flex-shrink-0" />
               </span>
-              <ChevronRight className="hidden h-3.5 w-3.5 text-sidebar-foreground group-hover/collapsed:block" />
+              <ChevronRight className="text-sidebar-foreground hidden h-3.5 w-3.5 group-hover/collapsed:block" />
             </button>
           )}
           <button
@@ -527,16 +528,12 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
             onClick={() => (isMobile ? setOpenMobile(false) : setOpen(false))}
             aria-label={isMobile ? 'Close menu' : 'Collapse sidebar'}
             className={cn(
-              'flex items-center justify-center rounded-md text-sidebar-foreground/60 transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-foreground',
+              'text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground flex items-center justify-center rounded-md transition-colors duration-150',
               isMobile ? 'h-8 w-8' : 'h-6 w-6',
               effectiveState === 'collapsed' && 'hidden',
             )}
           >
-            {isMobile ? (
-              <X className="h-4 w-4" />
-            ) : (
-              <ChevronLeft className="h-3.5 w-3.5" />
-            )}
+            {isMobile ? <X className="h-4 w-4" /> : <ChevronLeft className="h-3.5 w-3.5" />}
           </button>
         </div>
         {/* Project selector stays visible when collapsed — ProjectSwitcher
@@ -557,20 +554,30 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                                                             consistently at the
                                                             bottom of the sidebar.
          ==================================================================== */}
-      <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] relative overflow-visible">
+      <SidebarContent className="relative [scrollbar-width:'none'] overflow-visible [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
         {/* --- Collapsed: icon rail. Absolute layer toggled by opacity so
             no text/kbd-hint from the expanded layer bleeds through.
             Mirrors apps/web/.../sidebar-left.tsx on main. --- */}
-        <div className={cn(
-          'absolute inset-0 px-2 pt-1 pb-1 flex flex-col items-center',
-          effectiveState === 'collapsed' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none',
-        )}>
+        <div
+          className={cn(
+            'absolute inset-0 flex flex-col items-center px-2 pt-1 pb-1',
+            effectiveState === 'collapsed'
+              ? 'pointer-events-auto opacity-100'
+              : 'pointer-events-none opacity-0',
+          )}
+        >
           <div className="w-full space-y-0.5">
             <CollapsedIconButton
-              icon={createSession.isPending
-                ? <Loader2 className="h-4 w-4 animate-spin" />
-                : <SquarePen className="h-4 w-4" />}
-              label={tHardcodedUi.raw('componentsProjectsProjectSidebar.line510JsxAttrLabelNewSession')}
+              icon={
+                createSession.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <SquarePen className="h-4 w-4" />
+                )
+              }
+              label={tHardcodedUi.raw(
+                'componentsProjectsProjectSidebar.line510JsxAttrLabelNewSession',
+              )}
               onClick={handleNewSession}
               disabled={createSession.isPending}
             />
@@ -599,10 +606,14 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
         </div>
 
         {/* --- Expanded layout --- */}
-        <div className={cn(
-          'flex flex-col h-full min-h-0 gap-0',
-          effectiveState === 'collapsed' ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto',
-        )}>
+        <div
+          className={cn(
+            'flex h-full min-h-0 flex-col gap-0',
+            effectiveState === 'collapsed'
+              ? 'pointer-events-none opacity-0'
+              : 'pointer-events-auto opacity-100',
+          )}
+        >
           {/* — Primary action — */}
           <SidebarGroup className="py-0">
             <SidebarMenu>
@@ -612,11 +623,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   disabled={createSession.isPending}
                   className="group/menu-button !text-sm font-normal [&_svg]:!size-4"
                 >
-                  {createSession.isPending ? (
-                    <Loader2 className="animate-spin" />
-                  ) : (
-                    <SquarePen />
-                  )}
+                  {createSession.isPending ? <Loader2 className="animate-spin" /> : <SquarePen />}
                   <span>{createSession.isPending ? 'Creating…' : 'New session'}</span>
                   <KbdHint mod={modSymbol} letter="J" />
                 </SidebarMenuButton>
@@ -625,25 +632,22 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           </SidebarGroup>
 
           {/* — Sessions — fills remaining space. */}
-          <SidebarGroup
-            className="min-h-0 flex-1 flex-col py-0"
-            ref={sessionsGroupRef}
-          >
+          <SidebarGroup className="min-h-0 flex-1 flex-col py-0" ref={sessionsGroupRef}>
             <Collapsible
               defaultOpen
               className="group/sessions flex min-h-0 flex-col data-[state=open]:flex-1"
             >
-              <SidebarGroupLabel className="group/label mt-1 flex h-6 items-center gap-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground/60">
+              <SidebarGroupLabel className="group/label text-muted-foreground/60 mt-1 flex h-6 items-center gap-2 px-2 text-xs font-medium tracking-wider uppercase">
                 {/* Label opens the filter menu; the chevron keeps collapse. */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      className="flex flex-1 cursor-pointer items-center gap-1.5 text-left uppercase tracking-wider hover:text-sidebar-foreground"
+                      className="hover:text-sidebar-foreground flex flex-1 cursor-pointer items-center gap-1.5 text-left tracking-wider uppercase"
                     >
                       <span>Sessions</span>
                       {sessionFilter !== 'all' && (
-                        <span className="truncate normal-case tracking-normal text-muted-foreground/50">
+                        <span className="text-muted-foreground/50 truncate tracking-normal normal-case">
                           · {activeFilterOption.label}
                         </span>
                       )}
@@ -661,7 +665,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                         >
                           <OptionIcon className="h-4 w-4" />
                           {option.label}
-                          <span className="ml-auto flex items-center gap-1.5 text-xs tabular-nums text-muted-foreground">
+                          <span className="text-muted-foreground ml-auto flex items-center gap-1.5 text-xs tabular-nums">
                             {sessionFilterCounts.get(option.value) ?? 0}
                             {isActiveOption && <Check className="h-3.5 w-3.5" />}
                           </span>
@@ -674,13 +678,13 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   <button
                     type="button"
                     aria-label="Toggle sessions"
-                    className="cursor-pointer text-muted-foreground/60 hover:text-sidebar-foreground"
+                    className="text-muted-foreground/60 hover:text-sidebar-foreground cursor-pointer"
                   >
                     <ChevronDown className="size-3 transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
                   </button>
                 </CollapsibleTrigger>
               </SidebarGroupLabel>
-              <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+              <CollapsibleContent className="min-h-0 [scrollbar-width:none] [-ms-overflow-style:none] data-[state=open]:flex-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden">
                 <ProjectSessionList projectId={projectId} filter={sessionFilter} />
               </CollapsibleContent>
             </Collapsible>
@@ -689,7 +693,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           {/* — Project nav — pinned just above the workspace footer. The
               single Customize button opens a full-screen modal with Files,
               Skills, Agents, and every other per-project config surface. */}
-          <SidebarGroup className="py-0 mt-auto">
+          <SidebarGroup className="mt-auto py-0">
             <SidebarMenu>
               <ProjectSandboxAlertNavItem projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
@@ -699,7 +703,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 <SidebarMenuButton
                   onClick={goCustomize}
                   isActive={customizeOpen}
-                  className="!text-sm font-normal data-[active=true]:font-normal !transition-none transform-none [&_svg]:!size-4"
+                  className="transform-none !text-sm font-normal !transition-none data-[active=true]:font-normal [&_svg]:!size-4"
                 >
                   <SlidersHorizontal />
                   <span>Customize</span>
@@ -716,7 +720,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           (you don't change account mid-project); which project is the
           ProjectSwitcher at the top.
          ==================================================================== */}
-      <SidebarFooter className="pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] pt-1 group-data-[collapsible=icon]:px-0">
+      <SidebarFooter className="pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] group-data-[collapsible=icon]:px-0">
         <UserMenu user={user} variant="sidebar" />
       </SidebarFooter>
 

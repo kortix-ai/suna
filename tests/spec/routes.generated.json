@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 331,
+  "count": 333,
   "routes": [
     {
       "method": "GET",
@@ -899,16 +899,24 @@
       "path": "/v1/projects/:projectId/manifest/validate"
     },
     {
+      "method": "GET",
+      "path": "/v1/projects/:projectId/oauth"
+    },
+    {
+      "method": "DELETE",
+      "path": "/v1/projects/:projectId/oauth/:provider"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/oauth/:provider/poll"
+    },
+    {
+      "method": "POST",
+      "path": "/v1/projects/:projectId/oauth/:provider/start"
+    },
+    {
       "method": "PATCH",
       "path": "/v1/projects/:projectId/onboarding"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/providers/openai/chatgpt/headless/complete"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/providers/openai/chatgpt/headless/start"
     },
     {
       "method": "GET",

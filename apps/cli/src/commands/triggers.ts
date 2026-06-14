@@ -1,6 +1,8 @@
 import {
+  emitJson,
   resolveProjectContext,
   surfaceApiError,
+  takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import {
@@ -24,13 +26,13 @@ schedules and webhooks. add/rm/enable/disable edit the LOCAL kortix.toml
 state from the cloud.
 
 Subcommands:
-  ls                       List triggers + runtime state.
+  ls [--json]              List triggers + runtime state.
   add <slug> [options]     Append a [[triggers]] block (cron or webhook).
   rm <slug>                Remove a trigger from kortix.toml.
   fire <slug>              Manually fire a trigger now.
   enable <slug>            Set enabled = true on a trigger.
   disable <slug>           Set enabled = false on a trigger.
-  info <slug>              Show one trigger in full.
+  info <slug> [--json]     Show one trigger in full.
 
 Add options:
   --type <cron|webhook>    Trigger type (default cron).
@@ -59,7 +61,9 @@ export async function runTriggers(argv: string[]): Promise<number> {
   let hostFlag: string | undefined;
   const tf: Record<string, string | undefined> = {};
   let disabled = false;
+  let json = false;
   try {
+    json = takeFlagBool(rest, ['--json']);
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     tf.type = takeFlagValue(rest, ['--type']);
@@ -83,7 +87,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
 
   switch (sub) {
     case 'ls':
-      return triggersLs(ctxOpts);
+      return triggersLs(ctxOpts, json);
     case 'add':
     case 'create':
       return triggersAddLocal(positional[0], tf, disabled);
@@ -99,7 +103,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
       return triggersToggle(rest[0], false);
     case 'info':
     case 'show':
-      return triggersInfo(rest[0], ctxOpts);
+      return triggersInfo(rest[0], ctxOpts, json);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -108,7 +112,7 @@ export async function runTriggers(argv: string[]): Promise<number> {
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-async function triggersLs(opts: CtxOpts): Promise<number> {
+async function triggersLs(opts: CtxOpts, json = false): Promise<number> {
   const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
@@ -119,6 +123,11 @@ async function triggersLs(opts: CtxOpts): Promise<number> {
     );
   } catch (err) {
     return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(resp);
+    return 0;
   }
 
   if (resp.triggers.length === 0) {
@@ -275,7 +284,7 @@ function triggersToggle(slug: string | undefined, enabled: boolean): number {
   return 0;
 }
 
-async function triggersInfo(slug: string | undefined, opts: CtxOpts): Promise<number> {
+async function triggersInfo(slug: string | undefined, opts: CtxOpts, json = false): Promise<number> {
   if (!slug) {
     process.stderr.write(`${status.err('Pass a trigger slug.')}\n`);
     return 2;
@@ -295,6 +304,11 @@ async function triggersInfo(slug: string | undefined, opts: CtxOpts): Promise<nu
   if (!t) {
     process.stderr.write(`${status.err(`No trigger "${slug}".`)}\n`);
     return 1;
+  }
+
+  if (json) {
+    emitJson(t);
+    return 0;
   }
 
   process.stdout.write('\n');

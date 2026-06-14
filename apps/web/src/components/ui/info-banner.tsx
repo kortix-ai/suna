@@ -1,63 +1,57 @@
 'use client';
 
-import * as React from 'react';
-import { cva, type VariantProps } from 'class-variance-authority';
-import type { Icon } from '@/components/ui/kortix-icons';
+import {
+  Alert,
+  AlertActions,
+  AlertDescription,
+  AlertMedia,
+  AlertTitle,
+} from '@/components/ui/alert';
+import { STATUS_BG, STATUS_BORDER, STATUS_TEXT, type StatusTone } from '@/components/ui/status';
 import { cn } from '@/lib/utils';
+import * as React from 'react';
 
-/**
- * Kortix <InfoBanner> — an inline status / info notice.
- *
- * The standard way to surface a contextual message inside a page or panel:
- * manifest status, "email skipped", a warning, a tip. Icon + optional title +
- * body + optional trailing action. Use the semantic `tone` instead of
- * hand-rolling `border-amber-500/30 bg-amber-500/[0.04]` one-offs.
- *
- *   <InfoBanner tone="warning" icon={IconWarning} title="Manifest out of sync">
- *     Re-run sync to apply the latest secrets.
- *   </InfoBanner>
- */
+export type InfoBannerIcon =
+  | React.ComponentType<{ className?: string }>
+  | React.ReactElement<{ className?: string }>;
 
-const bannerVariants = cva(
-  'flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm',
-  {
-    variants: {
-      tone: {
-        neutral: 'border-border/70 bg-muted/30 text-foreground',
-        info: 'border-blue-500/25 bg-blue-500/[0.06] text-foreground',
-        success: 'border-emerald-500/25 bg-emerald-500/[0.06] text-foreground',
-        warning: 'border-amber-500/30 bg-amber-500/[0.06] text-foreground',
-        destructive: 'border-destructive/30 bg-destructive/5 text-foreground',
-      },
-    },
-    defaultVariants: { tone: 'neutral' },
-  },
-);
+function renderBannerIcon(icon: InfoBannerIcon, className: string): React.ReactNode {
+  if (React.isValidElement(icon)) {
+    return React.cloneElement(icon, {
+      className: cn(className, icon.props.className),
+    });
+  }
 
-const ICON_TONE: Record<
-  NonNullable<VariantProps<typeof bannerVariants>['tone']>,
-  string
-> = {
-  neutral: 'text-muted-foreground',
-  info: 'text-blue-600 dark:text-blue-400',
-  success: 'text-emerald-600 dark:text-emerald-400',
-  warning: 'text-amber-600 dark:text-amber-400',
-  destructive: 'text-destructive',
+  const IconComponent = icon;
+  return <IconComponent className={className} />;
+}
+
+type AlertVariant = NonNullable<React.ComponentProps<typeof Alert>['variant']>;
+
+const TONE_TO_ALERT_VARIANT: Record<StatusTone, AlertVariant> = {
+  neutral: 'default',
+  info: 'default',
+  success: 'default',
+  warning: 'warning',
+  destructive: 'destructive',
 };
 
-export interface InfoBannerProps
-  extends
-    Omit<React.ComponentProps<'div'>, 'title'>,
-    VariantProps<typeof bannerVariants> {
-  icon?: Icon;
+const TONE_SURFACE: Partial<Record<StatusTone, string>> = {
+  neutral: cn(STATUS_BORDER.neutral, STATUS_BG.neutral),
+  info: cn(STATUS_BORDER.info, STATUS_BG.info),
+  success: cn(STATUS_BORDER.success, STATUS_BG.success),
+};
+
+export interface InfoBannerProps extends Omit<React.ComponentProps<'div'>, 'title'> {
+  tone?: StatusTone;
+  icon?: InfoBannerIcon;
   title?: React.ReactNode;
-  /** Trailing slot — usually a Button. */
   action?: React.ReactNode;
 }
 
 export function InfoBanner({
   tone = 'neutral',
-  icon: IconComponent,
+  icon,
   title,
   action,
   className,
@@ -65,29 +59,19 @@ export function InfoBanner({
   ...props
 }: InfoBannerProps) {
   const safeTone = tone ?? 'neutral';
+  const usesAlertToneVariant = safeTone === 'warning' || safeTone === 'destructive';
+  const iconClassName = cn('size-[1.1rem]', !usesAlertToneVariant && STATUS_TEXT[safeTone]);
+
   return (
-    <div className={cn(bannerVariants({ tone }), className)} {...props}>
-      {IconComponent && (
-        <IconComponent
-          className={cn('mt-0.5 h-4 w-4 shrink-0', ICON_TONE[safeTone])}
-        />
-      )}
-      <div className="min-w-0 flex-1">
-        {title != null && (
-          <p className="font-medium text-foreground">{title}</p>
-        )}
-        {children != null && (
-          <div
-            className={cn(
-              'text-xs text-muted-foreground',
-              title != null && 'mt-0.5',
-            )}
-          >
-            {children}
-          </div>
-        )}
-      </div>
-      {action != null && <div className="shrink-0">{action}</div>}
-    </div>
+    <Alert
+      variant={TONE_TO_ALERT_VARIANT[safeTone]}
+      className={cn(TONE_SURFACE[safeTone], className)}
+      {...props}
+    >
+      {icon != null && <AlertMedia>{renderBannerIcon(icon, iconClassName)}</AlertMedia>}
+      {title != null && <AlertTitle>{title}</AlertTitle>}
+      {children != null && <AlertDescription className="font-medium">{children}</AlertDescription>}
+      {action != null && <AlertActions>{action}</AlertActions>}
+    </Alert>
   );
 }

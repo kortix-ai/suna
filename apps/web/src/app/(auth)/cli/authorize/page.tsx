@@ -2,14 +2,14 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { CheckCircle2, KeyRound, Loader2, TerminalSquare, XCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { CheckCircle2, KeyRound, Loader2, TerminalSquare, XCircle } from 'lucide-react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 
-import { useAuth } from '@/components/AuthProvider';
-import { accountTokensApi } from '@/lib/api/account-tokens';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/features/providers/auth-provider';
+import { accountTokensApi } from '@/lib/api/account-tokens';
 
 /**
  * Browser-callback authorization page. The CLI runs `kortix login`,
@@ -28,7 +28,13 @@ import { Button } from '@/components/ui/button';
  */
 export default function CliAuthorizePage() {
   return (
-    <Suspense fallback={<Centered><Loader2 className="size-6 animate-spin text-muted-foreground" /></Centered>}>
+    <Suspense
+      fallback={
+        <Centered>
+          <Loader2 className="text-muted-foreground size-6 animate-spin" />
+        </Centered>
+      }
+    >
       <CliAuthorizeInner />
     </Suspense>
   );
@@ -62,7 +68,7 @@ function CliAuthorizeInner() {
   if (isLoading || !user) {
     return (
       <Centered>
-        <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        <Loader2 className="text-muted-foreground size-6 animate-spin" />
       </Centered>
     );
   }
@@ -72,7 +78,9 @@ function CliAuthorizeInner() {
       <Centered>
         <ErrorCard
           title={tHardcodedUi.raw('appCliAuthorizePage.line70JsxAttrTitleMissingCallback')}
-          message={tHardcodedUi.raw('appCliAuthorizePage.line71JsxAttrMessageThisPageIsOpenedByTheKortixCli')}
+          message={tHardcodedUi.raw(
+            'appCliAuthorizePage.line71JsxAttrMessageThisPageIsOpenedByTheKortixCli',
+          )}
         />
       </Centered>
     );
@@ -81,7 +89,10 @@ function CliAuthorizeInner() {
   if (!validation.ok) {
     return (
       <Centered>
-        <ErrorCard title={tHardcodedUi.raw('appCliAuthorizePage.line80JsxAttrTitleInvalidCallback')} message={validation.reason} />
+        <ErrorCard
+          title={tHardcodedUi.raw('appCliAuthorizePage.line80JsxAttrTitleInvalidCallback')}
+          message={validation.reason}
+        />
       </Centered>
     );
   }
@@ -179,7 +190,7 @@ function CliAuthorizeInner() {
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted/30 p-4">
+    <div className="bg-muted/30 flex min-h-screen items-center justify-center p-4">
       <div className="w-full max-w-md">{children}</div>
     </div>
   );
@@ -209,28 +220,36 @@ function ConsentCard({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const busy = phase === 'authorizing';
   return (
-    <div className="rounded-2xl border bg-background shadow-sm">
+    <div className="bg-background rounded-2xl border shadow-sm">
       <div className="p-7">
         <div className="mb-6 flex items-center gap-3">
-          <div className="grid size-11 place-items-center rounded-2xl border bg-muted/40">
+          <div className="bg-muted/40 grid size-11 place-items-center rounded-2xl border">
             <TerminalSquare className="size-5" />
           </div>
           <div>
-            <div className="text-base font-semibold">{tHardcodedUi.raw('appCliAuthorizePage.line214JsxTextAuthorizeKortixCli')}</div>
-            <div className="text-xs text-muted-foreground">{tHardcodedUi.raw('appCliAuthorizePage.line216JsxTextKortixComYourTerminal')}</div>
+            <div className="text-base font-semibold">
+              {tHardcodedUi.raw('appCliAuthorizePage.line214JsxTextAuthorizeKortixCli')}
+            </div>
+            <div className="text-muted-foreground text-xs">
+              {tHardcodedUi.raw('appCliAuthorizePage.line216JsxTextKortixComYourTerminal')}
+            </div>
           </div>
         </div>
 
-        <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appCliAuthorizePage.line222JsxTextApprovingWillCreateANewPersonalAccessToken')}</p>
+        <p className="text-muted-foreground text-sm">
+          {tHardcodedUi.raw(
+            'appCliAuthorizePage.line222JsxTextApprovingWillCreateANewPersonalAccessToken',
+          )}
+        </p>
 
-        <dl className="mt-5 space-y-2 rounded-2xl border bg-muted/30 p-4 text-sm">
+        <dl className="bg-muted/30 mt-5 space-y-2 rounded-2xl border p-4 text-sm">
           <Row label="Account" value={userEmail || 'You'} />
           <Row label="Callback" value={callbackHost} />
           {deviceLabel && <Row label="Device" value={deviceLabel} />}
         </dl>
 
         {phase === 'error' && error && (
-          <div className="mt-5 flex items-start gap-2 rounded-2xl border border-destructive bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="border-destructive bg-destructive/5 text-destructive mt-5 flex items-start gap-2 rounded-2xl border p-3 text-sm">
             <XCircle className="mt-0.5 size-4 shrink-0" />
             <span>{error}</span>
           </div>
@@ -239,14 +258,16 @@ function ConsentCard({
         <div className="mt-6 flex items-center justify-between gap-3">
           <Link
             href="/"
-            className="text-sm text-muted-foreground underline-offset-4 hover:underline"
+            className="text-muted-foreground text-sm underline-offset-4 hover:underline"
           >
             Cancel
           </Link>
           <Button onClick={onAuthorize} disabled={busy} size="lg">
             {busy ? (
               <>
-                <Loader2 className="size-4 animate-spin" />{tHardcodedUi.raw('appCliAuthorizePage.line249JsxTextAuthorizing')}</>
+                <Loader2 className="size-4 animate-spin" />
+                {tHardcodedUi.raw('appCliAuthorizePage.line249JsxTextAuthorizing')}
+              </>
             ) : (
               <>
                 <KeyRound className="size-4" /> Authorize
@@ -256,8 +277,12 @@ function ConsentCard({
         </div>
       </div>
 
-      <div className="border-t bg-muted/30 px-7 py-3 text-xs text-muted-foreground">{tHardcodedUi.raw('appCliAuthorizePage.line261JsxTextYouCanRevokeThisTokenAnytimeUnder')}{' '}
-        <strong className="text-foreground">{tHardcodedUi.raw('appCliAuthorizePage.line262JsxTextSettingsCliTokens')}</strong>.
+      <div className="bg-muted/30 text-muted-foreground border-t px-7 py-3 text-xs">
+        {tHardcodedUi.raw('appCliAuthorizePage.line261JsxTextYouCanRevokeThisTokenAnytimeUnder')}{' '}
+        <strong className="text-foreground">
+          {tHardcodedUi.raw('appCliAuthorizePage.line262JsxTextSettingsCliTokens')}
+        </strong>
+        .
       </div>
     </div>
   );
@@ -279,25 +304,31 @@ function Row({ label, value }: { label: string; value: string }) {
 function SuccessCard() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="rounded-2xl border bg-background p-7 shadow-sm text-center">
+    <div className="bg-background rounded-2xl border p-7 text-center shadow-sm">
       <div className="mx-auto grid size-12 place-items-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
         <CheckCircle2 className="size-6" />
       </div>
-      <div className="mt-4 text-base font-semibold">{tHardcodedUi.raw('appCliAuthorizePage.line287JsxTextCliAuthorized')}</div>
-      <p className="mt-1 text-sm text-muted-foreground">{tHardcodedUi.raw('appCliAuthorizePage.line289JsxTextReturnToYourTerminalYouAposReSigned')}</p>
-      <p className="mt-4 text-xs text-muted-foreground">{tHardcodedUi.raw('appCliAuthorizePage.line292JsxTextYouCanCloseThisTab')}</p>
+      <div className="mt-4 text-base font-semibold">
+        {tHardcodedUi.raw('appCliAuthorizePage.line287JsxTextCliAuthorized')}
+      </div>
+      <p className="text-muted-foreground mt-1 text-sm">
+        {tHardcodedUi.raw('appCliAuthorizePage.line289JsxTextReturnToYourTerminalYouAposReSigned')}
+      </p>
+      <p className="text-muted-foreground mt-4 text-xs">
+        {tHardcodedUi.raw('appCliAuthorizePage.line292JsxTextYouCanCloseThisTab')}
+      </p>
     </div>
   );
 }
 
 function ErrorCard({ title, message }: { title: string; message: string }) {
   return (
-    <div className="rounded-2xl border bg-background p-7 shadow-sm text-center">
-      <div className="mx-auto grid size-12 place-items-center rounded-full bg-destructive/10 text-destructive">
+    <div className="bg-background rounded-2xl border p-7 text-center shadow-sm">
+      <div className="bg-destructive/10 text-destructive mx-auto grid size-12 place-items-center rounded-full">
         <XCircle className="size-6" />
       </div>
       <div className="mt-4 text-base font-semibold">{title}</div>
-      <p className="mt-1 text-sm text-muted-foreground">{message}</p>
+      <p className="text-muted-foreground mt-1 text-sm">{message}</p>
     </div>
   );
 }

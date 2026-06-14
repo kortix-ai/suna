@@ -23,31 +23,19 @@ import { useTranslations } from 'next-intl';
  * "+ New workspace" (opens global NewInstanceModal), "All workspaces" → /instances picker.
  */
 
-import * as React from 'react';
-import { useRouter, usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import {
-  ArrowUpRight,
-  Box,
-  Check,
-  ChevronsUpDown,
-  Loader2,
-  Plus,
-  Settings2,
-} from 'lucide-react';
+import { ArrowUpRight, Box, Check, ChevronsUpDown, Loader2, Plus, Settings2 } from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import * as React from 'react';
 
-import { useAuth } from '@/components/AuthProvider';
-import {
-  Popover,
-  PopoverTrigger,
-  PopoverContent,
-} from '@/components/ui/popover';
 import { InstanceSettingsModal } from '@/components/instances/instance-settings-modal';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { useAuth } from '@/features/providers/auth-provider';
 import { isBillingEnabled } from '@/lib/config';
-import { listSandboxes, ensureSandbox, type SandboxInfo } from '@/lib/platform-client';
+import { ensureSandbox, listSandboxes, type SandboxInfo } from '@/lib/platform-client';
+import { cn } from '@/lib/utils';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { activateInstanceSelection, useServerStore } from '@/stores/server-store';
-import { cn } from '@/lib/utils';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -126,9 +114,7 @@ export function CurrentWorkspaceAvatar() {
     [sandboxes],
   );
   const currentInstanceId = getCurrentInstanceIdFromPath(pathname);
-  const activeServer = useServerStore((s) =>
-    s.servers.find((srv) => srv.id === s.activeServerId),
-  );
+  const activeServer = useServerStore((s) => s.servers.find((srv) => srv.id === s.activeServerId));
   const activeInstanceId = currentInstanceId || activeServer?.instanceId || null;
   const active = visible.find((s) => s.sandbox_id === activeInstanceId) ?? null;
   return <WorkspaceAvatar sandbox={active} size="xs" />;
@@ -153,7 +139,11 @@ export function WorkspacesFlyoutContent({
   const [settingsTarget, setSettingsTarget] = React.useState<SandboxInfo | null>(null);
   const [creatingLocal, setCreatingLocal] = React.useState(false);
 
-  const { data: sandboxes, isLoading, refetch } = useQuery({
+  const {
+    data: sandboxes,
+    isLoading,
+    refetch,
+  } = useQuery({
     queryKey: ['platform', 'sandbox', 'list'],
     queryFn: listSandboxes,
     enabled: !!user,
@@ -166,9 +156,7 @@ export function WorkspacesFlyoutContent({
   );
 
   const currentInstanceId = getCurrentInstanceIdFromPath(pathname);
-  const activeServer = useServerStore((s) =>
-    s.servers.find((srv) => srv.id === s.activeServerId),
-  );
+  const activeServer = useServerStore((s) => s.servers.find((srv) => srv.id === s.activeServerId));
   const activeInstanceId = currentInstanceId || activeServer?.instanceId || null;
 
   const handleSelect = async (sandbox: SandboxInfo) => {
@@ -210,12 +198,18 @@ export function WorkspacesFlyoutContent({
 
   return (
     <>
-      <div className="p-1 flex flex-col">
+      <div className="flex flex-col p-1">
         {isLoading && visible.length === 0 ? (
-          <div className="flex items-center gap-2 px-2 py-2 text-xs text-muted-foreground">
-            <Loader2 className="size-3.5 animate-spin" />{tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line214JsxTextLoading')}</div>
+          <div className="text-muted-foreground flex items-center gap-2 px-2 py-2 text-xs">
+            <Loader2 className="size-3.5 animate-spin" />
+            {tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line214JsxTextLoading')}
+          </div>
         ) : visible.length === 0 ? (
-          <div className="px-2 py-6 text-center text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line218JsxTextNoWorkspacesYet')}</div>
+          <div className="text-muted-foreground/60 px-2 py-6 text-center text-xs">
+            {tHardcodedUi.raw(
+              'componentsSidebarInstanceSwitcherPopover.line218JsxTextNoWorkspacesYet',
+            )}
+          </div>
         ) : (
           visible.map((s) => {
             const isActive = s.sandbox_id === activeInstanceId;
@@ -224,16 +218,13 @@ export function WorkspacesFlyoutContent({
                 key={s.sandbox_id}
                 type="button"
                 onClick={() => handleSelect(s)}
-                className={cn(
-                  rowClass,
-                  isActive && 'bg-foreground/[0.06] text-foreground',
-                )}
+                className={cn(rowClass, isActive && 'bg-foreground/[0.06] text-foreground')}
               >
                 <Box className={iconColClass} />
                 <span
                   className={cn(
                     'flex-1 truncate text-left leading-tight',
-                    isActive ? 'font-semibold text-foreground' : 'font-medium text-foreground/85',
+                    isActive ? 'text-foreground font-semibold' : 'text-foreground/85 font-medium',
                   )}
                 >
                   {displayName(s)}
@@ -253,9 +244,9 @@ export function WorkspacesFlyoutContent({
                     setSettingsTarget(s);
                   }}
                   className={cn(
-                    'flex items-center justify-center h-5 w-5 rounded-[4px] flex-shrink-0',
+                    'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-[4px]',
                     'text-muted-foreground/60 hover:text-foreground hover:bg-muted',
-                    'opacity-0 group-hover/row:opacity-100 transition-opacity duration-150',
+                    'opacity-0 transition-opacity duration-150 group-hover/row:opacity-100',
                   )}
                 >
                   <Settings2 className="size-3" />
@@ -265,17 +256,15 @@ export function WorkspacesFlyoutContent({
             );
           })
         )}
-        <div className="border-t border-border/40 my-1" />
+        <div className="border-border/40 my-1 border-t" />
         <button
           type="button"
           onClick={handleNewInstance}
           disabled={creatingLocal}
-          className={cn(rowClass, 'disabled:opacity-50 disabled:pointer-events-none')}
+          className={cn(rowClass, 'disabled:pointer-events-none disabled:opacity-50')}
         >
           {creatingLocal ? <Loader2 className="animate-spin" /> : <Plus />}
-          <span className="flex-1 text-left">
-            {creatingLocal ? 'Creating…' : 'New workspace'}
-          </span>
+          <span className="flex-1 text-left">{creatingLocal ? 'Creating…' : 'New workspace'}</span>
         </button>
         <button
           type="button"
@@ -286,7 +275,11 @@ export function WorkspacesFlyoutContent({
           className={rowClass}
         >
           <ArrowUpRight />
-          <span className="flex-1 text-left">{tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line290JsxTextAllWorkspaces')}</span>
+          <span className="flex-1 text-left">
+            {tHardcodedUi.raw(
+              'componentsSidebarInstanceSwitcherPopover.line290JsxTextAllWorkspaces',
+            )}
+          </span>
         </button>
       </div>
 
@@ -336,9 +329,7 @@ export function InstanceSwitcherPopover() {
   );
 
   const currentInstanceId = getCurrentInstanceIdFromPath(pathname);
-  const activeServer = useServerStore((s) =>
-    s.servers.find((srv) => srv.id === s.activeServerId),
-  );
+  const activeServer = useServerStore((s) => s.servers.find((srv) => srv.id === s.activeServerId));
   const activeInstanceId = currentInstanceId || activeServer?.instanceId || null;
   const triggerSandbox = visible.find((s) => s.sandbox_id === activeInstanceId) ?? null;
   const triggerLabel = triggerSandbox ? displayName(triggerSandbox) : 'Select workspace';
@@ -350,22 +341,24 @@ export function InstanceSwitcherPopover() {
           <button
             type="button"
             className={cn(
-              'group/switcher flex items-center gap-2 w-full h-9 px-1.5 rounded-lg text-left',
-              'text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer',
+              'group/switcher flex h-9 w-full items-center gap-2 rounded-lg px-1.5 text-left',
+              'text-sidebar-foreground hover:bg-sidebar-accent cursor-pointer transition-colors duration-150',
               open && 'bg-sidebar-accent',
             )}
-            aria-label={tHardcodedUi.raw('componentsSidebarInstanceSwitcherPopover.line357JsxAttrAriaLabelSwitchWorkspace')}
+            aria-label={tHardcodedUi.raw(
+              'componentsSidebarInstanceSwitcherPopover.line357JsxAttrAriaLabelSwitchWorkspace',
+            )}
           >
             <WorkspaceAvatar sandbox={triggerSandbox} size="sm" />
-            <div className="flex-1 min-w-0">
-              <p className="truncate text-xs font-semibold leading-tight text-foreground">
+            <div className="min-w-0 flex-1">
+              <p className="text-foreground truncate text-xs leading-tight font-semibold">
                 {triggerLabel}
               </p>
-              <p className="truncate text-xs font-medium uppercase tracking-wider text-muted-foreground/60 leading-tight mt-0.5">
+              <p className="text-muted-foreground/60 mt-0.5 truncate text-xs leading-tight font-medium tracking-wider uppercase">
                 Workspace
               </p>
             </div>
-            <ChevronsUpDown className="size-3 opacity-50 flex-shrink-0 group-hover/switcher:opacity-100 transition-opacity" />
+            <ChevronsUpDown className="size-3 flex-shrink-0 opacity-50 transition-opacity group-hover/switcher:opacity-100" />
           </button>
         </PopoverTrigger>
 
@@ -374,14 +367,14 @@ export function InstanceSwitcherPopover() {
           align="start"
           sideOffset={6}
           className={cn(
-            'w-[280px] p-0 overflow-hidden rounded-2xl border-0',
+            'w-[280px] overflow-hidden rounded-2xl border-0 p-0',
             // Same dark slab surface as the unified dropdown system —
             // bg-card with hairline white inner border, soft drop, top-edge
             // gradient highlight. Identical material to DropdownMenuContent.
             'bg-card text-popover-foreground',
-            'border border-border/60',
+            'border-border/60 border',
             'before:pointer-events-none before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-white/[0.08] before:to-transparent',
-            'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.97] data-[state=open]:zoom-in-[0.97] data-[state=open]:duration-[180ms] data-[state=closed]:duration-[140ms]',
+            'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.97] data-[state=open]:zoom-in-[0.97] data-[state=closed]:duration-[140ms] data-[state=open]:duration-[180ms]',
           )}
         >
           <WorkspacesFlyoutContent onAfterAction={() => setOpen(false)} />
@@ -390,4 +383,3 @@ export function InstanceSwitcherPopover() {
     </>
   );
 }
-

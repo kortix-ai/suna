@@ -1,7 +1,7 @@
 'use client';
 
+import { errorToast } from '@/components/ui/toast';
 import { useMutation } from '@tanstack/react-query';
-import { toast } from '@/lib/toast';
 import type { UploadResult } from '../api/opencode-files';
 
 /**
@@ -16,7 +16,7 @@ import type { UploadResult } from '../api/opencode-files';
 const READ_ONLY_MSG = 'Project files are read-only in this view';
 
 function rejectReadOnly(): Promise<never> {
-  toast.error(READ_ONLY_MSG);
+  errorToast(READ_ONLY_MSG);
   return Promise.reject(new Error(READ_ONLY_MSG));
 }
 

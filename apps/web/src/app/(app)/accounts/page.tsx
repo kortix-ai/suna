@@ -2,20 +2,19 @@
 
 import { useTranslations } from 'next-intl';
 
-import { CreateAccountModal } from '@/components/accounts/create-account-modal';
-import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { CreateAccountModal } from '@/features/accounts/create-account-modal';
+import { useAuth } from '@/features/providers/auth-provider';
 import { listAccounts, type KortixAccount } from '@/lib/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Check, ChevronRight, Plus } from 'lucide-react';
+import { Check, ChevronRight, Plus } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -48,18 +47,9 @@ export default function AccountsPage() {
   }
 
   return (
-    <div className="bg-background flex min-h-screen flex-col">
-      <AppHeader user={user} breadcrumb="Accounts" />
+    <>
       <main className="flex-1 px-4 py-8">
-        <div className="mx-auto w-full max-w-4xl space-y-8">
-          <button
-            type="button"
-            onClick={() => router.push('/projects')}
-            className="text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            {tHardcodedUi.raw('appAccountsPage.line66JsxTextBackToProjects')}
-          </button>
+        <div className="mx-auto w-full max-w-6xl space-y-8">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-foreground text-2xl font-semibold tracking-tight">Accounts</h1>
@@ -122,7 +112,7 @@ export default function AccountsPage() {
           router.replace('/projects');
         }}
       />
-    </div>
+    </>
   );
 }
 

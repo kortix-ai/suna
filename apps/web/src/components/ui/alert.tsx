@@ -4,7 +4,7 @@ import * as React from 'react';
 import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { cn } from '@/lib/utils';
 
-const alertVariants = cva('w-full rounded-lg', {
+const alertVariants = cva('w-full rounded-md', {
   variants: {
     variant: {
       default: 'bg-card text-card-foreground',
@@ -56,7 +56,7 @@ function AlertDescription({ className, ...props }: React.ComponentProps<'div'>) 
     <div
       data-slot="item-description"
       className={cn(
-        'text-muted-foreground text-sm leading-normal font-normal text-balance',
+        'text-muted-foreground text-sm leading-normal font-normal',
         '[&>a:hover]:text-primary [&>a]:underline [&>a]:underline-offset-4',
         '[&_p]:leading-relaxed',
         className,

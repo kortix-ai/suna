@@ -20,6 +20,9 @@ function RadioGroup({
 
 type RadioGroupItemProps = React.ComponentProps<typeof RadioGroupPrimitive.Item> & {
   label?: React.ReactNode;
+  description?: React.ReactNode;
+  size?: 'sm' | 'md' | 'lg';
+  variant?: 'default' | 'outline';
 };
 
 const radioControlClassName = cn(
@@ -31,20 +34,35 @@ const radioControlClassName = cn(
   'aria-invalid:border-destructive',
 );
 
-function RadioGroupItem({ className, label, id, ...props }: RadioGroupItemProps) {
+function RadioGroupItem({
+  className,
+  label,
+  description,
+  id,
+  disabled,
+  size = 'md',
+  variant = 'default',
+  ...props
+}: RadioGroupItemProps) {
   const generatedId = React.useId();
   const itemId = id ?? generatedId;
+  const hasCaption = label != null || description != null;
 
   const control = (
     <RadioGroupPrimitive.Item
       data-slot="radio-group-item"
       id={itemId}
-      className={cn(radioControlClassName, !label && className)}
+      disabled={disabled}
+      className={cn(
+        radioControlClassName,
+        !hasCaption && className,
+        description != null && 'mt-[3px]',
+      )}
       {...props}
     />
   );
 
-  if (!label) {
+  if (!hasCaption) {
     return control;
   }
 
@@ -52,23 +70,47 @@ function RadioGroupItem({ className, label, id, ...props }: RadioGroupItemProps)
     <label
       htmlFor={itemId}
       className={cn(
-        'flex w-full cursor-pointer items-center gap-3 rounded-md px-3 py-1.5 transition-colors',
+        'flex w-full cursor-pointer gap-3 rounded-md px-3 py-1.5 transition-colors',
+        description != null ? 'items-start justify-start' : 'items-center justify-center',
         'hover:bg-foreground/3',
         'has-data-[state=checked]:bg-foreground/6 has-data-[state=checked]:hover:bg-foreground/6',
         'has-focus-visible:ring-ring has-focus-visible:ring-offset-background has-focus-visible:ring-2 has-focus-visible:ring-offset-2',
+        disabled && 'cursor-not-allowed opacity-50',
         className,
+        size === 'sm' && 'px-2 py-1.5',
+        size === 'md' && 'px-3 py-1.5',
+        size === 'lg' && 'px-4 py-2.5',
+        variant === 'outline' && 'border-border border',
       )}
     >
       {control}
-      <span
+      <div
         className={cn(
-          'text-sm transition-[color,font-weight]',
-          'text-muted-foreground',
-          'peer-data-[state=checked]:text-foreground peer-data-[state=checked]:font-medium',
+          'flex min-w-0 flex-1 flex-col',
+          description != null ? 'justify-start' : 'justify-center',
         )}
       >
-        {label}
-      </span>
+        {label != null && (
+          <span
+            className={cn(
+              'text-sm transition-[color,font-weight]',
+              'text-muted-foreground',
+              'peer-data-[state=checked]:text-foreground peer-data-[state=checked]:font-medium',
+              disabled && 'text-muted-foreground',
+            )}
+          >
+            {label}
+          </span>
+        )}
+        {description != null && (
+          <span
+            data-slot="radio-group-item-description"
+            className="text-muted-foreground block text-xs"
+          >
+            {description}
+          </span>
+        )}
+      </div>
     </label>
   );
 }

@@ -768,28 +768,55 @@ export async function upsertProjectSecret(
   );
 }
 
-export async function startProjectChatGptHeadlessAuth(projectId: string) {
+// ── Provider OAuth device flow (poll-based) ────────────────────────────────
+// Connect a subscription-backed provider (e.g. ChatGPT) via a device-code flow.
+// `start` returns the challenge; the caller polls `poll` until it resolves.
+// Plain JSON requests (no streaming) — survives the edge and any replica.
+
+export interface ProviderOAuthStart {
+  flow_id: string;
+  verification_url: string;
+  user_code: string | null;
+  /** Epoch ms when the device code expires. */
+  expires_at: number;
+  /** Suggested poll cadence. */
+  interval_ms: number;
+}
+
+export interface ProviderOAuthCredential {
+  provider_id: string;
+  expires_in_ms: number | null;
+  updated_at: string;
+}
+
+export type ProviderOAuthPoll =
+  | { status: 'pending'; next_poll_ms?: number }
+  | { status: 'success'; credential: ProviderOAuthCredential }
+  | { status: 'expired' }
+  | { status: 'failed'; error: string };
+
+export async function startProjectProviderOAuth(
+  projectId: string,
+  provider: string,
+  input?: { sharing?: ConnectorSharing },
+): Promise<ProviderOAuthStart> {
   return unwrap(
-    await backendApi.post<{
-      authId: string;
-      url: string;
-      instructions: string;
-      code: string | null;
-    }>(
-      `/projects/${projectId}/providers/openai/chatgpt/headless/start`,
-      {},
+    await backendApi.post<ProviderOAuthStart>(
+      `/projects/${projectId}/oauth/${provider}/start`,
+      { sharing: input?.sharing },
     ),
   );
 }
 
-export async function completeProjectChatGptHeadlessAuth(
+export async function pollProjectProviderOAuth(
   projectId: string,
-  input: { authId: string; sharing?: ConnectorSharing },
-) {
+  provider: string,
+  flowId: string,
+): Promise<ProviderOAuthPoll> {
   return unwrap(
-    await backendApi.post<ProjectSecret>(
-      `/projects/${projectId}/providers/openai/chatgpt/headless/complete`,
-      { auth_id: input.authId, sharing: input.sharing },
+    await backendApi.post<ProviderOAuthPoll>(
+      `/projects/${projectId}/oauth/${provider}/poll`,
+      { flow_id: flowId },
     ),
   );
 }

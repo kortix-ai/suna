@@ -50,6 +50,27 @@ project on every account you're a member of.
 
 ## Command surface
 
+### Machine-readable output (`--json`) — driving Kortix as an agent
+
+Every **read/list** command accepts `--json`: it prints the raw API
+payload to **stdout** (the human table is suppressed) and nothing else,
+so an agent can parse it directly. All diagnostics — the `host …` banner,
+update notices, errors — go to **stderr**, so `… --json 2>/dev/null | jq`
+is always clean JSON. Mutations are flag-driven with no hidden prompts.
+
+Net effect: the CLI is a **100% scriptable surface** — an agent can drive
+Kortix end-to-end from the terminal, the same surface a human drives in
+the dashboard (list/select/interact with sessions, read messages, browse
+files & diffs, open/merge change requests, manage secrets/triggers/
+connectors, …).
+
+```sh
+kortix sessions ls --json                       # what's running
+kortix sessions log <id> --json                 # what an agent is doing
+kortix cr ls --json                             # open change requests
+kortix files cat README.md --json | jq -r .content
+```
+
 ### Auth
 
 | Command | Effect |
@@ -128,9 +149,12 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 
 | Command | Effect |
 | --- | --- |
-| `kortix sessions ls` | All sessions on the project. |
-| `kortix sessions info <id>` | Detail view: status, branch, base ref, agent, sandbox URL, errors. |
-| `kortix sessions new [--prompt "<text>"]` | Start a new session, optionally with an initial prompt. |
+| `kortix sessions ls` | All sessions on the project. `--json` for machine-readable output. |
+| `kortix sessions status [--all] [--json]` | **Mission control** — every session + what each agent is doing *right now* (live: current tool / thinking / idle + last activity). Built for when many run in parallel. Aliases: `overview`, `ps`. |
+| `kortix sessions info <id>` | Detail view: status, branch, base ref, agent, sandbox URL, errors. `--json`. |
+| `kortix sessions log [<id>] [--limit N] [--json]` | **Read-only** peek at a session agent's recent messages — see what another agent is *doing right now* without sending it anything. Aliases: `messages`, `history`. No id → most-recent running (an interactive picker when several run on a TTY). |
+| `kortix sessions chat [<id>]` | Talk to a session's agent. `--prompt "<text>"` = one-shot (prints the reply and exits); add `--json` to get that reply as JSON (a synchronous subagent call); no flag = REPL. No id → picks/asks which running session. `--new` starts a fresh one. |
+| `kortix sessions new [--prompt "<text>"] [--wait] [--json]` | Start a new session. `--wait` blocks until it's running; `--json` prints the session object so you can capture `session_id` to orchestrate. |
 | `kortix sessions restart <id>` | Re-provision a session in place. |
 | `kortix sessions rm <id>` | Stop + delete. |
 | `kortix sessions open <id>` | Open the dashboard URL for a session. |
@@ -138,6 +162,41 @@ Each session is an isolated sandbox VM on its own ephemeral branch.
 **Inside a sandbox:** `KORTIX_SESSION_ID` tells you which session
 you're running in. `kortix sessions info $KORTIX_SESSION_ID` gives
 you the live view of yourself.
+
+**Watch + talk to other agents.** From any session (or your laptop) you
+can see the whole project's activity and read it live — this is how an
+agent checks up on every other agent that's running:
+
+```sh
+kortix sessions status                      # all agents + what each is doing now
+kortix sessions status --json | jq .        # …parsed for a monitoring loop
+kortix sessions log <id> --limit 20         # read one agent's recent transcript
+kortix sessions chat <id> --prompt "…"      # talk to another agent
+```
+
+`log` is **read-only** — it never sends a message, so it's the safe way
+to observe. To actually talk to another session, one-shot it:
+`kortix sessions chat <id> --prompt "status?"` (prints the reply and
+exits), or drop into a REPL with `kortix sessions chat <id>`.
+
+**Orchestrate parallel subagents.** The whole fan-out loop is CLI-only —
+spawn many sessions, watch the fleet, collect results, land work:
+
+```sh
+# spawn a subagent and get a *ready* session id back in one call
+id=$(kortix sessions new --json --wait --prompt "do task X" | jq -r .session_id)
+
+kortix sessions status --json                 # the fleet: who's working vs idle
+kortix sessions chat "$id" --prompt "result?" --json | jq -r .text   # synchronous call
+kortix sessions log "$id" --json              # …or read progress without interrupting
+
+kortix cr ls --json                           # subagents land work as CRs → review/merge
+kortix sessions rm "$id"                       # tear the subagent down
+```
+
+`--json --wait` is the spawn primitive (one call → a running session id you
+can immediately drive); `sessions status` is the at-a-glance fleet view;
+`chat … --prompt --json` is a synchronous call; `log` is async observation.
 
 ### Triggers
 

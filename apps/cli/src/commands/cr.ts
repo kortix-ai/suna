@@ -1,4 +1,4 @@
-import { resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
+import { emitJson, resolveProjectContext, surfaceApiError, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { C, pad, status } from '../style.ts';
 import type {
   ChangeRequest,
@@ -19,8 +19,9 @@ git) without per-host integration.
 
 Subcommands:
   ls [--status open|merged|closed|all]   List CRs. Default: open.
-  show <cr>                              Show one CR's metadata.
-  diff <cr> [--no-color]                 Show the CR's unified diff.
+     [--json]                            Print the raw CR list as JSON.
+  show <cr> [--json]                     Show one CR's metadata.
+  diff <cr> [--no-color] [--json]        Show the CR's unified diff.
   open --head <ver> [--base <ver>]       Open a new CR.
        --title "<text>" [--description "<text>"]
   merge <cr> [--message "<text>"]        Merge an open CR into its base.
@@ -31,6 +32,7 @@ Subcommands:
 
 Global options:
   --project <id>     Operate on this project id (default: linked).
+  --host <name>      Operate against a non-default Kortix host.
   -h, --help         Show this help.
 
 Inside an agent sandbox the CLI reads KORTIX_CLI_TOKEN and KORTIX_PROJECT_ID
@@ -47,32 +49,37 @@ export async function runCr(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
   let projectFlag: string | undefined;
+  let hostFlag: string | undefined;
+  let json = false;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
+    hostFlag = takeFlagValue(rest, ['--host']);
+    json = takeFlagBool(rest, ['--json']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
+  const ctxOpts: CtxOpts = { projectArg: projectFlag, hostArg: hostFlag };
 
   switch (sub) {
     case 'ls':
     case 'list':
-      return crLs(rest, projectFlag);
+      return crLs(rest, ctxOpts, json);
     case 'show':
     case 'info':
-      return crShow(rest[0], projectFlag);
+      return crShow(rest[0], ctxOpts, json);
     case 'diff':
-      return crDiff(rest, projectFlag);
+      return crDiff(rest, ctxOpts, json);
     case 'open':
     case 'new':
     case 'create':
-      return crOpen(rest, projectFlag);
+      return crOpen(rest, ctxOpts);
     case 'merge':
-      return crMerge(rest, projectFlag);
+      return crMerge(rest, ctxOpts);
     case 'close':
-      return crClose(rest[0], projectFlag);
+      return crClose(rest[0], ctxOpts);
     case 'reopen':
-      return crReopen(rest[0], projectFlag);
+      return crReopen(rest[0], ctxOpts);
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -80,6 +87,8 @@ export async function runCr(argv: string[]): Promise<number> {
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
+
+type CtxOpts = { projectArg?: string; hostArg?: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -156,7 +165,7 @@ async function resolveCr(
 
 // ── subcommands ────────────────────────────────────────────────────────────
 
-async function crLs(argv: string[], projectArg?: string): Promise<number> {
+async function crLs(argv: string[], opts: CtxOpts, json = false): Promise<number> {
   let statusFilter: string | undefined;
   try {
     statusFilter = takeFlagValue(argv, ['--status']);
@@ -170,7 +179,7 @@ async function crLs(argv: string[], projectArg?: string): Promise<number> {
     return 2;
   }
 
-  const ctx = resolveProjectContext(projectArg);
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   let resp: ChangeRequestsListResponse;
@@ -180,6 +189,11 @@ async function crLs(argv: string[], projectArg?: string): Promise<number> {
     );
   } catch (err) {
     return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(resp);
+    return 0;
   }
 
   const crs = resp.change_requests;
@@ -213,11 +227,26 @@ async function crLs(argv: string[], projectArg?: string): Promise<number> {
   return 0;
 }
 
-async function crShow(ref: string | undefined, projectArg?: string): Promise<number> {
-  const ctx = resolveProjectContext(projectArg);
+async function crShow(ref: string | undefined, opts: CtxOpts, json = false): Promise<number> {
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, ref);
   if (!cr) return 1;
+
+  if (json) {
+    let merge_preview: ChangeRequestMergePreview | null = null;
+    if (cr.status === 'open') {
+      try {
+        merge_preview = await ctx.client.get<ChangeRequestMergePreview>(
+          `/projects/${ctx.projectId}/change-requests/${cr.cr_id}/merge-preview`,
+        );
+      } catch {
+        merge_preview = null;
+      }
+    }
+    emitJson({ change_request: cr, merge_preview });
+    return 0;
+  }
 
   process.stdout.write('\n');
   process.stdout.write(`  ${C.bold}#${cr.number}${C.reset}  ${cr.title}\n`);
@@ -270,9 +299,9 @@ async function crShow(ref: string | undefined, projectArg?: string): Promise<num
   return 0;
 }
 
-async function crDiff(argv: string[], projectArg?: string): Promise<number> {
+async function crDiff(argv: string[], opts: CtxOpts, json = false): Promise<number> {
   const noColor = takeFlagBool(argv, ['--no-color']);
-  const ctx = resolveProjectContext(projectArg);
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, argv[0]);
   if (!cr) return 1;
@@ -284,6 +313,11 @@ async function crDiff(argv: string[], projectArg?: string): Promise<number> {
     );
   } catch (err) {
     return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson({ cr, patch: diff.patch });
+    return 0;
   }
 
   if (diff.files_changed === 0) {
@@ -335,7 +369,7 @@ async function crDiff(argv: string[], projectArg?: string): Promise<number> {
   return 0;
 }
 
-async function crOpen(argv: string[], projectArg?: string): Promise<number> {
+async function crOpen(argv: string[], opts: CtxOpts): Promise<number> {
   let headRef: string | undefined;
   let baseRef: string | undefined;
   let title: string | undefined;
@@ -367,7 +401,7 @@ async function crOpen(argv: string[], projectArg?: string): Promise<number> {
     return 2;
   }
 
-  const ctx = resolveProjectContext(projectArg);
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
   const body: Record<string, unknown> = {
@@ -397,7 +431,7 @@ async function crOpen(argv: string[], projectArg?: string): Promise<number> {
   return 0;
 }
 
-async function crMerge(argv: string[], projectArg?: string): Promise<number> {
+async function crMerge(argv: string[], opts: CtxOpts): Promise<number> {
   let message: string | undefined;
   try {
     message = takeFlagValue(argv, ['--message', '-m']);
@@ -405,7 +439,7 @@ async function crMerge(argv: string[], projectArg?: string): Promise<number> {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
   }
-  const ctx = resolveProjectContext(projectArg);
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, argv[0]);
   if (!cr) return 1;
@@ -428,8 +462,8 @@ async function crMerge(argv: string[], projectArg?: string): Promise<number> {
   return 0;
 }
 
-async function crClose(ref: string | undefined, projectArg?: string): Promise<number> {
-  const ctx = resolveProjectContext(projectArg);
+async function crClose(ref: string | undefined, opts: CtxOpts): Promise<number> {
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, ref);
   if (!cr) return 1;
@@ -446,8 +480,8 @@ async function crClose(ref: string | undefined, projectArg?: string): Promise<nu
   return 0;
 }
 
-async function crReopen(ref: string | undefined, projectArg?: string): Promise<number> {
-  const ctx = resolveProjectContext(projectArg);
+async function crReopen(ref: string | undefined, opts: CtxOpts): Promise<number> {
+  const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
   const cr = await resolveCr(ctx, ref);
   if (!cr) return 1;

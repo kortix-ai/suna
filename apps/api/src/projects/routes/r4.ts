@@ -1,7 +1,7 @@
 import { deleteSlackInstall, loadSlackInstall, saveSlackInstall } from '../../channels/install-store';
 import { buildSlackInstallUrl } from '../../channels/slack-oauth';
 import { slackOauthMode } from '../../channels/slack-oauth-mode';
-import { postQuestionAndWait, relayTurnAnswer, relayTurnEnd, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
+import { postQuestion, relayTurnAnswer, relayTurnEnd, relayTurnStep, type QuestionInfo } from '../../channels/slack-webhook';
 import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
 import { db } from '../../shared/db';
@@ -561,9 +561,14 @@ projectsApp.openapi(
     return c.json({ error: 'no valid questions provided' }, 400);
   }
 
-  const result = await postQuestionAndWait(sessionId, questions);
+  // Non-blocking: post the question(s) into the thread and return immediately
+  // with sentinel `answers`. The agent does NOT wait for an inline answer — the
+  // user's in-thread reply arrives as a follow-up turn. Returning `answers` keeps
+  // BOTH the new sandbox (ignores them, uses its own sentinel) and an old sandbox
+  // image (resumes opencode from them) unblocked.
+  const result = await postQuestion(sessionId, questions);
   if (!result.ok) return c.json({ ok: false, error: result.error }, 409);
-  return c.json({ ok: true, ask_id: result.ask_id, answers: result.answers });
+  return c.json({ ok: true, answers: result.answers });
 },
 );
 

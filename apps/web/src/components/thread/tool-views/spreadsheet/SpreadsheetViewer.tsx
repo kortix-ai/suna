@@ -2,34 +2,34 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useRef, useState, useEffect, useCallback } from 'react';
-import { SpreadsheetComponent } from '@syncfusion/ej2-react-spreadsheet';
-import { registerLicense } from '@syncfusion/ej2-base';
-import { FileSpreadsheet, Download, RefreshCw, Cloud, CloudOff, AlertCircle } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useSpreadsheetSync } from './useSpreadsheetSync';
-import { SyncStatusIndicator } from './SyncStatusIndicator';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/components/AuthProvider';
-import { toast } from '@/lib/toast';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useDownloadRestriction } from '@/hooks/billing';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { registerLicense } from '@syncfusion/ej2-base';
+import { SpreadsheetComponent } from '@syncfusion/ej2-react-spreadsheet';
+import { AlertCircle, Cloud, CloudOff, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { SpreadsheetLoader } from './SpreadsheetLoader';
+import { useSpreadsheetSync } from './useSpreadsheetSync';
 
 import '../../../../../node_modules/@syncfusion/ej2-base/styles/material.css';
-import '../../../../../node_modules/@syncfusion/ej2-inputs/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-buttons/styles/material.css';
-import '../../../../../node_modules/@syncfusion/ej2-splitbuttons/styles/material.css';
+import '../../../../../node_modules/@syncfusion/ej2-dropdowns/styles/material.css';
+import '../../../../../node_modules/@syncfusion/ej2-grids/styles/material.css';
+import '../../../../../node_modules/@syncfusion/ej2-inputs/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-lists/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-navigations/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-popups/styles/material.css';
-import '../../../../../node_modules/@syncfusion/ej2-dropdowns/styles/material.css';
-import '../../../../../node_modules/@syncfusion/ej2-grids/styles/material.css';
 import '../../../../../node_modules/@syncfusion/ej2-react-spreadsheet/styles/material.css';
+import '../../../../../node_modules/@syncfusion/ej2-splitbuttons/styles/material.css';
 import './kortix-spreadsheet-styles.css';
 
-
-const SYNCFUSION_LICENSE = "Ngo9BigBOggjHTQxAR8/V1JGaF5cXGpCfEx0QXxbf1x2ZFRMZVxbQXNPIiBoS35RcEViW3pfc3FXQmJYUkZ3VEFf";
-const SYNCFUSION_BASE_URL = 'https://ej2services.syncfusion.com/production/web-services/api/spreadsheet';
+const SYNCFUSION_LICENSE =
+  'Ngo9BigBOggjHTQxAR8/V1JGaF5cXGpCfEx0QXxbf1x2ZFRMZVxbQXNPIiBoS35RcEViW3pfc3FXQmJYUkZ3VEFf';
+const SYNCFUSION_BASE_URL =
+  'https://ej2services.syncfusion.com/production/web-services/api/spreadsheet';
 
 registerLicense(SYNCFUSION_LICENSE);
 
@@ -58,7 +58,11 @@ interface SpreadsheetViewerProps {
   showDownloadButton?: boolean;
   allowEditing?: boolean;
   onSyncStateChange?: (state: SyncState) => void;
-  onActionsReady?: (actions: { forceRefresh: () => Promise<boolean>; forceSave: () => void; resolveConflict: (keepLocal: boolean) => Promise<void> }) => void;
+  onActionsReady?: (actions: {
+    forceRefresh: () => Promise<boolean>;
+    forceSave: () => void;
+    resolveConflict: (keepLocal: boolean) => Promise<void>;
+  }) => void;
   onLoadingChange?: (isLoading: boolean) => void;
   onDownloadReady?: (download: () => void) => void;
   onDownloadingChange?: (isDownloading: boolean) => void;
@@ -87,7 +91,7 @@ export function SpreadsheetViewer({
   const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
     featureName: 'files',
   });
-  
+
   useEffect(() => {
     const style = document.createElement('style');
     style.innerHTML = `
@@ -108,22 +112,22 @@ export function SpreadsheetViewer({
       document.head.removeChild(style);
     };
   }, []);
-  
+
   const resolvedSandboxId = sandboxId || project?.sandbox?.id;
-  
+
   const resolvedFilePath = (() => {
     if (!filePath) {
       console.warn('[SpreadsheetViewer] No filePath provided, only fileName:', fileName);
       return null;
     }
-    
+
     let path = filePath;
-    
+
     if (path.startsWith('blob:')) {
       console.log('[SpreadsheetViewer] Using blob URL:', path);
       return path;
     }
-    
+
     if (!path.startsWith('/')) {
       if (path.startsWith('workspace')) {
         path = '/' + path;
@@ -131,23 +135,18 @@ export function SpreadsheetViewer({
         path = `/workspace/${path}`;
       }
     }
-    
+
     console.log('[SpreadsheetViewer] Resolved path:', {
       original: filePath,
       resolved: path,
       fileName,
-      sandboxId: resolvedSandboxId
+      sandboxId: resolvedSandboxId,
     });
-    
+
     return path;
   })();
 
-  const {
-    syncState,
-    isLoading,
-    handlers,
-    actions,
-  } = useSpreadsheetSync({
+  const { syncState, isLoading, handlers, actions } = useSpreadsheetSync({
     sandboxId: resolvedSandboxId,
     filePath: resolvedFilePath,
     spreadsheetRef: ssRef,
@@ -180,7 +179,7 @@ export function SpreadsheetViewer({
       openUpgradeModal();
       return;
     }
-    
+
     if (!resolvedFilePath) {
       toast.error('Unable to download file');
       return;
@@ -214,31 +213,41 @@ export function SpreadsheetViewer({
   const getSyncIcon = () => {
     switch (syncState.status) {
       case 'syncing':
-        return <Cloud className="w-3 h-3 text-zinc-500 dark:text-zinc-400 animate-pulse" />;
+        return <Cloud className="h-3 w-3 animate-pulse text-zinc-500 dark:text-zinc-400" />;
       case 'synced':
-        return <Cloud className="w-3 h-3 text-zinc-500 dark:text-zinc-400" />;
+        return <Cloud className="h-3 w-3 text-zinc-500 dark:text-zinc-400" />;
       case 'offline':
-        return <CloudOff className="w-3 h-3 text-amber-500" />;
+        return <CloudOff className="h-3 w-3 text-amber-500" />;
       case 'error':
       case 'conflict':
-        return <AlertCircle className="w-3 h-3 text-red-500" />;
+        return <AlertCircle className="h-3 w-3 text-red-500" />;
       default:
-        return syncState.pendingChanges 
-          ? <Cloud className="w-3 h-3 text-zinc-400" />
-          : <Cloud className="w-3 h-3 text-zinc-400" />;
+        return syncState.pendingChanges ? (
+          <Cloud className="h-3 w-3 text-zinc-400" />
+        ) : (
+          <Cloud className="h-3 w-3 text-zinc-400" />
+        );
     }
   };
 
   if (!resolvedFilePath) {
     return (
-      <div className={cn('w-full h-full flex items-center justify-center', className)}>
-        <div className="text-center space-y-3">
-          <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
-            <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
+      <div className={cn('flex h-full w-full items-center justify-center', className)}>
+        <div className="space-y-3 text-center">
+          <div className="bg-muted mx-auto flex h-16 w-16 items-center justify-center rounded-full">
+            <FileSpreadsheet className="text-muted-foreground h-8 w-8" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-foreground">{tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSpreadsheetviewer.line237JsxTextNoFilePathProvided')}</h3>
-            <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSpreadsheetviewer.line238JsxTextFilepathIsRequiredToLoadTheSpreadsheet')}</p>
+            <h3 className="text-foreground text-lg font-medium">
+              {tHardcodedUi.raw(
+                'componentsThreadToolViewsSpreadsheetSpreadsheetviewer.line237JsxTextNoFilePathProvided',
+              )}
+            </h3>
+            <p className="text-muted-foreground text-xs">
+              {tHardcodedUi.raw(
+                'componentsThreadToolViewsSpreadsheetSpreadsheetviewer.line238JsxTextFilepathIsRequiredToLoadTheSpreadsheet',
+              )}
+            </p>
           </div>
         </div>
       </div>
@@ -247,24 +256,25 @@ export function SpreadsheetViewer({
 
   if (syncState.status === 'error' && isLoading) {
     return (
-      <div className={cn('w-full h-full flex items-center justify-center', className)}>
-        <div className="text-center space-y-3">
-          <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
-            <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
+      <div className={cn('flex h-full w-full items-center justify-center', className)}>
+        <div className="space-y-3 text-center">
+          <div className="bg-muted mx-auto flex h-16 w-16 items-center justify-center rounded-full">
+            <FileSpreadsheet className="text-muted-foreground h-8 w-8" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-foreground">{tHardcodedUi.raw('componentsThreadToolViewsSpreadsheetSpreadsheetviewer.line253JsxTextFailedToLoadSpreadsheet')}</h3>
-            <p className="text-xs text-muted-foreground">{syncState.errorMessage || 'Unknown error'}</p>
+            <h3 className="text-foreground text-lg font-medium">
+              {tHardcodedUi.raw(
+                'componentsThreadToolViewsSpreadsheetSpreadsheetviewer.line253JsxTextFailedToLoadSpreadsheet',
+              )}
+            </h3>
+            <p className="text-muted-foreground text-xs">
+              {syncState.errorMessage || 'Unknown error'}
+            </p>
             {resolvedFilePath && (
-              <p className="text-xs text-muted-foreground mt-1">Path: {resolvedFilePath}</p>
+              <p className="text-muted-foreground mt-1 text-xs">Path: {resolvedFilePath}</p>
             )}
-            <Button
-              onClick={actions.forceRefresh}
-              variant="outline"
-              size="sm"
-              className="mt-3"
-            >
-              <RefreshCw className="w-3 h-3 mr-2" />
+            <Button onClick={actions.forceRefresh} variant="outline" size="sm" className="mt-3">
+              <RefreshCw className="mr-2 h-3 w-3" />
               Retry
             </Button>
           </div>
@@ -274,8 +284,8 @@ export function SpreadsheetViewer({
   }
 
   return (
-    <div className={cn('w-full h-full relative flex flex-col', className)}>
-      <div className="flex-1 relative">
+    <div className={cn('relative flex h-full w-full flex-col', className)}>
+      <div className="relative flex-1">
         <SpreadsheetComponent
           ref={ssRef}
           openUrl={`${SYNCFUSION_BASE_URL}/open`}
@@ -314,7 +324,7 @@ export function SpreadsheetViewer({
           openFailure={handlers.handleOpenFailure}
         />
         {isLoading && (
-          <div className="absolute inset-0 z-50 bg-background/95 backdrop-blur-sm">
+          <div className="bg-background/95 absolute inset-0 z-50 backdrop-blur-sm">
             <SpreadsheetLoader mode="max" />
           </div>
         )}

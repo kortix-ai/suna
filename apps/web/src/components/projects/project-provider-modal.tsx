@@ -13,7 +13,6 @@ import { useTranslations } from 'next-intl';
  * carries over: Connected | Add provider | Models.
  */
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
@@ -28,7 +27,15 @@ import {
   Search,
   Unplug,
 } from 'lucide-react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import {
+  SharingPicker,
+  isSharingComplete,
+  selectionToIntent,
+  type SharingSelection,
+} from '@/components/projects/sharing-picker';
+import type { FlatModel } from '@/components/session/session-chat-input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +46,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
 import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Dialog,
@@ -48,39 +56,28 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
-import {
-  SharingPicker,
-  isSharingComplete,
-  selectionToIntent,
-  type SharingSelection,
-} from '@/components/projects/sharing-picker';
-import {
-  PROVIDER_LABELS,
-  ProviderLogo,
-} from '@/components/providers/provider-branding';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
-import {
-  completeProjectChatGptHeadlessAuth,
-  deleteProjectSecret,
-  deletePersonalProjectSecret,
-  listProjectSecrets,
-  setPersonalProjectSecret,
-  startProjectChatGptHeadlessAuth,
-  upsertProjectSecret,
-} from '@/lib/projects-client';
+import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import { useModelStore } from '@/hooks/opencode/use-model-store';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import {
   LLM_PROVIDERS,
   LLM_PROVIDER_BY_ID,
   type LlmProviderEntry,
   type LlmProviderModel,
 } from '@/lib/llm-providers';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
-import type { FlatModel } from '@/components/session/session-chat-input';
-import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
+import {
+  deletePersonalProjectSecret,
+  deleteProjectSecret,
+  listProjectSecrets,
+  pollProjectProviderOAuth,
+  setPersonalProjectSecret,
+  startProjectProviderOAuth,
+  upsertProjectSecret,
+} from '@/lib/projects-client';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 
 const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
 const LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME = 'OPENCODE_AUTH_JSON';
@@ -124,7 +121,7 @@ export function ProjectProviderModal({
 
   const secretNames = useMemo(() => {
     const data = secretsQuery.data;
-    const items = Array.isArray(data) ? data : data?.items ?? [];
+    const items = Array.isArray(data) ? data : (data?.items ?? []);
     return new Set(items.map((item) => item.name));
   }, [secretsQuery.data]);
 
@@ -137,13 +134,11 @@ export function ProjectProviderModal({
     const connectedIds = new Set(ocProviders?.connected ?? []);
     const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
     if (!kortix || !connectedIds.has('kortix')) return null;
-    const models: LlmProviderModel[] = Object.entries(kortix.models ?? {}).map(
-      ([id, m]) => ({
-        id,
-        name: ((m as { name?: string }).name || id).replace('(latest)', '').trim(),
-        released: (m as { release_date?: string }).release_date ?? null,
-      }),
-    );
+    const models: LlmProviderModel[] = Object.entries(kortix.models ?? {}).map(([id, m]) => ({
+      id,
+      name: ((m as { name?: string }).name || id).replace('(latest)', '').trim(),
+      released: (m as { release_date?: string }).release_date ?? null,
+    }));
     return {
       id: 'kortix',
       label: kortix.name || 'Kortix',
@@ -208,9 +203,15 @@ export function ProjectProviderModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="!grid h-[min(80vh,680px)] w-[calc(100vw-2rem)] max-w-[600px] grid-rows-[auto_auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
-        <DialogHeader className="space-y-0.5 px-5 pt-5 pb-3 pr-12">
-          <DialogTitle className="text-sm font-semibold">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line151JsxTextLlmProviders')}</DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line153JsxTextConnectProvidersKeysAreStoredPerProjectAnd')}</DialogDescription>
+        <DialogHeader className="space-y-0.5 px-5 pt-5 pr-12 pb-3">
+          <DialogTitle className="text-sm font-semibold">
+            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line151JsxTextLlmProviders')}
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground/60 text-xs">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line153JsxTextConnectProvidersKeysAreStoredPerProjectAnd',
+            )}
+          </DialogDescription>
         </DialogHeader>
 
         {!inSubflow && (
@@ -223,7 +224,7 @@ export function ProjectProviderModal({
               >
                 Connected
                 {connectedProviders.length > 0 && (
-                  <span className="ml-0.5 text-xs text-muted-foreground/40 tabular-nums">
+                  <span className="text-muted-foreground/40 ml-0.5 text-xs tabular-nums">
                     {connectedProviders.length}
                   </span>
                 )}
@@ -232,7 +233,11 @@ export function ProjectProviderModal({
                 data-state={activeTab === 'catalog' ? 'active' : 'inactive'}
                 onClick={() => switchTab('catalog')}
                 className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
-              >{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line178JsxTextAddProvider')}</FilterBarItem>
+              >
+                {tHardcodedUi.raw(
+                  'componentsProjectsProjectProviderModal.line178JsxTextAddProvider',
+                )}
+              </FilterBarItem>
               <FilterBarItem
                 data-state={activeTab === 'models' ? 'active' : 'inactive'}
                 onClick={() => switchTab('models')}
@@ -242,15 +247,15 @@ export function ProjectProviderModal({
               </FilterBarItem>
             </FilterBar>
 
-            <div className="relative ml-auto h-9 min-w-0 flex-1 max-w-[260px]">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+            <div className="relative ml-auto h-9 max-w-[260px] min-w-0 flex-1">
+              <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2" />
               <Input
                 type="text"
                 placeholder={searchPlaceholder}
                 autoComplete="off"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-9 w-full rounded-full border-border/50 bg-foreground/[0.05] pl-9 text-xs shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+                className="border-border/50 bg-foreground/[0.05] focus-visible:ring-ring/40 h-9 w-full rounded-full pl-9 text-xs shadow-none focus-visible:ring-1"
               />
             </div>
           </div>
@@ -259,7 +264,7 @@ export function ProjectProviderModal({
         <div className="min-h-0 overflow-y-auto">
           {secretsQuery.isLoading && (
             <div className="flex min-h-[200px] items-center justify-center">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
             </div>
           )}
 
@@ -283,10 +288,7 @@ export function ProjectProviderModal({
           )}
 
           {!secretsQuery.isLoading && activeTab === 'models' && (
-            <ModelsTab
-              connectedProviders={connectedProviders}
-              search={search}
-            />
+            <ModelsTab connectedProviders={connectedProviders} search={search} />
           )}
         </div>
       </DialogContent>
@@ -294,10 +296,7 @@ export function ProjectProviderModal({
   );
 }
 
-function pickInitialTab(
-  defaultTab: ActiveTab | undefined,
-  hasConnections: boolean,
-): ActiveTab {
+function pickInitialTab(defaultTab: ActiveTab | undefined, hasConnections: boolean): ActiveTab {
   if (defaultTab === 'catalog') return 'catalog';
   if (defaultTab === 'connected') return hasConnections ? 'connected' : 'catalog';
   if (defaultTab === 'models') return hasConnections ? 'models' : 'catalog';
@@ -326,13 +325,14 @@ function ConnectedTab({
   // survive a disconnect on a multi-key provider.
   const disconnect = useMutation({
     mutationFn: async (provider: LlmProviderEntry) => {
-      const names = provider.id === 'openai'
-        ? [
-            ...provider.envVars,
-            CODEX_AUTH_JSON_SECRET_NAME,
-            LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
-          ]
-        : provider.envVars;
+      const names =
+        provider.id === 'openai'
+          ? [
+              ...provider.envVars,
+              CODEX_AUTH_JSON_SECRET_NAME,
+              LEGACY_OPENCODE_AUTH_JSON_SECRET_NAME,
+            ]
+          : provider.envVars;
       await Promise.all(
         names.flatMap((envVar) => [
           deleteProjectSecret(projectId, envVar).catch(() => undefined),
@@ -346,8 +346,7 @@ function ConnectedTab({
       setConfirmId(null);
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
     },
-    onError: (err) =>
-      toast.error(err instanceof Error ? err.message : 'Failed to disconnect'),
+    onError: (err) => toast.error(err instanceof Error ? err.message : 'Failed to disconnect'),
   });
 
   const filtered = useMemo(() => {
@@ -364,8 +363,14 @@ function ConnectedTab({
   if (connectedProviders.length === 0) {
     return (
       <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 px-6 text-center">
-        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line300JsxTextNoProvidersConnectedYet')}</p>
-        <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={onAddProvider}>{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line302JsxTextAddProvider')}</Button>
+        <p className="text-muted-foreground/60 text-xs">
+          {tHardcodedUi.raw(
+            'componentsProjectsProjectProviderModal.line300JsxTextNoProvidersConnectedYet',
+          )}
+        </p>
+        <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={onAddProvider}>
+          {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line302JsxTextAddProvider')}
+        </Button>
       </div>
     );
   }
@@ -373,7 +378,13 @@ function ConnectedTab({
   if (filtered.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line312JsxTextNoConnectedProvidersMatchLdquo')}{search}{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line312JsxTextRdquo')}</p>
+        <p className="text-muted-foreground/60 text-xs">
+          {tHardcodedUi.raw(
+            'componentsProjectsProjectProviderModal.line312JsxTextNoConnectedProvidersMatchLdquo',
+          )}
+          {search}
+          {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line312JsxTextRdquo')}
+        </p>
       </div>
     );
   }
@@ -381,18 +392,18 @@ function ConnectedTab({
   const confirmProvider = confirmId ? LLM_PROVIDER_BY_ID.get(confirmId) : null;
 
   return (
-    <div className="space-y-1 px-5 pb-4 pt-3">
+    <div className="space-y-1 px-5 pt-3 pb-4">
       {filtered.map((provider) => (
         <div
           key={provider.id}
-          className="group flex h-auto w-full items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-2.5 text-left"
+          className="group border-border/50 bg-muted/20 flex h-auto w-full items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-left"
         >
           <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
           <div className="min-w-0 flex-1">
-            <div className="truncate text-sm font-medium text-foreground">
+            <div className="text-foreground truncate text-sm font-medium">
               {PROVIDER_LABELS[provider.id] ?? provider.label}
             </div>
-            <div className="mt-0.5 truncate text-xs text-muted-foreground">
+            <div className="text-muted-foreground mt-0.5 truncate text-xs">
               {provider.managed
                 ? `${provider.hint} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`
                 : `${providerCredentialSummary(provider)} · ${provider.models.length} model${provider.models.length === 1 ? '' : 's'}`}
@@ -409,7 +420,7 @@ function ConnectedTab({
               disabled={disconnect.isPending}
               variant="ghost"
               size="icon-sm"
-              className="ml-auto shrink-0 text-muted-foreground/40 hover:bg-muted hover:text-foreground"
+              className="text-muted-foreground/40 hover:bg-muted hover:text-foreground ml-auto shrink-0"
               title="Disconnect"
             >
               {disconnect.isPending && disconnect.variables?.id === provider.id ? (
@@ -422,35 +433,51 @@ function ConnectedTab({
         </div>
       ))}
 
-      <AlertDialog
-        open={!!confirmId}
-        onOpenChange={(open) => !open && setConfirmId(null)}
-      >
+      <AlertDialog open={!!confirmId} onOpenChange={(open) => !open && setConfirmId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line361JsxTextDisconnectProvider')}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line361JsxTextDisconnectProvider',
+              )}
+            </AlertDialogTitle>
             <AlertDialogDescription className="text-xs">
               {confirmProvider && (
                 <>
                   Remove{' '}
-                  <span className="font-medium text-foreground">{confirmProvider.label}</span>{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line366JsxTextThisDeletes')}{' '}
+                  <span className="text-foreground font-medium">{confirmProvider.label}</span>
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectProviderModal.line366JsxTextThisDeletes',
+                  )}{' '}
                   {confirmProvider.envVars.length === 1 ? (
                     <>
                       the{' '}
-                      <code className="rounded bg-muted px-1 py-0.5 font-mono">
+                      <code className="bg-muted rounded px-1 py-0.5 font-mono">
                         {confirmProvider.envVars[0]}
-                      </code>{' '}{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line374JsxTextProjectSecret')}</>
+                      </code>{' '}
+                      {tHardcodedUi.raw(
+                        'componentsProjectsProjectProviderModal.line374JsxTextProjectSecret',
+                      )}
+                    </>
                   ) : (
                     <>
-                      {confirmProvider.envVars.length}{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line378JsxTextProjectSecrets')}{confirmProvider.envVars.map((envVar, index) => (
+                      {confirmProvider.envVars.length}
+                      {tHardcodedUi.raw(
+                        'componentsProjectsProjectProviderModal.line378JsxTextProjectSecrets',
+                      )}
+                      {confirmProvider.envVars.map((envVar, index) => (
                         <span key={envVar}>
                           {index > 0 && ', '}
-                          <code className="rounded bg-muted px-1 py-0.5 font-mono">{envVar}</code>
+                          <code className="bg-muted rounded px-1 py-0.5 font-mono">{envVar}</code>
                         </span>
                       ))}
                       ).
                     </>
-                  )}{' '}{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line388JsxTextYouAposLlNeedToReconnectToUse')}</>
+                  )}{' '}
+                  {tHardcodedUi.raw(
+                    'componentsProjectsProjectProviderModal.line388JsxTextYouAposLlNeedToReconnectToUse',
+                  )}
+                </>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -539,7 +566,7 @@ function CatalogTab({
   }
 
   return (
-    <div className="space-y-1 px-5 pb-4 pt-3">
+    <div className="space-y-1 px-5 pt-3 pb-4">
       {/* Custom provider always pinned to the top — same affordance the legacy
           modal had. Wires an OpenAI-compatible endpoint without needing it to
           be on the models.dev catalog. */}
@@ -547,21 +574,29 @@ function CatalogTab({
         type="button"
         variant="ghost"
         onClick={() => setSubview({ kind: 'custom' })}
-        className="group flex h-auto w-full items-center gap-3 rounded-2xl border border-dashed border-border bg-background px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35"
+        className="group border-border bg-background hover:bg-muted/35 flex h-auto w-full items-center gap-3 rounded-2xl border border-dashed px-3.5 py-2.5 text-left transition-colors"
       >
-        <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-dashed border-border/60 text-muted-foreground/70">
+        <span className="border-border/60 text-muted-foreground/70 flex size-9 shrink-0 items-center justify-center rounded-lg border border-dashed">
           <Plus className="h-4 w-4" />
         </span>
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line492JsxTextCustomProvider')}</div>
-          <div className="mt-0.5 truncate text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line495JsxTextConnectAnyOpenaiCompatibleEndpointWithYourOwn')}</div>
+          <div className="text-foreground truncate text-sm font-medium">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line492JsxTextCustomProvider',
+            )}
+          </div>
+          <div className="text-muted-foreground mt-0.5 truncate text-xs">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line495JsxTextConnectAnyOpenaiCompatibleEndpointWithYourOwn',
+            )}
+          </div>
         </div>
-        <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
+        <ChevronRight className="text-muted-foreground/40 group-hover:text-muted-foreground ml-auto h-4 w-4 shrink-0 transition-colors" />
       </Button>
 
       {filtered.length === 0 && (
         <div className="px-4 py-8 text-center">
-          <p className="text-xs text-muted-foreground/60">
+          <p className="text-muted-foreground/60 text-xs">
             {search ? `No providers match "${search}"` : 'No providers'}
           </p>
         </div>
@@ -575,11 +610,11 @@ function CatalogTab({
             type="button"
             variant="ghost"
             onClick={() => setSubview({ kind: 'detail', providerId: provider.id })}
-            className="group flex h-auto w-full items-center gap-3 rounded-2xl border border-border/50 bg-background px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35"
+            className="group border-border/50 bg-background hover:bg-muted/35 flex h-auto w-full items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-left transition-colors"
           >
             <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
+              <div className="text-foreground flex items-center gap-1.5 truncate text-sm font-medium">
                 {PROVIDER_LABELS[provider.id] ?? provider.label}
                 {isConnected && (
                   <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
@@ -587,11 +622,9 @@ function CatalogTab({
                   </span>
                 )}
               </div>
-              <div className="mt-0.5 truncate text-xs text-muted-foreground">
-                {provider.hint}
-              </div>
+              <div className="text-muted-foreground mt-0.5 truncate text-xs">{provider.hint}</div>
             </div>
-            <ChevronRight className="ml-auto h-4 w-4 shrink-0 text-muted-foreground/40 transition-colors group-hover:text-muted-foreground" />
+            <ChevronRight className="text-muted-foreground/40 group-hover:text-muted-foreground ml-auto h-4 w-4 shrink-0 transition-colors" />
           </Button>
         );
       })}
@@ -626,20 +659,22 @@ function ProviderDetail({
   }, [provider.helpUrl]);
 
   return (
-    <div className="space-y-3 px-5 pb-5 pt-3">
+    <div className="space-y-3 px-5 pt-3 pb-5">
       <Button
         type="button"
         variant="ghost"
         size="sm"
-        className="-ml-2 h-7 gap-1 px-2 text-xs text-muted-foreground"
+        className="text-muted-foreground -ml-2 h-7 gap-1 px-2 text-xs"
         onClick={onBack}
       >
-        <ChevronLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line576JsxTextBackToProviders')}</Button>
+        <ChevronLeft className="h-3.5 w-3.5" />
+        {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line576JsxTextBackToProviders')}
+      </Button>
 
-      <div className="flex items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3">
+      <div className="border-border/50 bg-muted/20 flex items-center gap-3 rounded-2xl border px-3.5 py-3">
         <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 truncate text-sm font-medium text-foreground">
+          <div className="text-foreground flex items-center gap-1.5 truncate text-sm font-medium">
             {PROVIDER_LABELS[provider.id] ?? provider.label}
             {isConnected && (
               <span className="rounded bg-emerald-500/10 px-1 py-0.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
@@ -647,7 +682,7 @@ function ProviderDetail({
               </span>
             )}
           </div>
-          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+          <div className="text-muted-foreground mt-0.5 truncate text-xs">
             {providerCredentialSummary(provider)} · {models.length} model
             {models.length === 1 ? '' : 's'}
           </div>
@@ -662,7 +697,7 @@ function ProviderDetail({
           href={provider.helpUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs"
         >
           <ExternalLink className="h-3 w-3" />
           {helpHostname}
@@ -671,32 +706,36 @@ function ProviderDetail({
 
       <div>
         <div className="mb-1.5 flex items-center justify-between px-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
+          <span className="text-muted-foreground/60 text-xs font-medium tracking-wide uppercase">
             Models
           </span>
-          <span className="text-xs text-muted-foreground/40 tabular-nums">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line618JsxTextNewestFirst')}</span>
+          <span className="text-muted-foreground/40 text-xs tabular-nums">
+            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line618JsxTextNewestFirst')}
+          </span>
         </div>
         {models.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-border/40 px-4 py-6 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line623JsxTextNoModelsDeclared')}</div>
+          <div className="border-border/40 text-muted-foreground rounded-2xl border border-dashed px-4 py-6 text-center text-xs">
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line623JsxTextNoModelsDeclared',
+            )}
+          </div>
         ) : (
-          <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/40">
+          <div className="border-border/40 bg-background/40 overflow-hidden rounded-2xl border">
             {models.map((model, i) => (
               <div
                 key={model.id}
                 className={cn(
                   'flex items-start gap-3 px-3 py-2',
-                  i > 0 && 'border-t border-border/20',
+                  i > 0 && 'border-border/20 border-t',
                 )}
               >
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm text-foreground">{model.name}</div>
-                  <div className="mt-0.5 truncate text-xs text-muted-foreground/50">
-                    {model.id}
-                  </div>
+                  <div className="text-foreground truncate text-sm">{model.name}</div>
+                  <div className="text-muted-foreground/50 mt-0.5 truncate text-xs">{model.id}</div>
                 </div>
                 {model.released && (
                   <span
-                    className="shrink-0 self-center text-xs tabular-nums text-muted-foreground/50"
+                    className="text-muted-foreground/50 shrink-0 self-center text-xs tabular-nums"
                     title={`Released ${model.released}`}
                   >
                     {releasedAgo(model.released)}
@@ -795,8 +834,7 @@ function ApiKeyConnectForm({
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
       onConnected();
     },
-    onError: (err) =>
-      setError(err instanceof Error ? err.message : 'Failed to save credentials'),
+    onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save credentials'),
   });
 
   const allFilled = provider.envVars.every((envVar) => values[envVar]?.trim());
@@ -828,30 +866,28 @@ function ApiKeyConnectForm({
   }
 
   return (
-    <div className="space-y-3 px-5 pb-5 pt-3">
+    <div className="space-y-3 px-5 pt-3 pb-5">
       <Button
         type="button"
         variant="ghost"
         size="sm"
-        className="-ml-2 h-7 gap-1 px-2 text-xs text-muted-foreground"
+        className="text-muted-foreground -ml-2 h-7 gap-1 px-2 text-xs"
         onClick={onBack}
       >
-        <ChevronLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line767JsxTextBackToProviders')}</Button>
+        <ChevronLeft className="h-3.5 w-3.5" />
+        {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line767JsxTextBackToProviders')}
+      </Button>
 
-      <div className="flex items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3">
+      <div className="border-border/50 bg-muted/20 flex items-center gap-3 rounded-2xl border px-3.5 py-3">
         <ProviderLogo providerID={provider.id} name={provider.label} size="default" />
         <div className="min-w-0 flex-1">
-          <div className="truncate text-sm font-medium text-foreground">
-            {provider.label}
-          </div>
-          <div className="mt-0.5 truncate text-xs text-muted-foreground">
+          <div className="text-foreground truncate text-sm font-medium">{provider.label}</div>
+          <div className="text-muted-foreground mt-0.5 truncate text-xs">
             {provider.envVars.length === 1 ? 'Stored as' : 'Stored as'}{' '}
             {provider.envVars.map((envVar, index) => (
               <span key={envVar}>
                 {index > 0 && ' · '}
-                <code className="rounded bg-background px-1 py-0.5 font-mono">
-                  {envVar}
-                </code>
+                <code className="bg-background rounded px-1 py-0.5 font-mono">{envVar}</code>
               </span>
             ))}
           </div>
@@ -868,15 +904,13 @@ function ApiKeyConnectForm({
 
       <form
         onSubmit={handleSubmit}
-        className={cn(
-          'space-y-3 rounded-2xl border border-border/50 bg-muted/20 p-4',
-        )}
+        className={cn('border-border/50 bg-muted/20 space-y-3 rounded-2xl border p-4')}
       >
         {provider.envVars.map((envVar, index) => (
           <div key={envVar}>
             <label
               htmlFor={`provider-${provider.id}-${envVar}`}
-              className="mb-1.5 block text-xs font-medium text-muted-foreground"
+              className="text-muted-foreground mb-1.5 block text-xs font-medium"
             >
               {prettyFieldLabel(envVar)}
             </label>
@@ -884,9 +918,7 @@ function ApiKeyConnectForm({
               id={`provider-${provider.id}-${envVar}`}
               type="text"
               value={values[envVar] ?? ''}
-              onChange={(e) =>
-                setValues((current) => ({ ...current, [envVar]: e.target.value }))
-              }
+              onChange={(e) => setValues((current) => ({ ...current, [envVar]: e.target.value }))}
               placeholder={envVarPlaceholder(provider, envVar)}
               className="h-9 text-sm"
               autoFocus={index === 0}
@@ -895,26 +927,25 @@ function ApiKeyConnectForm({
           </div>
         ))}
 
-        <SharingPicker
-          projectId={projectId}
-          value={sharing}
-          onChange={setSharing}
-          showHeading
-        />
+        <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} showHeading />
 
         {provider.helpUrl && helpHostname && (
           <a
             href={provider.helpUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex w-fit items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground flex w-fit items-center gap-1 text-xs"
           >
-            <ExternalLink className="h-3 w-3" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line827JsxTextGetCredentialsFrom')}{' '}{helpHostname}
+            <ExternalLink className="h-3 w-3" />
+            {tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line827JsxTextGetCredentialsFrom',
+            )}{' '}
+            {helpHostname}
           </a>
         )}
 
         {error && (
-          <div className="flex items-start gap-2 rounded-2xl bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <div className="bg-destructive/5 text-destructive flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
             <span>{error}</span>
           </div>
@@ -922,7 +953,7 @@ function ApiKeyConnectForm({
 
         <div className="flex items-start gap-2.5 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2.5">
           <Info className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
-          <p className="text-xs leading-relaxed text-foreground/80">
+          <p className="text-foreground/80 text-xs leading-relaxed">
             A sandbox picks up new providers when it starts. To use this in a running session,
             restart its sandbox from the session list.
           </p>
@@ -936,17 +967,28 @@ function ApiKeyConnectForm({
         >
           {upsert.isPending ? (
             <>
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line847JsxTextConnecting')}</>
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line847JsxTextConnecting')}
+            </>
           ) : (
             'Connect'
           )}
         </Button>
       </form>
 
-      <p className="px-1 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line856JsxTextValuesAreEncryptedAtRestAes256Gcm')}</p>
+      <p className="text-muted-foreground px-1 text-xs">
+        {tHardcodedUi.raw(
+          'componentsProjectsProjectProviderModal.line856JsxTextValuesAreEncryptedAtRestAes256Gcm',
+        )}
+      </p>
     </div>
   );
 }
+
+type ChatGptPhase = 'idle' | 'waiting' | 'done';
+type ChatGptChallenge = { url: string; code: string | null };
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function ChatGptSubscriptionConnect({
   projectId,
@@ -958,159 +1000,180 @@ function ChatGptSubscriptionConnect({
   onConnected: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<ChatGptPhase>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [authId, setAuthId] = useState<string | null>(null);
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
-  const [authInstructions, setAuthInstructions] = useState<string | null>(null);
+  const [challenge, setChallenge] = useState<ChatGptChallenge | null>(null);
+  // Flips true on unmount or Cancel to stop the in-flight poll loop.
+  const cancelledRef = useRef(false);
 
-  function formatProviderError(err: unknown): string {
-    if (err instanceof Error) return err.message;
-    if (err && typeof err === 'object') {
-      const record = err as Record<string, unknown>;
-      const data = record.data;
-      if (data && typeof data === 'object' && !Array.isArray(data)) {
-        const message = (data as Record<string, unknown>).message;
-        if (typeof message === 'string' && message.trim()) return message;
-      }
-      const message = record.message;
-      if (typeof message === 'string' && message.trim()) return message;
-      try {
-        return JSON.stringify(err);
-      } catch {
-        // fall through
-      }
-    }
-    return 'Failed to connect ChatGPT subscription';
-  }
+  useEffect(() => {
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, []);
 
-  async function handleStartHeadlessConnect() {
-    setBusy(true);
+  const reset = useCallback(() => {
+    cancelledRef.current = true;
+    setChallenge(null);
     setError(null);
-    setAuthId(null);
-    setAuthUrl(null);
-    setAuthInstructions(null);
-    try {
-      const authData = await startProjectChatGptHeadlessAuth(projectId);
-      setAuthId(authData.authId);
-      setAuthUrl(authData.url);
-      setAuthInstructions(authData.instructions);
-      if (authData.url) {
-        window.open(authData.url, '_blank', 'noopener,noreferrer');
-      }
-    } catch (err) {
-      setError(formatProviderError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+    setPhase('idle');
+  }, []);
 
-  async function handleCompleteHeadlessConnect() {
-    if (!authId) return;
-    setBusy(true);
+  const handleConnect = useCallback(async () => {
+    if (!isSharingComplete(sharing)) {
+      setError('Pick at least one member, or choose another access option.');
+      return;
+    }
+    cancelledRef.current = false;
     setError(null);
+    setChallenge(null);
+    setPhase('waiting');
     try {
-      if (!isSharingComplete(sharing)) {
-        throw new Error('Pick at least one member, or choose another access option.');
-      }
-      await completeProjectChatGptHeadlessAuth(projectId, {
-        authId,
+      const start = await startProjectProviderOAuth(projectId, 'openai', {
         sharing: selectionToIntent(sharing),
       });
+      if (cancelledRef.current) return;
+      setChallenge({ url: start.verification_url, code: start.user_code });
+      // Pop the auth page so the user can enter the code right away.
+      if (start.verification_url) {
+        window.open(start.verification_url, '_blank', 'noopener,noreferrer');
+      }
 
-      toast.success('ChatGPT subscription connected to this project');
-      queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
-      onConnected();
+      const interval = Math.max(2000, start.interval_ms || 3000);
+      const deadline = start.expires_at || Date.now() + 10 * 60_000;
+      while (!cancelledRef.current && Date.now() < deadline) {
+        await sleep(interval);
+        if (cancelledRef.current) return;
+        let res;
+        try {
+          res = await pollProjectProviderOAuth(projectId, 'openai', start.flow_id);
+        } catch {
+          continue; // transient — keep polling
+        }
+        if (cancelledRef.current) return;
+        if (res.status === 'success') {
+          setPhase('done');
+          toast.success('ChatGPT subscription connected to this project');
+          queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+          onConnected();
+          return;
+        }
+        if (res.status === 'failed') {
+          setChallenge(null);
+          setPhase('idle');
+          setError(res.error || 'Authorization failed');
+          return;
+        }
+        if (res.status === 'expired') {
+          setChallenge(null);
+          setPhase('idle');
+          setError('Authorization timed out. Try again.');
+          return;
+        }
+        // pending → keep polling
+      }
+      if (!cancelledRef.current) {
+        setChallenge(null);
+        setPhase('idle');
+        setError('Authorization timed out. Try again.');
+      }
     } catch (err) {
-      setError(formatProviderError(err));
-    } finally {
-      setBusy(false);
+      if (cancelledRef.current) return;
+      setChallenge(null);
+      setPhase('idle');
+      setError(err instanceof Error ? err.message : 'Failed to connect ChatGPT subscription');
     }
-  }
+  }, [projectId, sharing, queryClient, onConnected]);
 
-  const deviceCode = authInstructions?.match(/\b[A-Z0-9]{4,}(?:-[A-Z0-9]{4,})+\b/)?.[0] ?? null;
+  const waiting = phase === 'waiting';
 
   return (
-    <div className="rounded-2xl border border-border/50 bg-muted/20 p-4">
+    <div className="border-border/50 bg-muted/20 rounded-2xl border p-4">
       <div className="flex items-start gap-3">
         <ProviderLogo providerID="openai" name="OpenAI" size="default" />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-foreground">ChatGPT Plus/Pro</div>
-          <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-            Use OpenCode headless auth, then save the resulting login as an encrypted project secret for future sessions.
+          <div className="text-foreground text-sm font-medium">ChatGPT Plus/Pro</div>
+          <p className="text-muted-foreground mt-0.5 text-xs leading-5">
+            Sign in with your ChatGPT subscription. We save the login as an encrypted
+            project secret
+            so future sessions reuse it.
           </p>
         </div>
       </div>
-      {(authInstructions || authUrl) && (
-        <div className="mt-3 rounded-2xl border border-border/50 bg-background/70 p-3">
-          <div className="text-xs font-medium text-foreground">Complete authorization</div>
-          {authUrl && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="mt-2 h-8 gap-1.5 px-3"
-              onClick={() => window.open(authUrl, '_blank', 'noopener,noreferrer')}
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open auth page
-            </Button>
-          )}
-          {deviceCode ? (
-            <div className="mt-3">
-              <div className="text-xs text-muted-foreground">Enter this code on the auth page:</div>
-              <div className="mt-1 w-fit rounded-2xl border border-border/60 bg-muted px-3 py-2 font-mono text-lg font-semibold tracking-normal text-foreground">
-                {deviceCode}
+
+      {waiting && (
+        <div className="border-border/50 bg-background/70 mt-3 rounded-2xl border p-3">
+          {challenge ? (
+            <>
+              <div className="text-foreground text-xs font-medium">
+                Authorize in the browser
               </div>
-            </div>
-          ) : authInstructions ? (
-            <pre className="mt-3 whitespace-pre-wrap rounded-2xl border border-border/60 bg-muted p-3 text-xs text-muted-foreground">
-              {authInstructions}
-            </pre>
-          ) : null}
-          {busy && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Connecting
-            </div>
+              {challenge.url && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 h-8 gap-1.5 px-3"
+                  onClick={() => window.open(challenge.url, '_blank', 'noopener,noreferrer')}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open auth page
+                </Button>
+              )}
+              {challenge.code ? (
+                <div className="mt-3">
+                  <div className="text-muted-foreground text-xs">Enter this code on the auth page:</div>
+                  <div className="border-border/60 bg-muted text-foreground mt-1 w-fit rounded-2xl border px-3 py-2 font-mono text-lg font-semibold tracking-normal">
+                    {challenge.code}
+                  </div>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="text-xs font-medium text-foreground">Starting authorization…</div>
           )}
+          <div className="text-muted-foreground mt-3 flex items-center gap-2 text-xs">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {challenge
+              ? 'Waiting for you to finish in the browser…'
+              : 'Connecting to OpenAI…'}
+          </div>
         </div>
       )}
+
+      {phase === 'done' && (
+        <div className="mt-3 flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2.5 text-xs text-foreground/80">
+          ChatGPT subscription connected.
+        </div>
+      )}
+
       {error && (
-        <div className="mt-3 flex items-start gap-2 rounded-2xl bg-destructive/5 px-3 py-2 text-xs text-destructive">
+        <div className="bg-destructive/5 text-destructive mt-3 flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
+
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="px-4"
-          onClick={handleStartHeadlessConnect}
-          disabled={busy}
-        >
-          {busy ? (
-            <>
-              {!(authInstructions || authUrl) && (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              )}
-              Connecting
-            </>
-          ) : (
-            'Connect with headless auth'
-          )}
-        </Button>
-        {authId && (
+        {waiting ? (
           <Button
             type="button"
             size="sm"
+            variant="outline"
             className="px-4"
-            onClick={handleCompleteHeadlessConnect}
-            disabled={busy}
+            onClick={reset}
           >
-            Complete authorization
+            Cancel
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="px-4"
+            onClick={handleConnect}
+          >
+            {error || phase === 'done' ? 'Reconnect ChatGPT' : 'Connect ChatGPT'}
           </Button>
         )}
       </div>
@@ -1247,38 +1310,47 @@ function CustomProviderForm({
   }
 
   return (
-    <div className="space-y-3 px-5 pb-5 pt-3">
+    <div className="space-y-3 px-5 pt-3 pb-5">
       <Button
         type="button"
         variant="ghost"
         size="sm"
-        className="-ml-2 h-7 gap-1 px-2 text-xs text-muted-foreground"
+        className="text-muted-foreground -ml-2 h-7 gap-1 px-2 text-xs"
         onClick={onBack}
       >
-        <ChevronLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line983JsxTextBackToProviders')}</Button>
+        <ChevronLeft className="h-3.5 w-3.5" />
+        {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line983JsxTextBackToProviders')}
+      </Button>
 
-      <div className="rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-3">
-        <div className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line987JsxTextCustomProvider')}</div>
-        <p className="mt-0.5 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line989JsxTextConnectAnyOpenaiCompatibleEndpointTheApiKey')}{' '}
-          <code className="rounded bg-background px-1 py-0.5 font-mono">.opencode/opencode.jsonc</code>.
+      <div className="border-border/50 bg-muted/20 rounded-2xl border px-3.5 py-3">
+        <div className="text-foreground text-sm font-medium">
+          {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line987JsxTextCustomProvider')}
+        </div>
+        <p className="text-muted-foreground mt-0.5 text-xs">
+          {tHardcodedUi.raw(
+            'componentsProjectsProjectProviderModal.line989JsxTextConnectAnyOpenaiCompatibleEndpointTheApiKey',
+          )}{' '}
+          <code className="bg-background rounded px-1 py-0.5 font-mono">
+            .opencode/opencode.jsonc
+          </code>
+          .
         </p>
       </div>
 
       <form
         onSubmit={handleSubmit}
-        className="space-y-3 rounded-2xl border border-border/50 bg-muted/20 p-4"
+        className="border-border/50 bg-muted/20 space-y-3 rounded-2xl border p-4"
       >
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1002JsxTextProviderId')}</label>
+            <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1002JsxTextProviderId')}
+            </label>
             <Input
               type="text"
               value={form.providerId}
               onChange={(e) =>
-                setField(
-                  'providerId',
-                  e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''),
-                )
+                setField('providerId', e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))
               }
               placeholder="my-llm"
               className="h-9 font-mono text-xs"
@@ -1286,27 +1358,30 @@ function CustomProviderForm({
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1020JsxTextDisplayName')}</label>
+            <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line1020JsxTextDisplayName',
+              )}
+            </label>
             <Input
               type="text"
               value={form.name}
               onChange={(e) => setField('name', e.target.value)}
-              placeholder={tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1026JsxAttrPlaceholderMyLlm')}
+              placeholder={tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line1026JsxAttrPlaceholderMyLlm',
+              )}
               className="h-9 text-sm"
             />
           </div>
         </div>
 
         {form.apiKey.trim() && (
-          <SharingPicker
-            projectId={projectId}
-            value={sharing}
-            onChange={setSharing}
-            showHeading
-          />
+          <SharingPicker projectId={projectId} value={sharing} onChange={setSharing} showHeading />
         )}
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1033JsxTextBaseUrl')}</label>
+          <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1033JsxTextBaseUrl')}
+          </label>
           <Input
             type="text"
             value={form.baseURL}
@@ -1316,20 +1391,25 @@ function CustomProviderForm({
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1045JsxTextApiKey')}{' '}
-            <span className="font-normal text-muted-foreground/60">(optional)</span>
+          <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1045JsxTextApiKey')}{' '}
+            <span className="text-muted-foreground/60 font-normal">(optional)</span>
           </label>
           <Input
             type="text"
             value={form.apiKey}
             onChange={(e) => setField('apiKey', e.target.value)}
-            placeholder={tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1052JsxAttrPlaceholderSkSavedAsAProjectSecret')}
+            placeholder={tHardcodedUi.raw(
+              'componentsProjectsProjectProviderModal.line1052JsxAttrPlaceholderSkSavedAsAProjectSecret',
+            )}
             className="h-9 font-mono text-xs"
           />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1059JsxTextModelId')}</label>
+            <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1059JsxTextModelId')}
+            </label>
             <Input
               type="text"
               value={form.modelId}
@@ -1339,19 +1419,23 @@ function CustomProviderForm({
             />
           </div>
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1071JsxTextModelName')}</label>
+            <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1071JsxTextModelName')}
+            </label>
             <Input
               type="text"
               value={form.modelName}
               onChange={(e) => setField('modelName', e.target.value)}
-              placeholder={tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1077JsxAttrPlaceholderFoo7b')}
+              placeholder={tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line1077JsxAttrPlaceholderFoo7b',
+              )}
               className="h-9 text-sm"
             />
           </div>
         </div>
 
         {error && (
-          <div className="flex items-start gap-2 rounded-2xl bg-destructive/5 px-3 py-2 text-xs text-destructive">
+          <div className="bg-destructive/5 text-destructive flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
             <span>{error}</span>
           </div>
@@ -1365,7 +1449,9 @@ function CustomProviderForm({
         >
           {save.isPending ? (
             <>
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1094JsxTextGenerating')}</>
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1094JsxTextGenerating')}
+            </>
           ) : (
             'Generate snippet'
           )}
@@ -1399,24 +1485,37 @@ function CustomProviderSnippetView({
   }
 
   return (
-    <div className="space-y-3 px-5 pb-5 pt-3">
+    <div className="space-y-3 px-5 pt-3 pb-5">
       <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/[0.04] px-3.5 py-3">
-        <div className="text-sm font-medium text-foreground">
+        <div className="text-foreground text-sm font-medium">
           {secretName ? 'API key saved' : 'Snippet ready'}
         </div>
-        <p className="mt-0.5 text-xs text-muted-foreground">
+        <p className="text-muted-foreground mt-0.5 text-xs">
           {secretName ? (
-            <>{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1136JsxTextYourKeyIsStoredAs')}{' '}
-              <code className="rounded bg-background px-1 py-0.5 font-mono">{secretName}</code>{' '}{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1138JsxTextAndWillBeInjectedIntoSessionsAsAn')}</>
+            <>
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line1136JsxTextYourKeyIsStoredAs',
+              )}{' '}
+              <code className="bg-background rounded px-1 py-0.5 font-mono">{secretName}</code>{' '}
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line1138JsxTextAndWillBeInjectedIntoSessionsAsAn',
+              )}
+            </>
           ) : (
-            <>{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1141JsxTextNoApiKeyWasProvidedTheSnippetBelow')}</>
+            <>
+              {tHardcodedUi.raw(
+                'componentsProjectsProjectProviderModal.line1141JsxTextNoApiKeyWasProvidedTheSnippetBelow',
+              )}
+            </>
           )}
         </p>
       </div>
 
       <div>
         <div className="mb-1.5 flex items-center justify-between px-1">
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground/60">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1149JsxTextAddTo')}<code className="font-mono normal-case">.opencode/opencode.jsonc</code>
+          <span className="text-muted-foreground/60 text-xs font-medium tracking-wide uppercase">
+            {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1149JsxTextAddTo')}
+            <code className="font-mono normal-case">.opencode/opencode.jsonc</code>
           </span>
           <Button
             type="button"
@@ -1429,13 +1528,20 @@ function CustomProviderSnippetView({
             {copied ? 'Copied' : 'Copy'}
           </Button>
         </div>
-        <pre className="max-h-[280px] overflow-auto rounded-2xl border border-border/40 bg-muted/20 px-3 py-2.5 font-mono text-xs leading-snug text-foreground">
+        <pre className="border-border/40 bg-muted/20 text-foreground max-h-[280px] overflow-auto rounded-2xl border px-3 py-2.5 font-mono text-xs leading-snug">
           {snippet}
         </pre>
       </div>
 
-      <p className="px-1 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1168JsxTextPasteThisIntoYourProjectRepoAposS')}{' '}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono">.opencode/opencode.jsonc</code>{' '}{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1170JsxTextAndCommitRestartAnyRunningSessionForThe')}</p>
+      <p className="text-muted-foreground px-1 text-xs">
+        {tHardcodedUi.raw(
+          'componentsProjectsProjectProviderModal.line1168JsxTextPasteThisIntoYourProjectRepoAposS',
+        )}{' '}
+        <code className="bg-muted rounded px-1 py-0.5 font-mono">.opencode/opencode.jsonc</code>{' '}
+        {tHardcodedUi.raw(
+          'componentsProjectsProjectProviderModal.line1170JsxTextAndCommitRestartAnyRunningSessionForThe',
+        )}
+      </p>
 
       <Button size="sm" onClick={onDone}>
         Done
@@ -1478,7 +1584,10 @@ function buildCustomProviderSnippet(input: {
 function prettyFieldLabel(envVar: string): string {
   // ANTHROPIC_API_KEY → "API key"; AZURE_RESOURCE_NAME → "Resource name".
   // Strip the provider prefix where it's predictable, then humanize.
-  const trimmed = envVar.replace(/^[A-Z0-9]+_/, '').replace(/_/g, ' ').toLowerCase();
+  const trimmed = envVar
+    .replace(/^[A-Z0-9]+_/, '')
+    .replace(/_/g, ' ')
+    .toLowerCase();
   const upper = trimmed.toUpperCase();
   // Common acronyms we don't want lowercased back into "api"/"url"/etc.
   if (upper === 'API KEY') return 'API key';
@@ -1538,9 +1647,7 @@ function ModelsTab({
         provider,
         models: provider.models.filter(
           (model) =>
-            !q ||
-            model.name.toLowerCase().includes(q) ||
-            model.id.toLowerCase().includes(q),
+            !q || model.name.toLowerCase().includes(q) || model.id.toLowerCase().includes(q),
         ),
       }))
       .filter((group) => group.models.length > 0);
@@ -1549,7 +1656,11 @@ function ModelsTab({
   if (connectedProviders.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1258JsxTextConnectAProviderToSeeItsModels')}</p>
+        <p className="text-muted-foreground/60 text-xs">
+          {tHardcodedUi.raw(
+            'componentsProjectsProjectProviderModal.line1258JsxTextConnectAProviderToSeeItsModels',
+          )}
+        </p>
       </div>
     );
   }
@@ -1557,7 +1668,7 @@ function ModelsTab({
   if (grouped.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-        <p className="text-xs text-muted-foreground/60">
+        <p className="text-muted-foreground/60 text-xs">
           {search ? `No models match "${search}"` : 'No models'}
         </p>
       </div>
@@ -1565,17 +1676,17 @@ function ModelsTab({
   }
 
   return (
-    <div className="px-5 pb-4 pt-3">
+    <div className="px-5 pt-3 pb-4">
       {!search && (
         <div className="flex items-center justify-between gap-3 px-1 pb-2.5">
-          <p className="text-xs text-muted-foreground/60">
+          <p className="text-muted-foreground/60 text-xs">
             {enabledCount} of {flatModels.length} shown in the model picker
           </p>
           {hasOverrides && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
               onClick={() => modelStore.resetVisibility()}
             >
               Reset to defaults
@@ -1588,14 +1699,12 @@ function ModelsTab({
           <div key={provider.id}>
             <div className="flex items-center gap-2 px-1 pb-1">
               <ProviderLogo providerID={provider.id} name={provider.label} size="small" />
-              <span className="text-xs font-medium text-foreground/70">
+              <span className="text-foreground/70 text-xs font-medium">
                 {PROVIDER_LABELS[provider.id] ?? provider.label}
               </span>
-              <span className="ml-auto text-xs text-muted-foreground/40">
-                {models.length}
-              </span>
+              <span className="text-muted-foreground/40 ml-auto text-xs">{models.length}</span>
             </div>
-            <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/40">
+            <div className="border-border/40 bg-background/40 overflow-hidden rounded-2xl border">
               {models.map((model, i) => {
                 const key = { providerID: provider.id, modelID: model.id };
                 const visible = modelStore.isVisible(key);
@@ -1603,14 +1712,14 @@ function ModelsTab({
                   <label
                     key={model.id}
                     className={cn(
-                      'flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/30',
-                      i > 0 && 'border-t border-border/20',
+                      'hover:bg-muted/30 flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors',
+                      i > 0 && 'border-border/20 border-t',
                       !visible && 'opacity-60',
                     )}
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm text-foreground">{model.name}</div>
-                      <div className="mt-0.5 truncate text-xs text-muted-foreground/50">
+                      <div className="text-foreground truncate text-sm">{model.name}</div>
+                      <div className="text-muted-foreground/50 mt-0.5 truncate text-xs">
                         {model.id}
                       </div>
                     </div>
@@ -1641,7 +1750,9 @@ export function ConnectProviderButton({ projectId }: { projectId: string }) {
         className="h-8 gap-1.5 text-xs"
         onClick={() => setOpen(true)}
       >
-        <Plug className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1323JsxTextConnectProvider')}</Button>
+        <Plug className="h-3.5 w-3.5" />
+        {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line1323JsxTextConnectProvider')}
+      </Button>
       <ProjectProviderModal projectId={projectId} open={open} onOpenChange={setOpen} />
     </>
   );

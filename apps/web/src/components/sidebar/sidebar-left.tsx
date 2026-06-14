@@ -2,69 +2,52 @@
 
 import { useTranslations } from 'next-intl';
 
-import * as React from 'react';
-import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import Link from 'next/link';
-import { useRouter, usePathname, useSearchParams } from 'next/navigation';
 import {
-  ChevronRight,
-  ChevronLeft,
-  SquarePen,
-  ListTree,
-  ChevronDown,
-  Search,
-  ArrowDownToLine,
-  Sparkles,
-  Bug,
-  Zap,
-  X,
-  Loader2,
-  History,
-  ArrowRightLeft,
-  CheckCircle2,
-  FolderOpen,
-  AlertCircle,
   AlertTriangle,
+  ArrowDownToLine,
+  ArrowRightLeft,
+  Bug,
+  CheckCircle2,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Copy,
+  FolderOpen,
+  History,
+  ListTree,
+  Loader2,
+  Search,
   ShieldAlert,
+  Sparkles,
+  SquarePen,
+  X,
+  Zap,
 } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import posthog from 'posthog-js';
+import * as React from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { SessionList } from '@/components/sidebar/session-list';
-import { useLegacyThreads, useMigrateAllLegacyThreads, useMigrateAllStatus } from '@/hooks/legacy/use-legacy-threads';
+import {
+  useLegacyThreads,
+  useMigrateAllLegacyThreads,
+  useMigrateAllStatus,
+} from '@/hooks/legacy/use-legacy-threads';
 import { useGlobalSandboxUpdate } from '@/hooks/platform/use-global-sandbox-update';
 import { useUpdateDialogStore } from '@/stores/update-dialog-store';
 
-import { UserMenu } from '@/components/layout/user-menu';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { ThreadIcon } from '@/components/sidebar/thread-icon';
 import {
   CurrentWorkspaceAvatar,
   InstanceSwitcherPopover,
   WorkspacesFlyoutContent,
 } from '@/components/sidebar/instance-switcher-popover';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { ThreadIcon } from '@/components/sidebar/thread-icon';
+import { UserMenu } from '@/features/layout/user-menu';
 
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarFooter,
-  SidebarRail,
-  useSidebar,
-} from '@/components/ui/sidebar';
-import { Button } from '@/components/ui/button';
-import { InfoBanner } from '@/components/ui/info-banner';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -75,23 +58,47 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { InfoBanner } from '@/components/ui/info-banner';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarHeader,
+  SidebarRail,
+  useSidebar,
+} from '@/components/ui/sidebar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useAdminRole } from '@/hooks/admin';
 import { useIsMobile } from '@/hooks/utils';
 import { cn } from '@/lib/utils';
-import { useAdminRole } from '@/hooks/admin';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
-import { isBillingEnabled } from '@/lib/config';
 
-import { useCreateOpenCodeSession, useOpenCodeSessions } from '@/hooks/opencode/use-opencode-sessions';
-import { openTabAndNavigate } from '@/stores/tab-store';
-import { useServerStore } from '@/stores/server-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
-import { buildInstancePath, getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie, normalizeAppPathname } from '@/lib/instance-routes';
-import { createClient } from '@/lib/supabase/client';
+import {
+  useCreateOpenCodeSession,
+  useOpenCodeSessions,
+} from '@/hooks/opencode/use-opencode-sessions';
 import { useSandbox } from '@/hooks/platform/use-sandbox';
-import { getSandboxUrl, reactivateSandbox, listSandboxes, type SandboxInfo } from '@/lib/platform-client';
 import { authenticatedFetch } from '@/lib/auth-token';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  buildInstancePath,
+  getActiveInstanceIdFromCookie,
+  getCurrentInstanceIdFromPathname,
+  normalizeAppPathname,
+} from '@/lib/instance-routes';
+import {
+  getSandboxUrl,
+  listSandboxes,
+  reactivateSandbox,
+  type SandboxInfo,
+} from '@/lib/platform-client';
+import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
+import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useServerStore } from '@/stores/server-store';
+import { openTabAndNavigate } from '@/stores/tab-store';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface SidebarSandboxConfigProblem {
   source: string;
@@ -117,17 +124,27 @@ interface SidebarProjectSummary {
 function isSidebarSandboxConfigStatus(value: unknown): value is SidebarSandboxConfigStatus {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
-  return typeof candidate.valid === 'boolean'
-    && Array.isArray(candidate.loadedSources)
-    && Array.isArray(candidate.skippedSources)
-    && Array.isArray(candidate.problems);
+  return (
+    typeof candidate.valid === 'boolean' &&
+    Array.isArray(candidate.loadedSources) &&
+    Array.isArray(candidate.skippedSources) &&
+    Array.isArray(candidate.problems)
+  );
 }
 
-async function sidebarSandboxRequestJson<T>(sandboxUrl: string, path: string, init?: RequestInit): Promise<T> {
-  const response = await authenticatedFetch(`${sandboxUrl.replace(/\/+$/, '')}${path}`, {
-    signal: AbortSignal.timeout(10_000),
-    ...init,
-  }, { retryOnAuthError: false });
+async function sidebarSandboxRequestJson<T>(
+  sandboxUrl: string,
+  path: string,
+  init?: RequestInit,
+): Promise<T> {
+  const response = await authenticatedFetch(
+    `${sandboxUrl.replace(/\/+$/, '')}${path}`,
+    {
+      signal: AbortSignal.timeout(10_000),
+      ...init,
+    },
+    { retryOnAuthError: false },
+  );
 
   const text = await response.text();
   let data: unknown = null;
@@ -140,32 +157,41 @@ async function sidebarSandboxRequestJson<T>(sandboxUrl: string, path: string, in
   }
 
   if (!response.ok) {
-    const message = typeof data === 'object' && data && 'error' in data
-      ? String((data as Record<string, unknown>).error)
-      : `Request failed with status ${response.status}`;
+    const message =
+      typeof data === 'object' && data && 'error' in data
+        ? String((data as Record<string, unknown>).error)
+        : `Request failed with status ${response.status}`;
     throw new Error(message);
   }
 
   return data as T;
 }
 
-function pickSidebarConfigFixProject(projects: SidebarProjectSummary[]): SidebarProjectSummary | null {
+function pickSidebarConfigFixProject(
+  projects: SidebarProjectSummary[],
+): SidebarProjectSummary | null {
   return projects.find((project) => project.path === '/workspace') ?? projects[0] ?? null;
 }
 
-function buildSidebarConfigFixPrompt(sandbox: SandboxInfo, status: SidebarSandboxConfigStatus): string {
+function buildSidebarConfigFixPrompt(
+  sandbox: SandboxInfo,
+  status: SidebarSandboxConfigStatus,
+): string {
   const header = `Inspect and repair the ignored OpenCode config sources for instance "${sandbox.name || sandbox.sandbox_id}".`;
-  const explanation = 'OpenCode is running in fail-soft mode and skipped the invalid sources below instead of crashing the runtime.';
-  const problems = status.problems.map((problem, index) => {
-    const issueLines = (problem.issues ?? []).map((issue) => issue.message).filter(Boolean);
-    return [
-      `${index + 1}. Source: ${problem.source}`,
-      `   Scope: ${problem.scope}`,
-      `   Kind: ${problem.kind}`,
-      `   Message: ${problem.message || 'No message provided.'}`,
-      ...(issueLines.length ? issueLines.map((line) => `   Detail: ${line}`) : []),
-    ].join('\n');
-  }).join('\n\n');
+  const explanation =
+    'OpenCode is running in fail-soft mode and skipped the invalid sources below instead of crashing the runtime.';
+  const problems = status.problems
+    .map((problem, index) => {
+      const issueLines = (problem.issues ?? []).map((issue) => issue.message).filter(Boolean);
+      return [
+        `${index + 1}. Source: ${problem.source}`,
+        `   Scope: ${problem.scope}`,
+        `   Kind: ${problem.kind}`,
+        `   Message: ${problem.message || 'No message provided.'}`,
+        ...(issueLines.length ? issueLines.map((line) => `   Detail: ${line}`) : []),
+      ].join('\n');
+    })
+    .join('\n\n');
 
   return [
     header,
@@ -201,14 +227,21 @@ function KbdHint({ mod, letter }: { mod: string; letter: string }) {
   const chip =
     'inline-flex items-center justify-center h-4 min-w-4 px-1 rounded bg-foreground/[0.05] border border-border/40 text-xs font-medium text-muted-foreground/70 leading-none font-sans select-none';
   return (
-    <span className="ml-auto flex items-center gap-0.5 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150">
+    <span className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/row:opacity-100">
       <kbd className={chip}>{mod}</kbd>
       <kbd className={chip}>{letter}</kbd>
     </span>
   );
 }
 
-function CollapsedIconButton({ icon, label, onClick, flyoutContent, disabled, isActive }: CollapsedIconButtonProps) {
+function CollapsedIconButton({
+  icon,
+  label,
+  onClick,
+  flyoutContent,
+  disabled,
+  isActive,
+}: CollapsedIconButtonProps) {
   const [flyoutOpen, setFlyoutOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const flyoutRef = useRef<HTMLDivElement>(null);
@@ -220,10 +253,18 @@ function CollapsedIconButton({ icon, label, onClick, flyoutContent, disabled, is
   }, []);
 
   const cancelClose = useCallback(() => {
-    if (timer.current) { clearTimeout(timer.current); timer.current = null; }
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
   }, []);
 
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  useEffect(
+    () => () => {
+      if (timer.current) clearTimeout(timer.current);
+    },
+    [],
+  );
 
   // Position flyout to the right of the button
   const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
@@ -237,7 +278,9 @@ function CollapsedIconButton({ icon, label, onClick, flyoutContent, disabled, is
   // Close on Escape
   useEffect(() => {
     if (!flyoutOpen) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFlyoutOpen(false); };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFlyoutOpen(false);
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [flyoutOpen]);
@@ -246,7 +289,11 @@ function CollapsedIconButton({ icon, label, onClick, flyoutContent, disabled, is
   useEffect(() => {
     if (!flyoutOpen) return;
     const onDown = (e: PointerEvent) => {
-      if (btnRef.current?.contains(e.target as Node) || flyoutRef.current?.contains(e.target as Node)) return;
+      if (
+        btnRef.current?.contains(e.target as Node) ||
+        flyoutRef.current?.contains(e.target as Node)
+      )
+        return;
       setFlyoutOpen(false);
     };
     window.addEventListener('pointerdown', onDown, true);
@@ -273,23 +320,28 @@ function CollapsedIconButton({ icon, label, onClick, flyoutContent, disabled, is
           onClick={onClick}
           disabled={disabled}
           className={btnClass}
-          onMouseEnter={() => { cancelClose(); setFlyoutOpen(true); }}
+          onMouseEnter={() => {
+            cancelClose();
+            setFlyoutOpen(true);
+          }}
           onMouseLeave={scheduleClose}
         >
           {icon}
         </button>
-        {flyoutOpen && typeof document !== 'undefined' && createPortal(
-          <div
-            ref={flyoutRef}
-            style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 10001 }}
-            className="w-[260px] max-h-[60vh] overflow-hidden flex flex-col rounded-2xl border bg-popover text-popover-foreground shadow-lg animate-in fade-in-0 zoom-in-[0.98] slide-in-from-left-1 duration-100"
-            onMouseEnter={cancelClose}
-            onMouseLeave={scheduleClose}
-          >
-            {flyoutContent}
-          </div>,
-          document.body,
-        )}
+        {flyoutOpen &&
+          typeof document !== 'undefined' &&
+          createPortal(
+            <div
+              ref={flyoutRef}
+              style={{ position: 'fixed', top: pos.top, left: pos.left, zIndex: 10001 }}
+              className="bg-popover text-popover-foreground animate-in fade-in-0 zoom-in-[0.98] slide-in-from-left-1 flex max-h-[60vh] w-[260px] flex-col overflow-hidden rounded-2xl border shadow-lg duration-100"
+              onMouseEnter={cancelClose}
+              onMouseLeave={scheduleClose}
+            >
+              {flyoutContent}
+            </div>,
+            document.body,
+          )}
       </>
     );
   }
@@ -298,12 +350,7 @@ function CollapsedIconButton({ icon, label, onClick, flyoutContent, disabled, is
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <button
-          ref={btnRef}
-          onClick={onClick}
-          disabled={disabled}
-          className={btnClass}
-        >
+        <button ref={btnRef} onClick={onClick} disabled={disabled} className={btnClass}>
           {icon}
         </button>
       </TooltipTrigger>
@@ -333,14 +380,18 @@ function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
   }, [sessions]);
 
   const getPendingCount = (id: string) => {
-    return Object.values(permissions).filter((p) => p.sessionID === id).length
-      + Object.values(questions).filter((q) => q.sessionID === id).length;
+    return (
+      Object.values(permissions).filter((p) => p.sessionID === id).length +
+      Object.values(questions).filter((q) => q.sessionID === id).length
+    );
   };
 
   return (
-    <div className="overflow-y-auto py-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+    <div className="[scrollbar-width:none] overflow-y-auto py-1 [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
       {rootSessions.length === 0 ? (
-        <div className="px-3 py-8 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line340JsxTextNoSessionsYet')}</div>
+        <div className="text-muted-foreground px-3 py-8 text-center text-xs">
+          {tHardcodedUi.raw('componentsSidebarSidebarLeft.line340JsxTextNoSessionsYet')}
+        </div>
       ) : (
         rootSessions.map((session) => {
           const active = pathname === `/sessions/${session.id}`;
@@ -358,16 +409,18 @@ function SessionsFlyout({ collapsed }: { collapsed?: boolean }) {
                 });
               }}
               className={cn(
-                'flex items-center gap-2 w-full px-3 py-1 text-xs cursor-pointer transition-colors duration-100',
+                'flex w-full cursor-pointer items-center gap-2 px-3 py-1 text-xs transition-colors duration-100',
                 active
                   ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
                   : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
               )}
             >
-              {!collapsed && <ThreadIcon iconName={(session as any).icon} className="flex-shrink-0" size={12} />}
+              {!collapsed && (
+                <ThreadIcon iconName={(session as any).icon} className="flex-shrink-0" size={12} />
+              )}
               <span className="flex-1 truncate text-left">{session.title || 'Untitled'}</span>
               {pending > 0 && (
-                <span className="flex-shrink-0 h-4 min-w-4 px-1 rounded-full bg-amber-500/15 text-amber-500 text-xs font-semibold flex items-center justify-center">
+                <span className="flex h-4 min-w-4 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/15 px-1 text-xs font-semibold text-amber-500">
                   {pending}
                 </span>
               )}
@@ -401,9 +454,22 @@ const changeTypeColor: Record<string, string> = {
 function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const {
-    updateAvailable, latestVersion, currentChannel, changelog,
-    isUpdating, updateResult, isBackingUp, isDestructive, phaseProgress,
-    hasActiveUpdate, phase, phaseMessage, updateErrorMessage, canCancel, isCancelling, cancel,
+    updateAvailable,
+    latestVersion,
+    currentChannel,
+    changelog,
+    isUpdating,
+    updateResult,
+    isBackingUp,
+    isDestructive,
+    phaseProgress,
+    hasActiveUpdate,
+    phase,
+    phaseMessage,
+    updateErrorMessage,
+    canCancel,
+    isCancelling,
+    cancel,
   } = useGlobalSandboxUpdate();
   const openDialog = useUpdateDialogStore((s) => s.openDialog);
   const router = useRouter();
@@ -422,7 +488,9 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
   const handleDismiss = (e: React.MouseEvent) => {
     e.stopPropagation();
     setDismissed(true);
-    try { localStorage.setItem(dismissKey, 'true'); } catch {}
+    try {
+      localStorage.setItem(dismissKey, 'true');
+    } catch {}
   };
 
   const navigateToChangelog = () => {
@@ -436,7 +504,13 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
   // dismissed, and no in-progress work. An active backup must keep this card
   // visible even if the user previously dismissed the "update available" toast.
   const showBackupCard = isBackingUp;
-  if (!mounted || (!updateAvailable && !hasActiveUpdate) || (dismissed && !hasActiveUpdate) || updateResult?.success) return null;
+  if (
+    !mounted ||
+    (!updateAvailable && !hasActiveUpdate) ||
+    (dismissed && !hasActiveUpdate) ||
+    updateResult?.success
+  )
+    return null;
 
   // ── Collapsed state: icon with pulse dot ──
   if (collapsed) {
@@ -444,13 +518,19 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
       <div className="flex justify-center">
         <button
           onClick={hasActiveUpdate ? undefined : navigateToChangelog}
-          className="relative p-2 rounded-lg hover:bg-primary/10 transition-colors cursor-pointer"
-          title={hasActiveUpdate ? `${phaseMessage || phase} (${phaseProgress}%)` : `v${latestVersion} available`}
+          className="hover:bg-primary/10 relative cursor-pointer rounded-lg p-2 transition-colors"
+          title={
+            hasActiveUpdate
+              ? `${phaseMessage || phase} (${phaseProgress}%)`
+              : `v${latestVersion} available`
+          }
         >
-          {hasActiveUpdate
-            ? <Loader2 className="h-4 w-4 text-primary animate-spin" />
-            : <ArrowDownToLine className="h-4 w-4 text-primary" />}
-          <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-primary animate-pulse" />
+          {hasActiveUpdate ? (
+            <Loader2 className="text-primary h-4 w-4 animate-spin" />
+          ) : (
+            <ArrowDownToLine className="text-primary h-4 w-4" />
+          )}
+          <span className="bg-primary absolute top-1 right-1 h-2 w-2 animate-pulse rounded-full" />
         </button>
       </div>
     );
@@ -458,19 +538,25 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
 
   if (showBackupCard) {
     return (
-      <div className="rounded-2xl border border-primary/15 bg-muted/40 overflow-hidden">
+      <div className="border-primary/15 bg-muted/40 overflow-hidden rounded-2xl border">
         <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
-          <Loader2 className="h-3.5 w-3.5 text-primary animate-spin flex-shrink-0" />
-          <span className="text-xs font-semibold text-foreground truncate min-w-0">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line461JsxTextBackingUpSandbox')}</span>
+          <Loader2 className="text-primary h-3.5 w-3.5 flex-shrink-0 animate-spin" />
+          <span className="text-foreground min-w-0 truncate text-xs font-semibold">
+            {tHardcodedUi.raw('componentsSidebarSidebarLeft.line461JsxTextBackingUpSandbox')}
+          </span>
           <span className="flex-1" />
-          <span className="text-xs text-muted-foreground flex-shrink-0">v{latestVersion}</span>
+          <span className="text-muted-foreground flex-shrink-0 text-xs">v{latestVersion}</span>
         </div>
-        <p className="px-3 pb-2 text-xs text-muted-foreground leading-tight">
-          {phaseMessage || 'You can keep using your machine. Update will continue automatically once the backup completes.'}
+        <p className="text-muted-foreground px-3 pb-2 text-xs leading-tight">
+          {phaseMessage ||
+            'You can keep using your machine. Update will continue automatically once the backup completes.'}
         </p>
         <div className="flex items-center gap-2 px-3 pb-2.5">
-          <div className="h-1.5 flex-1 rounded-full bg-foreground/10 overflow-hidden">
-            <div className="h-full bg-primary transition-all" style={{ width: `${phaseProgress}%` }} />
+          <div className="bg-foreground/10 h-1.5 flex-1 overflow-hidden rounded-full">
+            <div
+              className="bg-primary h-full transition-all"
+              style={{ width: `${phaseProgress}%` }}
+            />
           </div>
           {canCancel && (
             <Button size="toolbar" variant="muted" onClick={() => cancel()} disabled={isCancelling}>
@@ -484,21 +570,25 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
 
   if (phase === 'failed') {
     return (
-      <div className="rounded-2xl border border-red-500/20 bg-red-500/[0.04] overflow-hidden">
+      <div className="overflow-hidden rounded-2xl border border-red-500/20 bg-red-500/[0.04]">
         <div className="flex items-center gap-2 px-3 pt-2.5 pb-1">
-          <Bug className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
-          <span className="text-xs font-semibold text-foreground truncate min-w-0">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line488JsxTextUpdateFailed')}</span>
+          <Bug className="h-3.5 w-3.5 flex-shrink-0 text-red-500" />
+          <span className="text-foreground min-w-0 truncate text-xs font-semibold">
+            {tHardcodedUi.raw('componentsSidebarSidebarLeft.line488JsxTextUpdateFailed')}
+          </span>
           <span className="flex-1" />
-          <span className="text-xs text-muted-foreground flex-shrink-0">v{latestVersion}</span>
+          <span className="text-muted-foreground flex-shrink-0 text-xs">v{latestVersion}</span>
         </div>
-        <p className="px-3 pb-2 text-xs text-muted-foreground leading-tight line-clamp-3">
+        <p className="text-muted-foreground line-clamp-3 px-3 pb-2 text-xs leading-tight">
           {updateErrorMessage || phaseMessage || 'Something went wrong during the update.'}
         </p>
-        <div className="flex items-center gap-1.5 px-2.5 pb-2.5 pt-1">
+        <div className="flex items-center gap-1.5 px-2.5 pt-1 pb-2.5">
           <Button onClick={() => openDialog()} variant="default" size="toolbar" className="flex-1">
             Retry
           </Button>
-          <Button onClick={navigateToChangelog} variant="muted" size="toolbar">Details</Button>
+          <Button onClick={navigateToChangelog} variant="muted" size="toolbar">
+            Details
+          </Button>
         </div>
       </div>
     );
@@ -506,13 +596,13 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
 
   if (isDestructive) {
     return (
-      <div className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] px-3 py-2.5 flex items-center gap-2">
-        <Loader2 className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 animate-spin flex-shrink-0" />
+      <div className="flex items-center gap-2 rounded-2xl border border-amber-500/20 bg-amber-500/[0.04] px-3 py-2.5">
+        <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-amber-600 dark:text-amber-400" />
         <div className="min-w-0 flex-1">
-          <span className="block text-xs font-medium text-amber-700 dark:text-amber-300 truncate">
+          <span className="block truncate text-xs font-medium text-amber-700 dark:text-amber-300">
             {phaseMessage || `Installing v${latestVersion}…`}
           </span>
-          <span className="block text-xs text-amber-700/70 dark:text-amber-300/70 truncate">
+          <span className="block truncate text-xs text-amber-700/70 dark:text-amber-300/70">
             {phase} · {phaseProgress}%
           </span>
         </div>
@@ -526,44 +616,46 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
   const remaining = changes.length - 3;
 
   return (
-    <div className="rounded-2xl border border-primary/15 bg-primary/[0.03] overflow-hidden">
+    <div className="border-primary/15 bg-primary/[0.03] overflow-hidden rounded-2xl border">
       {/* Header row */}
       <div className="flex items-center gap-2 px-3 pt-2.5 pb-1.5">
         <span className="relative flex h-2 w-2 flex-shrink-0">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+          <span className="bg-primary/60 absolute inline-flex h-full w-full animate-ping rounded-full" />
+          <span className="bg-primary relative inline-flex h-2 w-2 rounded-full" />
         </span>
-        <span className="text-xs font-semibold text-foreground truncate min-w-0">
+        <span className="text-foreground min-w-0 truncate text-xs font-semibold">
           {currentChannel === 'dev' ? 'New dev build' : 'New Kortix version'}
         </span>
         <span className="flex-1" />
-        <span className="text-xs text-muted-foreground flex-shrink-0">v{latestVersion}</span>
+        <span className="text-muted-foreground flex-shrink-0 text-xs">v{latestVersion}</span>
         <button
           onClick={handleDismiss}
-          className="p-0.5 rounded hover:bg-muted/80 transition-colors cursor-pointer flex-shrink-0"
+          className="hover:bg-muted/80 flex-shrink-0 cursor-pointer rounded p-0.5 transition-colors"
           aria-label="Dismiss"
         >
-          <X className="h-3 w-3 text-muted-foreground/60" />
+          <X className="text-muted-foreground/60 h-3 w-3" />
         </button>
       </div>
 
       {/* Change list */}
       {previewChanges.length > 0 && (
-        <div className="px-3 pb-1.5 space-y-0.5">
+        <div className="space-y-0.5 px-3 pb-1.5">
           {previewChanges.map((change, i) => {
             const Icon = changeTypeIcon[change.type] ?? Zap;
             const color = changeTypeColor[change.type] ?? 'text-muted-foreground';
             return (
               <div key={i} className="flex items-start gap-1.5">
-                <Icon className={cn('h-3 w-3 mt-[1px] flex-shrink-0', color)} />
-                <span className="text-xs text-muted-foreground leading-tight line-clamp-1">{change.text}</span>
+                <Icon className={cn('mt-[1px] h-3 w-3 flex-shrink-0', color)} />
+                <span className="text-muted-foreground line-clamp-1 text-xs leading-tight">
+                  {change.text}
+                </span>
               </div>
             );
           })}
           {remaining > 0 && (
             <button
               onClick={navigateToChangelog}
-              className="text-xs text-primary/70 hover:text-primary font-medium pl-[18px] cursor-pointer transition-colors"
+              className="text-primary/70 hover:text-primary cursor-pointer pl-[18px] text-xs font-medium transition-colors"
             >
               +{remaining} more
             </button>
@@ -572,26 +664,19 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
       )}
 
       {/* Actions */}
-      <div className="flex items-center gap-1.5 px-2.5 pb-2.5 pt-1">
+      <div className="flex items-center gap-1.5 px-2.5 pt-1 pb-2.5">
         {!hasActiveUpdate ? (
-          <Button
-            onClick={() => openDialog()}
-            variant="default"
-            size="toolbar"
-            className="flex-1"
-          >
+          <Button onClick={() => openDialog()} variant="default" size="toolbar" className="flex-1">
             <ArrowDownToLine className="h-3 w-3" />
             Update
           </Button>
         ) : (
-          <div className="flex-1 flex items-center justify-center gap-1.5 h-7 text-xs font-medium text-amber-600 dark:text-amber-400">
-            <Loader2 className="h-3 w-3 animate-spin" />{tHardcodedUi.raw('componentsSidebarSidebarLeft.line587JsxTextUpdating')}</div>
+          <div className="flex h-7 flex-1 items-center justify-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400">
+            <Loader2 className="h-3 w-3 animate-spin" />
+            {tHardcodedUi.raw('componentsSidebarSidebarLeft.line587JsxTextUpdating')}
+          </div>
         )}
-        <Button
-          onClick={navigateToChangelog}
-          variant="muted"
-          size="toolbar"
-        >
+        <Button onClick={navigateToChangelog} variant="muted" size="toolbar">
           Details
         </Button>
       </div>
@@ -599,7 +684,11 @@ function SidebarUpdateIndicator({ collapsed }: { collapsed: boolean }) {
   );
 }
 
-function UserProfileSection({ user }: { user: { name: string; email: string; avatar: string; isAdmin?: boolean } }) {
+function UserProfileSection({
+  user,
+}: {
+  user: { name: string; email: string; avatar: string; isAdmin?: boolean };
+}) {
   return <UserMenu user={user} />;
 }
 
@@ -646,19 +735,22 @@ function SidebarSections() {
   };
 
   return (
-    <div className="flex flex-col min-h-0 flex-1 pt-0.5 space-y-0.5">
+    <div className="flex min-h-0 flex-1 flex-col space-y-0.5 pt-0.5">
       {/* Sessions — always visible, takes remaining space */}
-      <Collapsible defaultOpen className="group/sessions flex flex-col min-h-0 data-[state=open]:flex-1">
-        <div className="px-3 flex-shrink-0">
+      <Collapsible
+        defaultOpen
+        className="group/sessions flex min-h-0 flex-col data-[state=open]:flex-1"
+      >
+        <div className="flex-shrink-0 px-3">
           <CollapsibleTrigger asChild>
             <Button variant="sidebar" className="rounded-lg">
-              <ListTree className="flex-shrink-0 text-sidebar-foreground" />
+              <ListTree className="text-sidebar-foreground flex-shrink-0" />
               <span className="flex-1 text-left">Sessions</span>
-              <ChevronDown className="size-3 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
+              <ChevronDown className="text-muted-foreground size-3 transition-transform duration-200 group-data-[state=closed]/sessions:-rotate-90" />
             </Button>
           </CollapsibleTrigger>
         </div>
-        <CollapsibleContent className="min-h-0 data-[state=open]:flex-1 data-[state=open]:pt-1 data-[state=open]:overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <CollapsibleContent className="min-h-0 [scrollbar-width:none] [-ms-overflow-style:none] data-[state=open]:flex-1 data-[state=open]:overflow-y-auto data-[state=open]:pt-1 [&::-webkit-scrollbar]:hidden">
           <SessionList projectId={null} />
         </CollapsibleContent>
       </Collapsible>
@@ -670,29 +762,36 @@ function SidebarSections() {
         // ends up directly under Sessions either way. When Sessions is
         // COLLAPSED, mt-auto kicks in and pushes Previous Chats to the very
         // bottom of the scroll area, just above the footer card stack.
-        <div className="flex-shrink-0 mt-auto">
-          <div className="px-3 flex items-center">
+        <div className="mt-auto flex-shrink-0">
+          <div className="flex items-center px-3">
             <button
               onClick={() => setLegacyOpen((o) => !o)}
-              className="flex items-center gap-2.5 flex-1 px-2.5 py-1.5 rounded-lg text-sm text-sidebar-foreground hover:bg-sidebar-accent transition-colors duration-150 cursor-pointer"
+              className="text-sidebar-foreground hover:bg-sidebar-accent flex flex-1 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors duration-150"
             >
               <History className="h-3.5 w-3.5 flex-shrink-0" />
-              <span className="flex-1 text-left">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line679JsxTextPreviousChats')}</span>
-              <span className="text-xs tabular-nums text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
+              <span className="flex-1 text-left">
+                {tHardcodedUi.raw('componentsSidebarSidebarLeft.line679JsxTextPreviousChats')}
+              </span>
+              <span className="text-muted-foreground bg-muted rounded-full px-1.5 py-0.5 text-xs tabular-nums">
                 {legacyData!.total}
               </span>
-              <ChevronDown className={cn(
-                'size-3 text-muted-foreground transition-transform duration-200',
-                !legacyOpen && '-rotate-90',
-              )} />
+              <ChevronDown
+                className={cn(
+                  'text-muted-foreground size-3 transition-transform duration-200',
+                  !legacyOpen && '-rotate-90',
+                )}
+              />
             </button>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
-                  onClick={(e) => { e.stopPropagation(); setConfirmOpen(true); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setConfirmOpen(true);
+                  }}
                   disabled={isMigrating || migrateDone || migrateAll.isPending}
                   className={cn(
-                    'flex items-center justify-center h-7 w-7 rounded-lg flex-shrink-0 transition-colors duration-150',
+                    'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors duration-150',
                     migrateDone
                       ? 'text-emerald-500'
                       : isMigrating || migrateAll.isPending
@@ -721,16 +820,20 @@ function SidebarSections() {
           {/* Progress bar — always visible when migrating */}
           {(isMigrating || migrateAll.isPending) && migrateStatus && migrateStatus.total > 0 && (
             <div className="px-6 pb-1.5">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs text-muted-foreground">
+              <div className="mb-1 flex items-center gap-2">
+                <span className="text-muted-foreground text-xs">
                   Converting {migrateStatus.completed}/{migrateStatus.total}
-                  {migrateStatus.failed > 0 && <span className="text-destructive"> · {migrateStatus.failed} failed</span>}
+                  {migrateStatus.failed > 0 && (
+                    <span className="text-destructive"> · {migrateStatus.failed} failed</span>
+                  )}
                 </span>
               </div>
-              <div className="h-1 w-full rounded-full bg-muted overflow-hidden">
+              <div className="bg-muted h-1 w-full overflow-hidden rounded-full">
                 <div
-                  className="h-full rounded-full bg-primary transition-colors duration-300 ease-out"
-                  style={{ width: `${Math.round(((migrateStatus.completed + migrateStatus.failed) / migrateStatus.total) * 100)}%` }}
+                  className="bg-primary h-full rounded-full transition-colors duration-300 ease-out"
+                  style={{
+                    width: `${Math.round(((migrateStatus.completed + migrateStatus.failed) / migrateStatus.total) * 100)}%`,
+                  }}
                 />
               </div>
             </div>
@@ -739,12 +842,14 @@ function SidebarSections() {
             <div className="px-6 pb-1.5">
               <span className="text-xs text-emerald-600 dark:text-emerald-400">
                 Converted {migrateStatus.completed} chats
-                {migrateStatus.failed > 0 && <span className="text-destructive"> · {migrateStatus.failed} failed</span>}
+                {migrateStatus.failed > 0 && (
+                  <span className="text-destructive"> · {migrateStatus.failed} failed</span>
+                )}
               </span>
             </div>
           )}
           {legacyOpen && (
-            <div className="max-h-[40vh] overflow-y-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <div className="max-h-[40vh] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               <div className="px-4 pb-2">
                 <div className="space-y-0.5">
                   {legacyData!.threads.map((thread) => {
@@ -754,14 +859,16 @@ function SidebarSections() {
                         key={thread.thread_id}
                         onClick={() => handleLegacyClick(thread.thread_id, thread.name)}
                         className={cn(
-                          'flex items-center gap-2 w-full px-3 py-1 rounded-lg text-xs cursor-pointer',
+                          'flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-1 text-xs',
                           'transition-colors duration-150',
                           isActive
                             ? 'bg-sidebar-accent text-sidebar-accent-foreground font-medium'
                             : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
                         )}
                       >
-                        <span className="flex-1 truncate text-left">{thread.name || 'Untitled'}</span>
+                        <span className="flex-1 truncate text-left">
+                          {thread.name || 'Untitled'}
+                        </span>
                       </button>
                     );
                   })}
@@ -775,12 +882,24 @@ function SidebarSections() {
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{tHardcodedUi.raw('componentsSidebarSidebarLeft.line777JsxTextConvertAllPreviousChats')}</AlertDialogTitle>
-            <AlertDialogDescription>{tHardcodedUi.raw('componentsSidebarSidebarLeft.line779JsxTextThisWillConvert')}{' '}{legacyData?.total ?? 0}{tHardcodedUi.raw('componentsSidebarSidebarLeft.line779JsxTextPreviousChatsIntoSessionsTheProcessRunsIn')}</AlertDialogDescription>
+            <AlertDialogTitle>
+              {tHardcodedUi.raw(
+                'componentsSidebarSidebarLeft.line777JsxTextConvertAllPreviousChats',
+              )}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {tHardcodedUi.raw('componentsSidebarSidebarLeft.line779JsxTextThisWillConvert')}{' '}
+              {legacyData?.total ?? 0}
+              {tHardcodedUi.raw(
+                'componentsSidebarSidebarLeft.line779JsxTextPreviousChatsIntoSessionsTheProcessRunsIn',
+              )}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleMigrateAll}>{tHardcodedUi.raw('componentsSidebarSidebarLeft.line784JsxTextConvertAll')}</AlertDialogAction>
+            <AlertDialogAction onClick={handleMigrateAll}>
+              {tHardcodedUi.raw('componentsSidebarSidebarLeft.line784JsxTextConvertAll')}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -792,7 +911,13 @@ function SidebarSections() {
 // Main Sidebar
 // ============================================================================
 
-function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; onExpand: () => void }) {
+function ScheduledDeletionCard({
+  collapsed,
+  onExpand,
+}: {
+  collapsed: boolean;
+  onExpand: () => void;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { sandbox, refetch } = useSandbox();
   const [reactivating, setReactivating] = useState(false);
@@ -809,9 +934,10 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
     staleTime: 30_000,
   });
 
-  const activeSandbox = activeInstanceId && sandboxList
-    ? sandboxList.find((s) => s.sandbox_id === activeInstanceId)
-    : sandbox;
+  const activeSandbox =
+    activeInstanceId && sandboxList
+      ? sandboxList.find((s) => s.sandbox_id === activeInstanceId)
+      : sandbox;
 
   if (!activeSandbox?.cancel_at_period_end) return null;
 
@@ -841,7 +967,9 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
     }
   };
 
-  const daysLeft = cancelAt ? Math.max(0, Math.ceil((cancelAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24))) : null;
+  const daysLeft = cancelAt
+    ? Math.max(0, Math.ceil((cancelAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : null;
   const detail = `Deletion ${daysLeft !== null ? `in ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : `on ${dateStr}`}. All data will be removed.`;
 
   // Collapsed: same DNA as SidebarConfigDegradationNotice — small icon
@@ -855,19 +983,23 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
             <button
               type="button"
               onClick={onExpand}
-              aria-label={tHardcodedUi.raw('componentsSidebarSidebarLeft.line858JsxAttrAriaLabelSubscriptionCancelledClickToReactivate')}
-              className="relative flex items-center justify-center w-full py-2 rounded-lg cursor-pointer text-destructive hover:bg-destructive/10 transition-colors duration-150"
+              aria-label={tHardcodedUi.raw(
+                'componentsSidebarSidebarLeft.line858JsxAttrAriaLabelSubscriptionCancelledClickToReactivate',
+              )}
+              className="text-destructive hover:bg-destructive/10 relative flex w-full cursor-pointer items-center justify-center rounded-lg py-2 transition-colors duration-150"
             >
               <AlertTriangle className="h-4 w-4" />
               <span className="absolute top-1.5 right-2 flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-destructive opacity-75 animate-ping" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-destructive" />
+                <span className="bg-destructive absolute inline-flex h-full w-full animate-ping rounded-full opacity-75" />
+                <span className="bg-destructive relative inline-flex h-2 w-2 rounded-full" />
               </span>
             </button>
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={12} className="max-w-64 text-xs">
-            <div className="font-medium text-destructive">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line869JsxTextSubscriptionCancelled')}</div>
-            <div className="mt-1 text-muted-foreground">{detail}</div>
+            <div className="text-destructive font-medium">
+              {tHardcodedUi.raw('componentsSidebarSidebarLeft.line869JsxTextSubscriptionCancelled')}
+            </div>
+            <div className="text-muted-foreground mt-1">{detail}</div>
           </TooltipContent>
         </Tooltip>
       </div>
@@ -875,8 +1007,19 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
   }
 
   return (
-    <InfoBanner tone="destructive" title={tHardcodedUi.raw('componentsSidebarSidebarLeft.line878JsxAttrTitleSubscriptionCancelled')}>
-      <p className="leading-relaxed">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line880JsxTextThisInstanceWillBeDeleted')}{' '}{daysLeft !== null ? `in ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : `on ${dateStr}`}{tHardcodedUi.raw('componentsSidebarSidebarLeft.line880JsxTextAllDataWillBePermanentlyRemoved')}</p>
+    <InfoBanner
+      tone="destructive"
+      title={tHardcodedUi.raw(
+        'componentsSidebarSidebarLeft.line878JsxAttrTitleSubscriptionCancelled',
+      )}
+    >
+      <p className="leading-relaxed">
+        {tHardcodedUi.raw('componentsSidebarSidebarLeft.line880JsxTextThisInstanceWillBeDeleted')}{' '}
+        {daysLeft !== null ? `in ${daysLeft} day${daysLeft === 1 ? '' : 's'}` : `on ${dateStr}`}
+        {tHardcodedUi.raw(
+          'componentsSidebarSidebarLeft.line880JsxTextAllDataWillBePermanentlyRemoved',
+        )}
+      </p>
       <Button
         type="button"
         disabled={reactivating}
@@ -885,13 +1028,25 @@ function ScheduledDeletionCard({ collapsed, onExpand }: { collapsed: boolean; on
         size="toolbar"
         className="mt-2.5 w-full"
       >
-        {reactivating ? <><Loader2 className="h-3 w-3 animate-spin" /> Reactivating...</> : 'Reactivate'}
+        {reactivating ? (
+          <>
+            <Loader2 className="h-3 w-3 animate-spin" /> Reactivating...
+          </>
+        ) : (
+          'Reactivate'
+        )}
       </Button>
     </InfoBanner>
   );
 }
 
-function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: boolean; onExpand: () => void }) {
+function SidebarConfigDegradationNotice({
+  collapsed,
+  onExpand,
+}: {
+  collapsed: boolean;
+  onExpand: () => void;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { sandbox } = useSandbox();
   const activeServerId = useServerStore((s) => s.activeServerId);
@@ -942,7 +1097,7 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
     enabled: !!sandboxUrl && !!configStatusQuery.data && !configStatusQuery.data.valid,
     queryFn: async () => {
       const data = await sidebarSandboxRequestJson<unknown>(sandboxUrl!, '/kortix/projects');
-      return Array.isArray(data) ? data as SidebarProjectSummary[] : [];
+      return Array.isArray(data) ? (data as SidebarProjectSummary[]) : [];
     },
     staleTime: 30_000,
     refetchOnWindowFocus: false,
@@ -964,32 +1119,42 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
       if (!activeSandbox || !sandboxUrl || !configStatus || configStatus.valid) {
         throw new Error('No invalid config source is currently being skipped.');
       }
-      const targetProject = configFixProject ?? await sidebarSandboxRequestJson<SidebarProjectSummary>(sandboxUrl, '/kortix/projects', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Workspace',
-          path: '/workspace',
-          description: 'Default workspace project for runtime repair tasks.',
-        }),
-      });
+      const targetProject =
+        configFixProject ??
+        (await sidebarSandboxRequestJson<SidebarProjectSummary>(sandboxUrl, '/kortix/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: 'Workspace',
+            path: '/workspace',
+            description: 'Default workspace project for runtime repair tasks.',
+          }),
+        }));
 
       const task = await sidebarSandboxRequestJson<{ id: string }>(sandboxUrl, '/kortix/tasks', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           project_id: targetProject.id,
-          title: configStatus.problems.length > 1 ? 'Fix ignored OpenCode config sources' : 'Fix ignored OpenCode config source',
+          title:
+            configStatus.problems.length > 1
+              ? 'Fix ignored OpenCode config sources'
+              : 'Fix ignored OpenCode config source',
           description: buildSidebarConfigFixPrompt(activeSandbox, configStatus),
-          verification_condition: 'GET /config/status returns {"valid":true,"skippedSources":[]} for this instance.',
+          verification_condition:
+            'GET /config/status returns {"valid":true,"skippedSources":[]} for this instance.',
           status: 'todo',
         }),
       });
 
-      await sidebarSandboxRequestJson(sandboxUrl, `/kortix/tasks/${encodeURIComponent(task.id)}/start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      });
+      await sidebarSandboxRequestJson(
+        sandboxUrl,
+        `/kortix/tasks/${encodeURIComponent(task.id)}/start`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
 
       return { taskId: task.id, project: targetProject };
     },
@@ -1018,7 +1183,9 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
   if (!hasProblem) return null;
 
   const primaryProblem = configStatus.problems[0];
-  const taskTargetLabel = configFixProject ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})` : null;
+  const taskTargetLabel = configFixProject
+    ? `${configFixProject.name || configFixProject.path} (${configFixProject.path})`
+    : null;
 
   if (collapsed) {
     return (
@@ -1028,18 +1195,24 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
             <button
               type="button"
               onClick={onExpand}
-              className="relative flex items-center justify-center w-full py-2 rounded-lg cursor-pointer text-amber-400/90 hover:bg-amber-500/10 transition-colors duration-150"
+              className="relative flex w-full cursor-pointer items-center justify-center rounded-lg py-2 text-amber-400/90 transition-colors duration-150 hover:bg-amber-500/10"
             >
               <ShieldAlert className="h-4 w-4" />
               <span className="absolute top-1.5 right-2 flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75 animate-ping" />
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-400" />
               </span>
             </button>
           </TooltipTrigger>
           <TooltipContent side="right" sideOffset={12} className="max-w-64 text-xs">
-            <div className="font-medium">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line1042JsxTextConfigDegradedRuntimeStillHealthy')}</div>
-            <div className="mt-1 text-muted-foreground">{primaryProblem.message || 'Invalid config source ignored.'}</div>
+            <div className="font-medium">
+              {tHardcodedUi.raw(
+                'componentsSidebarSidebarLeft.line1042JsxTextConfigDegradedRuntimeStillHealthy',
+              )}
+            </div>
+            <div className="text-muted-foreground mt-1">
+              {primaryProblem.message || 'Invalid config source ignored.'}
+            </div>
           </TooltipContent>
         </Tooltip>
       </div>
@@ -1047,53 +1220,71 @@ function SidebarConfigDegradationNotice({ collapsed, onExpand }: { collapsed: bo
   }
 
   return (
-    <div className="rounded-2xl border border-amber-500/18 bg-sidebar-accent/45 px-3 py-2.5 shadow-[0_1px_0_rgba(255,255,255,0.02)]">
+    <div className="bg-sidebar-accent/45 rounded-2xl border border-amber-500/18 px-3 py-2.5 shadow-[0_1px_0_rgba(255,255,255,0.02)]">
       <div className="flex items-start gap-2.5">
         <div className="relative mt-0.5 shrink-0 text-amber-400/90">
           <ShieldAlert className="h-4 w-4" />
           <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full rounded-full bg-amber-400/80 opacity-75 animate-ping" />
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400/80 opacity-75" />
             <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-400" />
           </span>
         </div>
 
         <div className="min-w-0 flex-1 space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium text-foreground">{tHardcodedUi.raw('componentsSidebarSidebarLeft.line1063JsxTextConfigIgnored')}</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-foreground text-xs font-medium">
+              {tHardcodedUi.raw('componentsSidebarSidebarLeft.line1063JsxTextConfigIgnored')}
+            </span>
             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/18 bg-emerald-500/10 px-1.5 py-0.5 text-xs font-medium text-emerald-400">
-              <CheckCircle2 className="h-2.5 w-2.5" />{tHardcodedUi.raw('componentsSidebarSidebarLeft.line1066JsxTextRuntimeHealthy')}</span>
+              <CheckCircle2 className="h-2.5 w-2.5" />
+              {tHardcodedUi.raw('componentsSidebarSidebarLeft.line1066JsxTextRuntimeHealthy')}
+            </span>
           </div>
 
           <div className="space-y-1">
-            <div className="text-xs leading-relaxed text-muted-foreground">
+            <div className="text-muted-foreground text-xs leading-relaxed">
               {primaryProblem.message || 'An invalid config source is being ignored.'}
             </div>
-            <div className="truncate text-xs font-mono text-muted-foreground/80">
+            <div className="text-muted-foreground/80 truncate font-mono text-xs">
               {primaryProblem.source}
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex flex-wrap items-center gap-1.5">
             <Button
               type="button"
               size="toolbar"
-              className="h-7 rounded-lg bg-foreground text-background hover:bg-foreground/90"
+              className="bg-foreground text-background hover:bg-foreground/90 h-7 rounded-lg"
               onClick={() => startTaskMutation.mutate()}
               disabled={startTaskMutation.isPending}
             >
-              {startTaskMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <SquarePen className="h-3 w-3" />}
+              {startTaskMutation.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <SquarePen className="h-3 w-3" />
+              )}
               Fix
             </Button>
-            <Button type="button" size="toolbar" variant="outline" className="h-7 rounded-lg border-border/60 bg-background/40" onClick={handleCopyPrompt}>
+            <Button
+              type="button"
+              size="toolbar"
+              variant="outline"
+              className="border-border/60 bg-background/40 h-7 rounded-lg"
+              onClick={handleCopyPrompt}
+            >
               <Copy className="h-3 w-3" />
               Prompt
             </Button>
             {configStatus.problems.length > 1 ? (
-              <span className="text-xs text-muted-foreground">+{configStatus.problems.length - 1}{tHardcodedUi.raw('componentsSidebarSidebarLeft.line1095JsxTextMoreSource')}{' '}{configStatus.problems.length === 2 ? '' : 's'}</span>
+              <span className="text-muted-foreground text-xs">
+                +{configStatus.problems.length - 1}
+                {tHardcodedUi.raw('componentsSidebarSidebarLeft.line1095JsxTextMoreSource')}{' '}
+                {configStatus.problems.length === 2 ? '' : 's'}
+              </span>
             ) : null}
           </div>
 
-          <div className="text-xs text-muted-foreground/70 leading-relaxed">
+          <div className="text-muted-foreground/70 text-xs leading-relaxed">
             {taskTargetLabel
               ? `Fix task target: ${taskTargetLabel}`
               : 'Fix tasks will create a Workspace project automatically if needed.'}
@@ -1113,7 +1304,8 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
   const router = useRouter();
   const rawPathname = usePathname();
   const pathname = normalizeAppPathname(rawPathname);
-  const currentInstanceId = getCurrentInstanceIdFromPathname(rawPathname) || getActiveInstanceIdFromCookie();
+  const currentInstanceId =
+    getCurrentInstanceIdFromPathname(rawPathname) || getActiveInstanceIdFromCookie();
   const searchParams = useSearchParams();
 
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
@@ -1168,7 +1360,9 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
       });
       if (isMobile) setOpenMobile(false);
     } catch {
-      router.push(currentInstanceId ? buildInstancePath(currentInstanceId, '/dashboard') : '/dashboard');
+      router.push(
+        currentInstanceId ? buildInstancePath(currentInstanceId, '/dashboard') : '/dashboard',
+      );
       if (isMobile) setOpenMobile(false);
     }
   }, [createSession, router, isMobile, setOpenMobile, currentInstanceId]);
@@ -1234,95 +1428,106 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
   return (
     <Sidebar
       collapsible="icon"
-      className="bg-sidebar [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
+      className="bg-sidebar [scrollbar-width:'none'] [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden"
       {...props}
     >
       {/* ====== HEADER: Logo + collapse/expand ====== */}
-      <SidebarHeader className="pt-3 pb-0 overflow-visible">
-        <div className="relative flex h-[32px] items-center px-3 justify-between">
+      <SidebarHeader className="overflow-visible pt-3 pb-0">
+        <div className="relative flex h-[32px] items-center justify-between px-3">
           {/* Collapsed: Kortix symbol (always visible), chevron on hover */}
           {effectiveState === 'collapsed' && (
             <div
-              className="group/collapsed absolute inset-0 flex items-center justify-center cursor-pointer"
+              className="group/collapsed absolute inset-0 flex cursor-pointer items-center justify-center"
               onClick={() => {
                 setOpen(true);
-                window.dispatchEvent(new CustomEvent('sidebar-left-toggled', { detail: { expanded: true } }));
+                window.dispatchEvent(
+                  new CustomEvent('sidebar-left-toggled', { detail: { expanded: true } }),
+                );
               }}
             >
               {/* Symbol — hides on hover */}
-              <Link href="/dashboard" onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                openTabAndNavigate({
-                  id: 'page:/dashboard',
-                  title: 'Dashboard',
-                  type: 'dashboard',
-                  href: '/dashboard',
-                }, router);
-                if (isMobile) setOpenMobile(false);
-              }} className="flex items-center justify-center group-hover/collapsed:hidden">
-                <KortixLogo
-                  variant="symbol"
-                  size={20}
-                  className="flex-shrink-0"
-                />
+              <Link
+                href="/dashboard"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  openTabAndNavigate(
+                    {
+                      id: 'page:/dashboard',
+                      title: 'Dashboard',
+                      type: 'dashboard',
+                      href: '/dashboard',
+                    },
+                    router,
+                  );
+                  if (isMobile) setOpenMobile(false);
+                }}
+                className="flex items-center justify-center group-hover/collapsed:hidden"
+              >
+                <KortixLogo variant="symbol" size={20} className="flex-shrink-0" />
               </Link>
-              <ChevronRight className="h-3.5 w-3.5 text-sidebar-foreground hidden group-hover/collapsed:block" />
+              <ChevronRight className="text-sidebar-foreground hidden h-3.5 w-3.5 group-hover/collapsed:block" />
             </div>
           )}
-          <div className={cn(
-            'flex items-center transition-opacity duration-200',
-            effectiveState === 'collapsed' && 'opacity-0 pointer-events-none'
-          )}>
-            <Link href="/dashboard" onClick={(e) => {
-              e.preventDefault();
-              openTabAndNavigate({
-                id: 'page:/dashboard',
-                title: 'Dashboard',
-                type: 'dashboard',
-                href: '/dashboard',
-              }, router);
-              if (isMobile) setOpenMobile(false);
-            }} className="flex items-center">
-              <KortixLogo
-                variant="logomark"
-                size={16}
-                className="flex-shrink-0"
-              />
+          <div
+            className={cn(
+              'flex items-center transition-opacity duration-200',
+              effectiveState === 'collapsed' && 'pointer-events-none opacity-0',
+            )}
+          >
+            <Link
+              href="/dashboard"
+              onClick={(e) => {
+                e.preventDefault();
+                openTabAndNavigate(
+                  {
+                    id: 'page:/dashboard',
+                    title: 'Dashboard',
+                    type: 'dashboard',
+                    href: '/dashboard',
+                  },
+                  router,
+                );
+                if (isMobile) setOpenMobile(false);
+              }}
+              className="flex items-center"
+            >
+              <KortixLogo variant="logomark" size={16} className="flex-shrink-0" />
             </Link>
           </div>
 
           <button
             className={cn(
-              'flex items-center justify-center h-7 w-7 rounded-lg transition-colors duration-150 cursor-pointer',
-        'text-sidebar-foreground hover:bg-sidebar-accent',
-              effectiveState === 'collapsed' ? 'opacity-0 pointer-events-none' : 'opacity-100'
+              'flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg transition-colors duration-150',
+              'text-sidebar-foreground hover:bg-sidebar-accent',
+              effectiveState === 'collapsed' ? 'pointer-events-none opacity-0' : 'opacity-100',
             )}
-            onClick={() => isMobile ? setOpenMobile(false) : setOpen(false)}
-            aria-label={tHardcodedUi.raw('componentsSidebarSidebarLeft.line1304JsxAttrAriaLabelCollapseSidebar')}
+            onClick={() => (isMobile ? setOpenMobile(false) : setOpen(false))}
+            aria-label={tHardcodedUi.raw(
+              'componentsSidebarSidebarLeft.line1304JsxAttrAriaLabelCollapseSidebar',
+            )}
           >
             <ChevronLeft className="h-3.5 w-3.5" />
           </button>
         </div>
 
         {/* Workspace-style instance switcher — single click to swap, no full-page nav. */}
-        <div
-          className={cn(
-            'px-2 pt-2',
-            effectiveState === 'collapsed' && 'hidden',
-          )}
-        >
+        <div className={cn('px-2 pt-2', effectiveState === 'collapsed' && 'hidden')}>
           <InstanceSwitcherPopover />
         </div>
       </SidebarHeader>
 
       {/* ====== CONTENT ====== */}
-      <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] relative overflow-visible">
+      <SidebarContent className="relative [scrollbar-width:'none'] overflow-visible [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
         {/* --- Collapsed: icon buttons --- */}
-        <div className={cn(
-          'absolute inset-0 px-2 pt-2 space-y-0.5 flex flex-col items-center',
-          effectiveState === 'collapsed' ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        )}>
+        <div
+          className={cn(
+            'absolute inset-0 flex flex-col items-center space-y-0.5 px-2 pt-2',
+            effectiveState === 'collapsed'
+              ? 'pointer-events-auto opacity-100'
+              : 'pointer-events-none opacity-0',
+          )}
+        >
           {/* Workspace preview — current workspace avatar with hover flyout
               for switching instances. Sits at
               the top of the rail so users always see "this is the workspace
@@ -1375,12 +1580,16 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
         </div>
 
         {/* --- Expanded layout --- */}
-        <div className={cn(
-          'flex flex-col h-full min-h-0',
-          effectiveState === 'collapsed' ? 'opacity-0 pointer-events-none' : 'opacity-100 pointer-events-auto'
-        )}>
+        <div
+          className={cn(
+            'flex h-full min-h-0 flex-col',
+            effectiveState === 'collapsed'
+              ? 'pointer-events-none opacity-0'
+              : 'pointer-events-auto opacity-100',
+          )}
+        >
           {/* Navigation */}
-          <nav className="flex-shrink-0 px-3 pt-2 space-y-0.5">
+          <nav className="flex-shrink-0 space-y-0.5 px-3 pt-2">
             {/* New session */}
             <Button
               onClick={handleNewSession}
@@ -1388,8 +1597,10 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               variant="sidebar"
               className="group/row rounded-lg"
             >
-              <SquarePen className="flex-shrink-0 text-sidebar-foreground" />
-              <span className="flex-1 text-left">{createSession.isPending ? 'Creating...' : 'New session'}</span>
+              <SquarePen className="text-sidebar-foreground flex-shrink-0" />
+              <span className="flex-1 text-left">
+                {createSession.isPending ? 'Creating...' : 'New session'}
+              </span>
               <KbdHint mod={isMac ? '\u2318' : 'Ctrl'} letter="J" />
             </Button>
 
@@ -1410,7 +1621,7 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
               variant="sidebar"
               className="group/row rounded-lg"
             >
-              <Search className="flex-shrink-0 text-sidebar-foreground" />
+              <Search className="text-sidebar-foreground flex-shrink-0" />
               <span className="flex-1 text-left">Search</span>
               <KbdHint mod={isMac ? '\u2318' : 'Ctrl'} letter="K" />
             </Button>
@@ -1418,7 +1629,6 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
             {/* Files lives exclusively on the right sidebar — no redundant
                 entry here. Board is also right-sidebar-only (see
                 menu-registry entry `board`). */}
-
           </nav>
 
           <SidebarSections />
@@ -1426,19 +1636,23 @@ export function SidebarLeft({ ...props }: React.ComponentProps<typeof Sidebar>) 
       </SidebarContent>
 
       {/* ====== FOOTER ====== */}
-      <SidebarFooter className="px-3 pb-3 pt-0 group-data-[collapsible=icon]:px-0 gap-2">
+      <SidebarFooter className="gap-2 px-3 pt-0 pb-3 group-data-[collapsible=icon]:px-0">
         <SidebarConfigDegradationNotice
           collapsed={effectiveState === 'collapsed'}
           onExpand={() => {
             setOpen(true);
-            window.dispatchEvent(new CustomEvent('sidebar-left-toggled', { detail: { expanded: true } }));
+            window.dispatchEvent(
+              new CustomEvent('sidebar-left-toggled', { detail: { expanded: true } }),
+            );
           }}
         />
         <ScheduledDeletionCard
           collapsed={effectiveState === 'collapsed'}
           onExpand={() => {
             setOpen(true);
-            window.dispatchEvent(new CustomEvent('sidebar-left-toggled', { detail: { expanded: true } }));
+            window.dispatchEvent(
+              new CustomEvent('sidebar-left-toggled', { detail: { expanded: true } }),
+            );
           }}
         />
         <SidebarUpdateIndicator collapsed={effectiveState === 'collapsed'} />

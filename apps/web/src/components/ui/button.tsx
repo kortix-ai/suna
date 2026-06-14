@@ -21,9 +21,8 @@ const buttonVariants = cva(
         outline:
           'border border-border bg-transparent text-foreground hover:bg-foreground/5 hover:text-foreground',
         'outline-ghost': 'border border-primary/10 hover:bg-background/50 hover:text-foreground',
-        secondary:
-          'bg-secondary text-primary hover:bg-secondary    text-foreground ',
-        'outline-secondary': 'bg-secondary text-primary hover:bg-secondary ',
+        secondary: 'bg-secondary  hover:bg-secondary    text-foreground ',
+        'secondary-outline': 'bg-secondary hover:bg-secondary border border-border text-foreground',
         sidebar:
           'text-sidebar-foreground hover:bg-sidebar-accent/80 flex items-center justify-start gap-2.5 w-full transition-colors duration-150 font-normal !h-8 !text-sm !px-2.5 !py-1.5 [&_svg]:!size-3.5',
         input: 'bg-input text-primary hover:bg-input',

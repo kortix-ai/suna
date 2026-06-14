@@ -12,20 +12,23 @@
  *      — the user creates one via the Instance Manager dialog
  */
 
-import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@/features/providers/auth-provider';
 import {
+  getActiveInstanceIdFromCookie,
+  getCurrentInstanceIdFromPathname,
+} from '@/lib/instance-routes';
+import {
+  extractMappedPorts,
+  getProviders,
   getSandbox,
   listSandboxes,
-  getProviders,
-  extractMappedPorts,
   type SandboxInfo,
   type SandboxProviderName,
 } from '@/lib/platform-client';
 import { useServerStore } from '@/stores/server-store';
-import { useAuth } from '@/components/AuthProvider';
-import { useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { usePathname } from 'next/navigation';
-import { getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie } from '@/lib/instance-routes';
+import { useEffect, useRef } from 'react';
 
 /**
  * Derive a stable, deterministic server-store ID for a sandbox.
@@ -35,7 +38,8 @@ import { getCurrentInstanceIdFromPathname, getActiveInstanceIdFromCookie } from 
  * - Cloud additional: 'sandbox-<sandboxId>'
  */
 function stableIdForSandbox(sandbox: SandboxInfo, isPrimary: boolean): string {
-  if (sandbox.provider === 'local_docker') return isPrimary ? 'default' : `sandbox-${sandbox.sandbox_id}`;
+  if (sandbox.provider === 'local_docker')
+    return isPrimary ? 'default' : `sandbox-${sandbox.sandbox_id}`;
   if (isPrimary) return 'cloud-sandbox';
   return `sandbox-${sandbox.sandbox_id}`;
 }
@@ -46,7 +50,11 @@ function stableIdForSandbox(sandbox: SandboxInfo, isPrimary: boolean): string {
  *
  * Returns the server ID of the registered entry, or null if sandbox has no external_id.
  */
-function registerSandboxServer(sandbox: SandboxInfo, autoSwitch: boolean, isPrimary: boolean): string | null {
+function registerSandboxServer(
+  sandbox: SandboxInfo,
+  autoSwitch: boolean,
+  isPrimary: boolean,
+): string | null {
   if (sandbox.status !== 'active') return null;
 
   if (!sandbox.external_id) {
@@ -110,7 +118,8 @@ export function useSandbox() {
     // letting useSandbox auto-switch back to the user's primary here would
     // strand the page on an "active-server mismatch" loading gate forever.
     const onProjectRoute = pathname?.startsWith('/projects/') ?? false;
-    const routeInstance = getCurrentInstanceIdFromPathname(pathname) || getActiveInstanceIdFromCookie();
+    const routeInstance =
+      getCurrentInstanceIdFromPathname(pathname) || getActiveInstanceIdFromCookie();
     const hasExplicitRoute = !!routeInstance || onProjectRoute;
     const autoSwitch = !hasExplicitRoute;
 
@@ -128,31 +137,33 @@ export function useSandbox() {
     // loading gate.
     if (onProjectRoute) return;
 
-    listSandboxes().then((all) => {
-      const activeInstanceIds = new Set<string>();
+    listSandboxes()
+      .then((all) => {
+        const activeInstanceIds = new Set<string>();
 
-      for (const s of all) {
-        if (!s.external_id || s.status !== 'active') continue;
-        activeInstanceIds.add(s.sandbox_id);
-        if (s.sandbox_id !== primarySandbox.sandbox_id) {
-          registerSandboxServer(s, false, false);
+        for (const s of all) {
+          if (!s.external_id || s.status !== 'active') continue;
+          activeInstanceIds.add(s.sandbox_id);
+          if (s.sandbox_id !== primarySandbox.sandbox_id) {
+            registerSandboxServer(s, false, false);
+          }
         }
-      }
 
-      // Purge stale managed cloud entries so the sidebar doesn't offer dead,
-      // provisioning, errored, or deleted instances for direct switching.
-      const store = useServerStore.getState();
-      const staleIds = store.servers
-        .filter((s) => s.id !== 'default')
-        .filter((s) => !!s.provider && !!s.instanceId)
-        .filter((s) => s.id === 'cloud-sandbox' || s.id.startsWith('sandbox-'))
-        .filter((s) => !activeInstanceIds.has(s.instanceId!))
-        .map((s) => s.id);
+        // Purge stale managed cloud entries so the sidebar doesn't offer dead,
+        // provisioning, errored, or deleted instances for direct switching.
+        const store = useServerStore.getState();
+        const staleIds = store.servers
+          .filter((s) => s.id !== 'default')
+          .filter((s) => !!s.provider && !!s.instanceId)
+          .filter((s) => s.id === 'cloud-sandbox' || s.id.startsWith('sandbox-'))
+          .filter((s) => !activeInstanceIds.has(s.instanceId!))
+          .map((s) => s.id);
 
-      for (const id of staleIds) {
-        store.removeServer(id);
-      }
-    }).catch(() => {});
+        for (const id of staleIds) {
+          store.removeServer(id);
+        }
+      })
+      .catch(() => {});
   }, [query.data, pathname]);
 
   return {

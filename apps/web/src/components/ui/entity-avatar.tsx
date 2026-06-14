@@ -4,18 +4,6 @@ import type { Icon } from '@/components/ui/kortix-icons';
 import { cn } from '@/lib/utils';
 import { IconType } from 'react-icons/lib';
 
-/**
- * Kortix <EntityAvatar> — the squared counterpart to <UserAvatar>.
- *
- * People are round (UserAvatar); *things* — accounts, projects, groups,
- * workspaces — are rounded squares. Keeping the two shapes distinct is the
- * single convention that makes every list legible at a glance. Sizes mirror
- * UserAvatar exactly so people and entities line up on the same row.
- *
- *   <EntityAvatar label="Acme AGI" />          // initial tile
- *   <EntityAvatar icon={IconProject} />        // icon tile
- */
-
 const SIZE_MAP = {
   xs: { box: 'size-5 rounded-sm text-xs', icon: 'h-3 w-3' },
   sm: { box: 'size-6 rounded-sm text-xs', icon: 'h-3.5 w-3.5' },
@@ -27,9 +15,7 @@ const SIZE_MAP = {
 export type EntityAvatarSize = keyof typeof SIZE_MAP;
 
 export interface EntityAvatarProps {
-  /** Text to derive the initial from when no icon is given. */
   label?: string;
-  /** Lucide icon to render instead of an initial. */
   icon?: Icon | IconType;
   size?: EntityAvatarSize;
   className?: string;
@@ -48,7 +34,7 @@ export function EntityAvatar({
     <span
       data-slot="entity-avatar"
       className={cn(
-        'border-border bg-muted/40 text-foreground/80 inline-flex shrink-0 items-center justify-center border font-semibold',
+        'border-border bg-muted text-foreground inline-flex shrink-0 items-center justify-center border font-semibold',
         sizes.box,
         className,
       )}

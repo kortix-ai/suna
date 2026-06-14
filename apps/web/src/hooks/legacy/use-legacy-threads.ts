@@ -1,9 +1,9 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/features/providers/auth-provider';
 import { authenticatedFetch } from '@/lib/auth-token';
-import { useAuth } from '@/components/AuthProvider';
 import { getEnv } from '@/lib/env-config';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface LegacyThread {
   thread_id: string;
@@ -81,7 +81,13 @@ export function useMigrateLegacyThread() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ threadId, sandboxExternalId }: { threadId: string; sandboxExternalId: string }) =>
+    mutationFn: ({
+      threadId,
+      sandboxExternalId,
+    }: {
+      threadId: string;
+      sandboxExternalId: string;
+    }) =>
       legacyFetch<MigrationResult>(`/threads/${threadId}/migrate`, {
         method: 'POST',
         body: JSON.stringify({ sandboxExternalId }),
@@ -138,4 +144,4 @@ export function useMigrateAllStatus(enabled: boolean) {
   });
 }
 
-export type { LegacyThread, LegacyMessage, MigrationResult, MigrateAllStatus };
+export type { LegacyMessage, LegacyThread, MigrateAllStatus, MigrationResult };

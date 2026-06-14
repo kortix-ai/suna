@@ -2,83 +2,58 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
-import {
-  Settings,
-  Shield,
-  Zap,
-  Loader2,
-  Unplug,
-  Save,
-  RotateCcw,
-  ChevronDown,
-  ChevronRight,
-  Server,
-  Plus,
-  AlertCircle,
-  Plug,
-  Power,
-  Wrench,
-  X,
-} from 'lucide-react';
+import { ModelSelector } from '@/components/session/model-selector';
+import { flattenModels } from '@/components/session/session-chat-input';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogDescription,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { List, ListRow } from '@/components/ui/list';
-import { Badge } from '@/components/ui/badge';
-import {
-  StatusDot,
-  STATUS_TEXT,
-  STATUS_BG,
-  STATUS_BORDER,
-} from '@/components/ui/status';
-import { cn } from '@/lib/utils';
-import {
-  useOpenCodeConfig,
-  useUpdateOpenCodeConfig,
-} from '@/hooks/opencode/use-opencode-config';
+import { STATUS_BG, STATUS_BORDER, STATUS_TEXT, StatusDot } from '@/components/ui/status';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { ProviderList } from '@/features/providers/provider-list';
+import { setGlobalDefaultModel } from '@/hooks/opencode/use-model-store';
 import type { Config } from '@/hooks/opencode/use-opencode-config';
+import { useOpenCodeConfig, useUpdateOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
+import type { McpStatus } from '@/hooks/opencode/use-opencode-mcp';
 import {
-  useOpenCodeProviders,
-  useOpenCodeToolIds,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { getClient } from '@/lib/opencode-sdk';
-import { useQueryClient } from '@tanstack/react-query';
-import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
-import { ProviderList } from '@/components/providers/provider-list';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { ModelSelector } from '@/components/session/model-selector';
-import { flattenModels } from '@/components/session/session-chat-input';
-import {
-  useOpenCodeMcpStatus,
   useAddMcpServer,
   useConnectMcpServer,
   useDisconnectMcpServer,
-  useMcpAuthStart,
   useMcpAuthCallback,
+  useMcpAuthStart,
+  useOpenCodeMcpStatus,
 } from '@/hooks/opencode/use-opencode-mcp';
-import type { McpStatus } from '@/hooks/opencode/use-opencode-mcp';
+import { useOpenCodeProviders, useOpenCodeToolIds } from '@/hooks/opencode/use-opencode-sessions';
 import { toast } from '@/lib/toast';
-import { setGlobalDefaultModel } from '@/hooks/opencode/use-model-store';
+import { cn } from '@/lib/utils';
+import { useProviderModalStore } from '@/stores/provider-modal-store';
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Plug,
+  Plus,
+  Power,
+  RotateCcw,
+  Save,
+  Server,
+  Settings,
+  Shield,
+  Wrench,
+  X,
+  Zap,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 // ============================================================================
 // Constants
@@ -151,25 +126,35 @@ function GeneralSection({
     <div className="space-y-6">
       {/* Custom Instructions */}
       <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line152JsxTextCustomInstructions')}</label>
-        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line155JsxTextAdditionalInstructionFilePathsOnePerLineE')}</p>
+        <label className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+          {tHardcodedUi.raw(
+            'componentsSessionOpencodeSettingsDialog.line152JsxTextCustomInstructions',
+          )}
+        </label>
+        <p className="text-muted-foreground/60 text-xs">
+          {tHardcodedUi.raw(
+            'componentsSessionOpencodeSettingsDialog.line155JsxTextAdditionalInstructionFilePathsOnePerLineE',
+          )}
+        </p>
         <Textarea
           value={instructionsText}
           onChange={(e) => {
-            const lines = e.target.value
-              .split('\n')
-              .filter((l) => l.trim() !== '');
+            const lines = e.target.value.split('\n').filter((l) => l.trim() !== '');
             onDraft('instructions', lines.length > 0 ? lines : undefined);
           }}
-          placeholder={tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line165JsxAttrPlaceholderDocsRulesMd10Cursorrules10AgentsMd')}
+          placeholder={tHardcodedUi.raw(
+            'componentsSessionOpencodeSettingsDialog.line165JsxAttrPlaceholderDocsRulesMd10Cursorrules10AgentsMd',
+          )}
           rows={4}
-          className="font-mono text-sm resize-none rounded-2xl"
+          className="resize-none rounded-2xl font-mono text-sm"
         />
       </div>
 
       {/* Default Model */}
       <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line174JsxTextDefaultModel')}</label>
+        <label className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+          {tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line174JsxTextDefaultModel')}
+        </label>
         <div className="flex items-center gap-2">
           <ModelSelector
             models={allModels}
@@ -182,12 +167,14 @@ function GeneralSection({
               onClick={() => onDraft('model', undefined)}
               variant="link"
               size="sm"
-              className="h-auto p-0 text-xs text-muted-foreground"
-            >{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line190JsxTextResetToAuto')}</Button>
+              className="text-muted-foreground h-auto p-0 text-xs"
+            >
+              {tHardcodedUi.raw(
+                'componentsSessionOpencodeSettingsDialog.line190JsxTextResetToAuto',
+              )}
+            </Button>
           )}
-          {!selectedModel && (
-            <span className="text-xs text-muted-foreground/60">Auto-detect</span>
-          )}
+          {!selectedModel && <span className="text-muted-foreground/60 text-xs">Auto-detect</span>}
         </div>
       </div>
 
@@ -195,15 +182,16 @@ function GeneralSection({
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div>
-            <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            <label className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
               Snapshots
             </label>
-            <p className="text-xs text-muted-foreground/60 mt-0.5">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line207JsxTextCreateAGitSnapshotAtEachAgenticStep')}</p>
+            <p className="text-muted-foreground/60 mt-0.5 text-xs">
+              {tHardcodedUi.raw(
+                'componentsSessionOpencodeSettingsDialog.line207JsxTextCreateAGitSnapshotAtEachAgenticStep',
+              )}
+            </p>
           </div>
-          <Switch
-            checked={snapshot}
-            onCheckedChange={(v) => onDraft('snapshot', v)}
-          />
+          <Switch checked={snapshot} onCheckedChange={(v) => onDraft('snapshot', v)} />
         </div>
       </div>
     </div>
@@ -214,11 +202,7 @@ function GeneralSection({
 // Providers Tab
 // ============================================================================
 
-function ProvidersSection({
-  onDirty,
-}: {
-  onDirty: () => void;
-}) {
+function ProvidersSection({ onDirty }: { onDirty: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: providers } = useOpenCodeProviders();
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
@@ -232,12 +216,14 @@ function ProvidersSection({
   return (
     <div className="space-y-3 overflow-y-auto">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground/40 uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line242JsxTextConnected')}{connectedProviders.length})
+        <span className="text-muted-foreground/40 text-xs font-medium tracking-wider uppercase">
+          {tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line242JsxTextConnected')}
+          {connectedProviders.length})
         </span>
         <Button
           variant="outline"
           size="sm"
-          className="h-7 px-2.5 text-xs gap-1.5 "
+          className="h-7 gap-1.5 px-2.5 text-xs"
           onClick={() => openProviderModal('providers')}
         >
           <Plus className="h-3 w-3" />
@@ -271,16 +257,14 @@ function PermissionsSection({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { data: toolIds } = useOpenCodeToolIds();
 
-  const permission = (draft.permission ?? config.permission ?? {}) as Record<
-    string,
-    any
-  >;
+  const permission = (draft.permission ?? config.permission ?? {}) as Record<string, any>;
   const isGlobalMode = typeof permission === 'string';
   const globalAction = isGlobalMode ? (permission as string) : 'ask';
   // Resolve the wildcard fallback: permission["*"] acts as the default for all tools
-  const wildcardAction = !isGlobalMode && typeof (permission as Record<string, any>)['*'] === 'string'
-    ? (permission as Record<string, any>)['*']
-    : 'ask';
+  const wildcardAction =
+    !isGlobalMode && typeof (permission as Record<string, any>)['*'] === 'string'
+      ? (permission as Record<string, any>)['*']
+      : 'ask';
 
   const getAction = (key: string): string => {
     if (isGlobalMode) return globalAction;
@@ -323,30 +307,55 @@ function PermissionsSection({
     <div className="space-y-6">
       {/* Global permission mode */}
       <div className="space-y-2">
-        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line333JsxTextGlobalPermissionMode')}</label>
-        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line336JsxTextSetABlanketPermissionLevelOrConfigurePer')}</p>
+        <label className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+          {tHardcodedUi.raw(
+            'componentsSessionOpencodeSettingsDialog.line333JsxTextGlobalPermissionMode',
+          )}
+        </label>
+        <p className="text-muted-foreground/60 text-xs">
+          {tHardcodedUi.raw(
+            'componentsSessionOpencodeSettingsDialog.line336JsxTextSetABlanketPermissionLevelOrConfigurePer',
+          )}
+        </p>
         <div className="flex gap-1.5">
           {ACTIONS.map((a) => (
             <Button
               key={a}
               onClick={() => setGlobalMode(a)}
               size="toolbar"
-              variant={isGlobalMode && globalAction === a
-                ? a === 'allow' ? 'success'
-                : a === 'deny' ? 'destructive'
-                : 'muted'
-                : 'muted'}
+              variant={
+                isGlobalMode && globalAction === a
+                  ? a === 'allow'
+                    ? 'success'
+                    : a === 'deny'
+                      ? 'destructive'
+                      : 'muted'
+                  : 'muted'
+              }
               className={cn(
-                isGlobalMode && globalAction === a && a === 'allow' && cn('border', STATUS_BG.success, STATUS_TEXT.success, STATUS_BORDER.success),
-                isGlobalMode && globalAction === a && a === 'deny' && 'bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/15',
-                isGlobalMode && globalAction === a && a === 'ask' && cn('border', STATUS_BG.warning, STATUS_TEXT.warning, STATUS_BORDER.warning),
+                isGlobalMode &&
+                  globalAction === a &&
+                  a === 'allow' &&
+                  cn('border', STATUS_BG.success, STATUS_TEXT.success, STATUS_BORDER.success),
+                isGlobalMode &&
+                  globalAction === a &&
+                  a === 'deny' &&
+                  'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/15 border',
+                isGlobalMode &&
+                  globalAction === a &&
+                  a === 'ask' &&
+                  cn('border', STATUS_BG.warning, STATUS_TEXT.warning, STATUS_BORDER.warning),
               )}
             >
               {a}
             </Button>
           ))}
           <Button
-            onClick={() => { if (isGlobalMode) { onDraft('permission', {}); } }}
+            onClick={() => {
+              if (isGlobalMode) {
+                onDraft('permission', {});
+              }
+            }}
             size="toolbar"
             variant="muted"
             className={cn(
@@ -361,15 +370,19 @@ function PermissionsSection({
       {/* Per-tool permission overrides */}
       {!isGlobalMode && (
         <div className="space-y-2">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line375JsxTextPerToolPermissions')}</label>
-          <div className="rounded-2xl border border-border/50 bg-card">
+          <label className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+            {tHardcodedUi.raw(
+              'componentsSessionOpencodeSettingsDialog.line375JsxTextPerToolPermissions',
+            )}
+          </label>
+          <div className="border-border/50 bg-card rounded-2xl border">
             <List>
               {PERMISSION_TYPES.map(({ key, label, description }) => (
                 <ListRow
                   key={key}
                   className="px-3 py-2.5"
                   title={label}
-                  subtitle={<p className="text-xs text-muted-foreground/60">{description}</p>}
+                  subtitle={<p className="text-muted-foreground/60 text-xs">{description}</p>}
                   trailing={ACTIONS.map((a) => (
                     <Button
                       key={a}
@@ -377,9 +390,25 @@ function PermissionsSection({
                       size="xs"
                       variant="muted"
                       className={cn(
-                        getAction(key) === a && a === 'allow' && cn('border', STATUS_BG.success, STATUS_TEXT.success, STATUS_BORDER.success),
-                        getAction(key) === a && a === 'deny' && 'bg-destructive/10 text-destructive border border-destructive/20 hover:bg-destructive/15',
-                        getAction(key) === a && a === 'ask' && cn('border', STATUS_BG.warning, STATUS_TEXT.warning, STATUS_BORDER.warning),
+                        getAction(key) === a &&
+                          a === 'allow' &&
+                          cn(
+                            'border',
+                            STATUS_BG.success,
+                            STATUS_TEXT.success,
+                            STATUS_BORDER.success,
+                          ),
+                        getAction(key) === a &&
+                          a === 'deny' &&
+                          'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/15 border',
+                        getAction(key) === a &&
+                          a === 'ask' &&
+                          cn(
+                            'border',
+                            STATUS_BG.warning,
+                            STATUS_TEXT.warning,
+                            STATUS_BORDER.warning,
+                          ),
                       )}
                     >
                       {a}
@@ -395,20 +424,27 @@ function PermissionsSection({
       {/* Tool enable/disable overrides */}
       {builtinToolIds.length > 0 && (
         <div className="space-y-2">
-          <label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line411JsxTextToolOverrides')}</label>
-          <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line414JsxTextEnableOrDisableIndividualTools')}</p>
-          <div className="rounded-2xl border border-border/50 bg-card max-h-48 overflow-y-auto">
+          <label className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+            {tHardcodedUi.raw(
+              'componentsSessionOpencodeSettingsDialog.line411JsxTextToolOverrides',
+            )}
+          </label>
+          <p className="text-muted-foreground/60 text-xs">
+            {tHardcodedUi.raw(
+              'componentsSessionOpencodeSettingsDialog.line414JsxTextEnableOrDisableIndividualTools',
+            )}
+          </p>
+          <div className="border-border/50 bg-card max-h-48 overflow-y-auto rounded-2xl border">
             <List>
               {builtinToolIds.map((id) => (
                 <ListRow
                   key={id}
                   className="px-3 py-2"
-                  title={<span className="text-xs font-mono text-foreground/80 truncate">{id}</span>}
+                  title={
+                    <span className="text-foreground/80 truncate font-mono text-xs">{id}</span>
+                  }
                   trailing={
-                    <Switch
-                      checked={isToolEnabled(id)}
-                      onCheckedChange={() => toggleTool(id)}
-                    />
+                    <Switch checked={isToolEnabled(id)} onCheckedChange={() => toggleTool(id)} />
                   }
                 />
               ))}
@@ -448,13 +484,15 @@ function StatusBadge({ status }: { status: McpStatus }) {
   if (s === 'needs_auth' || s === 'needs_client_registration') {
     return (
       <Badge size="sm" variant="warning">
-        <StatusDot tone="warning" />{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line467JsxTextNeedsAuth')}</Badge>
+        <StatusDot tone="warning" />
+        {tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line467JsxTextNeedsAuth')}
+      </Badge>
     );
   }
   // failed
   return (
     <Badge size="sm" variant="outline" className="bg-destructive/10 text-destructive">
-      <span className="w-1.5 h-1.5 rounded-full bg-destructive" />
+      <span className="bg-destructive h-1.5 w-1.5 rounded-full" />
       error
     </Badge>
   );
@@ -509,103 +547,122 @@ function McpServersSection() {
     return result;
   }, [toolIds]);
 
-  const handleAddServer = useCallback(async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    setAddError('');
+  const handleAddServer = useCallback(
+    async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      setAddError('');
 
-    if (!addForm.name.trim()) {
-      setAddError('Server name is required');
-      return;
-    }
-
-    if (addForm.transportType === 'stdio' && !addForm.command.trim()) {
-      setAddError('Command is required for stdio transport');
-      return;
-    }
-
-    if (addForm.transportType === 'http' && !addForm.url.trim()) {
-      setAddError('URL is required for HTTP transport');
-      return;
-    }
-
-    if (addForm.transportType === 'http' && !/^https?:\/\//.test(addForm.url.trim())) {
-      setAddError('URL must start with http:// or https://');
-      return;
-    }
-
-    const envMap: Record<string, string> = {};
-    for (const pair of addForm.envPairs) {
-      if (pair.key.trim()) {
-        envMap[pair.key.trim()] = pair.value;
+      if (!addForm.name.trim()) {
+        setAddError('Server name is required');
+        return;
       }
-    }
 
-    try {
-      await addMutation.mutateAsync({
-        name: addForm.name.trim(),
-        type: addForm.transportType === 'stdio' ? 'local' : 'remote',
-        ...(addForm.transportType === 'stdio'
-          ? { command: addForm.command.trim().split(/\s+/), env: envMap }
-          : { url: addForm.url.trim() }),
-      });
-      toast.info(`MCP server "${addForm.name.trim()}" added`);
-      setAddForm({ name: '', transportType: 'stdio', command: '', url: '', envPairs: [] });
-      setView({ type: 'list' });
-    } catch (err) {
-      setAddError(err instanceof Error ? err.message : String(err));
-    }
-  }, [addForm, addMutation]);
+      if (addForm.transportType === 'stdio' && !addForm.command.trim()) {
+        setAddError('Command is required for stdio transport');
+        return;
+      }
 
-  const handleConnect = useCallback(async (name: string) => {
-    try {
-      await connectMutation.mutateAsync(name);
-      toast.info(`MCP server "${name}" connected`);
-    } catch (err) {
-      toast.warning(`Failed to connect "${name}": ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }, [connectMutation]);
+      if (addForm.transportType === 'http' && !addForm.url.trim()) {
+        setAddError('URL is required for HTTP transport');
+        return;
+      }
 
-  const handleDisconnect = useCallback(async (name: string) => {
-    try {
-      await disconnectMutation.mutateAsync(name);
-      toast.info(`MCP server "${name}" disconnected`);
-    } catch (err) {
-      toast.warning(`Failed to disconnect "${name}": ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }, [disconnectMutation]);
+      if (addForm.transportType === 'http' && !/^https?:\/\//.test(addForm.url.trim())) {
+        setAddError('URL must start with http:// or https://');
+        return;
+      }
 
-  const handleAuthStart = useCallback(async (name: string) => {
-    setAuthError('');
-    setAuthCode('');
-    setAuthUrl('');
-    setView({ type: 'auth', name });
-    try {
-      const result = await authStartMutation.mutateAsync(name);
-      setAuthUrl(result.authorizationUrl);
-      window.open(result.authorizationUrl, '_blank', 'noopener,noreferrer');
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : String(err));
-    }
-  }, [authStartMutation]);
+      const envMap: Record<string, string> = {};
+      for (const pair of addForm.envPairs) {
+        if (pair.key.trim()) {
+          envMap[pair.key.trim()] = pair.value;
+        }
+      }
 
-  const handleAuthCallback = useCallback(async (e?: React.FormEvent) => {
-    e?.preventDefault();
-    if (view.type !== 'auth') return;
-    if (!authCode.trim()) {
-      setAuthError('Authorization code is required');
-      return;
-    }
-    try {
-      await authCallbackMutation.mutateAsync({ name: view.name, code: authCode.trim() });
-      toast.info(`MCP server "${view.name}" authorized`);
-      setView({ type: 'list' });
+      try {
+        await addMutation.mutateAsync({
+          name: addForm.name.trim(),
+          type: addForm.transportType === 'stdio' ? 'local' : 'remote',
+          ...(addForm.transportType === 'stdio'
+            ? { command: addForm.command.trim().split(/\s+/), env: envMap }
+            : { url: addForm.url.trim() }),
+        });
+        toast.info(`MCP server "${addForm.name.trim()}" added`);
+        setAddForm({ name: '', transportType: 'stdio', command: '', url: '', envPairs: [] });
+        setView({ type: 'list' });
+      } catch (err) {
+        setAddError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [addForm, addMutation],
+  );
+
+  const handleConnect = useCallback(
+    async (name: string) => {
+      try {
+        await connectMutation.mutateAsync(name);
+        toast.info(`MCP server "${name}" connected`);
+      } catch (err) {
+        toast.warning(
+          `Failed to connect "${name}": ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    },
+    [connectMutation],
+  );
+
+  const handleDisconnect = useCallback(
+    async (name: string) => {
+      try {
+        await disconnectMutation.mutateAsync(name);
+        toast.info(`MCP server "${name}" disconnected`);
+      } catch (err) {
+        toast.warning(
+          `Failed to disconnect "${name}": ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    },
+    [disconnectMutation],
+  );
+
+  const handleAuthStart = useCallback(
+    async (name: string) => {
+      setAuthError('');
       setAuthCode('');
       setAuthUrl('');
-      setAuthError('');
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : String(err));
-    }
-  }, [view, authCode, authCallbackMutation]);
+      setView({ type: 'auth', name });
+      try {
+        const result = await authStartMutation.mutateAsync(name);
+        setAuthUrl(result.authorizationUrl);
+        window.open(result.authorizationUrl, '_blank', 'noopener,noreferrer');
+      } catch (err) {
+        setAuthError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [authStartMutation],
+  );
+
+  const handleAuthCallback = useCallback(
+    async (e?: React.FormEvent) => {
+      e?.preventDefault();
+      if (view.type !== 'auth') return;
+      if (!authCode.trim()) {
+        setAuthError('Authorization code is required');
+        return;
+      }
+      try {
+        await authCallbackMutation.mutateAsync({ name: view.name, code: authCode.trim() });
+        toast.info(`MCP server "${view.name}" authorized`);
+        setView({ type: 'list' });
+        setAuthCode('');
+        setAuthUrl('');
+        setAuthError('');
+      } catch (err) {
+        setAuthError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [view, authCode, authCallbackMutation],
+  );
 
   const addEnvPair = useCallback(() => {
     setAddForm((f) => ({ ...f, envPairs: [...f.envPairs, { key: '', value: '' }] }));
@@ -629,7 +686,10 @@ function McpServersSection() {
         <div className="flex items-center gap-2">
           <Button
             type="button"
-            onClick={() => { setView({ type: 'list' }); setAuthError(''); }}
+            onClick={() => {
+              setView({ type: 'list' });
+              setAuthError('');
+            }}
             variant="ghost"
             size="icon-sm"
           >
@@ -640,26 +700,51 @@ function McpServersSection() {
 
         {authStartMutation.isPending && !authUrl && (
           <div className="flex items-center gap-3 py-4">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line660JsxTextStartingAuthorization')}</span>
+            <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+            <span className="text-muted-foreground text-sm">
+              {tHardcodedUi.raw(
+                'componentsSessionOpencodeSettingsDialog.line660JsxTextStartingAuthorization',
+              )}
+            </span>
           </div>
         )}
 
         {authUrl && (
           <form onSubmit={handleAuthCallback} className="space-y-4">
-            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line667JsxTextVisitThe')}{' '}
-              <a href={authUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line669JsxTextAuthorizationPage')}</a>{' '}{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line671JsxTextAndAfterItRedirectsToLocalhostPasteThe')}</p>
+            <p className="text-muted-foreground text-sm">
+              {tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line667JsxTextVisitThe')}{' '}
+              <a
+                href={authUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                {tHardcodedUi.raw(
+                  'componentsSessionOpencodeSettingsDialog.line669JsxTextAuthorizationPage',
+                )}
+              </a>{' '}
+              {tHardcodedUi.raw(
+                'componentsSessionOpencodeSettingsDialog.line671JsxTextAndAfterItRedirectsToLocalhostPasteThe',
+              )}
+            </p>
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line674JsxTextLocalhostRedirectUrl')}</label>
-              <Input type="text"
-                placeholder={tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line676JsxAttrPlaceholderPasteHttpLocalhostCallback')}
+              <label className="text-muted-foreground mb-1 block text-xs">
+                {tHardcodedUi.raw(
+                  'componentsSessionOpencodeSettingsDialog.line674JsxTextLocalhostRedirectUrl',
+                )}
+              </label>
+              <Input
+                type="text"
+                placeholder={tHardcodedUi.raw(
+                  'componentsSessionOpencodeSettingsDialog.line676JsxAttrPlaceholderPasteHttpLocalhostCallback',
+                )}
                 value={authCode}
                 onChange={(e) => setAuthCode(e.target.value)}
                 autoFocus
               />
             </div>
             {authError && (
-              <p className="text-sm text-destructive flex items-center gap-1.5">
+              <p className="text-destructive flex items-center gap-1.5 text-sm">
                 <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
                 {authError}
               </p>
@@ -671,7 +756,10 @@ function McpServersSection() {
               className="h-8 px-4 text-xs"
             >
               {authCallbackMutation.isPending ? (
-                <><Loader2 className="h-3 w-3 animate-spin mr-1.5" />Authorizing...</>
+                <>
+                  <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                  Authorizing...
+                </>
               ) : (
                 'Submit'
               )}
@@ -681,7 +769,7 @@ function McpServersSection() {
 
         {authError && !authUrl && (
           <div className="space-y-3">
-            <p className="text-sm text-destructive flex items-center gap-1.5">
+            <p className="text-destructive flex items-center gap-1.5 text-sm">
               <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
               {authError}
             </p>
@@ -690,7 +778,9 @@ function McpServersSection() {
               size="sm"
               onClick={() => handleAuthStart(view.name)}
               className="h-8 px-3 text-xs"
-            >{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line715JsxTextTryAgain')}</Button>
+            >
+              {tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line715JsxTextTryAgain')}
+            </Button>
           </div>
         )}
       </div>
@@ -704,20 +794,28 @@ function McpServersSection() {
         <div className="flex items-center gap-2">
           <Button
             type="button"
-            onClick={() => { setView({ type: 'list' }); setAddError(''); }}
+            onClick={() => {
+              setView({ type: 'list' });
+              setAddError('');
+            }}
             variant="ghost"
             size="icon-sm"
           >
             <ChevronRight className="h-4 w-4 rotate-180" />
           </Button>
-          <h3 className="text-sm font-semibold">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line736JsxTextAddMcpServer')}</h3>
+          <h3 className="text-sm font-semibold">
+            {tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line736JsxTextAddMcpServer')}
+          </h3>
         </div>
 
         <form onSubmit={handleAddServer} className="space-y-4">
           {/* Name */}
           <div>
-            <label className="text-xs text-muted-foreground mb-1 block">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line742JsxTextServerName')}</label>
-            <Input type="text"
+            <label className="text-muted-foreground mb-1 block text-xs">
+              {tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line742JsxTextServerName')}
+            </label>
+            <Input
+              type="text"
               placeholder="my-server"
               value={addForm.name}
               onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
@@ -727,40 +825,58 @@ function McpServersSection() {
 
           {/* Transport Type */}
           <div className="space-y-2">
-            <label className="text-xs text-muted-foreground mb-1 block">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line753JsxTextTransportType')}</label>
+            <label className="text-muted-foreground mb-1 block text-xs">
+              {tHardcodedUi.raw(
+                'componentsSessionOpencodeSettingsDialog.line753JsxTextTransportType',
+              )}
+            </label>
             <div className="flex gap-1.5">
               <Button
                 type="button"
                 onClick={() => setAddForm((f) => ({ ...f, transportType: 'stdio' }))}
                 size="toolbar"
                 variant={addForm.transportType === 'stdio' ? 'secondary' : 'muted'}
-                className={cn(addForm.transportType === 'stdio' && 'border border-primary/20')}
-              >{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line762JsxTextStdioCommand')}</Button>
+                className={cn(addForm.transportType === 'stdio' && 'border-primary/20 border')}
+              >
+                {tHardcodedUi.raw(
+                  'componentsSessionOpencodeSettingsDialog.line762JsxTextStdioCommand',
+                )}
+              </Button>
               <Button
                 type="button"
                 onClick={() => setAddForm((f) => ({ ...f, transportType: 'http' }))}
                 size="toolbar"
                 variant={addForm.transportType === 'http' ? 'secondary' : 'muted'}
-                className={cn(addForm.transportType === 'http' && 'border border-primary/20')}
-              >{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line771JsxTextHttpUrl')}</Button>
+                className={cn(addForm.transportType === 'http' && 'border-primary/20 border')}
+              >
+                {tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line771JsxTextHttpUrl')}
+              </Button>
             </div>
           </div>
 
           {/* Transport-specific fields */}
           {addForm.transportType === 'stdio' ? (
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">Command</label>
-              <Input type="text"
-                placeholder={tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line781JsxAttrPlaceholderNpxYModelcontextprotocolServerGithub')}
+              <label className="text-muted-foreground mb-1 block text-xs">Command</label>
+              <Input
+                type="text"
+                placeholder={tHardcodedUi.raw(
+                  'componentsSessionOpencodeSettingsDialog.line781JsxAttrPlaceholderNpxYModelcontextprotocolServerGithub',
+                )}
                 value={addForm.command}
                 onChange={(e) => setAddForm((f) => ({ ...f, command: e.target.value }))}
               />
-              <p className="text-xs text-muted-foreground/60 mt-1">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line786JsxTextFullCommandWithArgumentsSpaceSeparated')}</p>
+              <p className="text-muted-foreground/60 mt-1 text-xs">
+                {tHardcodedUi.raw(
+                  'componentsSessionOpencodeSettingsDialog.line786JsxTextFullCommandWithArgumentsSpaceSeparated',
+                )}
+              </p>
             </div>
           ) : (
             <div>
-              <label className="text-xs text-muted-foreground mb-1 block">URL</label>
-              <Input type="text"
+              <label className="text-muted-foreground mb-1 block text-xs">URL</label>
+              <Input
+                type="text"
                 placeholder="https://mcp.example.com/sse"
                 value={addForm.url}
                 onChange={(e) => setAddForm((f) => ({ ...f, url: e.target.value }))}
@@ -771,13 +887,12 @@ function McpServersSection() {
           {/* Environment Variables */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <label className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line803JsxTextEnvironmentVariables')}</label>
-              <Button
-                type="button"
-                onClick={addEnvPair}
-                variant="muted"
-                size="xs"
-              >
+              <label className="text-muted-foreground text-xs">
+                {tHardcodedUi.raw(
+                  'componentsSessionOpencodeSettingsDialog.line803JsxTextEnvironmentVariables',
+                )}
+              </label>
+              <Button type="button" onClick={addEnvPair} variant="muted" size="xs">
                 <Plus className="h-3 w-3" />
                 Add
               </Button>
@@ -785,14 +900,16 @@ function McpServersSection() {
             {addForm.envPairs.length > 0 && (
               <div className="space-y-2">
                 {addForm.envPairs.map((pair, i) => (
-                  <div key={i} className="flex gap-2 items-center">
-                    <Input type="text"
+                  <div key={i} className="flex items-center gap-2">
+                    <Input
+                      type="text"
                       placeholder="KEY"
                       value={pair.key}
                       onChange={(e) => updateEnvPair(i, 'key', e.target.value)}
                       className="flex-1 font-mono text-xs"
                     />
-                    <Input type="text"
+                    <Input
+                      type="text"
                       placeholder="value"
                       value={pair.value}
                       onChange={(e) => updateEnvPair(i, 'value', e.target.value)}
@@ -814,7 +931,7 @@ function McpServersSection() {
           </div>
 
           {addError && (
-            <p className="text-sm text-destructive flex items-center gap-1.5">
+            <p className="text-destructive flex items-center gap-1.5 text-sm">
               <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
               {addError}
             </p>
@@ -827,7 +944,10 @@ function McpServersSection() {
             className="h-8 px-4 text-xs"
           >
             {addMutation.isPending ? (
-              <><Loader2 className="h-3 w-3 animate-spin mr-1.5" />Adding...</>
+              <>
+                <Loader2 className="mr-1.5 h-3 w-3 animate-spin" />
+                Adding...
+              </>
             ) : (
               'Add Server'
             )}
@@ -841,20 +961,27 @@ function McpServersSection() {
   return (
     <div className="space-y-4 overflow-y-auto pr-1">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line874JsxTextServers')}{servers.length})
+        <span className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+          {tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line874JsxTextServers')}
+          {servers.length})
         </span>
         <Button
           variant="outline"
           size="sm"
-          className="h-7 px-2.5 text-xs gap-1.5"
-          onClick={() => { setView({ type: 'add' }); setAddError(''); }}
+          className="h-7 gap-1.5 px-2.5 text-xs"
+          onClick={() => {
+            setView({ type: 'add' });
+            setAddError('');
+          }}
         >
-          <Plus className="h-3 w-3" />{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line883JsxTextAddServer')}</Button>
+          <Plus className="h-3 w-3" />
+          {tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line883JsxTextAddServer')}
+        </Button>
       </div>
 
       {isLoading ? (
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
         </div>
       ) : servers.length > 0 ? (
         <div className="space-y-2">
@@ -862,7 +989,8 @@ function McpServersSection() {
             const isExp = expanded === name;
             const tools = serverTools[name] ?? [];
             const isConnected = status.status === 'connected';
-            const needsAuth = status.status === 'needs_auth' || status.status === 'needs_client_registration';
+            const needsAuth =
+              status.status === 'needs_auth' || status.status === 'needs_client_registration';
             const isFailed = status.status === 'failed';
             const isToggling =
               (connectMutation.isPending && connectMutation.variables === name) ||
@@ -871,33 +999,31 @@ function McpServersSection() {
             return (
               <div
                 key={name}
-                className="rounded-2xl border border-border/50 bg-card overflow-hidden"
+                className="border-border/50 bg-card overflow-hidden rounded-2xl border"
               >
                 {/* Server header */}
                 <div className="flex items-center gap-3 px-3 py-2.5">
-                  <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-muted/50 flex-shrink-0">
-                    <Server className="h-4 w-4 text-muted-foreground" />
+                  <div className="bg-muted/50 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg">
+                    <Server className="text-muted-foreground h-4 w-4" />
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-foreground truncate">
-                        {name}
-                      </span>
+                      <span className="text-foreground truncate text-sm font-medium">{name}</span>
                       <StatusBadge status={status} />
                     </div>
                     {tools.length > 0 && (
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-muted-foreground text-xs">
                         {tools.length} tool{tools.length !== 1 ? 's' : ''}
                       </span>
                     )}
                     {isFailed && 'error' in status && (
-                      <p className={cn('text-xs truncate mt-0.5', STATUS_TEXT.destructive)}>
+                      <p className={cn('mt-0.5 truncate text-xs', STATUS_TEXT.destructive)}>
                         {(status as any).error}
                       </p>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex flex-shrink-0 items-center gap-1">
                     {/* Auth button for servers needing authentication */}
                     {needsAuth && (
                       <Button
@@ -914,12 +1040,14 @@ function McpServersSection() {
 
                     {/* Connect / Disconnect toggle */}
                     <Button
-                      onClick={() => isConnected ? handleDisconnect(name) : handleConnect(name)}
+                      onClick={() => (isConnected ? handleDisconnect(name) : handleConnect(name))}
                       disabled={isToggling}
                       variant="ghost"
                       size="icon-sm"
                       className={cn(
-                        isConnected ? 'hover:text-foreground hover:bg-muted' : 'hover:text-emerald-500 hover:bg-emerald-500/10',
+                        isConnected
+                          ? 'hover:text-foreground hover:bg-muted'
+                          : 'hover:bg-emerald-500/10 hover:text-emerald-500',
                       )}
                       title={isConnected ? 'Disconnect' : 'Connect'}
                     >
@@ -951,14 +1079,14 @@ function McpServersSection() {
                     </Button>
 
                     {isExp && (
-                      <div className="border-t border-border/30 max-h-40 overflow-y-auto">
+                      <div className="border-border/30 max-h-40 overflow-y-auto border-t">
                         {tools.map((tool) => (
                           <div
                             key={tool}
-                            className="flex items-center gap-2 px-3 py-1.5 text-xs text-foreground/80 hover:bg-muted/30"
+                            className="text-foreground/80 hover:bg-muted/30 flex items-center gap-2 px-3 py-1.5 text-xs"
                           >
-                            <Wrench className="h-3 w-3 text-muted-foreground flex-shrink-0" />
-                            <span className="font-mono truncate">{tool}</span>
+                            <Wrench className="text-muted-foreground h-3 w-3 flex-shrink-0" />
+                            <span className="truncate font-mono">{tool}</span>
                           </div>
                         ))}
                       </div>
@@ -971,9 +1099,17 @@ function McpServersSection() {
         </div>
       ) : (
         <div className="flex flex-col items-center justify-center py-8 text-center">
-          <Server className="h-6 w-6 text-muted-foreground mb-2" />
-          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line1007JsxTextNoMcpServersConfigured')}</p>
-          <p className="text-xs text-muted-foreground/60 mt-1">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line1009JsxTextAddAnMcpServerToExtendAvailableTools')}</p>
+          <Server className="text-muted-foreground mb-2 h-6 w-6" />
+          <p className="text-muted-foreground text-sm">
+            {tHardcodedUi.raw(
+              'componentsSessionOpencodeSettingsDialog.line1007JsxTextNoMcpServersConfigured',
+            )}
+          </p>
+          <p className="text-muted-foreground/60 mt-1 text-xs">
+            {tHardcodedUi.raw(
+              'componentsSessionOpencodeSettingsDialog.line1009JsxTextAddAnMcpServerToExtendAvailableTools',
+            )}
+          </p>
         </div>
       )}
     </div>
@@ -1051,25 +1187,33 @@ export function OpenCodeSettingsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-       <DialogContent
-        className="sm:max-w-2xl max-h-[85vh] flex flex-col p-0 gap-0 overflow-hidden"
+      <DialogContent
+        className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
         aria-describedby="opencode-settings-desc"
       >
-        <DialogHeader className="px-6 pt-5 pb-0 flex-shrink-0">
+        <DialogHeader className="flex-shrink-0 px-6 pt-5 pb-0">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Settings className="h-4 w-4" />
             Settings
           </DialogTitle>
-          <DialogDescription id="opencode-settings-desc" className="sr-only">{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line1097JsxTextConfigureOpencodeSettingsIncludingGeneralOptionsProvidersAnd')}</DialogDescription>
+          <DialogDescription id="opencode-settings-desc" className="sr-only">
+            {tHardcodedUi.raw(
+              'componentsSessionOpencodeSettingsDialog.line1097JsxTextConfigureOpencodeSettingsIncludingGeneralOptionsProvidersAnd',
+            )}
+          </DialogDescription>
         </DialogHeader>
 
         {isLoading || !config ? (
           <div className="flex items-center justify-center py-16">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+            <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
           </div>
         ) : (
-          <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full flex-1 flex flex-col min-h-0 overflow-hidden">
-            <div className="px-6 pt-3 flex-shrink-0">
+          <Tabs
+            value={activeTab}
+            onValueChange={handleTabChange}
+            className="flex min-h-0 w-full flex-1 flex-col overflow-hidden"
+          >
+            <div className="flex-shrink-0 px-6 pt-3">
               <TabsList className="w-full">
                 <TabsTrigger value="general" className="flex-1 gap-1.5">
                   <Settings className="h-3.5 w-3.5" />
@@ -1084,44 +1228,36 @@ export function OpenCodeSettingsDialog({
                   Permissions
                 </TabsTrigger>
                 <TabsTrigger value="mcp" className="flex-1 gap-1.5">
-                  <Server className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line1124JsxTextMcpServers')}</TabsTrigger>
+                  <Server className="h-3.5 w-3.5" />
+                  {tHardcodedUi.raw(
+                    'componentsSessionOpencodeSettingsDialog.line1124JsxTextMcpServers',
+                  )}
+                </TabsTrigger>
               </TabsList>
             </div>
 
-            <div className="px-6 py-4 flex-1 min-h-0 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
               {activeTab === 'general' && (
-                <GeneralSection
-                  draft={draft}
-                  config={config}
-                  onDraft={onDraft}
-                />
+                <GeneralSection draft={draft} config={config} onDraft={onDraft} />
               )}
 
-              {activeTab === 'providers' && (
-                <ProvidersSection onDirty={() => {}} />
-              )}
+              {activeTab === 'providers' && <ProvidersSection onDirty={() => {}} />}
 
               {activeTab === 'permissions' && (
-                <PermissionsSection
-                  draft={draft}
-                  config={config}
-                  onDraft={onDraft}
-                />
+                <PermissionsSection draft={draft} config={config} onDraft={onDraft} />
               )}
 
-              {activeTab === 'mcp' && (
-                <McpServersSection />
-              )}
+              {activeTab === 'mcp' && <McpServersSection />}
             </div>
 
             {/* Save / Discard footer */}
             {hasDraftChanges && (
-              <div className="flex items-center justify-end gap-2 px-6 py-3 border-t border-border/40 flex-shrink-0 bg-background">
+              <div className="border-border/40 bg-background flex flex-shrink-0 items-center justify-end gap-2 border-t px-6 py-3">
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleDiscard}
-                  className="h-8 px-3 text-xs gap-1.5"
+                  className="h-8 gap-1.5 px-3 text-xs"
                 >
                   <RotateCcw className="h-3 w-3" />
                   Discard
@@ -1130,13 +1266,17 @@ export function OpenCodeSettingsDialog({
                   size="sm"
                   onClick={handleSave}
                   disabled={updateMutation.isPending}
-                  className="h-8 px-4 text-xs gap-1.5"
+                  className="h-8 gap-1.5 px-4 text-xs"
                 >
                   {updateMutation.isPending ? (
                     <Loader2 className="h-3 w-3 animate-spin" />
                   ) : (
                     <Save className="h-3 w-3" />
-                  )}{tHardcodedUi.raw('componentsSessionOpencodeSettingsDialog.line1178JsxTextSaveChanges')}</Button>
+                  )}
+                  {tHardcodedUi.raw(
+                    'componentsSessionOpencodeSettingsDialog.line1178JsxTextSaveChanges',
+                  )}
+                </Button>
               </div>
             )}
           </Tabs>

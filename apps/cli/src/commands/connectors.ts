@@ -1,4 +1,5 @@
 import {
+  emitJson,
   resolveProjectContext,
   surfaceApiError,
   takeFlagValue,
@@ -60,8 +61,8 @@ edit your LOCAL file — run \`kortix ship\` to apply, then \`sync\` to reconcil
 Only credentials, OAuth, sharing and reads talk to the cloud.
 
 Subcommands:
-  ls                                List connectors + status, auth, sharing.
-  show <slug>                       Show one connector's tools (actions).
+  ls [--json]                       List connectors + status, auth, sharing.
+  show <slug> [--json]              Show one connector's tools (actions).
   add <slug> --provider <p> [...]   Add a [[connectors]] block to kortix.toml.
   rm <slug>                         Remove a [[connectors]] block from kortix.toml.
   rename <slug> <name…>             Set a connector's display name (applies now).
@@ -72,10 +73,10 @@ Subcommands:
   share <slug> --mode <m> [...]     Set who can use it (project|private|members).
   connect <slug>                    Start a Pipedream 1-click connect.
   finalize <slug>                   Confirm a Pipedream connection completed.
-  apps [<query>]                    Browse the Pipedream app catalog.
-  policy ls                         Show project-wide execution policies.
+  apps [<query>] [--json]           Browse the Pipedream app catalog.
+  policy ls [--json]                Show project-wide execution policies.
   policy set --default <risk|allow_all>   Set the default execution mode.
-  policy <slug> ls                  Show one connector's tool-call rules.
+  policy <slug> ls [--json]         Show one connector's tool-call rules.
   policy <slug> set <match> <act>   Allow|ask|block a tool/glob/regex (applies now).
                                     <match> = tool name, glob (send_*) or /regex/.
   policy <slug> rm <match>          Remove a connector rule.
@@ -114,7 +115,9 @@ export async function runConnectors(argv: string[]): Promise<number> {
   const rest = argv.slice(1);
   let f: Record<string, string | undefined> = {};
   let asStdin = false;
+  let json = false;
   try {
+    json = takeFlagBool(rest, ['--json']);
     f.project = takeFlagValue(rest, ['--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.name = takeFlagValue(rest, ['--name']);
@@ -155,6 +158,10 @@ export async function runConnectors(argv: string[]): Promise<number> {
       case 'ls':
       case 'list': {
         const { connectors } = await ctx.client.get<{ connectors: AdminConnector[] }>(`${ex}/connectors`);
+        if (json) {
+          emitJson({ connectors });
+          return 0;
+        }
         if (connectors.length === 0) {
           process.stdout.write(
             `  ${C.dim}No connectors. Add one: ${C.reset}${C.cyan}kortix connectors add <slug> --provider mcp --url …${C.reset}\n`,
@@ -182,6 +189,10 @@ export async function runConnectors(argv: string[]): Promise<number> {
         if (!c) {
           process.stderr.write(`${status.err(`No connector "${slug}".`)}\n`);
           return 1;
+        }
+        if (json) {
+          emitJson(c);
+          return 0;
         }
         process.stdout.write(`\n  ${C.bold}${c.name}${C.reset} ${C.faded}(${c.slug})${C.reset}\n`);
         process.stdout.write(`  ${C.dim}provider ${C.reset}${c.provider}   ${C.dim}status ${C.reset}${statusCell(c.status)}   ${C.dim}cred ${C.reset}${c.credentialMode}${c.secretSet ? ` ${C.green}(set)${C.reset}` : ''}\n`);
@@ -308,6 +319,10 @@ export async function runConnectors(argv: string[]): Promise<number> {
           nextCursor?: string;
           hasMore: boolean;
         }>(`${ex}/pipedream/apps${qs ? `?${qs}` : ''}`);
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         if (resp.apps.length === 0) {
           process.stdout.write(`  ${C.dim}No apps${q ? ` matching "${q}"` : ''}.${C.reset}\n`);
           return 0;
@@ -331,6 +346,10 @@ export async function runConnectors(argv: string[]): Promise<number> {
             policies: { match: string; action: string }[];
             defaultMode: string;
           }>(`${ex}/policies`);
+          if (json) {
+            emitJson(resp);
+            return 0;
+          }
           process.stdout.write(`\n  ${C.dim}default mode: ${C.reset}${C.bold}${resp.defaultMode}${C.reset}\n`);
           if (resp.policies.length === 0) {
             process.stdout.write(`  ${C.dim}No explicit project policies.${C.reset}\n\n`);
@@ -348,7 +367,12 @@ export async function runConnectors(argv: string[]): Promise<number> {
         const load = () => ctx.client.get<{ policies: { match: string; action: string }[] }>(path);
 
         if (cAction === 'ls' || cAction === 'list') {
-          const { policies } = await load();
+          const resp = await load();
+          if (json) {
+            emitJson(resp);
+            return 0;
+          }
+          const { policies } = resp;
           if (policies.length === 0) {
             process.stdout.write(`  ${C.dim}No rules for ${slug} — every tool follows global rules & risk.${C.reset}\n`);
             return 0;

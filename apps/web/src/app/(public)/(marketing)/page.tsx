@@ -1,6 +1,5 @@
 'use client';
 
-import { useAuth } from '@/components/AuthProvider';
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
@@ -10,6 +9,7 @@ import Hero from '@/features/marketing/hero';
 import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
 import Security from '@/features/marketing/security/security';
 import { USP } from '@/features/marketing/usp/usp';
+import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';

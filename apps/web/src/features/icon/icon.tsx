@@ -1,6 +1,6 @@
-import { cn } from "@/lib/utils";
-import { CgClose } from "react-icons/cg";
-import { PiSmileyMeltingFill } from "react-icons/pi";
+import { cn } from '@/lib/utils';
+import { CgClose } from 'react-icons/cg';
+import { PiSmileyMeltingFill } from 'react-icons/pi';
 
 export const Icon = {
   NewGoogle: ({ className }: { className?: string }) => {
@@ -256,7 +256,7 @@ export const Icon = {
         viewBox="-3 0 262 262"
         xmlns="http://www.w3.org/2000/svg"
         preserveAspectRatio="xMidYMid"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M255.878 133.451c0-10.734-.871-18.567-2.756-26.69H130.55v48.448h71.947c-1.45 12.04-9.283 30.172-26.69 42.356l-.244 1.622 38.755 30.023 2.685.268c24.659-22.774 38.875-56.282 38.875-96.027"
@@ -281,7 +281,7 @@ export const Icon = {
   Gemini: ({ className }: { className?: string }) => {
     return (
       <svg
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
         viewBox="0 0 24 24"
         width="1em"
         height="1em"
@@ -348,7 +348,7 @@ export const Icon = {
       <svg
         viewBox="0 0 24 24"
         xmlns="http://www.w3.org/2000/svg"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <title>Claude</title>
         <path
@@ -363,7 +363,7 @@ export const Icon = {
   OpenAI: ({ className }: { className?: string }) => {
     return (
       <svg
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
         viewBox="0 0 24 24"
         xmlns="http://www.w3.org/2000/svg"
       >
@@ -379,7 +379,7 @@ export const Icon = {
       width="74.6"
       height="56"
       xmlns="http://www.w3.org/2000/svg"
-      className={cn("size-5", className)}
+      className={cn('size-5', className)}
     >
       <g>
         <g>
@@ -399,11 +399,11 @@ export const Icon = {
         fill="currentColor"
         fillRule="evenodd"
         height="1em"
-        style={{ flex: "none", lineHeight: "1" }}
+        style={{ flex: 'none', lineHeight: '1' }}
         viewBox="0 0 24 24"
         width="1em"
         xmlns="http://www.w3.org/2000/svg"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <title>Github</title>
         <path d="M12 0c6.63 0 12 5.276 12 11.79-.001 5.067-3.29 9.567-8.175 11.187-.6.118-.825-.25-.825-.56 0-.398.015-1.665.015-3.242 0-1.105-.375-1.813-.81-2.181 2.67-.295 5.475-1.297 5.475-5.822 0-1.297-.465-2.344-1.23-3.169.12-.295.54-1.503-.12-3.125 0 0-1.005-.324-3.3 1.209a11.32 11.32 0 00-3-.398c-1.02 0-2.04.133-3 .398-2.295-1.518-3.3-1.209-3.3-1.209-.66 1.622-.24 2.83-.12 3.125-.765.825-1.23 1.887-1.23 3.169 0 4.51 2.79 5.527 5.46 5.822-.345.294-.66.81-.765 1.577-.69.31-2.415.81-3.495-.973-.225-.354-.9-1.223-1.845-1.209-1.005.015-.405.56.015.781.51.28 1.095 1.327 1.23 1.666.24.663 1.02 1.93 4.035 1.385 0 .988.015 1.916.015 2.196 0 .31-.225.664-.825.56C3.303 21.374-.003 16.867 0 11.791 0 5.276 5.37 0 12 0z"></path>
@@ -419,7 +419,7 @@ export const Icon = {
         viewBox="0 0 534 534"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M441.028 124.329C441.028 106.604 426.662 92.2913 409.003 92.2913C391.343 92.2913 376.965 106.604 376.965 124.329C376.965 141.989 391.343 156.301 409.003 156.301C426.662 156.301 441.028 141.989 441.028 124.329Z"
@@ -493,7 +493,7 @@ export const Icon = {
         width="100"
         height="100"
         viewBox="0 0 48 48"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           fill="#ff3d00"
@@ -510,7 +510,7 @@ export const Icon = {
         width="113"
         height="113"
         viewBox="0 0 113 113"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
@@ -557,7 +557,7 @@ export const Icon = {
         strokeLinejoin="round"
         viewBox="0 0 16 16"
         width="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M14 1V15H12.5V1H14ZM5.00488 5.89746C5.05621 5.39333 5.48232 5 6 5H10L10.1025 5.00488C10.573 5.05278 10.9472 5.42703 10.9951 5.89746L11 6V10L10.9951 10.1025C10.9472 10.573 10.573 10.9472 10.1025 10.9951L10 11H6C5.48232 11 5.05621 10.6067 5.00488 10.1025L5 10V6L5.00488 5.89746ZM9.5 9.5V6.5H6.5L6.5 9.5H9.5ZM3.5 1L3.5 15H2L2 1H3.5Z"
@@ -574,7 +574,7 @@ export const Icon = {
         strokeLinejoin="round"
         viewBox="0 0 16 16"
         width="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M15 14H1V12.5H15V14ZM10.1025 5.00488C10.6067 5.05621 11 5.48232 11 6V10L10.9951 10.1025C10.9472 10.573 10.573 10.9472 10.1025 10.9951L10 11H6L5.89746 10.9951C5.42703 10.9472 5.05278 10.573 5.00488 10.1025L5 10V6C5 5.48232 5.39333 5.05621 5.89746 5.00488L6 5H10L10.1025 5.00488ZM6.5 9.5H9.5V6.5H6.5V9.5ZM15 3.5H1V2H15V3.5Z"
@@ -591,7 +591,7 @@ export const Icon = {
         strokeLinejoin="round"
         viewBox="0 0 16 16"
         width="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M10.1025 5.00488C10.6067 5.05621 11 5.48232 11 6V10L10.9951 10.1025C10.9472 10.573 10.573 10.9472 10.1025 10.9951L10 11H6L5.89746 10.9951C5.42703 10.9472 5.05278 10.573 5.00488 10.1025L5 10V6C5 5.48232 5.39333 5.05621 5.89746 5.00488L6 5H10L10.1025 5.00488ZM6.5 9.5H9.5V6.5H6.5V9.5ZM15 3.5H1V2H15V3.5Z"
@@ -608,7 +608,7 @@ export const Icon = {
         strokeLinejoin="round"
         viewBox="0 0 16 16"
         width="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M15 14H1V12.5H15V14ZM10.1025 5.00488C10.6067 5.05621 11 5.48232 11 6V10L10.9951 10.1025C10.9472 10.573 10.573 10.9472 10.1025 10.9951L10 11H6L5.89746 10.9951C5.42703 10.9472 5.05278 10.573 5.00488 10.1025L5 10V6C5 5.48232 5.39333 5.05621 5.89746 5.00488L6 5H10L10.1025 5.00488ZM6.5 9.5H9.5V6.5H6.5V9.5Z"
@@ -625,7 +625,7 @@ export const Icon = {
         strokeLinejoin="round"
         viewBox="0 0 16 16"
         width="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M5.00488 5.89746C5.05621 5.39333 5.48232 5 6 5H10L10.1025 5.00488C10.573 5.05278 10.9472 5.42703 10.9951 5.89746L11 6V10L10.9951 10.1025C10.9472 10.573 10.573 10.9472 10.1025 10.9951L10 11H6C5.48232 11 5.05621 10.6067 5.00488 10.1025L5 10V6L5.00488 5.89746ZM9.5 9.5V6.5H6.5L6.5 9.5H9.5ZM3.5 1L3.5 15H2L2 1H3.5Z"
@@ -642,7 +642,7 @@ export const Icon = {
         strokeLinejoin="round"
         viewBox="0 0 16 16"
         width="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M14 1V15H12.5V1H14ZM5.00488 5.89746C5.05621 5.39333 5.48232 5 6 5H10L10.1025 5.00488C10.573 5.05278 10.9472 5.42703 10.9951 5.89746L11 6V10L10.9951 10.1025C10.9472 10.573 10.573 10.9472 10.1025 10.9951L10 11H6C5.48232 11 5.05621 10.6067 5.00488 10.1025L5 10L5 6L5.00488 5.89746ZM9.5 9.5V6.5H6.5V9.5H9.5Z"
@@ -659,7 +659,7 @@ export const Icon = {
         strokeLinejoin="round"
         viewBox="0 0 16 16"
         width="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M14.9951 14.1025C14.9438 14.6067 14.5177 15 14 15H2L1.89746 14.9951C1.42703 14.9472 1.05278 14.573 1.00488 14.1025L1 14V2L1.00488 1.89746C1.05278 1.42703 1.42703 1.05278 1.89746 1.00488L2 1H14C14.5177 1 14.9438 1.39333 14.9951 1.89746L15 2V14L14.9951 14.1025ZM2.5 2.5V13.5H13.5V2.5H2.5ZM4.2666 12.375V3.625H5.66699V12.375H4.2666ZM10.333 12.375V3.625H11.7334V12.375H10.333Z"
@@ -676,7 +676,7 @@ export const Icon = {
         strokeLinejoin="round"
         viewBox="0 0 16 16"
         width="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M14.1025 1.00488C14.6067 1.05621 15 1.48232 15 2V14L14.9951 14.1025C14.9472 14.573 14.573 14.9472 14.1025 14.9951L14 15H2L1.89746 14.9951C1.42703 14.9472 1.05278 14.573 1.00488 14.1025L1 14V2C1 1.48232 1.39333 1.05621 1.89746 1.00488L2 1H14L14.1025 1.00488ZM2.5 13.5H13.5V2.5H2.5V13.5ZM12.375 11.7334H3.625V10.333H12.375V11.7334ZM12.375 5.66699H3.625V4.2666H12.375V5.66699Z"
@@ -693,7 +693,7 @@ export const Icon = {
         strokeLinejoin="round"
         viewBox="0 0 16 16"
         width="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M14.1025 1.00488C14.6067 1.05621 15 1.48232 15 2V14L14.9951 14.1025C14.9472 14.573 14.573 14.9472 14.1025 14.9951L14 15H2L1.89746 14.9951C1.42703 14.9472 1.05278 14.573 1.00488 14.1025L1 14V2C1 1.48232 1.39333 1.05621 1.89746 1.00488L2 1H14L14.1025 1.00488ZM2.5 13.5H13.5V2.5H2.5V13.5ZM12.375 5.66699H3.625V4.2666H12.375V5.66699Z"
@@ -710,7 +710,7 @@ export const Icon = {
         strokeLinejoin="round"
         viewBox="0 0 16 16"
         width="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M14.1025 1.00488C14.6067 1.05621 15 1.48232 15 2V14L14.9951 14.1025C14.9472 14.573 14.573 14.9472 14.1025 14.9951L14 15H2L1.89746 14.9951C1.42703 14.9472 1.05278 14.573 1.00488 14.1025L1 14V2C1 1.48232 1.39333 1.05621 1.89746 1.00488L2 1H14L14.1025 1.00488ZM2.5 13.5H13.5V2.5H2.5V13.5ZM12.375 11.7334H3.625V10.333H12.375V11.7334Z"
@@ -727,7 +727,7 @@ export const Icon = {
         strokeLinejoin="round"
         viewBox="0 0 16 16"
         width="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M14.9951 14.1025C14.9438 14.6067 14.5177 15 14 15H2L1.89746 14.9951C1.42703 14.9472 1.05278 14.573 1.00488 14.1025L1 14V2L1.00488 1.89746C1.05278 1.42703 1.42703 1.05278 1.89746 1.00488L2 1H14C14.5177 1 14.9438 1.39333 14.9951 1.89746L15 2V14L14.9951 14.1025ZM2.5 2.5V13.5H13.5V2.5H2.5ZM4.2666 12.375V3.625H5.66699V12.375H4.2666Z"
@@ -742,7 +742,7 @@ export const Icon = {
       <svg
         height="16"
         strokeLinejoin="round"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
         viewBox="0 0 16 16"
         width="16"
       >
@@ -759,7 +759,7 @@ export const Icon = {
       <svg
         height="16"
         strokeLinejoin="round"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
         viewBox="0 0 16 16"
         width="16"
       >
@@ -778,7 +778,7 @@ export const Icon = {
         viewBox="0 0 72 72"
         width="16"
         height="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           d="M 36 13 C 33.791 13 32 14.791 32 17 L 32 32 L 17 32 C 14.791 32 13 33.791 13 36 C 13 38.209 14.791 40 17 40 L 32 40 L 32 55 C 32 57.209 33.791 59 36 59 C 38.209 59 40 57.209 40 55 L 40 40 L 55 40 C 57.209 40 59 38.209 59 36 C 59 33.791 57.209 32 55 32 L 40 32 L 40 17 C 40 14.791 38.209 13 36 13 z"
@@ -799,7 +799,7 @@ export const Icon = {
         viewBox="0 0 24 24"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
         xmlns="http://www.w3.org/2000/svg"
       >
         <path d="M6 12h12" />
@@ -813,7 +813,7 @@ export const Icon = {
         xmlns="http://www.w3.org/2000/svg"
         fill="none"
         viewBox="0 0 100 100"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           fill="#000"
@@ -854,7 +854,7 @@ export const Icon = {
 
   NPM: ({ className }: { className?: string }) => {
     return (
-      <svg viewBox="0 0 780 250" aria-hidden="true" className={cn("size-4", className)}>
+      <svg viewBox="0 0 780 250" aria-hidden="true" className={cn('size-4', className)}>
         <path
           fill="currentColor"
           d="M240,250h100v-50h100V0H240V250z M340,50h50v100h-50V50z M480,0v200h100V50h50v150h50V50h50v150h50V0H480z M0,200h100V50h50v150h50V0H0V200z"
@@ -870,14 +870,14 @@ export const Icon = {
       <svg
         height="16"
         stroke-linejoin="round"
-        className={cn("text-muted-foreground size-4", className)}
+        className={cn('text-muted-foreground size-4', className)}
         style={{
-          color: "currentcolor",
-          transitionProperty: "color",
-          transitionDuration: "150ms",
-          transitionTimingFunction: "cubic-bezier(0.31, 0.1, 0.08, 0.96)",
-          transitionDelay: "0ms",
-          willChange: "color",
+          color: 'currentcolor',
+          transitionProperty: 'color',
+          transitionDuration: '150ms',
+          transitionTimingFunction: 'cubic-bezier(0.31, 0.1, 0.08, 0.96)',
+          transitionDelay: '0ms',
+          willChange: 'color',
         }}
         viewBox="0 0 16 16"
         width="16"
@@ -897,7 +897,7 @@ export const Icon = {
         viewBox="0 0 50 50"
         width="16"
         height="16"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
         fill="currentColor"
       >
         <path d="M22.462 11.035l2.88 7.097c1.204 2.968 3.558 5.322 6.526 6.526l7.097 2.88c1.312.533 1.312 2.391 0 2.923l-7.097 2.88c-2.968 1.204-5.322 3.558-6.526 6.526l-2.88 7.097c-.533 1.312-2.391 1.312-2.923 0l-2.88-7.097c-1.204-2.968-3.558-5.322-6.526-6.526l-7.097-2.88c-1.312-.533-1.312-2.391 0-2.923l7.097-2.88c2.968-1.204 5.322-3.558 6.526-6.526l2.88-7.097C20.071 9.723 21.929 9.723 22.462 11.035zM39.945 2.701l.842 2.428c.664 1.915 2.169 3.42 4.084 4.084l2.428.842c.896.311.896 1.578 0 1.889l-2.428.842c-1.915.664-3.42 2.169-4.084 4.084l-.842 2.428c-.311.896-1.578.896-1.889 0l-.842-2.428c-.664-1.915-2.169-3.42-4.084-4.084l-2.428-.842c-.896-.311-.896-1.578 0-1.889l2.428-.842c1.915-.664 3.42-2.169 4.084-4.084l.842-2.428C38.366 1.805 39.634 1.805 39.945 2.701z" />
@@ -913,7 +913,7 @@ export const Icon = {
         width="16"
         height="16"
         baseProfile="basic"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <linearGradient
           id="hBcdOHj0tpNmQcPjQ7iiFa"
@@ -958,7 +958,7 @@ export const Icon = {
         xmlns="http://www.w3.org/2000/svg"
         fill="none"
         viewBox="0 0 100 100"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           fill="#36C5F0"
@@ -993,7 +993,7 @@ export const Icon = {
       <svg
         xmlns="http://www.w3.org/2000/svg"
         viewBox="54 36 360.02 149.84"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
         aria-label="Stripe"
       >
         <g>
@@ -1060,7 +1060,7 @@ export const Icon = {
         role="img"
         viewBox="0 0 24 24"
         xmlns="http://www.w3.org/2000/svg"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <title>Stripe</title>
         <path
@@ -1079,7 +1079,7 @@ export const Icon = {
         viewBox="0 0 20 20"
         fill="currentColor"
         xmlns="http://www.w3.org/2000/svg"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path d="M12.668 10.667C12.668 9.95614 12.668 9.46258 12.6367 9.0791C12.6137 8.79732 12.5758 8.60761 12.5244 8.46387L12.4688 8.33399C12.3148 8.03193 12.0803 7.77885 11.793 7.60254L11.666 7.53125C11.508 7.45087 11.2963 7.39395 10.9209 7.36328C10.5374 7.33197 10.0439 7.33203 9.33301 7.33203H6.5C5.78896 7.33203 5.29563 7.33195 4.91211 7.36328C4.63016 7.38632 4.44065 7.42413 4.29688 7.47559L4.16699 7.53125C3.86488 7.68518 3.61186 7.9196 3.43555 8.20703L3.36524 8.33399C3.28478 8.49198 3.22795 8.70352 3.19727 9.0791C3.16595 9.46259 3.16504 9.95611 3.16504 10.667V13.5C3.16504 14.211 3.16593 14.7044 3.19727 15.0879C3.22797 15.4636 3.28473 15.675 3.36524 15.833L3.43555 15.959C3.61186 16.2466 3.86474 16.4807 4.16699 16.6348L4.29688 16.6914C4.44063 16.7428 4.63025 16.7797 4.91211 16.8027C5.29563 16.8341 5.78896 16.835 6.5 16.835H9.33301C10.0439 16.835 10.5374 16.8341 10.9209 16.8027C11.2965 16.772 11.508 16.7152 11.666 16.6348L11.793 16.5645C12.0804 16.3881 12.3148 16.1351 12.4688 15.833L12.5244 15.7031C12.5759 15.5594 12.6137 15.3698 12.6367 15.0879C12.6681 14.7044 12.668 14.211 12.668 13.5V10.667ZM13.998 12.665C14.4528 12.6634 14.8011 12.6602 15.0879 12.6367C15.4635 12.606 15.675 12.5492 15.833 12.4688L15.959 12.3975C16.2466 12.2211 16.4808 11.9682 16.6348 11.666L16.6914 11.5361C16.7428 11.3924 16.7797 11.2026 16.8027 10.9209C16.8341 10.5374 16.835 10.0439 16.835 9.33301V6.5C16.835 5.78896 16.8341 5.29563 16.8027 4.91211C16.7797 4.63025 16.7428 4.44063 16.6914 4.29688L16.6348 4.16699C16.4807 3.86474 16.2466 3.61186 15.959 3.43555L15.833 3.36524C15.675 3.28473 15.4636 3.22797 15.0879 3.19727C14.7044 3.16593 14.211 3.16504 13.5 3.16504H10.667C9.9561 3.16504 9.46259 3.16595 9.0791 3.19727C8.79739 3.22028 8.6076 3.2572 8.46387 3.30859L8.33399 3.36524C8.03176 3.51923 7.77886 3.75343 7.60254 4.04102L7.53125 4.16699C7.4508 4.32498 7.39397 4.53655 7.36328 4.91211C7.33985 5.19893 7.33562 5.54719 7.33399 6.00195H9.33301C10.022 6.00195 10.5791 6.00131 11.0293 6.03809C11.4873 6.07551 11.8937 6.15471 12.2705 6.34668L12.4883 6.46875C12.984 6.7728 13.3878 7.20854 13.6533 7.72949L13.7197 7.87207C13.8642 8.20859 13.9292 8.56974 13.9619 8.9707C13.9987 9.42092 13.998 9.97799 13.998 10.667V12.665ZM18.165 9.33301C18.165 10.022 18.1657 10.5791 18.1289 11.0293C18.0961 11.4302 18.0311 11.7914 17.8867 12.1279L17.8203 12.2705C17.5549 12.7914 17.1509 13.2272 16.6553 13.5313L16.4365 13.6533C16.0599 13.8452 15.6541 13.9245 15.1963 13.9619C14.8593 13.9895 14.4624 13.9935 13.9951 13.9951C13.9935 14.4624 13.9895 14.8593 13.9619 15.1963C13.9292 15.597 13.864 15.9576 13.7197 16.2939L13.6533 16.4365C13.3878 16.9576 12.9841 17.3941 12.4883 17.6982L12.2705 17.8203C11.8937 18.0123 11.4873 18.0915 11.0293 18.1289C10.5791 18.1657 10.022 18.165 9.33301 18.165H6.5C5.81091 18.165 5.25395 18.1657 4.80371 18.1289C4.40306 18.0962 4.04235 18.031 3.70606 17.8867L3.56348 17.8203C3.04244 17.5548 2.60585 17.151 2.30176 16.6553L2.17969 16.4365C1.98788 16.0599 1.90851 15.6541 1.87109 15.1963C1.83431 14.746 1.83496 14.1891 1.83496 13.5V10.667C1.83496 9.978 1.83432 9.42091 1.87109 8.9707C1.90851 8.5127 1.98772 8.10625 2.17969 7.72949L2.30176 7.51172C2.60586 7.0159 3.04236 6.6122 3.56348 6.34668L3.70606 6.28027C4.04237 6.136 4.40303 6.07083 4.80371 6.03809C5.14051 6.01057 5.53708 6.00551 6.00391 6.00391C6.00551 5.53708 6.01057 5.14051 6.03809 4.80371C6.0755 4.34588 6.15483 3.94012 6.34668 3.56348L6.46875 3.34473C6.77282 2.84912 7.20856 2.44514 7.72949 2.17969L7.87207 2.11328C8.20855 1.96886 8.56979 1.90385 8.9707 1.87109C9.42091 1.83432 9.978 1.83496 10.667 1.83496H13.5C14.1891 1.83496 14.746 1.83431 15.1963 1.87109C15.6541 1.90851 16.0599 1.98788 16.4365 2.17969L16.6553 2.30176C17.151 2.60585 17.5548 3.04244 17.8203 3.56348L17.8867 3.70606C18.031 4.04235 18.0962 4.40306 18.1289 4.80371C18.1657 5.25395 18.165 5.81091 18.165 6.5V9.33301Z"></path>
       </svg>
@@ -1106,7 +1106,7 @@ export const Icon = {
         viewBox="0 0 24 24"
         width="24px"
         fill="currentColor"
-        className={cn("size-5", className)}
+        className={cn('size-5', className)}
       >
         <path d="M0 0h24v24H0z" fill="none" />
         <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" />
@@ -1124,7 +1124,7 @@ export const Icon = {
         xmlns="http://www.w3.org/2000/svg"
         xmlnsXlink="http://www.w3.org/1999/xlink"
         preserveAspectRatio="xMidYMid"
-        className={cn("size-5", className)}
+        className={cn('size-5', className)}
       >
         <g>
           <polygon
@@ -1168,7 +1168,7 @@ export const Icon = {
     return (
       <svg
         viewBox="0 0 24 24"
-        className={cn("size-6", className)}
+        className={cn('size-6', className)}
         xmlns="http://www.w3.org/2000/svg"
       >
         <path
@@ -1183,7 +1183,7 @@ export const Icon = {
     return (
       <svg
         viewBox="0 0 24 24"
-        className={cn("text-foreground size-6", className)}
+        className={cn('text-foreground size-6', className)}
         xmlns="http://www.w3.org/2000/svg"
       >
         <path
@@ -1203,7 +1203,7 @@ export const Icon = {
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path d="M12,4.69c0-1.66,1.33-3,2.99-3.01,1.18,0,1.94,.82,2.65,1.65,.94,1.09,1.84,2.27,2.51,3.55,.82,1.55,1.08,3.17,1.27,4.89,.1,.94,.12,1.9-.02,2.84s-.5,1.7-.92,2.56c-.45,.94-.7,2.03-1.26,2.89-.57,.88-1.68,1.46-2.7,1.59-2.19,.28-4.2-1.26-4.48-3.45-.02-.17-.03-.34-.03-.51V4.69Z"></path>
         <path d="M12,17.69c0,.17-.01,.34-.03,.51-.28,2.19-2.29,3.74-4.48,3.45-1.02-.13-2.13-.71-2.7-1.59-.56-.86-.81-1.96-1.26-2.89-.42-.87-.78-1.59-.92-2.56s-.12-1.9-.02-2.84c.19-1.72,.45-3.34,1.27-4.89,.67-1.28,1.57-2.46,2.51-3.55,.71-.83,1.47-1.66,2.65-1.65,1.66,0,3,1.35,2.99,3.01v13Z"></path>
@@ -1224,7 +1224,7 @@ export const Icon = {
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"></path>
         <path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"></path>
@@ -1249,7 +1249,7 @@ export const Icon = {
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path d="M12,4.69c0-1.66-1.33-3-2.99-3.01-1.66,0-3,1.33-3.01,2.99,0,.05,0,.1,0,.14-2.14,.55-3.43,2.73-2.88,4.87,.08,.31,.2,.62,.35,.9-1.71,1.39-1.98,3.91-.58,5.63,.32,.39,.7,.71,1.14,.96-.28,2.19,1.26,4.2,3.45,4.48,2.19,.28,4.2-1.26,4.48-3.45,.02-.17,.03-.34,.03-.51V4.69Z"></path>
         <path d="M6,4.81c.02,.48,.32,2.19,2.42,2.76"></path>
@@ -1268,11 +1268,11 @@ export const Icon = {
   Gradient: ({ className }: { className?: string }) => {
     return (
       <div
-        className={cn("size-4 h-4 w-4 rounded-sm", className)}
+        className={cn('size-4 h-4 w-4 rounded-sm', className)}
         style={{
           background:
-            "linear-gradient(180deg, #F7D6FF 0%, #005686 100%), linear-gradient(180deg, #FFFFFF 0%, #060046 100%), linear-gradient(130deg, #00FFA3 0%, #1A003C 100%), linear-gradient(307deg, #FF0000 0%, #3300C6 100%), radial-gradient(50% 72% at 50% 50%, #004584 0%, #00FFB2 100%), radial-gradient(100% 140% at 100% 0%, #5ED500 0%, #2200AA 100%)",
-          backgroundBlendMode: "soft-light, overlay, difference, difference, color-burn, normal",
+            'linear-gradient(180deg, #F7D6FF 0%, #005686 100%), linear-gradient(180deg, #FFFFFF 0%, #060046 100%), linear-gradient(130deg, #00FFA3 0%, #1A003C 100%), linear-gradient(307deg, #FF0000 0%, #3300C6 100%), radial-gradient(50% 72% at 50% 50%, #004584 0%, #00FFB2 100%), radial-gradient(100% 140% at 100% 0%, #5ED500 0%, #2200AA 100%)',
+          backgroundBlendMode: 'soft-light, overlay, difference, difference, color-burn, normal',
         }}
       />
     );
@@ -1290,7 +1290,7 @@ export const Icon = {
         viewBox="0 0 32 32"
         enableBackground="new 0 0 32 32"
         xmlSpace="preserve"
-        className={cn("size-10", className)}
+        className={cn('size-10', className)}
       >
         <g>
           <defs>
@@ -1390,7 +1390,7 @@ export const Icon = {
   // },
 
   Close: ({ className, ...props }: React.ComponentProps<typeof CgClose>) => {
-    return <CgClose className={cn("size-4 stroke-1", className)} {...props} />;
+    return <CgClose className={cn('size-4 stroke-1', className)} {...props} />;
   },
 
   Facebook: ({ className }: { className?: string }) => {
@@ -1402,7 +1402,7 @@ export const Icon = {
         height="666.66718"
         viewBox="0 0 666.66668 666.66717"
         xmlns="http://www.w3.org/2000/svg"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <defs id="defs13">
           <clipPath clipPathUnits="userSpaceOnUse" id="clipPath25">
@@ -1415,14 +1415,14 @@ export const Icon = {
               <g id="g27" transform="translate(600,350)">
                 <path
                   d="m 0,0 c 0,138.071 -111.929,250 -250,250 -138.071,0 -250,-111.929 -250,-250 0,-117.245 80.715,-215.622 189.606,-242.638 v 166.242 h -51.552 V 0 h 51.552 v 32.919 c 0,85.092 38.508,124.532 122.048,124.532 15.838,0 43.167,-3.105 54.347,-6.211 V 81.986 c -5.901,0.621 -16.149,0.932 -28.882,0.932 -40.993,0 -56.832,-15.528 -56.832,-55.9 V 0 h 81.659 l -14.028,-76.396 h -67.631 V -248.169 C -95.927,-233.218 0,-127.818 0,0"
-                  style={{ fill: "#0866ff", fillOpacity: 1, fillRule: "nonzero", stroke: "none" }}
+                  style={{ fill: '#0866ff', fillOpacity: 1, fillRule: 'nonzero', stroke: 'none' }}
                   id="path29"
                 />
               </g>
               <g id="g31" transform="translate(447.9175,273.6036)">
                 <path
                   d="M 0,0 14.029,76.396 H -67.63 v 27.019 c 0,40.372 15.838,55.899 56.831,55.899 12.733,0 22.981,-0.31 28.882,-0.931 v 69.253 c -11.18,3.106 -38.509,6.212 -54.347,6.212 -83.539,0 -122.048,-39.441 -122.048,-124.533 V 76.396 h -51.552 V 0 h 51.552 v -166.242 c 19.343,-4.798 39.568,-7.362 60.394,-7.362 10.254,0 20.358,0.632 30.288,1.831 L -67.63,0 Z"
-                  style={{ fill: "#ffffff", fillOpacity: 1, fillRule: "nonzero", stroke: "none" }}
+                  style={{ fill: '#ffffff', fillOpacity: 1, fillRule: 'nonzero', stroke: 'none' }}
                   id="path33"
                 />
               </g>
@@ -1441,7 +1441,7 @@ export const Icon = {
         viewBox="0 0 16 16"
         fill="currentColor"
         xmlns="http://www.w3.org/2000/svg"
-        className={cn("text-primary size-4", className)}
+        className={cn('text-primary size-4', className)}
       >
         <rect
           x="1"
@@ -1452,9 +1452,9 @@ export const Icon = {
           color="currentColor"
           fill="currentColor"
           style={{
-            transformOrigin: "center",
-            transition: "160ms var(--ease-out-quad)",
-            transform: "translateY(-3px)",
+            transformOrigin: 'center',
+            transition: '160ms var(--ease-out-quad)',
+            transform: 'translateY(-3px)',
           }}
         ></rect>
         <rect
@@ -1466,9 +1466,9 @@ export const Icon = {
           color="currentColor"
           fill="currentColor"
           style={{
-            transformOrigin: "center",
-            transition: "160ms var(--ease-out-quad)",
-            transform: "translateY(3px)",
+            transformOrigin: 'center',
+            transition: '160ms var(--ease-out-quad)',
+            transform: 'translateY(3px)',
           }}
         ></rect>
       </svg>
@@ -1476,7 +1476,7 @@ export const Icon = {
   },
 
   Personalisation: ({ className }: { className?: string }) => {
-    return <PiSmileyMeltingFill className={cn("size-4", className)} />;
+    return <PiSmileyMeltingFill className={cn('size-4', className)} />;
   },
 
   N8N: ({ className }: { className?: string }) => {
@@ -1487,7 +1487,7 @@ export const Icon = {
         viewBox="0 0 155 80"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className={cn("text-primary size-4", className)}
+        className={cn('text-primary size-4', className)}
       >
         <path
           fillRule="evenodd"
@@ -1507,7 +1507,7 @@ export const Icon = {
         viewBox="0 0 296 80"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className={cn("text-primary size-4", className)}
+        className={cn('text-primary size-4', className)}
       >
         <path
           fillRule="evenodd"
@@ -1543,7 +1543,7 @@ export const Icon = {
         xmlns="http://www.w3.org/2000/svg"
         xmlnsXlink="http://www.w3.org/1999/xlink"
         preserveAspectRatio="xMidYMid"
-        className={cn("text-primary size-4", className)}
+        className={cn('text-primary size-4', className)}
       >
         <g>
           <path
@@ -1562,7 +1562,7 @@ export const Icon = {
         xmlns="http://www.w3.org/2000/svg"
         preserveAspectRatio="xMidYMid"
         viewBox="0 0 256 268"
-        className={cn("text-background dark:text-foreground size-4", className)}
+        className={cn('text-background dark:text-foreground size-4', className)}
       >
         <path
           fill="currentColor"
@@ -1581,7 +1581,7 @@ export const Icon = {
         viewBox="0 0 256 292"
         xmlns="http://www.w3.org/2000/svg"
         preserveAspectRatio="xMidYMid"
-        className={cn("text-primary size-4", className)}
+        className={cn('text-primary size-4', className)}
       >
         <path
           d="M223.774 57.34c-.201-1.46-1.48-2.268-2.537-2.357-1.055-.088-23.383-1.743-23.383-1.743s-15.507-15.395-17.209-17.099c-1.703-1.703-5.029-1.185-6.32-.805-.19.056-3.388 1.043-8.678 2.68-5.18-14.906-14.322-28.604-30.405-28.604-.444 0-.901.018-1.358.044C129.31 3.407 123.644.779 118.75.779c-37.465 0-55.364 46.835-60.976 70.635-14.558 4.511-24.9 7.718-26.221 8.133-8.126 2.549-8.383 2.805-9.45 10.462C21.3 95.806.038 260.235.038 260.235l165.678 31.042 89.77-19.42S223.973 58.8 223.775 57.34zM156.49 40.848l-14.019 4.339c.005-.988.01-1.96.01-3.023 0-9.264-1.286-16.723-3.349-22.636 8.287 1.04 13.806 10.469 17.358 21.32zm-27.638-19.483c2.304 5.773 3.802 14.058 3.802 25.238 0 .572-.005 1.095-.01 1.624-9.117 2.824-19.024 5.89-28.953 8.966 5.575-21.516 16.025-31.908 25.161-35.828zm-11.131-10.537c1.617 0 3.246.549 4.805 1.622-12.007 5.65-24.877 19.88-30.312 48.297l-22.886 7.088C75.694 46.16 90.81 10.828 117.72 10.828z"
@@ -1607,7 +1607,7 @@ export const Icon = {
         viewBox="0 0 24 24"
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
-        className={cn("text-primary size-4", className)}
+        className={cn('text-primary size-4', className)}
       >
         <path
           d="M3.03509 12.9431C3.24245 14.9227 4.10472 16.8468 5.62188 18.364C7.13904 19.8811 9.0631 20.7434 11.0428 20.9508L3.03509 12.9431Z"
@@ -1635,7 +1635,7 @@ export const Icon = {
         xmlns="http://www.w3.org/2000/svg"
         xmlSpace="preserve"
         viewBox="0 0 1831.08 1703.34"
-        className={cn("text-primary size-4", className)}
+        className={cn('text-primary size-4', className)}
       >
         <path
           fill="#0A2767"
@@ -1738,7 +1738,7 @@ export const Icon = {
         height="16"
         viewBox="0 0 16 16"
         fill="none"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <rect
           x="0.5"
@@ -1764,7 +1764,7 @@ export const Icon = {
         height="16"
         viewBox="0 0 16 16"
         fill="none"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <rect
           x="0.5"
@@ -1787,7 +1787,7 @@ export const Icon = {
       <svg
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 240 240"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <defs>
           <linearGradient id="tg-a" x1="0.667" x2="0.417" y1="0.167" y2="0.75">
@@ -1812,7 +1812,7 @@ export const Icon = {
         id="Layer_1"
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 256 256"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           fill="#ff4500"
@@ -1828,7 +1828,7 @@ export const Icon = {
       viewBox="0 0 76 65"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
-      className={cn("size-4", className)}
+      className={cn('size-4', className)}
     >
       <path d="M37.5274 0L75.0548 65H0L37.5274 0Z" fill="currentColor" />
     </svg>
@@ -1839,12 +1839,107 @@ export const Icon = {
       <svg
         xmlns="http://www.w3.org/2000/svg"
         viewBox="0 0 96 96"
-        className={cn("size-4", className)}
+        className={cn('size-4', className)}
       >
         <path
           fill="#2377EA"
           d="m94.7 85.9-41.9-80.4c-0.9-1.7-2.4-3.1-4.7-3.1-2 0-3.7 1-4.7 2.8l-41.5 80.3c-1.5 2.7-0.7 5.7 1.6 7.3 2.5 1.5 6 1 7.3-1.9 3.1-5.7 21.1-38.8 37.2-71.5l29.3 56.5-26.8-14.3c-4.7-2.2-8.9 1.8-7.5 6.5 0.4 1 1.1 2.7 2.5 3.4l41.9 21.3c4.6 2.4 9.2-1.6 7.3-6.9z"
         />
+      </svg>
+    );
+  },
+
+  Sun: ({ className }: { className?: string }) => {
+    return (
+      <svg
+        aria-hidden="true"
+        width="24px"
+        height="24px"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className={cn('size-4', className)}
+      >
+        <path
+          d="M13 2C13 1.44772 12.5523 1 12 1C11.4477 1 11 1.44772 11 2V3C11 3.55228 11.4477 4 12 4C12.5523 4 13 3.55228 13 3V2Z"
+          fill="currentColor"
+        ></path>
+        <path
+          d="M13 21C13 20.4477 12.5523 20 12 20C11.4477 20 11 20.4477 11 21V22C11 22.5523 11.4477 23 12 23C12.5523 23 13 22.5523 13 22V21Z"
+          fill="currentColor"
+        ></path>
+        <path
+          d="M19.777 4.22295C20.1675 4.61347 20.1675 5.24664 19.777 5.63716L19.0669 6.34716C18.6764 6.73768 18.0433 6.73768 17.6527 6.34716C17.2622 5.95664 17.2622 5.32347 17.6527 4.93295L18.3627 4.22295C18.7533 3.83242 19.3864 3.83242 19.777 4.22295Z"
+          fill="currentColor"
+        ></path>
+        <path
+          d="M6.34726 19.0671C6.73779 18.6766 6.73779 18.0434 6.34726 17.6529C5.95674 17.2624 5.32357 17.2624 4.93305 17.6529L4.22305 18.3629C3.83253 18.7534 3.83253 19.3866 4.22305 19.7771C4.61357 20.1676 5.24674 20.1676 5.63726 19.7771L6.34726 19.0671Z"
+          fill="currentColor"
+        ></path>
+        <path
+          d="M20 12C20 11.4477 20.4477 11 21 11H22C22.5523 11 23 11.4477 23 12C23 12.5523 22.5523 13 22 13H21C20.4477 13 20 12.5523 20 12Z"
+          fill="currentColor"
+        ></path>
+        <path
+          d="M2 11C1.44772 11 1 11.4477 1 12C1 12.5523 1.44772 13 2 13H3C3.55228 13 4 12.5523 4 12C4 11.4477 3.55228 11 3 11H2Z"
+          fill="currentColor"
+        ></path>
+        <path
+          d="M17.6527 17.6529C18.0433 17.2624 18.6764 17.2624 19.0669 17.6529L19.777 18.3629C20.1675 18.7534 20.1675 19.3866 19.777 19.7771C19.3864 20.1676 18.7533 20.1676 18.3627 19.7771L17.6527 19.0671C17.2622 18.6766 17.2622 18.0434 17.6527 17.6529Z"
+          fill="currentColor"
+        ></path>
+        <path
+          d="M5.63726 4.22295C5.24674 3.83242 4.61357 3.83242 4.22305 4.22295C3.83253 4.61347 3.83253 5.24664 4.22305 5.63716L4.93305 6.34716C5.32357 6.73768 5.95674 6.73768 6.34726 6.34716C6.73779 5.95664 6.73779 5.32347 6.34726 4.93295L5.63726 4.22295Z"
+          fill="currentColor"
+        ></path>
+        <path
+          d="M7.75736 7.75736C10.1005 5.41421 13.8995 5.41421 16.2426 7.75736C18.5858 10.1005 18.5858 13.8995 16.2426 16.2426C13.8995 18.5858 10.1005 18.5858 7.75736 16.2426C5.41421 13.8995 5.41421 10.1005 7.75736 7.75736Z"
+          fill="currentColor"
+        ></path>
+      </svg>
+    );
+  },
+
+  Moon: ({ className }: { className?: string }) => {
+    return (
+      <svg
+        aria-hidden="true"
+        width="24px"
+        height="24px"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className={cn('size-4', className)}
+      >
+        <path
+          d="M12.0517 3.59971C12.2712 3.28123 12.2873 2.86472 12.0931 2.53021C11.8989 2.19569 11.5292 2.00315 11.1438 2.03581C6.0214 2.46985 2 6.76372 2 11.9979C2 17.5197 6.47632 21.996 11.9981 21.996C17.2324 21.996 21.5264 17.9745 21.9602 12.8519C21.9929 12.4664 21.8003 12.0968 21.4658 11.9026C21.1313 11.7084 20.7148 11.7246 20.3963 11.9441C19.4302 12.61 18.2602 12.9998 16.9961 12.9998C13.6824 12.9998 10.9961 10.3135 10.9961 6.99976C10.9961 5.73577 11.3858 4.56582 12.0517 3.59971Z"
+          fill="currentColor"
+        ></path>
+      </svg>
+    );
+  },
+
+  Monitor: ({ className }: { className?: string }) => {
+    return (
+      <svg
+        aria-hidden="true"
+        width="24px"
+        height="24px"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+        className={cn('size-4', className)}
+      >
+        <path
+          d="M6 3C3.79086 3 2 4.79086 2 7V12H22V7C22 4.79086 20.2091 3 18 3H6Z"
+          fill="currentColor"
+        ></path>
+        <path
+          fill-rule="evenodd"
+          clip-rule="evenodd"
+          d="M2 14H22C22 16.2091 20.2091 18 18 18H15V21C15 21.5523 14.5523 22 14 22H10C9.44772 22 9 21.5523 9 21V18H6C3.79086 18 2 16.2091 2 14ZM11 18V20H13V18H11Z"
+          fill="currentColor"
+        ></path>
       </svg>
     );
   },

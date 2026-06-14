@@ -1,6 +1,8 @@
 import {
+  emitJson,
   resolveProjectContext,
   surfaceApiError,
+  takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import { C, pad, status } from '../style.ts';
@@ -34,11 +36,11 @@ Manage who can use the linked project — mirrors the dashboard's project
 sharing/access panel. Roles: ${ROLES.join(', ')}.
 
 Subcommands:
-  ls                                List members + effective project roles.
+  ls [--json]                       List members + effective project roles.
   invite <email> --role <r>         Invite someone to the project.
   grant <user-id> --role <r>        Set/grant a member's project role.
   revoke <user-id>                  Remove a member's project access.
-  pending                           List pending project invitations.
+  pending [--json]                  List pending project invitations.
   cancel <invite-id>                Cancel a pending invitation.
 
 Options:
@@ -57,11 +59,13 @@ export async function runAccess(argv: string[]): Promise<number> {
   const sub = argv[0];
   const rest = argv.slice(1);
   const f: Record<string, string | undefined> = {};
+  let json = false;
   try {
     f.project = takeFlagValue(rest, ['--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.role = takeFlagValue(rest, ['--role']);
     f.expires = takeFlagValue(rest, ['--expires']);
+    json = takeFlagBool(rest, ['--json']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -84,6 +88,10 @@ export async function runAccess(argv: string[]): Promise<number> {
       case 'ls':
       case 'list': {
         const resp = await ctx.client.get<{ members: AccessMember[]; can_manage: boolean }>(`${base}/access`);
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         const emailW = Math.max(...resp.members.map((m) => (m.email ?? m.user_id).length), 6);
         process.stdout.write('\n');
         process.stdout.write(`  ${C.dim}${pad('MEMBER', emailW)}   ACCOUNT   PROJECT ROLE   SOURCE${C.reset}\n`);
@@ -130,6 +138,10 @@ export async function runAccess(argv: string[]): Promise<number> {
       }
       case 'pending': {
         const resp = await ctx.client.get<{ pending: PendingInvite[] }>(`${base}/access/pending-invites`);
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
         if (resp.pending.length === 0) {
           process.stdout.write(`  ${C.dim}No pending invites.${C.reset}\n`);
           return 0;

@@ -2,21 +2,27 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect, useRef, type ReactNode } from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, RotateCcw } from 'lucide-react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useRef, type ReactNode } from 'react';
 
-import { useAuth } from '@/components/AuthProvider';
-import { useAccountState } from '@/hooks/billing';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
-import { isBillingEnabled } from '@/lib/config';
+import { ProjectShell } from '@/components/projects/project-shell';
 import { SessionChat } from '@/components/session/session-chat';
 import { SessionLayout } from '@/components/session/session-layout';
 import { SessionLoadingSkeleton } from '@/components/session/session-loading-skeleton';
-import { ProjectShell } from '@/components/projects/project-shell';
 import { Button } from '@/components/ui/button';
+import { useAuth } from '@/features/providers/auth-provider';
+import { useAccountState } from '@/hooks/billing';
+import {
+  clearOpencodeEnsureGuard,
+  useCanonicalOpenCodeSession,
+} from '@/hooks/opencode/use-canonical-opencode-session';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
+import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
+import { isBillingEnabled } from '@/lib/config';
+import { setActiveInstanceCookie } from '@/lib/instance-routes';
+import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
 import {
   getProjectDetail,
   getProjectSessionSandbox,
@@ -24,19 +30,13 @@ import {
   syncOpencodeSessionData,
   wakeProjectSession,
 } from '@/lib/projects-client';
-import { setActiveInstanceCookie } from '@/lib/instance-routes';
-import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
+import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import {
   markProvisioningVerified,
   useSandboxConnectionStore,
 } from '@/stores/sandbox-connection-store';
-import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { switchToSessionSandboxAsync, useServerStore } from '@/stores/server-store';
-import {
-  clearOpencodeEnsureGuard,
-  useCanonicalOpenCodeSession,
-} from '@/hooks/opencode/use-canonical-opencode-session';
-import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 
 /**
  * /projects/[id]/sessions/[sessionId] — project-scoped session view.
@@ -82,8 +82,7 @@ export default function ProjectSessionPage() {
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const accountLoaded = !!accountState;
-  const noPlan =
-    isBillingEnabled() && accountLoaded && !accountState.subscription?.subscription_id;
+  const noPlan = isBillingEnabled() && accountLoaded && !accountState.subscription?.subscription_id;
 
   // session_id == sandbox_id by construction (see session-sandbox.ts).
   const { data: sandbox, isLoading } = useQuery({
@@ -189,7 +188,11 @@ export default function ProjectSessionPage() {
           title="Subscribe to start sessions"
           message="Your team isn't on a plan yet. Subscribe to Kortix Team to run sessions, with LLM compute and AI Computers for every teammate."
           action={
-            <Button onClick={() => openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId })}>
+            <Button
+              onClick={() =>
+                openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId })
+              }
+            >
               Subscribe to Team plan
             </Button>
           }
@@ -223,7 +226,9 @@ export default function ProjectSessionPage() {
       return (
         <InlineSessionError
           title={`${sandboxLabel ?? 'session'} is stopped`}
-          message={tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen')}
+          message={tHardcodedUi.raw(
+            'appProjectsIdSessionsSessionidPage.line151JsxAttrMessageTheSandboxForThisSessionWasStoppedOpen',
+          )}
         />
       );
     }
@@ -237,7 +242,7 @@ export default function ProjectSessionPage() {
     return (
       <ProjectSessionRuntimeConnection>
         <OpenCodeEventStreamProvider />
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <ActiveSessionChat projectId={projectId} sessionId={sessionId} />
         </div>
       </ProjectSessionRuntimeConnection>
@@ -270,12 +275,12 @@ function InlineSessionError({
   action?: ReactNode;
 }) {
   return (
-    <div className="flex-1 min-h-0 flex items-center justify-center px-6">
-      <div className="max-w-md text-center flex flex-col items-center gap-3">
-        <h2 className="text-sm font-medium text-foreground/90">{title}</h2>
-        <p className="text-xs leading-relaxed text-muted-foreground/70">{message}</p>
+    <div className="flex min-h-0 flex-1 items-center justify-center px-6">
+      <div className="flex max-w-md flex-col items-center gap-3 text-center">
+        <h2 className="text-foreground/90 text-sm font-medium">{title}</h2>
+        <p className="text-muted-foreground/70 text-xs leading-relaxed">{message}</p>
         {detail ? (
-          <p className="max-w-full rounded-2xl border border-border/60 bg-muted/40 px-2 py-1 font-mono text-xs leading-relaxed text-muted-foreground">
+          <p className="border-border/60 bg-muted/40 text-muted-foreground max-w-full rounded-2xl border px-2 py-1 font-mono text-xs leading-relaxed">
             {detail}
           </p>
         ) : null}
@@ -291,13 +296,7 @@ function InlineSessionError({
  * first runtime-ready render so the user lands inside the conversation UI
  * immediately.
  */
-function ActiveSessionChat({
-  projectId,
-  sessionId,
-}: {
-  projectId: string;
-  sessionId: string;
-}) {
+function ActiveSessionChat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const runtimeReady = useSandboxConnectionStore(
     (s) => s.status === 'connected' && s.healthy === true,
@@ -352,7 +351,10 @@ function ActiveSessionChat({
     if (!chatSessionId) return;
     sessionMark(sessionId, 'chat-ready');
     const sb = queryClient.getQueryData<{ metadata?: Record<string, unknown> }>([
-      'project', 'session-sandbox', projectId, sessionId,
+      'project',
+      'session-sandbox',
+      projectId,
+      sessionId,
     ]);
     finishSessionTiming(sessionId, sb?.metadata?.provisionTimeline);
   }, [chatSessionId, sessionId, projectId, queryClient]);
@@ -428,8 +430,12 @@ function ActiveSessionChat({
   if (!runtimeReady && runtimeBootError) {
     return (
       <InlineSessionError
-        title={tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line380JsxAttrTitleOpencodeRuntimeIsNotReady')}
-        message={tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid')}
+        title={tHardcodedUi.raw(
+          'appProjectsIdSessionsSessionidPage.line380JsxAttrTitleOpencodeRuntimeIsNotReady',
+        )}
+        message={tHardcodedUi.raw(
+          'appProjectsIdSessionsSessionidPage.line381JsxAttrMessageTheSandboxBootedButTheProjectRuntimeDid',
+        )}
         detail={runtimeBootError}
         action={
           <Button
@@ -442,7 +448,9 @@ function ActiveSessionChat({
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <RotateCcw className="h-3.5 w-3.5" />
-            )}{tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line395JsxTextRestartSession')}</Button>
+            )}
+            {tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line395JsxTextRestartSession')}
+          </Button>
         }
       />
     );
@@ -469,7 +477,9 @@ function ActiveSessionChat({
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
             ) : (
               <RotateCcw className="h-3.5 w-3.5" />
-            )}{tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line424JsxTextRestartSession')}</Button>
+            )}
+            {tHardcodedUi.raw('appProjectsIdSessionsSessionidPage.line424JsxTextRestartSession')}
+          </Button>
         }
       />
     );
