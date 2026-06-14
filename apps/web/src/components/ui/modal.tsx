@@ -1,5 +1,46 @@
 'use client';
 
+/**
+ * @example
+ * ```tsx
+ * import {
+ *   Modal,
+ *   ModalBody,
+ *   ModalContent,
+ *   ModalDescription,
+ *   ModalFooter,
+ *   ModalHeader,
+ *   ModalTitle,
+ *   ModalTrigger,
+ * } from '@/components/ui/modal';
+ * import { Button } from '@/components/ui/button';
+ *
+ * <Modal>
+ *   <ModalTrigger asChild>
+ *     <Button>Open</Button>
+ *   </ModalTrigger>
+ *   <ModalContent className="lg:max-w-md">
+ *     <ModalHeader>
+ *       <ModalTitle>Title</ModalTitle>
+ *       <ModalDescription>Description</ModalDescription>
+ *     </ModalHeader>
+ *     <ModalBody>{children}</ModalBody>
+ *     <ModalFooter>
+ *       <Button variant="outline-ghost">Cancel</Button>
+ *       <Button>Confirm</Button>
+ *     </ModalFooter>
+ *   </ModalContent>
+ * </Modal>
+ * ```
+ *
+ * Controlled:
+ * ```tsx
+ * <Modal open={open} onOpenChange={setOpen}>
+ *   <ModalContent>...</ModalContent>
+ * </Modal>
+ * ```
+ */
+
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';

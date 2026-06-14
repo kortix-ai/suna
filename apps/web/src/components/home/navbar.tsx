@@ -1,6 +1,5 @@
 'use client';
 
-import { useAuth } from '@/components/AuthProvider';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import {
   ContextMenu,
@@ -13,6 +12,7 @@ import {
 } from '@/components/ui/context-menu';
 import { Button } from '@/components/ui/marketing/button';
 import { Icon } from '@/features/icon/icon';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useIsMobile } from '@/hooks/utils';
 import { useGitHubStars } from '@/hooks/utils/use-github-stars';
 import { trackCtaSignup } from '@/lib/analytics/gtm';

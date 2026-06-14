@@ -1,24 +1,13 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  ArrowLeft,
-  Check,
-  Eye,
-  FolderOpen,
-  Shield,
-  ShieldOff,
-  Users,
-  X,
-} from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowLeft, Check, Eye, FolderOpen, Shield, ShieldOff, Users, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useParams, useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 
-import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -33,6 +22,8 @@ import { InfoBanner } from '@/components/ui/info-banner';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { UserAvatar } from '@/components/ui/user-avatar';
+import { AppHeader } from '@/features/layout/app-header';
+import { useAuth } from '@/features/providers/auth-provider';
 import {
   listMemberGroups,
   listMemberProjectAccess,
@@ -86,8 +77,7 @@ export default function MemberDetailPage() {
   });
 
   const setSuperAdminMutation = useMutation({
-    mutationFn: (next: boolean) =>
-      setMemberSuperAdmin(accountId!, memberUserId!, next),
+    mutationFn: (next: boolean) => setMemberSuperAdmin(accountId!, memberUserId!, next),
     onSuccess: (res) => {
       toast.success(res.is_super_admin ? 'Granted super-admin' : 'Revoked super-admin');
       queryClient.invalidateQueries({ queryKey: ['account-members', accountId] });
@@ -105,10 +95,7 @@ export default function MemberDetailPage() {
     [members, memberUserId],
   );
   // canPromoteSuperAdmin gates the bypass toggle below.
-  const canPromoteSuperAdmin = usePermission(
-    accountId,
-    'member.super_admin.grant',
-  ).allowed;
+  const canPromoteSuperAdmin = usePermission(accountId, 'member.super_admin.grant').allowed;
 
   if (authLoading || !user) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
@@ -123,7 +110,7 @@ export default function MemberDetailPage() {
   const memberLabel = member?.email ?? memberUserId ?? 'Member';
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="bg-background flex min-h-screen flex-col">
       <AppHeader user={user} />
       <main className="flex-1 px-4 py-8">
         <div className="mx-auto w-full max-w-4xl space-y-8">
@@ -131,15 +118,16 @@ export default function MemberDetailPage() {
             <button
               type="button"
               onClick={() => router.push('/projects')}
-              className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
-              {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line120JsxTextBackToProjects')}</button>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line120JsxTextBackToProjects')}
+            </button>
+            <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <button
                 type="button"
                 onClick={() => router.push('/accounts')}
-                className="cursor-pointer transition-colors hover:text-foreground"
+                className="hover:text-foreground cursor-pointer transition-colors"
               >
                 Accounts
               </button>
@@ -147,7 +135,7 @@ export default function MemberDetailPage() {
               <button
                 type="button"
                 onClick={() => router.push(`/accounts/${accountId}`)}
-                className="cursor-pointer transition-colors hover:text-foreground"
+                className="hover:text-foreground cursor-pointer transition-colors"
               >
                 Members
               </button>
@@ -155,7 +143,7 @@ export default function MemberDetailPage() {
               {membersQuery.isLoading ? (
                 <Skeleton className="h-4 w-32" />
               ) : (
-                <span className="truncate font-medium text-foreground">{memberLabel}</span>
+                <span className="text-foreground truncate font-medium">{memberLabel}</span>
               )}
             </div>
             <div className="flex items-start justify-between gap-4">
@@ -167,7 +155,7 @@ export default function MemberDetailPage() {
                   className="mt-0.5"
                 />
                 <div>
-                  <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                  <h1 className="text-foreground text-2xl font-semibold tracking-tight">
                     {memberLabel}
                   </h1>
                   {member && (
@@ -181,7 +169,7 @@ export default function MemberDetailPage() {
                           Super-admin
                         </Badge>
                       )}
-                      <span className="text-xs text-muted-foreground">
+                      <span className="text-muted-foreground text-xs">
                         Joined {new Date(member.joined_at).toLocaleDateString()}
                       </span>
                     </div>
@@ -200,41 +188,55 @@ export default function MemberDetailPage() {
                     View as
                   </Button>
                 )}
-              {canPromoteSuperAdmin && memberUserId !== user.id && member?.is_super_admin && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setRevokeConfirmOpen(true)}
-                  className="gap-1.5"
-                  disabled={setSuperAdminMutation.isPending}
-                >
-                  <ShieldOff className="h-3.5 w-3.5" />
-                  {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line184JsxTextRevokeSuperAdmin')}</Button>
-              )}
-              {canPromoteSuperAdmin && memberUserId !== user.id && !member?.is_super_admin && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setGrantConfirmOpen(true)}
-                  className="gap-1.5"
-                  disabled={setSuperAdminMutation.isPending}
-                >
-                  <Shield className="h-3.5 w-3.5" />
-                  {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line196JsxTextGrantSuperAdmin')}</Button>
-              )}
+                {canPromoteSuperAdmin && memberUserId !== user.id && member?.is_super_admin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setRevokeConfirmOpen(true)}
+                    className="gap-1.5"
+                    disabled={setSuperAdminMutation.isPending}
+                  >
+                    <ShieldOff className="h-3.5 w-3.5" />
+                    {tHardcodedUi.raw(
+                      'appAccountsIdMembersUserIdPage.line184JsxTextRevokeSuperAdmin',
+                    )}
+                  </Button>
+                )}
+                {canPromoteSuperAdmin && memberUserId !== user.id && !member?.is_super_admin && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setGrantConfirmOpen(true)}
+                    className="gap-1.5"
+                    disabled={setSuperAdminMutation.isPending}
+                  >
+                    <Shield className="h-3.5 w-3.5" />
+                    {tHardcodedUi.raw(
+                      'appAccountsIdMembersUserIdPage.line196JsxTextGrantSuperAdmin',
+                    )}
+                  </Button>
+                )}
               </div>
             </div>
           </div>
 
           {membersQuery.isError && (
-            <InfoBanner tone="destructive" title={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line203JsxAttrTitleFailedToLoadMember')}>
+            <InfoBanner
+              tone="destructive"
+              title={tHardcodedUi.raw(
+                'appAccountsIdMembersUserIdPage.line203JsxAttrTitleFailedToLoadMember',
+              )}
+            >
               {(membersQuery.error as Error).message}
             </InfoBanner>
           )}
 
           {!membersQuery.isLoading && !member && memberUserId && (
             <InfoBanner tone="neutral">
-              {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line210JsxTextThisUserIsNotAMemberOfThis')}</InfoBanner>
+              {tHardcodedUi.raw(
+                'appAccountsIdMembersUserIdPage.line210JsxTextThisUserIsNotAMemberOfThis',
+              )}
+            </InfoBanner>
           )}
 
           {account && member && (
@@ -254,21 +256,29 @@ export default function MemberDetailPage() {
           )}
 
           {account && member && (
-            <CapabilitiesCard
-              accountId={account.account_id}
-              memberUserId={member.user_id}
-            />
+            <CapabilitiesCard accountId={account.account_id} memberUserId={member.user_id} />
           )}
 
           <ConfirmDialog
             open={grantConfirmOpen}
             onOpenChange={setGrantConfirmOpen}
-            title={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line250JsxAttrTitleGrantSuperAdmin')}
+            title={tHardcodedUi.raw(
+              'appAccountsIdMembersUserIdPage.line250JsxAttrTitleGrantSuperAdmin',
+            )}
             description={
               <span>
-                {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line253JsxTextSuperAdminBypassesEveryIAMCheck')}<strong>{memberLabel}</strong> {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line253JsxTextWillBeAbleToDoAnythingInThis')}</span>
+                {tHardcodedUi.raw(
+                  'appAccountsIdMembersUserIdPage.line253JsxTextSuperAdminBypassesEveryIAMCheck',
+                )}
+                <strong>{memberLabel}</strong>{' '}
+                {tHardcodedUi.raw(
+                  'appAccountsIdMembersUserIdPage.line253JsxTextWillBeAbleToDoAnythingInThis',
+                )}
+              </span>
             }
-            confirmLabel={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line258JsxAttrConfirmLabelGrantSuperAdmin')}
+            confirmLabel={tHardcodedUi.raw(
+              'appAccountsIdMembersUserIdPage.line258JsxAttrConfirmLabelGrantSuperAdmin',
+            )}
             isPending={setSuperAdminMutation.isPending}
             onConfirm={() => setSuperAdminMutation.mutate(true)}
           />
@@ -276,12 +286,20 @@ export default function MemberDetailPage() {
           <ConfirmDialog
             open={revokeConfirmOpen}
             onOpenChange={setRevokeConfirmOpen}
-            title={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line266JsxAttrTitleRevokeSuperAdmin')}
+            title={tHardcodedUi.raw(
+              'appAccountsIdMembersUserIdPage.line266JsxAttrTitleRevokeSuperAdmin',
+            )}
             description={
               <span>
-                <strong>{memberLabel}</strong> {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line269JsxTextWillLoseTheBypassFromNowOnEvery')}</span>
+                <strong>{memberLabel}</strong>{' '}
+                {tHardcodedUi.raw(
+                  'appAccountsIdMembersUserIdPage.line269JsxTextWillLoseTheBypassFromNowOnEvery',
+                )}
+              </span>
             }
-            confirmLabel={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line274JsxAttrConfirmLabelRevokeSuperAdmin')}
+            confirmLabel={tHardcodedUi.raw(
+              'appAccountsIdMembersUserIdPage.line274JsxAttrConfirmLabelRevokeSuperAdmin',
+            )}
             isPending={setSuperAdminMutation.isPending}
             onConfirm={() => setSuperAdminMutation.mutate(false)}
           />
@@ -365,20 +383,22 @@ function CapabilitiesCard({
 
   // Build a quick lookup keyed by action so the grouped render finds its
   // result without re-walking the array per row.
-  const byAction = new Map(
-    FLAT_CAPABILITIES.map((c, i) => [c.action, results[i]] as const),
-  );
+  const byAction = new Map(FLAT_CAPABILITIES.map((c, i) => [c.action, results[i]] as const));
 
   return (
     <SectionCard
-      title={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line353JsxAttrTitleWhatThisMemberCanDo')}
-      description={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line354JsxAttrDescriptionComputedByTheIAMEngineSumOfExplicit')}
+      title={tHardcodedUi.raw(
+        'appAccountsIdMembersUserIdPage.line353JsxAttrTitleWhatThisMemberCanDo',
+      )}
+      description={tHardcodedUi.raw(
+        'appAccountsIdMembersUserIdPage.line354JsxAttrDescriptionComputedByTheIAMEngineSumOfExplicit',
+      )}
       flush
     >
-      <div className="divide-y divide-border/60">
+      <div className="divide-border/60 divide-y">
         {CAPABILITY_GROUPS.map((group) => (
           <div key={group.heading} className="px-6 py-4">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
               {group.heading}
             </p>
             <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
@@ -418,15 +438,15 @@ function CapabilityRow({
       className="flex items-center justify-between gap-3 text-sm"
       title={reason ? `Reason: ${reason}` : undefined}
     >
-      <span className="truncate text-foreground">{label}</span>
+      <span className="text-foreground truncate">{label}</span>
       {isLoading ? (
-        <span className="h-3.5 w-3.5 animate-pulse rounded-full bg-muted-foreground/20" />
+        <span className="bg-muted-foreground/20 h-3.5 w-3.5 animate-pulse rounded-full" />
       ) : allowed ? (
         <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
           <Check className="h-3 w-3" />
         </span>
       ) : (
-        <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <span className="bg-muted text-muted-foreground inline-flex h-5 w-5 items-center justify-center rounded-full">
           <X className="h-3 w-3" />
         </span>
       )}
@@ -454,7 +474,9 @@ function MemberGroupsCard({
   return (
     <SectionCard
       title={`Member of ${memberGroups.length} ${memberGroups.length === 1 ? 'group' : 'groups'}`}
-      description={tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line435JsxAttrDescriptionAnyPolicyAttachedToOneOfTheseGroups')}
+      description={tHardcodedUi.raw(
+        'appAccountsIdMembersUserIdPage.line435JsxAttrDescriptionAnyPolicyAttachedToOneOfTheseGroups',
+      )}
       flush
     >
       {isLoading && (
@@ -465,12 +487,17 @@ function MemberGroupsCard({
 
       {!isLoading && memberGroups.length === 0 && (
         <div className="px-6 py-6 text-center">
-          <div className="mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground">
+          <div className="border-border/70 bg-background text-muted-foreground mx-auto mb-2 flex h-9 w-9 items-center justify-center rounded-full border">
             <Users className="h-4 w-4" />
           </div>
-          <p className="text-sm text-foreground">{tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line449JsxTextNotAMemberOfAnyGroups')}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line451JsxTextAddThemToAGroupToInheritIts')}</p>
+          <p className="text-foreground text-sm">
+            {tHardcodedUi.raw('appAccountsIdMembersUserIdPage.line449JsxTextNotAMemberOfAnyGroups')}
+          </p>
+          <p className="text-muted-foreground mt-0.5 text-xs">
+            {tHardcodedUi.raw(
+              'appAccountsIdMembersUserIdPage.line451JsxTextAddThemToAGroupToInheritIts',
+            )}
+          </p>
         </div>
       )}
 
@@ -481,9 +508,9 @@ function MemberGroupsCard({
               key={g.group_id}
               type="button"
               onClick={() => router.push(`/accounts/${accountId}/groups/${g.group_id}`)}
-              className="inline-flex cursor-pointer items-center gap-1.5 rounded-full border border-border/70 bg-background px-3 py-1 text-xs font-medium text-foreground transition-colors hover:border-foreground/30 hover:bg-muted/40"
+              className="border-border/70 bg-background text-foreground hover:border-foreground/30 hover:bg-muted/40 inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors"
             >
-              <Users className="h-3 w-3 text-muted-foreground" />
+              <Users className="text-muted-foreground h-3 w-3" />
               {g.name}
             </button>
           ))}
@@ -547,14 +574,14 @@ function MemberProjectAccessCard({
       )}
 
       {!query.isLoading && !query.isError && items.length === 0 && (
-        <p className="text-xs text-muted-foreground">
+        <p className="text-muted-foreground text-xs">
           No project access yet. Add this member to a project directly from the project&apos;s
           Members page, or to a group that&apos;s attached to one.
         </p>
       )}
 
       {!query.isLoading && items.length > 0 && (
-        <ul className="divide-y divide-border/60 -mx-6">
+        <ul className="divide-border/60 -mx-6 divide-y">
           {items
             .slice()
             .sort(
@@ -567,20 +594,16 @@ function MemberProjectAccessCard({
                 <button
                   type="button"
                   onClick={() => router.push(`/projects/${p.project_id}`)}
-                  className="flex w-full cursor-pointer items-center gap-3 px-6 py-2.5 text-left transition-colors hover:bg-muted/40"
+                  className="hover:bg-muted/40 flex w-full cursor-pointer items-center gap-3 px-6 py-2.5 text-left transition-colors"
                 >
-                  <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  <span className="flex-1 truncate text-sm font-medium text-foreground">
+                  <FolderOpen className="text-muted-foreground h-4 w-4 shrink-0" />
+                  <span className="text-foreground flex-1 truncate text-sm font-medium">
                     {p.project_name}
                   </span>
-                  <Badge
-                    variant="outline"
-                    size="sm"
-                    className="capitalize text-[10px] font-normal"
-                  >
+                  <Badge variant="outline" size="sm" className="text-[10px] font-normal capitalize">
                     {p.role}
                   </Badge>
-                  <span className="text-[10px] text-muted-foreground">
+                  <span className="text-muted-foreground text-[10px]">
                     via {p.sources.map((s) => SOURCE_LABEL[s]).join(' + ')}
                   </span>
                 </button>
@@ -612,17 +635,17 @@ const SIMULATOR_PROBES: Array<{
   label: string;
   group: 'Account' | 'Projects' | 'Audit';
 }> = [
-  { action: 'account.write',           label: 'Change account settings',  group: 'Account' },
-  { action: 'member.invite',           label: 'Invite members',           group: 'Account' },
-  { action: 'member.remove',           label: 'Remove members',           group: 'Account' },
-  { action: 'group.create',            label: 'Create groups',            group: 'Account' },
-  { action: 'group.delete',            label: 'Delete groups',            group: 'Account' },
-  { action: 'project.create',          label: 'Create projects',          group: 'Projects' },
-  { action: 'project.write',           label: 'Edit projects',            group: 'Projects' },
-  { action: 'project.delete',          label: 'Delete projects',          group: 'Projects' },
-  { action: 'project.members.manage',  label: 'Manage project members',   group: 'Projects' },
-  { action: 'audit.read',              label: 'View the audit log',       group: 'Audit' },
-  { action: 'audit.export',            label: 'Export audit events',      group: 'Audit' },
+  { action: 'account.write', label: 'Change account settings', group: 'Account' },
+  { action: 'member.invite', label: 'Invite members', group: 'Account' },
+  { action: 'member.remove', label: 'Remove members', group: 'Account' },
+  { action: 'group.create', label: 'Create groups', group: 'Account' },
+  { action: 'group.delete', label: 'Delete groups', group: 'Account' },
+  { action: 'project.create', label: 'Create projects', group: 'Projects' },
+  { action: 'project.write', label: 'Edit projects', group: 'Projects' },
+  { action: 'project.delete', label: 'Delete projects', group: 'Projects' },
+  { action: 'project.members.manage', label: 'Manage project members', group: 'Projects' },
+  { action: 'audit.read', label: 'View the audit log', group: 'Audit' },
+  { action: 'audit.export', label: 'Export audit events', group: 'Audit' },
 ];
 
 function ViewAsUserDialog({
@@ -644,17 +667,17 @@ function ViewAsUserDialog({
   // V2 engine answers "can they perform this action on the account"
   // which is the question this dialog should answer; per-project
   // breakdown is the job of the MemberProjectAccessCard above.
-  const probes = useMemo(
-    () => SIMULATOR_PROBES.map((p) => ({ action: p.action })),
-    [],
-  );
+  const probes = useMemo(() => SIMULATOR_PROBES.map((p) => ({ action: p.action })), []);
   const results = usePermissionsFor(
     open ? accountId : undefined,
     open ? memberUserId : undefined,
     probes,
   );
   const grouped = useMemo(() => {
-    const groups: Record<string, Array<{ label: string; allowed: boolean; reason: string | null; isLoading: boolean }>> = {};
+    const groups: Record<
+      string,
+      Array<{ label: string; allowed: boolean; reason: string | null; isLoading: boolean }>
+    > = {};
     SIMULATOR_PROBES.forEach((p, i) => {
       const r = results[i];
       if (!groups[p.group]) groups[p.group] = [];
@@ -673,31 +696,27 @@ function ViewAsUserDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Eye className="h-4 w-4 text-muted-foreground" />
+            <Eye className="text-muted-foreground h-4 w-4" />
             Viewing as {memberLabel}
           </DialogTitle>
           <DialogDescription>
-            Read-only check of what this member can do across the
-            account. The engine answers in real time — same logic the
-            UI uses to gate buttons for the user themselves.
+            Read-only check of what this member can do across the account. The engine answers in
+            real time — same logic the UI uses to gate buttons for the user themselves.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-1">
           {(['Account', 'Projects', 'Audit'] as const).map((sectionName) => (
             <section key={sectionName} className="space-y-1.5">
-              <h3 className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+              <h3 className="text-muted-foreground/70 text-[10px] font-semibold tracking-[0.08em] uppercase">
                 {sectionName}
               </h3>
-              <ul className="divide-y divide-border/40 rounded-md border border-border/60">
+              <ul className="divide-border/40 border-border/60 divide-y rounded-md border">
                 {(grouped[sectionName] ?? []).map((row) => (
-                  <li
-                    key={row.label}
-                    className="flex items-start gap-3 px-3 py-2 text-sm"
-                  >
+                  <li key={row.label} className="flex items-start gap-3 px-3 py-2 text-sm">
                     <span className="mt-0.5 shrink-0">
                       {row.isLoading ? (
-                        <span className="block h-3.5 w-3.5 animate-pulse rounded-full bg-muted" />
+                        <span className="bg-muted block h-3.5 w-3.5 animate-pulse rounded-full" />
                       ) : row.allowed ? (
                         <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
                       ) : (
@@ -707,9 +726,7 @@ function ViewAsUserDialog({
                     <div className="min-w-0 flex-1">
                       <p className="text-foreground">{row.label}</p>
                       {!row.allowed && row.reason && !row.isLoading && (
-                        <p className="text-[11px] text-muted-foreground">
-                          {row.reason}
-                        </p>
+                        <p className="text-muted-foreground text-[11px]">{row.reason}</p>
                       )}
                     </div>
                   </li>
@@ -718,10 +735,9 @@ function ViewAsUserDialog({
             </section>
           ))}
 
-          <p className="text-[11px] text-muted-foreground">
-            Project-scoped access (which projects they can reach + at
-            what role) is shown in the Project access card on this
-            page. This dialog is the account-wide capability view.
+          <p className="text-muted-foreground text-[11px]">
+            Project-scoped access (which projects they can reach + at what role) is shown in the
+            Project access card on this page. This dialog is the account-wide capability view.
           </p>
         </div>
       </DialogContent>

@@ -1441,3 +1441,7 @@ html[data-desktop='true']:not([data-desktop-platform='macos']) .kx-customize-hea
   /* delay so it starts ~when the vertical mask reaches bottom */
   animation-delay: 1.25s;
 }
+
+@utility px-mobile {
+  @apply px-6 xl:px-0;
+}

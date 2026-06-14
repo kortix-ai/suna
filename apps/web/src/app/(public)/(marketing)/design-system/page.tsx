@@ -2208,7 +2208,7 @@ export default function BrandPage() {
                         <Button
                           onClick={() =>
                             successToast('Saved', {
-                              description: 'Your changes were saved.',
+                              // description: 'Your changes were saved.',
                             })
                           }
                           variant="success"

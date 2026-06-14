@@ -1,5 +1,20 @@
 'use client';
 
+import { Button } from '@/components/ui/button';
+import { errorToast, successToast } from '@/components/ui/toast';
+import { cn } from '@/lib/utils';
+import { dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Code,
+  Download,
+  Eye,
+  History,
+  Maximize2,
+  Minimize2,
+  X,
+} from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -9,11 +24,6 @@ import {
   type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Download, ChevronLeft, ChevronRight, History, Code, Eye, Maximize2, Minimize2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useDialogDepth, dialogOverlayZ, dialogContentZ } from '@/lib/z-stack';
-import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
 import { FileContentRenderer, getLanguageFromExt } from './file-content-renderer';
 import { FileSourceProvider, type FileSource } from './file-source';
 
@@ -236,9 +246,9 @@ export function FilePreviewModal({
     if (!selectedFilePath) return;
     try {
       await source.download(selectedFilePath, fileName);
-      toast.success(`Downloaded ${fileName}`);
+      successToast(`Downloaded ${fileName}`);
     } catch {
-      toast.error(`Failed to download ${fileName}`);
+      errorToast(`Failed to download ${fileName}`);
     }
   }, [selectedFilePath, fileName, source]);
 
@@ -250,38 +260,43 @@ export function FilePreviewModal({
 
   const toolbar = (
     <>
-      <div className="flex items-center gap-2 min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 items-center gap-2">
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground h-8 w-8 shrink-0"
           onClick={onClose}
           title="Back"
         >
           <ChevronLeft className="h-4 w-4" />
         </Button>
-        <div className="flex items-center gap-2 min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
           {renderFileIcon(fileName)}
-          <span className="text-sm font-medium truncate max-w-[300px]" title={selectedFilePath ?? ''}>
+          <span
+            className="max-w-[300px] truncate text-sm font-medium"
+            title={selectedFilePath ?? ''}
+          >
             {fileName}
           </span>
         </div>
         {statusSlot}
         {filePathList.length > 1 && (
-          <span className="text-xs text-muted-foreground bg-muted/60 px-2 py-0.5 rounded-full shrink-0 tabular-nums">
+          <span className="text-muted-foreground bg-muted/60 shrink-0 rounded-full px-2 py-0.5 text-xs tabular-nums">
             {currentFileIndex + 1} / {filePathList.length}
           </span>
         )}
       </div>
 
-      <div className="flex items-center gap-0.5 shrink-0">
+      <div className="flex shrink-0 items-center gap-0.5">
         {isMarkdownFile && (
           <Button
             variant="ghost"
             size="icon"
             className={cn(
               'h-8 w-8',
-              markdownPreview ? 'text-muted-foreground hover:text-foreground' : 'text-foreground bg-muted',
+              markdownPreview
+                ? 'text-muted-foreground hover:text-foreground'
+                : 'text-foreground bg-muted',
             )}
             onClick={() => setMarkdownPreview((v) => !v)}
             title={markdownPreview ? 'View source' : 'Preview'}
@@ -294,7 +309,9 @@ export function FilePreviewModal({
           size="icon"
           className={cn(
             'h-8 w-8',
-            historyPath ? 'text-foreground bg-muted' : 'text-muted-foreground hover:text-foreground',
+            historyPath
+              ? 'text-foreground bg-muted'
+              : 'text-muted-foreground hover:text-foreground',
           )}
           onClick={() => setHistoryPath(historyPath ? null : selectedFilePath)}
           title={historyLabel}
@@ -304,7 +321,7 @@ export function FilePreviewModal({
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground h-8 w-8"
           onClick={handleDownload}
           title="Download"
         >
@@ -315,18 +332,18 @@ export function FilePreviewModal({
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground h-8 w-8"
             onClick={() => setExpanded((v) => !v)}
             title={expanded ? 'Collapse to panel' : 'Expand'}
           >
             {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </Button>
         )}
-        <div className="w-px h-5 bg-border/50 mx-1" />
+        <div className="bg-border/50 mx-1 h-5 w-px" />
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground h-8 w-8"
           onClick={onClose}
           title="Close (Esc)"
         >
@@ -341,7 +358,7 @@ export function FilePreviewModal({
       {hasPrev && (
         <button
           onClick={onPrev}
-          className="absolute left-3 top-1/2 -translate-y-1/2 z-20 h-9 w-9 rounded-full bg-background/95 backdrop-blur border border-border/60 shadow-sm hover:bg-background flex items-center justify-center transition-all opacity-70 hover:opacity-100"
+          className="bg-background/95 border-border/60 hover:bg-background absolute top-1/2 left-3 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border opacity-70 shadow-sm backdrop-blur transition-all hover:opacity-100"
           title="Previous file"
           aria-label="Previous file"
         >
@@ -351,7 +368,7 @@ export function FilePreviewModal({
       {hasNext && (
         <button
           onClick={onNext}
-          className="absolute right-3 top-1/2 -translate-y-1/2 z-20 h-9 w-9 rounded-full bg-background/95 backdrop-blur border border-border/60 shadow-sm hover:bg-background flex items-center justify-center transition-all opacity-70 hover:opacity-100"
+          className="bg-background/95 border-border/60 hover:bg-background absolute top-1/2 right-3 z-20 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border opacity-70 shadow-sm backdrop-blur transition-all hover:opacity-100"
           title="Next file"
           aria-label="Next file"
         >
@@ -372,7 +389,7 @@ export function FilePreviewModal({
       </div>
 
       {historyPath && (
-        <div className="absolute bottom-4 right-4 z-30 bg-popover border border-border/60 rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in-0 duration-150">
+        <div className="bg-popover border-border/60 animate-in slide-in-from-bottom-4 fade-in-0 absolute right-4 bottom-4 z-30 overflow-hidden rounded-2xl border shadow-2xl duration-150">
           <HistoryContent filePath={historyPath} onClose={() => setHistoryPath(null)} />
         </div>
       )}
@@ -381,10 +398,10 @@ export function FilePreviewModal({
 
   const panelInner = (
     <>
-      <div className="flex items-center gap-2 px-3 h-12 border-b border-border/40 shrink-0 bg-background/95 backdrop-blur-sm">
+      <div className="border-border/40 bg-background/95 flex h-12 shrink-0 items-center gap-2 border-b px-3 backdrop-blur-sm">
         {toolbar}
       </div>
-      <div ref={contentRef} className="flex-1 relative min-h-0 overflow-hidden">
+      <div ref={contentRef} className="relative min-h-0 flex-1 overflow-hidden">
         {body}
       </div>
     </>
@@ -400,7 +417,7 @@ export function FilePreviewModal({
         role="dialog"
         aria-label={`File preview${fileName ? `: ${fileName}` : ''}`}
         tabIndex={-1}
-        className="absolute inset-0 z-20 flex flex-col bg-background overflow-hidden animate-in fade-in-0 duration-150 outline-none"
+        className="bg-background animate-in fade-in-0 absolute inset-0 z-20 flex flex-col overflow-hidden duration-150 outline-none"
       >
         {panelInner}
       </div>
@@ -411,7 +428,7 @@ export function FilePreviewModal({
     <>
       <div
         data-file-preview-overlay=""
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm animate-in fade-in-0 duration-150 pointer-events-auto"
+        className="animate-in fade-in-0 pointer-events-auto fixed inset-0 bg-black/50 backdrop-blur-sm duration-150"
         style={{ zIndex: dialogOverlayZ(dialogDepth + 1) }}
         onClick={embedded ? () => setExpanded(false) : onClose}
       />
@@ -422,7 +439,7 @@ export function FilePreviewModal({
         aria-modal="true"
         aria-label={`File preview${fileName ? `: ${fileName}` : ''}`}
         tabIndex={-1}
-        className="kx-fullscreen-modal fixed inset-3 sm:inset-4 flex flex-col rounded-2xl border border-border/60 bg-background shadow-2xl overflow-hidden animate-in fade-in-0 zoom-in-[0.98] duration-150 pointer-events-auto outline-none"
+        className="kx-fullscreen-modal border-border/60 bg-background animate-in fade-in-0 zoom-in-[0.98] pointer-events-auto fixed inset-3 flex flex-col overflow-hidden rounded-2xl border shadow-2xl duration-150 outline-none sm:inset-4"
         style={{ zIndex: dialogContentZ(dialogDepth + 1) }}
       >
         {panelInner}

@@ -2,27 +2,6 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useMemo, useCallback, useState, useRef, useEffect } from 'react';
-import {
-  Search,
-  RefreshCw,
-  FolderUp,
-  ServerOff,
-  Upload,
-  FolderPlus,
-  FilePlus,
-  Clipboard,
-  Download,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from '@/components/ui/context-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,26 +12,47 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { useFilesStore } from '../store/files-store';
-import { useFileList, useServerHealth, useGitStatus, buildGitStatusMap } from '../hooks';
+import { Button } from '@/components/ui/button';
 import {
-  useFileUpload,
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
+import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, infoToast, successToast } from '@/components/ui/toast';
+import { cn } from '@/lib/utils';
+import { buildDiagnosticCountsMap, useDiagnosticsStore } from '@/stores/diagnostics-store';
+import { useServerStore } from '@/stores/server-store';
+import {
+  Clipboard,
+  Download,
+  FilePlus,
+  FolderPlus,
+  FolderUp,
+  RefreshCw,
+  Search,
+  ServerOff,
+  Upload,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { downloadFile } from '../api/opencode-files';
+import { buildGitStatusMap, useFileList, useGitStatus, useServerHealth } from '../hooks';
+import { useDirectoryDownload } from '../hooks/use-directory-download';
+import {
+  useFileCopy,
+  useFileCreate,
   useFileDelete,
   useFileMkdir,
   useFileRename,
-  useFileCreate,
-  useFileCopy,
+  useFileUpload,
 } from '../hooks/use-file-mutations';
-import { downloadFile } from '../api/opencode-files';
-import { useDirectoryDownload } from '../hooks/use-directory-download';
-import { useServerStore } from '@/stores/server-store';
+import { useFilesStore } from '../store/files-store';
 import type { FileNode } from '../types';
 import { FileBreadcrumbs } from './file-breadcrumbs';
-import { FileTreeItem, DRAG_MIME } from './file-tree-item';
 import { FileSearch } from './file-search';
-import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
-import { useDiagnosticsStore, buildDiagnosticCountsMap } from '@/stores/diagnostics-store';
+import { DRAG_MIME, FileTreeItem } from './file-tree-item';
 
 /** Drop target for the ".." (parent directory) row */
 function ParentDropTarget({
@@ -103,9 +103,9 @@ function ParentDropTarget({
         onDropMove(sourcePath, parentPath === '.' ? '' : parentPath);
       }}
       className={cn(
-        'flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left rounded-lg transition-colors cursor-pointer',
+        'flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-left text-sm transition-colors',
         'hover:bg-muted/80 text-muted-foreground',
-        isDragOver && 'bg-primary/15 ring-1 ring-primary/40',
+        isDragOver && 'bg-primary/15 ring-primary/40 ring-1',
       )}
     >
       <FolderUp className="h-4 w-4 shrink-0" />
@@ -234,10 +234,7 @@ export function FileBrowser() {
   // Build per-entry diagnostic counts from the diagnostics store.
   // Uses buildDiagnosticCountsMap for flexible absolute→relative path matching.
   const diagByFile = useDiagnosticsStore((s) => s.byFile);
-  const diagCountsLookup = useMemo(
-    () => buildDiagnosticCountsMap(diagByFile),
-    [diagByFile],
-  );
+  const diagCountsLookup = useMemo(() => buildDiagnosticCountsMap(diagByFile), [diagByFile]);
   const diagnosticCountsMap = useMemo(() => {
     const map = new Map<string, { errors: number; warnings: number }>();
     if (!files || Object.keys(diagCountsLookup).length === 0) return map;
@@ -309,17 +306,20 @@ export function FileBrowser() {
   const handleDownload = useCallback(async (node: FileNode) => {
     try {
       await downloadFile('', '', node.path, node.name);
-      toast.success(`Downloaded ${node.name}`);
+      successToast(`Downloaded ${node.name}`);
     } catch (err) {
-      toast.error(`Failed to download ${node.name}`);
+      errorToast(`Failed to download ${node.name}`);
     }
   }, []);
 
   // Directory download with progress toast
   const { downloadDir, isDownloading: isDirDownloading, downloadingPaths } = useDirectoryDownload();
-  const handleDownloadDirectory = useCallback((node: FileNode) => {
-    downloadDir(node.path, node.name);
-  }, [downloadDir]);
+  const handleDownloadDirectory = useCallback(
+    (node: FileNode) => {
+      downloadDir(node.path, node.name);
+    },
+    [downloadDir],
+  );
 
   // Rename a file/folder (called from inline input in FileTreeItem)
   const handleRename = useCallback(
@@ -331,9 +331,9 @@ export function FileBrowser() {
 
       try {
         await renameMutation.mutateAsync({ from: node.path, to: newPath });
-        toast.success(`Renamed to ${newName}`);
+        successToast(`Renamed to ${newName}`);
       } catch (err) {
-        toast.error(`Failed to rename: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        errorToast(`Failed to rename: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     },
     [renameMutation],
@@ -350,9 +350,9 @@ export function FileBrowser() {
     if (!deleteTarget) return;
     try {
       await deleteMutation.mutateAsync({ filePath: deleteTarget.path });
-      toast.success(`Deleted ${deleteTarget.name}`);
+      successToast(`Deleted ${deleteTarget.name}`);
     } catch (err) {
-      toast.error(`Failed to delete: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(`Failed to delete: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setDeleteTarget(null);
     }
@@ -373,9 +373,9 @@ export function FileBrowser() {
           file,
           targetPath: isRootPath ? undefined : currentPath,
         });
-        toast.success(`Uploaded ${file.name}`);
+        successToast(`Uploaded ${file.name}`);
       } catch (err) {
-        toast.error(`Upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        errorToast(`Upload failed: ${err instanceof Error ? err.message : 'Unknown error'}`);
       } finally {
         event.target.value = '';
       }
@@ -396,9 +396,11 @@ export function FileBrowser() {
 
     try {
       await mkdirMutation.mutateAsync({ dirPath: folderPath });
-      toast.success(`Created folder: ${newFolderName.trim()}`);
+      successToast(`Created folder: ${newFolderName.trim()}`);
     } catch (err) {
-      toast.error(`Failed to create folder: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(
+        `Failed to create folder: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      );
     } finally {
       setIsCreatingFolder(false);
       setNewFolderName('');
@@ -418,9 +420,9 @@ export function FileBrowser() {
 
     try {
       await createMutation.mutateAsync({ filePath });
-      toast.success(`Created file: ${newFileName.trim()}`);
+      successToast(`Created file: ${newFileName.trim()}`);
     } catch (err) {
-      toast.error(`Failed to create file: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(`Failed to create file: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setIsCreatingFile(false);
       setNewFileName('');
@@ -431,7 +433,7 @@ export function FileBrowser() {
   const handleCopy = useCallback(
     (node: FileNode) => {
       copyToClipboard(node.path, node.name, node.type);
-      toast.success(`Copied "${node.name}" to clipboard`);
+      successToast(`Copied "${node.name}" to clipboard`);
     },
     [copyToClipboard],
   );
@@ -439,7 +441,7 @@ export function FileBrowser() {
   const handleCut = useCallback(
     (node: FileNode) => {
       cutToClipboard(node.path, node.name, node.type);
-      toast.success(`Cut "${node.name}" to clipboard`);
+      successToast(`Cut "${node.name}" to clipboard`);
     },
     [cutToClipboard],
   );
@@ -454,9 +456,9 @@ export function FileBrowser() {
 
       try {
         await renameMutation.mutateAsync({ from: sourcePath, to: destPath });
-        toast.success(`Moved "${sourceName}" to ${targetDirPath.split('/').pop() || 'root'}`);
+        successToast(`Moved "${sourceName}" to ${targetDirPath.split('/').pop() || 'root'}`);
       } catch (err) {
-        toast.error(`Failed to move: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        errorToast(`Failed to move: ${err instanceof Error ? err.message : 'Unknown error'}`);
       }
     },
     [renameMutation],
@@ -490,7 +492,7 @@ export function FileBrowser() {
           const normalizedSourceDir = sourceDir === '' ? '.' : sourceDir;
           const normalizedDestDir = destDir === '' ? '.' : destDir;
           if (normalizedSourceDir === normalizedDestDir) {
-            toast.error('Item is already in this directory');
+            errorToast('Item is already in this directory');
             return;
           }
         }
@@ -506,7 +508,7 @@ export function FileBrowser() {
             sourcePath: clipboard.path,
             destPath,
           });
-          toast.success(`Copied "${clipboard.name}" here`);
+          successToast(`Copied "${clipboard.name}" here`);
         } else {
           // For directories, use rename to copy (mkdir + read+upload is complex)
           // We'll use the rename API but since it's a copy, we need a different approach.
@@ -514,19 +516,32 @@ export function FileBrowser() {
           // would require recursive read+upload, which the API doesn't natively support).
           // Best approach: create empty dir with same name for copy
           await mkdirMutation.mutateAsync({ dirPath: destPath });
-          toast.success(`Created copy of folder "${clipboard.name}" here (empty)`);
-          toast(tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line515CallToastNoteDirectoryContentsAreNotCopied'), { description: 'Copy individual files to move them.' });
+          successToast(`Created copy of folder "${clipboard.name}" here (empty)`);
+          infoToast(
+            tHardcodedUi.raw(
+              'featuresProjectFilesComponentsFileBrowser.line515CallToastNoteDirectoryContentsAreNotCopied',
+            ),
+            { description: 'Copy individual files to move them.' },
+          );
         }
       } else {
         // Cut = move via rename
         await renameMutation.mutateAsync({ from: clipboard.path, to: destPath });
-        toast.success(`Moved "${clipboard.name}" here`);
+        successToast(`Moved "${clipboard.name}" here`);
         clearClipboard();
       }
     } catch (err) {
-      toast.error(`Failed to paste: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(`Failed to paste: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, [clipboard, normalizedCurrentPath, files, copyMutation, renameMutation, mkdirMutation, clearClipboard]);
+  }, [
+    clipboard,
+    normalizedCurrentPath,
+    files,
+    copyMutation,
+    renameMutation,
+    mkdirMutation,
+    clearClipboard,
+  ]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -554,20 +569,38 @@ export function FileBrowser() {
   // Server not reachable
   if (!isHealthLoading && !health?.healthy) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
-        <ServerOff className="h-12 w-12 text-muted-foreground" />
+      <div className="flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+        <ServerOff className="text-muted-foreground h-12 w-12" />
         <div>
-          <h3 className="text-lg font-medium">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line557JsxTextServerNotReachable')}</h3>
-          <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line559JsxTextCouldNotConnectToTheOpencodeServerAt')}{' '}
-            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
-              {serverUrl}
-            </code>
+          <h3 className="text-lg font-medium">
+            {tHardcodedUi.raw(
+              'featuresProjectFilesComponentsFileBrowser.line557JsxTextServerNotReachable',
+            )}
+          </h3>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {tHardcodedUi.raw(
+              'featuresProjectFilesComponentsFileBrowser.line559JsxTextCouldNotConnectToTheOpencodeServerAt',
+            )}{' '}
+            <code className="bg-muted rounded px-1.5 py-0.5 text-xs">{serverUrl}</code>
           </p>
-          <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line565JsxTextMakeSure')}<code className="text-xs bg-muted px-1.5 py-0.5 rounded">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line565JsxTextOpencodeServe')}</code> or{' '}
-            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line566JsxTextOpencodeWeb')}</code>{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line566JsxTextIsRunning')}</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            {tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line565JsxTextMakeSure')}
+            <code className="bg-muted rounded px-1.5 py-0.5 text-xs">
+              {tHardcodedUi.raw(
+                'featuresProjectFilesComponentsFileBrowser.line565JsxTextOpencodeServe',
+              )}
+            </code>{' '}
+            or{' '}
+            <code className="bg-muted rounded px-1.5 py-0.5 text-xs">
+              {tHardcodedUi.raw(
+                'featuresProjectFilesComponentsFileBrowser.line566JsxTextOpencodeWeb',
+              )}
+            </code>
+            {tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line566JsxTextIsRunning')}
+          </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()}>
-          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
           Retry
         </Button>
       </div>
@@ -575,18 +608,20 @@ export function FileBrowser() {
   }
 
   return (
-    <div ref={containerRef} className="flex flex-col h-full relative">
+    <div ref={containerRef} className="relative flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between gap-2 px-4 py-3 border-b shrink-0">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b px-4 py-3">
         <FileBreadcrumbs />
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex shrink-0 items-center gap-1">
           <Button
             variant="ghost"
             size="icon"
             className="h-7 w-7"
             onClick={handleUpload}
             disabled={uploadMutation.isPending}
-            title={tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line589JsxAttrTitleUploadFile')}
+            title={tHardcodedUi.raw(
+              'featuresProjectFilesComponentsFileBrowser.line589JsxAttrTitleUploadFile',
+            )}
           >
             <Upload className="h-3.5 w-3.5" />
           </Button>
@@ -599,7 +634,9 @@ export function FileBrowser() {
               setNewFileName('untitled.txt');
             }}
             disabled={createMutation.isPending}
-            title={tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line602JsxAttrTitleNewFile')}
+            title={tHardcodedUi.raw(
+              'featuresProjectFilesComponentsFileBrowser.line602JsxAttrTitleNewFile',
+            )}
           >
             <FilePlus className="h-3.5 w-3.5" />
           </Button>
@@ -612,7 +649,9 @@ export function FileBrowser() {
               setNewFolderName('New Folder');
             }}
             disabled={mkdirMutation.isPending}
-            title={tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line615JsxAttrTitleNewFolder')}
+            title={tHardcodedUi.raw(
+              'featuresProjectFilesComponentsFileBrowser.line615JsxAttrTitleNewFolder',
+            )}
           >
             <FolderPlus className="h-3.5 w-3.5" />
           </Button>
@@ -620,7 +659,7 @@ export function FileBrowser() {
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 text-primary"
+              className="text-primary h-7 w-7"
               onClick={handlePaste}
               disabled={copyMutation.isPending || renameMutation.isPending}
               title={`Paste "${clipboard.name}" (${clipboard.operation})`}
@@ -633,7 +672,9 @@ export function FileBrowser() {
             size="icon"
             className="h-7 w-7"
             onClick={toggleSearch}
-            title={tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line636JsxAttrTitleSearchFilesCtrlP')}
+            title={tHardcodedUi.raw(
+              'featuresProjectFilesComponentsFileBrowser.line636JsxAttrTitleSearchFilesCtrlP',
+            )}
           >
             <Search className="h-3.5 w-3.5" />
           </Button>
@@ -651,12 +692,16 @@ export function FileBrowser() {
             size="icon"
             className="h-7 w-7"
             onClick={() => {
-              const dirName = isRootPath ? 'workspace' : (currentPath.split('/').filter(Boolean).pop() || 'directory');
+              const dirName = isRootPath
+                ? 'workspace'
+                : currentPath.split('/').filter(Boolean).pop() || 'directory';
               const dirPath = isRootPath ? '/workspace' : currentPath;
               downloadDir(dirPath, dirName);
             }}
             disabled={isDirDownloading(isRootPath ? '/workspace' : currentPath)}
-            title={tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line659JsxAttrTitleDownloadCurrentDirectoryAsZip')}
+            title={tHardcodedUi.raw(
+              'featuresProjectFilesComponentsFileBrowser.line659JsxAttrTitleDownloadCurrentDirectoryAsZip',
+            )}
           >
             {isDirDownloading(isRootPath ? '/workspace' : currentPath) ? (
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
@@ -668,12 +713,7 @@ export function FileBrowser() {
       </div>
 
       {/* Hidden file input for uploads */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        className="hidden"
-        onChange={handleFileInputChange}
-      />
+      <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileInputChange} />
 
       {/* Search overlay */}
       {isSearchOpen && <FileSearch />}
@@ -682,7 +722,7 @@ export function FileBrowser() {
       <div className="flex-1 overflow-y-auto">
         {/* Loading state */}
         {isLoading && (
-          <div className="p-3 space-y-1.5">
+          <div className="space-y-1.5 p-3">
             {Array.from({ length: 8 }).map((_, i) => (
               <Skeleton key={i} className="h-8 w-full rounded-lg" />
             ))}
@@ -691,9 +731,13 @@ export function FileBrowser() {
 
         {/* Error state */}
         {error && !isLoading && (
-          <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line696JsxTextFailedToLoadFiles')}</p>
-            <p className="text-xs text-muted-foreground max-w-sm">
+          <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+            <p className="text-muted-foreground text-sm">
+              {tHardcodedUi.raw(
+                'featuresProjectFilesComponentsFileBrowser.line696JsxTextFailedToLoadFiles',
+              )}
+            </p>
+            <p className="text-muted-foreground max-w-sm text-xs">
               {error instanceof Error ? error.message : 'Unknown error'}
             </p>
             <Button variant="outline" size="sm" onClick={() => refetch()}>
@@ -706,7 +750,7 @@ export function FileBrowser() {
         {!isLoading && !error && files && (
           <ContextMenu>
             <ContextMenuTrigger asChild>
-              <div className="p-1.5 min-h-full">
+              <div className="min-h-full p-1.5">
                 {/* Go up — also a drop target for moving items to parent */}
                 {!isRootPath && (
                   <ParentDropTarget
@@ -720,7 +764,7 @@ export function FileBrowser() {
                 {isCreatingFolder && (
                   <div className="flex flex-col gap-0.5 px-3 py-1.5">
                     <div className="flex items-center gap-2">
-                      <FolderPlus className="h-4 w-4 text-blue-400 shrink-0" />
+                      <FolderPlus className="h-4 w-4 shrink-0 text-blue-400" />
                       <input
                         type="text"
                         ref={folderInputRef}
@@ -741,13 +785,17 @@ export function FileBrowser() {
                           }
                         }}
                         className={cn(
-                          'flex-1 h-7 text-sm bg-card border rounded-2xl px-3 outline-none focus:ring-2 focus:ring-primary/50 selection:bg-primary/15 selection:text-foreground',
+                          'bg-card focus:ring-primary/50 selection:bg-primary/15 selection:text-foreground h-7 flex-1 rounded-2xl border px-3 text-sm outline-none focus:ring-2',
                           folderNameExists && 'border-destructive focus:ring-destructive/30',
                         )}
                       />
                     </div>
                     {folderNameExists && (
-                      <p className="text-xs text-destructive pl-6">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line753JsxTextAFileOrFolderWithThatNameAlready')}</p>
+                      <p className="text-destructive pl-6 text-xs">
+                        {tHardcodedUi.raw(
+                          'featuresProjectFilesComponentsFileBrowser.line753JsxTextAFileOrFolderWithThatNameAlready',
+                        )}
+                      </p>
                     )}
                   </div>
                 )}
@@ -756,7 +804,7 @@ export function FileBrowser() {
                 {isCreatingFile && (
                   <div className="flex flex-col gap-0.5 px-3 py-1.5">
                     <div className="flex items-center gap-2">
-                      <FilePlus className="h-4 w-4 text-green-400 shrink-0" />
+                      <FilePlus className="h-4 w-4 shrink-0 text-green-400" />
                       <input
                         type="text"
                         ref={fileCreateInputRef}
@@ -777,13 +825,17 @@ export function FileBrowser() {
                           }
                         }}
                         className={cn(
-                          'flex-1 h-7 text-sm bg-card border rounded-2xl px-3 outline-none focus:ring-2 focus:ring-primary/50 selection:bg-primary/15 selection:text-foreground',
+                          'bg-card focus:ring-primary/50 selection:bg-primary/15 selection:text-foreground h-7 flex-1 rounded-2xl border px-3 text-sm outline-none focus:ring-2',
                           fileNameExists && 'border-destructive focus:ring-destructive/30',
                         )}
                       />
                     </div>
                     {fileNameExists && (
-                      <p className="text-xs text-destructive pl-6">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line791JsxTextAFileOrFolderWithThatNameAlready')}</p>
+                      <p className="text-destructive pl-6 text-xs">
+                        {tHardcodedUi.raw(
+                          'featuresProjectFilesComponentsFileBrowser.line791JsxTextAFileOrFolderWithThatNameAlready',
+                        )}
+                      </p>
                     )}
                   </div>
                 )}
@@ -831,7 +883,11 @@ export function FileBrowser() {
                 {/* Empty directory */}
                 {files.length === 0 && !isCreatingFolder && !isCreatingFile && (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line841JsxTextEmptyDirectory')}</p>
+                    <p className="text-muted-foreground text-sm">
+                      {tHardcodedUi.raw(
+                        'featuresProjectFilesComponentsFileBrowser.line841JsxTextEmptyDirectory',
+                      )}
+                    </p>
                   </div>
                 )}
               </div>
@@ -846,7 +902,11 @@ export function FileBrowser() {
                 }}
                 disabled={createMutation.isPending}
               >
-                <FilePlus className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line858JsxTextNewFile')}</ContextMenuItem>
+                <FilePlus className="mr-2 h-4 w-4" />
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsFileBrowser.line858JsxTextNewFile',
+                )}
+              </ContextMenuItem>
               <ContextMenuItem
                 onClick={() => {
                   setTimeout(() => {
@@ -856,13 +916,18 @@ export function FileBrowser() {
                 }}
                 disabled={mkdirMutation.isPending}
               >
-                <FolderPlus className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line870JsxTextNewFolder')}</ContextMenuItem>
+                <FolderPlus className="mr-2 h-4 w-4" />
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsFileBrowser.line870JsxTextNewFolder',
+                )}
+              </ContextMenuItem>
               <ContextMenuSeparator />
-              <ContextMenuItem
-                onClick={handleUpload}
-                disabled={uploadMutation.isPending}
-              >
-                <Upload className="mr-2 h-4 w-4" />{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line878JsxTextUploadFile')}</ContextMenuItem>
+              <ContextMenuItem onClick={handleUpload} disabled={uploadMutation.isPending}>
+                <Upload className="mr-2 h-4 w-4" />
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsFileBrowser.line878JsxTextUploadFile',
+                )}
+              </ContextMenuItem>
               {clipboard && (
                 <>
                   <ContextMenuSeparator />
@@ -872,7 +937,7 @@ export function FileBrowser() {
                   >
                     <Clipboard className="mr-2 h-4 w-4" />
                     Paste{' '}
-                    <span className="ml-auto text-xs text-muted-foreground">
+                    <span className="text-muted-foreground ml-auto text-xs">
                       {clipboard.operation === 'cut' ? 'Move' : 'Copy'}
                     </span>
                   </ContextMenuItem>
@@ -890,14 +955,14 @@ export function FileBrowser() {
 
       {/* Clipboard indicator bar */}
       {clipboard && (
-        <div className="flex items-center justify-between gap-2 px-3 py-1.5 border-t bg-muted/30 text-xs text-muted-foreground shrink-0">
+        <div className="bg-muted/30 text-muted-foreground flex shrink-0 items-center justify-between gap-2 border-t px-3 py-1.5 text-xs">
           <span className="truncate">
             {clipboard.operation === 'cut' ? 'Moving' : 'Copying'}:{' '}
-            <span className="font-medium text-foreground">{clipboard.name}</span>
+            <span className="text-foreground font-medium">{clipboard.name}</span>
           </span>
           <button
             onClick={clearClipboard}
-            className="text-muted-foreground hover:text-foreground transition-colors shrink-0 cursor-pointer"
+            className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer transition-colors"
           >
             Cancel
           </button>
@@ -917,13 +982,24 @@ export function FileBrowser() {
             <AlertDialogTitle>
               Delete {deleteTarget?.type === 'directory' ? 'folder' : 'file'}
             </AlertDialogTitle>
-            <AlertDialogDescription>{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line935JsxTextAreYouSureYouWantToDelete')}{' '}
-              <span className="font-semibold text-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line937JsxTextQuot')}{deleteTarget?.name}{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line937JsxTextQuot6e940e76')}</span>{tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line939JsxTextThisActionCannotBeUndone')}</AlertDialogDescription>
+            <AlertDialogDescription>
+              {tHardcodedUi.raw(
+                'featuresProjectFilesComponentsFileBrowser.line935JsxTextAreYouSureYouWantToDelete',
+              )}{' '}
+              <span className="text-foreground font-semibold">
+                {tHardcodedUi.raw('featuresProjectFilesComponentsFileBrowser.line937JsxTextQuot')}
+                {deleteTarget?.name}
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsFileBrowser.line937JsxTextQuot6e940e76',
+                )}
+              </span>
+              {tHardcodedUi.raw(
+                'featuresProjectFilesComponentsFileBrowser.line939JsxTextThisActionCannotBeUndone',
+              )}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={deleteMutation.isPending}>
-              Cancel
-            </AlertDialogCancel>
+            <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               ref={deleteButtonRef}
               onClick={(e) => {
@@ -931,7 +1007,7 @@ export function FileBrowser() {
                 confirmDelete();
               }}
               disabled={deleteMutation.isPending}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive hover:bg-destructive/90 text-white"
             >
               {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>

@@ -17,68 +17,56 @@
  * ============================================================================
  */
 
+import { Icon } from '@/features/icon/icon';
+import {
+  CogOneSolid,
+  CreditCardSolid,
+  Icon as IconMynauiType,
+  UsersSolid,
+} from '@mynaui/icons-react';
 import type { LucideIcon } from 'lucide-react';
 import {
-  // Navigation
-  LayoutDashboard,
-  Blocks,
-  FolderOpen,
-  Calendar,
-  ScrollText,
-  Brain,
-  Cable,
-  Globe,
-  Compass,
   Activity,
-  Rocket,
+  Blocks,
+  Bot,
+  Cable,
+  Calendar,
   Coins,
-  LayoutTemplate,
+  Compass,
   // Projects / app navigation (new project shell)
   FolderGit2,
-  MessagesSquare,
-  SlidersHorizontal,
-  Webhook,
-  Hash,
-
-  // Actions
-  Plus,
-  TerminalSquare,
-  Layers,
+  FolderOpen,
   GitCompareArrows,
-  Search,
-  RefreshCw,
-
+  Globe,
+  Hash,
+  Key,
+  Keyboard,
   // Settings pages
   KeyRound,
-  Plug,
-  Settings as SettingsIcon,
-  Key,
-  Bot,
-
+  Layers,
+  // Navigation
+  LayoutDashboard,
+  LayoutTemplate,
+  LogOut,
+  MessagesSquare,
   // Preferences
   Palette,
-  Volume2,
-  Keyboard,
-
-  // Account
-  Zap,
-  CreditCard,
-  Receipt,
-  Users,
-
-  // Theme
-  Sun,
-  Moon,
-  Monitor,
-
   // View / Misc
   PanelLeftClose,
-  PanelLeftIcon,
-  LogOut,
-
-  // Role-gated
-  BarChart3,
+  Plug,
+  // Actions
+  Plus,
+  Receipt,
+  RefreshCw,
+  Rocket,
+  ScrollText,
+  Search,
+  SlidersHorizontal,
+  TerminalSquare,
+  Volume2,
+  Webhook,
 } from 'lucide-react';
+import { IconType } from 'react-icons/lib';
 
 const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED === 'true';
 
@@ -87,11 +75,7 @@ const DEPLOYMENTS_ENABLED = process.env.NEXT_PUBLIC_KORTIX_DEPLOYMENTS_ENABLED =
 // ============================================================================
 
 /** Where a menu item should be rendered. */
-export type MenuSurface =
-  | 'commandPalette'
-  | 'rightSidebar'
-  | 'leftSidebar'
-  | 'userMenu';
+export type MenuSurface = 'commandPalette' | 'rightSidebar' | 'leftSidebar' | 'userMenu';
 
 /**
  * How the item behaves when activated.
@@ -102,12 +86,7 @@ export type MenuSurface =
  * - 'theme':    Switches the app theme
  * - 'sandboxService': Opens a sandbox service preview tab (needs special handler)
  */
-export type MenuItemKind =
-  | 'navigate'
-  | 'action'
-  | 'settings'
-  | 'theme'
-  | 'sandboxService';
+export type MenuItemKind = 'navigate' | 'action' | 'settings' | 'theme' | 'sandboxService';
 
 export type SettingsTabId =
   | 'general'
@@ -139,10 +118,7 @@ export type MenuGroup =
  * Used by the right sidebar to add separators between logical sections
  * without changing the overall group structure.
  */
-export type NavSubGroup =
-  | 'tools'
-  | 'services'
-  | 'security';
+export type NavSubGroup = 'tools' | 'services' | 'security';
 
 /** Human-readable labels for sub-groups (used in expanded sidebar) */
 export const navSubGroupLabels: Record<NavSubGroup, string> = {
@@ -157,7 +133,7 @@ export interface MenuItemDef {
   /** Display label */
   label: string;
   /** Lucide icon component */
-  icon: LucideIcon;
+  icon: LucideIcon | IconMynauiType | IconType;
   /** Which group/section this belongs to */
   group: MenuGroup;
   /** Which UI surfaces should render this item */
@@ -305,7 +281,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'nav-accounts',
     label: 'Accounts',
-    icon: Users,
+    icon: UsersSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
@@ -412,12 +388,13 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/projects/{projectId}/customize/connectors?tab=policies',
     requiresProject: true,
-    keywords: 'policies approval block require_approval rules tools executor guardrails project customize',
+    keywords:
+      'policies approval block require_approval rules tools executor guardrails project customize',
   },
   {
     id: 'proj-members',
     label: 'Customize · Members',
-    icon: Users,
+    icon: UsersSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
@@ -461,7 +438,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'proj-settings',
     label: 'Project settings',
-    icon: SettingsIcon,
+    icon: CogOneSolid,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
@@ -586,16 +563,18 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/tunnel',
   },
   ...(DEPLOYMENTS_ENABLED
-    ? [{
-      id: 'deployments',
-      label: 'Deployments',
-      icon: Rocket,
-      group: 'navigation' as const,
-      subGroup: 'services' as const,
-      showIn: ['commandPalette', 'rightSidebar'] as MenuSurface[],
-      kind: 'navigate' as const,
-      href: '/deployments',
-    }]
+    ? [
+        {
+          id: 'deployments',
+          label: 'Deployments',
+          icon: Rocket,
+          group: 'navigation' as const,
+          subGroup: 'services' as const,
+          showIn: ['commandPalette', 'rightSidebar'] as MenuSurface[],
+          kind: 'navigate' as const,
+          href: '/deployments',
+        },
+      ]
     : []),
   {
     id: 'running-services',
@@ -636,7 +615,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'desktop',
     label: 'Desktop',
-    icon: Monitor,
+    icon: Icon.Monitor,
     group: 'navigation',
     subGroup: 'services',
     showIn: ['rightSidebar'],
@@ -674,7 +653,8 @@ export const menuRegistry: MenuItemDef[] = [
     href: '/service-manager',
     tabId: 'service-manager',
     tabType: 'services',
-    keywords: 'service manager services orchestration process manager sandbox active restart reload',
+    keywords:
+      'service manager services orchestration process manager sandbox active restart reload',
   },
   {
     id: 'agent-browser-cmd',
@@ -703,7 +683,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'desktop-cmd',
     label: 'Desktop',
-    icon: Monitor,
+    icon: Icon.Monitor,
     group: 'navigation',
     showIn: ['commandPalette'],
     kind: 'navigate',
@@ -759,7 +739,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'api-keys',
     label: 'API Keys',
-    icon: SettingsIcon,
+    icon: CogOneSolid,
     group: 'settingsPages',
     showIn: ['commandPalette'],
     kind: 'navigate',
@@ -782,7 +762,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'pref-general',
     label: 'General',
-    icon: SettingsIcon,
+    icon: CogOneSolid,
     group: 'preferences',
     showIn: ['commandPalette', 'userMenu'],
     kind: 'settings',
@@ -827,12 +807,13 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'account-billing',
     label: 'Billing',
-    icon: CreditCard,
+    icon: CreditCardSolid,
     group: 'account',
     showIn: ['commandPalette', 'userMenu'],
     kind: 'settings',
     settingsTab: 'billing',
-    keywords: 'billing payment credit card subscription manage wallet tier plan limits overview spend usage',
+    keywords:
+      'billing payment credit card subscription manage wallet tier plan limits overview spend usage',
     requiresBilling: true,
   },
   {
@@ -848,7 +829,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'account-referrals',
     label: 'Referrals',
-    icon: Users,
+    icon: UsersSolid,
     group: 'account',
     showIn: ['commandPalette'],
     kind: 'settings',
@@ -873,7 +854,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'theme-light',
     label: 'Light Theme',
-    icon: Sun,
+    icon: Icon.Sun,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',
@@ -883,7 +864,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'theme-dark',
     label: 'Dark Theme',
-    icon: Moon,
+    icon: Icon.Moon,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',
@@ -893,7 +874,7 @@ export const menuRegistry: MenuItemDef[] = [
   {
     id: 'theme-system',
     label: 'System Theme',
-    icon: Monitor,
+    icon: Icon.Monitor,
     group: 'theme',
     showIn: ['commandPalette'],
     kind: 'theme',
@@ -924,7 +905,6 @@ export const menuRegistry: MenuItemDef[] = [
     actionId: 'logout',
     keywords: 'log out sign out logout signout disconnect',
   },
-
 ];
 
 // ============================================================================
@@ -935,15 +915,8 @@ export function getItemsForSurface(surface: MenuSurface): MenuItemDef[] {
   return menuRegistry.filter((item) => item.showIn.includes(surface));
 }
 
-export function getItemsByGroup(
-  surface: MenuSurface,
-  group: MenuGroup,
-): MenuItemDef[] {
-  return menuRegistry.filter(
-    (item) =>
-      item.showIn.includes(surface) &&
-      item.group === group,
-  );
+export function getItemsByGroup(surface: MenuSurface, group: MenuGroup): MenuItemDef[] {
+  return menuRegistry.filter((item) => item.showIn.includes(surface) && item.group === group);
 }
 
 export function getItemById(id: string): MenuItemDef | undefined {
@@ -957,10 +930,7 @@ export function getItemById(id: string): MenuItemDef | undefined {
  * The cluster order follows the first appearance of each subGroup.
  * Items without a subGroup are placed in a leading "ungrouped" cluster.
  */
-export function getNavItemsClustered(
-  surface: MenuSurface,
-  group: MenuGroup,
-): MenuItemDef[][] {
+export function getNavItemsClustered(surface: MenuSurface, group: MenuGroup): MenuItemDef[][] {
   const items = getItemsByGroup(surface, group);
   const clusterMap = new Map<string, MenuItemDef[]>();
   const order: string[] = [];
@@ -996,19 +966,17 @@ export function isItemActive(item: MenuItemDef, pathname: string | null): boolea
 export interface SettingsTab {
   id: SettingsTabId;
   label: string;
-  icon: LucideIcon;
+  icon: LucideIcon | IconMynauiType | IconType;
 }
 
 /** Preference tabs for the settings modal */
 export function getPreferenceTabs(): SettingsTab[] {
   const preferenceIds: SettingsTabId[] = ['general', 'appearance', 'sounds', 'shortcuts'];
   return preferenceIds.map((tabId) => {
-    const item = menuRegistry.find(
-      (i) => i.kind === 'settings' && i.settingsTab === tabId,
-    );
+    const item = menuRegistry.find((i) => i.kind === 'settings' && i.settingsTab === tabId);
     if (!item) {
       // Fallback — should not happen if registry is complete
-      return { id: tabId, label: tabId, icon: SettingsIcon };
+      return { id: tabId, label: tabId, icon: CogOneSolid };
     }
     return { id: tabId, label: item.label, icon: item.icon };
   });
@@ -1021,15 +989,13 @@ export function getPreferenceTabs(): SettingsTab[] {
  * on `/instances` list or account-level pages.
  */
 export function getInstanceTabs(): SettingsTab[] {
-  return [
-    { id: 'instance-members', label: 'Team', icon: Users },
-  ];
+  return [{ id: 'instance-members', label: 'Team', icon: UsersSolid }];
 }
 
 /** Account tabs for the settings modal */
 export function getAccountTabs(billingEnabled: boolean): SettingsTab[] {
   const items: SettingsTab[] = [
-    { id: 'billing', label: 'Billing', icon: CreditCard },
+    { id: 'billing', label: 'Billing', icon: CreditCardSolid },
     { id: 'transactions', label: 'Credits ledger', icon: Receipt },
     { id: 'tokens', label: 'CLI tokens', icon: KeyRound },
   ];
@@ -1039,9 +1005,7 @@ export function getAccountTabs(billingEnabled: boolean): SettingsTab[] {
   // }
   // Enrich labels/icons from registry where possible
   return items.map((tab) => {
-    const item = menuRegistry.find(
-      (i) => i.settingsTab === tab.id,
-    );
+    const item = menuRegistry.find((i) => i.settingsTab === tab.id);
     if (item) {
       return { ...tab, label: item.label, icon: item.icon };
     }

@@ -1,11 +1,11 @@
 'use client';
 
-import React, { createContext, useContext, useMemo, useRef, useState, useCallback, useEffect } from 'react';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth } from '@/features/providers/auth-provider';
+import React, { createContext, useContext, useMemo } from 'react';
 
 /**
  * Novu Inbox Context
- * 
+ *
  * This provider ensures the Novu session is only initialized ONCE
  * and prevents the excessive /v1/inbox/session API calls that happen
  * when the Inbox component re-mounts on every parent re-render.
@@ -35,7 +35,7 @@ interface NovuInboxProviderProps {
 export function NovuInboxProvider({ children }: NovuInboxProviderProps) {
   const { user } = useAuth();
   const applicationIdentifier = process.env.NEXT_PUBLIC_NOVU_APP_IDENTIFIER || null;
-  
+
   // Generate a stable session key that only changes when user changes
   // This prevents unnecessary re-initialization of the Inbox component
   const sessionKey = useMemo(() => {
@@ -45,18 +45,17 @@ export function NovuInboxProvider({ children }: NovuInboxProviderProps) {
 
   const isReady = Boolean(user?.id && applicationIdentifier);
 
-  const value = useMemo<NovuInboxContextValue>(() => ({
-    applicationIdentifier,
-    subscriberId: user?.id || null,
-    isReady,
-    sessionKey,
-  }), [applicationIdentifier, user?.id, isReady, sessionKey]);
-
-  return (
-    <NovuInboxContext.Provider value={value}>
-      {children}
-    </NovuInboxContext.Provider>
+  const value = useMemo<NovuInboxContextValue>(
+    () => ({
+      applicationIdentifier,
+      subscriberId: user?.id || null,
+      isReady,
+      sessionKey,
+    }),
+    [applicationIdentifier, user?.id, isReady, sessionKey],
   );
+
+  return <NovuInboxContext.Provider value={value}>{children}</NovuInboxContext.Provider>;
 }
 
 /**
@@ -64,18 +63,20 @@ export function NovuInboxProvider({ children }: NovuInboxProviderProps) {
  * This ensures the appearance object reference doesn't change on every render
  */
 export function useNovuAppearance() {
-  return useMemo(() => ({
-    variables: {
-      colorBackground: 'var(--card)',
-      borderRadius: '8px',
-      colorForeground: 'var(--foreground)',
-      colorPrimary: 'var(--primary)',
-      colorSecondary: 'var(--secondary)',
-      colorDestructive: 'var(--destructive)',
-      colorMuted: 'var(--muted)',
-      colorAccent: 'var(--accent)',
-      colorPopover: 'var(--popover)',
-    },
-  }), []);
+  return useMemo(
+    () => ({
+      variables: {
+        colorBackground: 'var(--card)',
+        borderRadius: '8px',
+        colorForeground: 'var(--foreground)',
+        colorPrimary: 'var(--primary)',
+        colorSecondary: 'var(--secondary)',
+        colorDestructive: 'var(--destructive)',
+        colorMuted: 'var(--muted)',
+        colorAccent: 'var(--accent)',
+        colorPopover: 'var(--popover)',
+      },
+    }),
+    [],
+  );
 }
-

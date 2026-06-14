@@ -1,18 +1,18 @@
 'use client';
 
-import { Suspense, lazy, useCallback, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { AnimatePresence, motion } from 'motion/react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { AnimatePresence, motion } from 'motion/react';
+import { useRouter } from 'next/navigation';
+import { Suspense, lazy, useCallback, useEffect } from 'react';
 
-import { useAuth } from '@/components/AuthProvider';
-import { AppProviders } from '@/components/layout/app-providers';
 import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { CustomizeOverlay } from '@/components/projects/customize/customize-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { ProjectSidebar } from '@/components/projects/project-sidebar';
 import { ProjectMobileMenuBar, ProjectTabBar } from '@/components/projects/project-tab-bar';
+import { AppProviders } from '@/features/layout/app-providers';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
 import { createProjectSession, getProjectDetail } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
@@ -40,11 +40,7 @@ interface ProjectShellProps {
  * It reuses the shared sidebar frame but disables legacy dashboard globals
  * like the old instance modal and dashboard command palette.
  */
-export function ProjectShell({
-  projectId,
-  initialSidebarOpen,
-  children,
-}: ProjectShellProps) {
+export function ProjectShell({ projectId, initialSidebarOpen, children }: ProjectShellProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
@@ -71,7 +67,10 @@ export function ProjectShell({
   // connection in the background while the user is reading the home page.
   useEffect(() => {
     try {
-      const backend = (process.env.NEXT_PUBLIC_BACKEND_URL || window.location.origin).replace(/\/v1\/?$/, '');
+      const backend = (process.env.NEXT_PUBLIC_BACKEND_URL || window.location.origin).replace(
+        /\/v1\/?$/,
+        '',
+      );
       const origin = new URL(backend).origin;
       const existing = document.querySelector(`link[rel="preconnect"][href="${origin}"]`);
       if (existing) return;
@@ -80,8 +79,12 @@ export function ProjectShell({
       link.href = origin;
       link.crossOrigin = '';
       document.head.appendChild(link);
-      return () => { link.remove(); };
-    } catch { /* preconnect is best-effort */ }
+      return () => {
+        link.remove();
+      };
+    } catch {
+      /* preconnect is best-effort */
+    }
   }, []);
 
   // Single canonical "new session" path used by both the sidebar button and
@@ -106,114 +109,116 @@ export function ProjectShell({
   useProjectShellShortcuts({ projectId, onNewSession: handleNewSession });
 
   const isSwitchingProject = useIsSwitchingProject();
-  const disableTabSelector = useUserPreferencesStore((s) => s.preferences.disableTabSelector ?? false);
+  const disableTabSelector = useUserPreferencesStore(
+    (s) => s.preferences.disableTabSelector ?? false,
+  );
 
   // Quiet, chrome-free render until auth resolves — no Kortix logo flash,
   // no progress bar. If unauthenticated, the effect above redirects to /auth.
   if (authLoading || !user) {
-    return <div className="min-h-screen bg-background" />;
+    return <div className="bg-background min-h-screen" />;
   }
 
   return (
     <BillingAccountProvider accountId={projectDetail?.project?.account_id ?? null}>
-    <AppProviders
-      showSidebar
-      showRightSidebar={false}
-      showGlobalNewInstanceModal={false}
-      showGlobalUserSettingsModal={false}
-      defaultSidebarOpen={initialSidebarOpen}
-      sidebarContent={<ProjectSidebar projectId={projectId} />}
-    >
-      <div className="relative flex-1 min-h-0 flex flex-col overflow-hidden">
-        <Suspense fallback={null}>
-          <CommandPalette />
-        </Suspense>
+      <AppProviders
+        showSidebar
+        showRightSidebar={false}
+        showGlobalNewInstanceModal={false}
+        showGlobalUserSettingsModal={false}
+        defaultSidebarOpen={initialSidebarOpen}
+        sidebarContent={<ProjectSidebar projectId={projectId} />}
+      >
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <Suspense fallback={null}>
+            <CommandPalette />
+          </Suspense>
 
-        {/* Top progress hairline — shown while a project switch is in
+          {/* Top progress hairline — shown while a project switch is in
             flight. Pinned over both the tab bar and the rounded content,
             so it reads as "the whole shell is loading", not just one panel. */}
-        <AnimatePresence>
-          {isSwitchingProject && (
-            <motion.div
-              key="project-switch-progress"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15 }}
-              className="absolute top-0 left-0 right-0 z-50 pointer-events-none h-[2px] bg-foreground/[0.04] overflow-hidden"
-            >
-              <div className="h-full w-1/3 bg-foreground/60 animate-connect-progress" />
-            </motion.div>
-          )}
-        </AnimatePresence>
+          <AnimatePresence>
+            {isSwitchingProject && (
+              <motion.div
+                key="project-switch-progress"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15 }}
+                className="bg-foreground/[0.04] pointer-events-none absolute top-0 right-0 left-0 z-50 h-[2px] overflow-hidden"
+              >
+                <div className="bg-foreground/60 animate-connect-progress h-full w-1/3" />
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-        {/* Project tab bar — mirrors the dashboard's entrance animation
+          {/* Project tab bar — mirrors the dashboard's entrance animation
             (see dashboard/layout-content.tsx lines 1062–1075). When tabs
             are disabled we still leave a small sidebar-colored strip so the
             rounded panel "floats" instead of bleeding to the top edge. */}
-        <AnimatePresence initial={false}>
-          {!disableTabSelector && (
-            <motion.div
-              key="project-tab-bar"
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
-              transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-              className="overflow-hidden"
-            >
-              <ProjectTabBar projectId={projectId} />
-            </motion.div>
-          )}
-        </AnimatePresence>
-        {disableTabSelector && (
-          <>
-            {/* Mobile keeps a slim bar (with the menu button + notch inset) so
+          <AnimatePresence initial={false}>
+            {!disableTabSelector && (
+              <motion.div
+                key="project-tab-bar"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+                className="overflow-hidden"
+              >
+                <ProjectTabBar projectId={projectId} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+          {disableTabSelector && (
+            <>
+              {/* Mobile keeps a slim bar (with the menu button + notch inset) so
                 the sidebar drawer stays reachable even with tabs disabled.
                 Desktop shows the thin floating strip so the rounded panel
                 doesn't bleed to the top edge. */}
-            <ProjectMobileMenuBar />
-            <div className="hidden md:block flex-shrink-0 bg-sidebar h-3" />
-          </>
-        )}
-
-        <div
-          className={cn(
-            // White panel fill so every state (error, loading, active chat)
-            // reads as the content card — not the gray sidebar showing through.
-            'flex-1 min-h-0 flex flex-col overflow-hidden relative bg-background',
-            // Floats off the top (strip above) and the right (sidebar-colored
-            // gap), but stays anchored to the bottom edge — no bottom border,
-            // bottom corners square. Left stays flush with the sidebar rail.
-            'md:border md:border-b-0 md:border-border/50 md:rounded-t-xl md:mr-3',
+              <ProjectMobileMenuBar />
+              <div className="bg-sidebar hidden h-3 flex-shrink-0 md:block" />
+            </>
           )}
-        >
-          {/* Session-internal layout (chat + actions/browser side panel) is
+
+          <div
+            className={cn(
+              // White panel fill so every state (error, loading, active chat)
+              // reads as the content card — not the gray sidebar showing through.
+              'bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden',
+              // Floats off the top (strip above) and the right (sidebar-colored
+              // gap), but stays anchored to the bottom edge — no bottom border,
+              // bottom corners square. Left stays flush with the sidebar rail.
+              'md:border-border/50 md:mr-3 md:rounded-t-xl md:border md:border-b-0',
+            )}
+          >
+            {/* Session-internal layout (chat + actions/browser side panel) is
               owned by `apps/web/src/components/session/session-layout.tsx`.
               The project shell just hosts the chrome. */}
-          {children}
+            {children}
+          </div>
         </div>
-      </div>
 
-      {/* Customize — a full-screen overlay floating over the active page, so
+        {/* Customize — a full-screen overlay floating over the active page, so
           opening config never swaps the content area or spawns a tab. */}
-      <CustomizeOverlay projectId={projectId} />
+        <CustomizeOverlay projectId={projectId} />
 
-      {/* Apps — sibling overlay for the experimental [[apps]] deploy surface.
+        {/* Apps — sibling overlay for the experimental [[apps]] deploy surface.
           Self-gates on the per-project apps toggle (the store only opens when
           the sidebar's gated Apps button fires), so mounting it here is inert
           when apps is disabled for the project. */}
-      <AppsOverlay projectId={projectId} />
+        <AppsOverlay projectId={projectId} />
 
-      {/* Guided onboarding wizard — auto-opens for new projects, fades out
+        {/* Guided onboarding wizard — auto-opens for new projects, fades out
           when customize is on top, dismissed forever once user clicks Skip. */}
-      <ProjectOnboardingWizard projectId={projectId} />
+        <ProjectOnboardingWizard projectId={projectId} />
 
-      {/* CEO-concierge welcome — dismissible floating widget; localStorage
+        {/* CEO-concierge welcome — dismissible floating widget; localStorage
           dismiss is global so it never re-appears once closed. Hides while
           this project's onboarding wizard is still pending so the user only
           sees one CTA at a time. */}
-      <PersonalOnboardingWelcome projectId={projectId} />
-    </AppProviders>
+        <PersonalOnboardingWelcome projectId={projectId} />
+      </AppProviders>
     </BillingAccountProvider>
   );
 }

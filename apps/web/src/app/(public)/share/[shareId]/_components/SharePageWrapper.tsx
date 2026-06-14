@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useEffect, useState, Suspense, lazy } from 'react';
-import { useParams } from 'next/navigation';
+import { AppProviders } from '@/features/layout/app-providers';
 import { createClient } from '@/lib/supabase/client';
-import { AppProviders } from '@/components/layout/app-providers';
+import { useParams } from 'next/navigation';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { MobileAppBanner } from './MobileAppBanner';
 
 const PresentationViewerWrapper = lazy(() =>
-  import('@/stores/presentation-viewer-store').then(mod => ({ default: mod.PresentationViewerWrapper }))
+  import('@/stores/presentation-viewer-store').then((mod) => ({
+    default: mod.PresentationViewerWrapper,
+  })),
 );
 
 export function SharePageWrapper({ children }: { children: React.ReactNode }) {
@@ -20,7 +22,9 @@ export function SharePageWrapper({ children }: { children: React.ReactNode }) {
     const checkAuth = async () => {
       try {
         const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         setIsLoggedIn(!!session);
       } catch {
         setIsLoggedIn(false);

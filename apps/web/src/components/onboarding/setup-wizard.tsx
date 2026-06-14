@@ -13,48 +13,48 @@ import { useTranslations } from 'next-intl';
  * - Get Started — launches the onboarding chat session
  */
 
-import { useState, useMemo, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { motion, AnimatePresence } from 'motion/react';
+import { AutoTopupCard } from '@/components/billing/auto-topup-card';
+import type { FlatModel } from '@/components/session/session-chat-input';
+import { flattenModels } from '@/components/session/session-chat-input';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { KortixLoader } from '@/components/ui/kortix-loader';
+import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import { useModelStore } from '@/hooks/opencode/use-model-store';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { backendApi } from '@/lib/api-client';
+import { authenticatedFetch } from '@/lib/auth-token';
+import { isBillingEnabled } from '@/lib/config';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { useProviderModalStore } from '@/stores/provider-modal-store';
+import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import {
-  Settings2,
+  ArrowLeft,
+  BookOpen,
+  Bot,
   Check,
-  Sparkles,
-  Search,
+  ChevronRight,
+  CreditCard,
+  ExternalLink,
   Flame,
   Image as ImageIcon,
-  Mic,
-  BookOpen,
-  ExternalLink,
+  Key,
   Loader2,
-  ChevronRight,
-  ArrowLeft,
-  Zap,
   MessageSquare,
+  Mic,
+  Search,
+  Settings2,
+  Sparkles,
   Wrench,
   X,
-  Bot,
-  CreditCard,
-  Key,
+  Zap,
 } from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
-import { ProviderLogo, PROVIDER_LABELS } from '@/components/providers/provider-branding';
-import { flattenModels } from '@/components/session/session-chat-input';
-import type { FlatModel } from '@/components/session/session-chat-input';
-import { useModelStore } from '@/hooks/opencode/use-model-store';
-import { getActiveOpenCodeUrl } from '@/stores/server-store';
-import { authenticatedFetch } from '@/lib/auth-token';
-import { toast } from '@/lib/toast';
+import { AnimatePresence, motion } from 'motion/react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { saveToolKeys } from './save-tool-keys';
-import { isBillingEnabled } from '@/lib/config';
-import { cn } from '@/lib/utils';
-import { backendApi } from '@/lib/api-client';
-import { AutoTopupCard } from '@/components/billing/auto-topup-card';
 
 // ─── Step definitions ───────────────────────────────────────────────────────
 
@@ -73,15 +73,15 @@ function StepIndicator({ current, steps }: { current: number; steps: StepDef[] }
             className={cn(
               'rounded-full transition-colors duration-300',
               i === current
-                ? 'w-6 h-1.5 bg-foreground'
+                ? 'bg-foreground h-1.5 w-6'
                 : i < current
-                  ? 'w-1.5 h-1.5 bg-foreground/40'
-                  : 'w-1.5 h-1.5 bg-foreground/15',
+                  ? 'bg-foreground/40 h-1.5 w-1.5'
+                  : 'bg-foreground/15 h-1.5 w-1.5',
             )}
           />
         ))}
       </div>
-      <p className="text-xs font-medium text-muted-foreground/40 uppercase tracking-wider">
+      <p className="text-muted-foreground/40 text-xs font-medium tracking-wider uppercase">
         {steps[current]?.label}
       </p>
     </div>
@@ -110,7 +110,7 @@ function ConfigureModal({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="absolute inset-0 bg-black/50 backdrop-blur-xs cursor-pointer"
+        className="absolute inset-0 cursor-pointer bg-black/50 backdrop-blur-xs"
         onClick={onClose}
       />
       {/* Panel */}
@@ -119,11 +119,11 @@ function ConfigureModal({
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 8 }}
         transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-        className="relative z-10 w-full max-w-md mx-4 bg-background rounded-2xl border shadow-xl max-h-[80vh] flex flex-col"
+        className="bg-background relative z-10 mx-4 flex max-h-[80vh] w-full max-w-md flex-col rounded-2xl border shadow-xl"
       >
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-3">
-          <h3 className="text-sm font-medium text-foreground/90">{title}</h3>
+          <h3 className="text-foreground/90 text-sm font-medium">{title}</h3>
           <Button
             onClick={onClose}
             variant="ghost"
@@ -134,9 +134,7 @@ function ConfigureModal({
           </Button>
         </div>
         {/* Content */}
-        <div className="flex-1 overflow-y-auto px-5 pb-5">
-          {children}
-        </div>
+        <div className="flex-1 overflow-y-auto px-5 pb-5">{children}</div>
       </motion.div>
     </div>
   );
@@ -146,7 +144,7 @@ function ConfigureModal({
 
 function CloudBadge({ text }: { text?: string }) {
   return (
-    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-medium mx-auto w-fit">
+    <div className="mx-auto flex w-fit items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
       <Zap className="h-3 w-3" />
       {text || 'Included with your Kortix credits'}
     </div>
@@ -158,7 +156,7 @@ function CloudBadge({ text }: { text?: string }) {
 function WelcomePane({ onNext }: { onNext: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="flex flex-col items-center text-center gap-10">
+    <div className="flex flex-col items-center gap-10 text-center">
       {/* Kortix logo — large, centered */}
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
@@ -171,17 +169,23 @@ function WelcomePane({ onNext }: { onNext: () => void }) {
       {/* Welcome text */}
       <div className="space-y-3">
         <motion.h1
-          className="text-2xl font-medium text-foreground/90 tracking-tight"
+          className="text-foreground/90 text-2xl font-medium tracking-tight"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.15, ease: [0.16, 1, 0.3, 1] }}
-        >{tHardcodedUi.raw('componentsOnboardingSetupWizard.line174JsxTextWelcomeToYourKortix')}</motion.h1>
+        >
+          {tHardcodedUi.raw('componentsOnboardingSetupWizard.line174JsxTextWelcomeToYourKortix')}
+        </motion.h1>
         <motion.p
-          className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto"
+          className="text-muted-foreground/50 mx-auto max-w-xs text-sm leading-relaxed"
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.25, ease: [0.16, 1, 0.3, 1] }}
-        >{tHardcodedUi.raw('componentsOnboardingSetupWizard.line182JsxTextLetAposSGetYouSetUpThis')}</motion.p>
+        >
+          {tHardcodedUi.raw(
+            'componentsOnboardingSetupWizard.line182JsxTextLetAposSGetYouSetUpThis',
+          )}
+        </motion.p>
       </div>
 
       {/* CTA */}
@@ -191,11 +195,9 @@ function WelcomePane({ onNext }: { onNext: () => void }) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
       >
-        <Button
-          onClick={onNext}
-          size="lg"
-          className="w-full shadow-none"
-        >{tHardcodedUi.raw('componentsOnboardingSetupWizard.line198JsxTextGetStarted')}<ChevronRight className="h-4 w-4" />
+        <Button onClick={onNext} size="lg" className="w-full shadow-none">
+          {tHardcodedUi.raw('componentsOnboardingSetupWizard.line198JsxTextGetStarted')}
+          <ChevronRight className="h-4 w-4" />
         </Button>
       </motion.div>
     </div>
@@ -207,59 +209,84 @@ function WelcomePane({ onNext }: { onNext: () => void }) {
 function HowItWorksPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="w-full max-w-sm space-y-6 mx-auto">
-      <div className="text-center space-y-3">
+    <div className="mx-auto w-full max-w-sm space-y-6">
+      <div className="space-y-3 text-center">
         <div className="flex items-center justify-center">
-          <div className="h-12 w-12 rounded-full flex items-center justify-center bg-muted/60">
-            <Key className="h-5 w-5 text-muted-foreground/50" />
+          <div className="bg-muted/60 flex h-12 w-12 items-center justify-center rounded-full">
+            <Key className="text-muted-foreground/50 h-5 w-5" />
           </div>
         </div>
         <div className="space-y-1.5">
-          <h2 className="text-lg font-medium text-foreground/90">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line217JsxTextConnectYourAi')}</h2>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line219JsxTextKortixIsDesignedToWorkWithYourOwn')}</p>
+          <h2 className="text-foreground/90 text-lg font-medium">
+            {tHardcodedUi.raw('componentsOnboardingSetupWizard.line217JsxTextConnectYourAi')}
+          </h2>
+          <p className="text-muted-foreground/50 mx-auto max-w-xs text-sm leading-relaxed">
+            {tHardcodedUi.raw(
+              'componentsOnboardingSetupWizard.line219JsxTextKortixIsDesignedToWorkWithYourOwn',
+            )}
+          </p>
         </div>
       </div>
 
       {/* Options */}
       <div className="space-y-2">
-        <div className="flex items-start gap-3 px-3 py-3 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]">
-          <div className="h-7 w-7 rounded-2xl bg-emerald-500/10 flex items-center justify-center shrink-0 mt-0.5">
+        <div className="border-foreground/[0.06] bg-foreground/[0.02] flex items-start gap-3 rounded-2xl border px-3 py-3">
+          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-2xl bg-emerald-500/10">
             <Sparkles className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
           </div>
           <div className="text-left">
-            <p className="text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line231JsxTextCodingSubscriptions')}</p>
-            <p className="text-xs text-foreground/40 leading-relaxed">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line233JsxTextChatgptMaxClaudeProCodeOrSimilarBest')}</p>
+            <p className="text-foreground/80 text-sm font-medium">
+              {tHardcodedUi.raw(
+                'componentsOnboardingSetupWizard.line231JsxTextCodingSubscriptions',
+              )}
+            </p>
+            <p className="text-foreground/40 text-xs leading-relaxed">
+              {tHardcodedUi.raw(
+                'componentsOnboardingSetupWizard.line233JsxTextChatgptMaxClaudeProCodeOrSimilarBest',
+              )}
+            </p>
           </div>
         </div>
 
-        <div className="flex items-start gap-3 px-3 py-3 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]">
-          <div className="h-7 w-7 rounded-2xl bg-foreground/[0.05] flex items-center justify-center shrink-0 mt-0.5">
-            <Key className="h-3.5 w-3.5 text-foreground/40" />
+        <div className="border-foreground/[0.06] bg-foreground/[0.02] flex items-start gap-3 rounded-2xl border px-3 py-3">
+          <div className="bg-foreground/[0.05] mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-2xl">
+            <Key className="text-foreground/40 h-3.5 w-3.5" />
           </div>
           <div className="text-left">
-            <p className="text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line243JsxTextYourOwnApiKeys')}</p>
-            <p className="text-xs text-foreground/40 leading-relaxed">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line245JsxTextOpenaiAnthropicGoogleOpenrouterBringAnyKeyYou')}</p>
+            <p className="text-foreground/80 text-sm font-medium">
+              {tHardcodedUi.raw('componentsOnboardingSetupWizard.line243JsxTextYourOwnApiKeys')}
+            </p>
+            <p className="text-foreground/40 text-xs leading-relaxed">
+              {tHardcodedUi.raw(
+                'componentsOnboardingSetupWizard.line245JsxTextOpenaiAnthropicGoogleOpenrouterBringAnyKeyYou',
+              )}
+            </p>
           </div>
         </div>
 
         {isBillingEnabled() && (
-          <div className="flex items-start gap-3 px-3 py-3 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]">
-            <div className="h-7 w-7 rounded-2xl bg-foreground/[0.05] flex items-center justify-center shrink-0 mt-0.5">
-              <CreditCard className="h-3.5 w-3.5 text-foreground/40" />
+          <div className="border-foreground/[0.06] bg-foreground/[0.02] flex items-start gap-3 rounded-2xl border px-3 py-3">
+            <div className="bg-foreground/[0.05] mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-2xl">
+              <CreditCard className="text-foreground/40 h-3.5 w-3.5" />
             </div>
             <div className="text-left">
-              <p className="text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line256JsxTextKortixCredits')}</p>
-              <p className="text-xs text-foreground/40 leading-relaxed">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line258JsxTextDonAposTHaveAKeyYetWe')}</p>
+              <p className="text-foreground/80 text-sm font-medium">
+                {tHardcodedUi.raw('componentsOnboardingSetupWizard.line256JsxTextKortixCredits')}
+              </p>
+              <p className="text-foreground/40 text-xs leading-relaxed">
+                {tHardcodedUi.raw(
+                  'componentsOnboardingSetupWizard.line258JsxTextDonAposTHaveAKeyYetWe',
+                )}
+              </p>
             </div>
           </div>
         )}
       </div>
 
       <div className="space-y-2">
-        <Button
-          onClick={onNext}
-          size="lg" className="w-full shadow-none"
-        >{tHardcodedUi.raw('componentsOnboardingSetupWizard.line270JsxTextConnectAProvider')}<ChevronRight className="h-4 w-4" />
+        <Button onClick={onNext} size="lg" className="w-full shadow-none">
+          {tHardcodedUi.raw('componentsOnboardingSetupWizard.line270JsxTextConnectAProvider')}
+          <ChevronRight className="h-4 w-4" />
         </Button>
 
         <div className="flex justify-center pt-1">
@@ -281,7 +308,10 @@ function AutoTopupPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
 
   const handleContinue = async () => {
     const config = configRef.current;
-    if (!config) { onNext(); return; }
+    if (!config) {
+      onNext();
+      return;
+    }
     setSaving(true);
     try {
       await backendApi.post('/billing/auto-topup/configure', config);
@@ -293,29 +323,31 @@ function AutoTopupPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
   };
 
   return (
-    <div className="flex flex-col items-center text-center gap-6">
-      <div
-        className={cn(
-          'h-12 w-12 rounded-full flex items-center justify-center',
-          'bg-muted/60',
-        )}
-      >
-        <CreditCard className="h-5 w-5 text-muted-foreground/50" />
+    <div className="flex flex-col items-center gap-6 text-center">
+      <div className={cn('flex h-12 w-12 items-center justify-center rounded-full', 'bg-muted/60')}>
+        <CreditCard className="text-muted-foreground/50 h-5 w-5" />
       </div>
 
       <div className="space-y-1.5">
-        <h2 className="text-lg font-medium text-foreground/90">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line314JsxTextKortixCredits')}</h2>
-        <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line316JsxTextYouStartWithAFewFreeCreditsTo')}</p>
+        <h2 className="text-foreground/90 text-lg font-medium">
+          {tHardcodedUi.raw('componentsOnboardingSetupWizard.line314JsxTextKortixCredits')}
+        </h2>
+        <p className="text-muted-foreground/50 mx-auto max-w-xs text-sm leading-relaxed">
+          {tHardcodedUi.raw(
+            'componentsOnboardingSetupWizard.line316JsxTextYouStartWithAFewFreeCreditsTo',
+          )}
+        </p>
       </div>
 
-      <div className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-sm text-muted-foreground/60 leading-relaxed">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line321JsxTextCreditsAreUsedWhenYourAgentRunsOn')}</div>
+      <div className="border-foreground/[0.06] bg-foreground/[0.02] text-muted-foreground/60 rounded-2xl border p-3.5 text-sm leading-relaxed">
+        {tHardcodedUi.raw(
+          'componentsOnboardingSetupWizard.line321JsxTextCreditsAreUsedWhenYourAgentRunsOn',
+        )}
+      </div>
 
       {/* Shared auto top-up card */}
-      <div className="w-full rounded-2xl border bg-card/50 p-4">
-        <AutoTopupCard
-          defaultEnabled={true}
-          configRef={configRef}
-        />
+      <div className="bg-card/50 w-full rounded-2xl border p-4">
+        <AutoTopupCard defaultEnabled={true} configRef={configRef} />
       </div>
 
       <Button onClick={handleContinue} disabled={saving} size="lg" className="w-full shadow-none">
@@ -350,35 +382,37 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center py-16 space-y-4">
+      <div className="flex flex-col items-center space-y-4 py-16">
         <KortixLoader size="small" />
-        <p className="text-xs text-muted-foreground/40">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line366JsxTextCheckingProviders')}</p>
+        <p className="text-muted-foreground/40 text-xs">
+          {tHardcodedUi.raw('componentsOnboardingSetupWizard.line366JsxTextCheckingProviders')}
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="w-full max-w-sm space-y-6 mx-auto">
-      <div className="text-center space-y-3">
+    <div className="mx-auto w-full max-w-sm space-y-6">
+      <div className="space-y-3 text-center">
         <div className="flex items-center justify-center">
           <div
             className={cn(
-              'h-12 w-12 rounded-full flex items-center justify-center',
+              'flex h-12 w-12 items-center justify-center rounded-full',
               hasLLM ? 'bg-emerald-500/10' : 'bg-muted/60',
             )}
           >
             {hasLLM ? (
               <Check className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
             ) : (
-              <Sparkles className="h-5 w-5 text-muted-foreground/50" />
+              <Sparkles className="text-muted-foreground/50 h-5 w-5" />
             )}
           </div>
         </div>
         <div className="space-y-1.5">
-          <h2 className="text-lg font-medium text-foreground/90">
+          <h2 className="text-foreground/90 text-lg font-medium">
             {hasLLM ? 'Providers Connected' : 'Connect a Provider'}
           </h2>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">
+          <p className="text-muted-foreground/50 mx-auto max-w-xs text-sm leading-relaxed">
             {hasLLM
               ? 'Your agent is ready to use these models.'
               : 'Log in with your coding subscription, paste an API key, or skip to use Kortix credits.'}
@@ -392,13 +426,13 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
           {connectedProviders.map((p) => (
             <div
               key={p.id}
-              className="flex items-center gap-3 px-3 py-2 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]"
+              className="border-foreground/[0.06] bg-foreground/[0.02] flex items-center gap-3 rounded-2xl border px-3 py-2"
             >
               <ProviderLogo providerID={p.id} name={p.name} size="small" />
-              <span className="text-sm font-medium text-foreground/80">
+              <span className="text-foreground/80 text-sm font-medium">
                 {PROVIDER_LABELS[p.id] || p.name || p.id}
               </span>
-              <Check className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 ml-auto" />
+              <Check className="ml-auto h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
             </div>
           ))}
         </div>
@@ -408,7 +442,8 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
         <Button
           onClick={() => openProviderModal('providers')}
           variant={hasLLM ? 'outline' : 'default'}
-          size="lg" className="w-full shadow-none"
+          size="lg"
+          className="w-full shadow-none"
         >
           <Settings2 className="h-4 w-4" />
           {hasLLM ? 'Manage providers' : 'Connect a provider'}
@@ -418,13 +453,12 @@ function ProvidersPane({ onNext, onBack }: { onNext: () => void; onBack: () => v
           onClick={onNext}
           variant={hasLLM ? 'default' : 'ghost'}
           size="lg"
-          className={cn(
-            'w-full shadow-none',
-            !hasLLM && 'text-muted-foreground/60',
-          )}
+          className={cn('w-full shadow-none', !hasLLM && 'text-muted-foreground/60')}
         >
           {hasLLM ? (
-            <>Continue <ChevronRight className="h-4 w-4" /></>
+            <>
+              Continue <ChevronRight className="h-4 w-4" />
+            </>
           ) : (
             'Skip for now'
           )}
@@ -507,9 +541,11 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
 
   if (isLoading) {
     return (
-      <div className="flex flex-col items-center py-16 space-y-4">
+      <div className="flex flex-col items-center space-y-4 py-16">
         <KortixLoader size="small" />
-        <p className="text-xs text-muted-foreground/40">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line522JsxTextLoadingModels')}</p>
+        <p className="text-muted-foreground/40 text-xs">
+          {tHardcodedUi.raw('componentsOnboardingSetupWizard.line522JsxTextLoadingModels')}
+        </p>
       </div>
     );
   }
@@ -517,16 +553,18 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
   const hasModels = grouped.length > 0;
 
   return (
-    <div className="w-full max-w-sm space-y-5 mx-auto">
-      <div className="text-center space-y-3">
+    <div className="mx-auto w-full max-w-sm space-y-5">
+      <div className="space-y-3 text-center">
         <div className="flex items-center justify-center">
-          <div className="h-12 w-12 rounded-full flex items-center justify-center bg-muted/60">
-            <Bot className="h-5 w-5 text-muted-foreground/50" />
+          <div className="bg-muted/60 flex h-12 w-12 items-center justify-center rounded-full">
+            <Bot className="text-muted-foreground/50 h-5 w-5" />
           </div>
         </div>
         <div className="space-y-1.5">
-          <h2 className="text-lg font-medium text-foreground/90">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line538JsxTextDefaultModel')}</h2>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">
+          <h2 className="text-foreground/90 text-lg font-medium">
+            {tHardcodedUi.raw('componentsOnboardingSetupWizard.line538JsxTextDefaultModel')}
+          </h2>
+          <p className="text-muted-foreground/50 mx-auto max-w-xs text-sm leading-relaxed">
             {hasModels
               ? 'Choose which model your agent uses by default. You can switch models anytime in chat.'
               : 'Connect a provider first to see available models.'}
@@ -536,38 +574,37 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
 
       {/* Model list */}
       {hasModels && (
-        <div className="space-y-3 max-h-[280px] overflow-y-auto pr-1 -mr-1">
+        <div className="-mr-1 max-h-[280px] space-y-3 overflow-y-auto pr-1">
           {grouped.map(([providerID, models]) => (
             <div key={providerID} className="space-y-1">
               <div className="flex items-center gap-2 px-1 pb-1">
                 <ProviderLogo providerID={providerID} name={models[0]?.providerName} size="small" />
-                <span className="text-xs font-medium text-foreground/40 uppercase tracking-wider">
+                <span className="text-foreground/40 text-xs font-medium tracking-wider uppercase">
                   {PROVIDER_LABELS[providerID] || providerID}
                 </span>
               </div>
               {models.map((model) => {
                 const isSelected =
-                  selected?.providerID === model.providerID &&
-                  selected?.modelID === model.modelID;
+                  selected?.providerID === model.providerID && selected?.modelID === model.modelID;
                 return (
                   <button
                     key={`${model.providerID}:${model.modelID}`}
                     onClick={() => handleSelect(model)}
                     className={cn(
-                      'w-full flex items-center gap-3 px-3 py-2 rounded-2xl border text-left transition-colors cursor-pointer',
+                      'flex w-full cursor-pointer items-center gap-3 rounded-2xl border px-3 py-2 text-left transition-colors',
                       isSelected
                         ? 'border-foreground/20 bg-foreground/[0.04]'
                         : 'border-foreground/[0.06] bg-foreground/[0.01] hover:bg-foreground/[0.03]',
                     )}
                   >
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-medium text-foreground/80 truncate">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-foreground/80 truncate text-sm font-medium">
                         {model.modelName}
                       </div>
-                      <div className="text-xs text-foreground/30 truncate">{model.modelID}</div>
+                      <div className="text-foreground/30 truncate text-xs">{model.modelID}</div>
                     </div>
                     {isSelected && (
-                      <Check className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                      <Check className="h-4 w-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
                     )}
                   </button>
                 );
@@ -579,10 +616,7 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
 
       {/* Actions */}
       <div className="space-y-2">
-        <Button
-          onClick={handleContinue}
-          size="lg" className="w-full shadow-none"
-        >
+        <Button onClick={handleContinue} size="lg" className="w-full shadow-none">
           {selected ? 'Continue' : 'Skip for now'} <ChevronRight className="h-4 w-4" />
         </Button>
 
@@ -599,12 +633,48 @@ function DefaultModelPane({ onNext, onBack }: { onNext: () => void; onBack: () =
 // ─── Step 3: Tool secrets ───────────────────────────────────────────────────
 
 const TOOL_SECRETS = [
-  { key: 'TAVILY_API_KEY', label: 'Tavily', description: 'Web search', icon: Search, url: 'https://tavily.com' },
-  { key: 'FIRECRAWL_API_KEY', label: 'Firecrawl', description: 'Web scraping', icon: Flame, url: 'https://firecrawl.dev' },
-  { key: 'SERPER_API_KEY', label: 'Serper', description: 'Image search', icon: ImageIcon, url: 'https://serper.dev' },
-  { key: 'REPLICATE_API_TOKEN', label: 'Replicate', description: 'AI media generation', icon: ImageIcon, url: 'https://replicate.com' },
-  { key: 'CONTEXT7_API_KEY', label: 'Context7', description: 'Library docs search', icon: BookOpen, url: 'https://context7.com' },
-  { key: 'ELEVENLABS_API_KEY', label: 'ElevenLabs', description: 'Voice generation', icon: Mic, url: 'https://elevenlabs.io' },
+  {
+    key: 'TAVILY_API_KEY',
+    label: 'Tavily',
+    description: 'Web search',
+    icon: Search,
+    url: 'https://tavily.com',
+  },
+  {
+    key: 'FIRECRAWL_API_KEY',
+    label: 'Firecrawl',
+    description: 'Web scraping',
+    icon: Flame,
+    url: 'https://firecrawl.dev',
+  },
+  {
+    key: 'SERPER_API_KEY',
+    label: 'Serper',
+    description: 'Image search',
+    icon: ImageIcon,
+    url: 'https://serper.dev',
+  },
+  {
+    key: 'REPLICATE_API_TOKEN',
+    label: 'Replicate',
+    description: 'AI media generation',
+    icon: ImageIcon,
+    url: 'https://replicate.com',
+  },
+  {
+    key: 'CONTEXT7_API_KEY',
+    label: 'Context7',
+    description: 'Library docs search',
+    icon: BookOpen,
+    url: 'https://context7.com',
+  },
+  {
+    key: 'ELEVENLABS_API_KEY',
+    label: 'ElevenLabs',
+    description: 'Voice generation',
+    icon: Mic,
+    url: 'https://elevenlabs.io',
+  },
 ] as const;
 
 function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
@@ -619,7 +689,10 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
 
   const handleSave = useCallback(async () => {
     const toSave = Object.entries(values).filter(([, v]) => v.trim());
-    if (toSave.length === 0) { setModalOpen(false); return; }
+    if (toSave.length === 0) {
+      setModalOpen(false);
+      return;
+    }
 
     setSaving(true);
     const base = getActiveOpenCodeUrl();
@@ -648,33 +721,55 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
 
   return (
     <>
-      <div className="w-full max-w-sm space-y-5 mx-auto">
+      <div className="mx-auto w-full max-w-sm space-y-5">
         {/* Header */}
-        <div className="text-center space-y-3">
+        <div className="space-y-3 text-center">
           <div className="flex items-center justify-center">
-            <div className="h-12 w-12 rounded-full flex items-center justify-center bg-muted/60">
-              <Wrench className="h-5 w-5 text-muted-foreground/50" />
+            <div className="bg-muted/60 flex h-12 w-12 items-center justify-center rounded-full">
+              <Wrench className="text-muted-foreground/50 h-5 w-5" />
             </div>
           </div>
           <div className="space-y-1.5">
-            <h2 className="text-lg font-medium text-foreground/90">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line660JsxTextToolApiKeys')}</h2>
-            <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line662JsxTextYourAgentUsesToolsLikeWebSearchScraping')}</p>
+            <h2 className="text-foreground/90 text-lg font-medium">
+              {tHardcodedUi.raw('componentsOnboardingSetupWizard.line660JsxTextToolApiKeys')}
+            </h2>
+            <p className="text-muted-foreground/50 mx-auto max-w-xs text-sm leading-relaxed">
+              {tHardcodedUi.raw(
+                'componentsOnboardingSetupWizard.line662JsxTextYourAgentUsesToolsLikeWebSearchScraping',
+              )}
+            </p>
           </div>
-          {isCloud && <CloudBadge text={tHardcodedUi.raw('componentsOnboardingSetupWizard.line665JsxAttrTextIncludedWithYourKortixCredits')} />}
+          {isCloud && (
+            <CloudBadge
+              text={tHardcodedUi.raw(
+                'componentsOnboardingSetupWizard.line665JsxAttrTextIncludedWithYourKortixCredits',
+              )}
+            />
+          )}
         </div>
 
         {/* Info box */}
-        <div className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] p-3.5 text-sm text-muted-foreground/60 leading-relaxed">
+        <div className="border-foreground/[0.06] bg-foreground/[0.02] text-muted-foreground/60 rounded-2xl border p-3.5 text-sm leading-relaxed">
           {isCloud ? (
-            <>{tHardcodedUi.raw('componentsOnboardingSetupWizard.line672JsxTextAllToolKeysAre')}<span className="text-foreground/80 font-medium">pre-configured</span>{tHardcodedUi.raw('componentsOnboardingSetupWizard.line672JsxTextAndUsageIsBilledThroughYourCreditsYou')}</>
+            <>
+              {tHardcodedUi.raw('componentsOnboardingSetupWizard.line672JsxTextAllToolKeysAre')}
+              <span className="text-foreground/80 font-medium">pre-configured</span>
+              {tHardcodedUi.raw(
+                'componentsOnboardingSetupWizard.line672JsxTextAndUsageIsBilledThroughYourCreditsYou',
+              )}
+            </>
           ) : (
-            <>{tHardcodedUi.raw('componentsOnboardingSetupWizard.line677JsxTextAddApiKeysToEnableAgentCapabilitiesLike')}</>
+            <>
+              {tHardcodedUi.raw(
+                'componentsOnboardingSetupWizard.line677JsxTextAddApiKeysToEnableAgentCapabilitiesLike',
+              )}
+            </>
           )}
         </div>
 
         {/* Saved confirmation */}
         {savedCount > 0 && (
-          <div className="flex items-center justify-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 font-medium">
+          <div className="flex items-center justify-center gap-2 text-sm font-medium text-emerald-600 dark:text-emerald-400">
             <Check className="h-3.5 w-3.5" />
             {savedCount} key{savedCount > 1 ? 's' : ''} saved
           </div>
@@ -692,10 +787,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
             {isCloud ? 'Use my own API keys' : 'Configure tool keys'}
           </Button>
 
-          <Button
-            onClick={onNext}
-            size="lg" className="w-full shadow-none"
-          >
+          <Button onClick={onNext} size="lg" className="w-full shadow-none">
             Continue <ChevronRight className="h-4 w-4" />
           </Button>
 
@@ -708,9 +800,13 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
       </div>
 
       {/* Configure modal */}
-      <ConfigureModal open={modalOpen} onClose={() => setModalOpen(false)} title={tHardcodedUi.raw('componentsOnboardingSetupWizard.line719JsxAttrTitleToolApiKeys')}>
+      <ConfigureModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={tHardcodedUi.raw('componentsOnboardingSetupWizard.line719JsxAttrTitleToolApiKeys')}
+      >
         <div className="space-y-4">
-          <p className="text-xs text-muted-foreground/50 leading-relaxed">
+          <p className="text-muted-foreground/50 text-xs leading-relaxed">
             {isCloud
               ? 'These keys will override the default Kortix-managed keys for these tools.'
               : 'Paste your API keys below. All fields are optional.'}
@@ -721,20 +817,20 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
               return (
                 <div
                   key={s.key}
-                  className="flex items-start gap-3 p-2.5 rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02]"
+                  className="border-foreground/[0.06] bg-foreground/[0.02] flex items-start gap-3 rounded-2xl border p-2.5"
                 >
-                  <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-2xl bg-foreground/[0.05]">
-                    <Icon className="h-3.5 w-3.5 text-foreground/40" />
+                  <div className="bg-foreground/[0.05] mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-2xl">
+                    <Icon className="text-foreground/40 h-3.5 w-3.5" />
                   </div>
-                  <div className="flex-1 min-w-0 space-y-1">
+                  <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-foreground/80">{s.label}</span>
-                      <span className="text-xs text-foreground/30">{s.description}</span>
+                      <span className="text-foreground/80 text-sm font-medium">{s.label}</span>
+                      <span className="text-foreground/30 text-xs">{s.description}</span>
                       <a
                         href={s.url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="ml-auto text-foreground/20 hover:text-foreground/50 transition-colors"
+                        className="text-foreground/20 hover:text-foreground/50 ml-auto transition-colors"
                       >
                         <ExternalLink className="h-3 w-3" />
                       </a>
@@ -744,7 +840,7 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
                       placeholder={s.key}
                       value={values[s.key] || ''}
                       onChange={(e) => setValues((p) => ({ ...p, [s.key]: e.target.value }))}
-                      className="h-8 text-xs font-mono"
+                      className="h-8 font-mono text-xs"
                       autoComplete="off"
                     />
                   </div>
@@ -753,12 +849,23 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
             })}
           </div>
           <div className="flex gap-2 pt-1">
-            <Button variant="ghost" onClick={() => setModalOpen(false)} className="flex-1 h-10 text-sm shadow-none">
+            <Button
+              variant="ghost"
+              onClick={() => setModalOpen(false)}
+              className="h-10 flex-1 text-sm shadow-none"
+            >
               Cancel
             </Button>
-            <Button onClick={handleSave} disabled={saving} className="flex-1 h-10 text-sm shadow-none">
+            <Button
+              onClick={handleSave}
+              disabled={saving}
+              className="h-10 flex-1 text-sm shadow-none"
+            >
               {saving ? (
-                <><Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('componentsOnboardingSetupWizard.line769JsxTextSaving')}</>
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {tHardcodedUi.raw('componentsOnboardingSetupWizard.line769JsxTextSaving')}
+                </>
               ) : filled > 0 ? (
                 `Save ${filled} key${filled > 1 ? 's' : ''}`
               ) : (
@@ -777,24 +884,29 @@ function ToolKeysPane({ onNext, onBack }: { onNext: () => void; onBack: () => vo
 function GetStartedPane({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <div className="w-full max-w-sm space-y-6 mx-auto">
-      <div className="text-center space-y-3">
+    <div className="mx-auto w-full max-w-sm space-y-6">
+      <div className="space-y-3 text-center">
         <div className="flex items-center justify-center">
-          <div className="h-12 w-12 rounded-full flex items-center justify-center bg-primary/10">
-            <MessageSquare className="h-5 w-5 text-primary" />
+          <div className="bg-primary/10 flex h-12 w-12 items-center justify-center rounded-full">
+            <MessageSquare className="text-primary h-5 w-5" />
           </div>
         </div>
         <div className="space-y-1.5">
-          <h2 className="text-lg font-medium text-foreground/90">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line795JsxTextYouAposReAllSet')}</h2>
-          <p className="text-sm text-muted-foreground/50 leading-relaxed max-w-xs mx-auto">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line797JsxTextYourKortixAgentIsConfiguredAndReadyWe')}</p>
+          <h2 className="text-foreground/90 text-lg font-medium">
+            {tHardcodedUi.raw('componentsOnboardingSetupWizard.line795JsxTextYouAposReAllSet')}
+          </h2>
+          <p className="text-muted-foreground/50 mx-auto max-w-xs text-sm leading-relaxed">
+            {tHardcodedUi.raw(
+              'componentsOnboardingSetupWizard.line797JsxTextYourKortixAgentIsConfiguredAndReadyWe',
+            )}
+          </p>
         </div>
       </div>
 
       <div className="space-y-2">
-        <Button
-          onClick={onNext}
-          size="lg" className="w-full shadow-none"
-        >{tHardcodedUi.raw('componentsOnboardingSetupWizard.line807JsxTextStartOnboarding')}<ChevronRight className="h-4 w-4" />
+        <Button onClick={onNext} size="lg" className="w-full shadow-none">
+          {tHardcodedUi.raw('componentsOnboardingSetupWizard.line807JsxTextStartOnboarding')}
+          <ChevronRight className="h-4 w-4" />
         </Button>
 
         <div className="flex justify-center pt-1">
@@ -814,14 +926,17 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
   const router = useRouter();
   const showBilling = isBillingEnabled();
 
-  const steps = useMemo<StepDef[]>(() => [
-    { label: 'How It Works', icon: Key },
-    { label: 'Providers', icon: Sparkles },
-    ...(showBilling ? [{ label: 'Kortix Credits', icon: CreditCard }] : []),
-    { label: 'Default Model', icon: Bot },
-    { label: 'Tools', icon: Wrench },
-    { label: 'Get Started', icon: MessageSquare },
-  ], [showBilling]);
+  const steps = useMemo<StepDef[]>(
+    () => [
+      { label: 'How It Works', icon: Key },
+      { label: 'Providers', icon: Sparkles },
+      ...(showBilling ? [{ label: 'Kortix Credits', icon: CreditCard }] : []),
+      { label: 'Default Model', icon: Bot },
+      { label: 'Tools', icon: Wrench },
+      { label: 'Get Started', icon: MessageSquare },
+    ],
+    [showBilling],
+  );
 
   const totalSteps = steps.length + 1; // +1 for Welcome
 
@@ -861,7 +976,7 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
   }, [showBilling, step, next, back]);
 
   return (
-    <div className="fixed inset-0 z-[80] flex flex-col items-center justify-center bg-background">
+    <div className="bg-background fixed inset-0 z-[80] flex flex-col items-center justify-center">
       {/* Back to dashboard — only on welcome step */}
       {step === 0 && (
         <Button
@@ -870,12 +985,14 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
           size="xs"
           className="absolute top-6 left-6 cursor-pointer"
         >
-          <ArrowLeft className="h-3 w-3" />{tHardcodedUi.raw('componentsOnboardingSetupWizard.line882JsxTextBackToDashboard')}</Button>
+          <ArrowLeft className="h-3 w-3" />
+          {tHardcodedUi.raw('componentsOnboardingSetupWizard.line882JsxTextBackToDashboard')}
+        </Button>
       )}
 
       {/* Header: Logo + stepper — hidden on welcome step */}
       {step > 0 && (
-        <div className="absolute top-0 inset-x-0 flex flex-col items-center pt-8 gap-6">
+        <div className="absolute inset-x-0 top-0 flex flex-col items-center gap-6 pt-8">
           <KortixLogo size={20} />
           <StepIndicator current={step - 1} steps={steps} />
         </div>
@@ -898,7 +1015,11 @@ export function SetupWizard({ onComplete }: { onComplete: () => void }) {
 
       {/* Footer — hidden on welcome step */}
       {step > 0 && (
-        <p className="absolute bottom-6 text-xs text-foreground/20">{tHardcodedUi.raw('componentsOnboardingSetupWizard.line912JsxTextYouCanChangeAllOfThisLaterIn')}</p>
+        <p className="text-foreground/20 absolute bottom-6 text-xs">
+          {tHardcodedUi.raw(
+            'componentsOnboardingSetupWizard.line912JsxTextYouCanChangeAllOfThisLaterIn',
+          )}
+        </p>
       )}
     </div>
   );

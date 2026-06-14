@@ -2,15 +2,21 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { toast } from '@/lib/toast';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, FolderOpen, Loader2, Plus, Trash2, Users } from 'lucide-react';
-import { toast } from '@/lib/toast';
+import { useParams, useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 
-import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { AppHeader } from '@/components/layout/app-header';
+import {
+  countOverridingMembers,
+  floatCurrentUserFirst,
+  formatExpiry,
+  isOverridingAccountRole,
+  sortGroupMembersByOverride,
+  type AccountMeta,
+} from '@/components/iam/iam-display-helpers';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
@@ -21,13 +27,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { InlineMeta } from '@/components/ui/inline-meta';
@@ -35,9 +34,18 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { List, ListRow } from '@/components/ui/list';
 import { SectionCard } from '@/components/ui/section-card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { UserAvatar } from '@/components/ui/user-avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { UserAvatar } from '@/components/ui/user-avatar';
+import { AppHeader } from '@/features/layout/app-header';
+import { useAuth } from '@/features/providers/auth-provider';
 import {
   addGroupMembers,
   deleteGroup,
@@ -48,14 +56,6 @@ import {
   updateGroup,
   type GroupProjectGrant,
 } from '@/lib/iam-client';
-import {
-  countOverridingMembers,
-  floatCurrentUserFirst,
-  formatExpiry,
-  isOverridingAccountRole,
-  sortGroupMembersByOverride,
-  type AccountMeta,
-} from '@/components/iam/iam-display-helpers';
 import {
   attachGroupToProject,
   detachGroupFromProject,
@@ -112,7 +112,7 @@ export default function GroupDetailPage() {
   const group = groupQuery.data;
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="bg-background flex min-h-screen flex-col">
       <AppHeader user={user} />
       <main className="flex-1 px-4 py-8">
         <div className="mx-auto w-full max-w-4xl space-y-8">
@@ -120,14 +120,16 @@ export default function GroupDetailPage() {
             <button
               type="button"
               onClick={() => router.push('/projects')}
-              className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line99JsxTextBackToProjects')}</button>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <ArrowLeft className="h-3.5 w-3.5" />
+              {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line99JsxTextBackToProjects')}
+            </button>
+            <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <button
                 type="button"
                 onClick={() => router.push('/accounts')}
-                className="cursor-pointer transition-colors hover:text-foreground"
+                className="hover:text-foreground cursor-pointer transition-colors"
               >
                 Accounts
               </button>
@@ -135,7 +137,7 @@ export default function GroupDetailPage() {
               <button
                 type="button"
                 onClick={() => router.push(`/accounts/${accountId}`)}
-                className="cursor-pointer transition-colors hover:text-foreground"
+                className="hover:text-foreground cursor-pointer transition-colors"
               >
                 Groups
               </button>
@@ -143,17 +145,17 @@ export default function GroupDetailPage() {
               {groupQuery.isLoading ? (
                 <Skeleton className="h-4 w-24" />
               ) : (
-                <span className="truncate font-medium text-foreground">
+                <span className="text-foreground truncate font-medium">
                   {group?.name ?? 'Group'}
                 </span>
               )}
             </div>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+              <h1 className="text-foreground text-2xl font-semibold tracking-tight">
                 {groupQuery.isLoading ? <Skeleton className="h-7 w-48" /> : group?.name}
               </h1>
               {group?.description && (
-                <p className="mt-1 text-sm text-muted-foreground">{group.description}</p>
+                <p className="text-muted-foreground mt-1 text-sm">{group.description}</p>
               )}
             </div>
           </div>
@@ -161,13 +163,11 @@ export default function GroupDetailPage() {
           {groupQuery.isError && (
             <InfoBanner
               tone="destructive"
-              title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line139JsxAttrTitleFailedToLoadGroup')}
+              title={tHardcodedUi.raw(
+                'appAccountsIdGroupsGroupidPage.line139JsxAttrTitleFailedToLoadGroup',
+              )}
               action={
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => groupQuery.refetch()}
-                >
+                <Button variant="outline" size="sm" onClick={() => groupQuery.refetch()}>
                   Retry
                 </Button>
               }
@@ -179,7 +179,9 @@ export default function GroupDetailPage() {
           {group && account && (
             <Tabs defaultValue="members" className="space-y-6">
               <TabsList>
-                <TabsTrigger value="members">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line157JsxTextGroupMembers')}</TabsTrigger>
+                <TabsTrigger value="members">
+                  {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line157JsxTextGroupMembers')}
+                </TabsTrigger>
                 <TabsTrigger value="projects">Project access</TabsTrigger>
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>
@@ -295,11 +297,15 @@ function GroupMembersCard({
     <SectionCard
       title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line249JsxAttrTitleGroupMembers')}
       count={members.length}
-      description={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line251JsxAttrDescriptionMembersOfThisGroupInheritEveryPolicyAttached')}
+      description={tHardcodedUi.raw(
+        'appAccountsIdGroupsGroupidPage.line251JsxAttrDescriptionMembersOfThisGroupInheritEveryPolicyAttached',
+      )}
       action={
         canManage && (
           <Button onClick={() => setAddOpen(true)} size="sm" className="gap-1.5">
-            <Plus className="h-4 w-4" />{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line256JsxTextAddMembers')}</Button>
+            <Plus className="h-4 w-4" />
+            {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line256JsxTextAddMembers')}
+          </Button>
         )
       }
       flush
@@ -317,81 +323,79 @@ function GroupMembersCard({
       {!membersQuery.isLoading && members.length === 0 && (
         <EmptyState
           icon={Users}
-          title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line275JsxAttrTitleNoMembersInThisGroup')}
+          title={tHardcodedUi.raw(
+            'appAccountsIdGroupsGroupidPage.line275JsxAttrTitleNoMembersInThisGroup',
+          )}
           description={
-            canManage
-              ? "Add account members to grant them this group's policies."
-              : undefined
+            canManage ? "Add account members to grant them this group's policies." : undefined
           }
         />
       )}
 
       {!membersQuery.isLoading && members.length > 0 && overrideCount > 0 && (
-        <div className="border-b border-border/60 bg-amber-500/5 px-6 py-2.5 text-xs text-amber-700 dark:text-amber-300">
-          <span className="font-medium">Heads-up:</span>{' '}
-          {overrideCount} {overrideCount === 1 ? 'member is' : 'members are'} an
-          account owner or admin. They get Manager on every project regardless
-          of this group&apos;s role.
+        <div className="border-border/60 border-b bg-amber-500/5 px-6 py-2.5 text-xs text-amber-700 dark:text-amber-300">
+          <span className="font-medium">Heads-up:</span> {overrideCount}{' '}
+          {overrideCount === 1 ? 'member is' : 'members are'} an account owner or admin. They get
+          Manager on every project regardless of this group&apos;s role.
         </div>
       )}
 
       {!membersQuery.isLoading && members.length > 0 && (
         <List>
-          {sortGroupMembersByOverride(members, accountMetaByUserId)
-            .map((m) => {
-              const label = emailByUserId.get(m.user_id) ?? m.user_id;
-              const meta = accountMetaByUserId.get(m.user_id);
-              const overrides = !!meta && isOverridingAccountRole(meta);
-              const badgeLabel = meta?.isSuperAdmin
-                ? 'super admin'
-                : meta?.accountRole;
-              return (
-                <ListRow
-                  key={m.user_id}
-                  leading={<UserAvatar email={label} size="md" />}
-                  title={label}
-                  badges={
-                    overrides && badgeLabel ? (
-                      <span
-                        className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-normal capitalize text-amber-700 dark:text-amber-300"
-                        title="Account owners and admins always have Manager access on every project, regardless of group role."
-                      >
-                        {badgeLabel}
-                      </span>
-                    ) : meta?.accountRole === 'member' ? (
-                      <span className="rounded-2xl border border-border/60 px-1.5 py-0.5 text-[10px] font-normal capitalize text-muted-foreground">
-                        member
-                      </span>
-                    ) : null
-                  }
-                  subtitle={
-                    <InlineMeta>
-                      <span>
-                        Added{' '}
-                        {new Date(m.added_at).toLocaleDateString(undefined, {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}
-                      </span>
-                    </InlineMeta>
-                  }
-                  trailing={
-                    canManage && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-muted-foreground hover:text-foreground"
-                        onClick={() => setRemoveTarget(m.user_id)}
-                        aria-label={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line312JsxAttrAriaLabelRemoveFromGroup')}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )
-                  }
-                />
-              );
-            })}
+          {sortGroupMembersByOverride(members, accountMetaByUserId).map((m) => {
+            const label = emailByUserId.get(m.user_id) ?? m.user_id;
+            const meta = accountMetaByUserId.get(m.user_id);
+            const overrides = !!meta && isOverridingAccountRole(meta);
+            const badgeLabel = meta?.isSuperAdmin ? 'super admin' : meta?.accountRole;
+            return (
+              <ListRow
+                key={m.user_id}
+                leading={<UserAvatar email={label} size="md" />}
+                title={label}
+                badges={
+                  overrides && badgeLabel ? (
+                    <span
+                      className="rounded-2xl border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-normal text-amber-700 capitalize dark:text-amber-300"
+                      title="Account owners and admins always have Manager access on every project, regardless of group role."
+                    >
+                      {badgeLabel}
+                    </span>
+                  ) : meta?.accountRole === 'member' ? (
+                    <span className="border-border/60 text-muted-foreground rounded-2xl border px-1.5 py-0.5 text-[10px] font-normal capitalize">
+                      member
+                    </span>
+                  ) : null
+                }
+                subtitle={
+                  <InlineMeta>
+                    <span>
+                      Added{' '}
+                      {new Date(m.added_at).toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
+                    </span>
+                  </InlineMeta>
+                }
+                trailing={
+                  canManage && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="text-muted-foreground hover:text-foreground h-7 w-7"
+                      onClick={() => setRemoveTarget(m.user_id)}
+                      aria-label={tHardcodedUi.raw(
+                        'appAccountsIdGroupsGroupidPage.line312JsxAttrAriaLabelRemoveFromGroup',
+                      )}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )
+                }
+              />
+            );
+          })}
         </List>
       )}
 
@@ -409,8 +413,12 @@ function GroupMembersCard({
         onOpenChange={(open) => {
           if (!open) setRemoveTarget(null);
         }}
-        title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line338JsxAttrTitleRemoveFromGroup')}
-        description={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line339JsxAttrDescriptionTheUserStaysAMemberOfTheAccount')}
+        title={tHardcodedUi.raw(
+          'appAccountsIdGroupsGroupidPage.line338JsxAttrTitleRemoveFromGroup',
+        )}
+        description={tHardcodedUi.raw(
+          'appAccountsIdGroupsGroupidPage.line339JsxAttrDescriptionTheUserStaysAMemberOfTheAccount',
+        )}
         confirmLabel="Remove"
         isPending={removeMutation.isPending}
         onConfirm={() => {
@@ -487,15 +495,25 @@ function AddGroupMembersDialog({
       }}
     >
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle className="text-lg font-semibold tracking-tight">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line406JsxTextAddMembers')}</DialogTitle>
-          <DialogDescription className="text-sm text-muted-foreground">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line409JsxTextPickTheAccountMembersToAddToThis')}</DialogDescription>
+        <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
+          <DialogTitle className="text-lg font-semibold tracking-tight">
+            {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line406JsxTextAddMembers')}
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground text-sm">
+            {tHardcodedUi.raw(
+              'appAccountsIdGroupsGroupidPage.line409JsxTextPickTheAccountMembersToAddToThis',
+            )}
+          </DialogDescription>
         </DialogHeader>
         <div className="px-6 py-5">
           {eligible.length === 0 ? (
-            <p className="rounded-2xl border border-dashed border-border/60 px-3 py-6 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line415JsxTextEveryAccountMemberIsAlreadyInThisGroup')}</p>
+            <p className="border-border/60 text-muted-foreground rounded-2xl border border-dashed px-3 py-6 text-center text-xs">
+              {tHardcodedUi.raw(
+                'appAccountsIdGroupsGroupidPage.line415JsxTextEveryAccountMemberIsAlreadyInThisGroup',
+              )}
+            </p>
           ) : (
-            <div className="max-h-72 space-y-1 overflow-y-auto rounded-2xl border border-border/60 p-2">
+            <div className="border-border/60 max-h-72 space-y-1 overflow-y-auto rounded-2xl border p-2">
               {eligible.map((m) => {
                 const checked = selected.has(m.user_id);
                 const label = m.email ?? m.user_id;
@@ -514,11 +532,11 @@ function AddGroupMembersDialog({
                       type="checkbox"
                       checked={checked}
                       readOnly
-                      className="h-3.5 w-3.5 rounded border-border accent-primary"
+                      className="border-border accent-primary h-3.5 w-3.5 rounded"
                     />
                     <span className="truncate text-sm">{label}</span>
                     {isMe && (
-                      <span className="ml-auto rounded-2xl border border-border/60 px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                      <span className="border-border/60 text-muted-foreground ml-auto rounded-2xl border px-1.5 py-0.5 text-[10px] font-normal">
                         you
                       </span>
                     )}
@@ -528,7 +546,7 @@ function AddGroupMembersDialog({
             </div>
           )}
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3">
+        <div className="border-border/60 bg-muted/30 flex items-center justify-end gap-2 border-t px-6 py-3">
           <Button
             type="button"
             variant="ghost"
@@ -601,12 +619,13 @@ function GroupSettingsCard({
     onError: (err: Error) => toast.error(err.message || 'Failed to delete group'),
   });
 
-  const dirty =
-    name.trim() !== initialName || description.trim() !== (initialDescription ?? '');
+  const dirty = name.trim() !== initialName || description.trim() !== (initialDescription ?? '');
 
   return (
     <div className="space-y-6">
-      <SectionCard title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line522JsxAttrTitleGroupDetails')}>
+      <SectionCard
+        title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line522JsxAttrTitleGroupDetails')}
+      >
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="group-name">Name</Label>
@@ -630,7 +649,7 @@ function GroupSettingsCard({
               className="max-w-md"
             />
           </div>
-          <div className="flex justify-end border-t border-border/60 pt-4">
+          <div className="border-border/60 flex justify-end border-t pt-4">
             <Button
               onClick={() => updateMutation.mutate()}
               disabled={!canEdit || !dirty || !name.trim() || updateMutation.isPending}
@@ -647,12 +666,18 @@ function GroupSettingsCard({
         <SectionCard
           tone="destructive"
           title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line562JsxAttrTitleDangerZone')}
-          description={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line563JsxAttrDescriptionDeletingAGroupRemovesEveryPermissionPolicyAttached')}
+          description={tHardcodedUi.raw(
+            'appAccountsIdGroupsGroupidPage.line563JsxAttrDescriptionDeletingAGroupRemovesEveryPermissionPolicyAttached',
+          )}
           flush
         >
           <div className="flex items-center justify-between px-6 py-4">
-            <p className="text-sm text-foreground">{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line567JsxTextDeleteThisGroup')}</p>
-            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>{tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line569JsxTextDeleteGroup')}</Button>
+            <p className="text-foreground text-sm">
+              {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line567JsxTextDeleteThisGroup')}
+            </p>
+            <Button variant="destructive" onClick={() => setDeleteOpen(true)}>
+              {tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line569JsxTextDeleteGroup')}
+            </Button>
           </div>
         </SectionCard>
       )}
@@ -662,7 +687,9 @@ function GroupSettingsCard({
         onOpenChange={setDeleteOpen}
         title={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line578JsxAttrTitleDeleteGroup')}
         description={`Delete "${initialName}"? This cannot be undone.`}
-        confirmLabel={tHardcodedUi.raw('appAccountsIdGroupsGroupidPage.line580JsxAttrConfirmlabelDeleteGroup')}
+        confirmLabel={tHardcodedUi.raw(
+          'appAccountsIdGroupsGroupidPage.line580JsxAttrConfirmlabelDeleteGroup',
+        )}
         isPending={deleteMutation.isPending}
         onConfirm={() => deleteMutation.mutate()}
       />
@@ -701,17 +728,12 @@ function GroupProjectGrantsCard({
       return t !== 0 ? t : a.project_id.localeCompare(b.project_id);
     });
   }, [grantsQuery.data]);
-  const attachedProjectIds = useMemo(
-    () => new Set(grants.map((g) => g.project_id)),
-    [grants],
-  );
+  const attachedProjectIds = useMemo(() => new Set(grants.map((g) => g.project_id)), [grants]);
 
   // Set rather than scalar so two concurrent detaches (admin clicks
   // Revoke on row A, then row B before A finishes) both show their
   // own spinner instead of A's spinner jumping to B.
-  const [pendingProjectIds, setPendingProjectIds] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [pendingProjectIds, setPendingProjectIds] = useState<Set<string>>(() => new Set());
   // Detach is destructive — strips every group member's inherited
   // access on the project at once. Confirm first.
   const [detachTarget, setDetachTarget] = useState<GroupProjectGrant | null>(null);
@@ -720,8 +742,7 @@ function GroupProjectGrantsCard({
     // detach the grant via the per-project route — that's the one gated
     // by project.members.manage and the canonical write surface.
     mutationFn: (projectId: string) => detachGroupFromProject(projectId, groupId),
-    onMutate: (projectId) =>
-      setPendingProjectIds((prev) => new Set(prev).add(projectId)),
+    onMutate: (projectId) => setPendingProjectIds((prev) => new Set(prev).add(projectId)),
     onSettled: (_data, _error, projectId) =>
       setPendingProjectIds((prev) => {
         const next = new Set(prev);
@@ -744,153 +765,150 @@ function GroupProjectGrantsCard({
 
   return (
     <>
-    <SectionCard
-      flush
-      title="Project access"
-      description={`Projects "${groupName}" is attached to. Every group member inherits the chosen role on that project — except account owners and admins, who always have Manager.`}
-      count={grants.length}
-      action={
-        <Button size="sm" className="gap-1.5" onClick={() => setAttachOpen(true)}>
-          <Plus className="h-4 w-4" />
-          Attach to project
-        </Button>
-      }
-    >
-      {grantsQuery.isLoading && (
-        <div className="px-6 py-5">
-          <Skeleton className="h-8 w-full" />
-        </div>
-      )}
+      <SectionCard
+        flush
+        title="Project access"
+        description={`Projects "${groupName}" is attached to. Every group member inherits the chosen role on that project — except account owners and admins, who always have Manager.`}
+        count={grants.length}
+        action={
+          <Button size="sm" className="gap-1.5" onClick={() => setAttachOpen(true)}>
+            <Plus className="h-4 w-4" />
+            Attach to project
+          </Button>
+        }
+      >
+        {grantsQuery.isLoading && (
+          <div className="px-6 py-5">
+            <Skeleton className="h-8 w-full" />
+          </div>
+        )}
 
-      {!grantsQuery.isLoading && grantsQuery.isError && (
-        <div className="px-6 py-5">
-          <InfoBanner
-            tone="destructive"
-            title="Failed to load project access"
-            action={
-              <Button variant="outline" size="sm" onClick={() => grantsQuery.refetch()}>
-                Retry
-              </Button>
-            }
-          >
-            {(grantsQuery.error as Error)?.message}
-          </InfoBanner>
-        </div>
-      )}
+        {!grantsQuery.isLoading && grantsQuery.isError && (
+          <div className="px-6 py-5">
+            <InfoBanner
+              tone="destructive"
+              title="Failed to load project access"
+              action={
+                <Button variant="outline" size="sm" onClick={() => grantsQuery.refetch()}>
+                  Retry
+                </Button>
+              }
+            >
+              {(grantsQuery.error as Error)?.message}
+            </InfoBanner>
+          </div>
+        )}
 
-      {!grantsQuery.isLoading && !grantsQuery.isError && grants.length === 0 && (
-        <EmptyState
-          icon={FolderOpen}
-          title="Not attached to any project"
-          description={`Click "Attach to project" to give "${groupName}" access to one of your projects.`}
+        {!grantsQuery.isLoading && !grantsQuery.isError && grants.length === 0 && (
+          <EmptyState
+            icon={FolderOpen}
+            title="Not attached to any project"
+            description={`Click "Attach to project" to give "${groupName}" access to one of your projects.`}
+          />
+        )}
+
+        <AttachToProjectDialog
+          accountId={accountId}
+          groupId={groupId}
+          groupName={groupName}
+          open={attachOpen}
+          onOpenChange={setAttachOpen}
+          attachedProjectIds={attachedProjectIds}
+          onAttached={(attachedProjectId) => {
+            queryClient.invalidateQueries({ queryKey });
+            queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
+            // The target project's Members card (in another tab) shows
+            // group-derived access for every member — without these the
+            // tab would be stale until the next focus + 20s staleTime.
+            queryClient.invalidateQueries({ queryKey: ['project-access', attachedProjectId] });
+            queryClient.invalidateQueries({ queryKey: ['project', attachedProjectId] });
+            setAttachOpen(false);
+          }}
         />
-      )}
 
-      <AttachToProjectDialog
-        accountId={accountId}
-        groupId={groupId}
-        groupName={groupName}
-        open={attachOpen}
-        onOpenChange={setAttachOpen}
-        attachedProjectIds={attachedProjectIds}
-        onAttached={(attachedProjectId) => {
-          queryClient.invalidateQueries({ queryKey });
-          queryClient.invalidateQueries({ queryKey: ['account-groups', accountId] });
-          // The target project's Members card (in another tab) shows
-          // group-derived access for every member — without these the
-          // tab would be stale until the next focus + 20s staleTime.
-          queryClient.invalidateQueries({ queryKey: ['project-access', attachedProjectId] });
-          queryClient.invalidateQueries({ queryKey: ['project', attachedProjectId] });
-          setAttachOpen(false);
+        {!grantsQuery.isLoading && grants.length > 0 && (
+          <List>
+            {grants.map((g: GroupProjectGrant) => {
+              const busy = pendingProjectIds.has(g.project_id);
+              return (
+                <ListRow
+                  key={g.project_id}
+                  leading={
+                    <span className="bg-muted/60 flex h-8 w-8 items-center justify-center rounded-full">
+                      <FolderOpen className="text-muted-foreground h-4 w-4" />
+                    </span>
+                  }
+                  title={g.project_name}
+                  badges={
+                    <span className="border-border/60 text-muted-foreground rounded-2xl border px-1.5 py-0.5 text-[10px] font-normal capitalize">
+                      {g.role}
+                    </span>
+                  }
+                  subtitle={
+                    <InlineMeta>
+                      <span>Attached {new Date(g.created_at).toLocaleDateString()}</span>
+                      {g.expires_at && (
+                        <span
+                          className={
+                            new Date(g.expires_at).getTime() < Date.now()
+                              ? 'text-rose-600 dark:text-rose-400'
+                              : 'text-amber-700 dark:text-amber-400'
+                          }
+                          title={new Date(g.expires_at).toLocaleString()}
+                        >
+                          {formatExpiry(g.expires_at)}
+                        </span>
+                      )}
+                    </InlineMeta>
+                  }
+                  trailing={
+                    busy ? (
+                      <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setDetachTarget(g)}
+                      >
+                        Detach
+                      </Button>
+                    )
+                  }
+                />
+              );
+            })}
+          </List>
+        )}
+      </SectionCard>
+
+      <ConfirmDialog
+        open={detachTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDetachTarget(null);
+        }}
+        title="Detach from project?"
+        description={
+          detachTarget ? (
+            <span>
+              <strong>{groupName}</strong> will no longer be attached to{' '}
+              <strong>{detachTarget.project_name}</strong>. Every group member will lose their
+              inherited <strong>{detachTarget.role}</strong> access on that project (unless they
+              also have a direct grant or another group attached). Owners and admins keep their
+              implicit Manager access either way.
+            </span>
+          ) : null
+        }
+        confirmLabel="Detach"
+        confirmVariant="destructive"
+        isPending={detachMutation.isPending}
+        onConfirm={() => {
+          if (!detachTarget) return;
+          const target = detachTarget;
+          setDetachTarget(null);
+          detachMutation.mutate(target.project_id);
         }}
       />
-
-
-      {!grantsQuery.isLoading && grants.length > 0 && (
-        <List>
-          {grants.map((g: GroupProjectGrant) => {
-            const busy = pendingProjectIds.has(g.project_id);
-            return (
-              <ListRow
-                key={g.project_id}
-                leading={
-                  <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted/60">
-                    <FolderOpen className="h-4 w-4 text-muted-foreground" />
-                  </span>
-                }
-                title={g.project_name}
-                badges={
-                  <span className="rounded-2xl border border-border/60 px-1.5 py-0.5 text-[10px] font-normal capitalize text-muted-foreground">
-                    {g.role}
-                  </span>
-                }
-                subtitle={
-                  <InlineMeta>
-                    <span>Attached {new Date(g.created_at).toLocaleDateString()}</span>
-                    {g.expires_at && (
-                      <span
-                        className={
-                          new Date(g.expires_at).getTime() < Date.now()
-                            ? 'text-rose-600 dark:text-rose-400'
-                            : 'text-amber-700 dark:text-amber-400'
-                        }
-                        title={new Date(g.expires_at).toLocaleString()}
-                      >
-                        {formatExpiry(g.expires_at)}
-                      </span>
-                    )}
-                  </InlineMeta>
-                }
-                trailing={
-                  busy ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setDetachTarget(g)}
-                    >
-                      Detach
-                    </Button>
-                  )
-                }
-              />
-            );
-          })}
-        </List>
-      )}
-    </SectionCard>
-
-    <ConfirmDialog
-      open={detachTarget !== null}
-      onOpenChange={(open) => {
-        if (!open) setDetachTarget(null);
-      }}
-      title="Detach from project?"
-      description={
-        detachTarget ? (
-          <span>
-            <strong>{groupName}</strong> will no longer be attached to{' '}
-            <strong>{detachTarget.project_name}</strong>. Every group
-            member will lose their inherited{' '}
-            <strong>{detachTarget.role}</strong> access on that
-            project (unless they also have a direct grant or another
-            group attached). Owners and admins keep their implicit
-            Manager access either way.
-          </span>
-        ) : null
-      }
-      confirmLabel="Detach"
-      confirmVariant="destructive"
-      isPending={detachMutation.isPending}
-      onConfirm={() => {
-        if (!detachTarget) return;
-        const target = detachTarget;
-        setDetachTarget(null);
-        detachMutation.mutate(target.project_id);
-      }}
-    />
     </>
   );
 }
@@ -922,9 +940,7 @@ function AttachToProjectDialog({
    *  invalidations to the project that was just attached. */
   onAttached: (projectId: string) => void;
 }) {
-  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(
-    undefined,
-  );
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
   const [selectedRole, setSelectedRole] = useState<ProjectRole>('editor');
   // Optional auto-revoke timestamp. Empty string = permanent (default).
   // Stored as the raw <input type="datetime-local"> value; we convert
@@ -944,9 +960,7 @@ function AttachToProjectDialog({
     const all = projectsQuery.data ?? [];
     return all
       .filter(
-        (p) =>
-          p.effective_project_role === 'manager' &&
-          !attachedProjectIds.has(p.project_id),
+        (p) => p.effective_project_role === 'manager' && !attachedProjectIds.has(p.project_id),
       )
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [projectsQuery.data, attachedProjectIds]);
@@ -969,15 +983,8 @@ function AttachToProjectDialog({
       // ISO so server gets unambiguous UTC. Empty = permanent (null
       // would clear an existing expiry, but on attach there's nothing
       // to clear, so we just omit it).
-      const expiresAt = expiresAtLocal
-        ? new Date(expiresAtLocal).toISOString()
-        : undefined;
-      return attachGroupToProject(
-        selectedProjectId,
-        groupId,
-        selectedRole,
-        expiresAt,
-      );
+      const expiresAt = expiresAtLocal ? new Date(expiresAtLocal).toISOString() : undefined;
+      return attachGroupToProject(selectedProjectId, groupId, selectedRole, expiresAt);
     },
     onSuccess: () => {
       toast.success(`"${groupName}" attached to project`);
@@ -985,8 +992,7 @@ function AttachToProjectDialog({
       // synchronously if it isn't set, which short-circuits onSuccess.
       onAttached(selectedProjectId!);
     },
-    onError: (err: Error) =>
-      toast.error(err.message || 'Failed to attach group to project'),
+    onError: (err: Error) => toast.error(err.message || 'Failed to attach group to project'),
   });
 
   return (
@@ -995,8 +1001,7 @@ function AttachToProjectDialog({
         <DialogHeader>
           <DialogTitle>Attach &quot;{groupName}&quot; to a project</DialogTitle>
           <DialogDescription>
-            Every member of this group will inherit the chosen role on the
-            project.
+            Every member of this group will inherit the chosen role on the project.
           </DialogDescription>
         </DialogHeader>
 
@@ -1006,15 +1011,16 @@ function AttachToProjectDialog({
             {projectsQuery.isLoading ? (
               <Skeleton className="h-9 w-full" />
             ) : candidates.length === 0 ? (
-              <p className="rounded-2xl border border-border/60 bg-muted/20 px-3 py-2.5 text-xs text-muted-foreground">
+              <p className="border-border/60 bg-muted/20 text-muted-foreground rounded-2xl border px-3 py-2.5 text-xs">
                 {(projectsQuery.data ?? []).length === 0
                   ? 'No projects in this account yet.'
                   : attachedProjectIds.size > 0 &&
-                    attachedProjectIds.size === (projectsQuery.data ?? []).filter(
-                      (p) => p.effective_project_role === 'manager',
-                    ).length
-                  ? 'This group is already attached to every project you can manage.'
-                  : 'You need Manager access on a project to attach a group to it.'}
+                      attachedProjectIds.size ===
+                        (projectsQuery.data ?? []).filter(
+                          (p) => p.effective_project_role === 'manager',
+                        ).length
+                    ? 'This group is already attached to every project you can manage.'
+                    : 'You need Manager access on a project to attach a group to it.'}
               </p>
             ) : (
               <Select
@@ -1037,17 +1043,12 @@ function AttachToProjectDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="attach-role">Role</Label>
-            <Select
-              value={selectedRole}
-              onValueChange={(v) => setSelectedRole(v as ProjectRole)}
-            >
+            <Select value={selectedRole} onValueChange={(v) => setSelectedRole(v as ProjectRole)}>
               <SelectTrigger id="attach-role">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="manager">
-                  Manager — full control of the project
-                </SelectItem>
+                <SelectItem value="manager">Manager — full control of the project</SelectItem>
                 <SelectItem value="editor">
                   Editor — read and write, no member or settings changes
                 </SelectItem>
@@ -1059,7 +1060,7 @@ function AttachToProjectDialog({
           <div className="space-y-1.5">
             <Label htmlFor="attach-expires" className="flex items-center gap-2">
               Expires
-              <span className="text-[10px] font-normal text-muted-foreground">
+              <span className="text-muted-foreground text-[10px] font-normal">
                 optional · leave blank for permanent
               </span>
             </Label>
@@ -1075,10 +1076,9 @@ function AttachToProjectDialog({
               min={new Date(Date.now() + 60_000).toISOString().slice(0, 16)}
               className="max-w-xs"
             />
-            <p className="text-[11px] text-muted-foreground">
-              The grant auto-revokes at this time. Group members lose
-              this project on the next request after expiry; the audit
-              log records the revocation within a minute.
+            <p className="text-muted-foreground text-[11px]">
+              The grant auto-revokes at this time. Group members lose this project on the next
+              request after expiry; the audit log records the revocation within a minute.
             </p>
           </div>
         </div>
@@ -1093,16 +1093,10 @@ function AttachToProjectDialog({
           </Button>
           <Button
             onClick={() => attachMutation.mutate()}
-            disabled={
-              !selectedProjectId ||
-              attachMutation.isPending ||
-              candidates.length === 0
-            }
+            disabled={!selectedProjectId || attachMutation.isPending || candidates.length === 0}
             className="gap-1.5"
           >
-            {attachMutation.isPending && (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            )}
+            {attachMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
             Attach
           </Button>
         </DialogFooter>

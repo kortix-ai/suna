@@ -1,9 +1,9 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/features/providers/auth-provider';
 import { authenticatedFetch } from '@/lib/auth-token';
-import { useAuth } from '@/components/AuthProvider';
 import { useServerStore } from '@/stores/server-store';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export type SandboxServiceStatus = 'running' | 'stopped' | 'starting' | 'failed' | 'backoff';
 export type SandboxServiceAdapter = 'spawn' | 's6';
@@ -76,10 +76,7 @@ const getActiveServerUrl = () => {
   return useServerStore.getState().getActiveServerUrl();
 };
 
-async function requestJson<T>(
-  url: string,
-  init?: RequestInit,
-): Promise<T> {
+async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await authenticatedFetch(
     url,
     {
@@ -106,8 +103,10 @@ async function requestJson<T>(
 
 export const serviceKeys = {
   all: ['sandbox-services'] as const,
-  list: (serverUrl: string, includeAll: boolean) => ['sandbox-services', serverUrl, includeAll ? 'all' : 'visible'] as const,
-  logs: (serverUrl: string, serviceId: string) => ['sandbox-services', serverUrl, 'logs', serviceId] as const,
+  list: (serverUrl: string, includeAll: boolean) =>
+    ['sandbox-services', serverUrl, includeAll ? 'all' : 'visible'] as const,
+  logs: (serverUrl: string, serviceId: string) =>
+    ['sandbox-services', serverUrl, 'logs', serviceId] as const,
   templates: (serverUrl: string) => ['sandbox-services', serverUrl, 'templates'] as const,
 };
 
@@ -122,7 +121,9 @@ export function useSandboxServices(options?: { enabled?: boolean; includeAll?: b
     queryFn: async () => {
       if (!serverUrl) return [];
       const query = includeAll ? '?all=true' : '';
-      const data = await requestJson<{ services?: SandboxService[] }>(`${serverUrl}/kortix/services${query}`);
+      const data = await requestJson<{ services?: SandboxService[] }>(
+        `${serverUrl}/kortix/services${query}`,
+      );
       return data.services ?? [];
     },
     enabled: (options?.enabled ?? true) && !isAuthLoading && !!user && !!serverUrl,
@@ -142,7 +143,9 @@ export function useSandboxServiceTemplates(options?: { enabled?: boolean }) {
     queryKey: [...serviceKeys.templates(serverUrl), user?.id ?? 'anonymous'],
     queryFn: async () => {
       if (!serverUrl) return [];
-      const data = await requestJson<{ templates?: SandboxServiceTemplate[] }>(`${serverUrl}/kortix/services/templates`);
+      const data = await requestJson<{ templates?: SandboxServiceTemplate[] }>(
+        `${serverUrl}/kortix/services/templates`,
+      );
       return data.templates ?? [];
     },
     enabled: (options?.enabled ?? true) && !isAuthLoading && !!user && !!serverUrl,
@@ -161,7 +164,9 @@ export function useSandboxServiceLogs(serviceId: string | null, options?: { enab
       : ['sandbox-services', serverUrl, 'logs', 'none', user?.id ?? 'anonymous'],
     queryFn: async () => {
       if (!serverUrl || !serviceId) return [];
-      const data = await requestJson<{ logs?: string[] }>(`${serverUrl}/kortix/services/${encodeURIComponent(serviceId)}/logs`);
+      const data = await requestJson<{ logs?: string[] }>(
+        `${serverUrl}/kortix/services/${encodeURIComponent(serviceId)}/logs`,
+      );
       return data.logs ?? [];
     },
     enabled: (options?.enabled ?? true) && !isAuthLoading && !!user && !!serverUrl && !!serviceId,
@@ -241,14 +246,16 @@ export function useSandboxRuntimeReload() {
     mutationFn: async ({ mode }: { mode: RuntimeReloadMode }) => {
       const serverUrl = getActiveServerUrl();
       if (!serverUrl) throw new Error('No active instance selected');
-      return requestJson<{ success: boolean; mode: RuntimeReloadMode; steps: string[]; errors: string[] }>(
-        `${serverUrl}/kortix/services/system/reload`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ mode }),
-        },
-      );
+      return requestJson<{
+        success: boolean;
+        mode: RuntimeReloadMode;
+        steps: string[];
+        errors: string[];
+      }>(`${serverUrl}/kortix/services/system/reload`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode }),
+      });
     },
   });
 }

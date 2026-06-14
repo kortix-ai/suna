@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { referralsApi, ReferralCodeResponse, ReferralStats, ReferralListResponse, ValidateReferralCodeResponse, ReferralEmailResponse } from '@/lib/api/referrals';
-import { toast } from '@/lib/toast';
+import { errorToast, successToast, warningToast } from '@/components/ui/toast';
+import { referralsApi } from '@/lib/api/referrals';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 
 export const REFERRALS_QUERY_KEYS = {
@@ -22,16 +22,16 @@ export function useReferralCode(options?: { enabled?: boolean }) {
 export function useRefreshReferralCode() {
   const queryClient = useQueryClient();
   const t = useTranslations('settings.referrals');
-  
+
   return useMutation({
     mutationFn: () => referralsApi.refreshReferralCode(),
     onSuccess: (data) => {
       queryClient.setQueryData(REFERRALS_QUERY_KEYS.code, data);
       queryClient.invalidateQueries({ queryKey: REFERRALS_QUERY_KEYS.stats });
-      toast.success(t('codeRefreshed'));
+      successToast(t('codeRefreshed'));
     },
     onError: () => {
-      toast.error(t('refreshFailed'));
+      errorToast(t('refreshFailed'));
     },
   });
 }
@@ -62,7 +62,7 @@ export function useValidateReferralCode() {
   return useMutation({
     mutationFn: (code: string) => referralsApi.validateReferralCode(code),
     onError: (error) => {
-      toast.error('Failed to validate referral code');
+      errorToast('Failed to validate referral code');
       console.error('Referral code validation error:', error);
     },
   });
@@ -73,16 +73,16 @@ export function useCopyReferralLink() {
 
   const copyToClipboard = async () => {
     if (!referralData?.referral_url) {
-      toast.error('Referral link not available');
+      errorToast('Referral link not available');
       return;
     }
 
     try {
       await navigator.clipboard.writeText(referralData.referral_url);
-      toast.success('Referral link copied to clipboard!');
+      successToast('Referral link copied to clipboard!');
     } catch (error) {
       console.error('Failed to copy referral link:', error);
-      toast.error('Failed to copy referral link');
+      errorToast('Failed to copy referral link');
     }
   };
 
@@ -91,25 +91,26 @@ export function useCopyReferralLink() {
 
 export function useSendReferralEmails() {
   const t = useTranslations('settings.referrals');
-  
+
   return useMutation({
     mutationFn: (emails: string[]) => referralsApi.sendReferralEmails(emails),
     onSuccess: (data) => {
       if (data.success_count && data.total_count) {
         if (data.success_count === data.total_count) {
-          toast.success(`Successfully sent ${data.success_count} ${data.success_count === 1 ? 'invitation' : 'invitations'}!`);
+          successToast(
+            `Successfully sent ${data.success_count} ${data.success_count === 1 ? 'invitation' : 'invitations'}!`,
+          );
         } else {
-          toast.warning(`Sent ${data.success_count} out of ${data.total_count} invitations`);
+          warningToast(`Sent ${data.success_count} out of ${data.total_count} invitations`);
         }
       } else {
-        toast.success(t('emailSent'));
+        successToast(t('emailSent'));
       }
     },
     onError: (error: any) => {
       const errorMessage = error?.message || 'Failed to send referral emails';
-      toast.error(errorMessage);
+      errorToast(errorMessage);
       console.error('Referral email error:', error);
     },
   });
 }
-

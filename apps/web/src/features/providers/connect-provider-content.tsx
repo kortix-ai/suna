@@ -13,48 +13,48 @@ import { useTranslations } from 'next-intl';
  * All provider connection flows go through this one component.
  */
 
-import { useState, useMemo, useCallback, useEffect } from 'react';
-import { cn } from '@/lib/utils';
-import {
-  Search,
-  ArrowLeft,
-  Loader2,
-  ExternalLink,
-  AlertCircle,
-  ChevronRight,
-  ChevronDown,
-  Key,
-  Globe,
-  Plus,
-} from 'lucide-react';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   POPULAR_PROVIDER_IDS,
   PROVIDER_LABELS,
   PROVIDER_NOTES,
   ProviderLogo,
-} from '@/components/providers/provider-branding';
-import { ProviderCard } from '@/components/providers/provider-card';
+} from '@/features/providers/provider-branding';
+import { ProviderCard } from '@/features/providers/provider-card';
+import { cn } from '@/lib/utils';
+import {
+  AlertCircle,
+  ArrowLeft,
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  Globe,
+  Key,
+  Loader2,
+  Plus,
+  Search,
+} from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { getClient } from '@/lib/opencode-sdk';
-import { useQueryClient } from '@tanstack/react-query';
-import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import { configKeys } from '@/hooks/opencode/use-opencode-config';
-import { toast } from '@/lib/toast';
+import { successToast } from '@/components/ui/toast';
 import {
   buildCustomProviderConfigUpdate,
   isEnvReference,
   normalizeCustomProviderForm,
   validateCustomProviderForm,
-} from '@/components/providers/custom-provider-config';
+} from '@/features/providers/custom-provider-config';
+import { configKeys } from '@/hooks/opencode/use-opencode-config';
+import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
+import { getClient } from '@/lib/opencode-sdk';
+import { useQueryClient } from '@tanstack/react-query';
 
 const FALLBACK_PROVIDER_CARDS: Array<{ id: string; name: string }> = [];
 
@@ -102,7 +102,9 @@ function formatOauthError(err: unknown): string {
     try {
       const json = JSON.stringify(err);
       if (json && json !== '{}') return json;
-    } catch { /* fall through */ }
+    } catch {
+      /* fall through */
+    }
   }
   return typeof err === 'string' ? err : 'Something went wrong. Please try again.';
 }
@@ -110,14 +112,8 @@ function formatOauthError(err: unknown): string {
 /** Get an icon for the auth method based on its label/type */
 function methodIcon(method: { type: string; label: string }) {
   const label = method.label.toLowerCase();
-  if (
-    method.type === 'api' ||
-    label.includes('api key') ||
-    label.includes('manually')
-  )
-    return Key;
-  if (label.includes('pro') || label.includes('max') || label.includes('plus'))
-    return Globe;
+  if (method.type === 'api' || label.includes('api key') || label.includes('manually')) return Key;
+  if (label.includes('pro') || label.includes('max') || label.includes('plus')) return Globe;
   if (label.includes('create')) return Plus;
   return Globe;
 }
@@ -166,16 +162,10 @@ export function ConnectProviderContent({
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const queryClient = useQueryClient();
-  const connectedIds = useMemo(
-    () => new Set(providers?.connected ?? []),
-    [providers],
-  );
+  const connectedIds = useMemo(() => new Set(providers?.connected ?? []), [providers]);
 
   // --- Navigation state ---
-  type View =
-    | { type: 'list' }
-    | { type: 'custom' }
-    | { type: 'connect'; providerID: string };
+  type View = { type: 'list' } | { type: 'custom' } | { type: 'connect'; providerID: string };
 
   const [view, setView] = useState<View>({ type: 'list' });
 
@@ -190,20 +180,14 @@ export function ConnectProviderContent({
   const [otherOpen, setOtherOpen] = useState(false);
 
   // --- Connect flow state ---
-  const [authMethods, setAuthMethods] = useState<
-    Array<{ type: string; label: string }>
-  >([]);
+  const [authMethods, setAuthMethods] = useState<Array<{ type: string; label: string }>>([]);
   const [methodIndex, setMethodIndex] = useState<number | undefined>(undefined);
   const [apiKey, setApiKey] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [oauthState, setOauthState] = useState<
-    'idle' | 'pending' | 'complete' | 'error'
-  >('idle');
+  const [oauthState, setOauthState] = useState<'idle' | 'pending' | 'complete' | 'error'>('idle');
   const [oauthUrl, setOauthUrl] = useState('');
-  const [oauthMethod, setOauthMethod] = useState<'code' | 'auto' | undefined>(
-    undefined,
-  );
+  const [oauthMethod, setOauthMethod] = useState<'code' | 'auto' | undefined>(undefined);
   const [oauthCode, setOauthCode] = useState('');
   const [oauthInstructions, setOauthInstructions] = useState('');
 
@@ -231,9 +215,7 @@ export function ConnectProviderContent({
     return allProviders
       .filter(
         (p) =>
-          !q ||
-          (p.id || '').toLowerCase().includes(q) ||
-          (p.name || '').toLowerCase().includes(q),
+          !q || (p.id || '').toLowerCase().includes(q) || (p.name || '').toLowerCase().includes(q),
       )
       .sort((a, b) => {
         const ai = POPULAR_PROVIDER_IDS.indexOf(a.id);
@@ -262,9 +244,7 @@ export function ConnectProviderContent({
 
   const selectedProviderData = useMemo(
     () =>
-      view.type === 'connect'
-        ? allProviders.find((p) => p.id === view.providerID)
-        : undefined,
+      view.type === 'connect' ? allProviders.find((p) => p.id === view.providerID) : undefined,
     [view, allProviders],
   );
 
@@ -294,7 +274,7 @@ export function ConnectProviderContent({
       queryClient.invalidateQueries({ queryKey: opencodeKeys.providers() });
       onProviderConnected?.();
       const label = PROVIDER_LABELS[providerID] || providerID;
-      toast.success(`${label} connected`, {
+      successToast(`${label} connected`, {
         description: 'API key saved successfully.',
       });
       setView({ type: 'list' });
@@ -316,11 +296,7 @@ export function ConnectProviderContent({
 
   // --- Select auth method ---
   const selectMethod = useCallback(
-    async (
-      providerID: string,
-      methods: Array<{ type: string; label: string }>,
-      index: number,
-    ) => {
+    async (providerID: string, methods: Array<{ type: string; label: string }>, index: number) => {
       setMethodIndex(index);
       setError('');
       const method = methods[index];
@@ -364,9 +340,9 @@ export function ConnectProviderContent({
       try {
         const client = getClient();
         const result = await client.provider.auth();
-        const methods = (
-          result.data as Record<string, Array<{ type: string; label: string }>>
-        )?.[providerID];
+        const methods = (result.data as Record<string, Array<{ type: string; label: string }>>)?.[
+          providerID
+        ];
         if (methods && methods.length > 0) {
           setAuthMethods(methods);
           if (methods.length === 1) {
@@ -444,12 +420,7 @@ export function ConnectProviderContent({
   // When method is 'auto', open the auth URL in a new tab, then call the callback
   // endpoint (no code) — the backend blocks until auth completes.
   useEffect(() => {
-    if (
-      view.type !== 'connect' ||
-      oauthMethod !== 'auto' ||
-      oauthState !== 'complete'
-    )
-      return;
+    if (view.type !== 'connect' || oauthMethod !== 'auto' || oauthState !== 'complete') return;
     let cancelled = false;
 
     // Open auth URL automatically
@@ -496,14 +467,9 @@ export function ConnectProviderContent({
         const normalizedForm = normalizeCustomProviderForm(customForm);
         const client = getClient();
         const currentConfig = unwrapResult(await client.global.config.get());
-        const configUpdate = buildCustomProviderConfigUpdate(
-          currentConfig,
-          normalizedForm,
-        );
+        const configUpdate = buildCustomProviderConfigUpdate(currentConfig, normalizedForm);
 
-        unwrapResult(
-          await client.global.config.update({ config: configUpdate } as any),
-        );
+        unwrapResult(await client.global.config.update({ config: configUpdate } as any));
 
         if (normalizedForm.apiKey && !isEnvReference(normalizedForm.apiKey)) {
           unwrapResult(
@@ -519,7 +485,7 @@ export function ConnectProviderContent({
         queryClient.invalidateQueries({ queryKey: opencodeKeys.providers() });
         onProviderConnected?.();
         const label = normalizedForm.name || normalizedForm.providerID;
-        toast.success(`${label} connected`, {
+        successToast(`${label} connected`, {
           description: 'Custom provider added successfully.',
         });
         setView({ type: 'list' });
@@ -566,14 +532,10 @@ export function ConnectProviderContent({
   }, [view, authMethods, methodIndex, resetConnect]);
 
   // Determine what to show in connect view
-  const currentMethod =
-    methodIndex !== undefined ? authMethods[methodIndex] : undefined;
+  const currentMethod = methodIndex !== undefined ? authMethods[methodIndex] : undefined;
   const showMethodSelect =
-    view.type === 'connect' &&
-    authMethods.length > 1 &&
-    methodIndex === undefined;
-  const showApiKeyForm =
-    view.type === 'connect' && currentMethod?.type === 'api';
+    view.type === 'connect' && authMethods.length > 1 && methodIndex === undefined;
+  const showApiKeyForm = view.type === 'connect' && currentMethod?.type === 'api';
   const showOAuthCode =
     view.type === 'connect' &&
     currentMethod?.type === 'oauth' &&
@@ -585,24 +547,16 @@ export function ConnectProviderContent({
     oauthMethod === 'auto' &&
     oauthState === 'complete';
   const showOAuthPending =
-    view.type === 'connect' &&
-    currentMethod?.type === 'oauth' &&
-    oauthState === 'pending';
+    view.type === 'connect' && currentMethod?.type === 'oauth' && oauthState === 'pending';
   const showOAuthError = view.type === 'connect' && oauthState === 'error';
 
   // Dynamic title: upstream shows "Login with Claude Pro/Max" when that method is selected
   const connectTitle = (() => {
     if (view.type !== 'connect') return '';
-    if (
-      currentMethod?.label?.toLowerCase().includes('max') &&
-      view.providerID === 'anthropic'
-    ) {
+    if (currentMethod?.label?.toLowerCase().includes('max') && view.providerID === 'anthropic') {
       return 'Login with Claude Pro/Max';
     }
-    if (
-      currentMethod?.label?.toLowerCase().includes('plus') &&
-      view.providerID === 'openai'
-    ) {
+    if (currentMethod?.label?.toLowerCase().includes('plus') && view.providerID === 'openai') {
       return 'Login with ChatGPT Pro/Plus';
     }
     return `Connect ${PROVIDER_LABELS[view.providerID] || selectedProviderData?.name || view.providerID}`;
@@ -625,7 +579,7 @@ export function ConnectProviderContent({
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <h3 className="flex-1 text-sm font-medium text-foreground">
+          <h3 className="text-foreground flex-1 text-sm font-medium">
             {view.type === 'custom' && 'Add Custom Provider'}
             {view.type === 'connect' && connectTitle}
           </h3>
@@ -634,19 +588,18 @@ export function ConnectProviderContent({
 
       {/* Selected provider summary for connect view */}
       {view.type === 'connect' && selectedProviderData && (
-        <div className="mb-5 flex items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-4 py-3.5">
+        <div className="border-border/50 bg-muted/20 mb-5 flex items-center gap-3 rounded-2xl border px-4 py-3.5">
           <ProviderLogo
             providerID={selectedProviderData.id}
             name={selectedProviderData.name}
             size="large"
           />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold text-foreground">
-              {PROVIDER_LABELS[selectedProviderData.id] ||
-                selectedProviderData.name}
+            <div className="text-foreground text-sm font-semibold">
+              {PROVIDER_LABELS[selectedProviderData.id] || selectedProviderData.name}
             </div>
             {PROVIDER_NOTES[selectedProviderData.id] && (
-              <p className="text-xs text-muted-foreground mt-0.5">
+              <p className="text-muted-foreground mt-0.5 text-xs">
                 {PROVIDER_NOTES[selectedProviderData.id]}
               </p>
             )}
@@ -656,18 +609,20 @@ export function ConnectProviderContent({
 
       {/* ============ PROVIDER LIST ============ */}
       {view.type === 'list' && (
-        <div className="space-y-1 px-3 pb-4 pt-3">
+        <div className="space-y-1 px-3 pt-3 pb-4">
           {/* Search — only when not controlled by a parent (e.g. modal). */}
           {!isControlledSearch && (
             <div className="relative pb-1">
-              <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+              <Search className="text-muted-foreground/60 absolute top-1/2 left-3 size-3.5 -translate-y-1/2" />
               <Input
                 type="text"
-                placeholder={tHardcodedUi.raw('componentsProvidersConnectProviderContent.line663JsxAttrPlaceholderSearchProviders')}
+                placeholder={tHardcodedUi.raw(
+                  'componentsProvidersConnectProviderContent.line663JsxAttrPlaceholderSearchProviders',
+                )}
                 autoComplete="off"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-9 rounded-xl border-border/50 bg-muted/20 pl-9 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+                className="border-border/50 bg-muted/20 focus-visible:ring-ring/40 h-9 rounded-xl pl-9 text-sm shadow-none focus-visible:ring-1"
               />
             </div>
           )}
@@ -694,12 +649,17 @@ export function ConnectProviderContent({
               onValueChange={(value) => setOtherOpen(value === 'other')}
             >
               <AccordionItem value="other" className="border-none">
-                <AccordionTrigger className="rounded-xl px-3.5 py-2.5 text-xs font-medium text-muted-foreground hover:bg-muted/35 hover:no-underline hover:text-foreground [&>svg]:hidden">
+                <AccordionTrigger className="text-muted-foreground hover:bg-muted/35 hover:text-foreground rounded-xl px-3.5 py-2.5 text-xs font-medium hover:no-underline [&>svg]:hidden">
                   <span className="flex w-full items-center justify-between gap-2">
-                    <span>{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line696JsxTextMoreProviders')}{otherGroup.length})</span>
+                    <span>
+                      {tHardcodedUi.raw(
+                        'componentsProvidersConnectProviderContent.line696JsxTextMoreProviders',
+                      )}
+                      {otherGroup.length})
+                    </span>
                     <ChevronDown
                       className={cn(
-                        'h-3.5 w-3.5 text-muted-foreground/50 transition-transform duration-200',
+                        'text-muted-foreground/50 h-3.5 w-3.5 transition-transform duration-200',
                         otherOpen && 'rotate-180',
                       )}
                     />
@@ -727,13 +687,19 @@ export function ConnectProviderContent({
             <ProviderCard
               providerID="custom"
               name="Custom Provider"
-              description={tHardcodedUi.raw('componentsProvidersConnectProviderContent.line727JsxAttrDescriptionAddAnyOpenaiCompatibleEndpoint')}
+              description={tHardcodedUi.raw(
+                'componentsProvidersConnectProviderContent.line727JsxAttrDescriptionAddAnyOpenaiCompatibleEndpoint',
+              )}
               onClick={() => setView({ type: 'custom' })}
             />
           )}
 
           {filteredProviders.length === 0 && !customMatchesSearch && (
-            <div className="py-8 text-center text-sm text-muted-foreground/60">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line734JsxTextNoProvidersFound')}</div>
+            <div className="text-muted-foreground/60 py-8 text-center text-sm">
+              {tHardcodedUi.raw(
+                'componentsProvidersConnectProviderContent.line734JsxTextNoProvidersFound',
+              )}
+            </div>
           )}
         </div>
       )}
@@ -741,107 +707,123 @@ export function ConnectProviderContent({
       {/* ============ CUSTOM PROVIDER FORM ============ */}
       {view.type === 'custom' && (
         <form onSubmit={handleCustomSubmit} className="space-y-4">
-          <p className="text-sm text-muted-foreground/70">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line744JsxTextAddAnOpenaiCompatibleProvider')}{' '}
+          <p className="text-muted-foreground/70 text-sm">
+            {tHardcodedUi.raw(
+              'componentsProvidersConnectProviderContent.line744JsxTextAddAnOpenaiCompatibleProvider',
+            )}{' '}
             <a
               href="https://opencode.ai/docs/providers/#custom-provider"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-primary hover:underline inline-flex items-center gap-0.5"
-            >{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line751JsxTextLearnMore')}<ExternalLink className="h-3 w-3" />
+              className="text-primary inline-flex items-center gap-0.5 hover:underline"
+            >
+              {tHardcodedUi.raw(
+                'componentsProvidersConnectProviderContent.line751JsxTextLearnMore',
+              )}
+              <ExternalLink className="h-3 w-3" />
             </a>
           </p>
-          <div className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-4">
+          <div className="border-border/50 bg-muted/20 space-y-4 rounded-2xl border p-4">
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line757JsxTextProviderId')}</label>
+              <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+                {tHardcodedUi.raw(
+                  'componentsProvidersConnectProviderContent.line757JsxTextProviderId',
+                )}
+              </label>
               <Input
                 type="text"
                 placeholder="my-provider"
                 value={customForm.providerID}
-                onChange={(e) =>
-                  setCustomForm((f) => ({ ...f, providerID: e.target.value }))
-                }
-                className="h-9 rounded-xl border-border/50 bg-background text-sm"
+                onChange={(e) => setCustomForm((f) => ({ ...f, providerID: e.target.value }))}
+                className="border-border/50 bg-background h-9 rounded-xl text-sm"
                 autoFocus
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line772JsxTextDisplayName')}</label>
+              <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+                {tHardcodedUi.raw(
+                  'componentsProvidersConnectProviderContent.line772JsxTextDisplayName',
+                )}
+              </label>
               <Input
                 type="text"
-                placeholder={tHardcodedUi.raw('componentsProvidersConnectProviderContent.line776JsxAttrPlaceholderMyProvider')}
+                placeholder={tHardcodedUi.raw(
+                  'componentsProvidersConnectProviderContent.line776JsxAttrPlaceholderMyProvider',
+                )}
                 value={customForm.name}
-                onChange={(e) =>
-                  setCustomForm((f) => ({ ...f, name: e.target.value }))
-                }
-                className="h-9 rounded-xl border-border/50 bg-background text-sm"
+                onChange={(e) => setCustomForm((f) => ({ ...f, name: e.target.value }))}
+                className="border-border/50 bg-background h-9 rounded-xl text-sm"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line786JsxTextBaseUrl')}</label>
+              <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+                {tHardcodedUi.raw(
+                  'componentsProvidersConnectProviderContent.line786JsxTextBaseUrl',
+                )}
+              </label>
               <Input
                 type="text"
                 placeholder="https://api.example.com/v1"
                 value={customForm.baseURL}
-                onChange={(e) =>
-                  setCustomForm((f) => ({ ...f, baseURL: e.target.value }))
-                }
-                className="h-9 rounded-xl border-border/50 bg-background text-sm"
+                onChange={(e) => setCustomForm((f) => ({ ...f, baseURL: e.target.value }))}
+                className="border-border/50 bg-background h-9 rounded-xl text-sm"
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line800JsxTextApiKey')}{' '}
-                <span className="font-normal text-muted-foreground/50">
-                  (optional)
-                </span>
+              <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+                {tHardcodedUi.raw('componentsProvidersConnectProviderContent.line800JsxTextApiKey')}{' '}
+                <span className="text-muted-foreground/50 font-normal">(optional)</span>
               </label>
               <Input
                 placeholder="sk-..."
                 type="password"
                 value={customForm.apiKey}
-                onChange={(e) =>
-                  setCustomForm((f) => ({ ...f, apiKey: e.target.value }))
-                }
-                className="h-9 rounded-xl border-border/50 bg-background text-sm"
+                onChange={(e) => setCustomForm((f) => ({ ...f, apiKey: e.target.value }))}
+                className="border-border/50 bg-background h-9 rounded-xl text-sm"
               />
-              <p className="text-xs text-muted-foreground/50 mt-1.5">
-                Use {'{env:VAR_NAME}'}{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line815JsxTextToReadFromEnvironment')}</p>
+              <p className="text-muted-foreground/50 mt-1.5 text-xs">
+                Use {'{env:VAR_NAME}'}
+                {tHardcodedUi.raw(
+                  'componentsProvidersConnectProviderContent.line815JsxTextToReadFromEnvironment',
+                )}
+              </p>
             </div>
             <div>
-              <label className="text-xs font-medium text-muted-foreground mb-1.5 block">
+              <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
                 Model
               </label>
               <div className="flex gap-2">
                 <Input
                   type="text"
-                  placeholder={tHardcodedUi.raw('componentsProvidersConnectProviderContent.line825JsxAttrPlaceholderModelId')}
+                  placeholder={tHardcodedUi.raw(
+                    'componentsProvidersConnectProviderContent.line825JsxAttrPlaceholderModelId',
+                  )}
                   value={customForm.modelId}
-                  onChange={(e) =>
-                    setCustomForm((f) => ({ ...f, modelId: e.target.value }))
-                  }
-                  className="h-9 flex-1 rounded-xl border-border/50 bg-background text-sm"
+                  onChange={(e) => setCustomForm((f) => ({ ...f, modelId: e.target.value }))}
+                  className="border-border/50 bg-background h-9 flex-1 rounded-xl text-sm"
                 />
                 <Input
                   type="text"
-                  placeholder={tHardcodedUi.raw('componentsProvidersConnectProviderContent.line834JsxAttrPlaceholderDisplayName')}
+                  placeholder={tHardcodedUi.raw(
+                    'componentsProvidersConnectProviderContent.line834JsxAttrPlaceholderDisplayName',
+                  )}
                   value={customForm.modelName}
-                  onChange={(e) =>
-                    setCustomForm((f) => ({ ...f, modelName: e.target.value }))
-                  }
-                  className="h-9 flex-1 rounded-xl border-border/50 bg-background text-sm"
+                  onChange={(e) => setCustomForm((f) => ({ ...f, modelName: e.target.value }))}
+                  className="border-border/50 bg-background h-9 flex-1 rounded-xl text-sm"
                 />
               </div>
             </div>
           </div>
           {error && (
-            <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-2xl px-3 py-2">
-              <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+            <div className="text-destructive bg-destructive/5 flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
               <span>{error}</span>
             </div>
           )}
           <Button type="submit" disabled={saving} size="sm" className="px-4">
             {saving ? (
               <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                 Connecting...
               </>
             ) : (
@@ -856,13 +838,13 @@ export function ConnectProviderContent({
         <div className="space-y-4">
           {showMethodSelect && (
             <>
-              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line869JsxTextSelectLoginMethodFor')}{' '}
-                {PROVIDER_LABELS[view.providerID] ||
-                  selectedProviderData?.name ||
-                  view.providerID}
-                .
+              <p className="text-muted-foreground text-sm">
+                {tHardcodedUi.raw(
+                  'componentsProvidersConnectProviderContent.line869JsxTextSelectLoginMethodFor',
+                )}{' '}
+                {PROVIDER_LABELS[view.providerID] || selectedProviderData?.name || view.providerID}.
               </p>
-              <div className="rounded-2xl border border-border/50 bg-muted/20 p-2 space-y-0.5">
+              <div className="border-border/50 bg-muted/20 space-y-0.5 rounded-2xl border p-2">
                 {authMethods.map((method, i) => {
                   const Icon = methodIcon(method);
                   const desc = methodDescription(method);
@@ -870,26 +852,22 @@ export function ConnectProviderContent({
                     <Button
                       key={i}
                       type="button"
-                      onClick={() =>
-                        selectMethod(view.providerID, authMethods, i)
-                      }
+                      onClick={() => selectMethod(view.providerID, authMethods, i)}
                       variant="ghost"
-                      className="group h-auto w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-background/70 justify-start"
+                      className="group hover:bg-background/70 h-auto w-full items-center justify-start gap-3 rounded-xl px-3 py-3 text-left"
                     >
-                      <span className="flex items-center justify-center size-8 rounded-lg bg-muted/50 text-muted-foreground group-hover:text-foreground transition-colors shrink-0">
+                      <span className="bg-muted/50 text-muted-foreground group-hover:text-foreground flex size-8 shrink-0 items-center justify-center rounded-lg transition-colors">
                         <Icon className="h-4 w-4" />
                       </span>
-                      <span className="flex-1 min-w-0">
-                        <span className="text-sm font-medium block">
-                          {methodLabel(method)}
-                        </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-medium">{methodLabel(method)}</span>
                         {desc && (
-                          <span className="text-xs text-muted-foreground/70 block mt-0.5">
+                          <span className="text-muted-foreground/70 mt-0.5 block text-xs">
                             {desc}
                           </span>
                         )}
                       </span>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors shrink-0 ml-auto" />
+                      <ChevronRight className="text-muted-foreground/40 group-hover:text-muted-foreground ml-auto h-4 w-4 shrink-0 transition-colors" />
                     </Button>
                   );
                 })}
@@ -900,35 +878,42 @@ export function ConnectProviderContent({
           {showApiKeyForm && (
             <form
               onSubmit={handleApiKeySubmit}
-              className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-4"
+              className="border-border/50 bg-muted/20 space-y-4 rounded-2xl border p-4"
             >
-              <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line916JsxTextEnterYour')}{' '}{selectedProviderData?.name || view.providerID}{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line916JsxTextApiKey')}</p>
+              <p className="text-muted-foreground text-sm">
+                {tHardcodedUi.raw(
+                  'componentsProvidersConnectProviderContent.line916JsxTextEnterYour',
+                )}{' '}
+                {selectedProviderData?.name || view.providerID}
+                {tHardcodedUi.raw('componentsProvidersConnectProviderContent.line916JsxTextApiKey')}
+              </p>
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line921JsxTextApiKey')}</label>
+                <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+                  {tHardcodedUi.raw(
+                    'componentsProvidersConnectProviderContent.line921JsxTextApiKey',
+                  )}
+                </label>
                 <Input
-                  placeholder={tHardcodedUi.raw('componentsProvidersConnectProviderContent.line924JsxAttrPlaceholderEnterApiKey')}
+                  placeholder={tHardcodedUi.raw(
+                    'componentsProvidersConnectProviderContent.line924JsxAttrPlaceholderEnterApiKey',
+                  )}
                   type="text"
                   value={apiKey}
                   onChange={(e) => setApiKey(e.target.value)}
-                  className="h-9 rounded-xl border-border/50 bg-background text-sm"
+                  className="border-border/50 bg-background h-9 rounded-xl text-sm"
                   autoFocus
                 />
               </div>
               {error && (
-                <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-2xl px-3 py-2">
-                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                <div className="text-destructive bg-destructive/5 flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
-              <Button
-                type="submit"
-                disabled={saving}
-                size="sm"
-                className="px-4 "
-              >
+              <Button type="submit" disabled={saving} size="sm" className="px-4">
                 {saving ? (
                   <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                     Connecting...
                   </>
                 ) : (
@@ -939,50 +924,69 @@ export function ConnectProviderContent({
           )}
 
           {showOAuthPending && (
-            <div className="flex items-center gap-2.5 py-6 justify-center">
-              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              <span className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line960JsxTextStartingAuthorization')}</span>
+            <div className="flex items-center justify-center gap-2.5 py-6">
+              <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+              <span className="text-muted-foreground text-sm">
+                {tHardcodedUi.raw(
+                  'componentsProvidersConnectProviderContent.line960JsxTextStartingAuthorization',
+                )}
+              </span>
             </div>
           )}
 
           {showOAuthCode && (
             <form
               onSubmit={handleOAuthCodeSubmit}
-              className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-5"
+              className="border-border/50 bg-muted/20 space-y-4 rounded-2xl border p-5"
             >
               <div className="space-y-3">
-                <h3 className="text-sm font-semibold text-foreground">
+                <h3 className="text-foreground text-sm font-semibold">
                   Connect {selectedProviderData?.name || view.providerID}
                 </h3>
-                <div className="space-y-2 text-sm text-muted-foreground">
+                <div className="text-muted-foreground space-y-2 text-sm">
                   <div className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center mt-0.5">
+                    <span className="bg-primary/10 text-primary mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold">
                       1
                     </span>
-                    <span>{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line980JsxTextClickTheButtonBelowToOpenTheAuthorization')}</span>
+                    <span>
+                      {tHardcodedUi.raw(
+                        'componentsProvidersConnectProviderContent.line980JsxTextClickTheButtonBelowToOpenTheAuthorization',
+                      )}
+                    </span>
                   </div>
                   <div className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center mt-0.5">
+                    <span className="bg-primary/10 text-primary mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold">
                       2
                     </span>
-                    <span>{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line987JsxTextSignInAndAuthorizeAccess')}</span>
+                    <span>
+                      {tHardcodedUi.raw(
+                        'componentsProvidersConnectProviderContent.line987JsxTextSignInAndAuthorizeAccess',
+                      )}
+                    </span>
                   </div>
                   <div className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center mt-0.5">
+                    <span className="bg-primary/10 text-primary mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold">
                       3
                     </span>
-                    <span>{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line994JsxTextAfterRedirectCopyTheFullUrlFromYour')}{' '}
-                      <code className="text-xs bg-muted px-1 py-0.5 rounded">
+                    <span>
+                      {tHardcodedUi.raw(
+                        'componentsProvidersConnectProviderContent.line994JsxTextAfterRedirectCopyTheFullUrlFromYour',
+                      )}{' '}
+                      <code className="bg-muted rounded px-1 py-0.5 text-xs">
                         http://localhost...
                       </code>
                       )
                     </span>
                   </div>
                   <div className="flex items-start gap-2">
-                    <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center mt-0.5">
+                    <span className="bg-primary/10 text-primary mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full text-xs font-semibold">
                       4
                     </span>
-                    <span>{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line1006JsxTextPasteItBelowAndClickConnect')}</span>
+                    <span>
+                      {tHardcodedUi.raw(
+                        'componentsProvidersConnectProviderContent.line1006JsxTextPasteItBelowAndClickConnect',
+                      )}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -991,27 +995,33 @@ export function ConnectProviderContent({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="w-full h-10 gap-2"
-                onClick={() =>
-                  window.open(oauthUrl, '_blank', 'noopener,noreferrer')
-                }
+                className="h-10 w-full gap-2"
+                onClick={() => window.open(oauthUrl, '_blank', 'noopener,noreferrer')}
               >
-                <ExternalLink className="h-4 w-4" />{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line1021JsxTextOpenAuthorizationPage')}</Button>
+                <ExternalLink className="h-4 w-4" />
+                {tHardcodedUi.raw(
+                  'componentsProvidersConnectProviderContent.line1021JsxTextOpenAuthorizationPage',
+                )}
+              </Button>
 
               <div>
-                <label className="text-xs font-medium text-muted-foreground mb-1.5 block">{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line1026JsxTextPasteTheRedirectUrlHere')}</label>
+                <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+                  {tHardcodedUi.raw(
+                    'componentsProvidersConnectProviderContent.line1026JsxTextPasteTheRedirectUrlHere',
+                  )}
+                </label>
                 <Input
                   placeholder="http://localhost:.../callback?code=..."
                   type="text"
                   value={oauthCode}
                   onChange={(e) => setOauthCode(e.target.value)}
-                  className="h-9 rounded-xl border-border/50 bg-background text-sm"
+                  className="border-border/50 bg-background h-9 rounded-xl text-sm"
                   autoFocus
                 />
               </div>
               {error && (
-                <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/5 rounded-2xl px-3 py-2">
-                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0 mt-0.5" />
+                <div className="text-destructive bg-destructive/5 flex items-start gap-2 rounded-2xl px-3 py-2 text-xs">
+                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
@@ -1019,11 +1029,11 @@ export function ConnectProviderContent({
                 type="submit"
                 disabled={saving || !oauthCode.trim()}
                 size="sm"
-                className="w-full "
+                className="w-full"
               >
                 {saving ? (
                   <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                     Connecting...
                   </>
                 ) : (
@@ -1034,12 +1044,16 @@ export function ConnectProviderContent({
           )}
 
           {showOAuthAuto && (
-            <div className="space-y-4 rounded-2xl border border-border/50 bg-muted/20 p-5">
-              <div className="space-y-2 text-sm text-muted-foreground">
-                <p>{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line1065JsxTextABrowserTabShouldHaveOpenedAutomaticallyComplete')}</p>
+            <div className="border-border/50 bg-muted/20 space-y-4 rounded-2xl border p-5">
+              <div className="text-muted-foreground space-y-2 text-sm">
+                <p>
+                  {tHardcodedUi.raw(
+                    'componentsProvidersConnectProviderContent.line1065JsxTextABrowserTabShouldHaveOpenedAutomaticallyComplete',
+                  )}
+                </p>
               </div>
               {oauthInstructions && (
-                <div className="px-3 py-2.5 rounded-2xl bg-background border border-border/30 font-mono text-sm select-all break-all text-center font-semibold tracking-widest">
+                <div className="bg-background border-border/30 rounded-2xl border px-3 py-2.5 text-center font-mono text-sm font-semibold tracking-widest break-all select-all">
                   {oauthInstructions.includes(':')
                     ? oauthInstructions.split(':')[1]?.trim()
                     : oauthInstructions}
@@ -1049,23 +1063,29 @@ export function ConnectProviderContent({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="w-full h-10 gap-2"
-                onClick={() =>
-                  window.open(oauthUrl, '_blank', 'noopener,noreferrer')
-                }
+                className="h-10 w-full gap-2"
+                onClick={() => window.open(oauthUrl, '_blank', 'noopener,noreferrer')}
               >
-                <ExternalLink className="h-4 w-4" />{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line1086JsxTextOpenAuthorizationPage')}</Button>
-              <div className="flex items-center gap-2.5 text-sm text-muted-foreground justify-center">
+                <ExternalLink className="h-4 w-4" />
+                {tHardcodedUi.raw(
+                  'componentsProvidersConnectProviderContent.line1086JsxTextOpenAuthorizationPage',
+                )}
+              </Button>
+              <div className="text-muted-foreground flex items-center justify-center gap-2.5 text-sm">
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line1090JsxTextWaitingForAuthorization')}</span>
+                <span>
+                  {tHardcodedUi.raw(
+                    'componentsProvidersConnectProviderContent.line1090JsxTextWaitingForAuthorization',
+                  )}
+                </span>
               </div>
             </div>
           )}
 
           {showOAuthError && (
             <div className="space-y-3">
-              <div className="flex items-start gap-2 text-sm text-destructive bg-destructive/5 rounded-2xl px-4 py-3">
-                <AlertCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+              <div className="text-destructive bg-destructive/5 flex items-start gap-2 rounded-2xl px-4 py-3 text-sm">
+                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0" />
                 <span>{error || 'Authorization failed'}</span>
               </div>
               <Button
@@ -1077,7 +1097,11 @@ export function ConnectProviderContent({
                   setMethodIndex(undefined);
                   setError('');
                 }}
-              >{tHardcodedUi.raw('componentsProvidersConnectProviderContent.line1111JsxTextTryAgain')}</Button>
+              >
+                {tHardcodedUi.raw(
+                  'componentsProvidersConnectProviderContent.line1111JsxTextTryAgain',
+                )}
+              </Button>
             </div>
           )}
         </div>

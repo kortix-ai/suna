@@ -1,8 +1,8 @@
-import { useAuth } from '@/components/AuthProvider';
 import { InteractiveDemoSection } from '@/components/home/interactive-demo-section';
 import { Button } from '@/components/ui/marketing/button';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useCopy } from '@/hooks/use-copy';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { Check, Copy } from 'lucide-react';

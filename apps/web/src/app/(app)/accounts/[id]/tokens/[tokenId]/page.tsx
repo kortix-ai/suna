@@ -2,18 +2,18 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useMemo } from 'react';
-import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft, KeyRound } from 'lucide-react';
+import { useParams, useRouter } from 'next/navigation';
+import { useMemo } from 'react';
 
-import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { AppHeader } from '@/components/layout/app-header';
 import { Badge } from '@/components/ui/badge';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AppHeader } from '@/features/layout/app-header';
+import { useAuth } from '@/features/providers/auth-provider';
 import { accountTokensApi } from '@/lib/api/account-tokens';
 import { getAccount } from '@/lib/projects-client';
 import { usePermission } from '@/lib/use-permission';
@@ -66,7 +66,7 @@ export default function TokenDetailPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
+    <div className="bg-background flex min-h-screen flex-col">
       <AppHeader user={user} />
       <main className="flex-1 px-4 py-8">
         <div className="mx-auto w-full max-w-4xl space-y-8">
@@ -74,14 +74,16 @@ export default function TokenDetailPage() {
             <button
               type="button"
               onClick={() => router.push('/projects')}
-              className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground inline-flex cursor-pointer items-center gap-1.5 text-xs transition-colors"
             >
-              <ArrowLeft className="h-3.5 w-3.5" />{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line78JsxTextBackToProjects')}</button>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <ArrowLeft className="h-3.5 w-3.5" />
+              {tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line78JsxTextBackToProjects')}
+            </button>
+            <div className="text-muted-foreground flex items-center gap-2 text-sm">
               <button
                 type="button"
                 onClick={() => router.push('/accounts')}
-                className="cursor-pointer transition-colors hover:text-foreground"
+                className="hover:text-foreground cursor-pointer transition-colors"
               >
                 Accounts
               </button>
@@ -89,17 +91,19 @@ export default function TokenDetailPage() {
               <button
                 type="button"
                 onClick={() => router.push(`/accounts/${accountId}`)}
-                className="cursor-pointer transition-colors hover:text-foreground"
+                className="hover:text-foreground cursor-pointer transition-colors"
               >
                 {accountQuery.data?.name ?? 'Account'}
               </button>
               <span className="text-muted-foreground/40">/</span>
-              <span>{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line97JsxTextCliTokens')}</span>
+              <span>
+                {tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line97JsxTextCliTokens')}
+              </span>
               <span className="text-muted-foreground/40">/</span>
               {tokensQuery.isLoading ? (
                 <Skeleton className="h-4 w-24" />
               ) : (
-                <span className="truncate font-medium text-foreground">
+                <span className="text-foreground truncate font-medium">
                   {token?.name ?? 'Token'}
                 </span>
               )}
@@ -107,15 +111,15 @@ export default function TokenDetailPage() {
             <div className="flex items-start gap-3">
               <EntityAvatar icon={KeyRound} size="lg" />
               <div>
-                <h1 className="text-2xl font-semibold tracking-tight text-foreground">
+                <h1 className="text-foreground text-2xl font-semibold tracking-tight">
                   {tokensQuery.isLoading ? (
                     <Skeleton className="h-7 w-48" />
                   ) : (
-                    token?.name ?? 'Token not found'
+                    (token?.name ?? 'Token not found')
                   )}
                 </h1>
                 {token && (
-                  <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="text-muted-foreground mt-1 flex items-center gap-2 text-xs">
                     <Badge
                       variant={token.status === 'active' ? 'outline' : 'destructive'}
                       size="sm"
@@ -125,7 +129,10 @@ export default function TokenDetailPage() {
                     </Badge>
                     <span>Created {formatDate(token.created_at)}</span>
                     <span className="text-muted-foreground/40">·</span>
-                    <span>{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line128JsxTextLastUsed')}{' '}{formatDate(token.last_used_at)}</span>
+                    <span>
+                      {tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line128JsxTextLastUsed')}{' '}
+                      {formatDate(token.last_used_at)}
+                    </span>
                   </div>
                 )}
               </div>
@@ -133,12 +140,17 @@ export default function TokenDetailPage() {
           </div>
 
           {!tokensQuery.isLoading && !token && tokenId && (
-            <InfoBanner tone="neutral">{tHardcodedUi.raw('appAccountsIdTokensTokenidPage.line137JsxTextThisTokenDoesnAposTExistOrHas')}</InfoBanner>
+            <InfoBanner tone="neutral">
+              {tHardcodedUi.raw(
+                'appAccountsIdTokensTokenidPage.line137JsxTextThisTokenDoesnAposTExistOrHas',
+              )}
+            </InfoBanner>
           )}
 
           {token && accountId && (
             <InfoBanner tone="info" title="Token permissions">
-              Tokens inherit their creator&apos;s account-role and group memberships at request time. To narrow what a token can reach, scope it to a single project when minting.
+              Tokens inherit their creator&apos;s account-role and group memberships at request
+              time. To narrow what a token can reach, scope it to a single project when minting.
             </InfoBanner>
           )}
         </div>

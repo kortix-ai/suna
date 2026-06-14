@@ -3,22 +3,22 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { toast } from '@/lib/toast';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { updateProject } from '@/lib/projects-client';
 
 interface RenameProjectDialogProps {
   projectId: string | null;
-  /** Current project name, prefilled into the input. */
   currentName?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -27,17 +27,16 @@ interface RenameProjectDialogProps {
 
 const MAX_NAME_LENGTH = 120;
 
-export function RenameProjectDialog({
+export const RenameProjectDialog = ({
   projectId,
   currentName,
   open,
   onOpenChange,
   onSaved,
-}: RenameProjectDialogProps) {
+}: RenameProjectDialogProps) => {
   const queryClient = useQueryClient();
   const [value, setValue] = useState(currentName ?? '');
 
-  // Reset the field whenever a new project opens the dialog.
   useEffect(() => {
     if (open) setValue(currentName ?? '');
   }, [open, currentName]);
@@ -52,12 +51,12 @@ export function RenameProjectDialog({
         queryClient.setQueryData(['project', projectId], updated);
       }
       queryClient.invalidateQueries({ queryKey: ['projects'] });
-      toast.success('Project renamed');
+      successToast('Project renamed');
       onSaved?.();
       onOpenChange(false);
     },
     onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Failed to rename project');
+      errorToast(err instanceof Error ? err.message : 'Failed to rename project');
     },
   });
 
@@ -71,39 +70,36 @@ export function RenameProjectDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>Rename project</DialogTitle>
-          <DialogDescription>
-            Give this project a new name.
-          </DialogDescription>
-        </DialogHeader>
-        <Input
-          autoFocus
-          value={value}
-          maxLength={MAX_NAME_LENGTH}
-          placeholder="Project name"
-          onChange={(e) => setValue(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              submit();
-            }
-          }}
-        />
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+    <Modal open={open} onOpenChange={onOpenChange}>
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>Rename project</ModalTitle>
+          <ModalDescription>Give this project a new name.</ModalDescription>
+        </ModalHeader>
+        <ModalBody>
+          <Input
+            autoFocus
+            value={value}
+            maxLength={MAX_NAME_LENGTH}
+            placeholder="Project name"
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                submit();
+              }
+            }}
+          />
+        </ModalBody>
+        <ModalFooter className='sm:justify-between'>
+          <Button variant="outline-ghost" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button
-            onClick={submit}
-            disabled={renameMutation.isPending || isUnchanged || isEmpty}
-          >
+          <Button onClick={submit} disabled={renameMutation.isPending || isUnchanged || isEmpty}>
             {renameMutation.isPending ? 'Saving…' : 'Save'}
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
-}
+};

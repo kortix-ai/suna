@@ -12,12 +12,24 @@ import { useTranslations } from 'next-intl';
  * hardcoded surface.
  */
 
+import { AlertCircle, ChevronRight } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, Suspense, lazy, useEffect, useMemo, useState } from 'react';
-import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { AlertCircle, ChevronRight } from 'lucide-react';
 
+import { AuthBrowserNoiseGuard } from '@/components/auth/auth-browser-noise-guard';
+import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import { useAuth } from '@/features/providers/auth-provider';
+import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
+import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
+import { getEnv } from '@/lib/env-config';
+import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
 import {
   signIn as signInWithMagicLink,
   signInWithPassword,
@@ -25,18 +37,6 @@ import {
   signUpWithPassword,
   verifyOtp,
 } from './actions';
-import { useAuth } from '@/components/AuthProvider';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
-import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
-import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { AuthBrowserNoiseGuard } from '@/components/auth/auth-browser-noise-guard';
-import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
-import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
-import { invalidateTokenCache, setBootstrapAuthToken } from '@/lib/auth-token';
-import { createClient as createBrowserSupabaseClient } from '@/lib/supabase/client';
-import { getEnv } from '@/lib/env-config';
 
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
 
@@ -59,15 +59,12 @@ function LiveClock() {
   const h = now ? now.getHours() % 12 || 12 : '--';
   const m = now ? now.getMinutes().toString().padStart(2, '0') : '--';
   return (
-    <div className="flex flex-col items-center select-none pointer-events-none">
-      <p
-        className="text-foreground/35 text-sm font-light tracking-widest"
-        suppressHydrationWarning
-      >
+    <div className="pointer-events-none flex flex-col items-center select-none">
+      <p className="text-foreground/35 text-sm font-light tracking-widest" suppressHydrationWarning>
         {day} {month} {date}
       </p>
       <p
-        className="text-foreground/80 text-7xl sm:text-8xl font-extralight leading-none -tracking-[0.02em] tabular-nums"
+        className="text-foreground/80 text-7xl leading-none font-extralight -tracking-[0.02em] tabular-nums sm:text-8xl"
         suppressHydrationWarning
       >
         {h}:{m}
@@ -288,7 +285,11 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
   return (
     <div className="w-full max-w-sm">
       {/* Tabs */}
-      <div role="tablist" aria-label="Authentication mode" className="flex items-center gap-1 mb-5 bg-foreground/[0.05] rounded-full p-1 w-fit mx-auto">
+      <div
+        role="tablist"
+        aria-label="Authentication mode"
+        className="bg-foreground/[0.05] mx-auto mb-5 flex w-fit items-center gap-1 rounded-full p-1"
+      >
         <button
           type="button"
           role="tab"
@@ -300,12 +301,14 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
             resetTransientState();
           }}
           className={cn(
-            'px-5 py-1.5 rounded-full text-sm font-medium transition-colors',
+            'rounded-full px-5 py-1.5 text-sm font-medium transition-colors',
             mode === 'signin'
               ? 'bg-background/80 text-foreground shadow-sm'
               : 'text-foreground/50 hover:text-foreground/80',
           )}
-        >{tHardcodedUi.raw('appAuthPage.line167JsxTextSignIn')}</button>
+        >
+          {tHardcodedUi.raw('appAuthPage.line167JsxTextSignIn')}
+        </button>
         <button
           type="button"
           role="tab"
@@ -317,7 +320,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
             resetTransientState();
           }}
           className={cn(
-            'px-5 py-1.5 rounded-full text-sm font-medium transition-colors',
+            'rounded-full px-5 py-1.5 text-sm font-medium transition-colors',
             mode === 'signup'
               ? 'bg-background/80 text-foreground shadow-sm'
               : 'text-foreground/50 hover:text-foreground/80',
@@ -327,11 +330,11 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
         </button>
       </div>
 
-      <div className="flex flex-col items-center mb-5">
-        <h1 className="text-base font-medium text-foreground/90 tracking-tight">
+      <div className="mb-5 flex flex-col items-center">
+        <h1 className="text-foreground/90 text-base font-medium tracking-tight">
           {mode === 'signup' ? 'Create your account' : 'Sign in to Kortix'}
         </h1>
-        <p className="text-sm text-foreground/40 mt-0.5">
+        <p className="text-foreground/40 mt-0.5 text-sm">
           {method === 'magic'
             ? awaitingCode
               ? 'Click the link in your email, or enter the code below'
@@ -343,14 +346,14 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
       </div>
 
       {errorMessage && (
-        <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-destructive/10 border border-destructive/20 text-destructive">
+        <div className="bg-destructive/10 border-destructive/20 text-destructive mb-4 flex items-center gap-2 rounded-2xl border p-3">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           <span className="text-sm">{errorMessage}</span>
         </div>
       )}
 
       {info && (
-        <div className="mb-4 p-3 rounded-2xl flex items-center gap-2 bg-foreground/[0.05] border border-foreground/[0.08] text-foreground/80">
+        <div className="bg-foreground/[0.05] border-foreground/[0.08] text-foreground/80 mb-4 flex items-center gap-2 rounded-2xl border p-3">
           <AlertCircle className="h-4 w-4 flex-shrink-0" />
           <span className="text-sm">{info}</span>
         </div>
@@ -369,7 +372,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
               placeholder="000000"
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              className="text-center text-lg font-mono tracking-[0.4em]"
+              className="text-center font-mono text-lg tracking-[0.4em]"
               autoFocus
               required
             />
@@ -383,7 +386,7 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
             </Button>
           </form>
 
-          <div className="flex items-center justify-center gap-3 text-xs text-foreground/40">
+          <div className="text-foreground/40 flex items-center justify-center gap-3 text-xs">
             <button
               type="button"
               onClick={handleResend}
@@ -403,109 +406,110 @@ function AuthCardForm({ returnUrl }: { returnUrl: string }) {
           </div>
         </div>
       ) : (
-      <>
-      <form
-        id="auth-form-panel"
-        role="tabpanel"
-        aria-labelledby={mode === 'signin' ? 'auth-tab-signin' : 'auth-tab-signup'}
-        onSubmit={handleSubmit}
-        className="space-y-3"
-      >
-        <Input
-          id="email"
-          name="email"
-          type="email"
-          aria-label={tHardcodedUi.raw('appAuthPage.line215JsxAttrPlaceholderEmailAddress')}
-          placeholder={tHardcodedUi.raw('appAuthPage.line215JsxAttrPlaceholderEmailAddress')}
-          required
-          autoComplete="email"
-          className="text-sm"
-        />
-        {method === 'password' && (
-          <>
+        <>
+          <form
+            id="auth-form-panel"
+            role="tabpanel"
+            aria-labelledby={mode === 'signin' ? 'auth-tab-signin' : 'auth-tab-signup'}
+            onSubmit={handleSubmit}
+            className="space-y-3"
+          >
             <Input
-              id="password"
-              name="password"
-              type="password"
-              aria-label="Password"
-              placeholder="Password"
+              id="email"
+              name="email"
+              type="email"
+              aria-label={tHardcodedUi.raw('appAuthPage.line215JsxAttrPlaceholderEmailAddress')}
+              placeholder={tHardcodedUi.raw('appAuthPage.line215JsxAttrPlaceholderEmailAddress')}
               required
-              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+              autoComplete="email"
               className="text-sm"
             />
-            {mode === 'signup' && (
-              <Input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                aria-label={tHardcodedUi.raw('appAuthPage.line234JsxAttrPlaceholderConfirmPassword')}
-                placeholder={tHardcodedUi.raw('appAuthPage.line234JsxAttrPlaceholderConfirmPassword')}
-                required
-                autoComplete="new-password"
-                className="text-sm"
-              />
+            {method === 'password' && (
+              <>
+                <Input
+                  id="password"
+                  name="password"
+                  type="password"
+                  aria-label="Password"
+                  placeholder="Password"
+                  required
+                  autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                  className="text-sm"
+                />
+                {mode === 'signup' && (
+                  <Input
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    type="password"
+                    aria-label={tHardcodedUi.raw(
+                      'appAuthPage.line234JsxAttrPlaceholderConfirmPassword',
+                    )}
+                    placeholder={tHardcodedUi.raw(
+                      'appAuthPage.line234JsxAttrPlaceholderConfirmPassword',
+                    )}
+                    required
+                    autoComplete="new-password"
+                    className="text-sm"
+                  />
+                )}
+              </>
             )}
-          </>
-        )}
 
-        <Button
-          type="submit"
-          size="lg"
-          disabled={pending}
-          className="w-full text-sm"
-        >
-          {pending
-            ? method === 'magic'
-              ? 'Sending link…'
-              : mode === 'signup'
-                ? 'Creating account…'
-                : 'Signing in…'
-            : method === 'magic'
-              ? 'Email me a sign-in link'
-              : mode === 'signup'
-                ? 'Create account'
-                : 'Sign in'}
-        </Button>
-      </form>
+            <Button type="submit" size="lg" disabled={pending} className="w-full text-sm">
+              {pending
+                ? method === 'magic'
+                  ? 'Sending link…'
+                  : mode === 'signup'
+                    ? 'Creating account…'
+                    : 'Signing in…'
+                : method === 'magic'
+                  ? 'Email me a sign-in link'
+                  : mode === 'signup'
+                    ? 'Create account'
+                    : 'Sign in'}
+            </Button>
+          </form>
 
-      {magicLinkEnabled && passwordEnabled && (
-        <div className="mt-4 text-center">
-          <button
-            type="button"
-            onClick={() => {
-              setMethod(method === 'magic' ? 'password' : 'magic');
-              resetTransientState();
-            }}
-            className="text-xs text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline"
-          >
-            {method === 'magic' ? 'Use password instead' : 'Use email link instead'}
-          </button>
-        </div>
-      )}
+          {magicLinkEnabled && passwordEnabled && (
+            <div className="mt-4 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setMethod(method === 'magic' ? 'password' : 'magic');
+                  resetTransientState();
+                }}
+                className="text-foreground/40 hover:text-foreground/70 text-xs underline-offset-4 hover:underline"
+              >
+                {method === 'magic' ? 'Use password instead' : 'Use email link instead'}
+              </button>
+            </div>
+          )}
 
-      {/* Social providers — only when configured */}
-      {googleEnabled && (
-        <>
-          <div className="my-5 flex items-center gap-3">
-            <div className="flex-1 h-px bg-foreground/[0.08]" />
-            <span className="text-xs uppercase tracking-wider text-foreground/40">or</span>
-            <div className="flex-1 h-px bg-foreground/[0.08]" />
-          </div>
-          <Suspense fallback={null}>
-            <GoogleSignIn returnUrl={returnUrl} />
-          </Suspense>
+          {/* Social providers — only when configured */}
+          {googleEnabled && (
+            <>
+              <div className="my-5 flex items-center gap-3">
+                <div className="bg-foreground/[0.08] h-px flex-1" />
+                <span className="text-foreground/40 text-xs tracking-wider uppercase">or</span>
+                <div className="bg-foreground/[0.08] h-px flex-1" />
+              </div>
+              <Suspense fallback={null}>
+                <GoogleSignIn returnUrl={returnUrl} />
+              </Suspense>
+            </>
+          )}
+
+          {mode === 'signin' && passwordEnabled && (
+            <div className="mt-5 text-center">
+              <Link
+                href="/auth/forgot-password"
+                className="text-foreground/40 hover:text-foreground/70 text-xs underline-offset-4 hover:underline"
+              >
+                {tHardcodedUi.raw('appAuthPage.line277JsxTextForgotYourPassword')}
+              </Link>
+            </div>
+          )}
         </>
-      )}
-
-      {mode === 'signin' && passwordEnabled && (
-        <div className="mt-5 text-center">
-          <Link
-            href="/auth/forgot-password"
-            className="text-xs text-foreground/40 hover:text-foreground/70 underline-offset-4 hover:underline"
-          >{tHardcodedUi.raw('appAuthPage.line277JsxTextForgotYourPassword')}</Link>
-        </div>
-      )}
-      </>
       )}
     </div>
   );
@@ -545,12 +549,18 @@ function AuthContent() {
   }, [phase]);
 
   if (isLoading || user) {
-    return <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appAuthPage.line317JsxAttrTitleSigningIn')} />;
+    return (
+      <ConnectingScreen
+        forceConnecting
+        minimal
+        title={tHardcodedUi.raw('appAuthPage.line317JsxAttrTitleSigningIn')}
+      />
+    );
   }
 
   return (
     <div
-      className="fixed inset-0 overflow-hidden cursor-pointer"
+      className="fixed inset-0 cursor-pointer overflow-hidden"
       onClick={() => phase === 'lock' && setPhase('form')}
     >
       <WallpaperBackground wallpaperId="brandmark" />
@@ -560,7 +570,7 @@ function AuthContent() {
         {phase === 'lock' && (
           <motion.div
             key="lock"
-            className="absolute inset-0 z-10 flex flex-col pointer-events-none"
+            className="pointer-events-none absolute inset-0 z-10 flex flex-col"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -575,20 +585,26 @@ function AuthContent() {
               <LiveClock />
             </motion.div>
             <motion.div
-              className="absolute bottom-[10vh] left-0 right-0 flex flex-col items-center gap-3"
+              className="absolute right-0 bottom-[10vh] left-0 flex flex-col items-center gap-3"
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, delay: 0.35, ease: [0.16, 1, 0.3, 1] }}
             >
               <div className="flex flex-col items-center gap-1.5">
                 <p className="text-foreground/50 text-sm font-medium tracking-wide">Kortix</p>
-                <p className="text-foreground/25 text-xs tracking-widest uppercase">{tHardcodedUi.raw('appAuthPage.line355JsxTextClickOrPressEnterToSignIn')}</p>
+                <p className="text-foreground/25 text-xs tracking-widest uppercase">
+                  {tHardcodedUi.raw('appAuthPage.line355JsxTextClickOrPressEnterToSignIn')}
+                </p>
               </div>
               <motion.div
                 animate={prefersReducedMotion ? undefined : { y: [0, 5, 0] }}
-                transition={prefersReducedMotion ? undefined : { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }}
+                transition={
+                  prefersReducedMotion
+                    ? undefined
+                    : { duration: 1.8, repeat: Infinity, ease: 'easeInOut' }
+                }
               >
-                <ChevronRight className="size-3.5 text-foreground/20 rotate-90" />
+                <ChevronRight className="text-foreground/20 size-3.5 rotate-90" />
               </motion.div>
             </motion.div>
           </motion.div>
@@ -600,7 +616,7 @@ function AuthContent() {
         {phase === 'form' && (
           <motion.div
             key="form"
-            className="absolute inset-0 z-10 flex flex-col items-center justify-center cursor-default"
+            className="absolute inset-0 z-10 flex cursor-default flex-col items-center justify-center"
             onClick={() => setPhase('lock')}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -608,20 +624,20 @@ function AuthContent() {
             transition={{ duration: 0.3 }}
           >
             <motion.div
-              className="absolute inset-0 bg-background/20 backdrop-blur-[2px]"
+              className="bg-background/20 absolute inset-0 backdrop-blur-[2px]"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ duration: 0.4 }}
             />
             <motion.div
-              className="relative z-10 w-full max-w-[400px] mx-4"
+              className="relative z-10 mx-4 w-full max-w-[400px]"
               onClick={(e) => e.stopPropagation()}
               initial={{ opacity: 0, y: 40, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.97 }}
               transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
             >
-              <div className="bg-background/75 dark:bg-background/70 backdrop-blur-2xl border border-foreground/[0.08] rounded-2xl p-7 max-h-[calc(100vh-4rem)] overflow-y-auto">
+              <div className="bg-background/75 dark:bg-background/70 border-foreground/[0.08] max-h-[calc(100vh-4rem)] overflow-y-auto rounded-2xl border p-7 backdrop-blur-2xl">
                 <AuthCardForm returnUrl={returnUrl} />
               </div>
             </motion.div>
@@ -635,7 +651,15 @@ function AuthContent() {
 export default function AuthPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
-    <Suspense fallback={<ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appAuthPage.line408JsxAttrTitleSigningIn')} />}>
+    <Suspense
+      fallback={
+        <ConnectingScreen
+          forceConnecting
+          minimal
+          title={tHardcodedUi.raw('appAuthPage.line408JsxAttrTitleSigningIn')}
+        />
+      }
+    >
       <>
         <AuthBrowserNoiseGuard />
         <AuthContent />

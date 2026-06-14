@@ -2,13 +2,11 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useAuth } from '@/components/AuthProvider';
 import {
   ConnectingScreen,
   useConnectionToasts,
   type Stage as ConnectingStage,
 } from '@/components/dashboard/connecting-screen';
-import { AppProviders } from '@/components/layout/app-providers';
 import { TabBar } from '@/components/tabs/tab-bar';
 import {
   AlertDialog,
@@ -24,6 +22,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { UpdateDialogProvider } from '@/components/update-dialog-provider';
+import { AppProviders } from '@/features/layout/app-providers';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin';
 import { useSystemStatusQuery } from '@/hooks/edge-flags';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
@@ -99,15 +99,15 @@ const DashboardPromoBanner = lazy(() =>
 );
 
 const MobileAppInterstitial = lazy(() =>
-	import("@/components/announcements/mobile-app-interstitial").then((mod) => ({
-		default: mod.MobileAppInterstitial,
-	})),
+  import('@/components/announcements/mobile-app-interstitial').then((mod) => ({
+    default: mod.MobileAppInterstitial,
+  })),
 );
 
 const KortixAppBanners = lazy(() =>
-	import("@/components/announcements/kortix-app-banners").then((mod) => ({
-		default: mod.KortixAppBanners,
-	})),
+  import('@/components/announcements/kortix-app-banners').then((mod) => ({
+    default: mod.KortixAppBanners,
+  })),
 );
 
 const SleepOverlay = lazy(() =>
@@ -129,7 +129,7 @@ const CommandPalette = lazy(() =>
 );
 
 const GlobalProviderModal = lazy(() =>
-  import('@/components/providers/provider-modal').then((mod) => ({
+  import('@/features/providers/provider-modal').then((mod) => ({
     default: mod.GlobalProviderModal,
   })),
 );
@@ -793,14 +793,12 @@ export default function DashboardLayoutContent({
         }
 
         ob.setSessionId(sid);
-        useTabStore
-          .getState()
-          .openTab({
-            id: sid,
-            title: 'Kortix Onboarding',
-            type: 'session',
-            href: `/sessions/${sid}`,
-          });
+        useTabStore.getState().openTab({
+          id: sid,
+          title: 'Kortix Onboarding',
+          type: 'session',
+          href: `/sessions/${sid}`,
+        });
       } catch (err) {
         obCreating.current = false;
         obRetries.current++;
@@ -1174,14 +1172,14 @@ export default function DashboardLayoutContent({
               </Suspense>
             ) : null}
 
-				{/* Bottom-right "Get Kortix Desktop" widget. Desktop banner only
+            {/* Bottom-right "Get Kortix Desktop" widget. Desktop banner only
 				    for now (mobile kept implemented but hidden via showMobile);
 				    auto-hidden inside the desktop app itself. */}
-				{!hideChrome && (
-					<Suspense fallback={null}>
-						<KortixAppBanners />
-					</Suspense>
-				)}
+            {!hideChrome && (
+              <Suspense fallback={null}>
+                <KortixAppBanners />
+              </Suspense>
+            )}
           </AppProviders>
         </NovuInboxProvider>
       )}
