@@ -1,11 +1,5 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { GitBranch, GitPullRequest, Loader2 } from 'lucide-react';
-import { toast } from '@/lib/toast';
-
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,8 +21,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { errorToast, successToast } from '@/components/ui/toast';
 import type { ProjectBranch, ProjectSession } from '@/lib/projects-client';
-
+import { GitBranch, GitPullRequest, Loader2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useBranches } from '../hooks/use-branches';
 import { useOpenChangeRequest, useVersionDiff } from '../hooks/use-change-requests';
 import { DiffPreviewBanner } from './diff-preview-banner';
@@ -65,7 +62,7 @@ function displayBranchName(name: string): string {
 function FieldRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3 px-3 py-2.5">
-      <Label className="w-12 shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+      <Label className="text-muted-foreground w-12 shrink-0 text-xs font-medium tracking-wide uppercase">
         {label}
       </Label>
       {children}
@@ -77,8 +74,8 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 function BranchValue({ name }: { name: string }) {
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      <GitBranch className="h-3 w-3 shrink-0 text-muted-foreground" />
-      <span className="truncate font-mono text-xs text-foreground">{name}</span>
+      <GitBranch className="text-muted-foreground h-3 w-3 shrink-0" />
+      <span className="text-foreground truncate font-mono text-xs">{name}</span>
     </div>
   );
 }
@@ -88,8 +85,8 @@ function BranchRow({ branch }: { branch: ProjectBranch }) {
   return (
     <div className="flex flex-col gap-0.5 py-0.5">
       <div className="flex items-center gap-1.5">
-        <GitBranch className="h-3 w-3 text-muted-foreground shrink-0" />
-        <span className="font-mono text-xs text-foreground truncate">
+        <GitBranch className="text-muted-foreground h-3 w-3 shrink-0" />
+        <span className="text-foreground truncate font-mono text-xs">
           {displayBranchName(branch.name)}
         </span>
         {branch.is_default && (
@@ -99,7 +96,7 @@ function BranchRow({ branch }: { branch: ProjectBranch }) {
         )}
       </div>
       {branch.subject && (
-        <span className="ml-[18px] text-xs text-muted-foreground/80 truncate">
+        <span className="text-muted-foreground/80 ml-[18px] truncate text-xs">
           {branch.subject}
         </span>
       )}
@@ -206,39 +203,62 @@ export function OpenChangeRequestDialog({
       },
       {
         onSuccess: (cr) => {
-          toast.success(`Opened change request #${cr.number}`);
+          successToast(`Opened change request #${cr.number}`);
           onOpenChange(false);
           onCreated?.(cr.cr_id);
         },
-        onError: (err) => toast.error(err.message),
+        onError: (err) => errorToast(err.message),
       },
     );
   };
 
-  const hasOnlyDefaultBranch =
-    !sessionMode && !branchesQuery.isLoading && headOptions.length === 0;
+  const hasOnlyDefaultBranch = !sessionMode && !branchesQuery.isLoading && headOptions.length === 0;
   const selectedHeadBranch = headRef ? branchMap.get(headRef) : undefined;
   const selectedBaseBranch = branchMap.get(baseRef);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden">
-        <DialogHeader className="px-5 pt-5 pb-3 space-y-1">
-          <DialogTitle className="text-base font-medium flex items-center gap-2">
-            <GitPullRequest className="h-4 w-4 text-muted-foreground" />{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line226JsxTextOpenChangeRequest')}</DialogTitle>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <DialogHeader className="space-y-1 px-5 pt-5 pb-3">
+          <DialogTitle className="flex items-center gap-2 text-base font-medium">
+            <GitPullRequest className="text-muted-foreground h-4 w-4" />
+            {tHardcodedUi.raw(
+              'featuresProjectFilesComponentsOpenChangeRequestDialog.line226JsxTextOpenChangeRequest',
+            )}
+          </DialogTitle>
           <DialogDescription className="text-xs">
             {sessionMode ? (
-              <>{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line231JsxTextProposeMergingThisSessionAposSWorkInto')}{' '}
-                <span className="font-mono text-foreground">{defaultBranch}</span>{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line232JsxTextTheSessionNeedsToHaveCommittedAndPushed')}</>
+              <>
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsOpenChangeRequestDialog.line231JsxTextProposeMergingThisSessionAposSWorkInto',
+                )}{' '}
+                <span className="text-foreground font-mono">{defaultBranch}</span>
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsOpenChangeRequestDialog.line232JsxTextTheSessionNeedsToHaveCommittedAndPushed',
+                )}
+              </>
             ) : (
-              <>{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line237JsxTextProposeMergingOneVersionIntoAnotherTheMerge')}</>
+              <>
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsOpenChangeRequestDialog.line237JsxTextProposeMergingOneVersionIntoAnotherTheMerge',
+                )}
+              </>
             )}
           </DialogDescription>
         </DialogHeader>
 
         {hasOnlyDefaultBranch ? (
-          <div className="px-5 pb-5 space-y-3">
-            <InfoBanner tone="warning" title={tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line246JsxAttrTitleNoNonDefaultVersionsYet')}>{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line247JsxTextStartASessionEachSessionLivesOnIts')}</InfoBanner>
+          <div className="space-y-3 px-5 pb-5">
+            <InfoBanner
+              tone="warning"
+              title={tHardcodedUi.raw(
+                'featuresProjectFilesComponentsOpenChangeRequestDialog.line246JsxAttrTitleNoNonDefaultVersionsYet',
+              )}
+            >
+              {tHardcodedUi.raw(
+                'featuresProjectFilesComponentsOpenChangeRequestDialog.line247JsxTextStartASessionEachSessionLivesOnIts',
+              )}
+            </InfoBanner>
             <div className="flex justify-end">
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 Close
@@ -247,10 +267,10 @@ export function OpenChangeRequestDialog({
           </div>
         ) : (
           <>
-            <div className="px-5 pb-4 space-y-4">
+            <div className="space-y-4 px-5 pb-4">
               {/* Title */}
               <div className="space-y-1.5">
-                <Label htmlFor="cr-title" className="text-xs font-medium text-foreground">
+                <Label htmlFor="cr-title" className="text-foreground text-xs font-medium">
                   Title
                 </Label>
                 <Input
@@ -272,7 +292,7 @@ export function OpenChangeRequestDialog({
 
               {/* From / Into — read-only summary in session mode, branch pickers
                   in picker mode. Same container shape either way. */}
-              <div className="rounded-2xl border border-border/60 divide-y divide-border/40">
+              <div className="border-border/60 divide-border/40 divide-y rounded-2xl border">
                 {sessionMode ? (
                   <>
                     <FieldRow label="From">
@@ -294,10 +314,14 @@ export function OpenChangeRequestDialog({
                           {selectedHeadBranch ? (
                             <BranchRow branch={selectedHeadBranch} />
                           ) : (
-                            <SelectValue placeholder={tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line305JsxAttrPlaceholderPickAVersion')} />
+                            <SelectValue
+                              placeholder={tHardcodedUi.raw(
+                                'featuresProjectFilesComponentsOpenChangeRequestDialog.line305JsxAttrPlaceholderPickAVersion',
+                              )}
+                            />
                           )}
                         </SelectTrigger>
-                        <SelectContent className="w-[420px] max-h-[260px]">
+                        <SelectContent className="max-h-[260px] w-[420px]">
                           {headOptions.map((b) => (
                             <SelectItem key={b.name} value={b.name} className="py-1.5">
                               <BranchRow branch={b} />
@@ -319,7 +343,7 @@ export function OpenChangeRequestDialog({
                             <SelectValue />
                           )}
                         </SelectTrigger>
-                        <SelectContent className="w-[420px] max-h-[260px]">
+                        <SelectContent className="max-h-[260px] w-[420px]">
                           {branches.map((b) => (
                             <SelectItem key={b.name} value={b.name} className="py-1.5">
                               <BranchRow branch={b} />
@@ -342,20 +366,25 @@ export function OpenChangeRequestDialog({
                 />
               )}
               {!sessionMode && headRef && baseRef && headRef === baseRef && (
-                <InfoBanner tone="warning">{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line354JsxTextPickTwoDifferentVersionsYouCanAposT')}</InfoBanner>
+                <InfoBanner tone="warning">
+                  {tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsOpenChangeRequestDialog.line354JsxTextPickTwoDifferentVersionsYouCanAposT',
+                  )}
+                </InfoBanner>
               )}
 
               {/* Description */}
               <div className="space-y-1.5">
-                <Label htmlFor="cr-description" className="text-xs font-medium text-foreground">
-                  Description{' '}
-                  <span className="font-normal text-muted-foreground">(optional)</span>
+                <Label htmlFor="cr-description" className="text-foreground text-xs font-medium">
+                  Description <span className="text-muted-foreground font-normal">(optional)</span>
                 </Label>
                 <Textarea
                   id="cr-description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  placeholder={tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line369JsxAttrPlaceholderContextForReviewersWhatChangedAndWhy')}
+                  placeholder={tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsOpenChangeRequestDialog.line369JsxAttrPlaceholderContextForReviewersWhatChangedAndWhy',
+                  )}
                   rows={3}
                   className="resize-none"
                 />
@@ -371,7 +400,11 @@ export function OpenChangeRequestDialog({
                 Cancel
               </Button>
               <Button disabled={!canSubmit || openMutation.isPending} onClick={handleSubmit}>
-                {openMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}{tHardcodedUi.raw('featuresProjectFilesComponentsOpenChangeRequestDialog.line386JsxTextOpenChangeRequest')}</Button>
+                {openMutation.isPending && <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />}
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsOpenChangeRequestDialog.line386JsxTextOpenChangeRequest',
+                )}
+              </Button>
             </DialogFooter>
           </>
         )}

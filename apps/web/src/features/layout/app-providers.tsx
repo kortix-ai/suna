@@ -1,21 +1,21 @@
 'use client';
 
-import React from 'react';
-import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
-import { RightSidebarProvider } from '@/components/ui/sidebar-right-provider';
-import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
-import { SubscriptionStoreSync } from '@/stores/subscription-store';
-import { useModelHydration } from '@/hooks/opencode/use-model-hydration';
 import { NewInstanceModal } from '@/components/billing/pricing/new-instance-modal';
-import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
-import { UserSettingsModal } from '@/components/settings/user-settings-modal';
-import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
 import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
-import { isBillingEnabled } from '@/lib/config';
 import { SidebarLeft } from '@/components/sidebar/sidebar-left';
 import { SidebarRight } from '@/components/sidebar/sidebar-right';
+import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { RightSidebarProvider } from '@/components/ui/sidebar-right-provider';
+import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
+import { useModelHydration } from '@/hooks/opencode/use-model-hydration';
+import { isBillingEnabled } from '@/lib/config';
 import { pruneAllRegisteredCaches } from '@/lib/storage/managed-storage';
+import { useDeleteOperationEffects } from '@/stores/delete-operation-store';
+import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
+import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
+import { SubscriptionStoreSync } from '@/stores/subscription-store';
+import { useUserSettingsModalStore } from '@/stores/user-settings-modal-store';
+import React from 'react';
 
 /**
  * Left sidebar slot — lives inside SidebarProvider so it can read the
@@ -56,7 +56,7 @@ function SidebarLeftSlot({ sidebarContent }: { sidebarContent?: React.ReactNode 
       data-slot="sidebar-left-slot"
       className={
         booted
-          ? 'transition-[max-width,opacity] duration-500 ease-out overflow-hidden'
+          ? 'overflow-hidden transition-[max-width,opacity] duration-500 ease-out'
           : 'overflow-hidden'
       }
       style={{
@@ -82,7 +82,13 @@ function DeleteOperationEffectsWrapper({ children }: { children: React.ReactNode
 /** Store-driven NewInstanceModal — mounted by legacy dashboard surfaces only. */
 function GlobalNewInstanceModal() {
   const { isOpen, title, closeNewInstanceModal } = useNewInstanceModalStore();
-  return <NewInstanceModal open={isOpen} onOpenChange={(o) => !o && closeNewInstanceModal()} title={title} />;
+  return (
+    <NewInstanceModal
+      open={isOpen}
+      onOpenChange={(o) => !o && closeNewInstanceModal()}
+      title={title}
+    />
+  );
 }
 
 /** Store-driven UserSettingsModal — mounted once globally so the error handler
@@ -90,7 +96,7 @@ function GlobalNewInstanceModal() {
 function GlobalUserSettingsModal() {
   const { isOpen, defaultTab, closeUserSettings } = useUserSettingsModalStore();
   return (
-    <UserSettingsModal
+    <SidePanelUserSettings
       open={isOpen}
       onOpenChange={(o) => !o && closeUserSettings()}
       defaultTab={defaultTab}
@@ -157,9 +163,7 @@ export function AppProviders({
       <SidebarLeftSlot sidebarContent={sidebarContent} />
       <SidebarInset>
         <RightSidebarProvider>
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            {content}
-          </div>
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">{content}</div>
           {showRightSidebar && <SidebarRight />}
         </RightSidebarProvider>
       </SidebarInset>

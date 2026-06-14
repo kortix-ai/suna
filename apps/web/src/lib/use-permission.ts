@@ -10,15 +10,15 @@
 // for the React tree's lifetime so multiple components asking for the same
 // permission collapse to a single network call.
 
-import { useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth } from '@/features/providers/auth-provider';
 import {
   probeEffectivePermission,
   probeEffectivePermissions,
   type PermissionProbeInput,
   type ResourceType,
 } from '@/lib/iam-client';
+import { useQuery } from '@tanstack/react-query';
+import { useMemo } from 'react';
 
 export interface UsePermissionTarget {
   resourceType?: ResourceType;

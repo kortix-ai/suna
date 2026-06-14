@@ -1,10 +1,11 @@
-import { toast } from '@/lib/toast';
-import { BillingError, isBillingError, formatBillingErrorForUI } from './api/errors';
-import { usePricingModalStore } from '@/stores/pricing-modal-store';
-import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { Button } from '@/components/ui/button';
+import { errorToast, infoToast, successToast, warningToast } from '@/components/ui/toast';
 import { isBillingEnabled } from '@/lib/config';
+import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
+import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import * as Sentry from '@sentry/nextjs';
+import { BillingError, formatBillingErrorForUI, isBillingError } from './api/errors';
 
 export interface ApiError extends Error {
   status?: number;
@@ -26,7 +27,7 @@ const getStatusMessage = (status: number): string => {
     case 401:
       return 'Authentication required. Please sign in again.';
     case 403:
-      return 'Access denied. You don\'t have permission to perform this action.';
+      return "Access denied. You don't have permission to perform this action.";
     case 404:
       return 'The requested resource was not found.';
     case 408:
@@ -128,24 +129,23 @@ const formatErrorMessage = (message: string, context?: ErrorContext): string => 
   }
 
   const parts = [];
-  
+
   if (context.operation) {
     parts.push(`Failed to ${context.operation}`);
   }
-  
+
   if (context.resource) {
     parts.push(context.resource);
   }
 
   const prefix = parts.join(' ');
-  
+
   if (message.toLowerCase().includes(context.operation?.toLowerCase() || '')) {
     return message;
   }
 
   return `${prefix}: ${message}`;
 };
-
 
 export const handleApiError = (error: any, context?: ErrorContext): void => {
   const status = error?.status || error?.response?.status;
@@ -162,18 +162,21 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   // Report server errors (5xx) and network failures to Better Stack via Sentry.
   // 4xx errors are expected (auth, validation) and don't need alerting.
   if (status >= 500 || error?.code === 'TIMEOUT' || error?.code === 'NETWORK_ERROR') {
-    Sentry.captureException(error instanceof Error ? error : new Error(error?.message || String(error)), {
-      tags: {
-        errorType: status >= 500 ? 'server_error' : 'network_error',
-        statusCode: status?.toString(),
-        operation: context?.operation,
+    Sentry.captureException(
+      error instanceof Error ? error : new Error(error?.message || String(error)),
+      {
+        tags: {
+          errorType: status >= 500 ? 'server_error' : 'network_error',
+          statusCode: status?.toString(),
+          operation: context?.operation,
+        },
+        extra: {
+          context,
+          status,
+          code: error?.code,
+        },
       },
-      extra: {
-        context,
-        status,
-        code: error?.code,
-      },
-    });
+    );
   }
 
   // Billing v2 — structured 402 detection runs BEFORE shouldShowError, because
@@ -181,23 +184,16 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   // suppress its toast — but we still need to open the upgrade dialog for
   // those errors. Don't rely on `instanceof` here either, since Next.js HMR
   // can swap the class identity across module reloads.
-  const v2Status: number | undefined =
-    (error as any)?.status ?? (error as any)?.response?.status;
+  const v2Status: number | undefined = (error as any)?.status ?? (error as any)?.response?.status;
   const errAny = error as any;
   const v2Detail =
     errAny?.detail ??
     errAny?.data ??
     errAny?.details ??
     (typeof errAny === 'object' ? errAny : null);
-  const v2Code: string | undefined =
-    v2Detail?.code ??
-    errAny?.code;
-  const v2Message: string | undefined =
-    v2Detail?.message ??
-    v2Detail?.error ??
-    errAny?.message;
-  const v2Balance: number =
-    typeof v2Detail?.balance === 'number' ? v2Detail.balance : 0;
+  const v2Code: string | undefined = v2Detail?.code ?? errAny?.code;
+  const v2Message: string | undefined = v2Detail?.message ?? v2Detail?.error ?? errAny?.message;
+  const v2Balance: number = typeof v2Detail?.balance === 'number' ? v2Detail.balance : 0;
   // The blocked account (e.g. the project's team account), surfaced by the
   // billing 402s. Scopes the upgrade dialog so a non-billing member sees the
   // team's gated CTA, not their own primary account. Absent → primary account.
@@ -225,16 +221,21 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   if (isBillingEnabled() && v2Status === 402 && v2Code === 'insufficient_credits') {
     const title = 'Out of credits';
     if (!shouldSuppressDuplicate(v2Status, title)) {
-      toast.warning(title, {
+      warningToast(title, {
         description: 'Top up your wallet or turn on auto-refill to keep using compute and LLMs.',
         duration: 6000,
-        action: {
-          label: 'Top up',
-          onClick: () =>
-            useAccountSettingsModalStore
-              .getState()
-              .openAccountSettings({ tab: 'billing', highlight: 'credits' }),
-        },
+        button: (
+          <Button
+            size="sm"
+            onClick={() =>
+              useAccountSettingsModalStore
+                .getState()
+                .openAccountSettings({ tab: 'billing', highlight: 'credits' })
+            }
+          >
+            Top up
+          </Button>
+        ),
       });
     }
     return;
@@ -245,19 +246,26 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   // site might also emit with the same body.
   if (v2Status === 429 && v2Code === 'concurrent_session_limit') {
     const limit = typeof v2Detail?.limit === 'number' ? v2Detail.limit : undefined;
-    const active = typeof v2Detail?.active_sessions === 'number' ? v2Detail.active_sessions : undefined;
-    const title = limit !== undefined
-      ? `You're at your session limit (${active ?? limit}/${limit})`
-      : 'Session limit reached';
+    const active =
+      typeof v2Detail?.active_sessions === 'number' ? v2Detail.active_sessions : undefined;
+    const title =
+      limit !== undefined
+        ? `You're at your session limit (${active ?? limit}/${limit})`
+        : 'Session limit reached';
     if (!shouldSuppressDuplicate(v2Status, title)) {
-      toast.warning(title, {
+      warningToast(title, {
         description: 'Close a running session, or upgrade your plan for more.',
         duration: 6000,
-        action: {
-          label: 'Manage plan',
-          onClick: () =>
-            useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
-        },
+        button: (
+          <Button
+            size="sm"
+            onClick={() =>
+              useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' })
+            }
+          >
+            Manage plan
+          </Button>
+        ),
       });
     }
     return;
@@ -279,16 +287,14 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
 
     const message = detail?.message?.toLowerCase() || '';
     const isCreditsExhausted =
-      message.includes('credit') ||
-      message.includes('balance') ||
-      message.includes('insufficient');
+      message.includes('credit') || message.includes('balance') || message.includes('insufficient');
 
     if (isCreditsExhausted) {
       useAccountSettingsModalStore.getState().openAccountSettings({
         tab: 'billing',
         highlight: 'credits',
       });
-      toast.error(errorUI.alertTitle, {
+      errorToast(errorUI.alertTitle, {
         description: errorUI.alertSubtitle,
         duration: 6000,
       });
@@ -306,29 +312,29 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   }
 
   if (error?.status >= 500) {
-    toast.error(formattedMessage, {
+    errorToast(formattedMessage, {
       description: 'Our team has been notified and is working on a fix.',
       duration: 6000,
     });
   } else if (error?.status === 403) {
-    toast.error(formattedMessage, {
+    errorToast(formattedMessage, {
       description: 'Contact support if you believe this is an error.',
       duration: 6000,
     });
   } else if (error?.status === 429) {
-    toast.warning(formattedMessage, {
+    warningToast(formattedMessage, {
       description: 'Please wait a moment before trying again.',
       duration: 5000,
     });
   } else {
-    toast.error(formattedMessage, {
+    errorToast(formattedMessage, {
       duration: 5000,
     });
   }
 };
 
 export const handleNetworkError = (error: any, context?: ErrorContext): void => {
-  const isNetworkError = 
+  const isNetworkError =
     error?.message?.includes('fetch') ||
     error?.message?.includes('network') ||
     error?.message?.includes('connection') ||
@@ -344,7 +350,7 @@ export const handleNetworkError = (error: any, context?: ErrorContext): void => 
         level: 'warning',
       },
     );
-    toast.error('Connection error', {
+    errorToast('Connection error', {
       description: 'Please check your internet connection and try again.',
       duration: 6000,
     });
@@ -354,21 +360,21 @@ export const handleNetworkError = (error: any, context?: ErrorContext): void => 
 };
 
 export const handleApiSuccess = (message: string, description?: string): void => {
-  toast.success(message, {
+  successToast(message, {
     description,
     duration: 3000,
   });
 };
 
 export const handleApiWarning = (message: string, description?: string): void => {
-  toast.warning(message, {
+  warningToast(message, {
     description,
     duration: 4000,
   });
 };
 
 export const handleApiInfo = (message: string, description?: string): void => {
-  toast.info(message, {
+  infoToast(message, {
     description,
     duration: 3000,
   });
@@ -388,7 +394,7 @@ export const handleBillingError = (error: any): boolean => {
   if (!isBillingError(error)) {
     return false;
   }
-  
+
   handleApiError(error);
   return true;
 };

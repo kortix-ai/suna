@@ -2,18 +2,6 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect, useMemo, useCallback, useState, useRef } from 'react';
-import {
-  Search,
-  ServerOff,
-  RefreshCw,
-  FolderPlus,
-  FilePlus,
-  Upload,
-  Clipboard,
-  FolderOpen,
-} from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,48 +12,50 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useFilesStore } from '../store/files-store';
+import { useServerStore } from '@/stores/server-store';
+import { Clipboard, FilePlus, FolderPlus, RefreshCw, ServerOff, Upload } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { downloadFile } from '../api/opencode-files';
 import {
-  useFileList,
-  useServerHealth,
-  useFileEventInvalidation,
-  useGitStatus,
   buildGitStatusMap,
+  useFileEventInvalidation,
+  useFileList,
+  useGitStatus,
+  useServerHealth,
 } from '../hooks';
+import { useDirectoryDownload } from '../hooks/use-directory-download';
 import {
-  useFileUpload,
+  useFileCopy,
+  useFileCreate,
   useFileDelete,
   useFileMkdir,
   useFileRename,
-  useFileCreate,
-  useFileCopy,
+  useFileUpload,
 } from '../hooks/use-file-mutations';
-import { downloadFile } from '../api/opencode-files';
-import { useDirectoryDownload } from '../hooks/use-directory-download';
-import { useServerStore } from '@/stores/server-store';
+import { useFilesStore } from '../store/files-store';
 import type { FileNode } from '../types';
-import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
 
-import { DriveToolbar } from './drive-toolbar';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { DriveGridView } from './drive-grid-view';
 import { DriveListView } from './drive-list-view';
-import { FileSearch } from './file-search';
-import { FilePreviewModal } from './file-preview-modal';
+import { DriveToolbar } from './drive-toolbar';
 import { FileHistoryPopoverContent } from './file-history-popover';
+import { FilePreviewModal } from './file-preview-modal';
+import { FileSearch } from './file-search';
 import { DRAG_MIME } from './file-tree-item';
 
 /**
  * Google Drive-style file explorer page.
- * 
+ *
  * Layout:
  * +---------------------------------------------------+
  * | DriveToolbar (breadcrumbs + actions)               |
  * +---------------------------------------------------+
  * | Main area (grid or list view)                      |
  * +---------------------------------------------------+
- * 
+ *
  * Opening a file (single- or double-click, context menu) always opens the
  * full-screen preview modal overlay.
  */
@@ -157,7 +147,10 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           const el = folderInputRef.current;
-          if (el) { el.focus(); el.setSelectionRange(0, el.value.length); }
+          if (el) {
+            el.focus();
+            el.setSelectionRange(0, el.value.length);
+          }
         });
       });
     }
@@ -183,7 +176,8 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        return;
 
       const isMod = e.metaKey || e.ctrlKey;
 
@@ -209,7 +203,12 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
 
   // Sort and separate dirs and files
   const { elevatedDirs, dirs, fileItems } = useMemo(() => {
-    if (!files) return { elevatedDirs: [] as FileNode[], dirs: [] as FileNode[], fileItems: [] as FileNode[] };
+    if (!files)
+      return {
+        elevatedDirs: [] as FileNode[],
+        dirs: [] as FileNode[],
+        fileItems: [] as FileNode[],
+      };
 
     const sortFn = (a: FileNode, b: FileNode) => {
       let cmp = 0;
@@ -236,27 +235,29 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
     const elevatedDirs = allDirs
       .filter((f) => ELEVATED_DIRS.has(f.name))
       .sort((a, b) => a.name.localeCompare(b.name));
-    const dirs = allDirs
-      .filter((f) => !ELEVATED_DIRS.has(f.name))
-      .sort(sortFn);
-    const fileItems = files
-      .filter((f) => f.type === 'file')
-      .sort(sortFn);
+    const dirs = allDirs.filter((f) => !ELEVATED_DIRS.has(f.name)).sort(sortFn);
+    const fileItems = files.filter((f) => f.type === 'file').sort(sortFn);
     return { elevatedDirs, dirs, fileItems };
   }, [files, sortBy, sortOrder]);
 
   // ── Handlers ──────────────────────────────────────────────────
 
-  const handleNavigateToDir = useCallback((node: FileNode) => {
-    navigateToPath(node.path);
-  }, [navigateToPath]);
+  const handleNavigateToDir = useCallback(
+    (node: FileNode) => {
+      navigateToPath(node.path);
+    },
+    [navigateToPath],
+  );
 
-  const handlePreviewFile = useCallback((node: FileNode) => {
-    // Open in preview modal
-    const allFiles = fileItems.map((f) => f.path);
-    const index = allFiles.indexOf(node.path);
-    openFileWithList(node.path, allFiles, Math.max(0, index));
-  }, [fileItems, openFileWithList]);
+  const handlePreviewFile = useCallback(
+    (node: FileNode) => {
+      // Open in preview modal
+      const allFiles = fileItems.map((f) => f.path);
+      const index = allFiles.indexOf(node.path);
+      openFileWithList(node.path, allFiles, Math.max(0, index));
+    },
+    [fileItems, openFileWithList],
+  );
 
   // Opening a file always shows the in-place preview modal.
   const handleOpenFile = handlePreviewFile;
@@ -264,27 +265,33 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
   const handleDownload = useCallback(async (node: FileNode) => {
     try {
       await downloadFile(node.path, node.name);
-      toast.success(`Downloaded ${node.name}`);
+      successToast(`Downloaded ${node.name}`);
     } catch {
-      toast.error(`Failed to download ${node.name}`);
+      errorToast(`Failed to download ${node.name}`);
     }
   }, []);
 
-  const handleDownloadDir = useCallback((node: FileNode) => {
-    downloadDir(node.path, node.name);
-  }, [downloadDir]);
+  const handleDownloadDir = useCallback(
+    (node: FileNode) => {
+      downloadDir(node.path, node.name);
+    },
+    [downloadDir],
+  );
 
-  const handleRename = useCallback(async (node: FileNode, newName: string) => {
-    if (!newName || newName === node.name) return;
-    const parentPath = node.path.substring(0, node.path.lastIndexOf('/'));
-    const newPath = parentPath ? `${parentPath}/${newName}` : newName;
-    try {
-      await renameMutation.mutateAsync({ from: node.path, to: newPath });
-      toast.success(`Renamed to ${newName}`);
-    } catch (err) {
-      toast.error(`Failed to rename: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  }, [renameMutation]);
+  const handleRename = useCallback(
+    async (node: FileNode, newName: string) => {
+      if (!newName || newName === node.name) return;
+      const parentPath = node.path.substring(0, node.path.lastIndexOf('/'));
+      const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+      try {
+        await renameMutation.mutateAsync({ from: node.path, to: newPath });
+        successToast(`Renamed to ${newName}`);
+      } catch (err) {
+        errorToast(`Failed to rename: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    },
+    [renameMutation],
+  );
 
   const handleDelete = useCallback((node: FileNode) => {
     setDeleteTarget(node);
@@ -294,9 +301,9 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
     if (!deleteTarget) return;
     try {
       await deleteMutation.mutateAsync({ filePath: deleteTarget.path });
-      toast.success(`Deleted ${deleteTarget.name}`);
+      successToast(`Deleted ${deleteTarget.name}`);
     } catch (err) {
-      toast.error(`Failed to delete: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(`Failed to delete: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setDeleteTarget(null);
     }
@@ -306,27 +313,36 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
     setHistoryPopoverPath(node.path);
   }, []);
 
-  const handleCopy = useCallback((node: FileNode) => {
-    copyToClipboard(node.path, node.name, node.type);
-    toast.success(`Copied "${node.name}" to clipboard`);
-  }, [copyToClipboard]);
+  const handleCopy = useCallback(
+    (node: FileNode) => {
+      copyToClipboard(node.path, node.name, node.type);
+      successToast(`Copied "${node.name}" to clipboard`);
+    },
+    [copyToClipboard],
+  );
 
-  const handleCut = useCallback((node: FileNode) => {
-    cutToClipboard(node.path, node.name, node.type);
-    toast.success(`Cut "${node.name}" to clipboard`);
-  }, [cutToClipboard]);
+  const handleCut = useCallback(
+    (node: FileNode) => {
+      cutToClipboard(node.path, node.name, node.type);
+      successToast(`Cut "${node.name}" to clipboard`);
+    },
+    [cutToClipboard],
+  );
 
-  const handleDropMove = useCallback(async (sourcePath: string, targetDirPath: string) => {
-    const sourceName = sourcePath.split('/').pop() || '';
-    const destPath = targetDirPath ? `${targetDirPath}/${sourceName}` : sourceName;
-    if (sourcePath === destPath) return;
-    try {
-      await renameMutation.mutateAsync({ from: sourcePath, to: destPath });
-      toast.success(`Moved "${sourceName}"`);
-    } catch (err) {
-      toast.error(`Failed to move: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    }
-  }, [renameMutation]);
+  const handleDropMove = useCallback(
+    async (sourcePath: string, targetDirPath: string) => {
+      const sourceName = sourcePath.split('/').pop() || '';
+      const destPath = targetDirPath ? `${targetDirPath}/${sourceName}` : sourceName;
+      if (sourcePath === destPath) return;
+      try {
+        await renameMutation.mutateAsync({ from: sourcePath, to: destPath });
+        successToast(`Moved "${sourceName}"`);
+      } catch (err) {
+        errorToast(`Failed to move: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      }
+    },
+    [renameMutation],
+  );
 
   // Upload
   const handleUpload = useCallback(() => {
@@ -350,7 +366,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
           });
           successCount++;
         } catch (err) {
-          toast.error(
+          errorToast(
             `Failed to upload ${file.name}: ${err instanceof Error ? err.message : 'Unknown error'}`,
           );
         }
@@ -359,7 +375,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       setUploadingCount(0);
 
       if (successCount > 0) {
-        toast.success(
+        successToast(
           successCount === 1
             ? `Uploaded ${files[0].name}`
             : `Uploaded ${successCount} file${successCount > 1 ? 's' : ''}`,
@@ -369,23 +385,31 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
     [uploadMutation, isRootPath, currentPath],
   );
 
-  const handleFileInputChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files || e.target.files.length === 0) return;
-    await handleUploadFiles(e.target.files);
-    e.target.value = '';
-  }, [handleUploadFiles]);
+  const handleFileInputChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (!e.target.files || e.target.files.length === 0) return;
+      await handleUploadFiles(e.target.files);
+      e.target.value = '';
+    },
+    [handleUploadFiles],
+  );
 
   // Create folder
   const handleCreateFolder = useCallback(async () => {
-    if (!newFolderName.trim()) { setIsCreatingFolder(false); return; }
+    if (!newFolderName.trim()) {
+      setIsCreatingFolder(false);
+      return;
+    }
     const folderPath = normalizedCurrentPath
       ? `${normalizedCurrentPath}/${newFolderName.trim()}`
       : newFolderName.trim();
     try {
       await mkdirMutation.mutateAsync({ dirPath: folderPath });
-      toast.success(`Created folder: ${newFolderName.trim()}`);
+      successToast(`Created folder: ${newFolderName.trim()}`);
     } catch (err) {
-      toast.error(`Failed to create folder: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(
+        `Failed to create folder: ${err instanceof Error ? err.message : 'Unknown error'}`,
+      );
     } finally {
       setIsCreatingFolder(false);
       setNewFolderName('');
@@ -394,15 +418,18 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
 
   // Create file
   const handleCreateFile = useCallback(async () => {
-    if (!newFileName.trim()) { setIsCreatingFile(false); return; }
+    if (!newFileName.trim()) {
+      setIsCreatingFile(false);
+      return;
+    }
     const filePath = normalizedCurrentPath
       ? `${normalizedCurrentPath}/${newFileName.trim()}`
       : newFileName.trim();
     try {
       await createMutation.mutateAsync({ filePath });
-      toast.success(`Created file: ${newFileName.trim()}`);
+      successToast(`Created file: ${newFileName.trim()}`);
     } catch (err) {
-      toast.error(`Failed to create file: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(`Failed to create file: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setIsCreatingFile(false);
       setNewFileName('');
@@ -433,7 +460,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
           const normalizedSourceDir = sourceDir === '' ? '.' : sourceDir;
           const normalizedDestDir = destDir === '' ? '.' : destDir;
           if (normalizedSourceDir === normalizedDestDir) {
-            toast.error('Item is already in this directory');
+            errorToast('Item is already in this directory');
             return;
           }
         }
@@ -446,26 +473,35 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       if (clipboard.operation === 'copy') {
         if (clipboard.type === 'file') {
           await copyMutation.mutateAsync({ sourcePath: clipboard.path, destPath });
-          toast.success(`Copied "${clipboard.name}" here`);
+          successToast(`Copied "${clipboard.name}" here`);
         } else {
           await mkdirMutation.mutateAsync({ dirPath: destPath });
-          toast.success(`Created copy of folder "${clipboard.name}" here (empty)`);
+          successToast(`Created copy of folder "${clipboard.name}" here (empty)`);
         }
       } else {
         await renameMutation.mutateAsync({ from: clipboard.path, to: destPath });
-        toast.success(`Moved "${clipboard.name}" here`);
+        successToast(`Moved "${clipboard.name}" here`);
         clearClipboard();
       }
     } catch (err) {
-      toast.error(`Failed to paste: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      errorToast(`Failed to paste: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
-  }, [clipboard, normalizedCurrentPath, files, copyMutation, renameMutation, mkdirMutation, clearClipboard]);
+  }, [
+    clipboard,
+    normalizedCurrentPath,
+    files,
+    copyMutation,
+    renameMutation,
+    mkdirMutation,
+    clearClipboard,
+  ]);
 
   // Keyboard: Ctrl+V paste
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+        return;
       if ((e.metaKey || e.ctrlKey) && e.key === 'v' && clipboard) {
         e.preventDefault();
         handlePaste();
@@ -484,59 +520,78 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
     return e.dataTransfer.types.includes('Files') && !e.dataTransfer.types.includes(DRAG_MIME);
   }, []);
 
-  const handlePageDragEnter = useCallback((e: React.DragEvent) => {
-    if (!isExternalFileDrag(e)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    dragPageCounter.current++;
-    if (dragPageCounter.current === 1) {
-      setIsDragOverPage(true);
-    }
-  }, [isExternalFileDrag]);
+  const handlePageDragEnter = useCallback(
+    (e: React.DragEvent) => {
+      if (!isExternalFileDrag(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragPageCounter.current++;
+      if (dragPageCounter.current === 1) {
+        setIsDragOverPage(true);
+      }
+    },
+    [isExternalFileDrag],
+  );
 
-  const handlePageDragLeave = useCallback((e: React.DragEvent) => {
-    if (!isExternalFileDrag(e)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    dragPageCounter.current--;
-    if (dragPageCounter.current <= 0) {
+  const handlePageDragLeave = useCallback(
+    (e: React.DragEvent) => {
+      if (!isExternalFileDrag(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      dragPageCounter.current--;
+      if (dragPageCounter.current <= 0) {
+        dragPageCounter.current = 0;
+        setIsDragOverPage(false);
+      }
+    },
+    [isExternalFileDrag],
+  );
+
+  const handlePageDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!isExternalFileDrag(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'copy';
+    },
+    [isExternalFileDrag],
+  );
+
+  const handlePageDrop = useCallback(
+    async (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
       dragPageCounter.current = 0;
       setIsDragOverPage(false);
-    }
-  }, [isExternalFileDrag]);
 
-  const handlePageDragOver = useCallback((e: React.DragEvent) => {
-    if (!isExternalFileDrag(e)) return;
-    e.preventDefault();
-    e.stopPropagation();
-    e.dataTransfer.dropEffect = 'copy';
-  }, [isExternalFileDrag]);
-
-  const handlePageDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragPageCounter.current = 0;
-    setIsDragOverPage(false);
-
-    if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
-    await handleUploadFiles(e.dataTransfer.files);
-  }, [handleUploadFiles]);
+      if (!e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+      await handleUploadFiles(e.dataTransfer.files);
+    },
+    [handleUploadFiles],
+  );
 
   // ── Render ────────────────────────────────────────────────────
 
   // Server not reachable
   if (!isHealthLoading && !health?.healthy) {
     return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center bg-background">
-        <ServerOff className="h-12 w-12 text-muted-foreground/30" />
+      <div className="bg-background flex h-full flex-col items-center justify-center gap-4 p-8 text-center">
+        <ServerOff className="text-muted-foreground/30 h-12 w-12" />
         <div>
-          <h3 className="text-base font-medium text-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line546JsxTextServerNotReachable')}</h3>
-          <p className="text-sm text-muted-foreground mt-1.5">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line548JsxTextCouldNotConnectTo')}{' '}
-            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{serverUrl}</code>
+          <h3 className="text-foreground text-base font-medium">
+            {tHardcodedUi.raw(
+              'featuresFilesComponentsFileExplorerPage.line546JsxTextServerNotReachable',
+            )}
+          </h3>
+          <p className="text-muted-foreground mt-1.5 text-sm">
+            {tHardcodedUi.raw(
+              'featuresFilesComponentsFileExplorerPage.line548JsxTextCouldNotConnectTo',
+            )}{' '}
+            <code className="bg-muted rounded px-1.5 py-0.5 text-xs">{serverUrl}</code>
           </p>
         </div>
         <Button variant="outline" size="sm" className="" onClick={() => refetch()}>
-          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
           Retry
         </Button>
       </div>
@@ -545,7 +600,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
 
   return (
     <div
-      className="h-full flex flex-col bg-background relative"
+      className="bg-background relative flex h-full flex-col"
       onDragEnter={handlePageDragEnter}
       onDragLeave={handlePageDragLeave}
       onDragOver={handlePageDragOver}
@@ -553,10 +608,18 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
     >
       <DriveToolbar
         onUpload={handleUpload}
-        onNewFolder={() => { setNewFolderName('New Folder'); setIsCreatingFolder(true); }}
-        onNewFile={() => { setNewFileName('untitled.txt'); setIsCreatingFile(true); }}
+        onNewFolder={() => {
+          setNewFolderName('New Folder');
+          setIsCreatingFolder(true);
+        }}
+        onNewFile={() => {
+          setNewFileName('untitled.txt');
+          setIsCreatingFile(true);
+        }}
         onDownloadDir={() => {
-          const dirName = isRootPath ? 'workspace' : (currentPath.split('/').filter(Boolean).pop() || 'directory');
+          const dirName = isRootPath
+            ? 'workspace'
+            : currentPath.split('/').filter(Boolean).pop() || 'directory';
           const dirPath = isRootPath ? '/workspace' : currentPath;
           downloadDir(dirPath, dirName);
         }}
@@ -567,14 +630,20 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       {isSearchOpen && <FileSearch />}
 
       {/* Hidden file input for uploads */}
-      <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileInputChange} multiple />
+      <input
+        type="file"
+        ref={fileInputRef}
+        className="hidden"
+        onChange={handleFileInputChange}
+        multiple
+      />
 
       {/* Inline create inputs (shown at top of file area) */}
       {(isCreatingFolder || isCreatingFile) && (
-        <div className="px-4 py-2 border-b border-border/30 bg-muted/10">
+        <div className="border-border/30 bg-muted/10 border-b px-4 py-2">
           {isCreatingFolder && (
-            <div className="flex items-center gap-2 max-w-md">
-              <FolderPlus className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div className="flex max-w-md items-center gap-2">
+              <FolderPlus className="text-muted-foreground h-4 w-4 shrink-0" />
               <input
                 type="text"
                 ref={folderInputRef}
@@ -582,17 +651,22 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
                 onChange={(e) => setNewFolderName(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleCreateFolder();
-                  if (e.key === 'Escape') { setIsCreatingFolder(false); setNewFolderName(''); }
+                  if (e.key === 'Escape') {
+                    setIsCreatingFolder(false);
+                    setNewFolderName('');
+                  }
                 }}
                 onBlur={handleCreateFolder}
-                className="flex-1 text-sm bg-transparent border border-border rounded-2xl px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
-                placeholder={tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line603JsxAttrPlaceholderFolderName')}
+                className="border-border focus:ring-primary flex-1 rounded-2xl border bg-transparent px-3 py-1.5 text-sm outline-none focus:ring-1"
+                placeholder={tHardcodedUi.raw(
+                  'featuresFilesComponentsFileExplorerPage.line603JsxAttrPlaceholderFolderName',
+                )}
               />
             </div>
           )}
           {isCreatingFile && (
-            <div className="flex items-center gap-2 max-w-md">
-              <FilePlus className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div className="flex max-w-md items-center gap-2">
+              <FilePlus className="text-muted-foreground h-4 w-4 shrink-0" />
               <input
                 type="text"
                 ref={fileCreateInputRef}
@@ -600,11 +674,16 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
                 onChange={(e) => setNewFileName(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleCreateFile();
-                  if (e.key === 'Escape') { setIsCreatingFile(false); setNewFileName(''); }
+                  if (e.key === 'Escape') {
+                    setIsCreatingFile(false);
+                    setNewFileName('');
+                  }
                 }}
                 onBlur={handleCreateFile}
-                className="flex-1 text-sm bg-transparent border border-border rounded-2xl px-3 py-1.5 outline-none focus:ring-1 focus:ring-primary"
-                placeholder={tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line621JsxAttrPlaceholderFileName')}
+                className="border-border focus:ring-primary flex-1 rounded-2xl border bg-transparent px-3 py-1.5 text-sm outline-none focus:ring-1"
+                placeholder={tHardcodedUi.raw(
+                  'featuresFilesComponentsFileExplorerPage.line621JsxAttrPlaceholderFileName',
+                )}
               />
             </div>
           )}
@@ -615,20 +694,26 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       <div className="flex-1 overflow-y-auto">
         {/* Loading - only show skeleton after 200ms delay to prevent flash */}
         {isLoading && showSkeleton && (
-          <div className="p-4 animate-in fade-in-0 duration-200">
+          <div className="animate-in fade-in-0 p-4 duration-200">
             {viewMode === 'grid' ? (
               <div className="space-y-6">
                 <div>
-                  <Skeleton className="h-4 w-16 mb-3" />
-                  <div className="grid gap-2" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}>
+                  <Skeleton className="mb-3 h-4 w-16" />
+                  <div
+                    className="grid gap-2"
+                    style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
+                  >
                     {Array.from({ length: 6 }).map((_, i) => (
                       <Skeleton key={`f${i}`} className="h-10 rounded-lg" />
                     ))}
                   </div>
                 </div>
                 <div>
-                  <Skeleton className="h-4 w-12 mb-3" />
-                  <div className="grid gap-2.5" style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
+                  <Skeleton className="mb-3 h-4 w-12" />
+                  <div
+                    className="grid gap-2.5"
+                    style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}
+                  >
                     {Array.from({ length: 8 }).map((_, i) => (
                       <Skeleton key={`fi${i}`} className="h-[138px] rounded-lg" />
                     ))}
@@ -647,9 +732,13 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
 
         {/* Error */}
         {error && !isLoading && (
-          <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
-            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line665JsxTextFailedToLoadFiles')}</p>
-            <p className="text-xs text-muted-foreground max-w-sm">
+          <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+            <p className="text-muted-foreground text-sm">
+              {tHardcodedUi.raw(
+                'featuresFilesComponentsFileExplorerPage.line665JsxTextFailedToLoadFiles',
+              )}
+            </p>
+            <p className="text-muted-foreground max-w-sm text-xs">
               {error instanceof Error ? error.message : 'Unknown error'}
             </p>
             <Button variant="outline" size="sm" onClick={() => refetchFiles()}>
@@ -710,23 +799,31 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
 
       {/* Upload progress indicator */}
       {uploadingCount > 0 && (
-        <div className="absolute top-12 left-0 right-0 z-40">
-          <div className="h-0.5 bg-primary/20 w-full overflow-hidden">
-            <div className="h-full bg-primary animate-pulse w-full" />
+        <div className="absolute top-12 right-0 left-0 z-40">
+          <div className="bg-primary/20 h-0.5 w-full overflow-hidden">
+            <div className="bg-primary h-full w-full animate-pulse" />
           </div>
         </div>
       )}
 
       {/* Drag & drop overlay */}
       {isDragOverPage && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm border-2 border-dashed border-primary/50 rounded-2xl pointer-events-none">
+        <div className="bg-background/80 border-primary/50 pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-2xl border-2 border-dashed backdrop-blur-sm">
           <div className="flex flex-col items-center gap-3 text-center">
-            <div className="h-16 w-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <Upload className="h-8 w-8 text-primary" />
+            <div className="bg-primary/10 flex h-16 w-16 items-center justify-center rounded-2xl">
+              <Upload className="text-primary h-8 w-8" />
             </div>
             <div>
-              <p className="text-base font-medium text-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line744JsxTextDropFilesToUpload')}</p>
-              <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line746JsxTextFilesWillBeUploadedToTheCurrentDirectory')}</p>
+              <p className="text-foreground text-base font-medium">
+                {tHardcodedUi.raw(
+                  'featuresFilesComponentsFileExplorerPage.line744JsxTextDropFilesToUpload',
+                )}
+              </p>
+              <p className="text-muted-foreground mt-1 text-sm">
+                {tHardcodedUi.raw(
+                  'featuresFilesComponentsFileExplorerPage.line746JsxTextFilesWillBeUploadedToTheCurrentDirectory',
+                )}
+              </p>
             </div>
           </div>
         </div>
@@ -734,12 +831,12 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
 
       {/* Clipboard indicator bar */}
       {clipboard && (
-        <div className="flex items-center justify-between gap-2 px-4 py-2 border-t border-border/40 bg-muted/20 text-xs text-muted-foreground shrink-0">
+        <div className="border-border/40 bg-muted/20 text-muted-foreground flex shrink-0 items-center justify-between gap-2 border-t px-4 py-2 text-xs">
           <div className="flex items-center gap-2">
             <Clipboard className="h-3.5 w-3.5" />
             <span>
               {clipboard.operation === 'cut' ? 'Moving' : 'Copying'}:{' '}
-              <span className="font-medium text-foreground">{clipboard.name}</span>
+              <span className="text-foreground font-medium">{clipboard.name}</span>
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -749,10 +846,12 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
               className="h-6 text-xs"
               onClick={handlePaste}
               disabled={copyMutation.isPending || renameMutation.isPending}
-            >{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line771JsxTextPasteHere')}</Button>
+            >
+              {tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line771JsxTextPasteHere')}
+            </Button>
             <button
               onClick={clearClipboard}
-              className="text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+              className="text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
             >
               Cancel
             </button>
@@ -765,7 +864,7 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
 
       {/* History popover */}
       {historyPopoverPath && (
-        <div className="fixed bottom-4 right-4 z-50 bg-popover border border-border rounded-2xl shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4 fade-in-0 duration-200">
+        <div className="bg-popover border-border animate-in slide-in-from-bottom-4 fade-in-0 fixed right-4 bottom-4 z-50 overflow-hidden rounded-2xl border shadow-2xl duration-200">
           <FileHistoryPopoverContent
             filePath={historyPopoverPath}
             onClose={() => setHistoryPopoverPath(null)}
@@ -777,22 +876,41 @@ export function FileExplorerPage({ embedded = false }: { embedded?: boolean } = 
       <AlertDialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <AlertDialogContent
           className="sm:max-w-md"
-          onOpenAutoFocus={(e) => { e.preventDefault(); deleteButtonRef.current?.focus(); }}
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            deleteButtonRef.current?.focus();
+          }}
         >
           <AlertDialogHeader>
             <AlertDialogTitle>
               Delete {deleteTarget?.type === 'directory' ? 'folder' : 'file'}
             </AlertDialogTitle>
-            <AlertDialogDescription>{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line807JsxTextAreYouSureYouWantToDelete')}{' '}
-              <span className="font-semibold text-foreground">{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line808JsxTextQuot')}{deleteTarget?.name}{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line808JsxTextQuot306b697a')}</span>{tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line808JsxTextThisActionCannotBeUndone')}</AlertDialogDescription>
+            <AlertDialogDescription>
+              {tHardcodedUi.raw(
+                'featuresFilesComponentsFileExplorerPage.line807JsxTextAreYouSureYouWantToDelete',
+              )}{' '}
+              <span className="text-foreground font-semibold">
+                {tHardcodedUi.raw('featuresFilesComponentsFileExplorerPage.line808JsxTextQuot')}
+                {deleteTarget?.name}
+                {tHardcodedUi.raw(
+                  'featuresFilesComponentsFileExplorerPage.line808JsxTextQuot306b697a',
+                )}
+              </span>
+              {tHardcodedUi.raw(
+                'featuresFilesComponentsFileExplorerPage.line808JsxTextThisActionCannotBeUndone',
+              )}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel disabled={deleteMutation.isPending}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               ref={deleteButtonRef}
-              onClick={(e) => { e.preventDefault(); confirmDelete(); }}
+              onClick={(e) => {
+                e.preventDefault();
+                confirmDelete();
+              }}
               disabled={deleteMutation.isPending}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive hover:bg-destructive/90 text-white"
             >
               {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
             </AlertDialogAction>

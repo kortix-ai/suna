@@ -2,18 +2,18 @@
 
 import { useLocale, useTranslations } from 'next-intl';
 
-import { useEffect } from 'react';
-import { useParams, useRouter } from 'next/navigation';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { motion } from 'motion/react';
 import { Clock, Loader2 } from 'lucide-react';
+import { motion } from 'motion/react';
+import { useParams, useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 
-import { useAuth } from '@/components/AuthProvider';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import { useAuth } from '@/features/providers/auth-provider';
 import {
   acceptAccountInvite,
   declineAccountInvite,
@@ -90,8 +90,10 @@ export default function InvitePage() {
   if (authLoading || !user || inviteQuery.isLoading) {
     return (
       <BrandSurface>
-        <div className="flex items-center gap-2.5 text-foreground/40 text-sm">
-          <Loader2 className="h-4 w-4 animate-spin" />{tHardcodedUi.raw('appInvitesInviteidPage.line88JsxTextLoadingInvite')}</div>
+        <div className="text-foreground/40 flex items-center gap-2.5 text-sm">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          {tHardcodedUi.raw('appInvitesInviteidPage.line88JsxTextLoadingInvite')}
+        </div>
       </BrandSurface>
     );
   }
@@ -100,11 +102,13 @@ export default function InvitePage() {
     return (
       <BrandSurface>
         <InviteCard kicker="Invite">
-          <StateHeading>{tHardcodedUi.raw('appInvitesInviteidPage.line98JsxTextInviteNotFound')}</StateHeading>
-          <StateBody>
-            {tHardcodedUi.raw('appInvitesInviteidPage.inviteInvalidOrRevoked')}
-          </StateBody>
-          <GhostAction onClick={() => router.replace('/projects')}>{tHardcodedUi.raw('appInvitesInviteidPage.line105JsxTextBackToProjects')}</GhostAction>
+          <StateHeading>
+            {tHardcodedUi.raw('appInvitesInviteidPage.line98JsxTextInviteNotFound')}
+          </StateHeading>
+          <StateBody>{tHardcodedUi.raw('appInvitesInviteidPage.inviteInvalidOrRevoked')}</StateBody>
+          <GhostAction onClick={() => router.replace('/projects')}>
+            {tHardcodedUi.raw('appInvitesInviteidPage.line105JsxTextBackToProjects')}
+          </GhostAction>
         </InviteCard>
       </BrandSurface>
     );
@@ -120,12 +124,24 @@ export default function InvitePage() {
   if (!invite.email_matches_caller) {
     return (
       <BrandSurface>
-        <InviteCard kicker={tHardcodedUi.raw('appInvitesInviteidPage.line122JsxAttrKickerWrongAccount')}>
-          <StateHeading>{tHardcodedUi.raw('appInvitesInviteidPage.line123JsxTextSwitchAccounts')}</StateHeading>
-          <StateBody>{tHardcodedUi.raw('appInvitesInviteidPage.line125JsxTextThisInviteIsAddressedToADifferentAccount')}{' '}<span className="text-foreground/80 font-medium">{user.email}</span>.
+        <InviteCard
+          kicker={tHardcodedUi.raw('appInvitesInviteidPage.line122JsxAttrKickerWrongAccount')}
+        >
+          <StateHeading>
+            {tHardcodedUi.raw('appInvitesInviteidPage.line123JsxTextSwitchAccounts')}
+          </StateHeading>
+          <StateBody>
+            {tHardcodedUi.raw(
+              'appInvitesInviteidPage.line125JsxTextThisInviteIsAddressedToADifferentAccount',
+            )}{' '}
+            <span className="text-foreground/80 font-medium">{user.email}</span>.
           </StateBody>
-          <p className="text-xs text-foreground/30 mt-4">{tHardcodedUi.raw('appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe')}</p>
-          <GhostAction onClick={() => router.replace('/projects')}>{tHardcodedUi.raw('appInvitesInviteidPage.line132JsxTextBackToProjects')}</GhostAction>
+          <p className="text-foreground/30 mt-4 text-xs">
+            {tHardcodedUi.raw('appInvitesInviteidPage.line129JsxTextSignOutAndSignBackInWithThe')}
+          </p>
+          <GhostAction onClick={() => router.replace('/projects')}>
+            {tHardcodedUi.raw('appInvitesInviteidPage.line132JsxTextBackToProjects')}
+          </GhostAction>
         </InviteCard>
       </BrandSurface>
     );
@@ -135,11 +151,19 @@ export default function InvitePage() {
     return (
       <BrandSurface>
         <InviteCard kicker={tHardcodedUi.raw('appInvitesInviteidPage.inviteKicker')}>
-          <StateHeading>{tHardcodedUi.raw('appInvitesInviteidPage.line143JsxTextInviteExpired')}</StateHeading>
+          <StateHeading>
+            {tHardcodedUi.raw('appInvitesInviteidPage.line143JsxTextInviteExpired')}
+          </StateHeading>
           <StateBody>
             {tHardcodedUi.raw('appInvitesInviteidPage.expiredPrefix')}{' '}
-            <span className="text-foreground/60">{formatWhen(invite.expires_at, locale)}</span>{tHardcodedUi.raw('appInvitesInviteidPage.line145JsxTextAskThePersonWhoInvitedYouToSend')}</StateBody>
-          <GhostAction onClick={() => router.replace('/projects')}>{tHardcodedUi.raw('appInvitesInviteidPage.line148JsxTextBackToProjects')}</GhostAction>
+            <span className="text-foreground/60">{formatWhen(invite.expires_at, locale)}</span>
+            {tHardcodedUi.raw(
+              'appInvitesInviteidPage.line145JsxTextAskThePersonWhoInvitedYouToSend',
+            )}
+          </StateBody>
+          <GhostAction onClick={() => router.replace('/projects')}>
+            {tHardcodedUi.raw('appInvitesInviteidPage.line148JsxTextBackToProjects')}
+          </GhostAction>
         </InviteCard>
       </BrandSurface>
     );
@@ -155,9 +179,10 @@ export default function InvitePage() {
   const targetName = item.invite.account_name || 'Account';
   const inviterEmail = invite.inviter_email;
   const targetLabel = tHardcodedUi.raw('appInvitesInviteidPage.teamAccountLabel');
-  const roleLabel = item.invite.initial_role === 'admin'
-    ? tHardcodedUi.raw('appInvitesInviteidPage.roleAdmin')
-    : tHardcodedUi.raw('appInvitesInviteidPage.roleMember');
+  const roleLabel =
+    item.invite.initial_role === 'admin'
+      ? tHardcodedUi.raw('appInvitesInviteidPage.roleAdmin')
+      : tHardcodedUi.raw('appInvitesInviteidPage.roleMember');
 
   return (
     <BrandSurface>
@@ -166,27 +191,29 @@ export default function InvitePage() {
           <div className="flex items-center gap-3">
             <UserAvatar email={inviterEmail} size="lg" />
             <div className="min-w-0">
-              <div className="text-foreground/85 truncate text-sm font-medium">
-                {inviterEmail}
+              <div className="text-foreground/85 truncate text-sm font-medium">{inviterEmail}</div>
+              <div className="text-foreground/40 mt-0.5 text-xs">
+                {tHardcodedUi.raw('appInvitesInviteidPage.line180JsxTextInvitedYouToJoinATeam')}
               </div>
-              <div className="text-foreground/40 mt-0.5 text-xs">{tHardcodedUi.raw('appInvitesInviteidPage.line180JsxTextInvitedYouToJoinATeam')}</div>
             </div>
           </div>
         ) : (
-          <div className="text-foreground/50 text-sm leading-relaxed">{tHardcodedUi.raw('appInvitesInviteidPage.line186JsxTextYouHaveBeenInvitedToJoinATeam')}</div>
+          <div className="text-foreground/50 text-sm leading-relaxed">
+            {tHardcodedUi.raw('appInvitesInviteidPage.line186JsxTextYouHaveBeenInvitedToJoinATeam')}
+          </div>
         )}
 
-        <div className="mt-5 flex items-center gap-3 rounded-2xl border border-foreground/[0.08] bg-foreground/[0.03] px-4 py-3.5">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-foreground/[0.05] text-foreground/60">
+        <div className="border-foreground/[0.08] bg-foreground/[0.03] mt-5 flex items-center gap-3 rounded-2xl border px-4 py-3.5">
+          <div className="bg-foreground/[0.05] text-foreground/60 flex size-10 shrink-0 items-center justify-center rounded-2xl">
             <KortixLogo size={16} />
           </div>
           <div className="min-w-0 flex-1">
-            <div className="text-foreground/85 truncate text-sm font-medium">
-              {targetName}
-            </div>
+            <div className="text-foreground/85 truncate text-sm font-medium">{targetName}</div>
             <div className="text-foreground/40 mt-0.5 flex items-center gap-1 text-xs">
               <Clock className="size-3" />
-              {targetLabel}{tHardcodedUi.raw('appInvitesInviteidPage.line200JsxTextExpires')}{' '}{formatWhen(invite.expires_at, locale)}
+              {targetLabel}
+              {tHardcodedUi.raw('appInvitesInviteidPage.line200JsxTextExpires')}{' '}
+              {formatWhen(invite.expires_at, locale)}
             </div>
           </div>
         </div>
@@ -211,7 +238,7 @@ export default function InvitePage() {
             className="flex-1 text-sm"
           >
             {declinePending ? (
-              <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+              <Loader2 className="mx-auto h-4 w-4 animate-spin" />
             ) : (
               tHardcodedUi.raw('appInvitesInviteidPage.decline')
             )}
@@ -224,7 +251,7 @@ export default function InvitePage() {
             className="flex-1 text-sm"
           >
             {acceptPending ? (
-              <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+              <Loader2 className="mx-auto h-4 w-4 animate-spin" />
             ) : (
               tHardcodedUi.raw('appInvitesInviteidPage.accept')
             )}
@@ -241,21 +268,13 @@ function BrandSurface({ children }: { children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 overflow-hidden">
       <WallpaperBackground wallpaperId="brandmark" />
-      <div className="absolute inset-0 bg-background/20 backdrop-blur-[2px]" />
-      <div className="relative z-10 flex h-full items-center justify-center px-4">
-        {children}
-      </div>
+      <div className="bg-background/20 absolute inset-0 backdrop-blur-[2px]" />
+      <div className="relative z-10 flex h-full items-center justify-center px-4">{children}</div>
     </div>
   );
 }
 
-function InviteCard({
-  children,
-  kicker,
-}: {
-  children: React.ReactNode;
-  kicker: string;
-}) {
+function InviteCard({ children, kicker }: { children: React.ReactNode; kicker: string }) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20, scale: 0.98 }}
@@ -265,10 +284,8 @@ function InviteCard({
     >
       <div className="flex flex-col items-center gap-5">
         <KortixLogo size={26} />
-        <div className="w-full bg-background/80 dark:bg-background/75 backdrop-blur-2xl border border-foreground/[0.06] rounded-2xl px-7 py-7">
-          <p className="text-xs text-foreground/30 tracking-[0.2em] uppercase mb-5">
-            {kicker}
-          </p>
+        <div className="bg-background/80 dark:bg-background/75 border-foreground/[0.06] w-full rounded-2xl border px-7 py-7 backdrop-blur-2xl">
+          <p className="text-foreground/30 mb-5 text-xs tracking-[0.2em] uppercase">{kicker}</p>
           {children}
         </div>
       </div>
@@ -278,29 +295,21 @@ function InviteCard({
 
 function StateHeading({ children }: { children: React.ReactNode }) {
   return (
-    <h1 className="text-3xl font-extralight tracking-tight text-foreground/85 leading-none">
+    <h1 className="text-foreground/85 text-3xl leading-none font-extralight tracking-tight">
       {children}
     </h1>
   );
 }
 
 function StateBody({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="mt-3 text-sm text-foreground/50 leading-relaxed">{children}</p>
-  );
+  return <p className="text-foreground/50 mt-3 text-sm leading-relaxed">{children}</p>;
 }
 
-function GhostAction({
-  onClick,
-  children,
-}: {
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
+function GhostAction({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return (
     <Button
       variant="ghost"
-      className="mt-6 h-10 px-4 text-sm text-foreground/60 hover:text-foreground/90 hover:bg-foreground/[0.05]"
+      className="text-foreground/60 hover:text-foreground/90 hover:bg-foreground/[0.05] mt-6 h-10 px-4 text-sm"
       onClick={onClick}
     >
       {children}

@@ -1,34 +1,24 @@
 'use client';
 
-/**
- * ProjectOnboardingWizard — the guided multi-step setup flow that auto-opens
- * for newly-created projects.
- *
- * Step list is wizard-specific (NOT derived from the sidebar's setup
- * checklist): we deliberately drop "connect a repo" (every project already
- * has one) and re-order around real first-day value — connect tools → invite
- * the team → try a request → save it as an agent → automate it. Step 1 is a
- * personal "want help from Marko?" offer (cal embed), gated by
- * useShowPersonalContact() — cloud build flag AND a paid plan, so self-hosters
- * and free accounts never see the founder's face.
- *
- * Navigation is local (`currentIndex`) — user explicitly clicks Back/Continue;
- * pre-done steps still get shown, with an "Already set up" pill instead of
- * a primary CTA. Footer dots track WIZARD progress (past vs current vs
- * future), not project state — earlier "random tick" bug came from mixing
- * the two. Auto-advance only fires when THIS step's id transitions from
- * undone→done (user just configured it in customize).
- *
- * Persistence is localStorage via {@link useProjectOnboarding}; server-side
- * column is the documented follow-up — swap the hook's body, the wizard
- * doesn't change.
- */
-
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { DemoQualifierDialog } from '@/components/contact/demo-qualifier-dialog';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/features/providers/auth-provider';
+import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
+import { useShowPersonalContact } from '@/hooks/use-show-personal-contact';
+import type { CustomizeSection } from '@/lib/customize-sections';
+import {
+  getProjectDetail,
+  listConnectors,
+  listProjectAccess,
+  listProjectSessions,
+} from '@/lib/projects-client';
+import { STARTER_PROMPTS, type StarterPrompt } from '@/lib/starter-prompts';
 import { toast } from '@/lib/toast';
-import Image from 'next/image';
-import { AnimatePresence, motion } from 'motion/react';
+import { cn } from '@/lib/utils';
+import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
+import { useCustomizeStore } from '@/stores/customize-store';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
   ArrowRight,
@@ -43,23 +33,9 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import { useAuth } from '@/components/AuthProvider';
-import { DemoQualifierDialog } from '@/components/contact/demo-qualifier-dialog';
-import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
-import {
-  getProjectDetail,
-  listConnectors,
-  listProjectAccess,
-  listProjectSessions,
-} from '@/lib/projects-client';
-import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
-import { useCustomizeStore } from '@/stores/customize-store';
-import type { CustomizeSection } from '@/lib/customize-sections';
-import { useShowPersonalContact } from '@/hooks/use-show-personal-contact';
-import { STARTER_PROMPTS, type StarterPrompt } from '@/lib/starter-prompts';
-import { cn } from '@/lib/utils';
+import { AnimatePresence, motion } from 'motion/react';
+import Image from 'next/image';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // Public team demo event (cal.com/team/kortix/demo). Namespace stays unique to
 // this surface so the embed's UI config doesn't collide with other instances.
@@ -68,12 +44,7 @@ const CAL_NAMESPACE = 'kortix-onboarding-wizard';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
-type WizardStepId =
-  | 'founder'
-  | 'integrations'
-  | 'team'
-  | 'first-request'
-  | 'agents';
+type WizardStepId = 'founder' | 'integrations' | 'team' | 'first-request' | 'agents';
 
 type WizardStep = {
   id: WizardStepId;
@@ -166,10 +137,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
 
   // First paint waits for the queries that gate the done-state we render —
   // showing "pending" then snapping to "done" looks broken.
-  const isLoading =
-    detail.isLoading ||
-    connectors.isLoading ||
-    sessions.isLoading;
+  const isLoading = detail.isLoading || connectors.isLoading || sessions.isLoading;
 
   // Tracks whether the user just booked a call via the qualifier. Setting
   // this to true flips the founder step's `done` from false → true, which
@@ -246,37 +214,34 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
         description: (
           <div className="space-y-3">
             <p>
-              You start with a stack of general knowledge work skills
-              pre-configured &mdash; research, writing, analysis, the basics.
-              That&rsquo;s enough to get going.
+              You start with a stack of general knowledge work skills pre-configured &mdash;
+              research, writing, analysis, the basics. That&rsquo;s enough to get going.
             </p>
             <p>
-              To make it truly <span className="text-foreground">yours</span>,
-              build out:
+              To make it truly <span className="text-foreground">yours</span>, build out:
             </p>
             <ul className="space-y-1.5 pl-1">
               <li>
-                <span className="font-medium text-foreground">Agents</span>{' '}
-                &mdash; personas shaped around how your team actually works.
+                <span className="text-foreground font-medium">Agents</span> &mdash; personas shaped
+                around how your team actually works.
               </li>
               <li>
-                <span className="font-medium text-foreground">Skills</span>{' '}
-                &mdash; turn the workflows you do over and over into one-line
-                shortcuts that reach into your integrations.
+                <span className="text-foreground font-medium">Skills</span> &mdash; turn the
+                workflows you do over and over into one-line shortcuts that reach into your
+                integrations.
               </li>
               <li>
-                <span className="font-medium text-foreground">Commands</span>{' '}
-                &mdash; slash shortcuts for the things you fire constantly.
+                <span className="text-foreground font-medium">Commands</span> &mdash; slash
+                shortcuts for the things you fire constantly.
               </li>
               <li>
-                <span className="font-medium text-foreground">Automations</span>{' '}
-                &mdash; schedules and webhooks that run work for you, no
-                prompt needed.
+                <span className="text-foreground font-medium">Automations</span> &mdash; schedules
+                and webhooks that run work for you, no prompt needed.
               </li>
             </ul>
             <p>
-              All of it lives in your repo as code, version-controlled, and
-              compounds week over week.
+              All of it lives in your repo as code, version-controlled, and compounds week over
+              week.
             </p>
           </div>
         ),
@@ -317,10 +282,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
   }, [currentStep, totalSteps]);
 
   const shouldRender =
-    onboarding.hydrated &&
-    onboarding.status === 'pending' &&
-    !isLoading &&
-    totalSteps > 0;
+    onboarding.hydrated && onboarding.status === 'pending' && !isLoading && totalSteps > 0;
 
   const advance = useCallback(() => {
     setCurrentIndex((i) => Math.min(i + 1, totalSteps));
@@ -364,7 +326,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
               aria-modal="true"
               aria-label="Project onboarding"
             >
-              <div className="overflow-hidden rounded-3xl border border-border/60 bg-card shadow-[0_2px_4px_rgba(0,0,0,0.04),0_32px_80px_-16px_rgba(0,0,0,0.32)]">
+              <div className="border-border bg-card overflow-hidden rounded-xl border">
                 <Header
                   index={currentIndex}
                   total={totalSteps}
@@ -379,7 +341,7 @@ export function ProjectOnboardingWizard({ projectId }: { projectId: string }) {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -12 }}
                     transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                    className="px-8 pb-6 pt-2"
+                    className="px-8 pt-2 pb-6"
                   >
                     {isFinalScreen ? (
                       <FinalScreen onFinish={onboarding.complete} />
@@ -447,13 +409,11 @@ function Header({
 }) {
   const stepNumber = Math.min(index + 1, total);
   return (
-    <div className="relative flex items-center justify-between gap-3 border-b border-border/60 px-6 py-4">
+    <div className="border-border/60 relative flex items-center justify-between gap-3 border-b px-6 py-4">
       <div className="flex items-center gap-2.5">
         <KortixLogo size={18} />
-        <span className="text-sm font-medium tracking-tight text-foreground">
-          Project setup
-        </span>
-        <span className="text-xs tabular-nums text-muted-foreground/70">
+        <span className="text-foreground text-sm font-medium tracking-tight">Project setup</span>
+        <span className="text-muted-foreground/70 text-xs tabular-nums">
           {isFinal ? 'Done' : `${stepNumber} of ${total}`}
         </span>
       </div>
@@ -461,7 +421,7 @@ function Header({
         type="button"
         onClick={onClose}
         aria-label="Skip onboarding"
-        className="grid size-7 cursor-pointer place-items-center rounded-full text-muted-foreground/70 hover:bg-muted hover:text-foreground"
+        className="text-muted-foreground/70 hover:bg-muted hover:text-foreground grid size-7 cursor-pointer place-items-center rounded-full"
       >
         <X className="size-3.5" />
       </button>
@@ -488,7 +448,7 @@ function StepCard({
     <div className="flex flex-col gap-6 pt-6">
       <div className="flex flex-col items-start gap-5">
         {isFounder ? (
-          <div className="relative size-16 shrink-0 overflow-hidden rounded-2xl border border-border/60 bg-muted">
+          <div className="border-border/60 bg-muted relative size-16 shrink-0 overflow-hidden rounded-2xl border">
             <Image
               src="/marko.png"
               alt="Marko Kraemer"
@@ -517,16 +477,16 @@ function StepCard({
 
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-xl font-semibold tracking-tight text-foreground sm:text-[22px]">
+            <h2 className="text-foreground text-xl font-semibold tracking-tight sm:text-[22px]">
               {step.title}
             </h2>
             {step.done && !isFounder && !isInformational && (
-              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary">
+              <span className="bg-primary/10 text-primary rounded-full px-2 py-0.5 text-[10px] font-medium tracking-wide uppercase">
                 Already set up
               </span>
             )}
           </div>
-          <div className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
+          <div className="text-muted-foreground mt-2 text-[15px] leading-relaxed">
             {step.description}
           </div>
         </div>
@@ -545,13 +505,11 @@ function StepCard({
                 type="button"
                 onClick={() => onPickStarterPrompt(p)}
                 className={cn(
-                  'group relative flex cursor-pointer items-start gap-3 rounded-2xl border bg-card/60 p-3 text-left',
+                  'group bg-card/60 relative flex cursor-pointer items-start gap-3 rounded-2xl border p-3 text-left',
                   'transition-all duration-150',
                   'hover:border-foreground/25 hover:bg-card hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.18)]',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                  isStaged
-                    ? 'border-primary/40 ring-1 ring-primary/20'
-                    : 'border-border/60',
+                  'focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
+                  isStaged ? 'border-primary/40 ring-primary/20 ring-1' : 'border-border/60',
                 )}
               >
                 <span
@@ -565,10 +523,10 @@ function StepCard({
                   {isStaged ? <Check className="size-4" /> : <PIcon className="size-4" />}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <div className="text-sm font-medium tracking-tight text-foreground">
+                  <div className="text-foreground text-sm font-medium tracking-tight">
                     {p.label}
                   </div>
-                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                  <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs">
                     {isStaged ? 'Saved — opens in your composer after onboarding.' : p.description}
                   </p>
                 </div>
@@ -587,9 +545,7 @@ function StepCard({
             className="gap-1.5"
           >
             {isFounder ? <CalendarDays /> : null}
-            {step.done && !isFounder && !step.showStarterPrompts
-              ? 'Open it'
-              : step.primaryCta}
+            {step.done && !isFounder && !step.showStarterPrompts ? 'Open it' : step.primaryCta}
           </Button>
         </div>
       )}
@@ -604,8 +560,7 @@ function StepCard({
 // to the connectors customize section; the grid is a visual menu, not
 // per-app entry points.
 
-const faviconUrl = (domain: string) =>
-  `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
+const faviconUrl = (domain: string) => `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
 
 type BusinessApp = { id: string; name: string; domain: string };
 
@@ -631,10 +586,10 @@ function BusinessAppLogos({ onPick }: { onPick: () => void }) {
           title={app.name}
           aria-label={`Connect ${app.name}`}
           className={cn(
-            'group flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border border-border/60 bg-card/60 px-2 py-3',
+            'group border-border/60 bg-card/60 flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 py-3',
             'transition-all duration-150',
             'hover:border-foreground/25 hover:bg-card hover:shadow-[0_1px_2px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.18)]',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+            'focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
           )}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -645,7 +600,7 @@ function BusinessAppLogos({ onPick }: { onPick: () => void }) {
             height={24}
             className="size-6 rounded-sm"
           />
-          <span className="truncate text-[10px] text-muted-foreground/80 group-hover:text-foreground">
+          <span className="text-muted-foreground/80 group-hover:text-foreground truncate text-[10px]">
             {app.name}
           </span>
         </button>
@@ -657,16 +612,15 @@ function BusinessAppLogos({ onPick }: { onPick: () => void }) {
 function FinalScreen({ onFinish }: { onFinish: () => void }) {
   return (
     <div className="flex flex-col items-start gap-6 pt-6">
-      <span className="flex size-12 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+      <span className="bg-primary/10 text-primary flex size-12 items-center justify-center rounded-2xl">
         <Sparkles className="size-5" />
       </span>
       <div>
-        <h2 className="text-xl font-semibold tracking-tight text-foreground sm:text-[22px]">
+        <h2 className="text-foreground text-xl font-semibold tracking-tight sm:text-[22px]">
           You&rsquo;re all set
         </h2>
-        <p className="mt-2 text-[15px] leading-relaxed text-muted-foreground">
-          Your command center is ready. Describe a task in the composer and
-          your agent gets to work.
+        <p className="text-muted-foreground mt-2 text-[15px] leading-relaxed">
+          Your command center is ready. Describe a task in the composer and your agent gets to work.
         </p>
       </div>
       <Button size="lg" onClick={onFinish} className="gap-1.5">
@@ -697,7 +651,7 @@ function Footer({
   const currentStep = steps[currentIndex];
 
   return (
-    <div className="flex items-center justify-between gap-3 border-t border-border/60 bg-muted/30 px-6 py-3">
+    <div className="border-border/60 bg-muted/30 flex items-center justify-between gap-3 border-t px-6 py-3">
       <div className="flex items-center gap-1.5" aria-label="Wizard progress">
         {steps.map((s, i) => {
           // Dots reflect WIZARD progress only — past vs current vs future.
@@ -714,8 +668,8 @@ function Footer({
                 isPast
                   ? 'bg-primary/10 text-primary'
                   : isActive
-                    ? 'border border-primary/40 bg-primary/5 text-primary'
-                    : 'border border-border bg-background text-muted-foreground/60',
+                    ? 'border-primary/40 bg-primary/5 text-primary border'
+                    : 'border-border bg-background text-muted-foreground/60 border',
               )}
             >
               {isPast ? <Check className="size-3" /> : i + 1}

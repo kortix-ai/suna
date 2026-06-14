@@ -16,11 +16,13 @@
  */
 
 import { cn } from '@/lib/utils';
+import { Icon as IconMynauiType } from '@mynaui/icons-react';
+import { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
-import type { Icon } from '@/components/ui/kortix-icons';
+import { IconType } from 'react-icons/lib';
 
 export interface EmptyStateProps {
-  icon?: Icon;
+  icon?: LucideIcon | IconMynauiType | IconType;
   title: string;
   description?: ReactNode;
   action?: ReactNode;
@@ -42,26 +44,19 @@ export function EmptyState({
   const maxW = size === 'sm' ? 'max-w-[240px]' : 'max-w-[320px]';
 
   return (
-    <div
-      className={cn(
-        'flex flex-1 items-center justify-center px-6 py-12',
-        className,
-      )}
-    >
+    <div className={cn('flex flex-1 items-center justify-center px-6 py-12', className)}>
       <div className={cn('text-center', maxW)}>
         {IconComponent && (
-          <div className="flex justify-center mb-4">
+          <div className="mb-4 flex justify-center">
             <IconComponent
               className={cn(iconSize, 'text-muted-foreground/20')}
               strokeWidth={1.25}
             />
           </div>
         )}
-        <h3 className="text-sm font-semibold text-foreground tracking-tight">
-          {title}
-        </h3>
+        <h3 className="text-foreground text-sm font-semibold tracking-tight">{title}</h3>
         {description && (
-          <p className="mt-1.5 text-sm text-muted-foreground/80 leading-relaxed">
+          <p className="text-muted-foreground/80 mt-1.5 text-sm leading-relaxed text-balance">
             {description}
           </p>
         )}

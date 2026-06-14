@@ -2,14 +2,14 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { useAuth } from '@/components/AuthProvider';
-import { createClient } from '@/lib/supabase/client';
-import { getEnv } from '@/lib/env-config';
-import { Button } from '@/components/ui/button';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/features/providers/auth-provider';
+import { getEnv } from '@/lib/env-config';
+import { createClient } from '@/lib/supabase/client';
 import { Shield, X } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
 
 const SCOPE_DESCRIPTIONS: Record<string, string> = {
   profile: 'View your account information',
@@ -18,9 +18,7 @@ const SCOPE_DESCRIPTIONS: Record<string, string> = {
 
 export default function OAuthConsentPage() {
   return (
-    <Suspense
-      fallback={<ConnectingScreen forceConnecting minimal title="Authorizing" />}
-    >
+    <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Authorizing" />}>
       <OAuthConsent />
     </Suspense>
   );
@@ -45,7 +43,9 @@ function OAuthConsent() {
   useEffect(() => {
     if (!isLoading && !user) {
       const currentUrl = new URL(window.location.href);
-      router.replace(`/auth?returnUrl=${encodeURIComponent(currentUrl.pathname + currentUrl.search)}`);
+      router.replace(
+        `/auth?returnUrl=${encodeURIComponent(currentUrl.pathname + currentUrl.search)}`,
+      );
     }
   }, [user, isLoading, router]);
 
@@ -58,18 +58,23 @@ function OAuthConsent() {
       setConsentRequest(null);
       try {
         const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
         if (!session?.access_token) {
           setError('Session expired. Please sign in again.');
           return;
         }
 
         const backendUrl = getEnv().BACKEND_URL || '';
-        const res = await fetch(`${backendUrl}/oauth/authorize/consent/${encodeURIComponent(requestId)}`, {
-          headers: {
-            Authorization: `Bearer ${session.access_token}`,
+        const res = await fetch(
+          `${backendUrl}/oauth/authorize/consent/${encodeURIComponent(requestId)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
           },
-        });
+        );
         const data = await res.json().catch(() => null);
         if (!res.ok) {
           setError(data?.error_description || data?.error || 'Authorization request expired.');
@@ -80,7 +85,9 @@ function OAuthConsent() {
             clientName: data.client_name || 'Unknown App',
             scopes: Array.isArray(data.scopes)
               ? data.scopes.filter((scope: unknown): scope is string => typeof scope === 'string')
-              : String(data.scope || '').split(' ').filter(Boolean),
+              : String(data.scope || '')
+                  .split(' ')
+                  .filter(Boolean),
           });
         }
       } catch {
@@ -101,7 +108,9 @@ function OAuthConsent() {
 
     try {
       const supabase = createClient();
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session?.access_token) {
         setError('Session expired. Please sign in again.');
         setSubmitting(false);
@@ -144,10 +153,14 @@ function OAuthConsent() {
 
   if (!requestId) {
     return (
-      <div className="fixed inset-0 bg-background flex items-center justify-center">
-        <div className="max-w-sm text-center space-y-4">
-          <p className="text-destructive font-medium">{tHardcodedUi.raw('appOauthAuthorizePage.line146JsxTextInvalidAuthorizationRequest')}</p>
-          <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('appOauthAuthorizePage.line147JsxTextMissingRequiredParameters')}</p>
+      <div className="bg-background fixed inset-0 flex items-center justify-center">
+        <div className="max-w-sm space-y-4 text-center">
+          <p className="text-destructive font-medium">
+            {tHardcodedUi.raw('appOauthAuthorizePage.line146JsxTextInvalidAuthorizationRequest')}
+          </p>
+          <p className="text-muted-foreground text-sm">
+            {tHardcodedUi.raw('appOauthAuthorizePage.line147JsxTextMissingRequiredParameters')}
+          </p>
         </div>
       </div>
     );
@@ -155,12 +168,16 @@ function OAuthConsent() {
 
   if (!consentRequest) {
     return (
-      <div className="fixed inset-0 bg-background flex items-center justify-center">
-        <div className="max-w-sm text-center space-y-4">
+      <div className="bg-background fixed inset-0 flex items-center justify-center">
+        <div className="max-w-sm space-y-4 text-center">
           {error ? (
             <>
-              <p className="text-destructive font-medium">{tHardcodedUi.raw('appOauthAuthorizePage.line159JsxTextAuthorizationRequestUnavailable')}</p>
-              <p className="text-sm text-muted-foreground">{error}</p>
+              <p className="text-destructive font-medium">
+                {tHardcodedUi.raw(
+                  'appOauthAuthorizePage.line159JsxTextAuthorizationRequestUnavailable',
+                )}
+              </p>
+              <p className="text-muted-foreground text-sm">{error}</p>
             </>
           ) : (
             <ConnectingScreen forceConnecting minimal title="Authorizing" />
@@ -171,41 +188,44 @@ function OAuthConsent() {
   }
 
   return (
-    <div className="fixed inset-0 bg-background flex items-center justify-center px-4">
+    <div className="bg-background fixed inset-0 flex items-center justify-center px-4">
       <div className="w-full max-w-sm space-y-6">
-        <div className="text-center space-y-2">
-          <div className="flex items-center justify-center mb-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-foreground/[0.06] border border-foreground/[0.08]">
-              <Shield className="h-6 w-6 text-foreground/50" />
+        <div className="space-y-2 text-center">
+          <div className="mb-4 flex items-center justify-center">
+            <div className="bg-foreground/[0.06] border-foreground/[0.08] flex h-14 w-14 items-center justify-center rounded-full border">
+              <Shield className="text-foreground/50 h-6 w-6" />
             </div>
           </div>
-          <h1 className="text-xl font-semibold tracking-tight">
-            Authorize {clientName}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{clientName}</span>{tHardcodedUi.raw('appOauthAuthorizePage.line183JsxTextWantsToAccessYourKortixAccount')}</p>
+          <h1 className="text-xl font-semibold tracking-tight">Authorize {clientName}</h1>
+          <p className="text-muted-foreground text-sm">
+            <span className="text-foreground font-medium">{clientName}</span>
+            {tHardcodedUi.raw('appOauthAuthorizePage.line183JsxTextWantsToAccessYourKortixAccount')}
+          </p>
         </div>
 
-        <div className="rounded-2xl border border-border bg-muted/30 p-4 space-y-3">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tHardcodedUi.raw('appOauthAuthorizePage.line189JsxTextThisWillAllow')}{' '}{clientName} to:
+        <div className="border-border bg-muted/30 space-y-3 rounded-2xl border p-4">
+          <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+            {tHardcodedUi.raw('appOauthAuthorizePage.line189JsxTextThisWillAllow')} {clientName} to:
           </p>
           <ul className="space-y-2">
             {scopes.map((s) => (
               <li key={s} className="flex items-start gap-2 text-sm">
-                <div className="size-1.5 rounded-full bg-foreground/40 mt-1.5 shrink-0" />
+                <div className="bg-foreground/40 mt-1.5 size-1.5 shrink-0 rounded-full" />
                 <span>{SCOPE_DESCRIPTIONS[s] || s}</span>
               </li>
             ))}
           </ul>
         </div>
 
-        <div className="rounded-2xl border border-border bg-muted/20 px-4 py-3">
-          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appOauthAuthorizePage.line202JsxTextSignedInAs')}</p>
-          <p className="text-sm font-medium truncate">{user.email}</p>
+        <div className="border-border bg-muted/20 rounded-2xl border px-4 py-3">
+          <p className="text-muted-foreground text-xs">
+            {tHardcodedUi.raw('appOauthAuthorizePage.line202JsxTextSignedInAs')}
+          </p>
+          <p className="truncate text-sm font-medium">{user.email}</p>
         </div>
 
         {error && (
-          <div className="rounded-2xl border border-destructive/20 bg-destructive/5 p-3 text-sm text-destructive">
+          <div className="border-destructive/20 bg-destructive/5 text-destructive rounded-2xl border p-3 text-sm">
             {error}
           </div>
         )}
@@ -220,16 +240,14 @@ function OAuthConsent() {
             <X className="size-4" />
             Deny
           </Button>
-          <Button
-            className="flex-1"
-            onClick={() => handleConsent(true)}
-            disabled={submitting}
-          >
+          <Button className="flex-1" onClick={() => handleConsent(true)} disabled={submitting}>
             {submitting ? 'Authorizing...' : 'Allow'}
           </Button>
         </div>
 
-        <p className="text-xs text-center text-muted-foreground">{tHardcodedUi.raw('appOauthAuthorizePage.line232JsxTextYouCanRevokeAccessAtAnyTimeFrom')}</p>
+        <p className="text-muted-foreground text-center text-xs">
+          {tHardcodedUi.raw('appOauthAuthorizePage.line232JsxTextYouCanRevokeAccessAtAnyTimeFrom')}
+        </p>
       </div>
     </div>
   );

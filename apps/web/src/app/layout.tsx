@@ -1,10 +1,10 @@
-import { AuthProvider } from '@/components/AuthProvider';
 import { BrowserNoiseGuard } from '@/components/browser-noise-guard';
 import { DesktopChrome } from '@/components/desktop/desktop-chrome';
 import { DesktopUrlPrompt } from '@/components/desktop/desktop-url-prompt';
 import { ThemeProvider } from '@/components/home/theme-provider';
 import { I18nProvider } from '@/components/i18n-provider';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { AuthProvider } from '@/features/providers/auth-provider';
 import { DESKTOP_INIT_SCRIPT, DESKTOP_UA_TOKEN } from '@/lib/desktop';
 import { featureFlags } from '@/lib/feature-flags';
 import { getHardcodedUiServerText } from '@/lib/hardcoded-ui-server';

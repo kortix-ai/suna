@@ -2,20 +2,29 @@
 
 import { useTranslations } from 'next-intl';
 
-import { Suspense, useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { AlertCircle, CheckCircle2, Github, Loader2 } from 'lucide-react';
-import { useAuth } from '@/components/AuthProvider';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
+import Loading from '@/components/ui/loading';
+import { useAuth } from '@/features/providers/auth-provider';
 import { saveGitHubInstallation } from '@/lib/projects-client';
+import { CheckCircleSolid, InfoCircleSolid } from '@mynaui/icons-react';
+import { AlertCircle } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+
+type SetupState = 'saving' | 'done' | 'error';
 
 export default function GitHubSetupPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <Suspense
       fallback={
-        <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appGithubSetupPage.line15JsxAttrTitleConnectingGithub')} />
+        <ConnectingScreen
+          forceConnecting
+          minimal
+          title={tHardcodedUi.raw('appGithubSetupPage.line15JsxAttrTitleConnectingGithub')}
+        />
       }
     >
       <GitHubSetup />
@@ -28,8 +37,10 @@ function GitHubSetup() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, isLoading } = useAuth();
-  const [state, setState] = useState<'saving' | 'done' | 'error'>('saving');
-  const [message, setMessage] = useState('Connecting GitHub...');
+  const [state, setState] = useState<SetupState>('saving');
+  const [message, setMessage] = useState(
+    'Finishing your account connection and saving the installation.',
+  );
 
   const installState = searchParams.get('state') || '';
   const installationId = searchParams.get('installation_id') || '';
@@ -47,13 +58,11 @@ function GitHubSetup() {
   useEffect(() => {
     if (isLoading || !user) return;
 
-    // Tracked so the post-success/uninstall redirect doesn't fire router.replace
-    // after the component unmounts (e.g. the user navigates within the 900ms).
     let redirectTimer: number | undefined;
 
     if (setupAction === 'uninstall') {
       setState('done');
-      setMessage('GitHub App removed');
+      setMessage('GitHub App removed from your account.');
       redirectTimer = window.setTimeout(() => router.replace('/projects'), 900);
       return () => {
         if (redirectTimer) clearTimeout(redirectTimer);
@@ -62,7 +71,9 @@ function GitHubSetup() {
 
     if (!installState || !installationId) {
       setState('error');
-      setMessage('GitHub did not return the installation details.');
+      setMessage(
+        'GitHub did not return the installation details. Try connecting again from your project or account settings.',
+      );
       return;
     }
 
@@ -76,8 +87,8 @@ function GitHubSetup() {
         setState('done');
         setMessage(
           status.owner_login
-            ? `Connected ${status.owner_login}`
-            : 'GitHub connected',
+            ? `Connected to ${status.owner_login}. Redirecting you back now.`
+            : 'GitHub connected. Redirecting you back now.',
         );
         redirectTimer = window.setTimeout(
           () => router.replace(consumeGitHubSetupReturn() ?? '/projects?new=1'),
@@ -98,43 +109,99 @@ function GitHubSetup() {
 
   if (isLoading || !user) {
     return (
-      <ConnectingScreen forceConnecting minimal title={tHardcodedUi.raw('appGithubSetupPage.line90JsxAttrTitleConnectingGithub')} />
+      <ConnectingScreen
+        forceConnecting
+        minimal
+        title={tHardcodedUi.raw('appGithubSetupPage.line90JsxAttrTitleConnectingGithub')}
+      />
     );
   }
 
-  const Icon =
-    state === 'saving'
-      ? Loader2
-      : state === 'done'
-        ? CheckCircle2
-        : AlertCircle;
+  const heading = getHeading(state, setupAction);
 
   return (
-    <div className="fixed inset-0 bg-background flex items-center justify-center px-4">
-      <div className="w-full max-w-sm text-center space-y-5">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-border bg-muted/40">
-          {state === 'saving' ? (
-            <Icon className="h-6 w-6 animate-spin text-muted-foreground" />
-          ) : state === 'done' ? (
-            <Icon className="h-6 w-6 text-emerald-600" />
-          ) : (
-            <Icon className="h-6 w-6 text-destructive" />
-          )}
-        </div>
-        <div className="space-y-2">
-          <h1 className="text-xl font-semibold tracking-tight">{tHardcodedUi.raw('appGithubSetupPage.line114JsxTextGithubSetup')}</h1>
-          <p className="text-sm text-muted-foreground">{message}</p>
-        </div>
-        {state === 'error' ? (
-          <Button
-            onClick={() => router.replace('/projects')}
-            className="gap-1.5"
-          >
-            <Github className="h-4 w-4" />{tHardcodedUi.raw('appGithubSetupPage.line123JsxTextBackToProjects')}</Button>
-        ) : null}
+    <main
+      className="bg-background fixed inset-0 flex items-center justify-center px-4"
+      role="status"
+      aria-live="polite"
+      aria-label={heading}
+    >
+      <div className="w-full max-w-sm space-y-6 py-6">
+        {state === 'saving' ? (
+          <>
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div className="text-muted-foreground flex items-center gap-2 text-sm">
+                <Loading />
+                <span>Connecting</span>
+              </div>
+              <div className="space-y-1.5">
+                <h1 className="text-base font-semibold tracking-tight">
+                  {getHeading(state, setupAction)}
+                </h1>
+                <p className="text-muted-foreground text-sm leading-relaxed">{message}</p>
+              </div>
+            </div>
+            <p className="text-muted-foreground text-center text-xs">
+              This usually takes a few seconds.
+            </p>
+          </>
+        ) : state === 'error' ? (
+          <>
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div className="border-destructive/25 bg-destructive/5 flex h-10 w-10 items-center justify-center rounded-lg border">
+                <AlertCircle className="text-destructive h-5 w-5" aria-hidden />
+              </div>
+              <div className="space-y-1.5">
+                <h1 className="text-base font-semibold tracking-tight">
+                  {getHeading(state, setupAction)}
+                </h1>
+              </div>
+            </div>
+            <InfoBanner tone="destructive" icon={InfoCircleSolid}>
+              {message}
+            </InfoBanner>
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => router.replace('/projects')}
+            >
+              {tHardcodedUi.raw('appGithubSetupPage.line123JsxTextBackToProjects')}
+            </Button>
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col items-center gap-4 text-center">
+              <div className="border-border bg-primary/6 flex h-10 w-10 items-center justify-center rounded-lg border">
+                <CheckCircleSolid className="text-foreground size-5" aria-hidden />
+              </div>
+              <div className="space-y-1.5">
+                <h1 className="text-base font-semibold tracking-tight">
+                  {getHeading(state, setupAction)}
+                </h1>
+                <p className="text-muted-foreground text-sm leading-relaxed">{message}</p>
+              </div>
+            </div>
+            <p className="text-muted-foreground text-center text-xs">Redirecting…</p>
+          </>
+        )}
       </div>
-    </div>
+    </main>
   );
+}
+
+function getHeading(state: SetupState, setupAction: string): string {
+  switch (state) {
+    case 'saving':
+      return 'Connecting to GitHub';
+    case 'done':
+      return setupAction === 'uninstall' ? 'GitHub disconnected' : 'GitHub connected';
+    case 'error':
+      return 'Could not connect GitHub';
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
 }
 
 function consumeGitHubSetupReturn(): string | null {

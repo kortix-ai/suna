@@ -10,9 +10,6 @@ import { useTranslations } from 'next-intl';
  * disconnect action. Handles its own disconnect confirmation + loading state.
  */
 
-import { useState, useCallback } from 'react';
-import { Loader2, Unplug, ChevronDown, ChevronRight, Plus, Settings2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,18 +20,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { ProviderLogo, PROVIDER_LABELS } from '@/components/providers/provider-branding';
+import { Button } from '@/components/ui/button';
+import { errorToast, successToast } from '@/components/ui/toast';
+import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
 import { getClient } from '@/lib/opencode-sdk';
 import { useQueryClient } from '@tanstack/react-query';
-import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
-import { toast } from '@/lib/toast';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { ChevronDown, ChevronRight, Loader2, Plus, Unplug } from 'lucide-react';
+import { useCallback, useState } from 'react';
 
 type Provider = NonNullable<ProviderListResponse['all']>[number];
 
@@ -89,10 +83,10 @@ export function ProviderList({
         }
         await client.global.dispose();
         await queryClient.refetchQueries({ queryKey: opencodeKeys.providers() });
-        toast.success(`${PROVIDER_LABELS[providerID] || providerID} disconnected`);
+        successToast(`${PROVIDER_LABELS[providerID] || providerID} disconnected`);
         onDisconnected?.();
       } catch {
-        toast.error('Failed to disconnect provider');
+        errorToast('Failed to disconnect provider');
       } finally {
         setDisconnecting(null);
       }
@@ -103,15 +97,14 @@ export function ProviderList({
   if (connectedProviders.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-center">
-        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProvidersProviderList.line103JsxTextNoProvidersConnected')}</p>
+        <p className="text-muted-foreground/60 text-xs">
+          {tHardcodedUi.raw('componentsProvidersProviderList.line103JsxTextNoProvidersConnected')}
+        </p>
         {showConnectButton && onConnect && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-3"
-            onClick={onConnect}
-          >
-            <Plus className="h-3 w-3" />{tHardcodedUi.raw('componentsProvidersProviderList.line112JsxTextConnectAProvider')}</Button>
+          <Button variant="outline" size="sm" className="mt-3" onClick={onConnect}>
+            <Plus className="h-3 w-3" />
+            {tHardcodedUi.raw('componentsProvidersProviderList.line112JsxTextConnectAProvider')}
+          </Button>
         )}
       </div>
     );
@@ -129,23 +122,28 @@ export function ProviderList({
           return (
             <div
               key={p.id}
-              className="rounded-2xl border border-foreground/[0.06] bg-foreground/[0.02] overflow-hidden"
+              className="border-foreground/[0.06] bg-foreground/[0.02] overflow-hidden rounded-2xl border"
             >
               <div className="flex items-center gap-3 px-3 py-2.5">
                 <ProviderLogo providerID={p.id} name={p.name} size="default" />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm font-medium text-foreground/85">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-foreground/85 text-sm font-medium">
                       {PROVIDER_LABELS[p.id] || p.name || p.id}
                     </span>
-                    <span className="inline-flex items-center gap-1 px-1.5 py-px rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                      <span className="w-1 h-1 rounded-full bg-emerald-500" />
+                    <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-px text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                      <span className="h-1 w-1 rounded-full bg-emerald-500" />
                       connected
                     </span>
                   </div>
-                  <span className="text-xs text-muted-foreground/50">
+                  <span className="text-muted-foreground/50 text-xs">
                     {modelCount} model{modelCount !== 1 ? 's' : ''}
-                    {source && <> · <span className="capitalize">{source}</span></>}
+                    {source && (
+                      <>
+                        {' '}
+                        · <span className="capitalize">{source}</span>
+                      </>
+                    )}
                   </span>
                 </div>
                 <Button
@@ -153,7 +151,7 @@ export function ProviderList({
                   disabled={isDisc}
                   variant="ghost"
                   size="icon-sm"
-                  className="text-muted-foreground/30 hover:text-red-500 hover:bg-red-500/10"
+                  className="text-muted-foreground/30 hover:bg-red-500/10 hover:text-red-500"
                   title="Disconnect"
                 >
                   {isDisc ? (
@@ -181,11 +179,11 @@ export function ProviderList({
               )}
 
               {isExp && (
-                <div className="border-t border-border/20">
+                <div className="border-border/20 border-t">
                   {Object.values(p.models ?? {}).map((m: any) => (
                     <div
                       key={m.id}
-                      className="flex items-center gap-2 px-3 py-1 text-xs text-foreground/50 hover:bg-muted/20"
+                      className="text-foreground/50 hover:bg-muted/20 flex items-center gap-2 px-3 py-1 text-xs"
                     >
                       <span className="truncate">{m.name || m.id}</span>
                     </div>
@@ -203,14 +201,20 @@ export function ProviderList({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{tHardcodedUi.raw('componentsProvidersProviderList.line205JsxTextDisconnectProvider')}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {tHardcodedUi.raw('componentsProvidersProviderList.line205JsxTextDisconnectProvider')}
+            </AlertDialogTitle>
             <AlertDialogDescription className="text-xs">
               {confirmDisconnect && (
                 <>
                   Remove{' '}
-                  <span className="font-medium text-foreground">
+                  <span className="text-foreground font-medium">
                     {PROVIDER_LABELS[confirmDisconnect] || confirmDisconnect}
-                  </span>{tHardcodedUi.raw('componentsProvidersProviderList.line213JsxTextYouAposLlNeedToReEnterYour')}</>
+                  </span>
+                  {tHardcodedUi.raw(
+                    'componentsProvidersProviderList.line213JsxTextYouAposLlNeedToReEnterYour',
+                  )}
+                </>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -218,7 +222,7 @@ export function ProviderList({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => confirmDisconnect && doDisconnect(confirmDisconnect)}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive hover:bg-destructive/90 text-white"
             >
               Disconnect
             </AlertDialogAction>

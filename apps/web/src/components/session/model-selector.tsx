@@ -2,47 +2,37 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
-import { useParams } from 'next/navigation';
 import {
-  Check,
-  ChevronDown,
-  Eye,
-  EyeOff,
-  Plus,
-  SlidersHorizontal,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
-  CommandPopover,
-  CommandPopoverTrigger,
-  CommandPopoverContent,
-  CommandInput,
-  CommandList,
-  CommandGroup,
-  CommandItem,
   CommandFooter,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandPopover,
+  CommandPopoverContent,
+  CommandPopoverTrigger,
 } from '@/components/ui/command';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import { Check, ChevronDown, Eye, EyeOff, Plus, SlidersHorizontal } from 'lucide-react';
+import { useParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { useModelStore } from '@/hooks/opencode/use-model-store';
-import type { FlatModel } from './session-chat-input';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
   ProviderLogo,
-} from '@/components/providers/provider-branding';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
+} from '@/features/providers/provider-branding';
+import { useModelStore } from '@/hooks/opencode/use-model-store';
+import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
-import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
+import { useProviderModalStore } from '@/stores/provider-modal-store';
+import type { FlatModel } from './session-chat-input';
 
 // Re-export for consumers
-export { ConnectProviderContent } from '@/components/providers/connect-provider-content';
+export { ConnectProviderContent } from '@/features/providers/connect-provider-content';
+export { Tag };
 
 // ─── Backward-compat wrappers ────────────────────────────────────────────────
 
@@ -100,7 +90,6 @@ export function ManageModelsDialog({
 
 // Import from canonical UI component and re-export for consumers
 import { Tag } from '@/components/ui/tag';
-export { Tag };
 
 // ─── ModelSelector ───────────────────────────────────────────────────────────
 
@@ -128,8 +117,9 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const params = useParams<{ id?: string }>();
   const projectId = typeof params?.id === 'string' ? params.id : null;
   const [projectModalOpen, setProjectModalOpen] = useState(false);
-  const [projectModalTab, setProjectModalTab] =
-    useState<'connected' | 'catalog' | 'models'>('catalog');
+  const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
+    'catalog',
+  );
 
   const current = models.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
@@ -149,7 +139,8 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   // Are there any models the "latest" filter is currently hiding? Drives the
   // "Show older models" footer — no point showing it when nothing is hidden.
   const hasHidden = useMemo(
-    () => models.some((m) => !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })),
+    () =>
+      models.some((m) => !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })),
     [models, modelStore],
   );
 
@@ -159,20 +150,37 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
       .filter((m) => {
         // A search query reveals everything; otherwise respect visibility
         // unless the user expanded the "older models" section.
-        if (!q && !showHidden && !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })) return false;
-        return !q || (m.modelName || '').toLowerCase().includes(q) || (m.modelID || '').toLowerCase().includes(q) || (m.providerName || '').toLowerCase().includes(q);
+        if (
+          !q &&
+          !showHidden &&
+          !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })
+        )
+          return false;
+        return (
+          !q ||
+          (m.modelName || '').toLowerCase().includes(q) ||
+          (m.modelID || '').toLowerCase().includes(q) ||
+          (m.providerName || '').toLowerCase().includes(q)
+        );
       })
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
   }, [models, search, showHidden, modelStore]);
 
   const grouped = useMemo(() => {
-    const groups = new Map<string, { providerName: string; providerID: string; models: FlatModel[] }>();
+    const groups = new Map<
+      string,
+      { providerName: string; providerID: string; models: FlatModel[] }
+    >();
     for (const m of visibleModels) {
       const existing = groups.get(m.providerID);
       if (existing) {
         existing.models.push(m);
       } else {
-        groups.set(m.providerID, { providerID: m.providerID, providerName: PROVIDER_LABELS[m.providerID] || m.providerName, models: [m] });
+        groups.set(m.providerID, {
+          providerID: m.providerID,
+          providerName: PROVIDER_LABELS[m.providerID] || m.providerName,
+          models: [m],
+        });
       }
     }
     const entries = Array.from(groups.values());
@@ -197,162 +205,199 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     [onSelect],
   );
 
-  const handleOpenProviderModal = useCallback((tab: ProviderModalTab) => {
-    setOpen(false);
-    if (projectId) {
-      // Legacy tabs: 'providers' | 'connected' | 'models'. Map 'providers'
-      // (the "add" view in the old modal) to our 'catalog' tab.
-      setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
-      setProjectModalOpen(true);
-      return;
-    }
-    openProviderModal(tab);
-  }, [projectId, openProviderModal]);
+  const handleOpenProviderModal = useCallback(
+    (tab: ProviderModalTab) => {
+      setOpen(false);
+      if (projectId) {
+        // Legacy tabs: 'providers' | 'connected' | 'models'. Map 'providers'
+        // (the "add" view in the old modal) to our 'catalog' tab.
+        setProjectModalTab(tab === 'providers' ? 'catalog' : tab);
+        setProjectModalOpen(true);
+        return;
+      }
+      openProviderModal(tab);
+    },
+    [projectId, openProviderModal],
+  );
 
   return (
     <>
-    {projectId && (
-      <ProjectProviderModal
-        projectId={projectId}
-        open={projectModalOpen}
-        onOpenChange={setProjectModalOpen}
-        defaultTab={projectModalTab}
-      />
-    )}
-    <CommandPopover open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <CommandPopoverTrigger>
-            <button
-              type="button"
-              aria-label={tHardcodedUi.raw('componentsSessionModelSelector.line207JsxAttrAriaLabelModelPicker')}
-              className={cn(
-                'inline-flex items-center gap-1.5 h-8 px-2.5 rounded-full text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-200 cursor-pointer',
-                open && 'bg-muted text-foreground',
-              )}
-            >
-              <span className="truncate max-w-[120px]">{displayName}</span>
-              <ChevronDown className={cn('size-3 opacity-50 transition-transform duration-200', open && 'rotate-180')} />
-            </button>
-          </CommandPopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">{tHardcodedUi.raw('componentsSessionModelSelector.line218JsxTextChooseModel')}</TooltipContent>
-      </Tooltip>
-
-      <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
-        <CommandInput
-          compact
-          placeholder={tHardcodedUi.raw('componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels')}
-          value={search}
-          onValueChange={setSearch}
-          rightElement={
-            <div className="flex items-center gap-0.5 -mr-1 shrink-0">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenProviderModal('providers')}
-                    className="size-7 rounded-md flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">{tHardcodedUi.raw('componentsSessionModelSelector.line239JsxTextConnectProvider')}</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => handleOpenProviderModal('models')}
-                    className="size-7 rounded-md flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 transition-colors cursor-pointer"
-                  >
-                    <SlidersHorizontal className="h-3.5 w-3.5" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">{tHardcodedUi.raw('componentsSessionModelSelector.line251JsxTextManageModels')}</TooltipContent>
-              </Tooltip>
-            </div>
-          }
+      {projectId && (
+        <ProjectProviderModal
+          projectId={projectId}
+          open={projectModalOpen}
+          onOpenChange={setProjectModalOpen}
+          defaultTab={projectModalTab}
         />
+      )}
+      <CommandPopover open={open} onOpenChange={setOpen}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <CommandPopoverTrigger>
+              <button
+                type="button"
+                aria-label={tHardcodedUi.raw(
+                  'componentsSessionModelSelector.line207JsxAttrAriaLabelModelPicker',
+                )}
+                className={cn(
+                  'text-muted-foreground hover:text-foreground hover:bg-muted inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-full px-2.5 text-xs font-medium transition-colors duration-200',
+                  open && 'bg-muted text-foreground',
+                )}
+              >
+                <span className="max-w-[120px] truncate">{displayName}</span>
+                <ChevronDown
+                  className={cn(
+                    'size-3 opacity-50 transition-transform duration-200',
+                    open && 'rotate-180',
+                  )}
+                />
+              </button>
+            </CommandPopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="text-xs">
+            {tHardcodedUi.raw('componentsSessionModelSelector.line218JsxTextChooseModel')}
+          </TooltipContent>
+        </Tooltip>
 
-        <CommandList className="max-h-[380px]">
-          {grouped.length > 0 ? (
-            <>
-              {grouped.map((group) => (
-                <CommandGroup
-                  key={group.providerID}
-                  heading={
-                    <div className="flex items-center gap-2">
-                      <ProviderLogo providerID={group.providerID} name={group.providerName} size="small" />
-                      <span className="flex-1">{PROVIDER_LABELS[group.providerID] || group.providerName}</span>
-                      <span className="text-xs text-muted-foreground/30 normal-case tracking-normal">
-                        {group.models.length}
-                      </span>
-                    </div>
-                  }
-                  forceMount
-                >
-                  {group.models.map((model) => {
-                    const isSelected = selectedModel?.providerID === model.providerID && selectedModel?.modelID === model.modelID;
-                    const isFree = model.providerID === 'opencode' && (!model.cost || model.cost.input === 0);
-                    const modelKey = { providerID: model.providerID, modelID: model.modelID };
-                    // "Latest" models are always shown; older ones get an
-                    // activation switch so they can be pinned into the picker.
-                    const isLatestModel = modelStore.isLatest(modelKey);
-                    const isModelVisible = modelStore.isVisible(modelKey);
+        <CommandPopoverContent side="top" align="start" sideOffset={8} className="w-[300px]">
+          <CommandInput
+            compact
+            placeholder={tHardcodedUi.raw(
+              'componentsSessionModelSelector.line224JsxAttrPlaceholderSearchModels',
+            )}
+            value={search}
+            onValueChange={setSearch}
+            rightElement={
+              <div className="-mr-1 flex shrink-0 items-center gap-0.5">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenProviderModal('providers')}
+                      className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {tHardcodedUi.raw(
+                      'componentsSessionModelSelector.line239JsxTextConnectProvider',
+                    )}
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenProviderModal('models')}
+                      className="text-muted-foreground/50 hover:text-foreground hover:bg-muted/50 flex size-7 cursor-pointer items-center justify-center rounded-md transition-colors"
+                    >
+                      <SlidersHorizontal className="h-3.5 w-3.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {tHardcodedUi.raw('componentsSessionModelSelector.line251JsxTextManageModels')}
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            }
+          />
 
-                    return (
-                      <CommandItem
-                        key={`${model.providerID}:${model.modelID}`}
-                        value={`model-${model.providerID}-${model.modelID}`}
-                        className={cn(
-                          '!pl-3',
-                          isSelected && 'bg-foreground/[0.06]',
-                          !isLatestModel && !isModelVisible && 'opacity-60',
-                        )}
-                        onSelect={() => handleSelect(model)}
-                      >
-                        <div className="min-w-0 flex-1 py-0.5">
-                          <div className={cn(
-                            'truncate text-sm leading-tight',
-                            isSelected ? 'font-semibold text-foreground' : 'font-medium text-foreground/90',
-                          )}>
-                            {model.modelName}
+          <CommandList className="max-h-[380px]">
+            {grouped.length > 0 ? (
+              <>
+                {grouped.map((group) => (
+                  <CommandGroup
+                    key={group.providerID}
+                    heading={
+                      <div className="flex items-center gap-2">
+                        <ProviderLogo
+                          providerID={group.providerID}
+                          name={group.providerName}
+                          size="small"
+                        />
+                        <span className="flex-1">
+                          {PROVIDER_LABELS[group.providerID] || group.providerName}
+                        </span>
+                        <span className="text-muted-foreground/30 text-xs tracking-normal normal-case">
+                          {group.models.length}
+                        </span>
+                      </div>
+                    }
+                    forceMount
+                  >
+                    {group.models.map((model) => {
+                      const isSelected =
+                        selectedModel?.providerID === model.providerID &&
+                        selectedModel?.modelID === model.modelID;
+                      const isFree =
+                        model.providerID === 'opencode' && (!model.cost || model.cost.input === 0);
+                      const modelKey = { providerID: model.providerID, modelID: model.modelID };
+                      // "Latest" models are always shown; older ones get an
+                      // activation switch so they can be pinned into the picker.
+                      const isLatestModel = modelStore.isLatest(modelKey);
+                      const isModelVisible = modelStore.isVisible(modelKey);
+
+                      return (
+                        <CommandItem
+                          key={`${model.providerID}:${model.modelID}`}
+                          value={`model-${model.providerID}-${model.modelID}`}
+                          className={cn(
+                            '!pl-3',
+                            isSelected && 'bg-foreground/[0.06]',
+                            !isLatestModel && !isModelVisible && 'opacity-60',
+                          )}
+                          onSelect={() => handleSelect(model)}
+                        >
+                          <div className="min-w-0 flex-1 py-0.5">
+                            <div
+                              className={cn(
+                                'truncate text-sm leading-tight',
+                                isSelected
+                                  ? 'text-foreground font-semibold'
+                                  : 'text-foreground/90 font-medium',
+                              )}
+                            >
+                              {model.modelName}
+                            </div>
+                            <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
+                              {model.modelID}
+                            </p>
                           </div>
-                          <p className="truncate text-xs text-muted-foreground/55 leading-snug mt-1">{model.modelID}</p>
-                        </div>
-                        {isFree && <Tag variant="free">Free</Tag>}
-                        {isSelected && <Check className="text-foreground shrink-0" />}
-                      </CommandItem>
-                    );
-                  })}
-                </CommandGroup>
-              ))}
-            </>
-          ) : (
-            <div className="py-8 text-center text-xs text-muted-foreground/50">{tHardcodedUi.raw('componentsSessionModelSelector.line304JsxTextNoModelsFound')}</div>
-          )}
-        </CommandList>
+                          {isFree && <Tag variant="free">Free</Tag>}
+                          {isSelected && <Check className="text-foreground shrink-0" />}
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                ))}
+              </>
+            ) : (
+              <div className="text-muted-foreground/50 py-8 text-center text-xs">
+                {tHardcodedUi.raw('componentsSessionModelSelector.line304JsxTextNoModelsFound')}
+              </div>
+            )}
+          </CommandList>
 
-        {hasHidden && !search && (
-          <CommandFooter
-            role="button"
-            tabIndex={0}
-            onClick={() => setShowHidden((v) => !v)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setShowHidden((v) => !v);
-              }
-            }}
-            className="cursor-pointer select-none hover:bg-foreground/[0.04] hover:text-foreground transition-colors"
-          >
-            {showHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-            <span>{showHidden ? 'Hide older models' : 'Show older models'}</span>
-          </CommandFooter>
-        )}
-      </CommandPopoverContent>
-    </CommandPopover>
+          {hasHidden && !search && (
+            <CommandFooter
+              role="button"
+              tabIndex={0}
+              onClick={() => setShowHidden((v) => !v)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setShowHidden((v) => !v);
+                }
+              }}
+              className="hover:bg-foreground/[0.04] hover:text-foreground cursor-pointer transition-colors select-none"
+            >
+              {showHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              <span>{showHidden ? 'Hide older models' : 'Show older models'}</span>
+            </CommandFooter>
+          )}
+        </CommandPopoverContent>
+      </CommandPopover>
     </>
   );
 }

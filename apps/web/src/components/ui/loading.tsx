@@ -3,7 +3,10 @@ import { cn } from '@/lib/utils';
 const Loading = ({ className }: { className?: string }) => {
   return (
     <svg
-      className={cn('text-primary size-5 animate-spin', className)}
+      className={cn(
+        'text-foreground in-[button]:text-background in-data-[slot=button]:text-background size-4 animate-spin',
+        className,
+      )}
       xmlns="http://www.w3.org/2000/svg"
       fill="none"
       viewBox="0 0 24 24"

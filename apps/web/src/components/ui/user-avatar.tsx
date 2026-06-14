@@ -1,15 +1,5 @@
 'use client';
 
-/**
- * UserAvatar — a person (round). The squared counterpart is <EntityAvatar>.
- *
- * Renders the supabase profile picture when one is available (avatar_url /
- * picture, served with referrerPolicy="no-referrer" so Google-hosted images
- * load), and falls back to neutral monochrome initials otherwise. People and
- * things share the same neutral material and size scale — only the shape
- * differs (round vs square). No colored backgrounds: simplicity is the brand.
- */
-
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import * as React from 'react';
@@ -46,7 +36,6 @@ export interface UserAvatarProps {
   avatarUrl?: string | null;
   size?: UserAvatarSize;
   className?: string;
-  /** Render a subtle ring so the avatar stands out on dense rows. */
   ring?: boolean;
 }
 
@@ -67,13 +56,13 @@ export function UserAvatar({
     <Avatar
       className={cn(
         SIZE_MAP[size],
-        'shrink-0 font-medium tracking-tight',
+        'size-6 shrink-0 rounded-md bg-transparent font-medium tracking-tight',
         ring && 'ring-background ring-2',
         className,
       )}
     >
       {avatarUrl ? <AvatarImage src={avatarUrl} alt={name || email} /> : null}
-      <AvatarFallback className="border-border/70 bg-muted/40 text-foreground/80 border font-semibold">
+      <AvatarFallback className="border-border text-background border bg-transparent font-semibold">
         {initials || '?'}
       </AvatarFallback>
     </Avatar>

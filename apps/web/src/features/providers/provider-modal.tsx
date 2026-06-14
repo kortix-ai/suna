@@ -2,25 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Loader2,
-  Search,
-  Unplug,
-} from 'lucide-react';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
-import { cn } from '@/lib/utils';
+import type { FlatModel } from '@/components/session/session-chat-input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,23 +13,36 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { ConnectProviderContent } from '@/components/providers/connect-provider-content';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { errorToast, successToast } from '@/components/ui/toast';
+import { ConnectProviderContent } from '@/features/providers/connect-provider-content';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
   ProviderLogo,
-} from '@/components/providers/provider-branding';
-import { ProviderRowContent } from '@/components/providers/provider-card';
-import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+} from '@/features/providers/provider-branding';
+import { ProviderRowContent } from '@/features/providers/provider-card';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
-import type { FlatModel } from '@/components/session/session-chat-input';
+import type { ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
+import { opencodeKeys, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { getClient } from '@/lib/opencode-sdk';
-import { useQueryClient } from '@tanstack/react-query';
-import { opencodeKeys } from '@/hooks/opencode/use-opencode-sessions';
-import { toast } from '@/lib/toast';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
+import { cn } from '@/lib/utils';
 import type { ProviderModalTab } from '@/stores/provider-modal-store';
+import { useProviderModalStore } from '@/stores/provider-modal-store';
+import { useQueryClient } from '@tanstack/react-query';
+import { Loader2, Search, Unplug } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 export type { ProviderModalTab };
 
@@ -104,10 +99,10 @@ function ConnectedTabBody({
         }
         await client.global.dispose();
         await queryClient.refetchQueries({ queryKey: opencodeKeys.providers() });
-        toast.success(`${PROVIDER_LABELS[providerID] || providerID} disconnected`);
+        successToast(`${PROVIDER_LABELS[providerID] || providerID} disconnected`);
         onDisconnected?.();
       } catch {
-        toast.error('Failed to disconnect provider');
+        errorToast('Failed to disconnect provider');
       } finally {
         setDisconnecting(null);
       }
@@ -118,13 +113,14 @@ function ConnectedTabBody({
   if (connectedProviders.length === 0) {
     return (
       <div className="flex min-h-[200px] flex-col items-center justify-center gap-3 px-6 text-center">
-        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProvidersProviderModal.line118JsxTextNoProvidersConnectedYet')}</p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 px-3 text-xs"
-          onClick={onAddProvider}
-        >{tHardcodedUi.raw('componentsProvidersProviderModal.line126JsxTextAddProvider')}</Button>
+        <p className="text-muted-foreground/60 text-xs">
+          {tHardcodedUi.raw(
+            'componentsProvidersProviderModal.line118JsxTextNoProvidersConnectedYet',
+          )}
+        </p>
+        <Button variant="outline" size="sm" className="h-7 px-3 text-xs" onClick={onAddProvider}>
+          {tHardcodedUi.raw('componentsProvidersProviderModal.line126JsxTextAddProvider')}
+        </Button>
       </div>
     );
   }
@@ -132,13 +128,19 @@ function ConnectedTabBody({
   if (filtered.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-        <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProvidersProviderModal.line136JsxTextNoConnectedProvidersMatchLdquo')}{search}{tHardcodedUi.raw('componentsProvidersProviderModal.line136JsxTextRdquo')}</p>
+        <p className="text-muted-foreground/60 text-xs">
+          {tHardcodedUi.raw(
+            'componentsProvidersProviderModal.line136JsxTextNoConnectedProvidersMatchLdquo',
+          )}
+          {search}
+          {tHardcodedUi.raw('componentsProvidersProviderModal.line136JsxTextRdquo')}
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-1 px-3 pb-4 pt-3">
+    <div className="space-y-1 px-3 pt-3 pb-4">
       {filtered.map((provider) => {
         const modelCount = Object.keys(provider.models ?? {}).length;
         const isDisconnecting = disconnecting === provider.id;
@@ -146,7 +148,7 @@ function ConnectedTabBody({
         return (
           <div
             key={provider.id}
-            className="group flex h-auto w-full items-center gap-3 rounded-2xl border border-border/50 bg-muted/20 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/35"
+            className="group border-border/50 bg-muted/20 hover:bg-muted/35 flex h-auto w-full items-center gap-3 rounded-2xl border px-3.5 py-2.5 text-left transition-colors"
           >
             <ProviderRowContent
               providerID={provider.id}
@@ -170,7 +172,7 @@ function ConnectedTabBody({
                     disabled={isDisconnecting}
                     variant="ghost"
                     size="icon-sm"
-                    className="ml-auto shrink-0 text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive"
+                    className="text-muted-foreground/40 hover:bg-destructive/10 hover:text-destructive ml-auto shrink-0"
                     title="Disconnect"
                   >
                     {isDisconnecting ? (
@@ -192,14 +194,22 @@ function ConnectedTabBody({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{tHardcodedUi.raw('componentsProvidersProviderModal.line191JsxTextDisconnectProvider')}</AlertDialogTitle>
+            <AlertDialogTitle>
+              {tHardcodedUi.raw(
+                'componentsProvidersProviderModal.line191JsxTextDisconnectProvider',
+              )}
+            </AlertDialogTitle>
             <AlertDialogDescription className="text-xs">
               {confirmDisconnect && (
                 <>
                   Remove{' '}
-                  <span className="font-medium text-foreground">
+                  <span className="text-foreground font-medium">
                     {PROVIDER_LABELS[confirmDisconnect] || confirmDisconnect}
-                  </span>{tHardcodedUi.raw('componentsProvidersProviderModal.line199JsxTextYouAposLlNeedToReconnectItTo')}</>
+                  </span>
+                  {tHardcodedUi.raw(
+                    'componentsProvidersProviderModal.line199JsxTextYouAposLlNeedToReconnectItTo',
+                  )}
+                </>
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -207,7 +217,7 @@ function ConnectedTabBody({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => confirmDisconnect && doDisconnect(confirmDisconnect)}
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive hover:bg-destructive/90 text-white"
             >
               Disconnect
             </AlertDialogAction>
@@ -241,9 +251,8 @@ function ModelsTabBody({
 }) {
   const enabledCount = useMemo(
     () =>
-      models.filter((m) =>
-        modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID }),
-      ).length,
+      models.filter((m) => modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID }))
+        .length,
     [models, modelStore],
   );
   const hasOverrides = modelStore.userPrefs.length > 0;
@@ -274,15 +283,14 @@ function ModelsTabBody({
       return a[0].localeCompare(b[0]);
     });
     return entries.map(
-      ([id, list]) =>
-        [id, list.sort((a, b) => a.modelName.localeCompare(b.modelName))] as const,
+      ([id, list]) => [id, list.sort((a, b) => a.modelName.localeCompare(b.modelName))] as const,
     );
   }, [models, search]);
 
   if (grouped.length === 0) {
     return (
       <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-        <p className="text-xs text-muted-foreground/60">
+        <p className="text-muted-foreground/60 text-xs">
           {search ? `No models match "${search}"` : 'No models'}
         </p>
       </div>
@@ -290,17 +298,17 @@ function ModelsTabBody({
   }
 
   return (
-    <div className="px-3 pb-4 pt-3">
+    <div className="px-3 pt-3 pb-4">
       {!search && (
         <div className="flex items-center justify-between gap-3 px-1 pb-2.5">
-          <p className="text-xs text-muted-foreground/60">
+          <p className="text-muted-foreground/60 text-xs">
             {enabledCount} of {models.length} shown in the model picker
           </p>
           {hasOverrides && (
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground h-7 shrink-0 px-2 text-xs"
               onClick={() => modelStore.resetVisibility()}
             >
               Reset to defaults
@@ -317,14 +325,12 @@ function ModelsTabBody({
                 name={list[0]?.providerName || providerID}
                 size="small"
               />
-              <span className="text-xs font-medium text-foreground/70">
+              <span className="text-foreground/70 text-xs font-medium">
                 {PROVIDER_LABELS[providerID] || list[0]?.providerName || providerID}
               </span>
-              <span className="ml-auto text-xs text-muted-foreground/40">
-                {list.length}
-              </span>
+              <span className="text-muted-foreground/40 ml-auto text-xs">{list.length}</span>
             </div>
-            <div className="overflow-hidden rounded-2xl border border-border/40 bg-background/40">
+            <div className="border-border/40 bg-background/40 overflow-hidden rounded-2xl border">
               {list.map((m, i) => {
                 const key = { providerID: m.providerID, modelID: m.modelID };
                 const visible = modelStore.isVisible(key);
@@ -333,21 +339,21 @@ function ModelsTabBody({
                   <label
                     key={`${m.providerID}:${m.modelID}`}
                     className={cn(
-                      'flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors hover:bg-muted/30',
-                      i > 0 && 'border-t border-border/20',
+                      'hover:bg-muted/30 flex cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors',
+                      i > 0 && 'border-border/20 border-t',
                       !visible && 'opacity-60',
                     )}
                   >
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="truncate text-sm text-foreground">{m.modelName}</span>
+                        <span className="text-foreground truncate text-sm">{m.modelName}</span>
                         {m.capabilities?.reasoning && (
                           <Badge size="sm" variant="outline" className="shrink-0">
                             Reasoning
                           </Badge>
                         )}
                       </div>
-                      <div className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-muted-foreground/50">
+                      <div className="text-muted-foreground/50 mt-0.5 flex items-center gap-1.5 truncate text-xs">
                         <span className="truncate">{m.modelID}</span>
                         {ctx && <span className="shrink-0">· {ctx}</span>}
                       </div>
@@ -403,9 +409,7 @@ export function ProviderModal({
   const connectedProviders = useMemo(() => {
     if (!providers) return [];
     const connectedIds = new Set(providers.connected ?? []);
-    return (providers.all ?? []).filter((provider) =>
-      connectedIds.has(provider.id),
-    );
+    return (providers.all ?? []).filter((provider) => connectedIds.has(provider.id));
   }, [providers]);
 
   const hasConnections = connectedProviders.length > 0;
@@ -414,9 +418,7 @@ export function ProviderModal({
     mapInitialTab(defaultTab, hasConnections),
   );
   const [search, setSearch] = useState('');
-  const [catalogSubview, setCatalogSubview] = useState<
-    'list' | 'connect' | 'custom'
-  >('list');
+  const [catalogSubview, setCatalogSubview] = useState<'list' | 'connect' | 'custom'>('list');
 
   // Reset on open
   useEffect(() => {
@@ -442,13 +444,10 @@ export function ProviderModal({
 
   // Switch tabs from catalog sub-flow — return catalog to list view first so
   // re-entry doesn't drop the user back into a stale connect form.
-  const switchTab = useCallback(
-    (next: ActiveTab) => {
-      setActiveTab(next);
-      setSearch('');
-    },
-    [],
-  );
+  const switchTab = useCallback((next: ActiveTab) => {
+    setActiveTab(next);
+    setSearch('');
+  }, []);
 
   const searchPlaceholder =
     activeTab === 'connected'
@@ -460,16 +459,22 @@ export function ProviderModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="!grid h-[min(80vh,680px)] w-[calc(100vw-2rem)] max-w-[600px] grid-rows-[auto_auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
-        <DialogHeader className="space-y-0.5 px-5 pt-5 pb-3 pr-12">
-          <DialogTitle className="text-sm font-semibold">{tHardcodedUi.raw('componentsProvidersProviderModal.line413JsxTextLlmProviders')}</DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProvidersProviderModal.line415JsxTextConnectProvidersAndManageWhichModelsAppearIn')}</DialogDescription>
+        <DialogHeader className="space-y-0.5 px-5 pt-5 pr-12 pb-3">
+          <DialogTitle className="text-sm font-semibold">
+            {tHardcodedUi.raw('componentsProvidersProviderModal.line413JsxTextLlmProviders')}
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground/60 text-xs">
+            {tHardcodedUi.raw(
+              'componentsProvidersProviderModal.line415JsxTextConnectProvidersAndManageWhichModelsAppearIn',
+            )}
+          </DialogDescription>
         </DialogHeader>
 
         {/* Tab bar — pills on the left, search input on the right, same row.
             Both at h-9 so they line up. Hidden in connect/custom sub-flow so
             the form takes over cleanly. */}
         {!inSubflow && (
-          <div className="flex h-9 items-center gap-3 px-5 pb-3 box-content">
+          <div className="box-content flex h-9 items-center gap-3 px-5 pb-3">
             <FilterBar>
               <FilterBarItem
                 data-state={activeTab === 'connected' ? 'active' : 'inactive'}
@@ -478,7 +483,7 @@ export function ProviderModal({
               >
                 Connected
                 {connectedProviders.length > 0 && (
-                  <span className="ml-0.5 text-xs text-muted-foreground/40 tabular-nums">
+                  <span className="text-muted-foreground/40 ml-0.5 text-xs tabular-nums">
                     {connectedProviders.length}
                   </span>
                 )}
@@ -487,7 +492,9 @@ export function ProviderModal({
                 data-state={activeTab === 'catalog' ? 'active' : 'inactive'}
                 onClick={() => switchTab('catalog')}
                 className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
-              >{tHardcodedUi.raw('componentsProvidersProviderModal.line442JsxTextAddProvider')}</FilterBarItem>
+              >
+                {tHardcodedUi.raw('componentsProvidersProviderModal.line442JsxTextAddProvider')}
+              </FilterBarItem>
               <FilterBarItem
                 data-state={activeTab === 'models' ? 'active' : 'inactive'}
                 onClick={() => switchTab('models')}
@@ -495,7 +502,7 @@ export function ProviderModal({
               >
                 Models
                 {hasModels && (
-                  <span className="ml-0.5 text-xs text-muted-foreground/40 tabular-nums">
+                  <span className="text-muted-foreground/40 ml-0.5 text-xs tabular-nums">
                     {visibleModelCount}/{models!.length}
                   </span>
                 )}
@@ -503,14 +510,14 @@ export function ProviderModal({
             </FilterBar>
 
             <div className="relative ml-auto h-9 w-72 shrink-0">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/60" />
+              <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2" />
               <Input
                 type="text"
                 placeholder={searchPlaceholder}
                 autoComplete="off"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="h-9 rounded-xl border-border/50 bg-muted/20 pl-9 text-sm shadow-none focus-visible:ring-1 focus-visible:ring-ring/40"
+                className="border-border/50 bg-muted/20 focus-visible:ring-ring/40 h-9 rounded-xl pl-9 text-sm shadow-none focus-visible:ring-1"
               />
             </div>
           </div>
@@ -539,16 +546,16 @@ export function ProviderModal({
           )}
 
           {activeTab === 'models' && hasModels && (
-            <ModelsTabBody
-              models={models!}
-              modelStore={modelStore}
-              search={search}
-            />
+            <ModelsTabBody models={models!} modelStore={modelStore} search={search} />
           )}
 
           {activeTab === 'models' && !hasModels && (
             <div className="flex min-h-[200px] items-center justify-center px-6 text-center">
-              <p className="text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsProvidersProviderModal.line505JsxTextConnectAProviderToSeeItsModels')}</p>
+              <p className="text-muted-foreground/60 text-xs">
+                {tHardcodedUi.raw(
+                  'componentsProvidersProviderModal.line505JsxTextConnectAProviderToSeeItsModels',
+                )}
+              </p>
             </div>
           )}
         </div>
