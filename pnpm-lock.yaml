@@ -129,6 +129,9 @@ importers:
       stripe:
         specifier: ^14.0.0
         version: 14.25.0
+      yaml:
+        specifier: ^2.8.2
+        version: 2.9.0
       zod:
         specifier: ^3.23.0
         version: 3.25.76
