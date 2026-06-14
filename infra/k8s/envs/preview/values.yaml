@@ -31,13 +31,15 @@ pdb:
   enabled: false
 topologySpread:
   enabled: false
+# Tiny, throwaway env: pack many previews per node. ephemeral-storage (2Gi/8Gi)
+# is inherited from the chart base.
 resources:
   requests:
-    cpu: "250m"
-    memory: "512Mi"
+    cpu: "100m"
+    memory: "256Mi"
   limits:
-    cpu: "1"
-    memory: "1Gi"
+    cpu: "500m"
+    memory: "512Mi"
 
 serviceAccount:
   name: kortix-api
