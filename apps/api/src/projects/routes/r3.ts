@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { parseSharingIntent, resolveShareSubject, setSecretSharing } from '../../executor/share';
 import { auth, errors, json } from '../../openapi';
 import { createAccountToken, listAccountTokens, revokeAccountToken } from '../../repositories/account-tokens';
@@ -7,11 +6,11 @@ import { kickPreBuild } from '../../snapshots/builder';
 import { getTemplateById } from '../../snapshots/templates';
 import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
-import { runChatGptHeadlessAuth } from '../opencode-chatgpt-auth';
+import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
 import { decryptProjectSecret, encryptProjectSecret, isValidSecretName } from '../secrets';
 import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { createRoute, z } from '@hono/zod-openapi';
-import { oauthProviderFlows, projectSecrets, projects, sessionSandboxes } from '@kortix/db';
+import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { loadProjectForUser } from '../lib/access';
 import { AnyObject, SecretSchema, projectsApp } from '../lib/app';
@@ -544,11 +543,10 @@ const OAUTH_PROVIDERS: Record<string, { secretName: string }> = {
   openai: { secretName: CODEX_AUTH_JSON_SECRET_NAME },
 };
 
-// Overall cap on a device flow (OpenAI device codes expire well before this).
-const OAUTH_FLOW_TTL_MS = 10 * 60 * 1000;
-// How long `start` waits for OpenCode to surface the device challenge.
-const OAUTH_CHALLENGE_TIMEOUT_MS = 30 * 1000;
-// Suggested client poll cadence.
+// How long the encrypted flow handle stays valid (OpenAI expires the device
+// code on its side too; this just bounds the opaque handle clients hold).
+const DEVICE_AUTH_TTL_MS = 15 * 60 * 1000;
+// Floor for the client poll cadence (OpenAI returns its own suggested interval).
 const OAUTH_POLL_INTERVAL_MS = 3000;
 
 // Persists the Codex auth.json as the CODEX_AUTH_JSON project secret with the
@@ -681,71 +679,37 @@ projectsApp.openapi(
     return c.json({ error: 'Only project managers can configure shared provider credentials' }, 403);
   }
 
-  const userId = loaded.userId;
-  const flowId = randomUUID();
-  const expiresAt = new Date(Date.now() + OAUTH_FLOW_TTL_MS);
-
-  await db.insert(oauthProviderFlows).values({
-    flowId,
-    projectId,
-    userId,
-    provider,
-    status: 'pending',
-    sharing: sharing ? (sharing as unknown) : null,
-    expiresAt,
-  });
-
-  // Drive the real device flow detached from this request. It surfaces the
-  // challenge (resolved below), then blocks on the user finishing in the
-  // browser, then writes the encrypted auth.json onto the flow row. Not tied
-  // to any client connection, so the edge can't reset it.
-  let resolveChallenge: (c: { url: string; code: string | null } | null) => void = () => {};
-  const challengePromise = new Promise<{ url: string; code: string | null } | null>((r) => {
-    resolveChallenge = r;
-  });
-  let backgroundError: string | null = null;
-
-  void runChatGptHeadlessAuth({
-    signal: AbortSignal.timeout(OAUTH_FLOW_TTL_MS),
-    onChallenge: (challenge) => resolveChallenge({ url: challenge.url, code: challenge.code }),
-  })
-    .then((value) =>
-      db
-        .update(oauthProviderFlows)
-        .set({ status: 'ready', authJsonEnc: encryptProjectSecret(projectId, value), updatedAt: new Date() })
-        .where(eq(oauthProviderFlows.flowId, flowId)),
-    )
-    .catch(async (err) => {
-      backgroundError = err instanceof Error ? err.message : 'ChatGPT authorization failed';
-      resolveChallenge(null); // unblock `start` if it failed before the challenge
-      await db
-        .update(oauthProviderFlows)
-        .set({ status: 'failed', error: backgroundError, updatedAt: new Date() })
-        .where(eq(oauthProviderFlows.flowId, flowId))
-        .catch(() => {});
-    });
-
-  const challenge = await Promise.race([
-    challengePromise,
-    new Promise<null>((r) => setTimeout(() => r(null), OAUTH_CHALLENGE_TIMEOUT_MS)),
-  ]);
-
-  if (!challenge) {
-    await db.delete(oauthProviderFlows).where(eq(oauthProviderFlows.flowId, flowId)).catch(() => {});
-    return c.json({ error: backgroundError ?? 'Timed out starting the authorization flow' }, 502);
+  // Request a device code straight from OpenAI — a couple HTTPS calls, no
+  // subprocess, no server-side flow record. Everything `poll` needs is sealed
+  // into the opaque `flow_id` (encrypted with the project key), so any replica
+  // can serve any poll and there's nothing to leak or OOM.
+  let challenge;
+  try {
+    challenge = await startCodexDeviceAuth();
+  } catch (err) {
+    return c.json({
+      error: err instanceof Error ? err.message : 'Failed to start ChatGPT authorization',
+    }, 502);
   }
 
-  await db
-    .update(oauthProviderFlows)
-    .set({ verificationUrl: challenge.url, userCode: challenge.code, updatedAt: new Date() })
-    .where(eq(oauthProviderFlows.flowId, flowId));
+  const expiresAt = Date.now() + DEVICE_AUTH_TTL_MS;
+  const flowId = encryptProjectSecret(
+    projectId,
+    JSON.stringify({
+      d: challenge.deviceAuthId,
+      u: challenge.userCode,
+      s: sharing ?? null,
+      uid: loaded.userId,
+      e: expiresAt,
+    }),
+  );
 
   return c.json({
     flow_id: flowId,
-    verification_url: challenge.url,
-    user_code: challenge.code,
-    expires_at: expiresAt.getTime(),
-    interval_ms: OAUTH_POLL_INTERVAL_MS,
+    verification_url: challenge.verificationUrl,
+    user_code: challenge.userCode,
+    expires_at: expiresAt,
+    interval_ms: Math.max(challenge.intervalMs, OAUTH_POLL_INTERVAL_MS),
   });
 },
 );
@@ -778,50 +742,41 @@ projectsApp.openapi(
   const flowId = normalizeString(body.flow_id);
   if (!flowId) return c.json({ error: 'flow_id is required' }, 400);
 
-  const [flow] = await db
-    .select()
-    .from(oauthProviderFlows)
-    .where(eq(oauthProviderFlows.flowId, flowId))
-    .limit(1);
-
-  // Not found / wrong project / wrong user / wrong provider → expired (the CLI
-  // and UI just restart). Only the initiating member may poll their own flow.
+  // Decrypt the opaque flow handle. The key is project-scoped, so a handle from
+  // another project — or a tampered one — simply won't decrypt → expired.
+  let state: { d?: string; u?: string; s?: unknown; uid?: string; e?: number };
+  try {
+    state = JSON.parse(decryptProjectSecret(projectId, flowId));
+  } catch {
+    return c.json({ status: 'expired' });
+  }
+  // Only the member who started it may poll it, and only before it expires.
   if (
-    !flow ||
-    flow.projectId !== projectId ||
-    flow.userId !== loaded.userId ||
-    flow.provider !== provider
+    !state.d || !state.u ||
+    state.uid !== loaded.userId ||
+    typeof state.e !== 'number' || Date.now() > state.e
   ) {
     return c.json({ status: 'expired' });
   }
 
-  if (flow.expiresAt < new Date()) {
-    await db.delete(oauthProviderFlows).where(eq(oauthProviderFlows.flowId, flowId)).catch(() => {});
-    return c.json({ status: 'expired' });
-  }
-
-  if (flow.status === 'failed') {
-    await db.delete(oauthProviderFlows).where(eq(oauthProviderFlows.flowId, flowId)).catch(() => {});
-    return c.json({ status: 'failed', error: flow.error ?? 'Authorization failed' });
-  }
-
-  if (flow.status === 'pending' || !flow.authJsonEnc) {
+  const result = await pollCodexDeviceAuth({ deviceAuthId: state.d, userCode: state.u });
+  if (result.status === 'pending') {
     return c.json({ status: 'pending', next_poll_ms: OAUTH_POLL_INTERVAL_MS });
   }
+  if (result.status === 'failed') {
+    return c.json({ status: 'failed', error: result.error });
+  }
 
-  // status === 'ready' — persist the auth.json as the project secret, once.
-  const value = decryptProjectSecret(projectId, flow.authJsonEnc);
-  const sharing = flow.sharing
-    ? (parseSharingIntent(flow.sharing, loaded.userId) ?? undefined)
-    : undefined;
-  await writeCodexAuthSecret({ projectId, userId: loaded.userId, value, sharing });
-  await db.delete(oauthProviderFlows).where(eq(oauthProviderFlows.flowId, flowId)).catch(() => {});
+  // Authorized — persist the auth.json as the project secret with the sharing
+  // chosen at start time (sealed, tamper-proof, in the flow handle).
+  const sharing = state.s ? (parseSharingIntent(state.s, loaded.userId) ?? undefined) : undefined;
+  await writeCodexAuthSecret({ projectId, userId: loaded.userId, value: result.authJson, sharing });
 
   return c.json({
     status: 'success',
     credential: {
       provider_id: provider,
-      expires_in_ms: authExpiresInMs(value),
+      expires_in_ms: authExpiresInMs(result.authJson),
       updated_at: new Date().toISOString(),
     },
   });
