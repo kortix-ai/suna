@@ -131,6 +131,32 @@ export async function checkConcurrentSessionCap(accountId: string, userId: strin
 export { RESERVED_SANDBOX_ENV_NAMES, isReservedSandboxEnvName };
 
 
+/**
+ * Re-derive a session's chat-channel env (SLACK_*) from its persisted binding so
+ * any (re)provision restores it. Best-effort: a non-channel session (no
+ * metadata.slack) returns {}, and a read failure never blocks provisioning.
+ */
+async function buildSessionChannelEnv(sessionId: string): Promise<Record<string, string>> {
+  try {
+    const [row] = await db
+      .select({ metadata: projectSessions.metadata })
+      .from(projectSessions)
+      .where(eq(projectSessions.sessionId, sessionId))
+      .limit(1);
+    const slack = (row?.metadata as { slack?: Record<string, unknown> } | null)?.slack;
+    if (!slack) return {};
+    const env: Record<string, string> = {};
+    if (typeof slack.team_id === 'string') env.SLACK_TEAM_ID = slack.team_id;
+    if (typeof slack.channel === 'string') env.SLACK_CHANNEL_ID = slack.channel;
+    if (typeof slack.thread_ts === 'string') env.SLACK_THREAD_TS = slack.thread_ts;
+    if (typeof slack.user === 'string') env.SLACK_USER_ID = slack.user;
+    return env;
+  } catch (err) {
+    console.warn('[session-env] failed to restore channel binding', { sessionId, err: (err as Error).message });
+    return {};
+  }
+}
+
 export async function buildSessionSandboxEnvVars(input: {
   accountId: string;
   projectId: string;
@@ -163,8 +189,17 @@ export async function buildSessionSandboxEnvVars(input: {
       `[session ${input.sessionId}] ignored ${droppedReserved.length} project secret(s) with reserved env names: ${droppedReserved.join(', ')}`,
     );
   }
+  // Restore the session's channel binding on EVERY (re)provision. A session
+  // created from a chat channel (e.g. Slack) persists its binding in
+  // metadata.slack; the in-box relay gates turn-end/answer on SLACK_THREAD_TS /
+  // SLACK_CHANNEL_ID, so a box rebuilt from scratch (archived → cold-reprovision)
+  // must get these back or the resurrected agent can't talk to its thread. The
+  // session is the durable source of truth; the first boot got these via
+  // extraEnvVars, every later rebuild gets them here.
+  const channelEnv = await buildSessionChannelEnv(input.sessionId);
   return {
     ...runtimeSecrets.env,
+    ...channelEnv,
     KORTIX_PROJECT_SECRET_NAMES: runtimeSecrets.names.join(','),
     KORTIX_PROJECT_SECRETS_REVISION: runtimeSecrets.revision,
     KORTIX_PROJECT_AUTO_CLONE: '1',

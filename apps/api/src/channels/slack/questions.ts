@@ -2,20 +2,18 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
 import { db } from '../../shared/db';
-import { appendStream, postBlocks, updateBlocks, type StreamTaskChunk } from '../slack-api';
+import { postBlocks, updateBlocks, type StreamTaskChunk } from '../slack-api';
 import { ASK_TTL_MS, STREAM_TTL_MS } from './app';
 import {
   claimFinalize,
-  deleteStream,
-  finalizeStream,
-  isDeadStream,
-  loadStream,
-  markStreamDead,
-  openStreamWithFirstStep,
+  deleteTurn,
+  finalizeTurn,
+  loadTurn,
+  openPlanMessage,
   repaintLivePlan,
-  saveStream,
-  startTurnStream,
-} from './streams';
+  saveTurn,
+  startTurn,
+} from './turn';
 import { respondViaUrl } from './interactivity';
 import { escapeMrkdwn } from './util';
 import type { PendingAsk, QuestionInfo, SlackInteractionPayload } from './types';
@@ -38,7 +36,7 @@ export async function postQuestionAndWait(
   sessionId: string,
   questions: QuestionInfo[],
 ): Promise<{ ok: boolean; ask_id?: string; answers?: string[][]; error?: string }> {
-  const handle = await loadStream(sessionId);
+  const handle = await loadTurn(sessionId);
   if (!handle) {
     return { ok: false, error: 'No active Slack turn for this session.' };
   }
@@ -46,8 +44,8 @@ export async function postQuestionAndWait(
   const teamId = handle.teamId;
   const originatingEvent = handle.originatingEvent;
 
-  await finalizeStream(handle, { answer: '_Waiting on your answer below…_' });
-  await deleteStream(sessionId);
+  await finalizeTurn(handle, { answer: '_Waiting on your answer below…_' });
+  await deleteTurn(sessionId);
 
   const askId = randomUUID();
   const blocks = buildQuestionBlocks(askId, questions);
@@ -145,7 +143,7 @@ export async function relayTurnStep(
     sourcesForPrev?: Array<{ url: string; text: string }>;
   } = {},
 ): Promise<boolean> {
-  const handle = await loadStream(sessionId);
+  const handle = await loadTurn(sessionId);
   if (!handle || handle.finalized) {
     console.warn('[slack-webhook] turn-stream step relay dropped — no active stream', {
       sessionId,
@@ -155,7 +153,8 @@ export async function relayTurnStep(
     return false;
   }
 
-  if (!handle.streaming && !isDeadStream(handle)) {
+  // First `slack step` → create the plan-checklist message.
+  if (!handle.ts) {
     const firstStep: StreamTaskChunk = {
       type: 'task_update',
       id: 'step-0',
@@ -163,13 +162,15 @@ export async function relayTurnStep(
       status: 'in_progress',
     };
     if (opts.detail) firstStep.details = opts.detail.slice(0, 500);
-    const opened = await openStreamWithFirstStep(handle, firstStep);
+    const opened = await openPlanMessage(handle, firstStep);
     if (!opened) return false;
     handle.expiry = Date.now() + STREAM_TTL_MS;
-    await saveStream(handle);
+    await saveTurn(handle);
     return true;
   }
-  const chunks: StreamTaskChunk[] = [];
+
+  // Subsequent step → mark the previous one complete (with its output/sources),
+  // append the new one, and repaint the whole plan via chat.update.
   const last = handle.steps[handle.steps.length - 1];
   if (last && last.status === 'in_progress') {
     last.status = 'complete';
@@ -181,14 +182,6 @@ export async function relayTurnStep(
         text: s.text.slice(0, 80),
       }));
     }
-    chunks.push({
-      type: 'task_update',
-      id: last.id,
-      title: last.title,
-      status: 'complete',
-      ...(last.output ? { output: last.output } : {}),
-      ...(last.sources ? { sources: last.sources } : {}),
-    });
   }
   const next: StreamTaskChunk = {
     type: 'task_update',
@@ -198,21 +191,9 @@ export async function relayTurnStep(
   };
   if (opts.detail) next.details = opts.detail.slice(0, 500);
   handle.steps.push(next);
-  chunks.push(next);
   handle.expiry = Date.now() + STREAM_TTL_MS;
-  if (handle.streaming) {
-    const appended = await appendStream(handle.token, handle.channel, handle.ts, chunks);
-    if (!appended.ok) {
-      // Slack auto-completed the stream mid-turn (inactivity). Without this the
-      // step would silently vanish and the message would keep Slack's
-      // "Something went wrong" rendering. Drop to repaint mode instead.
-      markStreamDead(handle);
-      await repaintLivePlan(handle);
-    }
-  } else {
-    await repaintLivePlan(handle);
-  }
-  await saveStream(handle);
+  await repaintLivePlan(handle);
+  await saveTurn(handle);
   return true;
 }
 
@@ -221,30 +202,29 @@ export async function relayTurnAnswer(
   text: string,
   blocks?: unknown[],
 ): Promise<boolean> {
-  const handle = await loadStream(sessionId);
+  const handle = await loadTurn(sessionId);
   if (!handle || handle.finalized) return false;
-  // Win the finalize race against the watchdog / a duplicate send before we
-  // run stopStream, so the message is closed exactly once.
+  // Win the finalize race against a late session.idle/error relay (or a duplicate
+  // send) so the turn is closed exactly once.
   if (!(await claimFinalize(sessionId))) return false;
-  await finalizeStream(handle, { answer: text, blocks });
-  await deleteStream(sessionId);
+  await finalizeTurn(handle, { answer: text, blocks });
+  await deleteTurn(sessionId);
   return true;
 }
 
 // Called when the agent's turn ends — opencode `session.idle` (finished) or
 // `session.error` (died) on the root session, relayed by the sandbox. If the
-// agent already delivered its reply via `slack send`, the stream is gone and
-// there's nothing to do. If it ended WITHOUT sending — e.g. it judged the
-// message needed no reply — close the live stream so the streaming plan / ⏳
-// reaction doesn't hang until a timeout paints it as a failure. Idle closes
-// silently (no "_Done._" filler — see finalizeStream's silent path); error
-// surfaces an honest failure line.
+// agent already delivered its reply via `slack send`, the turn is already
+// finalized and there's nothing to do. If it ended WITHOUT sending — e.g. it
+// judged the message needed no reply — close the plan message (clearing the ⏳).
+// Idle closes silently (no "_Done._" filler — see finalizeTurn's silent path);
+// error surfaces an honest failure line.
 export async function relayTurnEnd(
   sessionId: string,
   status: 'idle' | 'error' = 'idle',
   opencodeSessionId?: string,
 ): Promise<boolean> {
-  const handle = await loadStream(sessionId);
+  const handle = await loadTurn(sessionId);
   if (!handle || handle.finalized) return false;
 
   // Subagents emit idle/error for their own opencode sessions too. The sandbox
@@ -260,13 +240,13 @@ export async function relayTurnEnd(
   }
 
   if (!(await claimFinalize(sessionId))) return false;
-  await finalizeStream(
+  await finalizeTurn(
     handle,
     status === 'error'
       ? { error: '_The run hit an error — open the session for details._' }
       : {},
   );
-  await deleteStream(sessionId);
+  await deleteTurn(sessionId);
   return true;
 }
 
@@ -304,7 +284,7 @@ export async function handleAskSubmit(payload: SlackInteractionPayload, askId: s
   // order under the user's submitted answers. Without this, the old
   // (parked) stream message above the form gets edited in-place.
   try {
-    const newHandle = await startTurnStream(
+    const newHandle = await startTurn(
       pending.projectId,
       pending.teamId,
       pending.originatingEvent,
@@ -312,7 +292,7 @@ export async function handleAskSubmit(payload: SlackInteractionPayload, askId: s
     );
     if (newHandle) {
       newHandle.sessionId = pending.sessionId;
-      await saveStream(newHandle);
+      await saveTurn(newHandle);
     }
   } catch (err) {
     console.warn('[slack-webhook] post-question stream re-open failed', err);

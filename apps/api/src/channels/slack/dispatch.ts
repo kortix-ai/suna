@@ -22,12 +22,12 @@ import {
 import { PICKER_TTL_MS } from './app';
 import {
   buildSlackTurnEnv,
-  deleteStream,
-  finalizeStream,
-  loadStream,
-  saveStream,
-  startTurnStream,
-} from './streams';
+  deleteTurn,
+  finalizeTurn,
+  loadTurn,
+  saveTurn,
+  startTurn,
+} from './turn';
 import { stripMentions } from './util';
 import type {
   EventClass,
@@ -303,27 +303,27 @@ export async function spawnAgentTurn(
       )
       .limit(1);
     if (existing) {
-      // The live stream is ONE row keyed by sessionId. If a turn is already in
-      // flight for this session (the agent is mid-task, streaming steps), opening
-      // a second stream here would overwrite that row via saveStream's upsert,
-      // and a failed/late delivery below would then clobber the running turn's
-      // progress with an error. So when a turn is already streaming, don't open a
-      // competing stream — just deliver the new message as a follow-up prompt into
-      // the running session and let the in-flight stream carry it forward.
-      const inflight = await loadStream(existing.sessionId);
+      // A known thread maps PERMANENTLY to exactly one session. Route the message
+      // into that session and NEVER create a second one — the session is durable
+      // and resurrects its own sandbox (resume / reprovision) underneath; the
+      // channel never touches the sandbox. The only stream-level decision here is
+      // "is a turn already streaming?": if so, don't open a competing stream, just
+      // hand the message to the running session.
+      const inflight = await loadTurn(existing.sessionId);
       const turnInFlight = !!inflight && !inflight.finalized;
 
       const handle = turnInFlight
         ? null
-        : await startTurnStream(projectId, teamId, event, 'On it');
+        : await startTurn(projectId, teamId, event, 'On it');
       if (handle) {
         handle.sessionId = existing.sessionId;
-        await saveStream(handle);
+        await saveTurn(handle);
       }
       const outcome = await deliverPromptToSession({
         sessionId: existing.sessionId,
         text: renderFollowUpPrompt(envelope, event),
       });
+
       if (outcome === 'delivered') {
         await db
           .update(chatThreads)
@@ -337,15 +337,48 @@ export async function spawnAgentTurn(
           );
         return;
       }
-      // Delivery failed. Only surface the error on a stream WE opened — never
-      // finalize/clobber a stream a different in-flight turn owns.
-      if (handle) {
-        await deleteStream(existing.sessionId);
-        await finalizeStream(handle, {
-          error: "I'm still spinning that session back up — give it a moment and try again.",
-        });
+
+      if (outcome === 'pending') {
+        // The session is ALIVE and owns this thread — it's just still coming up
+        // (provisioning / waking from hibernation). KEEP the mapping; do NOT
+        // recreate (recreating is exactly what orphaned the real session and
+        // produced a second reply from "a session you can never find"). Let the
+        // user know it's waking, only on a stream we own — never clobber an
+        // in-flight turn's stream.
+        if (handle) {
+          await deleteTurn(existing.sessionId);
+          await finalizeTurn(handle, {
+            error: "Still waking this thread's session back up — send that again in a moment.",
+          });
+        }
+        return;
       }
-      if (outcome === 'transient') return;
+
+      if (outcome === 'failed') {
+        // The session is in a genuine terminal error (provisioning failed). This is
+        // the one honest failure — surface it; KEEP the mapping and never recreate
+        // (a new session wouldn't fix a real fault, and silently recreating is what
+        // we're eliminating). The thread stays bound to its session.
+        if (handle) {
+          await deleteTurn(existing.sessionId);
+          await finalizeTurn(handle, {
+            error: "This thread's session hit an error and couldn't start. Open it in Kortix to see what happened.",
+          });
+        }
+        return;
+      }
+
+      // outcome === 'no-session': the session row itself is gone (it was deleted;
+      // the chat_threads FK cascade should already have dropped this mapping). The
+      // mapping is stale — drop it and fall through to start a REPLACEMENT session.
+      // This is the ONLY path that creates a session for a known thread, and only
+      // because the previous one no longer exists — never a duplicate of a live one.
+      console.warn('[slack-webhook] thread mapped to a deleted session — replacing', {
+        teamId,
+        threadId,
+        sessionId: existing.sessionId,
+      });
+      if (handle) await deleteTurn(existing.sessionId);
       revived = true;
       await db
         .delete(chatThreads)
@@ -372,7 +405,7 @@ export async function spawnAgentTurn(
     return;
   }
 
-  const handle = await startTurnStream(projectId, teamId, event, 'Spinning up a sandbox');
+  const handle = await startTurn(projectId, teamId, event, 'Spinning up a sandbox');
 
   const result = await createProjectSession({
     project,
@@ -404,14 +437,14 @@ export async function spawnAgentTurn(
   if (result.error) {
     console.error('[slack-webhook] createProjectSession failed', result.error.body);
     if (handle) {
-      await finalizeStream(handle, { error: "I couldn't start up just now — try again in a moment." });
+      await finalizeTurn(handle, { error: "I couldn't start up just now — try again in a moment." });
     }
     return;
   }
 
   if (result.row && handle) {
     handle.sessionId = result.row.sessionId;
-    await saveStream(handle);
+    await saveTurn(handle);
   }
 
   if (result.row && teamId && threadId) {
@@ -442,7 +475,9 @@ const TURN_INSTRUCTIONS = [
   '  Block Kit answers, sources, tone, and gotchas. Do not skip it.',
   '- As you go, post a short progress checkpoint before each major step:',
   '    slack step "Reading the incident logs"',
-  '  Keep them human and brief — a few per task, not one per command.',
+  '  Keep them human and brief — a few per task, not one per command — but DO post',
+  '  one right before anything slow (installs, builds, long searches, big edits) so',
+  '  the thread always shows fresh, lively progress and never sits silent.',
   '- Attach inline context with mrkdwn links:',
   '    slack step "Reading the logs" --detail "Pulling from <https://datadog.example.com|Datadog>"',
   '  `--detail` is the subtitle under the new step. `<url|label>` becomes a real link.',

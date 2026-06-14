@@ -427,6 +427,55 @@ export const projectSecrets = kortixSchema.table(
   ],
 );
 
+export const oauthProviderFlowStatusEnum = kortixSchema.enum('oauth_provider_flow_status', [
+  'pending',
+  'ready',
+  'failed',
+]);
+
+/**
+ * Transient state for a provider OAuth device-code flow (e.g. connecting a
+ * ChatGPT Plus/Pro subscription). The flow is two HTTP calls — `start` then
+ * repeated `poll` — that may hit DIFFERENT API replicas, so the state lives
+ * here in the DB rather than in one replica's memory.
+ *
+ * `start` (on whichever replica) drives the real device flow in a detached
+ * background task and writes the resulting auth blob into `auth_json_enc` when
+ * the user finishes authorizing; any replica's `poll` reads this row and, once
+ * `ready`, persists the blob as the project's CODEX_AUTH_JSON secret and
+ * deletes the row. Rows are short-lived (`expires_at`) and swept on poll.
+ */
+export const oauthProviderFlows = kortixSchema.table(
+  'oauth_provider_flows',
+  {
+    flowId: uuid('flow_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    // The member who started the flow — only they may poll it.
+    userId: uuid('user_id').notNull(),
+    // Kortix-side provider id (e.g. 'openai' for the ChatGPT subscription).
+    provider: varchar('provider', { length: 32 }).notNull(),
+    status: oauthProviderFlowStatusEnum('status').default('pending').notNull(),
+    // The device challenge surfaced to the user (filled once `start` has it).
+    verificationUrl: text('verification_url'),
+    userCode: varchar('user_code', { length: 64 }),
+    // Encrypted auth.json (project-scoped key), set when status flips to ready.
+    authJsonEnc: text('auth_json_enc'),
+    // Human-readable failure reason when status is failed.
+    error: text('error'),
+    // Sharing intent chosen up front, applied when the secret is written.
+    sharing: jsonb('sharing'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_oauth_provider_flows_project').on(table.projectId),
+    index('idx_oauth_provider_flows_expires').on(table.expiresAt),
+  ],
+);
+
 /**
  * Allow-list for a `restricted` project secret — which members/groups can use
  * it. Empty (with scope=project) = whole project. Dashboard-managed; never in

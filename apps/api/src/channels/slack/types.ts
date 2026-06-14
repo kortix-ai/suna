@@ -8,14 +8,12 @@ export interface QuestionInfo {
   custom?: boolean;
 }
 
-export interface TurnStream {
+export interface LiveTurn {
   channel: string;
   ts: string;
   token: string;
   triggerTs: string;
   steps: StreamTaskChunk[];
-  streaming: boolean;
-  placeholderActive: boolean;
   expiry: number;
   finalized: boolean;
   projectId: string;

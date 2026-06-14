@@ -92,9 +92,7 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
-const { finalizeStream, isDeadStream, markStreamDead, repaintLivePlan } = await import(
-  '../channels/slack/streams'
-);
+const { finalizeTurn, repaintLivePlan } = await import('../channels/slack/turn');
 const { relayTurnEnd, relayTurnStep } = await import('../channels/slack/questions');
 
 function liveHandle(overrides: Record<string, unknown> = {}) {
@@ -106,8 +104,6 @@ function liveHandle(overrides: Record<string, unknown> = {}) {
     steps: [
       { type: 'task_update', id: 'step-0', title: 'Reading logs', status: 'in_progress' },
     ],
-    streaming: true,
-    placeholderActive: false,
     expiry: Date.now() + 60_000,
     finalized: false,
     projectId: 'proj-1',
@@ -118,7 +114,7 @@ function liveHandle(overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
-// DB row shape for loadStream (chat_turn_streams select).
+// DB row shape for loadTurn (chat_turn_streams select).
 function streamRow(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: 'sess-1',
@@ -149,35 +145,26 @@ beforeEach(() => {
   appendStreamResult = { ok: true };
 });
 
-describe('finalizeStream', () => {
-  test('silent close completes the last step, skips the answer chunk, adds ✅', async () => {
+describe('finalizeTurn (chat.update only — no streaming)', () => {
+  test('silent close completes the last step and renders plan-only; adds nothing', async () => {
     const handle = liveHandle();
-    await finalizeStream(handle, {});
+    await finalizeTurn(handle, {});
 
-    const stops = calls('stopStream');
-    expect(stops.length).toBe(1);
-    const chunks = stops[0]!.args[3] as Array<Record<string, unknown>>;
-    expect(chunks).toEqual([
-      { type: 'task_update', id: 'step-0', title: 'Reading logs', status: 'complete' },
-    ]);
-
+    expect(calls('stopStream').length).toBe(0); // streaming is gone
     const updates = calls('updateBlocks');
     expect(updates.length).toBe(1);
     expect(updates[0]!.args[3]).toBe('Task complete');
-    const blocks = updates[0]!.args[4] as Array<{ type: string }>;
-    // Plan only — a silent close must not invent an answer body.
-    expect(blocks.map((b) => b.type)).toEqual(['plan']);
+    const blocks = updates[0]!.args[4] as Array<{ type: string; tasks?: Array<{ status: string }> }>;
+    expect(blocks.map((b) => b.type)).toEqual(['plan']); // silent close invents no answer body
+    expect(blocks[0]!.tasks![0]!.status).toBe('complete'); // last step closed
 
     expect(calls('removeReaction').length).toBe(1);
-    // ✅ is reserved for a real answer — a silent close leaves no trace.
-    expect(calls('addReaction').length).toBe(0);
+    expect(calls('addReaction').length).toBe(0); // ✅ reserved for a real answer
   });
 
-  test('dead stream close skips stopStream but repaints via chat.update', async () => {
-    const handle = liveHandle({ streaming: false });
-    expect(isDeadStream(handle)).toBe(true);
-
-    await finalizeStream(handle, { answer: 'All done.' });
+  test('answer close renders plan + answer section via chat.update and adds ✅', async () => {
+    const handle = liveHandle();
+    await finalizeTurn(handle, { answer: 'All done.' });
 
     expect(calls('stopStream').length).toBe(0);
     const updates = calls('updateBlocks');
@@ -187,34 +174,44 @@ describe('finalizeStream', () => {
     expect(blocks[0]!.type).toBe('plan');
     expect(blocks[0]!.tasks![0]!.status).toBe('complete');
     expect(blocks.map((b) => b.type)).toEqual(['plan', 'section']);
+    expect(calls('addReaction').length).toBe(1);
   });
 
   test('error close marks the last step error and titles the plan Run failed', async () => {
     const handle = liveHandle();
-    await finalizeStream(handle, { error: '_It broke._' });
+    await finalizeTurn(handle, { error: '_It broke._' });
 
-    const chunks = calls('stopStream')[0]!.args[3] as Array<{ type: string; status?: string; text?: string }>;
-    expect(chunks[0]!.status).toBe('error');
-    expect(chunks[1]).toEqual({ type: 'markdown_text', text: '_It broke._' });
-    expect(calls('updateBlocks')[0]!.args[3]).toBe('Run failed');
+    expect(calls('stopStream').length).toBe(0);
+    const update = calls('updateBlocks')[0]!;
+    expect(update.args[3]).toBe('Run failed');
+    const blocks = update.args[4] as Array<{ type: string; tasks?: Array<{ status: string }> }>;
+    expect(blocks[0]!.tasks![0]!.status).toBe('error');
+    expect(blocks.map((b) => b.type)).toEqual(['plan', 'section']);
     expect(calls('addReaction').length).toBe(0);
   });
-});
 
-describe('markStreamDead / isDeadStream', () => {
-  test('placeholder and fresh handles are not dead; marked handles are', () => {
-    const placeholder = liveHandle({ streaming: false, placeholderActive: true });
-    expect(isDeadStream(placeholder)).toBe(false);
+  test('no plan message + an answer → posts the reply fresh in-thread', async () => {
+    const handle = liveHandle({ ts: '', steps: [] });
+    await finalizeTurn(handle, { answer: 'Quick reply.' });
 
-    const handle = liveHandle();
-    expect(isDeadStream(handle)).toBe(false);
-    markStreamDead(handle);
-    expect(isDeadStream(handle)).toBe(true);
+    expect(calls('updateBlocks').length).toBe(0);
+    expect(calls('postMessage').length).toBe(1);
+    expect(String(calls('postMessage')[0]!.args[2])).toBe('Quick reply.');
+    expect(calls('addReaction').length).toBe(1);
+  });
+
+  test('silent close with no plan message leaves the thread untouched (just clears ⏳)', async () => {
+    const handle = liveHandle({ ts: '', steps: [] });
+    await finalizeTurn(handle, {});
+
+    expect(calls('updateBlocks').length).toBe(0);
+    expect(calls('postMessage').length).toBe(0);
+    expect(calls('removeReaction').length).toBe(1);
   });
 });
 
 describe('repaintLivePlan', () => {
-  test('paints the current steps with a working title', async () => {
+  test('paints the current steps with a working title via chat.update', async () => {
     const handle = liveHandle();
     await repaintLivePlan(handle);
     const update = calls('updateBlocks')[0]!;
@@ -224,66 +221,59 @@ describe('repaintLivePlan', () => {
   });
 });
 
-describe('relayTurnStep append failure', () => {
-  test('falls back to repaint mode when Slack already completed the stream', async () => {
-    appendStreamResult = { ok: false, error: 'message_not_streaming' };
+describe('relayTurnStep (chat.update model)', () => {
+  test('first step creates the plan message (startStream → immediate stopStream → chat.update)', async () => {
     dbResults = [
-      [streamRow()], // loadStream
-      [], // saveStream upsert
+      [streamRow({ messageTs: null, steps: [] })], // loadTurn → no plan message yet
+      [], // saveTurn upsert
+    ];
+
+    const ok = await relayTurnStep('sess-1', 'Reading logs');
+    expect(ok).toBe(true);
+    // Native plan message is opened then immediately closed; never left streaming.
+    expect(calls('startStream').length).toBe(1);
+    expect(calls('stopStream').length).toBe(1);
+    expect(calls('appendStream').length).toBe(0); // the streaming-append path is gone
+    expect(calls('updateBlocks').length).toBe(1);
+  });
+
+  test('subsequent step appends + repaints via chat.update, never appendStream/startStream', async () => {
+    dbResults = [
+      [streamRow()], // loadTurn → plan message already exists
+      [], // saveTurn upsert
     ];
 
     const ok = await relayTurnStep('sess-1', 'Next step');
     expect(ok).toBe(true);
-
-    // The failed append must trigger a chat.update repaint…
-    expect(calls('appendStream').length).toBe(1);
+    expect(calls('appendStream').length).toBe(0);
+    expect(calls('startStream').length).toBe(0);
     const update = calls('updateBlocks')[0]!;
     expect(update.args[3]).toBe('Working on it…');
     const blocks = update.args[4] as Array<{ tasks: Array<{ title: string; status: string }> }>;
     expect(blocks[0]!.tasks.map((t) => t.title)).toEqual(['Reading logs', 'Next step']);
-
-    // …and the row must be saved in dead-stream mode so later steps repaint too.
-    const saved = dbWrites.find((w) => w.op === 'insert.values')?.payload as
-      | { streaming: boolean; placeholderActive: boolean }
-      | undefined;
-    expect(saved?.streaming).toBe(false);
-    expect(saved?.placeholderActive).toBe(false);
-  });
-
-  test('dead-stream rows repaint directly without trying to append', async () => {
-    dbResults = [
-      [streamRow({ streaming: false })], // loadStream → dead-stream row
-      [], // saveStream upsert
-    ];
-
-    const ok = await relayTurnStep('sess-1', 'Another step');
-    expect(ok).toBe(true);
-    expect(calls('appendStream').length).toBe(0);
-    expect(calls('startStream').length).toBe(0);
-    expect(calls('updateBlocks')[0]!.args[3]).toBe('Working on it…');
   });
 });
 
 describe('relayTurnEnd', () => {
-  test('idle gracefully closes a streaming turn as Task complete', async () => {
+  test('idle gracefully closes a turn as Task complete via chat.update', async () => {
     dbResults = [
-      [streamRow()], // loadStream
+      [streamRow()], // loadTurn
       [{ pinned: 'oc-root' }], // canonical pin lookup
       [{ sessionId: 'sess-1' }], // claimFinalize
-      [], // deleteStream
+      [], // deleteTurn
     ];
 
     const ok = await relayTurnEnd('sess-1', 'idle', 'oc-root');
     expect(ok).toBe(true);
+    expect(calls('stopStream').length).toBe(0);
     expect(calls('updateBlocks')[0]!.args[3]).toBe('Task complete');
-    // Silent close — the working reaction clears, nothing else is added.
     expect(calls('removeReaction').length).toBe(1);
     expect(calls('addReaction').length).toBe(0);
   });
 
   test('a subagent session cannot close the stream', async () => {
     dbResults = [
-      [streamRow()], // loadStream
+      [streamRow()], // loadTurn
       [{ pinned: 'oc-root' }], // pin lookup — mismatch
     ];
 
@@ -292,33 +282,31 @@ describe('relayTurnEnd', () => {
     expect(slackCalls.length).toBe(0);
   });
 
-  test('idle on a silent turn (legacy placeholder, no steps) just cleans up', async () => {
+  test('idle on a turn with no plan message + no steps just clears ⏳', async () => {
     dbResults = [
-      [streamRow({ streaming: false, placeholderActive: true, steps: [] })], // loadStream
+      [streamRow({ messageTs: null, steps: [] })], // loadTurn
       [{ pinned: 'oc-root' }], // pin lookup
       [{ sessionId: 'sess-1' }], // claimFinalize
-      [], // deleteStream
+      [], // deleteTurn
     ];
 
     const ok = await relayTurnEnd('sess-1', 'idle', 'oc-root');
     expect(ok).toBe(true);
-    // Legacy placeholder removed, nothing posted in its place.
-    expect(calls('deleteMessage').length).toBe(1);
+    expect(calls('updateBlocks').length).toBe(0);
     expect(calls('postMessage').length).toBe(0);
     expect(calls('removeReaction').length).toBe(1);
   });
 
-  test('error closes even a placeholder turn with failure copy', async () => {
+  test('error close on a turn with no plan message posts failure copy fresh', async () => {
     dbResults = [
-      [streamRow({ streaming: false, placeholderActive: true, steps: [] })], // loadStream
+      [streamRow({ messageTs: null, steps: [] })], // loadTurn
       [{ pinned: 'oc-root' }], // pin lookup
       [{ sessionId: 'sess-1' }], // claimFinalize
-      [], // deleteStream
+      [], // deleteTurn
     ];
 
     const ok = await relayTurnEnd('sess-1', 'error', 'oc-root');
     expect(ok).toBe(true);
-    expect(calls('deleteMessage').length).toBe(1); // placeholder removed
     const posted = calls('postMessage')[0]!;
     expect(String(posted.args[2])).toContain('error');
     expect(calls('addReaction').length).toBe(0);

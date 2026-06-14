@@ -68,15 +68,14 @@ import {
   type LlmProviderModel,
 } from '@/lib/llm-providers';
 import {
-  connectProjectChatGpt,
   deletePersonalProjectSecret,
   deleteProjectSecret,
   listProjectSecrets,
+  pollProjectProviderOAuth,
   setPersonalProjectSecret,
+  startProjectProviderOAuth,
   upsertProjectSecret,
-  type ChatGptAuthChallenge,
 } from '@/lib/projects-client';
-import type { SSEStream } from '@/lib/utils/sse-stream';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 
@@ -987,6 +986,9 @@ function ApiKeyConnectForm({
 }
 
 type ChatGptPhase = 'idle' | 'waiting' | 'done';
+type ChatGptChallenge = { url: string; code: string | null };
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function ChatGptSubscriptionConnect({
   projectId,
@@ -1000,18 +1002,18 @@ function ChatGptSubscriptionConnect({
   const queryClient = useQueryClient();
   const [phase, setPhase] = useState<ChatGptPhase>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [challenge, setChallenge] = useState<ChatGptAuthChallenge | null>(null);
-  const streamRef = useRef<SSEStream | null>(null);
+  const [challenge, setChallenge] = useState<ChatGptChallenge | null>(null);
+  // Flips true on unmount or Cancel to stop the in-flight poll loop.
+  const cancelledRef = useRef(false);
 
-  // Tear the stream down if the modal/subview unmounts mid-flow so we don't
-  // leak a held-open connection (and its server-side opencode subprocess).
   useEffect(() => {
-    return () => streamRef.current?.close();
+    return () => {
+      cancelledRef.current = true;
+    };
   }, []);
 
   const reset = useCallback(() => {
-    streamRef.current?.close();
-    streamRef.current = null;
+    cancelledRef.current = true;
     setChallenge(null);
     setError(null);
     setPhase('idle');
@@ -1022,34 +1024,62 @@ function ChatGptSubscriptionConnect({
       setError('Pick at least one member, or choose another access option.');
       return;
     }
-    streamRef.current?.close();
+    cancelledRef.current = false;
     setError(null);
     setChallenge(null);
     setPhase('waiting');
     try {
-      streamRef.current = await connectProjectChatGpt(projectId, {
+      const start = await startProjectProviderOAuth(projectId, 'openai', {
         sharing: selectionToIntent(sharing),
-        onChallenge: (next) => {
-          setChallenge(next);
-          // Pop the auth page so the user can enter the code right away.
-          if (next.url) window.open(next.url, '_blank', 'noopener,noreferrer');
-        },
-        onDone: () => {
-          streamRef.current = null;
+      });
+      if (cancelledRef.current) return;
+      setChallenge({ url: start.verification_url, code: start.user_code });
+      // Pop the auth page so the user can enter the code right away.
+      if (start.verification_url) {
+        window.open(start.verification_url, '_blank', 'noopener,noreferrer');
+      }
+
+      const interval = Math.max(2000, start.interval_ms || 3000);
+      const deadline = start.expires_at || Date.now() + 10 * 60_000;
+      while (!cancelledRef.current && Date.now() < deadline) {
+        await sleep(interval);
+        if (cancelledRef.current) return;
+        let res;
+        try {
+          res = await pollProjectProviderOAuth(projectId, 'openai', start.flow_id);
+        } catch {
+          continue; // transient — keep polling
+        }
+        if (cancelledRef.current) return;
+        if (res.status === 'success') {
           setPhase('done');
           toast.success('ChatGPT subscription connected to this project');
           queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
           onConnected();
-        },
-        onError: (message) => {
-          streamRef.current = null;
+          return;
+        }
+        if (res.status === 'failed') {
           setChallenge(null);
           setPhase('idle');
-          setError(message);
-        },
-      });
+          setError(res.error || 'Authorization failed');
+          return;
+        }
+        if (res.status === 'expired') {
+          setChallenge(null);
+          setPhase('idle');
+          setError('Authorization timed out. Try again.');
+          return;
+        }
+        // pending → keep polling
+      }
+      if (!cancelledRef.current) {
+        setChallenge(null);
+        setPhase('idle');
+        setError('Authorization timed out. Try again.');
+      }
     } catch (err) {
-      streamRef.current = null;
+      if (cancelledRef.current) return;
+      setChallenge(null);
       setPhase('idle');
       setError(err instanceof Error ? err.message : 'Failed to connect ChatGPT subscription');
     }
@@ -1097,10 +1127,6 @@ function ChatGptSubscriptionConnect({
                     {challenge.code}
                   </div>
                 </div>
-              ) : challenge.instructions ? (
-                <pre className="border-border/60 bg-muted text-muted-foreground mt-3 rounded-2xl border p-3 text-xs whitespace-pre-wrap">
-                  {challenge.instructions}
-                </pre>
               ) : null}
             </>
           ) : (

@@ -6,7 +6,7 @@
 # Immutable dev tag (CI bumps to dev-<sha8> on each main push). Bootstrap value
 # is :dev-latest until the first deploy-dev-eks run pins an immutable sha.
 image:
-  tag: "dev-a7ae01d6"
+  tag: "dev-66fccc24"
 kortixVersion: ""
 env:
   internalKortixEnv: dev
@@ -22,15 +22,23 @@ autoscaling:
   enabled: true
   minReplicas: 1
   maxReplicas: 2
-# Smaller pod envelope than prod (500m/1Gi) — light dev load packs onto fewer
-# nodes. ephemeral-storage (2Gi/8Gi) is inherited from the chart base.
+# No PDB on a 1-replica dev: minAvailable 50% rounds to 1 → 0 allowed disruptions,
+# which blocks node drain (cluster-autoscaler can't consolidate, upgrades stall).
+# A 1-replica deploy has no HA to protect anyway; brief restart on drain is fine.
+pdb:
+  enabled: false
+# Headroom for the provider OAuth device flow: `start` spawns a short-lived
+# OpenCode `serve` subprocess (~200-300Mi) inside this container to drive the
+# ChatGPT/Codex login, so a 512Mi cap OOM-killed the pod (exit 137) on every
+# connect. 2Gi fits the API + a few concurrent device flows. ephemeral-storage
+# (2Gi/8Gi) is inherited from the chart base.
 resources:
   requests:
     cpu: "250m"
-    memory: "512Mi"
+    memory: "1Gi"
   limits:
     cpu: "1"
-    memory: "512Mi"
+    memory: "2Gi"
 serviceAccount:
   name: kortix-api
   # IRSA role from the dev-eks cluster layer (module.app_irsa, name
