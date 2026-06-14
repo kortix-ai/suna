@@ -44,12 +44,12 @@ mock.module('../projects', () => ({
 
 // ─── streams: fakes so spawnAgentTurn touches no real Slack/DB here ───────────
 let finalizeCalls: Array<{ error?: string; answer?: string }> = [];
-mock.module('../channels/slack/streams', () => ({
-  loadStream: async () => null, // no in-flight turn → we open our own stream
-  startTurnStream: async () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
-  saveStream: async () => {},
-  deleteStream: async () => {},
-  finalizeStream: async (_h: unknown, opts: { error?: string; answer?: string }) => {
+mock.module('../channels/slack/turn', () => ({
+  loadTurn: async () => null, // no in-flight turn → we open our own stream
+  startTurn: async () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
+  saveTurn: async () => {},
+  deleteTurn: async () => {},
+  finalizeTurn: async (_h: unknown, opts: { error?: string; answer?: string }) => {
     finalizeCalls.push(opts);
   },
   buildSlackTurnEnv: () => ({}),
