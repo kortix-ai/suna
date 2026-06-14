@@ -262,15 +262,15 @@ export default function ProjectsPage() {
   return (
     <div className="bg-foreground/5 flex min-h-screen flex-col">
       <AppHeader user={user} breadcrumb="Projects" />
-      <main className="ring-input bg-background flex-1 rounded-t-3xl px-4 py-10 shadow-[0_-8px_24px_0_rgba(0,0,0,0.04)] ring sm:py-12">
+      <main className="ring-input bg-background px-mobile flex-1 rounded-t-3xl py-10 shadow-[0_-8px_24px_0_rgba(0,0,0,0.04)] ring sm:py-12">
         <div className="mx-auto w-full max-w-6xl space-y-8">
           <SunaMigrationBanner accountId={activeAccountId} />
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="min-w-0 space-y-2">
+            <div className="min-w-0 space-y-1">
               <h1 className="text-foreground text-2xl font-semibold tracking-tight sm:text-3xl">
                 Projects
               </h1>
-              <p className="text-muted-foreground text-sm">
+              <p className="text-muted-foreground text-base">
                 {tHardcodedUi.raw(
                   'appProjectsPage.line216JsxTextYourWorkspacesOnePlacePickUpWhereYou',
                 )}
