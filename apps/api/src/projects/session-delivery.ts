@@ -25,14 +25,14 @@
 
 import { eq } from 'drizzle-orm';
 
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
 import { config } from '../config';
 import { db } from '../shared/db';
 import { wakeSandbox } from '../sandbox-proxy/backend';
 import { forwardToSandbox } from '../sandbox-proxy/routes/preview';
 import { ensureOpencodeSessionPin } from './opencode-mapping';
 import { resolveGitTriggerActor } from './lib/triggers';
-import { resumeStoppedSandbox } from './routes/shared';
+import { kickProvisionOnOpen, resumeStoppedSandbox } from './routes/shared';
 
 const WORKSPACE = '/workspace';
 /** Daemon port; it reverse-proxies `/session/*` to OpenCode (same as the browser). */
@@ -43,18 +43,33 @@ const DAEMON_PORT = 8000;
  * a minute to restore + reboot OpenCode, so 90s was too tight and surfaced a
  * spurious "couldn't reach the sandbox" on a box that was merely still resuming.
  */
-const WAKE_DEADLINE_MS = 180_000;
+// Generous: bringing a session back can mean a Daytona cold-storage restore (a
+// "stopped" box auto-archived to cold storage — slower to boot than a warm
+// resume) or, in the rare destroyed/error case, a full cold reprovision from the
+// git branch. This runs in the fire-and-forget webhook handler, so a long wait
+// costs nothing and just means the agent replies a bit later — far better than
+// bouncing the user with "try again". Exceeding it only yields `pending` (keep
+// the mapping, never recreate), so it is a soft ceiling, not a failure.
+const READY_DEADLINE_MS = 300_000;
 const POLL_INTERVAL_MS = 3_000;
 
 /**
  * Outcome of delivering a follow-up prompt to an existing session.
  *   - `delivered`: OpenCode accepted the prompt.
- *   - `transient`: the sandbox is reachable-but-not-ready (booting/busy) or hit a
- *     blip; retrying the same session later should land.
- *   - `gone`: the session's sandbox is permanently unusable (missing, archived,
- *     errored, or 404) — recover by starting a fresh session.
+ *   - `pending`: the session is ALIVE but its sandbox isn't ready this instant
+ *     (provisioning, waking from hibernation, or a transient blip). The caller
+ *     keeps the permanent thread→session mapping and NEVER creates a second
+ *     session — a retry lands. There is no "give up and recreate" for a live
+ *     session: the sandbox is a disposable cache under the durable session.
+ *   - `no-session`: the projectSessions row itself is gone (the session was
+ *     deleted; the chat_threads FK cascade should already have dropped the
+ *     mapping too). Only here may the caller start a session for the thread —
+ *     and that is a REPLACEMENT after deletion, never a duplicate of a live one.
+ *   - `failed`: the session is in a terminal `failed` state (provisioning genuinely
+ *     errored). This is the ONE honest failure — surface it; never silently loop
+ *     or recreate. An archived/stopped box is NOT this: it resurrects.
  */
-export type SessionDeliveryOutcome = 'delivered' | 'transient' | 'gone';
+export type SessionDeliveryOutcome = 'delivered' | 'pending' | 'no-session' | 'failed';
 
 export async function deliverPromptToSession(input: {
   sessionId: string;
@@ -62,65 +77,132 @@ export async function deliverPromptToSession(input: {
 }): Promise<SessionDeliveryOutcome> {
   const { sessionId, text } = input;
 
-  const [sandbox] = await db
+  // The SESSION is the durable thing (git branch + projectSessions row). Load it.
+  const [session] = await db
     .select({
-      sandboxId: sessionSandboxes.sandboxId,
-      externalId: sessionSandboxes.externalId,
-      provider: sessionSandboxes.provider,
-      projectId: sessionSandboxes.projectId,
-      accountId: sessionSandboxes.accountId,
-      status: sessionSandboxes.status,
+      accountId: projectSessions.accountId,
+      projectId: projectSessions.projectId,
+      status: projectSessions.status,
+      sandboxProvider: projectSessions.sandboxProvider,
+      baseRef: projectSessions.baseRef,
+      agentName: projectSessions.agentName,
+      opencodeSessionId: projectSessions.opencodeSessionId,
     })
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sessionId, sessionId))
-    .limit(1);
-
-  if (!sandbox?.externalId) return 'gone';
-  if (sandbox.status === 'archived' || sandbox.status === 'error') return 'gone';
-  const externalId = sandbox.externalId;
-
-  // The acting principal — the project's canonical actor, same one triggers run
-  // as. forwardToSandbox enforces ownership against it, so without one we can't
-  // deliver as an authorized caller.
-  const userId = await resolveGitTriggerActor(sandbox.accountId);
-  if (!userId) {
-    console.warn('[session-delivery] no actor for account', sandbox.accountId);
-    return 'transient';
-  }
-
-  // 1. Wake the existing box in place (same as opening the session in the UI).
-  if (sandbox.status === 'stopped') {
-    await resumeStoppedSandbox({
-      sandboxId: sandbox.sandboxId,
-      sessionId,
-      accountId: sandbox.accountId,
-      provider: sandbox.provider,
-      externalId,
-    });
-  }
-  await wakeSandbox(externalId);
-
-  // 2. Resolve the canonical OpenCode root, polling while the woken box boots
-  //    (ensureOpencodeSessionPin reaches into the box and is unreachable until
-  //    OpenCode is back up). allowCreate:false — a follow-up continues an
-  //    existing chat, it must never spin up a blank one.
-  const [sessionRow] = await db
-    .select({ opencodeSessionId: projectSessions.opencodeSessionId })
     .from(projectSessions)
     .where(eq(projectSessions.sessionId, sessionId))
     .limit(1);
 
-  const deadline = Date.now() + WAKE_DEADLINE_MS;
+  // Row gone → the session was deleted (the chat_threads FK cascade should already
+  // have dropped the mapping). The caller may start a replacement.
+  if (!session) return 'no-session';
+  // Terminal failure is the ONE honest error. A stopped/cold/archived box is NOT
+  // this — that resurrects. Only a genuinely failed session surfaces.
+  if (session.status === 'failed') return 'failed';
+
+  const userId = await resolveGitTriggerActor(session.accountId);
+  if (!userId) {
+    console.warn('[session-delivery] no actor for account', session.accountId);
+    return 'pending';
+  }
+
+  // Full project row — needed to (re)provision a sandbox for this session exactly
+  // the way opening it in the browser does.
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.projectId, session.projectId))
+    .limit(1);
+  if (!project) return 'no-session';
+
+  const deadline = Date.now() + READY_DEADLINE_MS;
+
+  // ── Ensure a LIVE, reachable sandbox for this session ──────────────────────
+  // The session owns 100% of its sandbox lifecycle; the caller never touches it.
+  //   • active            → ready
+  //   • stopped (cold)    → start it back up in place (resumeStoppedSandbox →
+  //                          provider.start, restoring from Daytona cold storage —
+  //                          slower, but the same box/disk)
+  //   • destroyed/missing → rebuild fresh from the durable git branch
+  //                          (kickProvisionOnOpen — the browser's own open path)
+  //   • error             → the one genuine failure → surface it
+  // This is identical to the browser's session-open (r7).
+  let externalId: string | null = null;
+  let kickedReprovision = false;
+  for (;;) {
+    const [sb] = await db
+      .select({
+        sandboxId: sessionSandboxes.sandboxId,
+        externalId: sessionSandboxes.externalId,
+        provider: sessionSandboxes.provider,
+        status: sessionSandboxes.status,
+      })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sessionId, sessionId))
+      .limit(1);
+
+    if (sb && sb.status === 'active' && sb.externalId) {
+      externalId = sb.externalId;
+      break;
+    }
+    if (sb && sb.status === 'error') return 'failed';
+    if (sb && sb.status === 'stopped' && sb.externalId) {
+      await resumeStoppedSandbox({
+        sandboxId: sb.sandboxId,
+        sessionId,
+        accountId: session.accountId,
+        provider: sb.provider,
+        externalId: sb.externalId,
+      });
+    } else if (!sb || sb.status === 'archived' || (!sb.externalId && sb.status !== 'provisioning')) {
+      // No usable box — rebuild from the branch. kickProvisionOnOpen flips the
+      // session to 'provisioning' synchronously, so re-reading the session status
+      // is the cross-call/replica guard against a double-kick; we also kick at
+      // most once per call. Mirror r7: drop the dead row first so provision inserts
+      // cleanly.
+      const [live] = await db
+        .select({ status: projectSessions.status })
+        .from(projectSessions)
+        .where(eq(projectSessions.sessionId, sessionId))
+        .limit(1);
+      if (!live) return 'no-session';
+      if (live.status === 'failed') return 'failed';
+      if (live.status !== 'provisioning' && !kickedReprovision) {
+        if (sb) {
+          await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sb.sandboxId)).catch(() => {});
+        }
+        await kickProvisionOnOpen(
+          { row: project, userId },
+          { sandboxProvider: session.sandboxProvider, baseRef: session.baseRef, agentName: session.agentName },
+          session.projectId,
+          sessionId,
+        );
+        kickedReprovision = true;
+      }
+    }
+    // else: provisioning in flight — just wait.
+
+    if (Date.now() >= deadline) {
+      console.warn('[session-delivery] sandbox not ready before deadline', { sessionId });
+      return 'pending';
+    }
+    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+  }
+
+  await wakeSandbox(externalId);
+
+  // ── Resolve the canonical OpenCode root, then deliver ──────────────────────
+  // A resumed box keeps its chat (continue it: allowCreate=false). A box we just
+  // rebuilt from scratch has none, so let the pin be created (allowCreate=true).
   let opencodeSessionId: string | null = null;
   for (;;) {
     const ensured = await ensureOpencodeSessionPin({
-      projectId: sandbox.projectId,
+      projectId: session.projectId,
       sessionId,
-      accountId: sandbox.accountId,
+      accountId: session.accountId,
       externalId,
       userId,
-      currentPin: sessionRow?.opencodeSessionId ?? null,
-      allowCreate: false,
+      currentPin: session.opencodeSessionId ?? null,
+      allowCreate: kickedReprovision,
     });
     if (ensured.pin) {
       opencodeSessionId = ensured.pin;
@@ -131,7 +213,9 @@ export async function deliverPromptToSession(input: {
         sessionId,
         reason: ensured.reason,
       });
-      return 'transient';
+      // Box is alive but OpenCode hasn't answered yet. Keep the session + mapping
+      // and let a retry land — never error the box or recreate the session.
+      return 'pending';
     }
     await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
   }
@@ -153,7 +237,7 @@ export async function deliverPromptToSession(input: {
   );
 
   if (res.ok || res.status === 204) return 'delivered';
-  if (res.status === 404) return 'gone';
+  if (res.status === 404) return 'no-session';
   console.warn('[session-delivery] prompt_async non-ok', { sessionId, status: res.status });
-  return 'transient';
+  return 'pending';
 }
