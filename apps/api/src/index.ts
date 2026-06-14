@@ -39,6 +39,7 @@ import { initModelPricing, stopModelPricing } from './router/config/model-pricin
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
+import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader } from './shared/leader-election';
 import { oauthApp } from './oauth';
 import {
@@ -798,6 +799,10 @@ let schemaReady = false;
 async function startReplicaServices() {
   startAccessControlCache();
   startTunnelService();
+  // Every replica stages snapshot/session-boot build contexts in tmpdir and can
+  // leak them on error paths; sweep stale ones so they don't fill node disk and
+  // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
+  startTmpReaper();
 }
 
 // Singleton background WORKERS — must run on EXACTLY ONE replica at a time
@@ -862,6 +867,7 @@ async function shutdown(signal: string) {
   stopModelPricing();
   stopTunnelService();
   stopAccessControlCache();
+  stopTmpReaper();
   // Flush observability data before exit
   await Promise.allSettled([appLogger.flush(), flushSentry()]);
   process.exit(0);
