@@ -4,6 +4,8 @@ import type { AppEnv } from '../../types';
 import { callOpenRouter } from '../services/openrouter-client';
 import { calculateCost } from '../services/pricing';
 import { extractUsageFromJson, extractUsageFromSseBuffer, type ExtractedUsage } from '../services/usage-extractor';
+import { isBedrockModel } from '../services/bedrock-models';
+import { handleBedrockCompletion } from '../services/bedrock-handler';
 import { makeOpenApiApp, errors } from '../../openapi';
 
 function newRequestId(): string {
@@ -108,12 +110,71 @@ export function createChatCompletionsRoute(
     if (!hasReasoning && supportsReasoning(modelId)) {
       body.reasoning = { effort: 'medium' };
     }
+    const useBedrock = config.bedrock?.enabled === true && isBedrockModel(modelId);
     console.info(
-      `[llm-gateway] ${requestId} model=${modelId} stream=${streaming} reasoning=${
+      `[llm-gateway] ${requestId} model=${modelId} backend=${useBedrock ? 'bedrock' : 'openrouter'} stream=${streaming} reasoning=${
         hasReasoning ? 'forwarded' : supportsReasoning(modelId) ? 'injected' : 'n/a'
       } keys=${Object.keys(body).join(',')}`,
     );
 
+    const finalize = async (
+      usage: ExtractedUsage | null,
+      provider: string,
+      modelHint?: string,
+    ) => {
+      if (!usage || usage.promptTokens + usage.completionTokens === 0) return;
+
+      const model = (usage.model ?? modelHint ?? (body.model as string) ?? 'unknown').toString();
+      const { upstreamCost, finalCost } = calculateCost(
+        model,
+        {
+          promptTokens: usage.promptTokens,
+          completionTokens: usage.completionTokens,
+          cachedTokens: usage.cachedTokens,
+        },
+        config.markup ?? 1,
+        usage.upstreamCostHint,
+      );
+
+      const event: UsageEvent = {
+        accountId: principal.accountId,
+        actorUserId: principal.userId,
+        provider,
+        model,
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        cachedTokens: usage.cachedTokens,
+        upstreamCost,
+        finalCost,
+        streaming,
+        requestId,
+      };
+      try {
+        await hooks.recordUsage(event);
+      } catch (err) {
+        console.warn(`[llm-gateway] recordUsage failed for ${requestId}:`, err);
+      }
+    };
+
+    // ── AWS Bedrock backend (kortix/bedrock/* models) ────────────────────
+    if (useBedrock) {
+      const bedrock = config.bedrock!;
+      return handleBedrockCompletion({
+        body,
+        modelId,
+        streaming,
+        requestId,
+        clientConfig: {
+          region: bedrock.region,
+          accessKeyId: bedrock.accessKeyId,
+          secretAccessKey: bedrock.secretAccessKey,
+          sessionToken: bedrock.sessionToken,
+        },
+        onUsage: (usage, model) => void finalize(usage, 'bedrock', model),
+      });
+    }
+
+    // ── OpenRouter backend (default) ─────────────────────────────────────
     const upstream = await callOpenRouter(
       streaming ? { ...body, stream: true, stream_options: { include_usage: true } } : body,
       {
@@ -132,45 +193,10 @@ export function createChatCompletionsRoute(
       );
     }
 
-    const finalize = async (usage: ExtractedUsage | null, modelHint?: string) => {
-      if (!usage || usage.promptTokens + usage.completionTokens === 0) return;
-
-      const model = (usage.model ?? modelHint ?? (body.model as string) ?? 'unknown').toString();
-      const { upstreamCost, finalCost } = calculateCost(
-        model,
-        {
-          promptTokens: usage.promptTokens,
-          completionTokens: usage.completionTokens,
-          cachedTokens: usage.cachedTokens,
-        },
-        config.markup ?? 1,
-        usage.upstreamCostHint,
-      );
-
-      const event: UsageEvent = {
-        accountId: principal.accountId,
-        actorUserId: principal.userId,
-        provider: 'openrouter',
-        model,
-        promptTokens: usage.promptTokens,
-        completionTokens: usage.completionTokens,
-        cachedTokens: usage.cachedTokens,
-        upstreamCost,
-        finalCost,
-        streaming,
-        requestId,
-      };
-      try {
-        await hooks.recordUsage(event);
-      } catch (err) {
-        console.warn(`[llm-gateway] recordUsage failed for ${requestId}:`, err);
-      }
-    };
-
     if (!streaming) {
       const json = await upstream.json();
       const usage = extractUsageFromJson(json);
-      void finalize(usage, body.model as string | undefined);
+      void finalize(usage, 'openrouter', body.model as string | undefined);
       return c.json(json);
     }
 
@@ -211,7 +237,7 @@ export function createChatCompletionsRoute(
         } catch {
         }
         const usage = extractUsageFromSseBuffer(sseBuffer);
-        void finalize(usage, body.model as string | undefined);
+        void finalize(usage, 'openrouter', body.model as string | undefined);
       }
     })().catch(() => {});
 

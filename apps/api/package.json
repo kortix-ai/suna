@@ -18,6 +18,7 @@
     "test:all": "bun run test"
   },
   "dependencies": {
+    "@aws-sdk/client-bedrock-runtime": "^3.700.0",
     "@daytonaio/sdk": "^0.184.0",
     "@hono/zod-openapi": "^0.19.10",
     "@kortix/db": "workspace:*",

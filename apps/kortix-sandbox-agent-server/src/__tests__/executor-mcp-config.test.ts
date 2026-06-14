@@ -109,6 +109,17 @@ describe('buildExecutorMcpConfigContent — Kortix LLM gateway provider', () => 
     expect(models['minimax/minimax-m3'].tool_call).toBe(true)
   })
 
+  test('exposes AWS Bedrock models under the kortix provider', () => {
+    const config = JSON.parse(buildExecutorMcpConfigContent(GATEWAY_ENV)!)
+    const models = config.provider.kortix.models
+    // bedrock/ prefixed ids are routed to the gateway's Bedrock backend.
+    expect(models['bedrock/anthropic/claude-opus-4.8']).toBeDefined()
+    expect(models['bedrock/anthropic/claude-opus-4.8'].reasoning).toBe(true)
+    expect(models['bedrock/anthropic/claude-opus-4.8'].tool_call).toBe(true)
+    expect(models['bedrock/meta/llama-4-maverick'].tool_call).toBe(true)
+    expect(models['bedrock/amazon/nova-pro'].tool_call).toBe(true)
+  })
+
   test('merges provider onto pre-existing inline provider block', () => {
     const existing = JSON.stringify({
       provider: { anthropic: { options: { timeout: 600000 } } },

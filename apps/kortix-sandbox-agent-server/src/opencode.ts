@@ -188,6 +188,67 @@ const KORTIX_GATEWAY_MODELS: Record<string, KortixGatewayModel> = {
     temperature: true,
     limit: { context: 1_000_000, output: 64_000 },
   },
+  // ── AWS Bedrock models (served by the gateway's Bedrock backend) ──────────
+  // `bedrock/` prefix routes these to AWS Bedrock Converse instead of OpenRouter.
+  'bedrock/anthropic/claude-opus-4.8': {
+    name: 'Claude Opus 4.8 (Bedrock)',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 1_000_000, output: 64_000 },
+  },
+  'bedrock/anthropic/claude-sonnet-4.6': {
+    name: 'Claude Sonnet 4.6 (Bedrock)',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 1_000_000, output: 64_000 },
+  },
+  'bedrock/anthropic/claude-haiku-4.5': {
+    name: 'Claude Haiku 4.5 (Bedrock)',
+    reasoning: true,
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 200_000, output: 64_000 },
+  },
+  'bedrock/meta/llama-4-maverick': {
+    name: 'Llama 4 Maverick (Bedrock)',
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 1_000_000, output: 8_192 },
+  },
+  'bedrock/meta/llama-4-scout': {
+    name: 'Llama 4 Scout (Bedrock)',
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 3_500_000, output: 8_192 },
+  },
+  'bedrock/amazon/nova-pro': {
+    name: 'Nova Pro (Bedrock)',
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 300_000, output: 5_120 },
+  },
+  'bedrock/amazon/nova-lite': {
+    name: 'Nova Lite (Bedrock)',
+    tool_call: true,
+    attachment: true,
+    temperature: true,
+    limit: { context: 300_000, output: 5_120 },
+  },
+  'bedrock/deepseek/deepseek-r1': {
+    name: 'DeepSeek R1 (Bedrock)',
+    reasoning: true,
+    tool_call: true,
+    temperature: true,
+    limit: { context: 163_840, output: 32_768 },
+  },
 }
 
 function materializeOpencodeAuth(env: NodeJS.ProcessEnv) {

@@ -529,6 +529,13 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
         markup: llmPriceMarkup(),
         appName: 'Kortix',
         appReferer: config.KORTIX_URL,
+        bedrock: {
+          enabled: config.BEDROCK_ENABLED,
+          region: config.BEDROCK_REGION,
+          accessKeyId: config.AWS_ACCESS_KEY_ID,
+          secretAccessKey: config.AWS_SECRET_ACCESS_KEY,
+          sessionToken: config.AWS_SESSION_TOKEN,
+        },
       },
       {
         authenticateToken: async (token) => {

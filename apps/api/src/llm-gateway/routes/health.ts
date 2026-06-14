@@ -20,6 +20,10 @@ export function createHealthRoute(config: LlmGatewayConfig) {
             baseUrl: z.string(),
             markup: z.number(),
             keyConfigured: z.boolean(),
+            bedrock: z.object({
+              enabled: z.boolean(),
+              region: z.string().optional(),
+            }),
           }),
           'Gateway health',
         ),
@@ -32,6 +36,10 @@ export function createHealthRoute(config: LlmGatewayConfig) {
         baseUrl: config.baseUrl ?? 'https://openrouter.ai/api/v1',
         markup: config.markup ?? 1,
         keyConfigured: !!config.openrouterApiKey,
+        bedrock: {
+          enabled: config.bedrock?.enabled ?? false,
+          region: config.bedrock?.region,
+        },
       }),
   );
 

@@ -167,6 +167,16 @@ const envSchema = z.object({
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
   LLM_GATEWAY_ENABLED:         optBoolFalse,
+  // ── AWS Bedrock backend for the managed gateway ──────────────────────────
+  // When enabled, gateway models prefixed `bedrock/` (e.g.
+  // `kortix/bedrock/anthropic/claude-opus-4.8`) are served via Bedrock Converse
+  // instead of OpenRouter. Credentials fall back to the AWS default chain
+  // (EKS IRSA / instance role) when the explicit keys are unset.
+  BEDROCK_ENABLED:             optBoolFalse,
+  BEDROCK_REGION:              optStrDefault('us-west-2'),
+  AWS_ACCESS_KEY_ID:           optStr,
+  AWS_SECRET_ACCESS_KEY:       optStr,
+  AWS_SESSION_TOKEN:           optStr,
   ANTHROPIC_API_URL:           optUrl('https://api.anthropic.com/v1'),
   ANTHROPIC_API_KEY:           optStr,
   OPENAI_API_URL:              optUrl('https://api.openai.com/v1'),
@@ -381,6 +391,9 @@ function validateEnv(): z.infer<typeof envSchema> {
       issues.push({ var: 'LLM_GATEWAY_ENABLED', message: 'Gateway is on but OPENROUTER_API_KEY is unset — /v1/llm will 500 "openrouterApiKey missing"', level: 'warn' });
     }
   }
+  if (raw.BEDROCK_ENABLED === 'true' && !raw.AWS_ACCESS_KEY_ID && !raw.AWS_SECRET_ACCESS_KEY) {
+    issues.push({ var: 'BEDROCK_ENABLED', message: 'Bedrock backend is on with no static AWS creds — relying on the default credential chain (EKS IRSA / instance role). Ensure the pod/role can call bedrock:InvokeModel.', level: 'warn' });
+  }
 
   // ── Print results ─────────────────────────────────────────────────────
   const errors = issues.filter((i) => i.level === 'error');
@@ -508,6 +521,11 @@ export const config = {
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
+  BEDROCK_ENABLED: env.BEDROCK_ENABLED,
+  BEDROCK_REGION: env.BEDROCK_REGION,
+  AWS_ACCESS_KEY_ID: env.AWS_ACCESS_KEY_ID,
+  AWS_SECRET_ACCESS_KEY: env.AWS_SECRET_ACCESS_KEY,
+  AWS_SESSION_TOKEN: env.AWS_SESSION_TOKEN,
   ANTHROPIC_API_URL: env.ANTHROPIC_API_URL,
   ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
   OPENAI_API_URL: env.OPENAI_API_URL,
