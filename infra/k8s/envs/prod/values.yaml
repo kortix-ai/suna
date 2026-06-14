@@ -5,26 +5,22 @@
 
 # Immutable release tag (promote bumps this). NOT :latest / :dev-latest in GitOps.
 image:
-  tag: "0.9.38"
-kortixVersion: "0.9.38"
-
+  tag: "0.9.49"
+kortixVersion: "0.9.49"
 env:
   internalKortixEnv: prod
-
 # PRE-CUTOVER: api-eks is the candidate while api.kortix.com is still served by
 # ECS, so EKS runs API-only and ECS keeps ownership of the singleton workers
 # (one Postgres leader lease is shared across both). At cutover, flip this to
 # true here AND disable the ECS service — EKS then owns the background work.
 workers:
   enabled: false
-
 # Prod sizing / HA (chart defaults are already prod-tuned; pinned here explicitly).
 replicas: 3
 autoscaling:
   enabled: true
   minReplicas: 3
   maxReplicas: 12
-
 # Headroom for the provider OAuth device flow: `start` spawns a short-lived
 # OpenCode `serve` subprocess (~300-350Mi) in the api container to drive the
 # ChatGPT/Codex login. The 1Gi chart default leaves no room over the API
@@ -37,23 +33,19 @@ resources:
   limits:
     cpu: "1"
     memory: "2Gi"
-
 serviceAccount:
   name: kortix-api
   roleArn: arn:aws:iam::935064898258:role/kortix-prod-eks-app
-
 externalSecrets:
   enabled: true
   region: us-west-2
   secretName: kortix-prod-env
   targetSecretName: kortix-api-env
-
 ingress:
   enabled: true
   host: api-eks.kortix.com
   certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/2b74aa18-1fe1-4cc8-a6c1-7012a0823d27
   cloudflareProxied: true
-
 # Plain rolling Deployment (no canary). The EKS wins we actually want —
 # auto-healing (probes restart hung/stale pods), autoscaling (HPA + cluster
 # autoscaler), zero-downtime rolling deploys — all come from the Deployment, not
