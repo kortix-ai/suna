@@ -34,9 +34,17 @@ resources:
   requests:
     cpu: "500m"
     memory: "1Gi"
+    # Reserve disk so the scheduler spreads pods instead of stacking heavy
+    # snapshot-context writers onto one node.
+    ephemeral-storage: "2Gi"
   limits:
     cpu: "1"
     memory: "1Gi"
+    # Cap per-pod ephemeral use: a runaway build-context leak evicts THAT pod
+    # individually, instead of filling the node and tripping DiskPressure that
+    # evicts healthy neighbours cluster-wide. The tmp-reaper keeps steady-state
+    # well under this; the limit is the backstop.
+    ephemeral-storage: "8Gi"
 
 # Disruption budget: never let voluntary disruptions (node drain, roll) drop us
 # below half the replicas.
