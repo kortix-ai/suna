@@ -52,15 +52,14 @@ externalSecrets:
   targetSecretName: kortix-api-env
 ingress:
   enabled: true
-  # Primary = the real dev domain (cutover target), reusing the existing ACM cert
-  # the ECS dev ALB uses (a9af6fd8). The EKS-direct name dev-api-eks stays served
-  # too (its own cert) as a stable test endpoint independent of the cutover.
-  host: dev-api.kortix.com
-  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/a9af6fd8-d214-4cbe-a525-107a44e893fb
-  extraHosts:
-    - dev-api-eks.kortix.com
-  extraCertificateArns:
-    - arn:aws:acm:us-west-2:935064898258:certificate/57eed8f4-cba4-4d6a-94ea-1b948708989b
+  # dev-api.kortix.com is now the Cloudflare Worker's custom domain
+  # (infra/cloudflare/workers/api-router, env=dev). It routes here via the clean
+  # backend name dev-api-eks.kortix.com (EKS = primary backend) or fails over to
+  # the ECS standby (dev-api-ecs-fargate). So EKS serves dev-api-eks ONLY, on its
+  # own cert (57eed8f4) — it no longer serves dev-api or borrows the ECS dev ALB
+  # cert (a9af6fd8), which is now free for the ECS dev stack alone.
+  host: dev-api-eks.kortix.com
+  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/57eed8f4-cba4-4d6a-94ea-1b948708989b
   cloudflareProxied: true
 # Plain rolling Deployment (no canary) — same delivery model as prod-eks:
 # probe-based auto-healing, HPA autoscaling, zero-downtime rolling deploys.

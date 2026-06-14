@@ -1,14 +1,23 @@
-# ── dev environment — dev-api.kortix.com on ECS Fargate (autoscaled) ──────────
+# ── dev environment — dev-api-ecs-fargate.kortix.com (ECS Fargate, autoscaled) ─
 #
-#   dev-api.kortix.com → Cloudflare (proxied, Full strict) → ALB → ECS Fargate
-#   service (autoscaled on CPU/memory) in private subnets, egress via NAT.
+#   dev-api-ecs-fargate.kortix.com → Cloudflare (proxied, Full strict) → ALB →
+#   ECS Fargate service (autoscaled) in private subnets, egress via NAT.
 #   dev.kortix.com (frontend) stays on Vercel — not managed here.
 #
-# This is the SAME module set prod uses (../prod) — dev just runs smaller
-# numbers + Fargate Spot. App code still ships via CI; Terraform owns the infra.
-# Nothing here is applied automatically. See README.md for the Lightsail→ECS
-# cutover plan. (The legacy Lightsail box lives in modules/api-host, no longer
-# referenced here.)
+# This ECS service is the always-warm FALLBACK behind dev-api.kortix.com: that
+# hostname is a Cloudflare Worker (infra/cloudflare/workers/api-router, env=dev)
+# that routes to EKS (dev-api-eks, primary) or here (dev-api-ecs-fargate) via its
+# ACTIVE_BACKEND var. So this stack owns the dev-api-ecs-fargate name ONLY —
+# dev-api itself is the Worker's custom domain, NOT managed here.
+#
+# Same module set prod uses (../prod) — dev just runs smaller numbers + Fargate
+# Spot. App code ships via CI (deploy-dev rolls this in parallel with EKS).
+# Nothing here is applied automatically. See README.md.
+#
+# NOTE: live was bootstrapped out-of-band (standalone ACM cert + manual proxied
+# CNAME via the Cloudflare API while EKS was made primary); a `terraform apply`
+# here reconciles onto this config — the old dev-api record is now the Worker's
+# and must NOT be recreated (hence local.domain below is the -ecs-fargate name).
 
 terraform {
   required_version = ">= 1.5"
@@ -38,7 +47,7 @@ provider "cloudflare" {
 
 locals {
   name   = "kortix-dev"
-  domain = "dev-api.kortix.com"
+  domain = "dev-api-ecs-fargate.kortix.com" # the ECS fallback name; dev-api itself is the Worker's custom domain
   tags = {
     Environment = "dev"
     Service     = "kortix-api"
@@ -99,15 +108,18 @@ module "api" {
   tags                       = local.tags
 }
 
-# ── DNS: dev-api.kortix.com → the ALB (Cloudflare-proxied) ─────────────────────
+# ── DNS: dev-api-ecs-fargate.kortix.com → the ALB (Cloudflare-proxied) ─────────
+# This is the ECS fallback backend the dev-api Worker routes to. dev-api itself
+# is the Worker's custom domain (AAAA 100:: placeholder) and is intentionally NOT
+# managed here, so a terraform apply never clobbers the Worker.
 module "dns" {
   source  = "../../modules/cloudflare-dns"
   count   = var.manage_dns ? 1 : 0
   zone_id = var.cloudflare_zone_id
 
   records = {
-    dev-api = {
-      name    = "dev-api"
+    dev-api-ecs-fargate = {
+      name    = "dev-api-ecs-fargate"
       type    = "CNAME"
       value   = module.api.alb_dns_name
       proxied = true

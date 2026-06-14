@@ -10,15 +10,20 @@ name: Deploy Prod
 #      (multi-arch manifest copy, zero rebuilds).
 #   2. Build the prod CLI (4 targets, default api.kortix.com) + prod desktop
 #      installers and cut a single GitHub Release `vX.Y.Z`.
-#   3. EKS deploy: the promote PR merge already bumped infra/k8s/envs/prod, so
-#      Argo CD rolls the prod Deployment — this job WATCHES it reach vX.Y.Z and
-#      announces to Slack. (Replaces the old imperative ECS roll.)
+#   3. EKS deploy (primary): the promote PR merge already bumped
+#      infra/k8s/envs/prod, so Argo CD rolls the prod Deployment — this job
+#      WATCHES it reach vX.Y.Z and announces to Slack.
+#   3b. ECS Fargate deploy (fallback): in PARALLEL, roll the kortix-prod ECS
+#      service onto the same vX.Y.Z so it stays a warm hot-standby (never gates
+#      the release). See the deploy-api-ecs job.
 #   4. Deploy the prod frontend on Vercel (the `prod` branch → kortix.com).
 #
-# The prod stack is api.kortix.com → EKS + kortix.com (Vercel). api.kortix.com is
-# routed to the EKS backend by the Cloudflare Worker (ACTIVE_BACKEND) and deployed
-# by Argo CD GitOps; ECS prod is the retired fallback. The EKS deploy lives inline
-# here (no separate workflow), so the whole release reads top to bottom in one file.
+# The prod stack is api.kortix.com → EKS (primary) + kortix.com (Vercel).
+# api.kortix.com is a Cloudflare Worker (infra/cloudflare/workers/api-router) that
+# routes to EKS (api-eks, ACTIVE_BACKEND=eks) or the ECS Fargate hot-standby
+# (api-ecs-fargate) — flip ACTIVE_BACKEND to fail over instantly. EKS rolls via
+# Argo CD GitOps; ECS rolls here in parallel. Both run the same image against the
+# same DB (one global worker-leader lease), so a flip is safe.
 
 on:
   push:
@@ -622,6 +627,96 @@ jobs:
             sleep $((attempt * 3))
           done
           echo "::error::Slack failed after 5 attempts (last: ${err})."; exit 1
+
+  # ── Roll the prod ECS Fargate FALLBACK onto the new image ───────────────────
+  # EKS is the live prod backend (deploy-api above); ECS Fargate is the always-
+  # warm standby behind api-ecs-fargate.kortix.com, so the api.kortix.com Worker
+  # can fail over to it instantly (flip ACTIVE_BACKEND → ecs-fargate). Runs in
+  # PARALLEL with the EKS watch — it never gates the release. Both run the same
+  # image against the same prod DB; safe because background-worker leadership is a
+  # single global DB lease (apps/api/src/shared/leader-election.ts) → one leader.
+  deploy-api-ecs:
+    name: Deploy API to prod (ECS fallback)
+    needs: [version, retag-images]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # assume the AWS role via GitHub OIDC
+      contents: read
+    env:
+      AWS_REGION: us-west-2
+      CLUSTER: kortix-prod
+      SERVICE: kortix-prod
+      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.ROLE }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Guard — ECS service exists
+        id: guard
+        run: |
+          set -uo pipefail
+          st="$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+                --query 'services[0].status' --output text 2>/dev/null || true)"
+          if [ "$st" = "ACTIVE" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::ECS fallback service $SERVICE not ACTIVE (status=$st) — skipping."
+          fi
+
+      - name: Roll the prod ECS fallback (clean version stamped)
+        if: steps.guard.outputs.exists == 'true'
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # The image is retagged (not rebuilt), so it carries the promoted DEV
+          # build's KORTIX_VERSION default. Register a new task-def revision that
+          # stamps the clean X.Y.Z so the fallback's /v1/health reports e.g. 0.9.1
+          # (matching EKS), not 0.9.1-dev.<sha>. Everything else is preserved.
+          echo "Stamping KORTIX_VERSION=$VERSION onto a new kortix-prod task-def revision…"
+          CURRENT_TD=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --task-definition "$CURRENT_TD" \
+            --query 'taskDefinition' --output json > td.json
+
+          # Also pin the released image :X.Y.Z (retag-images just created it) so
+          # the standby runs the EXACT same artifact as EKS — not the floating
+          # dev-latest tag the old task def carried.
+          jq --arg v "$VERSION" '
+            del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+            | .containerDefinitions |= map(
+                (if (.image | test("kortix/kortix-api"))
+                   then .image = "kortix/kortix-api:\($v)" else . end)
+                | .environment = ((.environment // []) | map(select(.name != "KORTIX_VERSION"))
+                                 + [{name: "KORTIX_VERSION", value: $v}]))
+          ' td.json > td-new.json
+
+          NEW_TD=$(aws ecs register-task-definition --cli-input-json file://td-new.json \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_TD"
+
+          echo "Rolling $SERVICE onto v$VERSION…"
+          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+            --task-definition "$NEW_TD" --force-new-deployment >/dev/null
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
+            --output table
+
+      - name: Summary
+        if: always() && steps.guard.outputs.exists == 'true'
+        run: |
+          h="$(curl -s --max-time 10 "https://api-ecs-fargate.kortix.com/v1/health" || true)"
+          {
+            echo "### Deployed API → **prod** (ECS Fargate fallback)"
+            echo "v${{ needs.version.outputs.version }} rolled onto ECS service \`kortix-prod\` (standby behind api-ecs-fargate)."
+            echo "Live: \`$(printf '%s' "$h" | jq -c '{version,commit,environment}' 2>/dev/null || echo '?')\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # ── Prod frontend (Vercel) ──────────────────────────────────────────────────
   # No job here: the Vercel project is git-connected and auto-deploys the `prod`
