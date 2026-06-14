@@ -79,6 +79,7 @@ import { clearSessionIDBCache } from '@/lib/idb-sync-cache';
 import { createClient } from '@/lib/supabase/client';
 import { clearUserLocalStorage } from '@/lib/utils/clear-local-storage';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
+import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { useNewInstanceModalStore } from '@/stores/pricing-modal-store';
 import { openTabAndNavigate } from '@/stores/tab-store';
@@ -339,9 +340,7 @@ function MessagesPage({
       .map((turn) => {
         const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
         const raw = textParts.map((p) => p.text).join(' ');
-        const stripped = stripKortixSystemTags(raw)
-          .replace(/<[^>]+>/g, '')
-          .trim();
+        const stripped = stripHtmlTags(stripKortixSystemTags(raw)).trim();
         return {
           id: turn.userMessage.info.id,
           text: stripped,
