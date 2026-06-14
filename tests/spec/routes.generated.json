@@ -1,6 +1,6 @@
 {
   "generatedAt": "static",
-  "count": 331,
+  "count": 330,
   "routes": [
     {
       "method": "GET",
@@ -904,11 +904,7 @@
     },
     {
       "method": "POST",
-      "path": "/v1/projects/:projectId/providers/openai/chatgpt/headless/complete"
-    },
-    {
-      "method": "POST",
-      "path": "/v1/projects/:projectId/providers/openai/chatgpt/headless/start"
+      "path": "/v1/projects/:projectId/providers/openai/chatgpt/connect"
     },
     {
       "method": "GET",

@@ -30,7 +30,7 @@ function makeApp() {
   app.get('/v1/llm/chat/completions', slow);          // exempt prefix (LLM streaming)
   app.post('/v1/billing/webhooks/stripe', slow);      // exempt prefix (webhook)
   app.post('/v1/projects/x/sessions/y/wake', slow);   // exempt fragment (long sync op)
-  app.post('/v1/projects/x/providers/openai/chatgpt/headless/complete', slow); // exempt fragment (OAuth device-flow long-poll)
+  app.post('/v1/projects/x/providers/openai/chatgpt/connect', slow); // exempt fragment (OAuth device-flow long-poll)
   app.post('/v1/projects', slow);                      // exempt method+path (provision)
   app.get('/v1/projects', slow);                       // bounded — only POST is exempt
   app.get('/v1/projects/x/fast', (c) => c.json({ ok: true })); // bounded, fast
@@ -87,7 +87,7 @@ describe('requestDeadline', () => {
   });
 
   it('exempts the ChatGPT headless OAuth device flow (long-polls past the deadline)', async () => {
-    const res = await makeApp().request('/v1/projects/x/providers/openai/chatgpt/headless/complete', { method: 'POST' });
+    const res = await makeApp().request('/v1/projects/x/providers/openai/chatgpt/connect', { method: 'POST' });
     expect(res.status).toBe(200);
   });
 

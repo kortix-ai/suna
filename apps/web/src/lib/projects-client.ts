@@ -1,6 +1,7 @@
 import { backendApi } from '@/lib/api-client';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
+import { createSSEStream, type SSEStream } from '@/lib/utils/sse-stream';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
 export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel';
@@ -768,30 +769,77 @@ export async function upsertProjectSecret(
   );
 }
 
-export async function startProjectChatGptHeadlessAuth(projectId: string) {
-  return unwrap(
-    await backendApi.post<{
-      authId: string;
-      url: string;
-      instructions: string;
-      code: string | null;
-    }>(
-      `/projects/${projectId}/providers/openai/chatgpt/headless/start`,
-      {},
-    ),
-  );
+/** The device challenge surfaced by the ChatGPT connect stream. */
+export interface ChatGptAuthChallenge {
+  /** Verification URL the user opens. */
+  url: string;
+  /** Raw instruction text from opencode. */
+  instructions: string;
+  /** Short user code to enter on the auth page, when present. */
+  code: string | null;
 }
 
-export async function completeProjectChatGptHeadlessAuth(
+/**
+ * Connect a ChatGPT Plus/Pro subscription via the OpenAI Codex device grant.
+ *
+ * The whole flow is a single Server-Sent Events stream so it stays pinned to
+ * one API replica (opencode holds the device poll in-process). Returns the
+ * live `SSEStream` handle — call `.close()` to cancel an in-flight connect.
+ *
+ *   onChallenge → open `url` + show `code`, then wait
+ *   onDone      → CODEX_AUTH_JSON saved; `secret` is the caller's view of it
+ *   onError     → a human-readable failure message
+ */
+export async function connectProjectChatGpt(
   projectId: string,
-  input: { authId: string; sharing?: ConnectorSharing },
-) {
-  return unwrap(
-    await backendApi.post<ProjectSecret>(
-      `/projects/${projectId}/providers/openai/chatgpt/headless/complete`,
-      { auth_id: input.authId, sharing: input.sharing },
-    ),
-  );
+  handlers: {
+    sharing?: ConnectorSharing;
+    onChallenge: (challenge: ChatGptAuthChallenge) => void;
+    onDone: (secret: ProjectSecret) => void;
+    onError: (message: string) => void;
+  },
+): Promise<SSEStream> {
+  const token = await getSupabaseAccessTokenWithRetry();
+  if (!token) throw new Error('Not authenticated');
+
+  const base = getEnv().BACKEND_URL || '';
+  const stream = createSSEStream({
+    url: `${base}/projects/${projectId}/providers/openai/chatgpt/connect`,
+    token,
+    method: 'POST',
+    body: { sharing: handlers.sharing },
+    // Transport-level failure (dropped connection, non-200 open).
+    onError: (err) => handlers.onError(err.message),
+  });
+
+  stream.addEventListener('challenge', (data) => {
+    try {
+      handlers.onChallenge(JSON.parse(data) as ChatGptAuthChallenge);
+    } catch {
+      // ignore malformed frame
+    }
+  });
+  stream.addEventListener('done', (data) => {
+    try {
+      handlers.onDone((JSON.parse(data) as { secret: ProjectSecret }).secret);
+    } catch {
+      handlers.onDone({ name: 'CODEX_AUTH_JSON' } as ProjectSecret);
+    }
+  });
+  // Application-level failure emitted by the server as `event: error`.
+  stream.addEventListener('error', (data) => {
+    try {
+      handlers.onError(
+        (JSON.parse(data) as { message?: string }).message ||
+          'Failed to connect ChatGPT subscription',
+      );
+    } catch {
+      handlers.onError('Failed to connect ChatGPT subscription');
+    }
+  });
+
+  stream.connect();
+  return stream;
 }
 
 export async function upsertProjectGitCredential(

@@ -13,7 +13,7 @@ import { useTranslations } from 'next-intl';
  * carries over: Connected | Add provider | Models.
  */
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertCircle,
@@ -62,14 +62,15 @@ import {
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import {
-  completeProjectChatGptHeadlessAuth,
+  connectProjectChatGpt,
   deleteProjectSecret,
   deletePersonalProjectSecret,
   listProjectSecrets,
   setPersonalProjectSecret,
-  startProjectChatGptHeadlessAuth,
   upsertProjectSecret,
+  type ChatGptAuthChallenge,
 } from '@/lib/projects-client';
+import type { SSEStream } from '@/lib/utils/sse-stream';
 import {
   LLM_PROVIDERS,
   LLM_PROVIDER_BY_ID,
@@ -948,6 +949,8 @@ function ApiKeyConnectForm({
   );
 }
 
+type ChatGptPhase = 'idle' | 'waiting' | 'done';
+
 function ChatGptSubscriptionConnect({
   projectId,
   sharing,
@@ -958,77 +961,64 @@ function ChatGptSubscriptionConnect({
   onConnected: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [busy, setBusy] = useState(false);
+  const [phase, setPhase] = useState<ChatGptPhase>('idle');
   const [error, setError] = useState<string | null>(null);
-  const [authId, setAuthId] = useState<string | null>(null);
-  const [authUrl, setAuthUrl] = useState<string | null>(null);
-  const [authInstructions, setAuthInstructions] = useState<string | null>(null);
+  const [challenge, setChallenge] = useState<ChatGptAuthChallenge | null>(null);
+  const streamRef = useRef<SSEStream | null>(null);
 
-  function formatProviderError(err: unknown): string {
-    if (err instanceof Error) return err.message;
-    if (err && typeof err === 'object') {
-      const record = err as Record<string, unknown>;
-      const data = record.data;
-      if (data && typeof data === 'object' && !Array.isArray(data)) {
-        const message = (data as Record<string, unknown>).message;
-        if (typeof message === 'string' && message.trim()) return message;
-      }
-      const message = record.message;
-      if (typeof message === 'string' && message.trim()) return message;
-      try {
-        return JSON.stringify(err);
-      } catch {
-        // fall through
-      }
-    }
-    return 'Failed to connect ChatGPT subscription';
-  }
+  // Tear the stream down if the modal/subview unmounts mid-flow so we don't
+  // leak a held-open connection (and its server-side opencode subprocess).
+  useEffect(() => {
+    return () => streamRef.current?.close();
+  }, []);
 
-  async function handleStartHeadlessConnect() {
-    setBusy(true);
+  const reset = useCallback(() => {
+    streamRef.current?.close();
+    streamRef.current = null;
+    setChallenge(null);
     setError(null);
-    setAuthId(null);
-    setAuthUrl(null);
-    setAuthInstructions(null);
-    try {
-      const authData = await startProjectChatGptHeadlessAuth(projectId);
-      setAuthId(authData.authId);
-      setAuthUrl(authData.url);
-      setAuthInstructions(authData.instructions);
-      if (authData.url) {
-        window.open(authData.url, '_blank', 'noopener,noreferrer');
-      }
-    } catch (err) {
-      setError(formatProviderError(err));
-    } finally {
-      setBusy(false);
-    }
-  }
+    setPhase('idle');
+  }, []);
 
-  async function handleCompleteHeadlessConnect() {
-    if (!authId) return;
-    setBusy(true);
+  const handleConnect = useCallback(async () => {
+    if (!isSharingComplete(sharing)) {
+      setError('Pick at least one member, or choose another access option.');
+      return;
+    }
+    streamRef.current?.close();
     setError(null);
+    setChallenge(null);
+    setPhase('waiting');
     try {
-      if (!isSharingComplete(sharing)) {
-        throw new Error('Pick at least one member, or choose another access option.');
-      }
-      await completeProjectChatGptHeadlessAuth(projectId, {
-        authId,
+      streamRef.current = await connectProjectChatGpt(projectId, {
         sharing: selectionToIntent(sharing),
+        onChallenge: (next) => {
+          setChallenge(next);
+          // Pop the auth page so the user can enter the code right away.
+          if (next.url) window.open(next.url, '_blank', 'noopener,noreferrer');
+        },
+        onDone: () => {
+          streamRef.current = null;
+          setPhase('done');
+          toast.success('ChatGPT subscription connected to this project');
+          queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+          onConnected();
+        },
+        onError: (message) => {
+          streamRef.current = null;
+          setChallenge(null);
+          setPhase('idle');
+          setError(message);
+        },
       });
-
-      toast.success('ChatGPT subscription connected to this project');
-      queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
-      onConnected();
     } catch (err) {
-      setError(formatProviderError(err));
-    } finally {
-      setBusy(false);
+      streamRef.current = null;
+      setPhase('idle');
+      setError(err instanceof Error ? err.message : 'Failed to connect ChatGPT subscription');
     }
-  }
+  }, [projectId, sharing, queryClient, onConnected]);
 
-  const deviceCode = authInstructions?.match(/\b[A-Z0-9]{4,}(?:-[A-Z0-9]{4,})+\b/)?.[0] ?? null;
+  const waiting = phase === 'waiting';
 
   return (
     <div className="rounded-2xl border border-border/50 bg-muted/20 p-4">
@@ -1037,80 +1027,89 @@ function ChatGptSubscriptionConnect({
         <div className="min-w-0 flex-1">
           <div className="text-sm font-medium text-foreground">ChatGPT Plus/Pro</div>
           <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
-            Use OpenCode headless auth, then save the resulting login as an encrypted project secret for future sessions.
+            Sign in with your ChatGPT subscription. We save the login as an encrypted
+            project secret so future sessions reuse it.
           </p>
         </div>
       </div>
-      {(authInstructions || authUrl) && (
+
+      {waiting && (
         <div className="mt-3 rounded-2xl border border-border/50 bg-background/70 p-3">
-          <div className="text-xs font-medium text-foreground">Complete authorization</div>
-          {authUrl && (
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="mt-2 h-8 gap-1.5 px-3"
-              onClick={() => window.open(authUrl, '_blank', 'noopener,noreferrer')}
-            >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Open auth page
-            </Button>
-          )}
-          {deviceCode ? (
-            <div className="mt-3">
-              <div className="text-xs text-muted-foreground">Enter this code on the auth page:</div>
-              <div className="mt-1 w-fit rounded-2xl border border-border/60 bg-muted px-3 py-2 font-mono text-lg font-semibold tracking-normal text-foreground">
-                {deviceCode}
+          {challenge ? (
+            <>
+              <div className="text-xs font-medium text-foreground">
+                Authorize in the browser
               </div>
-            </div>
-          ) : authInstructions ? (
-            <pre className="mt-3 whitespace-pre-wrap rounded-2xl border border-border/60 bg-muted p-3 text-xs text-muted-foreground">
-              {authInstructions}
-            </pre>
-          ) : null}
-          {busy && (
-            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Connecting
-            </div>
+              {challenge.url && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="mt-2 h-8 gap-1.5 px-3"
+                  onClick={() => window.open(challenge.url, '_blank', 'noopener,noreferrer')}
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open auth page
+                </Button>
+              )}
+              {challenge.code ? (
+                <div className="mt-3">
+                  <div className="text-xs text-muted-foreground">Enter this code on the auth page:</div>
+                  <div className="mt-1 w-fit rounded-2xl border border-border/60 bg-muted px-3 py-2 font-mono text-lg font-semibold tracking-normal text-foreground">
+                    {challenge.code}
+                  </div>
+                </div>
+              ) : challenge.instructions ? (
+                <pre className="mt-3 whitespace-pre-wrap rounded-2xl border border-border/60 bg-muted p-3 text-xs text-muted-foreground">
+                  {challenge.instructions}
+                </pre>
+              ) : null}
+            </>
+          ) : (
+            <div className="text-xs font-medium text-foreground">Starting authorization…</div>
           )}
+          <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            {challenge
+              ? 'Waiting for you to finish in the browser…'
+              : 'Connecting to OpenAI…'}
+          </div>
         </div>
       )}
+
+      {phase === 'done' && (
+        <div className="mt-3 flex items-start gap-2 rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.06] px-3 py-2.5 text-xs text-foreground/80">
+          ChatGPT subscription connected.
+        </div>
+      )}
+
       {error && (
         <div className="mt-3 flex items-start gap-2 rounded-2xl bg-destructive/5 px-3 py-2 text-xs text-destructive">
           <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
           <span>{error}</span>
         </div>
       )}
+
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className="px-4"
-          onClick={handleStartHeadlessConnect}
-          disabled={busy}
-        >
-          {busy ? (
-            <>
-              {!(authInstructions || authUrl) && (
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              )}
-              Connecting
-            </>
-          ) : (
-            'Connect with headless auth'
-          )}
-        </Button>
-        {authId && (
+        {waiting ? (
           <Button
             type="button"
             size="sm"
+            variant="outline"
             className="px-4"
-            onClick={handleCompleteHeadlessConnect}
-            disabled={busy}
+            onClick={reset}
           >
-            Complete authorization
+            Cancel
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className="px-4"
+            onClick={handleConnect}
+          >
+            {error || phase === 'done' ? 'Reconnect ChatGPT' : 'Connect ChatGPT'}
           </Button>
         )}
       </div>
