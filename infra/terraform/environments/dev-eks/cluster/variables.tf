@@ -32,17 +32,17 @@ variable "node_instance_types" {
 variable "node_desired_size" {
   description = "Initial node count."
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "node_min_size" {
-  description = "Node autoscaling floor."
+  description = "Node autoscaling floor. 1 for dev (≤100 users) — the cluster-autoscaler bursts up for preview envs and scales back to a single node when idle."
   type        = number
-  default     = 2
+  default     = 1
 }
 
 variable "node_max_size" {
-  description = "Node autoscaling ceiling."
+  description = "Node autoscaling ceiling (headroom for concurrent preview envs)."
   type        = number
   default     = 4
 }

@@ -16,12 +16,21 @@ env:
 # data plane). At cutover, flip this to true here AND disable the ECS dev service.
 workers:
   enabled: false
-# Dev sizing (smaller than prod's 3-replica / 3→12 HPA).
-replicas: 2
+# Dev sizing (≤100 users): 1 replica floor, burst to 2. Far below prod's 3→12.
+replicas: 1
 autoscaling:
   enabled: true
-  minReplicas: 2
-  maxReplicas: 4
+  minReplicas: 1
+  maxReplicas: 2
+# Smaller pod envelope than prod (500m/1Gi) — light dev load packs onto fewer
+# nodes. ephemeral-storage (2Gi/8Gi) is inherited from the chart base.
+resources:
+  requests:
+    cpu: "250m"
+    memory: "512Mi"
+  limits:
+    cpu: "1"
+    memory: "512Mi"
 serviceAccount:
   name: kortix-api
   # IRSA role from the dev-eks cluster layer (module.app_irsa, name
