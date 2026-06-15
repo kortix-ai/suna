@@ -85,8 +85,20 @@ function DevSteps({
 }: {
   project: Awaited<ReturnType<typeof getProject>>;
 }) {
-  const cloneUrl = cloneUrlFor(project.repo_url);
-  const repoDir = repoDirFor(project.repo_url) || 'my-project';
+  // Managed projects are served through the Kortix git proxy — clone the PROXY
+  // URL with a Kortix token (the real upstream, e.g. code.storage, isn't
+  // directly reachable by users). BYO GitHub projects clone their own URL.
+  const proxyOrigin =
+    project.git_origin_url && /\/v1\/git\//.test(project.git_origin_url)
+      ? project.git_origin_url
+      : null;
+  const repoDir =
+    (proxyOrigin
+      ? project.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-+|-+$)/g, '')
+      : repoDirFor(project.repo_url)) || 'my-project';
+  const cloneUrl = proxyOrigin
+    ? proxyOrigin.replace('://', '://x-access-token:<KORTIX_TOKEN>@')
+    : cloneUrlFor(project.repo_url);
   const managed = isManagedGithubProject(project);
   const branch = project.default_branch || 'main';
 
@@ -112,14 +124,31 @@ function DevSteps({
         n={next()}
         title="Clone the repo"
         hint={
-          managed
-            ? 'Once your invite is accepted, clone it like any other repo.'
-            : 'You need read access to the repo to clone it.'
+          proxyOrigin
+            ? 'Clone through the Kortix git proxy with an access token — no host account or collaborator invite needed.'
+            : managed
+              ? 'Once your invite is accepted, clone it like any other repo.'
+              : 'You need read access to the repo to clone it.'
         }
       >
-        <CommandBlock
-          lines={[`git clone ${cloneUrl}`, `cd ${repoDir}`]}
-        />
+        <CommandBlock lines={[`git clone ${cloneUrl} ${repoDir}`, `cd ${repoDir}`]} />
+        {proxyOrigin && (
+          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+            Replace{' '}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.7rem] text-foreground">
+              &lt;KORTIX_TOKEN&gt;
+            </code>{' '}
+            with a Kortix access token — run{' '}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.7rem] text-foreground">
+              kortix login
+            </code>{' '}
+            (below) or create one in Settings. It stays in your local{' '}
+            <code className="rounded bg-muted px-1 py-0.5 font-mono text-[0.7rem] text-foreground">
+              origin
+            </code>
+            , so pushes and change requests work too.
+          </p>
+        )}
       </Step>
 
       <Step

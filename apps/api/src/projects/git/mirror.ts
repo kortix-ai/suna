@@ -12,6 +12,7 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { validateRef } from '../git-ref';
+import { isCodeStorageHost } from '../git-backends/code-storage';
 import type { GitBackedProject } from './types';
 
 export const execFileAsync = promisify(execFile);
@@ -64,6 +65,27 @@ function gitAuthEnv(token?: string | null, authHost = 'github.com'): Record<stri
   };
 }
 
+/**
+ * code.storage rejects `http.extraheader` Basic auth (its `401 Basic realm`
+ * challenge isn't satisfied by a static header — git then stalls/prompts), so
+ * its `git` transport needs creds embedded in the URL (username `t`, password =
+ * JWT). Returns a creds-in-URL for code.storage hosts; `null` otherwise (those
+ * authenticate via the `gitAuthEnv` extraheader). The token is short-lived, so
+ * callers build this per fetch (never persist it in the repo's `origin`).
+ */
+function codeStorageCloneUrl(repoUrl: string, token?: string | null): string | null {
+  if (!token) return null;
+  try {
+    const u = new URL(repoUrl);
+    if (!isCodeStorageHost(u.host)) return null;
+    u.username = 't';
+    u.password = token;
+    return u.toString();
+  } catch {
+    return null;
+  }
+}
+
 export async function runGit(
   args: string[],
   cwd?: string,
@@ -76,7 +98,11 @@ export async function runGit(
   try {
     const result = await execFileAsync('git', args, {
       cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...authEnv, ...(extraEnv || {}) },
+      // Server-side git must NEVER prompt. GIT_TERMINAL_PROMPT=0 alone isn't
+      // enough when the parent process injects GIT_ASKPASS (e.g. VS Code/Cursor's
+      // git integration) — git would pop the editor's credential dialog. Force
+      // both off so an auth failure fails fast instead of hanging on a prompt.
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', SSH_ASKPASS: '', ...authEnv, ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
       timeout: 30_000,
     });
@@ -108,7 +134,7 @@ export async function runGitCapture(
   try {
     const result = await execFileAsync('git', args, {
       cwd,
-      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitAuthEnv(authToken, authHost), ...(extraEnv || {}) },
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ASKPASS: '', SSH_ASKPASS: '', ...gitAuthEnv(authToken, authHost), ...(extraEnv || {}) },
       maxBuffer: 10 * 1024 * 1024,
       timeout: 30_000,
     });
@@ -137,6 +163,7 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
   if (existsSync(join(repoPath, 'shallow'))) {
     await rm(repoPath, { recursive: true, force: true });
   }
+  const csCloneUrl = codeStorageCloneUrl(project.repoUrl, project.gitAuthToken);
   if (!existsSync(repoPath)) {
     // Bare clone with ALL branches — required for the version/checkpoint
     // viewer. Older callers cloned --single-branch; we self-heal those on
@@ -144,9 +171,11 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
     await runGit([
       'clone',
       '--bare',
-      project.repoUrl,
+      csCloneUrl ?? project.repoUrl,
       repoPath,
-    ], undefined, true, project.gitAuthToken, undefined, hostFromRepoUrl(project.repoUrl));
+    ], undefined, !csCloneUrl, project.gitAuthToken, undefined, hostFromRepoUrl(project.repoUrl));
+    // Don't persist the short-lived code.storage JWT in the bare repo's origin.
+    if (csCloneUrl) await runGit(['remote', 'set-url', 'origin', project.repoUrl], repoPath, false);
     lastRefreshAt.set(project.projectId, Date.now());
     return repoPath;
   }
@@ -157,7 +186,13 @@ async function doRefreshMirror(project: GitBackedProject, force = false) {
   await runGit(['remote', 'set-url', 'origin', project.repoUrl], repoPath);
   // Heal any legacy single-branch clones by widening the refspec.
   await runGit(['config', 'remote.origin.fetch', '+refs/heads/*:refs/heads/*'], repoPath, false);
-  await runGit(['fetch', '--prune', 'origin'], repoPath, true, project.gitAuthToken, undefined, hostFromRepoUrl(project.repoUrl));
+  if (csCloneUrl) {
+    // code.storage: fetch by creds-in-URL (origin stays token-free); refspec
+    // must be explicit since we're not fetching the named remote.
+    await runGit(['fetch', '--prune', csCloneUrl, '+refs/heads/*:refs/heads/*'], repoPath, false);
+  } else {
+    await runGit(['fetch', '--prune', 'origin'], repoPath, true, project.gitAuthToken, undefined, hostFromRepoUrl(project.repoUrl));
+  }
   lastRefreshAt.set(project.projectId, Date.now());
   return repoPath;
 }
