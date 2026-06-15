@@ -74,22 +74,32 @@ flow("INIT-2", { domain: "cli", routes: [] }, async (ctx) => {
 
 flow("INIT-3", { domain: "cli", routes: [] }, async (ctx) => {
   await ctx.step(
-    "kortix init --primary opencode --agents claude,cursor -y → primary + extra agent wiring",
+    "kortix init --primary opencode --agents claude,cursor -y → chosen agents wired via symlinks + AGENTS.md",
     async () => {
       const sb = new CliSandbox("init3");
       ctx.track("cli-sandbox", sb.cwd);
       try {
-        const r = await sb.run(["init", "--primary", "opencode", "--agents", "claude,cursor", "-y", "--no-git"]);
+        const r = await sb.run(["init", "wired", "--primary", "opencode", "--agents", "claude,cursor", "-y", "--no-git"]);
         check("exit 0", r.exitCode === 0, 0, r.exitCode);
-        // Primary opencode → .opencode/skills/kortix wrapper; extras → .claude + .cursor.
-        check("opencode skill wired", sb.exists(".opencode/skills/kortix"), true, sb.exists(".opencode/skills/kortix"));
-        check("claude skill wired", sb.exists(".claude/skills/kortix"), true, sb.exists(".claude/skills/kortix"));
+        // Selected agents' native dirs are symlinks onto the OpenCode config dir;
+        // existsSync follows the link, so a resolving path proves it works.
         check(
-          "cursor rule wired",
-          sb.exists(".cursor/rules/kortix.mdc"),
+          ".opencode → .kortix/opencode resolves",
+          sb.exists("wired/.opencode/opencode.jsonc"),
           true,
-          sb.exists(".cursor/rules/kortix.mdc"),
+          sb.exists("wired/.opencode/opencode.jsonc"),
         );
+        check(
+          ".claude → .kortix/opencode resolves to shared skills",
+          sb.exists("wired/.claude/skills/kortix-system/SKILL.md"),
+          true,
+          sb.exists("wired/.claude/skills/kortix-system/SKILL.md"),
+        );
+        // cursor was selected → AGENTS.md pointer (read natively); no .cursor rule file.
+        check("AGENTS.md pointer written", sb.exists("wired/AGENTS.md"), true, sb.exists("wired/AGENTS.md"));
+        check("no .cursor rule dir", sb.exists("wired/.cursor"), false, sb.exists("wired/.cursor"));
+        // codex was NOT selected → no .agents link (codex wires .agents, not .codex).
+        check("unselected codex not wired", sb.exists("wired/.agents"), false, sb.exists("wired/.agents"));
       } finally {
         sb.dispose();
       }
