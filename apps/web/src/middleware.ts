@@ -48,6 +48,10 @@ const PUBLIC_ROUTES = [
   '/enterprise', // Enterprise page should be public
   '/pricing', // Pricing page should be public
   '/use-cases', // Use cases page should be public
+  '/solutions', // Solutions / persona landing pages should be public
+  '/compare', // Competitor comparison pages should be public
+  '/integrations', // Integrations directory + per-tool pages should be public
+  '/security', // Security & trust page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),

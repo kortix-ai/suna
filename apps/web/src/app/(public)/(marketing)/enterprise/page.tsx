@@ -241,6 +241,9 @@ const EnterprisePage = () => {
               <p className="text-muted-foreground mt-4 text-base leading-relaxed">
                 {t('securityDescription')}
               </p>
+              <Button variant="secondary" size="lg" className="mt-6" asChild>
+                <Link href="/security">Read the security overview</Link>
+              </Button>
             </div>
           </Reveal>
           <Reveal delay={0.1}>
@@ -323,6 +326,80 @@ const EnterprisePage = () => {
                 </div>
               ))}
             </div>
+          </Reveal>
+        </section>
+
+        {/* Own it — deploy anywhere */}
+        <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 xl:px-0">
+          <Reveal>
+            <div className="max-w-2xl">
+              <div className="text-muted-foreground flex items-center gap-2 font-mono text-xs tracking-wider uppercase">
+                <GitBranch className="size-4" /> Own the whole stack
+              </div>
+              <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+                Open-source. Deploy it anywhere.
+              </h2>
+              <p className="text-muted-foreground mt-4 text-base leading-relaxed">
+                Kortix is open source and yours to run. Self-host in one command on infrastructure
+                you control — managed cloud, your own VPC, on-prem, even fully air-gapped. Your data,
+                agents, skills and models never leave your boundary, and nothing phones home.
+              </p>
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.05}>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                { icon: Server, label: 'Managed cloud', sub: 'Fastest path — we run it' },
+                { icon: Building2, label: 'Your VPC', sub: 'Your account, your network' },
+                { icon: Box, label: 'On-prem', sub: 'Inside your data center' },
+                { icon: MdShield, label: 'Air-gapped', sub: 'Nothing leaves the room' },
+              ].map((d) => (
+                <div key={d.label} className="border-border bg-card rounded-sm border p-5">
+                  <d.icon className="text-foreground size-5" />
+                  <div className="text-foreground mt-4 text-sm font-medium">{d.label}</div>
+                  <div className="text-muted-foreground mt-1 text-xs leading-relaxed">{d.sub}</div>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.1}>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              {[
+                {
+                  icon: KeyRound,
+                  title: 'Credentials never reach the model',
+                  body: 'A backend gateway injects secrets at execution time. Agents hold one scoped token; the model never sees a key.',
+                },
+                {
+                  icon: MdShield,
+                  title: 'Sensitive actions wait for approval',
+                  body: 'Money movements, code pushes, customer emails — gated by an explicit approve/reject, with a full audit trail.',
+                },
+                {
+                  icon: GitBranch,
+                  title: 'Your data never trains a model',
+                  body: 'Not by us, not by your providers. Bring your own models and keys; everything runs in isolated, branchable sandboxes.',
+                },
+              ].map((s) => (
+                <div key={s.title} className="border-border bg-card flex h-full flex-col rounded-sm border p-6">
+                  <span className="border-border bg-background text-foreground flex size-10 items-center justify-center rounded-lg border">
+                    <s.icon className="size-5" />
+                  </span>
+                  <h3 className="text-foreground mt-4 text-base font-medium tracking-tight">
+                    {s.title}
+                  </h3>
+                  <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{s.body}</p>
+                </div>
+              ))}
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.12}>
+            <Button variant="secondary" size="lg" className="w-fit" asChild>
+              <Link href="/security">Read the security overview</Link>
+            </Button>
           </Reveal>
         </section>
 
