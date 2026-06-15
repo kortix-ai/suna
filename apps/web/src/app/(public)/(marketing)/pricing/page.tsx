@@ -339,7 +339,7 @@ export default function PricingPage() {
           <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
             <div className="col-span-4 flex flex-col items-start justify-start p-6 *:text-left">
               <div className="space-y-2">
-                <Badge variant="update" className="rounded">
+                <Badge variant="kortix" className="rounded">
                   Start building
                 </Badge>
                 <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">

@@ -1,110 +1,106 @@
 'use client';
 
-import { DraggableCliPanel } from '@/components/home/interactive-demo/cli/draggable-cli-panel';
 import { PageHead, Panel } from '@/components/home/interactive-demo/primitives';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { Cloud, Github, Server, Shield } from 'lucide-react';
-import { motion } from 'motion/react';
-import { StepCliTerminal } from '../step-cli-terminal';
-import { useStep6Director, type Step6Host } from '../step-director';
-import { useStepShowcaseStart } from '../use-step-showcase';
+import { FileText, FolderGit2, Lightbulb, Repeat, TriangleAlert, Users } from 'lucide-react';
+import { motion, useReducedMotion } from 'motion/react';
+import type { ComponentType } from 'react';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 
-const HOSTS: { id: Step6Host; label: string; desc: string }[] = [
-  { id: 'managed', label: 'Managed cloud', desc: 'kortix.com — fully hosted' },
-  { id: 'my-vpc', label: 'my-vpc', desc: 'Your VPC — same stack, your network' },
-  { id: 'on-prem', label: 'On-prem', desc: 'Bare metal or private datacenter' },
-  { id: 'air-gapped', label: 'Air-gapped', desc: 'No outbound — fully isolated' },
+type Captured = {
+  icon: ComponentType<{ className?: string }>;
+  kind: string;
+  text: string;
+};
+
+const CAPTURED: Captured[] = [
+  {
+    icon: Lightbulb,
+    kind: 'Decision',
+    text: 'Revenue brief ships Mondays 9am to #leadership',
+  },
+  {
+    icon: TriangleAlert,
+    kind: 'Blocker',
+    text: 'HubSpot deal-stage mapping needs finance sign-off',
+  },
+  {
+    icon: Repeat,
+    kind: 'Workflow',
+    text: 'Month-end recon runs the board-update skill',
+  },
 ];
 
-function OwnView({ activeHost, dockerRunning }: { activeHost: Step6Host; dockerRunning: boolean }) {
-  return (
-    <div className="flex h-full flex-col">
-      <PageHead
-        title="Open source"
-        sub="Star it, fork it, run it — the same product everywhere"
-        action={
-          <Badge size="sm" variant="outline" className="gap-1.5 font-mono">
-            <Github className="size-3.5" />
-            19.8k
-          </Badge>
-        }
-      />
-
-      {dockerRunning && (
-        <motion.div
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="border-border/60 bg-muted/20 mb-4 flex items-center gap-2 rounded-md border px-3 py-2.5 text-xs"
-        >
-          <Server className="text-muted-foreground size-3.5 shrink-0" />
-          <span className="text-foreground font-medium">Kortix Cloud</span>
-          <span className="text-muted-foreground">running locally via Docker</span>
-          <Badge size="sm" variant="success" className="ml-auto gap-1">
-            <span className="size-1.5 animate-pulse rounded-full bg-emerald-500" /> up
-          </Badge>
-        </motion.div>
-      )}
-
-      <Panel title="Hosts" count="switch anytime">
-        <div className="divide-border divide-y">
-          {HOSTS.map((host) => {
-            const highlighted = activeHost === host.id;
-            return (
-              <div
-                key={host.id}
-                className={cn(
-                  'flex items-center gap-3 px-4 py-3',
-                  highlighted && 'bg-kortix-green/5',
-                )}
-              >
-                <span
-                  className={cn(
-                    'flex size-8 shrink-0 items-center justify-center rounded-lg border',
-                    highlighted
-                      ? 'border-kortix-green/20 bg-kortix-green/10 text-kortix-green'
-                      : 'border-border bg-background text-muted-foreground',
-                  )}
-                >
-                  {host.id === 'air-gapped' ? (
-                    <Shield className="size-4" />
-                  ) : (
-                    <Cloud className="size-4" />
-                  )}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="text-foreground text-sm font-medium">{host.label}</div>
-                  <div className="text-muted-foreground text-xs">{host.desc}</div>
-                </div>
-                {highlighted && (
-                  <Badge size="sm" variant="success">
-                    active
-                  </Badge>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </Panel>
-    </div>
-  );
-}
+const CARRIES: { icon: ComponentType<{ className?: string }>; label: string }[] = [
+  { icon: Users, label: 'marko · Dom' },
+  { icon: FileText, label: 'Q3 board deck' },
+  { icon: FolderGit2, label: 'acme-ops' },
+];
 
 export function Step6OwnCli() {
-  const director = useStep6Director();
-  const rootRef = useStepShowcaseStart(director.start);
+  const reduced = useReducedMotion();
+  const enter = (i: number) =>
+    reduced
+      ? { initial: false as const }
+      : {
+          initial: { opacity: 0, y: 8 },
+          animate: { opacity: 1, y: 0 },
+          transition: { delay: 0.05 + i * 0.06, duration: 0.32, ease: 'easeOut' as const },
+        };
 
   return (
-    <div ref={rootRef} className="relative aspect-19/22 w-full overflow-visible">
-      <DraggableCliPanel containerRef={rootRef}>
-        {({ dragHandleProps }) => (
-          <StepCliTerminal director={director} dragHandleProps={dragHandleProps} />
-        )}
-      </DraggableCliPanel>
+    <div className="relative aspect-19/22 w-full overflow-visible">
+      <WebPanelWrapper activeTab="memory">
+        <div className="flex h-full flex-col">
+          <PageHead
+            title="Memory"
+            sub="Context Kortix learned from your tools, files, and past sessions"
+          />
 
-      <WebPanelWrapper activeTab="projects">
-        <OwnView activeHost={director.activeHost} dockerRunning={director.dockerRunning} />
+          <Panel title="Captured this week" count="from real work">
+            <div className="divide-border divide-y">
+              {CAPTURED.map((item, i) => (
+                <motion.div
+                  key={item.text}
+                  {...enter(i)}
+                  className="flex items-start gap-3 px-4 py-3"
+                >
+                  <span className="border-border bg-background text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-lg border">
+                    <item.icon className="size-3.5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
+                      {item.kind}
+                    </div>
+                    <div className="text-foreground mt-0.5 text-sm leading-snug">{item.text}</div>
+                  </div>
+                </motion.div>
+              ))}
+            </div>
+          </Panel>
+
+          <motion.div {...enter(CAPTURED.length)} className="mt-4">
+            <div className="text-muted-foreground mb-2 text-xs font-medium">Carries forward</div>
+            <div className="flex flex-wrap gap-1.5">
+              {CARRIES.map((chip) => (
+                <Badge key={chip.label} size="sm" variant="outline" className="gap-1.5">
+                  <chip.icon className="size-3.5" />
+                  {chip.label}
+                </Badge>
+              ))}
+            </div>
+          </motion.div>
+
+          <motion.p
+            {...enter(CAPTURED.length + 1)}
+            className={cn(
+              'border-border/60 bg-muted/20 text-muted-foreground mt-4 rounded-md border px-3 py-2.5 text-xs leading-relaxed',
+            )}
+          >
+            Reused across sessions — every coworker starts from what the team already knows.
+          </motion.p>
+        </div>
       </WebPanelWrapper>
     </div>
   );
