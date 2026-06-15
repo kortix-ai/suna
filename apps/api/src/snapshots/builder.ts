@@ -228,20 +228,20 @@ async function runInlineBuild(
         diskGb: template.diskGb,
       },
       slug: template.slug,
-      // The shared platform default is ONE stateful template: the provider
-      // warm-boots it (kortix agent up on :8000/kortix/health) and snapshots the
-      // RUNNING VM, so every session is a sub-second CoW fork. Per-project
-      // templates stay cold (capture=none) — warm seeds are opt-in only.
+      // ONE stateful template, captured WARM (no warm pool, no per-gen snapshots).
+      // KORTIX_WARM_POOL=1 boots the daemon's runPoolMode: scaffold-warm opencode
+      // (project-init to completion) + pin a root session; the capture gates on
+      // the PIN FILE (/var/run/kortix/opencode-session-id) so the snapshot freezes
+      // a genuinely-warm opencode — forks resume runtime-ready (~2s) instead of
+      // the ~6s cold opencode-init wall a bare HTTP gate left. Predecessor pruned
+      // below ⇒ exactly one stateful-<id> snapshot, restore_clone-forked on demand.
       isShared: !!template.isShared,
       capture: template.isShared ? 'stateful' : 'none',
       captureCondition: template.isShared
-        ? { http: { port: 8000, path: '/kortix/health', timeoutSec: 180 } }
+        ? { cmd: 'test -f /var/run/kortix/opencode-session-id', timeoutSec: 300 }
         : undefined,
-      // Boot env the kortix agent needs to reach :8000/kortix/health during the
-      // warm capture (matches the proven Platinum seed-baker config). Without it
-      // the capture aborts and the default silently falls back to cold spawn.
       captureEnv: template.isShared
-        ? { KORTIX_ENABLE_INNER_DOCKER: '0', PUID: '911', PGID: '911', TZ: 'UTC' }
+        ? { KORTIX_WARM_POOL: '1', KORTIX_ENABLE_INNER_DOCKER: '0', PUID: '911', PGID: '911', TZ: 'UTC' }
         : undefined,
     });
     if (buildId) await closeBuildLogReady(buildId);
