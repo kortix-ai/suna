@@ -703,7 +703,23 @@ jobs:
           echo "Rolling $SERVICE onto v$VERSION…"
           aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
             --task-definition "$NEW_TD" --force-new-deployment >/dev/null
-          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          # `wait services-stable` returns success even when the deployment
+          # circuit breaker ROLLED BACK to the old task def (the service is
+          # "stable" again — on the old revision). So don't trust it: after it
+          # settles, assert the PRIMARY deployment is actually OUR $NEW_TD and
+          # COMPLETED. Otherwise the roll failed and we must go red.
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE" || true
+          PRIMARY_TD="$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].deployments[?status==`PRIMARY`]|[0].taskDefinition' --output text)"
+          ROLLOUT="$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].deployments[?status==`PRIMARY`]|[0].rolloutState' --output text)"
+          if [ "$PRIMARY_TD" != "$NEW_TD" ] || [ "$ROLLOUT" != "COMPLETED" ]; then
+            echo "::error::ECS fallback roll did NOT land — primary=$PRIMARY_TD rollout=$ROLLOUT, expected $NEW_TD/COMPLETED (circuit breaker likely rolled back). Recent events:"
+            aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+              --query 'services[0].events[0:6].message' --output text || true
+            exit 1
+          fi
+          echo "✓ ECS fallback on $NEW_TD (COMPLETED)"
           aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
             --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
             --output table

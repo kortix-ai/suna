@@ -160,7 +160,6 @@ export {
   executorProjectPoliciesRelations,
   executorProjectSettingsRelations,
   projectSecretGrantsRelations,
-  oauthProviderFlows,
 } from './schema/kortix';
 
 export type {
