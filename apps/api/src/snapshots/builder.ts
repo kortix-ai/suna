@@ -215,6 +215,7 @@ async function runInlineBuild(
       })
     : null;
 
+  const prevSnapshot = template.providerSnapshotName;
   try {
     await provider.buildSnapshot({
       snapshotName: identity.snapshotName,
@@ -227,6 +228,21 @@ async function runInlineBuild(
         diskGb: template.diskGb,
       },
       slug: template.slug,
+      // The shared platform default is ONE stateful template: the provider
+      // warm-boots it (kortix agent up on :8000/kortix/health) and snapshots the
+      // RUNNING VM, so every session is a sub-second CoW fork. Per-project
+      // templates stay cold (capture=none) — warm seeds are opt-in only.
+      isShared: !!template.isShared,
+      capture: template.isShared ? 'stateful' : 'none',
+      captureCondition: template.isShared
+        ? { http: { port: 8000, path: '/kortix/health', timeoutSec: 180 } }
+        : undefined,
+      // Boot env the kortix agent needs to reach :8000/kortix/health during the
+      // warm capture (matches the proven Platinum seed-baker config). Without it
+      // the capture aborts and the default silently falls back to cold spawn.
+      captureEnv: template.isShared
+        ? { KORTIX_ENABLE_INNER_DOCKER: '0', PUID: '911', PGID: '911', TZ: 'UTC' }
+        : undefined,
     });
     if (buildId) await closeBuildLogReady(buildId);
     await recordTemplateBuilt(template.templateId, {
@@ -235,6 +251,15 @@ async function runInlineBuild(
       builtFromCommit: identity.builtFromCommit,
       provider: opts.buildProvider,
     });
+    // One-template invariant: a successful rebuild supersedes the previous
+    // snapshot. Delete it so old runtime fingerprints don't accumulate — this
+    // was leaking a full ~8 GB rootfs template per agent-source change (7 stale
+    // copies = 56 GB observed before this fix).
+    if (prevSnapshot && prevSnapshot !== identity.snapshotName) {
+      await provider
+        .deleteSnapshot(prevSnapshot)
+        .catch((e) => console.warn(`[snapshots] prune predecessor ${prevSnapshot} failed: ${e?.message ?? e}`));
+    }
     return {
       snapshotName: identity.snapshotName,
       slug: template.slug,
