@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { getTraceHeaders } from '../../lib/request-context';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
-import { canAccessPreviewSandbox } from '../../shared/preview-ownership';
+import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
   invalidatePreviewLink,
@@ -263,6 +263,21 @@ export async function forwardToSandbox(
     throw new HTTPException(403, {
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
     });
+  }
+  // The daemon port serves the session's OpenCode conversation + owner-synced
+  // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
+  // REST side), not just account membership — closes the window where a member
+  // whose access was revoked/downgraded replays captured ids on the data path.
+  if (
+    port === 8000 &&
+    !(await canAccessSandboxSession({
+      sessionId: record.sessionId,
+      projectId: record.projectId,
+      accountId: record.accountId,
+      userId,
+    }))
+  ) {
+    throw new HTTPException(403, { message: 'Not authorized to access this session' });
   }
   // /kortix/env is a platform-only control endpoint that writes the sandbox's
   // live secret env. The API reaches it server-to-server (postEnvToDaemon),
@@ -535,6 +550,19 @@ export async function resolvePreviewWsUpstream(opts: {
   if (!record) return { ok: false, status: 404, message: 'sandbox not found' };
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
+  }
+  // Daemon port (8000) carries session conversation data — gate on session
+  // visibility, not just account membership (see forwardToSandbox).
+  if (
+    upstreamPort === 8000 &&
+    !(await canAccessSandboxSession({
+      sessionId: record.sessionId,
+      projectId: record.projectId,
+      accountId: record.accountId,
+      userId,
+    }))
+  ) {
+    return { ok: false, status: 403, message: 'not authorized for this session' };
   }
   if (record.status !== 'active') {
     return { ok: false, status: 503, message: 'sandbox not ready' };

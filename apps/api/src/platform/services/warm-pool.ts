@@ -278,7 +278,6 @@ async function spawnWarmSandbox(project: {
     agentName: 'default',
     initialPrompt: null,
   });
-  const { readProjectWarmPointer } = await import('../../snapshots/warm-project');
   await provisionSessionSandbox({
     sandboxId: W,
     accountId: project.accountId,
@@ -286,18 +285,18 @@ async function spawnWarmSandbox(project: {
     userId: ownerUserId,
     provider,
     extraEnvVars,
-    // Pool boxes ride the per-project warm snapshot too — the pool refills in
-    // seconds instead of paying the full clone+opencode boot. (Warm snapshots
-    // carry the platform-default runtime, so custom-template boxes skip them
-    // and boot their own template image via the normal path.)
-    projectWarmSnapshot:
-      poolSlug === 'default' && !config.KORTIX_WARM_POOL_FULL_SIZE
-        ? (readProjectWarmPointer(project.metadata)?.name ?? null)
-        : null,
     sandboxSlug: poolSlug === 'default' ? undefined : poolSlug,
-    // Full-size opt-out: warm boxes are Daytona-capped at 1 vCPU / 1 GiB; this
-    // boots pool boxes from the 2/4/20 Dockerfile image instead (slower refill).
-    disableWarmSnapshot: config.KORTIX_WARM_POOL_FULL_SIZE,
+    // A pool box's whole value is opencode ALREADY RUNNING when claimed. It
+    // gets that by booting normally (clone → daemon → opencode) and parking.
+    // The experimental warm SNAPSHOT can't help here: it kills opencode before
+    // snapshotting (warm-project.ts) so a restored box re-starts opencode
+    // anyway, AND it lives on the flaky experimental region — so routing pool
+    // fills through it only adds failed attempts before falling back. Boot pool
+    // boxes COLD on the reliable default region: same time-to-parked, no flaky
+    // dependency, so the pool actually stays full (which is what makes claims
+    // ~2s). (Revisit if/when a memory-preserving restore that keeps opencode
+    // running lands on a stable region — then pool refills could skip the boot.)
+    disableWarmSnapshot: true,
     poolState: 'booting',
     metadata: {
       warmPool: {
