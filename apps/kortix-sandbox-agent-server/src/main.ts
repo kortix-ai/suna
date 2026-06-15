@@ -230,7 +230,7 @@ async function startSessionRuntime(
       return
     }
   }
-  const ready = await waitForOpencodeReady(opencode, cfg.projectTarget)
+  const ready = await waitForOpencodeReady(opencode, cfg.projectTarget, () => bootMark('opencode-listening'))
   if (ready) {
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
