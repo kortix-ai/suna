@@ -335,9 +335,25 @@ jobs:
           # tag-api job just pushed it), so force-new-deployment re-pulls that tag
           # and rolls the standby — same tracking model as the EKS primary.
           echo "Rolling ECS fallback $SERVICE onto :dev-latest…"
-          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
-            --force-new-deployment >/dev/null
-          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
+          DEP_ID="$(aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
+            --force-new-deployment \
+            --query 'service.deployments[?status==`PRIMARY`]|[0].id' --output text)"
+          # `wait services-stable` returns success even if the deployment circuit
+          # breaker rolled OUR deployment back (the service is "stable" again on
+          # the prior task set). So verify the deployment WE triggered actually
+          # completed and is still PRIMARY — else it was rolled back → go red.
+          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE" || true
+          STATE="$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query "services[0].deployments[?id=='$DEP_ID']|[0].rolloutState" --output text)"
+          PRIMARY_ID="$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+            --query 'services[0].deployments[?status==`PRIMARY`]|[0].id' --output text)"
+          if [ "$STATE" = "FAILED" ] || { [ "$STATE" != "COMPLETED" ] && [ "$PRIMARY_ID" != "$DEP_ID" ]; }; then
+            echo "::error::dev ECS fallback roll failed/rolled back (deployment $DEP_ID state=$STATE, primary=$PRIMARY_ID). Recent events:"
+            aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
+              --query 'services[0].events[0:6].message' --output text || true
+            exit 1
+          fi
+          echo "✓ ECS fallback rolled (deployment $DEP_ID COMPLETED)"
           aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
             --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
             --output table

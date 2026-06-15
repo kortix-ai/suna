@@ -171,7 +171,14 @@ export function buildGitHubAppInstallUrl(accountId?: string | null, nonce?: stri
 }
 
 function normalizeGitHubPrivateKey(value: string) {
-  return value.trim().replace(/\\n/g, '\n');
+  // Strip surrounding quotes (a secret stored as "...PEM..." double-encodes the
+  // quotes into the value) and \n-escapes, so a quoted secret can never produce
+  // OpenSSL NO_START_LINE. Then normalize escaped newlines to real ones.
+  return value
+    .trim()
+    .replace(/^\s*(['"])([\s\S]*)\1\s*$/, '$2')
+    .trim()
+    .replace(/\\n/g, '\n');
 }
 
 function base64UrlJson(value: unknown) {
