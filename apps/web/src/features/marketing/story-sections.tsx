@@ -516,12 +516,12 @@ export function SurfacesSection() {
         <div className="grid aspect-video h-full grid-cols-1 gap-4 md:grid-cols-12">
           {surfaceCards.map((card, index) =>
             card.key === 'slack' ? (
-              <div className="lg:col-span-8">
-                <SlackSurfaceCard key={card.key} card={card} index={index} />
+              <div key={card.key} className="lg:col-span-8">
+                <SlackSurfaceCard card={card} index={index} />
               </div>
             ) : (
-              <div className="lg:col-span-4 hidden lg:block">
-                <TeamsSurfaceCard key={card.key} card={card} index={index} />
+              <div key={card.key} className="hidden lg:col-span-4 lg:block">
+                <TeamsSurfaceCard card={card} index={index} />
               </div>
             ),
           )}
