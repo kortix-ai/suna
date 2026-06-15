@@ -10,6 +10,14 @@ image:
 kortixVersion: ""
 env:
   internalKortixEnv: dev
+# Pool-only mode: disable the experimental Daytona memory-snapshot path on dev.
+# It depends on the flaky experimental region and doesn't beat the warm pool
+# (which runs on the reliable region). Rendered as explicit container env, so it
+# OVERRIDES whatever the synced kortix-dev-env secret bundle carries (k8s env
+# wins over envFrom). Flip back to "true" only once Daytona stabilizes the
+# experimental region.
+extraEnv:
+  KORTIX_WARM_SNAPSHOT_ENABLED: "false"
 # PRE-CUTOVER: dev-api-eks is the candidate while dev-api.kortix.com is still
 # served by ECS, so EKS runs API-only and ECS keeps ownership of the dev-tier
 # singleton workers (one Postgres leader lease is shared across both on the dev
