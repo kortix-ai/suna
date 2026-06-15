@@ -1,5 +1,5 @@
-// Polyfill for Promise.withResolvers (Node.js 21+ feature)
-// This is needed for react-pdf compatibility with Node.js 20
+// Polyfill for Promise.withResolvers (Node.js 21+ / older browsers)
+// Required by pdfjs-dist 4.x (used by the PDF renderer) on Node 20 / Safari < 17.4
 if (!Promise.withResolvers) {
   Promise.withResolvers = function <T>(): {
     promise: Promise<T>;

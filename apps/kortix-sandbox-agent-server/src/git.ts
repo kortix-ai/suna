@@ -43,6 +43,42 @@ function execGit(
   })
 }
 
+/**
+ * Run a git command for the file API (list `ignored`, status). Like execGit but
+ * exported, with optional stdin (for `git check-ignore --stdin`) and a sane
+ * default timeout. Never throws on non-zero exit — returns the result so callers
+ * can treat "not a git repo" / no-match as empty rather than an error.
+ */
+export function runGit(
+  args: string[],
+  opts: { cwd?: string; input?: string; timeoutMs?: number } = {},
+): Promise<ExecResult> {
+  const timeoutMs = opts.timeoutMs ?? 10_000
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', args, {
+      cwd: opts.cwd,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      stdio: [opts.input !== undefined ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    let timer: ReturnType<typeof setTimeout> | undefined
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        stderr += `\n[runGit] killed: exceeded ${timeoutMs}ms`
+        child.kill('SIGKILL')
+      }, timeoutMs)
+    }
+    child.stdout?.on('data', (d) => (stdout += d.toString()))
+    child.stderr?.on('data', (d) => (stderr += d.toString()))
+    child.on('error', (e) => { if (timer) clearTimeout(timer); reject(e) })
+    child.on('close', (code) => { if (timer) clearTimeout(timer); resolve({ code: code ?? 0, stdout, stderr }) })
+    if (opts.input !== undefined) {
+      child.stdin?.end(opts.input)
+    }
+  })
+}
+
 export function buildGitIdentityEnv(cfg: GitIdentityConfig): NodeJS.ProcessEnv {
   return {
     GIT_AUTHOR_NAME: cfg.gitUserName,

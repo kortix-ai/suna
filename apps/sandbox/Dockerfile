@@ -3,6 +3,8 @@
 # Kortix sandbox image — the base Daytona snapshot for every project
 # session. Bakes:
 #   - git + ca-certificates + curl  (project repo materialization)
+#   - ripgrep                       (daemon /find text search; Node fallback
+#                                    covers images built before this was added)
 #   - opencode CLI                  (the supervised child process)
 #   - kortix-agent                  (compiled daemon from
 #                                    apps/kortix-sandbox-agent-server)
@@ -87,6 +89,7 @@ RUN apt-get update \
         git \
         nodejs \
         npm \
+        ripgrep \
         unzip \
     && rm -rf /var/lib/apt/lists/*
 
