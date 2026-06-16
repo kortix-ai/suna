@@ -30,6 +30,17 @@
 const DEFAULT_AGENT_BROWSER_VERSION = '0.27.0';
 
 /**
+ * Chromium source for `agent-browser`. agent-browser's own `install` fetches
+ * Chrome for Testing, which has NO linux-arm64 build — so we source Chromium
+ * from Playwright instead: it ships both linux-x64 AND linux-arm64, and
+ * `--with-deps` installs the OS libraries Chromium needs. Keep in sync with the
+ * pin in apps/sandbox/Dockerfile + apps/api/src/snapshots/warm-bake.ts, and bump
+ * RUNTIME_LAYER_VERSION in templates.ts when this changes so cached images
+ * rebuild (the rendered Dockerfile text is not itself part of the fingerprint).
+ */
+const PLAYWRIGHT_VERSION = '1.60.0';
+
+/**
  * Hardcoded "platform default" Dockerfile. Used when a session boots from
  * Kortix's default template — no user customization, just Ubuntu plus the
  * Kortix runtime layer on top. The workspace gets cloned at boot.
@@ -235,9 +246,41 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
           '',
         ]
       : []),
+    // agent-browser (Vercel) — the browser-automation CLI the agent-browser
+    // skill drives. It must work OUT OF THE BOX with zero runtime download, so we
+    // bake a real Chromium into the image and wire agent-browser to it TWO
+    // independent ways:
+    //   1. AGENT_BROWSER_EXECUTABLE_PATH → a stable /usr/local/bin/chromium
+    //      symlink (the documented API; verified working on agent-browser 0.27.0).
+    //   2. a symlink into agent-browser's OWN browser cache (chrome-linux64),
+    //      which its auto-detect finds even if the env var is ever ignored again
+    //      — it WAS, historically (vercel-labs/agent-browser#422). Belt + braces.
+    // PLAYWRIGHT_BROWSERS_PATH is set BEFORE the install so Chromium lands in
+    // /opt/pw-browsers (a stable system path the symlinks resolve against). HOME
+    // is pinned to the runtime HOME (/opt/kortix/home, see opencode.ts) so the
+    // cache symlink lands where the agent looks at runtime. The build FAILS LOUDLY
+    // (chromium --version + `agent-browser doctor`) if Chromium didn't wire up —
+    // every sandbox ships a working browser; we never install one on the session
+    // hot path.
+    'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
+    '    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\',
+    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
     `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
-    '    && agent-browser --version',
-    'ENV AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
+    '    && agent-browser --version \\',
+    `    && HOME=/opt/kortix/home npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \\`,
+    '    && rm -rf /var/lib/apt/lists/* \\',
+    `    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\`,
+    '    && test -n "$pw_chrome" \\',
+    '    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\',
+    '    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\',
+    '    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\',
+    '    && /usr/local/bin/chromium --version \\',
+    // Assert agent-browser RESOLVES the browser via its env-independent cache —
+    // match the resolved path (deterministic), not the browser NAME (which is
+    // "Chromium" on arm64 but "Google Chrome for Testing" on x64). The doctor
+    // "Launch test" may itself fail under cross-arch QEMU emulation; we read the
+    // detection line, not the launch verdict, so the gate is emulation-safe.
+    "    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
     '',
     `COPY ${agentBinaryPath} /tmp/kortix-agent.gz`,
     `COPY ${cliBinaryPath} /tmp/kortix.gz`,
