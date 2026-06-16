@@ -4,7 +4,6 @@ import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { auth, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
-import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
@@ -12,6 +11,7 @@ import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { resolveProjectGitAuth } from '../lib/git';
 import { ProjectRow, isPlainObject, normalizeString, readBody, serializeSessionSandboxConfig } from '../lib/serializers';
+import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
 
@@ -212,16 +212,15 @@ export async function resumeStoppedSandbox(row: {
   return true;
 }
 
-export async function kickProvisionOnOpen(
-  loaded: { row: { accountId: string; repoUrl: string; defaultBranch: string; manifestPath: string }; userId: string },
-  session: { sandboxProvider: string; baseRef: string | null; agentName: string | null },
+export async function allocateRuntimeOnOpen(
+  loaded: { row: ProjectRow; userId: string },
+  session: { sandboxProvider: string; baseRef: string | null; agentName: string | null; metadata?: Record<string, unknown> | null },
   projectId: string,
   sessionId: string,
 ): Promise<void> {
   const providerName = session.sandboxProvider as SandboxProviderName;
   if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
   if (sandboxCallbackUnreachableReason()) return;
-  const gitAuth = await resolveProjectGitAuth(loaded.row as ProjectRow);
   await db.update(projectSessions)
     .set({ status: 'provisioning', error: null, updatedAt: new Date() })
     .where(eq(projectSessions.sessionId, sessionId));
@@ -229,46 +228,38 @@ export async function kickProvisionOnOpen(
   // the sandbox goes 'active' (so the frontend's ensure-opencode pin survives).
   const legacySandboxId = (loaded.row as { metadata?: { legacy_migration?: { source_sandbox_id?: unknown } } })
     .metadata?.legacy_migration?.source_sandbox_id;
+  const opencodeModel = typeof session.metadata?.opencode_model === 'string'
+    ? session.metadata.opencode_model
+    : null;
+  const runtimeMetadata = { opened_at: new Date().toISOString() };
+  const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
 
-  void (async () => {
-    try {
-      const extraEnvVars = await buildSessionSandboxEnvVars({
-        accountId: loaded.row.accountId,
-        projectId,
-        sessionId,
-        userId: loaded.userId,
-        repoUrl: loaded.row.repoUrl,
-        baseRef: session.baseRef ?? loaded.row.defaultBranch,
-        agentName: session.agentName ?? 'default',
-      });
-      await provisionSessionSandbox({
-        sandboxId: sessionId,
-        accountId: loaded.row.accountId,
-        projectId,
-        userId: loaded.userId,
-        provider: providerName,
-        metadata: { session_id: sessionId, project_id: projectId, opened_at: new Date().toISOString() },
-        extraEnvVars,
-        gitProject: {
-          projectId,
-          repoUrl: loaded.row.repoUrl,
-          defaultBranch: loaded.row.defaultBranch,
-          manifestPath: loaded.row.manifestPath,
-          gitAuthToken: gitAuth.auth?.token ?? null,
-        },
-        baseRef: session.baseRef ?? loaded.row.defaultBranch,
-        beforeActive: typeof legacySandboxId === 'string'
-          ? (externalId) => rehydrateSessionChat({ sessionId, legacySandboxId, newExternalId: externalId })
-          : undefined,
-      });
-    } catch (err) {
-      const message = (err as Error)?.message || 'Sandbox provisioning failed';
-      console.error(`[projects] provision-on-open failed for ${sessionId}:`, err);
-      await db.update(projectSessions)
-        .set({ status: 'failed', error: message, updatedAt: new Date() })
-        .where(eq(projectSessions.sessionId, sessionId)).catch(() => {});
-    }
-  })();
+  allocateSessionRuntime({
+    sessionId,
+    accountId: loaded.row.accountId,
+    projectId,
+    userId: loaded.userId,
+    project: loaded.row,
+    providerName,
+    baseRef: session.baseRef ?? loaded.row.defaultBranch,
+    agentName: session.agentName ?? 'default',
+    runtimeMetadata,
+    sessionMetadata,
+    buildEnvVars: () => buildSessionSandboxEnvVars({
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+      userId: loaded.userId,
+      repoUrl: loaded.row.repoUrl,
+      baseRef: session.baseRef ?? loaded.row.defaultBranch,
+      agentName: session.agentName ?? 'default',
+      opencodeModel,
+    }),
+    resolveGitAuthToken: async () => (await resolveProjectGitAuth(loaded.row)).auth?.token ?? null,
+    beforeActive: typeof legacySandboxId === 'string'
+      ? (externalId) => rehydrateSessionChat({ sessionId, legacySandboxId, newExternalId: externalId })
+      : undefined,
+  });
 }
 
 // ── Unified session-open orchestration ──────────────────────────────────────
@@ -314,8 +305,8 @@ function serializeSandboxRow(row: typeof sessionSandboxes.$inferSelect): Record<
  * one orchestration so the client makes a single call instead of three racing ones.
  */
 export async function openSession(args: {
-  loaded: { row: { accountId: string; repoUrl: string; defaultBranch: string; manifestPath: string; metadata?: unknown }; userId: string };
-  visible: { row: { status: string; sandboxProvider: string; baseRef: string | null; agentName: string | null; opencodeSessionId: string | null; accountId: string } };
+  loaded: { row: ProjectRow; userId: string };
+  visible: { row: { status: string; sandboxProvider: string; baseRef: string | null; agentName: string | null; opencodeSessionId: string | null; accountId: string; metadata?: Record<string, unknown> | null } };
   projectId: string;
   sessionId: string;
 }): Promise<SessionStartResult> {
@@ -352,7 +343,7 @@ export async function openSession(args: {
     }
     if (visible.row.status !== 'provisioning') {
       if (row) await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sessionId)).catch(() => {});
-      await kickProvisionOnOpen(loaded, visible.row, projectId, sessionId);
+      await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
     }
     return { stage: 'provisioning', retriable: true, sandbox: null, opencode_session_id: null };
   }

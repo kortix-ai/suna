@@ -2,16 +2,12 @@ import { checkBillingActive } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { resolveShareSubject } from '../../executor/share';
 import { auth, json } from '../../openapi';
-import { ProvisionTimeline } from '../../platform/services/provision-timeline';
-import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
-import { claimWarmSandbox, refillProjectPool, syncClaimedBoxToBase, warmPoolEnabled } from '../../platform/services/warm-pool';
-import { readProjectWarmPointer } from '../../snapshots/warm-project';
 import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/account-limits';
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
-import { projectSessions, sessionSandboxes } from '@kortix/db';
+import { projectSessions } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { randomUUID } from 'node:crypto';
@@ -19,6 +15,8 @@ import { resolveProjectGitAuth } from './git';
 import { isReservedSandboxEnvName, RESERVED_SANDBOX_ENV_NAMES } from './sandbox-env-names';
 import { selectProvider } from '../../platform/services/provider-balancer';
 import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES, ProjectRow, ProjectSessionRow, RequestAuditContext, UUID_V4_REGEX, deriveKortixApiRoot, normalizeJsonObject, normalizeString } from './serializers';
+import { allocateSessionRuntime } from './session-runtime-allocator';
+import { buildSessionRuntimeEnv } from './session-runtime-env';
 
 export type SessionCreateError = {
   status: number;
@@ -211,28 +209,22 @@ export async function buildSessionSandboxEnvVars(input: {
     // no on-demand fetches — reliable. Starter/project repos are small so the
     // size cost is negligible. Empty string = full clone (see daemon config.ts).
     KORTIX_CLONE_FILTER: '',
-    // Universal proxy origin: when enabled, the sandbox clones via the Kortix
-    // git proxy with its own KORTIX_TOKEN — a real host credential never lands
-    // in the sandbox. The daemon's credential helper returns KORTIX_TOKEN for
-    // the proxy host. OFF → direct clone of the real repo (legacy token flow).
-    KORTIX_REPO_URL: config.KORTIX_GIT_PROXY ? proxyGitUrl(input.projectId) : input.repoUrl,
-    KORTIX_DEFAULT_BRANCH: input.baseRef,
-    KORTIX_BASE_REF: input.baseRef,
-    KORTIX_BRANCH_NAME: input.sessionId,
-    KORTIX_PROJECT_ID: input.projectId,
-    KORTIX_SESSION_ID: input.sessionId,
-    KORTIX_SERVICE_PORT: '8000',
-    KORTIX_AGENT_NAME: input.agentName,
-    KORTIX_API_URL: deriveKortixApiBase(),
-    ...(input.initialPrompt
-      ? {
-          KORTIX_BOOTSTRAP_OPENCODE_SESSION: '1',
-          KORTIX_INITIAL_PROMPT: input.initialPrompt,
-        }
-      : {}),
-    // Per-session model override (e.g. Slack turns pin a specific model).
-    // The sandbox agent reads this and sets it on every opencode prompt call.
-    ...(input.opencodeModel ? { KORTIX_OPENCODE_MODEL: input.opencodeModel } : {}),
+    ...buildSessionRuntimeEnv({
+      projectId: input.projectId,
+      sessionId: input.sessionId,
+      // Universal proxy origin: when enabled, the sandbox clones via the Kortix
+      // git proxy with its own KORTIX_TOKEN — a real host credential never lands
+      // in the sandbox. The daemon's credential helper returns KORTIX_TOKEN for
+      // the proxy host. OFF → direct clone of the real repo (legacy token flow).
+      repoUrl: config.KORTIX_GIT_PROXY ? proxyGitUrl(input.projectId) : input.repoUrl,
+      baseRef: input.baseRef,
+      agentName: input.agentName,
+      apiUrl: deriveKortixApiBase(),
+      initialPrompt: input.initialPrompt,
+      // Per-session model override (e.g. Slack turns pin a specific model).
+      // The sandbox agent reads this and sets it on every opencode prompt call.
+      opencodeModel: input.opencodeModel,
+    }),
   };
 }
 
@@ -408,86 +400,6 @@ export async function createProjectSession(input: {
     ...(input.metadata ?? {}),
   };
 
-  // ── Warm-pool fast path ───────────────────────────────────────────────────
-  // ALWAYS try to claim a warm sandbox first — parked (instant) or, failing
-  // that, one already booting (it has a head start, so the session reaches
-  // ready far sooner than a fresh cold boot). Claiming skips provisioning: the
-  // box already cloned base, created branch W, and is warming opencode. The
-  // session id IS the warm box's id (W), preserving session_id==sandbox_id==
-  // branch. Guards keep this to the interactive default path (everything else
-  // falls through to cold): default template + provider (warm boxes boot the
-  // default), no server-side initial_prompt (it flows via the post-nav chat
-  // path). The claim SQL also matches only boxes booted for this user (owner),
-  // so per-user executor/LLM tokens stay correct.
-  // Warm boxes boot from the platform default snapshot, so a session targeting
-  // the default template (unset OR the reserved "default" slug — the UI's "New
-  // session" button sends "default") can claim them. A *custom* template can't.
-  // Pool boxes record the template slug they were spawned for (the project's
-  // default — custom templates included), so a claim just matches slugs.
-  // Sessions with an env-delivered initial prompt (channels/triggers) still
-  // need a cold boot — the daemon reads KORTIX_INITIAL_PROMPT at startup. The
-  // dashboard's prompt-first flow is unaffected: the UI never sends
-  // initial_prompt (it delivers via sessionStorage after open).
-  const wantedPoolSlug = sandboxSlug?.trim() || DEFAULT_SANDBOX_SLUG;
-  if (warmPoolEnabled() && providerName === config.getDefaultProvider() && !initialPrompt) {
-    const claimed = await claimWarmSandbox({ projectId, userId, slug: wantedPoolSlug }).catch((err) => {
-      console.warn(`[warm-pool] claim failed for ${projectId}:`, err instanceof Error ? err.message : err);
-      return null;
-    });
-    if (!claimed) {
-      // Pool was empty (cold miss) — start warming one now so the *next* create
-      // rides it. Warm for THIS user so they can claim it. Fire-and-forget; the
-      // cold path below handles this session.
-      void refillProjectPool(projectId, userId).catch(() => {});
-    }
-    if (claimed) {
-      const W = claimed.sandboxId;
-      try {
-        const [row] = await db
-          .insert(projectSessions)
-          .values({
-            sessionId: W,
-            accountId,
-            projectId,
-            branchName: W,
-            baseRef,
-            sandboxProvider: providerName,
-            sandboxId: W,
-            agentName,
-            // A parked box is already booted (runtimeReady), so the session is
-            // born 'running' — the provisioning mirror that normally does this
-            // flip ran at pool-SPAWN time, before this row existed, and would
-            // never fire again (the sidebar spinner used to spin forever). For
-            // a greedy claim of a still-booting box keep 'provisioning'; the
-            // spawn IIFE's mirror now finds this row and flips it on readiness.
-            status: claimed.sandboxStatus === 'active' ? 'running' : 'provisioning',
-            createdBy: userId,
-            visibility,
-            // Pin the opencode session pre-created at park time so the client
-            // skips the ensure-opencode round-trip → chat usable immediately.
-            opencodeSessionId: claimed.opencodeSessionId ?? undefined,
-            metadata: { ...metadata, warm_pool_claimed: true },
-            updatedAt: new Date(),
-          })
-          .returning();
-        // Fast-forward the claimed box to the latest base tip (it cloned base
-        // when it parked, which may now be stale) + refill the pool. Both
-        // fire-and-forget so the create returns immediately.
-        void syncClaimedBoxToBase(claimed.externalId, userId).catch(() => {});
-        void refillProjectPool(projectId, userId).catch(() => {});
-        return { row, headers: responseHeaders };
-      } catch (err) {
-        // Insert raced/failed — recycle the box and fall through to cold path.
-        await db
-          .update(sessionSandboxes)
-          .set({ poolState: 'reap', updatedAt: new Date() })
-          .where(eq(sessionSandboxes.sandboxId, W))
-          .catch(() => {});
-        console.warn(`[warm-pool] claimed-session insert failed; recycling ${W.slice(0, 8)}:`, err instanceof Error ? err.message : err);
-      }
-    }
-  }
-
   let sessionRow: ProjectSessionRow;
   try {
     const [row] = await db
@@ -518,116 +430,36 @@ export async function createProjectSession(input: {
     return { error: { status: 500, body: { error: message, retry: true } } };
   }
 
-  // Fire-and-forget sandbox provisioning. The dashboard polls the sandbox
-  // status endpoint and shows the ConnectingScreen during the long tail.
-  void (async () => {
-    const tl = new ProvisionTimeline(sessionId, 'session-create');
-    try {
-      // Resolve git auth and user env concurrently. Git auth is needed for the
-      // sandbox's clone credential, but a warm session can boot from an existing
-      // ready snapshot without waiting for it.
-      const gitAuthPromise = resolveProjectGitAuth(project).then((gitAuth) => {
-        tl.mark('git-auth');
-        return gitAuth;
-      });
-      const envPromise = buildSessionSandboxEnvVars({
-        accountId,
-        projectId,
-        sessionId,
-        userId,
-        repoUrl: project.repoUrl,
-        baseRef,
-        agentName,
-        initialPrompt,
-        opencodeModel,
-      }).then((envVars) => {
-        tl.mark('env-vars');
-        return envVars;
-      });
-
-      const mergeSessionMetadata = async (extra: Record<string, unknown>) => {
-        const [current] = await db
-          .select({ metadata: projectSessions.metadata })
-          .from(projectSessions)
-          .where(eq(projectSessions.sessionId, sessionId))
-          .limit(1);
-        const currentMetadata =
-          current?.metadata && typeof current.metadata === 'object'
-            ? (current.metadata as Record<string, unknown>)
-            : {};
-        await db
-          .update(projectSessions)
-          .set({
-            metadata: { ...currentMetadata, ...extra },
-            updatedAt: new Date(),
-          })
-          .where(eq(projectSessions.sessionId, sessionId));
-      };
-
-      // NOTE: the session branch is NOT pushed to origin here. The sandbox
-      // creates it locally from the base checkout at boot, and the agent works
-      // entirely on that local branch. It's published to origin lazily — on the
-      // first commit-push / `kortix` CLI push / when a change request is opened
-      // (see POST /sessions/:id/commit-push + commitFileToBranch, which create
-      // the remote branch on demand). Pushing at session-create was redundant
-      // work on the hot path: it bought nothing readiness-wise, and on a not-yet-
-      // seeded repo it just failed and wrote noise. Keep session start local +
-      // fast; pay the network cost only when there's real work to publish.
-
-      const extraEnvVars = {
-        ...(await envPromise),
-        ...(input.extraEnvVars ?? {}),
-      };
-
-      const provisionPromise = provisionSessionSandbox({
-        sandboxId: sessionId,
-        accountId,
-        projectId,
-        userId,
-        provider: providerName,
-        metadata: { session_id: sessionId, project_id: projectId, ...(input.metadata ?? {}) },
-        extraEnvVars,
-        gitProject: {
-          projectId,
-          repoUrl: project.repoUrl,
-          defaultBranch: project.defaultBranch,
-          manifestPath: project.manifestPath,
-          gitAuthToken: null,
-        },
-        resolveGitAuthToken: async () => (await gitAuthPromise).auth?.token ?? null,
-        baseRef,
-        sandboxSlug,
-        // Per-project warm snapshot pointer (repo baked at tip) — verified
-        // against the provider inside provisionSessionSandbox before use.
-        projectWarmSnapshot: readProjectWarmPointer(project.metadata)?.name ?? null,
-      });
-
-      // provisionSessionSandbox returns once its row is inserted; provider
-      // create and remote branch push both continue in detached background work.
-      await provisionPromise;
-      tl.mark('kicked');
-      const sessionStartTimeline = tl.log();
-      // Fire-and-forget: the timeline write is pure telemetry. Awaiting it
-      // here used to add ~30-80ms of DB round-trip to every session start.
-      void mergeSessionMetadata({ session_start_timeline: sessionStartTimeline }).catch(() => {});
-    } catch (err) {
-      const message = (err as Error)?.message || 'Sandbox provisioning failed';
-      console.error(`[projects] Failed to kick off sandbox for session ${sessionId}:`, err);
-      try {
-        await db
-          .update(projectSessions)
-          .set({
-            status: 'failed',
-            error: message,
-            metadata: { ...metadata, provisioning_error: message },
-            updatedAt: new Date(),
-          })
-          .where(eq(projectSessions.sessionId, sessionId));
-      } catch (markErr) {
-        console.error(`[projects] Failed to mark session ${sessionId} failed:`, markErr);
-      }
-    }
-  })();
+  // NOTE: the session branch is NOT pushed to origin here. The sandbox creates
+  // it locally from the base checkout at boot, and publishes it lazily on first
+  // push / change-request creation. Session creation owns durable identity; the
+  // runtime allocator only attaches compute for this exact id.
+  allocateSessionRuntime({
+    sessionId,
+    accountId,
+    projectId,
+    userId,
+    project,
+    providerName,
+    baseRef,
+    agentName,
+    sandboxSlug,
+    sessionMetadata: metadata,
+    runtimeMetadata: input.metadata,
+    extraEnvVars: input.extraEnvVars,
+    buildEnvVars: () => buildSessionSandboxEnvVars({
+      accountId,
+      projectId,
+      sessionId,
+      userId,
+      repoUrl: project.repoUrl,
+      baseRef,
+      agentName,
+      initialPrompt,
+      opencodeModel,
+    }),
+    resolveGitAuthToken: async () => (await resolveProjectGitAuth(project)).auth?.token ?? null,
+  });
 
   return { row: sessionRow, headers: responseHeaders };
 }

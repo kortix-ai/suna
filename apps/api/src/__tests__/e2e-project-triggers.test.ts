@@ -139,11 +139,20 @@ mock.module("../snapshots/builder", () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickProjectTemplatePrebuilds: () => {},
+  kickStartupPreBuild: () => {},
+  reconcileProjectTemplates: async () => undefined,
+  reconcileStaleBuilds: async () => undefined,
+  ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
+  parseGitHubRepoUrl: (repoUrl: string) => ({
+    owner: 'kortix-org',
+    repo: repoUrl.split('/').pop()?.replace(/\.git$/, '') ?? 'trigger-project',
+  }),
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
   verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
@@ -151,6 +160,7 @@ mock.module('../projects/github', () => ({
     nonce: 'test-nonce',
     issuedAt: Math.floor(Date.now() / 1000),
   }),
+  createGitHubAppJwt: () => 'jwt-test',
   getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
   commitFile: async (opts: { path: string; content: string; message: string }) => {
     repoFiles.set(opts.path, opts.content);
@@ -186,6 +196,11 @@ mock.module('../projects/github', () => ({
   listInstallationRepositories: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
+  isOrgAccount: async () => true,
+  deleteRepo: async () => undefined,
+  addCollaborator: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
 }));
 
 mock.module('../platform/services/session-sandbox', () => ({
@@ -232,8 +247,10 @@ mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),
   listProjectSecrets: async () => ({}),
+  listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
   listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
+  projectSecretsRevision: async () => 'empty',
   getProjectSecretValue: async (_projectId: string, name: string) =>
     secretValues.get(name) ?? null,
 }));
@@ -660,7 +677,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     const body = await res.json();
     expect(body.status).toBe('fired');
     expect(body.session_id).toBeTruthy();
-    expect(branchCreateCalls).toBe(1);
+    expect(branchCreateCalls).toBe(0);
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);

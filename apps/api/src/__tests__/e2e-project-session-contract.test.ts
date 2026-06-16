@@ -28,6 +28,8 @@ process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
+let providerStartCalls = 0;
+let providerStatus = 'stopped';
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
@@ -62,6 +64,8 @@ const projectRow: typeof projects.$inferSelect = {
 function resetState() {
   branchCreateCalls = 0;
   sandboxProvisionCalls = 0;
+  providerStartCalls = 0;
+  providerStatus = 'stopped';
   activeSessionCount = 0;
   lastProvisionInput = null;
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
@@ -157,11 +161,17 @@ mock.module("../snapshots/builder", () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickProjectTemplatePrebuilds: () => {},
+  kickStartupPreBuild: () => {},
+  reconcileProjectTemplates: async () => undefined,
+  reconcileStaleBuilds: async () => undefined,
+  ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
+  parseGitHubRepoUrl: (repoUrl: string) => ({ owner: TEST_GITHUB_OWNER, repo: repoUrl.split('/').pop()?.replace(/\.git$/, '') ?? 'contract-project' }),
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
   verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
@@ -169,6 +179,7 @@ mock.module('../projects/github', () => ({
     nonce: 'test-nonce',
     issuedAt: Math.floor(Date.now() / 1000),
   }),
+  createGitHubAppJwt: () => 'jwt-test',
   getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
   deleteFile: async () => undefined,
   commitFile: async () => undefined,
@@ -196,6 +207,11 @@ mock.module('../projects/github', () => ({
   listInstallationRepositories: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
+  isOrgAccount: async () => true,
+  deleteRepo: async () => undefined,
+  addCollaborator: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
 }));
 
 mock.module('../platform/services/session-sandbox', () => ({
@@ -203,6 +219,17 @@ mock.module('../platform/services/session-sandbox', () => ({
     sandboxProvisionCalls += 1;
     lastProvisionInput = input;
   },
+}));
+
+mock.module('../platform/providers', () => ({
+  getProvider: () => ({
+    getStatus: async () => providerStatus,
+    start: async () => {
+      providerStartCalls += 1;
+    },
+    stop: async () => undefined,
+    remove: async () => undefined,
+  }),
 }));
 
 // Session create runs the billing gate. Return a billing-active account so the
@@ -234,6 +261,7 @@ mock.module('../repositories/account-tokens', () => ({
   createAccountToken: async () => ({ secretKey: PROJECT_RUNTIME_PAT }),
   listAccountTokens: async () => [],
   revokeAccountToken: async () => true,
+  validateAccountToken: async () => null,
 }));
 
 // Pin the concurrent-session cap to 1 regardless of env mode so this test
@@ -243,6 +271,9 @@ mock.module('../shared/account-limits', () => ({
   resolveAccountTier: async () => 'free',
   maxConcurrentSessionsForTier: () => 1,
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
+  maxProjectsForAccount: async () => 100,
+  accountEntitledToLlmGateway: async () => true,
+  FREE_TIER_PROJECT_LIMIT: 1,
   clearAccountLimitCache: () => undefined,
 }));
 
@@ -257,7 +288,9 @@ mock.module('../shared/supabase', () => ({
 }));
 
 mock.module('../shared/db', () => ({
+  hasDatabase: () => true,
   db: {
+    execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => ({
@@ -456,20 +489,62 @@ mock.module('../shared/db', () => ({
     delete: (table: unknown) => ({
       where: async () => {
         if (table === projectSecrets) secretRows = [];
+        if (table === sessionSandboxes) sessionSandboxRows = [];
       },
     }),
     update: (table: unknown) => ({
-      set: (updates: Partial<typeof projectSessions.$inferSelect>) => ({
+      set: (updates: Partial<typeof projectSessions.$inferSelect> & Partial<typeof sessionSandboxes.$inferSelect>) => ({
         where: () => ({
           returning: async () => {
-            if (table !== projectSessions) return [];
-            if (!sessionRow) return [];
-            sessionRow = {
-              ...sessionRow,
-              ...updates,
-              updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-            };
-            return [sessionRow];
+            if (table === projectSessions) {
+              if (!sessionRow) return [];
+              sessionRow = {
+                ...sessionRow,
+                ...updates,
+                updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+              };
+              return [sessionRow];
+            }
+            if (table === sessionSandboxes) {
+              const row = sessionSandboxRows[0];
+              if (!row) return [];
+              sessionSandboxRows[0] = {
+                ...row,
+                ...updates,
+                updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+              };
+              return [sessionSandboxRows[0]];
+            }
+            return [];
+          },
+          then: async (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
+            try {
+              const rows = await (async () => {
+                if (table === projectSessions) {
+                  if (!sessionRow) return [];
+                  sessionRow = {
+                    ...sessionRow,
+                    ...updates,
+                    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                  };
+                  return [sessionRow];
+                }
+                if (table === sessionSandboxes) {
+                  const row = sessionSandboxRows[0];
+                  if (!row) return [];
+                  sessionSandboxRows[0] = {
+                    ...row,
+                    ...updates,
+                    updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                  };
+                  return [sessionSandboxRows[0]];
+                }
+                return [];
+              })();
+              return resolve(rows);
+            } catch (err) {
+              return reject?.(err);
+            }
           },
         }),
       }),
@@ -723,6 +798,69 @@ describe('project session API contract', () => {
     expect(await missingSession.json()).toMatchObject({ error: 'Not found' });
   });
 
+  test('dashboard start of an existing sandbox wakes in place and never allocates a second runtime', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [{
+      sandboxId: SESSION_ID,
+      sessionId: SESSION_ID,
+      accountId: ACCOUNT_ID,
+      projectId: PROJECT_ID,
+      provider: 'daytona',
+      externalId: 'box-existing',
+      baseUrl: null,
+      status: 'active',
+      poolState: null,
+      config: {},
+      metadata: {},
+      lastUsedAt: null,
+      createdAt: new Date('2026-01-02T00:00:00Z'),
+      updatedAt: new Date('2026-01-02T00:00:00Z'),
+    }];
+    providerStatus = 'stopped';
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ stage: 'starting', retriable: true });
+    expect(providerStartCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(branchCreateCalls).toBe(0);
+  });
+
+  test('dashboard start recovery of an already-bootstrapped session provisions without replaying the initial prompt', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+      metadata: {
+        existing: true,
+        initial_prompt: 'DO NOT REPLAY',
+        opencode_model: 'anthropic/claude-sonnet-4-6',
+      },
+    };
+    sessionSandboxRows = [];
+
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ stage: 'provisioning', retriable: true });
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(branchCreateCalls).toBe(0);
+    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
+    const env = lastProvisionInput?.extraEnvVars ?? {};
+    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
+    expect(env.KORTIX_INITIAL_PROMPT).toBeUndefined();
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
+  });
+
   test('allows only user-owned PATCH fields', async () => {
     const app = createApp();
     const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
@@ -730,7 +868,6 @@ describe('project session API contract', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'Human name',
-        opencode_session_id: 'oc-123',
         metadata: { custom: 'ok' },
       }),
     });
@@ -738,9 +875,9 @@ describe('project session API contract', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.name).toBe('Human name');
-    expect(body.opencode_session_id).toBe('oc-123');
+    expect(body.opencode_session_id).toBeNull();
     expect(body.status).toBe('provisioning');
-    expect(body.metadata).toEqual({ existing: true, custom: 'ok', name: 'Human name' });
+    expect(body.metadata).toEqual({ existing: true, custom: 'ok', custom_name: 'Human name' });
   });
 
   test('rejects unknown providers before creating a git branch', async () => {
@@ -819,7 +956,7 @@ describe('project session API contract', () => {
     expect(env.KORTIX_API_URL).toBeTruthy();
     expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
     expect(env.KORTIX_GITHUB_TOKEN).toBeUndefined();
-    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBeUndefined();
+    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(env.KORTIX_INITIAL_PROMPT).toBeUndefined();
 
     // 6. User can't shadow a platform var — POST /secrets rejects KORTIX_*.
@@ -858,7 +995,7 @@ describe('project session API contract', () => {
     expect(body.sandbox_provider).toBe('daytona');
     expect(body.status).toBe('provisioning');
     expect(body.name).toBe('Contract session');
-    expect(branchCreateCalls).toBe(1);
+    expect(branchCreateCalls).toBe(0);
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);

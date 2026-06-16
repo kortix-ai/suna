@@ -2,7 +2,6 @@ import { checkBillingActive } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
-import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { db } from '../../shared/db';
 import { getCrById, getNextCrNumber, serializeChangeRequest } from '../change-requests';
 import { getBranchDiff, getDiffBetweenShas, invalidateProjectMirror, previewMerge, resolveBranchTip } from '../git';
@@ -11,10 +10,11 @@ import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
-import { resolveProjectGitAuth, withProjectGitAuth } from '../lib/git';
+import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
+import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
-import { kickProvisionOnOpen, openSession, refreshCrTips, resumeStoppedSandbox } from './shared';
+import { openSession, refreshCrTips } from './shared';
 
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
@@ -158,7 +158,6 @@ projectsApp.openapi(
 
   // No existing box (deleted / never provisioned) → provision a fresh one so
   // restart still recovers a dead session from the preserved git branch.
-  const gitAuth = await resolveProjectGitAuth(loaded.row);
   // Re-inject the initial prompt ONLY if this session never bootstrapped its
   // OpenCode conversation (no pin yet — the box died before the first message
   // ever ran). Once `opencodeSessionId` is set, the first message already ran, so
@@ -179,51 +178,31 @@ projectsApp.openapi(
     .set({ status: 'provisioning', error: null, sandboxUrl: null, updatedAt: new Date() })
     .where(eq(projectSessions.sessionId, sessionId));
 
-  // Fire-and-forget the actual re-provision. Same shape as session-create.
-  void (async () => {
-    try {
-      const extraEnvVars = await buildSessionSandboxEnvVars({
-        accountId: loaded.row.accountId,
-        projectId,
-        sessionId,
-        userId: loaded.userId,
-        repoUrl: loaded.row.repoUrl,
-        baseRef: session.baseRef ?? loaded.row.defaultBranch,
-        agentName: session.agentName ?? 'default',
-        initialPrompt,
-        opencodeModel,
-      });
-      await provisionSessionSandbox({
-        sandboxId: sessionId,
-        accountId: loaded.row.accountId,
-        projectId,
-        userId: loaded.userId,
-        provider: providerName,
-        metadata: {
-          session_id: sessionId,
-          project_id: projectId,
-          restarted_at: new Date().toISOString(),
-        },
-        extraEnvVars,
-        gitProject: {
-          projectId,
-          repoUrl: loaded.row.repoUrl,
-          defaultBranch: loaded.row.defaultBranch,
-          manifestPath: loaded.row.manifestPath,
-          gitAuthToken: gitAuth.auth?.token ?? null,
-        },
-        baseRef: session.baseRef ?? loaded.row.defaultBranch,
-      });
-    } catch (err) {
-      const message = (err as Error)?.message || 'Sandbox restart failed';
-      console.error(`[projects] restart: provisioning failed for ${sessionId}:`, err);
-      await db
-        .update(projectSessions)
-        .set({ status: 'failed', error: message, updatedAt: new Date() })
-        .where(eq(projectSessions.sessionId, sessionId))
-        .catch(() => {});
-    }
-  })();
+  const runtimeMetadata = { restarted_at: new Date().toISOString() };
+  allocateSessionRuntime({
+    sessionId,
+    accountId: loaded.row.accountId,
+    projectId,
+    userId: loaded.userId,
+    project: loaded.row,
+    providerName,
+    baseRef: session.baseRef ?? loaded.row.defaultBranch,
+    agentName: session.agentName ?? 'default',
+    runtimeMetadata,
+    sessionMetadata: { ...(session.metadata ?? {}), ...runtimeMetadata },
+    buildEnvVars: () => buildSessionSandboxEnvVars({
+      accountId: loaded.row.accountId,
+      projectId,
+      sessionId,
+      userId: loaded.userId,
+      repoUrl: loaded.row.repoUrl,
+      baseRef: session.baseRef ?? loaded.row.defaultBranch,
+      agentName: session.agentName ?? 'default',
+      initialPrompt,
+      opencodeModel,
+    }),
+    resolveGitAuthToken: async () => (await withProjectGitAuth(loaded.row)).gitAuthToken ?? null,
+  });
 
   return c.json({ ok: true, session_id: sessionId, status: 'provisioning' }, 202);
 },
