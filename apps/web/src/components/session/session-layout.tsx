@@ -267,18 +267,22 @@ export const SessionLayout = memo(function SessionLayout({
     if (showTerminal) setTerminalActivated(true);
   }, [showTerminal]);
 
-  // The active side-panel body. "Actions" renders through the canonical
-  // ToolPartRenderer (via SessionActionsPanel) — the same handlers the chat
-  // uses — so there is exactly one tool-rendering implementation. The terminal
-  // is layered on top and toggled with `hidden` (display:none) rather than
-  // unmounted, keeping its connection alive across view switches.
-  const nonTerminalBody = showBrowser ? (
-    <PreviewTabContent
-      tabId={sessionPreviewTabId(sessionId)}
-      projectId={projectId}
-      projectSessionId={projectSessionId}
-    />
-  ) : showExplorer ? (
+  // The browser preview is the same story: its iframe holds a live, loaded
+  // sandbox app (scroll position, client-side route, form/auth state). Swapping
+  // it out of the tree on every view switch re-mounts the iframe and reloads
+  // the page — a white flash and lost state each time. So once opened it stays
+  // MOUNTED and is toggled with `hidden` (display:none), exactly like the
+  // terminal; the iframe keeps its document alive in the background.
+  const [browserActivated, setBrowserActivated] = useState(false);
+  useEffect(() => {
+    if (showBrowser) setBrowserActivated(true);
+  }, [showBrowser]);
+
+  // The cheap, stateless views — "Actions" (the canonical ToolPartRenderer, the
+  // same handlers the chat uses) and the Files explorer — swap normally. The
+  // terminal and browser are layered on top and shown/hidden via `hidden`
+  // rather than unmounted, so their live state survives view switches.
+  const swappableBody = showExplorer ? (
     <SessionFilesExplorer
       chatSessionId={sessionId}
       projectId={projectId}
@@ -294,8 +298,22 @@ export const SessionLayout = memo(function SessionLayout({
           <SessionTerminalPanel sessionId={sessionId} hidden={!showTerminal} />
         </div>
       )}
-      <div className={cn('absolute inset-0', showTerminal && 'hidden')}>
-        {nonTerminalBody}
+      {browserActivated && (
+        <div className={cn('absolute inset-0', !showBrowser && 'hidden')}>
+          <PreviewTabContent
+            tabId={sessionPreviewTabId(sessionId)}
+            projectId={projectId}
+            projectSessionId={projectSessionId}
+          />
+        </div>
+      )}
+      <div
+        className={cn(
+          'absolute inset-0',
+          (showTerminal || showBrowser) && 'hidden',
+        )}
+      >
+        {swappableBody}
       </div>
     </div>
   );
