@@ -42,6 +42,31 @@ export function clearOpencodeEnsureGuard(): void {
   ensuredForServer.clear();
 }
 
+/**
+ * READ-ONLY canonical-root pick for display. Mirrors the backend resolver
+ * (apps/api/src/projects/opencode-session-resolver.ts): the OLDEST root (no
+ * parentID) by time.created, tie-broken by id so the order is total. Used only
+ * as a render fallback so the chat resolves the instant the sandbox's OpenCode is
+ * serving sessions, even if the server-managed pin hasn't landed yet (e.g. the
+ * backend ensure is still warming or briefly stranded behind a readiness flap).
+ * This does NOT create or write the pin — the backend ensure stays the sole
+ * writer, so it can't re-introduce the "session replaced / data lost" drift.
+ */
+function pickCanonicalRoot(sessions: Session[]): string | null {
+  let best: Session | null = null;
+  for (const s of sessions) {
+    if (s.parentID) continue; // roots only
+    if (!best) {
+      best = s;
+      continue;
+    }
+    const a = s.time?.created ?? 0;
+    const b = best.time?.created ?? 0;
+    if (a < b || (a === b && s.id < best.id)) best = s;
+  }
+  return best?.id ?? null;
+}
+
 /** Fast retries before backing off to the slow heartbeat. */
 const MAX_ENSURE_ATTEMPTS = 8;
 /** After the fast retries are spent, keep trying at this slow cadence forever
@@ -90,8 +115,15 @@ export function useCanonicalOpenCodeSession(params: {
   });
 
   // Render the stored pin immediately; fall back to whatever ensure just
-  // returned (covers the very first map before the row query refetches).
-  const rootSessionId = pin ?? ensureMutation.data?.opencode_session_id ?? null;
+  // returned (covers the very first map before the row query refetches); and as
+  // a last resort adopt the canonical root of our OWN live session list so the
+  // chat resolves the instant OpenCode is serving sessions — even if the backend
+  // ensure path is still warming or briefly stuck behind a readiness flap. The
+  // pin / ensure result stay authoritative when present; this is a read-only
+  // display fallback (never written back, never creates a session).
+  const canonicalFromOwnList = pickCanonicalRoot(sessionsQuery.data ?? []);
+  const rootSessionId =
+    pin ?? ensureMutation.data?.opencode_session_id ?? canonicalFromOwnList;
 
   // Fire the backend ensure once per sandbox (create-if-missing + heal-if-stale,
   // server-side), retrying with backoff while the runtime is still warming.
@@ -101,6 +133,12 @@ export function useCanonicalOpenCodeSession(params: {
     if (!runtimeReady || !serverId) return;
     if (ensuredForServer.has(serverId)) return;
     let cancelled = false;
+    // Set true only once ensure returns a real pin. Gates the cleanup below: if
+    // this effect cycle is torn down (a runtimeReady flap changes the deps)
+    // BEFORE a pin resolves, we must release the one-shot guard so the recovery
+    // re-run re-fires ensure — otherwise the guard strands set and the chat
+    // spins forever even after the box goes healthy again.
+    let resolved = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     // Fresh fast-retry budget for this (server, readiness) cycle — a new
     // sandbox shouldn't inherit a previous one's exhausted attempts.
@@ -129,7 +167,8 @@ export function useCanonicalOpenCodeSession(params: {
         onSuccess: (updated) => {
           // Mapped → done; the pin is written and the guard stays set. Anything
           // else (still warming, unreachable, or a transient null) → retry.
-          if (!updated.opencode_session_id) scheduleRetry();
+          if (updated.opencode_session_id) resolved = true;
+          else scheduleRetry();
         },
         onError: scheduleRetry,
       });
@@ -139,6 +178,11 @@ export function useCanonicalOpenCodeSession(params: {
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
+      // If this cycle never resolved a pin (e.g. a runtimeReady flap tore it
+      // down while the mutation was in flight), free the one-shot guard so the
+      // recovery re-run re-fires ensure. Once a pin IS resolved the guard stays
+      // set and steady-state re-renders still short-circuit at the has() check.
+      if (!resolved && serverId) ensuredForServer.delete(serverId);
     };
     // Re-run only when the sandbox identity or readiness changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
