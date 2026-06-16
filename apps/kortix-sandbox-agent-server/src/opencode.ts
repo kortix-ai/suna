@@ -12,6 +12,13 @@ import { mergeProjectEnv, type ProjectEnvStore } from './project-env'
 const READY_POLL_MS = 100
 const BOOT_READY_POLL_MS = 50
 const READY_TIMEOUT_MS = 20_000
+// Once opencode is READY, the readiness probe becomes a slow LIVENESS check.
+// Polling /session every READY_POLL_MS (100ms) forever pegged opencode's Bun
+// event loop at ~55% of a CPU core PER IDLE SANDBOX (load-tested 2026-06-16) —
+// the dominant cap on warm-sandbox density (~14/host). A crash is already caught
+// by proc.on('exit'); after ready we only need an occasional liveness ping, so
+// drop to a 5s interval (~50x fewer probes → idle opencode falls to ~2% of a core).
+const READY_LIVENESS_MS = 5_000
 
 const EXECUTOR_MCP_ENTRY = '/opt/kortix/apps/sandbox/agent-cli/connectors/executor-mcp.ts'
 export const OPENCODE_HOME = '/opt/kortix/home'
@@ -381,6 +388,9 @@ export function createOpencodeSupervisor(
 
   function scheduleReadinessProbe() {
     if (stopping) return
+    // Poll fast until ready (quick boot detection), then slow to a liveness ping.
+    // The forever-100ms poll cost ~55% of a core per idle sandbox (READY_LIVENESS_MS).
+    const interval = state === 'ok' ? READY_LIVENESS_MS : READY_POLL_MS
     readinessTimer = setTimeout(async () => {
       if (stopping) return
       const ready = await checkReady()
@@ -390,7 +400,7 @@ export function createOpencodeSupervisor(
         state = 'starting'
       }
       scheduleReadinessProbe()
-    }, READY_POLL_MS)
+    }, interval)
   }
 
   return {
