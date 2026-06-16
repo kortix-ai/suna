@@ -69,6 +69,22 @@ function syncOpenCodeSessionSnapshot(
     .catch(() => {});
 }
 
+/**
+ * session.created/updated/deleted carry the Session object either nested under
+ * `properties.info` (the SDK type) or FLAT as `properties` itself — the opencode
+ * runtime emits the flat shape, which the typed `.info` read silently drops. That
+ * dropped every live `session.updated`, so auto-generated titles never reached
+ * the tabs/sidebar until an HTTP list refetch (i.e. only after you navigated to
+ * or created another session). Read both shapes — same fix the mobile client
+ * shipped (apps/mobile commit 7f31102fe "fix: session title updates").
+ */
+function readSessionInfo(event: OpenCodeEvent): Session | undefined {
+  const props = (event as any)?.properties;
+  if (!props) return undefined;
+  if (props.info) return props.info as Session;
+  return typeof props.id === 'string' ? (props as Session) : undefined;
+}
+
 function reserveMessageRehydrate(sessionID: string): boolean {
   if (!sessionID || messageRehydrateInFlight.has(sessionID)) return false;
   const now = Date.now();
@@ -251,6 +267,13 @@ export function useOpenCodeEventStream() {
     const previousStatuses = useSyncStore.getState().sessionStatus;
     for (const [sessionID, status] of Object.entries(previousStatuses)) {
       if (status?.type !== 'idle' && !nextStatuses[sessionID]) {
+        // A brand-new session whose first prompt the server hasn't registered
+        // yet is locally-busy but absent from the status snapshot. Don't idle
+        // it: markSessionIdleLocally → clearOptimisticMessages would wipe the
+        // optimistic user bubble before the real message.updated arrives (the
+        // "message sent from home vanishes / blinks" bug). Real status/idle
+        // events reconcile it once the server catches up.
+        if (useSyncStore.getState().hasOptimisticMessages(sessionID)) continue;
         markSessionIdleLocally.current(sessionID);
       }
     }
@@ -673,7 +696,7 @@ export function useOpenCodeEventStream() {
         // in all session list consumers, which triggers a Radix UI compose-refs
         // infinite loop (Maximum update depth exceeded).
         case 'session.created': {
-          const info = (event.properties as any)?.info as Session | undefined;
+          const info = readSessionInfo(event);
           if (info) {
             queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
               if (!old) return [info];
@@ -695,7 +718,7 @@ export function useOpenCodeEventStream() {
         }
 
         case 'session.updated': {
-          const info = (event.properties as any)?.info as Session | undefined;
+          const info = readSessionInfo(event);
           if (info) {
             // Did the title change? (opencode auto-titles after the first
             // message via session.updated.) Capture BEFORE we overwrite caches.
@@ -713,8 +736,14 @@ export function useOpenCodeEventStream() {
               if (!old) return old;
               const idx = old.findIndex((s) => s.id === info.id);
               if (idx < 0) return old;
-              // Shallow check: skip if the updated timestamp is identical
-              if (old[idx].time.updated === info.time.updated) return old;
+              // Shallow check: skip only if BOTH the timestamp and the title are
+              // unchanged. Title alone can flip (opencode auto-titles) without a
+              // perceptible time bump, and dropping that would keep the tab stale.
+              if (
+                old[idx].time.updated === info.time.updated &&
+                old[idx].title === info.title
+              )
+                return old;
               const next = [...old];
               next[idx] = info;
               return next.sort((a, b) => b.time.updated - a.time.updated);
@@ -728,7 +757,7 @@ export function useOpenCodeEventStream() {
         }
 
         case 'session.deleted': {
-          const info = (event.properties as any)?.info as Session | undefined;
+          const info = readSessionInfo(event);
           if (info) {
             queryClient.setQueryData<Session[]>(opencodeKeys.sessions(), (old) => {
               if (!old) return old;
