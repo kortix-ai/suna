@@ -159,9 +159,17 @@ projectsApp.openapi(
   // No existing box (deleted / never provisioned) → provision a fresh one so
   // restart still recovers a dead session from the preserved git branch.
   const gitAuth = await resolveProjectGitAuth(loaded.row);
-  const initialPrompt = typeof session.metadata?.initial_prompt === 'string'
-    ? session.metadata.initial_prompt as string
-    : null;
+  // Re-inject the initial prompt ONLY if this session never bootstrapped its
+  // OpenCode conversation (no pin yet — the box died before the first message
+  // ever ran). Once `opencodeSessionId` is set, the first message already ran, so
+  // a rebuild from the durable git branch must NOT replay it — that replay is the
+  // "opening the session resets & reruns the same thing" bug. The first cold
+  // create is the only path that delivers the initial prompt to a live box.
+  const initialPrompt = session.opencodeSessionId
+    ? null
+    : typeof session.metadata?.initial_prompt === 'string'
+      ? (session.metadata.initial_prompt as string)
+      : null;
   const opencodeModel = typeof session.metadata?.opencode_model === 'string'
     ? session.metadata.opencode_model as string
     : null;
