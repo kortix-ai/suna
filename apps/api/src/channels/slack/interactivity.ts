@@ -4,6 +4,7 @@ import { db } from '../../shared/db';
 import { loadSlackTokenForProject } from '../install-store';
 import { updateMessage } from '../slack-api';
 import { dispatchSlackEvent, pendingPickers, spawnAgentTurn } from './dispatch';
+import { escapeMrkdwn } from './util';
 import type { SlackEnvelope, SlackEvent, SlackInteractionPayload } from './types';
 
 // Agent-emitted button click (carousel cards, actions blocks). Routes the
@@ -58,6 +59,68 @@ async function handleAgentClick(
     team_id: teamId,
     event,
   };
+  await spawnAgentTurn(thread.projectId, envelope, event);
+}
+
+// A click on one of the agent's `question` options (rendered as buttons by
+// buildQuestionBlocks, action_id `qa_<q>_<o>`). Resolve the original message to a
+// confirmation so it can't be re-clicked, then resume the thread's session with
+// the chosen answer as a follow-up turn — the SAME path an in-thread reply takes,
+// so questions behave natively in Slack instead of dead-ending.
+async function handleQuestionAnswer(
+  payload: SlackInteractionPayload,
+  action: NonNullable<SlackInteractionPayload['actions']>[number],
+): Promise<void> {
+  const teamId = payload.team?.id ?? '';
+  const channelId = payload.channel?.id ?? '';
+  const userId = payload.user?.id ?? '';
+  const messageTs = payload.message?.ts ?? '';
+  const threadTs = payload.message?.thread_ts ?? messageTs;
+  if (!teamId || !channelId || !userId || !threadTs) return;
+
+  let parsed: { q?: string; a?: string } = {};
+  try {
+    parsed = JSON.parse(action.value ?? '{}') as { q?: string; a?: string };
+  } catch {
+    parsed = {};
+  }
+  const label = (parsed.a ?? action.text?.text ?? '').trim();
+  const question = (parsed.q ?? '').trim();
+
+  // Ephemeral ack only — NOT replace_original. A message may carry several
+  // questions; replacing it would wipe the sibling questions' buttons. (Matches
+  // handleAgentClick.) The buttons stay; a re-click just sends another follow-up.
+  await respondViaUrl(payload.response_url, {
+    response_type: 'ephemeral',
+    text: `On it — *${escapeMrkdwn(label)}*.`,
+  });
+
+  const [thread] = await db
+    .select({ projectId: chatThreads.projectId })
+    .from(chatThreads)
+    .where(and(
+      eq(chatThreads.platform, 'slack'),
+      eq(chatThreads.workspaceId, teamId),
+      eq(chatThreads.threadId, threadTs),
+    ))
+    .limit(1);
+  if (!thread) return;
+
+  const lines: string[] = [];
+  if (question) lines.push(`Answering your question "${question}":`);
+  lines.push(label || 'see the selection above');
+  lines.push('', 'Continue the turn based on this answer.');
+
+  const event: SlackEvent = {
+    type: 'message',
+    user: userId,
+    channel: channelId,
+    text: lines.join('\n'),
+    ts: messageTs,
+    thread_ts: threadTs,
+    team: teamId,
+  };
+  const envelope: SlackEnvelope = { type: 'event_callback', team_id: teamId, event };
   await spawnAgentTurn(thread.projectId, envelope, event);
 }
 
@@ -128,6 +191,11 @@ export async function respondViaUrl(url: string | undefined, body: unknown): Pro
 export async function handleBlockAction(payload: SlackInteractionPayload): Promise<void> {
   const action = payload.actions?.[0];
   if (!action?.action_id) return;
+
+  if (action.action_id.startsWith('qa_')) {
+    await handleQuestionAnswer(payload, action);
+    return;
+  }
 
   if (action.action_id.startsWith('switch_project_')) {
     await handleSwitchProject(payload, action.value ?? '');
