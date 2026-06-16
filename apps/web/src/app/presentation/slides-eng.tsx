@@ -320,9 +320,9 @@ export const SLIDES: SlideDef[] = [
               nothing to move or migrate.
             </Lead>
             <div className="grid gap-3 sm:grid-cols-3">
-              <MiniCard label="One-click connect" title="Popular apps" body="Ready to go." />
-              <MiniCard label="3,000+ apps" title="Everything" body="Your team touches." />
-              <MiniCard label="Or any custom API" title="Bring your own" body="Endpoints." />
+              <MiniCard title="One-click connect" body="Popular apps are ready to go." />
+              <MiniCard title="3,000+ apps" body="Everything your team touches." />
+              <MiniCard title="Or any custom API" body="Bring your own endpoints." />
             </div>
           </div>
           <Shot
@@ -357,14 +357,14 @@ export const SLIDES: SlideDef[] = [
               <IconFeature
                 icon={SlidersHorizontal}
                 step="SHAPE EVERY AGENT"
-                title="Give each one a role"
-                body="The tools it can touch, and the way it should work. In plain English, no code."
+                title="Shape every agent"
+                body="Give each one a role, the tools it can touch, and the way it should work. In plain English, no code."
               />
               <IconFeature
                 icon={Star}
                 step="70+ SKILLS, READY TO GO"
-                title="Account research, outreach, reporting, support triage"
-                body="Each skill gets sharper the more tools you connect."
+                title="70+ skills, ready to go"
+                body="Account research, outreach, reporting, support triage, and more. Each skill gets sharper the more tools you connect."
               />
             </div>
           </div>
@@ -391,9 +391,9 @@ export const SLIDES: SlideDef[] = [
               person&rsquo;s head.
             </Lead>
             <div className="grid gap-3 sm:grid-cols-3">
-              <MiniCard label="Invite by email" title="One step" body="To add a teammate." />
-              <MiniCard label="Roles and access" title="Manager, editor, viewer" body="" />
-              <MiniCard label="Shared by default" title="One project" body="One source of truth." />
+              <MiniCard title="Invite by email" body="One step to add a teammate." />
+              <MiniCard title="Roles and access" body="Manager, editor, or viewer." />
+              <MiniCard title="Shared by default" body="One project, one source of truth." />
             </div>
           </div>
           <Shot src={`${SHOT}/02-team.png`} alt="Kortix members" url="kortix · members" />
@@ -477,26 +477,26 @@ export const SLIDES: SlideDef[] = [
             <IconFeature
               icon={Lock}
               step="OPEN SOURCE"
-              title="Built in the open"
-              body="No black box, ever."
+              title="Open source"
+              body="Built in the open. No black box, ever."
             />
             <IconFeature
               icon={Eye}
               step="ALWAYS REVIEWABLE"
-              title="See exactly what every agent did"
-              body="Anytime."
+              title="Always reviewable"
+              body="See exactly what every agent did, anytime."
             />
             <IconFeature
               icon={ShieldCheck}
               step="YOU STAY IN CONTROL"
-              title="Nothing leaves without a person saying yes"
-              body="A human signs off before anything goes out."
+              title="You stay in control"
+              body="Nothing leaves without a person saying yes."
             />
             <IconFeature
               icon={Cpu}
               step="BRING YOUR OWN AI"
-              title="Our models or yours"
-              body="Cloud or self-hosted."
+              title="Bring your own AI"
+              body="Our models or yours. Cloud or self-hosted."
             />
           </div>
         </div>
