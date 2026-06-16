@@ -17,7 +17,7 @@ import { useCallback, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { createProjectSession } from '@/lib/projects-client';
+import { createProjectSession, prefetchSessionStart } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { useCustomizeStore } from '@/stores/customize-store';
 
@@ -78,7 +78,9 @@ export function useConfigureThread(projectId: string): ConfigureThread {
         // is ready (same contract the project-home composer uses).
         sessionStorage.setItem(`project_pending_prompt:${session.session_id}`, prompt);
         queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+        prefetchSessionStart(queryClient, projectId, session.session_id);
         closeCustomize();
+        router.prefetch(`/projects/${projectId}/sessions/${session.session_id}`);
         router.push(`/projects/${projectId}/sessions/${session.session_id}`);
         // Leave `pending` true on success — we're navigating away and the
         // overlay is closing; flipping it back would flash the idle button.

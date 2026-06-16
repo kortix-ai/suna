@@ -27,6 +27,7 @@ import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
 import {
   getProjectDetail,
   restartProjectSession,
+  sessionStartKey,
   startProjectSession,
   syncOpencodeSessionData,
 } from '@/lib/projects-client';
@@ -90,7 +91,7 @@ export default function ProjectSessionPage() {
   // three-call dance (GET /sandbox poll + POST /wake + POST /ensure-opencode).
   // session_id == sandbox_id by construction (see session-sandbox.ts).
   const { data: start } = useQuery({
-    queryKey: ['session-start', projectId, sessionId],
+    queryKey: sessionStartKey(projectId, sessionId),
     queryFn: () => startProjectSession(projectId!, sessionId!),
     enabled: !!user && !!sessionId && !!projectId && !noPlan,
     staleTime: 0,
