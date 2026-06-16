@@ -86,6 +86,15 @@ export interface BuildLayeredDockerfileOpts {
    * real snapshots.
    */
   executorSdkPath: string;
+  /**
+   * Path (in the build context) to the canonical starter `.kortix/opencode`
+   * config tree (pty plugin + standard tools + skills). When provided, the
+   * layer warms a real opencode PROJECT INSTANCE against it at build time so the
+   * costly first-instance work (Bun plugin auto-install/transpile, models.dev
+   * fetch, ripgrep) is cached into the image instead of paid on the session hot
+   * path. Optional — omit to skip the instance warm-up.
+   */
+  opencodeConfigPath?: string;
 }
 
 export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string {
@@ -98,6 +107,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     entrypointScriptPath,
     agentCliPath,
     executorSdkPath,
+    opencodeConfigPath,
   } = opts;
   const trimmed = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
 
@@ -179,6 +189,52 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > package.json \\`,
     '    && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install',
     '',
+    // Warm a real opencode PROJECT INSTANCE at build time. The first time opencode
+    // creates an instance for a project dir it loads that dir's .kortix/opencode
+    // surface — importing the pty plugin + tools — which makes Bun auto-install /
+    // transpile the plugin dep tree and opencode fetch its model catalog +
+    // ripgrep. On a fresh VM that's a one-time ~6s stall (up to ~60s when npm /
+    // GitHub are contended) that gates runtimeReady right on the session hot path.
+    // We pay it ONCE here, against the canonical starter config staged at the SAME
+    // runtime path (/workspace) so Bun's content-addressed transpile cache hits at
+    // boot, then wipe /workspace (the session clones into it) while the warmed
+    // caches under /opt/kortix/home persist in the image layer. Measured: cold
+    // first-instance 6–60s → ~2–4s after this bake. Requires opencode + bun + the
+    // baked config deps above, so it must come after them. Best effort: a build
+    // without network (or a warm-up failure) just falls back to the runtime cost —
+    // set +e + trailing `true` keep the image build green.
+    ...(opencodeConfigPath
+      ? [
+          `COPY ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
+          'RUN set +e; \\',
+          '    export HOME=/opt/kortix/home \\',
+          '        XDG_DATA_HOME=/opt/kortix/home/.local/share \\',
+          '        XDG_CONFIG_HOME=/opt/kortix/home/.config \\',
+          '        XDG_CACHE_HOME=/opt/kortix/home/.cache \\',
+          '        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\',
+          '    mkdir -p /workspace/.kortix; \\',
+          '    cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode; \\',
+          '    rm -rf /workspace/.kortix/opencode/node_modules; \\',
+          '    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\',
+          '    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\',
+          '    cd /workspace; \\',
+          '    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\',
+          '    ready=0; \\',
+          '    for i in $(seq 1 300); do \\',
+          `        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\`,
+          '        case "$code" in 200|204|301|302) ready=1; break;; esac; \\',
+          '        kill -0 "$oc_pid" 2>/dev/null || break; \\',
+          '        sleep 1; \\',
+          '    done; \\',
+          '    echo "=== instance-warm: ready=$ready ==="; \\',
+          '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
+          '    find /workspace -mindepth 1 -delete 2>/dev/null; \\',
+          '    rm -rf /opt/kortix/warm-config; \\',
+          '    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\',
+          '    rm -f /tmp/oc-warm.log; true',
+          '',
+        ]
+      : []),
     `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
     '    && agent-browser --version',
     'ENV AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',

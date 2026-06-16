@@ -77,7 +77,7 @@ import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin';
 import { useIsMobile } from '@/hooks/utils';
-import { createProjectSession } from '@/lib/projects-client';
+import { createProjectSession, prefetchSessionStart } from '@/lib/projects-client';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
@@ -446,6 +446,9 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       beginSessionTiming(session.session_id);
       sessionMark(session.session_id, 'session-created');
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      // Begin the runtime boot during navigation (warm pool claim / provision).
+      prefetchSessionStart(queryClient, projectId, session.session_id);
+      router.prefetch(`/projects/${projectId}/sessions/${session.session_id}`);
       router.push(`/projects/${projectId}/sessions/${session.session_id}`);
       if (isMobile) setOpenMobile(false);
     },

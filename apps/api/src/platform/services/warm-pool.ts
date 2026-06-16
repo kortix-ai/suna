@@ -255,9 +255,15 @@ async function spawnWarmSandbox(project: {
   defaultBranch: string;
   manifestPath: string | null;
   metadata?: unknown;
-}): Promise<boolean> {
-  const ownerUserId = await getProjectOwnerUserId(project.accountId);
-  if (!ownerUserId || !project.repoUrl) return false;
+}, forUserId?: string | null): Promise<boolean> {
+  // Warm the box for the user who's actually PRESENT (and will therefore claim
+  // it) — not always the account owner. claimWarmSandbox matches the box's
+  // stamped user against the acting session-creator, so an owner-stamped box can
+  // ONLY ever be claimed by the owner: every non-owner member would cold-miss
+  // AND burn an unclaimable box on each refill. Falling back to the owner keeps
+  // owner-driven warming (CR/trigger/config-change paths with no present user).
+  const targetUserId = forUserId ?? (await getProjectOwnerUserId(project.accountId));
+  if (!targetUserId || !project.repoUrl) return false;
   const W = randomUUID();
   const provider = await selectProvider();
   // The project's default template ([sandbox] default, synced to metadata by
@@ -272,7 +278,7 @@ async function spawnWarmSandbox(project: {
     accountId: project.accountId,
     projectId: project.projectId,
     sessionId: W,
-    userId: ownerUserId,
+    userId: targetUserId,
     repoUrl: project.repoUrl,
     baseRef: project.defaultBranch,
     agentName: 'default',
@@ -282,7 +288,7 @@ async function spawnWarmSandbox(project: {
     sandboxId: W,
     accountId: project.accountId,
     projectId: project.projectId,
-    userId: ownerUserId,
+    userId: targetUserId,
     provider,
     extraEnvVars,
     sandboxSlug: poolSlug === 'default' ? undefined : poolSlug,
@@ -301,7 +307,9 @@ async function spawnWarmSandbox(project: {
     metadata: {
       warmPool: {
         slug: poolSlug,
-        ownerUserId,
+        // Key name kept as `ownerUserId` for claim-predicate compatibility, but
+        // it holds the user this box was warmed FOR (present user, else owner).
+        ownerUserId: targetUserId,
         secretRevision: extraEnvVars.KORTIX_PROJECT_SECRETS_REVISION ?? null,
         bootedAt: new Date().toISOString(),
       },
@@ -333,7 +341,7 @@ async function reapWarmSandbox(row: { sandboxId: string; externalId: string | nu
  * Kick a single project's pool toward its desired size (best-effort, fire and
  * forget). Called reactively right after a claim so the pool refills fast.
  */
-export async function refillProjectPool(projectId: string): Promise<void> {
+export async function refillProjectPool(projectId: string, forUserId?: string | null): Promise<void> {
   if (!warmPoolEnabled()) return;
   try {
     const [project] = await db
@@ -361,7 +369,7 @@ export async function refillProjectPool(projectId: string): Promise<void> {
     const globalRemaining = config.KORTIX_WARM_POOL_MAX_TOTAL - (await countGlobalWarm());
     const want = Math.min(desired - live, Math.max(0, globalRemaining));
     for (let i = 0; i < want; i++) {
-      await spawnWarmSandbox(project).catch((err) => console.warn('[warm-pool] spawn failed:', err instanceof Error ? err.message : err));
+      await spawnWarmSandbox(project, forUserId).catch((err) => console.warn('[warm-pool] spawn failed:', err instanceof Error ? err.message : err));
     }
   } catch (err) {
     console.warn('[warm-pool] refill failed:', err instanceof Error ? err.message : err);
@@ -378,18 +386,22 @@ const presenceThrottle = new Map<string, number>();
  * the presence window, its pool is reaped — so we never hold idle boxes 24/7
  * for absent users. Throttled to ~1 DB write per project per minute.
  */
-export function notePoolPresence(projectId: string): void {
+export function notePoolPresence(projectId: string, userId?: string | null): void {
   if (!warmPoolEnabled() || !projectId) return;
   const nowMs = Date.now();
   if (nowMs - (presenceThrottle.get(projectId) ?? 0) < 60_000) return;
   presenceThrottle.set(projectId, nowMs);
   void (async () => {
     try {
-      await db
-        .update(projects)
-        .set({ metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{warm_pool_seen_at}', to_jsonb(now()))` })
-        .where(eq(projects.projectId, projectId));
-      await refillProjectPool(projectId);
+      // Record WHO is present (not just when) so the periodic reconcile refills
+      // the pool for the actually-active user, matching what claimWarmSandbox
+      // will look for — otherwise the sweep would re-warm owner-only boxes.
+      const seenAt = sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{warm_pool_seen_at}', to_jsonb(now()))`;
+      const meta = userId
+        ? sql`jsonb_set(${seenAt}, '{warm_pool_seen_by}', to_jsonb(${userId}::text))`
+        : seenAt;
+      await db.update(projects).set({ metadata: meta }).where(eq(projects.projectId, projectId));
+      await refillProjectPool(projectId, userId);
     } catch (err) {
       console.warn('[warm-pool] notePresence failed:', err instanceof Error ? err.message : err);
     }
@@ -449,7 +461,10 @@ export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: num
   let refilled = 0;
   for (const p of present) {
     if (resolveWarmConfig(p.metadata).enabled) {
-      await refillProjectPool(p.projectId);
+      // Warm for the last present user (recorded by notePoolPresence) so the
+      // box is claimable by them; fall back to the owner when unknown.
+      const seenBy = (p.metadata as Record<string, unknown> | null)?.warm_pool_seen_by;
+      await refillProjectPool(p.projectId, typeof seenBy === 'string' ? seenBy : null);
       refilled++;
     }
   }
