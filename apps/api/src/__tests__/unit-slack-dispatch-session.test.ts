@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 let dbResults: unknown[][] = [];
 function makeChain(): any {
   const chain: any = {};
-  for (const m of ['from', 'where', 'limit', 'set', 'values', 'onConflictDoUpdate', 'returning']) {
+  for (const m of ['from', 'where', 'limit', 'set', 'values', 'onConflictDoUpdate', 'onConflictDoNothing', 'returning']) {
     chain[m] = () => chain;
   }
   chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
@@ -106,11 +106,47 @@ describe('spawnAgentTurn — permanent 1:1 thread↔session, never a second sess
   test('no-session (session deleted) → replace it (the ONLY create path for a known thread)', async () => {
     deliverOutcome = 'no-session';
     dbResults = [
-      [{ sessionId: 'sess-1' }], // chat_threads lookup
-      [], // delete chat_threads (consumes a FIFO slot)
+      [{ sessionId: 'sess-1' }], // chat_threads lookup (known thread)
+      [], // delete the stale chat_threads mapping
       [{ projectId: 'proj-1', accountId: 'acc-1', defaultBranch: 'main', repoUrl: 'r', name: 'P', manifestPath: 'kortix.toml' }], // projects lookup
+      [{ eventId: 'claim' }], // claimThreadCreate → WON
+      [], // re-check chat_threads → none
+      [], // chat_threads insert (onConflictDoNothing)
     ];
     await spawnAgentTurn('proj-1', envelope, event);
     expect(createSessionCalls).toBe(1);
+  });
+});
+
+// The atomic thread-create claim is what makes the "shadow session" impossible:
+// two near-simultaneous first messages for the SAME new thread can no longer each
+// spin up a session. Exactly one handler wins the claim and creates; the rest
+// join that session as a follow-up.
+describe('createOrJoinThreadSession — atomic claim arbitrates a brand-new thread', () => {
+  const project = { projectId: 'proj-1', accountId: 'acc-1', defaultBranch: 'main', repoUrl: 'r', name: 'P', manifestPath: 'kortix.toml' };
+
+  test('claim WON, no existing mapping → creates EXACTLY one session, no follow-up', async () => {
+    dbResults = [
+      [], // chat_threads lookup → brand-new thread
+      [project], // projects lookup
+      [{ eventId: 'claim' }], // claimThreadCreate → WON (a row came back)
+      [], // re-check chat_threads → still none
+      [], // chat_threads insert
+    ];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(createSessionCalls).toBe(1);
+    expect(deliverCalls).toBe(0); // the winner creates with the initial prompt; no follow-up
+  });
+
+  test('claim LOST → joins the winner’s session as a follow-up, NEVER creates a second', async () => {
+    dbResults = [
+      [], // chat_threads lookup → brand-new thread
+      [project], // projects lookup
+      [], // claimThreadCreate → LOST (no row; someone else is creating)
+      [{ sessionId: 'winner-sess' }], // waitForThreadSession → winner published its mapping
+    ];
+    await spawnAgentTurn('proj-1', envelope, event);
+    expect(createSessionCalls).toBe(0); // never a shadow session
+    expect(deliverCalls).toBe(1); // delivered into the winner's session as a follow-up
   });
 });

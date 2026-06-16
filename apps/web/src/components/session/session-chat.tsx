@@ -79,7 +79,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SessionStartingLoader } from '@/components/session/session-starting-loader';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -5913,8 +5913,26 @@ export function SessionChat({
   const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome =
     !prevHasChatContentRef.current && hasChatContent;
+  // The welcome wallpaper is the EMPTY-STATE backdrop for a *resolved* session.
+  // The loading/connecting phase never reaches here (it early-returns the loader
+  // below), so this only needs to exclude the not-found screen.
   const shouldShowWelcomeOverlay =
-    !hasChatContent || welcomeFadeActive || isTransitioningFromWelcome;
+    !isNotFound &&
+    (!hasChatContent || welcomeFadeActive || isTransitioningFromWelcome);
+
+  // While the session is still connecting / loading its content, render ONLY the
+  // staged loader — never the session shell (header + input) at the same time.
+  // Showing both reads as "loaded and loading at once" (the very contradiction
+  // the loader exists to avoid). The connection keeps running in the parent
+  // ProjectSessionRuntimeConnection, so as soon as the runtime is ready
+  // isDataLoading flips and the full shell renders in one shot.
+  if (isDataLoading) {
+    return (
+      <div className="relative flex flex-col h-full bg-background" data-testid="session-chat">
+        <SessionStartingLoader stage="ready" />
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex flex-col h-full bg-background" data-testid="session-chat">
@@ -5954,12 +5972,10 @@ export function SessionChat({
         allSessions={allSessions}
       />
 
-      {/* Content area — loading, not-found, or actual messages */}
-      {isDataLoading ? (
-        <div className="flex-1 flex items-center justify-center min-h-0">
-          <KortixLoader size="small" />
-        </div>
-      ) : isNotFound ? (
+      {/* Content area — loading, not-found, or actual messages. The single
+          session loader (SessionStartingLoader) carries through here on its
+          "Connecting" phase so there's never a second, different loader. */}
+      {isNotFound ? (
         <div className="flex-1 flex flex-col items-center justify-center min-h-0 gap-3 text-center px-6">
           <div className="text-sm text-muted-foreground">
             {tHardcodedUi.raw('componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow')}</div>

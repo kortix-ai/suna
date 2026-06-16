@@ -327,6 +327,14 @@ export function createOpencodeSupervisor(
 
     materializeOpencodeAuth(env)
 
+    // Boot profiling: when KORTIX_OPENCODE_DEBUG=1, ask opencode to emit its own
+    // verbose startup logs (interleaved into the daemon log via inherited
+    // stdio) so a real cold boot reveals where the spawn→ready window goes.
+    // Opt-in only — no log noise in normal operation.
+    if (process.env.KORTIX_OPENCODE_DEBUG === '1') {
+      env.OPENCODE_LOG_LEVEL = 'DEBUG'
+    }
+
     const executorConfig = buildExecutorMcpConfigContent(baseEnv)
     if (executorConfig) {
       env.OPENCODE_CONFIG_CONTENT = executorConfig
@@ -496,15 +504,46 @@ export async function probeOpencodeSessionApi(
 export async function waitForOpencodeReady(
   opencode: Opencode,
   directory?: string,
+  // Boot-profiling hook: fired once the moment opencode's port answers ANY
+  // HTTP (process bound + listening), which is strictly before /session serves
+  // 200 (== ready). The gap between this and `opencode-ready` localizes the
+  // cold-start cost: a big spawn→listening gap = process/runtime startup; a big
+  // listening→ready gap = opencode's internal app/session init.
+  onListening?: () => void,
 ): Promise<boolean> {
   const deadline = Date.now() + READY_TIMEOUT_MS
+  let listeningSeen = false
   while (Date.now() < deadline) {
     if (opencode.getState() === 'ok') return true
-    if (directory && await probeOpencodeSessionApi(opencode.getInternalUrl(), directory, 500)) {
-      opencode.markReady()
-      return true
+    if (directory) {
+      const probe = await probeOpencodeReadiness(opencode.getInternalUrl(), directory, 500)
+      if (probe !== 'down' && !listeningSeen) {
+        listeningSeen = true
+        onListening?.()
+      }
+      if (probe === 'ready') {
+        opencode.markReady()
+        return true
+      }
     }
     await new Promise((r) => setTimeout(r, directory ? BOOT_READY_POLL_MS : READY_POLL_MS))
   }
   return false
+}
+
+/** Richer boot probe: 'down' = port not answering at all, 'listening' = answers
+ *  HTTP but /session not 2xx yet, 'ready' = /session 2xx/3xx. */
+async function probeOpencodeReadiness(
+  baseUrl: string,
+  directory: string,
+  timeoutMs: number,
+): Promise<'down' | 'listening' | 'ready'> {
+  try {
+    const res = await fetch(`${baseUrl}/session?directory=${encodeURIComponent(directory)}`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    return res.status >= 200 && res.status < 400 ? 'ready' : 'listening'
+  } catch {
+    return 'down'
+  }
 }

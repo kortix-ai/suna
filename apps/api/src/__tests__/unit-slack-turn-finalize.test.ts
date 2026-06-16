@@ -4,8 +4,10 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 // finalization posts to Slack. finalizeTurn only talks to slack-api (never the
 // DB), so mocking this module is enough to unit-test its behavior.
 const calls: Array<{ fn: string; args: unknown[] }> = [];
+let failFn: string | null = null; // set to a fn name to make that slack-api call reject
 const rec = (fn: string) => (...args: unknown[]) => {
   calls.push({ fn, args });
+  if (fn === failFn) return Promise.reject(new Error(`${fn} boom`));
   // startStream/postMessage/postBlocks return a ts; others return void.
   if (fn === 'startStream' || fn === 'postMessage' || fn === 'postBlocks') return Promise.resolve('ts.posted');
   return Promise.resolve();
@@ -47,6 +49,7 @@ function makeHandle(over: Partial<LiveTurn> = {}): LiveTurn {
 const fns = () => calls.map((c) => c.fn);
 afterEach(() => {
   calls.length = 0;
+  failFn = null;
 });
 
 describe('finalizeTurn — silent turn (the stuck "On it…" fix)', () => {
@@ -117,5 +120,19 @@ describe('finalizeTurn — silent turn (the stuck "On it…" fix)', () => {
   test('already finalized is a no-op', async () => {
     await finalizeTurn(makeHandle({ finalized: true }), { answer: 'ignored' });
     expect(calls.length).toBe(0);
+  });
+
+  test('clears ⏳ even when the plan render throws — never strands the reaction', async () => {
+    failFn = 'updateBlocks'; // simulate a Slack API hiccup mid-render
+    const handle = makeHandle({
+      ts: 'plan.ts',
+      steps: [{ type: 'task_update', id: 'step-0', title: 'Working', status: 'in_progress' }],
+    });
+    // Must NOT reject — the row is already claimed-finalized, so throwing would
+    // skip the caller's deleteTurn and (before the fix) leave the ⏳ forever,
+    // unreachable by the GC (which only sweeps un-finalized rows).
+    await finalizeTurn(handle, { answer: 'done!' });
+    expect(calls.some((c) => c.fn === 'updateBlocks')).toBe(true); // render was attempted (and threw)
+    expect(fns()).toContain('removeReaction'); // ⏳ cleared despite the failure
   });
 });

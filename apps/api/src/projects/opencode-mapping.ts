@@ -10,8 +10,9 @@
  *   1. Honor the pin whenever it still exists in the sandbox's live session
  *      list (stable identity — never flip off it for recency/duplicates).
  *   2. If the pin is missing (fresh/rebuilt sandbox, deleted session, never
- *      set), adopt the DETERMINISTIC canonical root: oldest root by created
- *      time, tie-broken by id, so every caller converges on the same id.
+ *      set), adopt the DETERMINISTIC canonical root: the most-recently-active
+ *      root (tie-broken by newest-created, then id), so every caller converges
+ *      on the LIVE root — never an orphaned pre-restart root frozen mid-turn.
  *   3. If the sandbox holds no root at all, create exactly one and pin it.
  *
  * Reachability mirrors the preview proxy exactly (the path the live session's

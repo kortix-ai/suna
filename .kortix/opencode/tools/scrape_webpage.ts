@@ -1,5 +1,9 @@
 import { tool } from "@opencode-ai/plugin";
-import FirecrawlApp from "@mendable/firecrawl-js";
+// Type-only import (erased at runtime). The actual SDK is imported lazily inside
+// execute() — a top-level value import makes opencode load this heavy SDK at
+// sandbox boot (tool modules are evaluated eagerly), adding ~seconds to cold
+// start. Deferred to first use.
+import type FirecrawlApp from "@mendable/firecrawl-js";
 import { getEnv, getKortixRouterBase } from "./lib/get-env";
 
 interface ScrapeResult {
@@ -89,6 +93,7 @@ export default tool({
       ? "Error: KORTIX_TOKEN not set."
       : "Error: FIRECRAWL_API_KEY not set.";
 
+    const FirecrawlApp = (await import("@mendable/firecrawl-js")).default;
     const client = new FirecrawlApp({
       apiKey,
       apiUrl: apiBaseURL ?? "https://api.firecrawl.dev",

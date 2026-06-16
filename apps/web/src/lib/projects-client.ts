@@ -1,3 +1,5 @@
+import type { QueryClient } from '@tanstack/react-query';
+
 import { backendApi } from '@/lib/api-client';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
@@ -1890,27 +1892,6 @@ export async function updateProjectSession(
   );
 }
 
-/**
- * Backend-owned OpenCode↔Kortix mapping. The API resolves the sandbox's
- * canonical OpenCode root id and persists it to opencode_session_id (creating
- * one if the sandbox has none, healing a stale pin). Idempotent. The returned
- * session row carries the authoritative `opencode_session_id`, plus an
- * `ensure` summary of what happened. Clients must NOT set the pin themselves.
- */
-export async function ensureOpencodeSession(projectId: string, sessionId: string) {
-  return unwrap(
-    await backendApi.post<
-      ProjectSession & {
-        ensure?: {
-          reason: 'unchanged' | 'healed' | 'created' | 'not_ready' | 'unreachable';
-          changed: boolean;
-          pin: string | null;
-        };
-      }
-    >(`/projects/${projectId}/sessions/${sessionId}/ensure-opencode`, {}),
-  );
-}
-
 export async function deleteProjectSession(
   projectId: string,
   sessionId: string,
@@ -1929,20 +1910,6 @@ export async function restartProjectSession(
   return unwrap(
     await backendApi.post<{ ok: boolean; session_id: string; status: string }>(
       `/projects/${projectId}/sessions/${sessionId}/restart`,
-      {},
-    ),
-  );
-}
-
-/**
- * Wake a sandbox the provider auto-stopped while idle. Cheap status no-op when
- * it's running; starts it in the background when stopped. Fire on session open
- * so an idled sandbox warms immediately instead of spinning the health poll.
- */
-export async function wakeProjectSession(projectId: string, sessionId: string) {
-  return unwrap(
-    await backendApi.post<{ status: 'running' | 'waking' | 'unknown' }>(
-      `/projects/${projectId}/sessions/${sessionId}/wake`,
       {},
     ),
   );
@@ -2135,17 +2102,67 @@ export interface ProjectSessionSandbox {
   updated_at: string;
 }
 
-export async function getProjectSessionSandbox(
+
+export type SessionStartStage = 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
+
+export interface SessionStartResult {
+  /** Coarse lifecycle stage to render + poll on. */
+  stage: SessionStartStage;
+  /** Whether polling /start again can make progress (false = terminal). */
+  retriable: boolean;
+  sandbox: ProjectSessionSandbox | null;
+  opencode_session_id: string | null;
+  reason?: string;
+}
+
+/**
+ * THE session-open call. Idempotently provisions/resumes the sandbox and resolves
+ * the OpenCode pin server-side, returning ONE readiness payload to poll until
+ * stage='ready'. Replaces getProjectSessionSandbox + wakeProjectSession +
+ * ensureOpencodeSession (the old three-call open dance).
+ */
+export async function startProjectSession(
   projectId: string,
   sessionId: string,
-): Promise<ProjectSessionSandbox | null> {
-  const response = await backendApi.get<ProjectSessionSandbox>(
-    `/projects/${projectId}/sessions/${sessionId}/sandbox`,
-    // 404 is an expected "not provisioned yet" state — caller polls.
+): Promise<SessionStartResult | null> {
+  const response = await backendApi.post<SessionStartResult>(
+    `/projects/${projectId}/sessions/${sessionId}/start`,
+    {},
+    // 402 (billing) is handled by the page's plan gate before polling; other
+    // failures just yield null and the caller retries.
     { showErrors: false },
   );
   if (!response.success || !response.data) return null;
   return response.data;
+}
+
+/**
+ * Stable React Query key for the session-open (`/start`) poll. Shared by the
+ * session page's useQuery AND every create→navigate site that prefetches it, so
+ * the keys can never drift — a mismatch would issue a SECOND `/start` POST
+ * instead of adopting the in-flight one.
+ */
+export function sessionStartKey(projectId: string, sessionId: string) {
+  return ['session-start', projectId, sessionId] as const;
+}
+
+/**
+ * Begin the session runtime boot DURING the route transition (before the session
+ * page mounts), so provisioning overlaps navigation instead of starting after the
+ * page paints. Idempotent + fire-and-forget: React Query dedupes against the
+ * session page's own query (same key), and `/start` is idempotent server-side.
+ * Also warms the route bundle. Use at every createProjectSession→navigate site.
+ */
+export function prefetchSessionStart(
+  queryClient: QueryClient,
+  projectId: string,
+  sessionId: string,
+): void {
+  void queryClient.prefetchQuery({
+    queryKey: sessionStartKey(projectId, sessionId),
+    queryFn: () => startProjectSession(projectId, sessionId),
+    staleTime: 0,
+  });
 }
 
 export async function createProject(input: ProjectInput) {

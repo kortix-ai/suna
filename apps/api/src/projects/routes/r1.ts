@@ -283,8 +283,8 @@ projectsApp.openapi(
 
   // Start the warm pool NOW instead of waiting for portal presence — "first
   // session right after creating a project" was exactly the cold moment users
-  // felt. Fire-and-forget; no-op when the pool is disabled.
-  notePoolPresence(row.projectId);
+  // felt. Fire-and-forget; no-op when the pool is disabled. Warm for the creator.
+  notePoolPresence(row.projectId, scope.userId);
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 },
