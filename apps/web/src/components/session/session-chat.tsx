@@ -4179,11 +4179,6 @@ export function SessionChat({
       const pendingPrompt = sessionStorage.getItem(
         `opencode_pending_prompt:${sessionId}`,
       );
-      console.log('[session-chat] pending prompt check', {
-        sessionId,
-        hasPending: !!pendingPrompt,
-        attempt,
-      });
       if (!pendingPrompt) {
         // Retry up to 5 times with 50ms delay to handle race condition
         if (attempt < 5) {
@@ -4300,11 +4295,6 @@ export function SessionChat({
         .getState()
         .consumePendingFiles();
 
-      console.log('[session-chat] sending promptAsync for pending prompt', {
-        sessionId,
-        pendingFileCount: pendingFiles.length,
-      });
-
       // Upload local files and build the parts array (text + file refs)
       const sendPendingPrompt = async () => {
         const parts: Array<
@@ -4376,22 +4366,12 @@ export function SessionChat({
           } as any),
         )
         .then((res: any) => {
-          console.log('[session-chat] promptAsync resolved', {
-            sessionId,
-            status: res?.response?.status,
-            hasError: !!res?.error,
-            res,
-          });
           // The SDK resolves (not rejects) on HTTP errors, returning
           // { error: ... } instead of throwing. Handle this case so
           // the UI doesn't stay stuck on "busy" forever.
           if (res?.error) handlePromptError();
         })
-        .catch((err: any) => {
-          console.error('[session-chat] promptAsync rejected', {
-            sessionId,
-            err,
-          });
+        .catch(() => {
           handlePromptError();
         });
     };
