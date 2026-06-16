@@ -5,25 +5,116 @@ import crypto from 'node:crypto'
 
 import type { Config } from '../config'
 import { logger } from '../logger'
+import { runGit } from '../git'
+import { isLikelyBinary, mimeTypeFor } from '../file-mime'
 
 /**
- * File write routes — direct sandbox filesystem access.
+ * The daemon owns the entire file API — direct sandbox filesystem access.
  *
- * OpenCode's HTTP API only serves READ endpoints (`/file` list,
- * `/file/content`, `/file/status`, `/find/file`). The write surface
- * (upload, delete, mkdir, rename) lived in the legacy kortix-master daemon
- * and must be served here: the catch-all reverse proxy forwards everything
- * else to OpenCode, which 404s these.
+ * Reads (GET /file list, /file/content, /file/raw, /file/status) and writes
+ * (upload, delete, mkdir, rename) are all served here. We deliberately do NOT
+ * forward file reads to OpenCode: its /file/content is editor-oriented and
+ * base64-inlines IMAGES only — every other binary (Office docs, PDFs, archives,
+ * sqlite, …) comes back as { type:"binary", content:"" } with no bytes, so
+ * previews and downloads were 0-byte/corrupt. Serving reads off disk here fixes
+ * that and gives one coherent contract. (Text-search/find lives in find.ts.)
  *
- * Mounted at `/file` (e.g. POST /file/upload). Only the WRITE methods/paths
- * are registered, so GET /file and GET /file/content still fall through to
- * the OpenCode reverse-proxy catch-all.
+ * Mounted at `/file`. Only `/project/current` + `/global/health` still fall
+ * through to OpenCode (server metadata, not file ops).
  *
  * Security: every path is resolved to an absolute path and validated against
  * ALLOWED_ROOTS before any filesystem operation (no traversal escapes).
  */
 
 const DEFAULT_ALLOWED_ROOTS = ['/workspace', '/opt', '/tmp', '/home']
+
+/**
+ * Which of `absPaths` are git-ignored. Uses `git check-ignore -z --stdin` (NUL
+ * I/O so paths with spaces/newlines are safe). Returns an empty set when the
+ * workspace isn't a git repo (check-ignore exits 128) — runGit never throws on
+ * non-zero, so we just parse whatever matched.
+ */
+async function gitIgnoredSet(workspace: string, absPaths: string[]): Promise<Set<string>> {
+  const set = new Set<string>()
+  if (!absPaths.length) return set
+  const res = await runGit(['check-ignore', '-z', '--stdin'], {
+    cwd: workspace,
+    input: absPaths.join('\0'),
+  })
+  for (const p of res.stdout.split('\0')) {
+    if (p) set.add(p)
+  }
+  return set
+}
+
+/** Count text lines in a file (best-effort; 0 for binary, empty, or >5MB). */
+async function countTextLines(absPath: string): Promise<number> {
+  try {
+    const buf = await fs.readFile(absPath)
+    if (buf.length === 0 || buf.length > 5_000_000 || buf.includes(0)) return 0
+    let n = 0
+    for (let i = 0; i < buf.length; i++) if (buf[i] === 10) n++
+    return buf[buf.length - 1] === 10 ? n : n + 1
+  } catch {
+    return 0
+  }
+}
+
+type GitFileStatus = {
+  path: string
+  added: number
+  removed: number
+  status: 'added' | 'deleted' | 'modified'
+}
+
+/**
+ * Uncommitted changes as GitFileStatus[] — matches OpenCode's `file.status`
+ * shape. status enum from `git status --porcelain`; added/removed line counts
+ * from `git diff --numstat HEAD` (tracked) + line-count for untracked files.
+ * Returns [] when not a git repo.
+ */
+async function gitWorkingStatus(workspace: string): Promise<GitFileStatus[]> {
+  const st = await runGit(['-c', 'core.quotePath=false', 'status', '--porcelain', '-uall'], {
+    cwd: workspace,
+  })
+  if (st.code !== 0) return []
+  const lines = st.stdout.split('\n').filter(Boolean)
+  if (!lines.length) return []
+
+  // Line counts vs HEAD (covers staged + unstaged for tracked files).
+  const counts = new Map<string, { added: number; removed: number }>()
+  const diff = await runGit(['-c', 'core.quotePath=false', 'diff', '--numstat', 'HEAD'], {
+    cwd: workspace,
+  })
+  if (diff.code === 0) {
+    for (const l of diff.stdout.split('\n').filter(Boolean)) {
+      const parts = l.split('\t')
+      if (parts.length >= 3) {
+        const added = parts[0] === '-' ? 0 : parseInt(parts[0]!, 10) || 0
+        const removed = parts[1] === '-' ? 0 : parseInt(parts[1]!, 10) || 0
+        counts.set(parts.slice(2).join('\t'), { added, removed })
+      }
+    }
+  }
+
+  const out: GitFileStatus[] = []
+  for (const line of lines) {
+    const x = line[0]
+    const y = line[1]
+    let p = line.slice(3)
+    const arrow = p.indexOf(' -> ') // rename: "orig -> new"
+    if (arrow >= 0) p = p.slice(arrow + 4)
+    const untracked = line.startsWith('??')
+    const status: GitFileStatus['status'] =
+      x === 'D' || y === 'D' ? 'deleted' : x === 'A' || untracked ? 'added' : 'modified'
+    let c = counts.get(p)
+    if (!c) {
+      c = untracked ? { added: await countTextLines(path.join(workspace, p)), removed: 0 } : { added: 0, removed: 0 }
+    }
+    out.push({ path: p, added: c.added, removed: c.removed, status })
+  }
+  return out
+}
 
 export function createFilesRouter(cfg: Config): Hono {
   const app = new Hono()
@@ -90,6 +181,157 @@ export function createFilesRouter(cfg: Config): Hono {
     await fs.writeFile(resolvePath(attempt), data, { flag: 'wx' })
     return resolvePath(attempt)
   }
+
+  // GET /file/raw?path=<path> — stream a file's RAW bytes off disk.
+  //
+  // OpenCode's read-only /file/content endpoint base64-encodes IMAGES only;
+  // every other binary type (xlsx, pptx, docx, pdf, zip, …) comes back as
+  // { type: "binary", content: "" } with NO bytes, so downloads and previews
+  // of Office docs were 0-byte / corrupt. The daemon has direct filesystem
+  // access (it already serves uploads), so it serves the real bytes here.
+  // The web/mobile clients and the pptx Office Online viewer already target
+  // this route — it just never existed until now.
+  app.get('/raw', async (c) => {
+    const raw = c.req.query('path')
+    if (!raw) return c.json({ error: 'path query parameter is required' }, 400)
+
+    let resolved: string
+    try {
+      resolved = resolvePath(raw)
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 403)
+    }
+
+    const stat = await fs.stat(resolved).catch(() => null)
+    if (!stat) return c.json({ error: 'File not found' }, 404)
+    if (stat.isDirectory()) return c.json({ error: 'Path is a directory' }, 400)
+
+    let data: Buffer
+    try {
+      data = await fs.readFile(resolved)
+    } catch (err) {
+      logger.warn('[files] raw read failed', { path: resolved, error: (err as Error).message })
+      return c.json({ error: (err as Error).message }, 500)
+    }
+
+    // fs.readFile returns an exact-sized Buffer (a Uint8Array view) — a valid
+    // BodyInit, sent verbatim. Never text/html, so clients don't mistake it
+    // for the SPA shell and reject it.
+    return new Response(data, {
+      status: 200,
+      headers: {
+        'Content-Type': mimeTypeFor(resolved, true),
+        'Content-Length': String(stat.size),
+        'Cache-Control': 'no-store',
+      },
+    })
+  })
+
+  // GET /file/content?path=<path> — read a file as JSON FileContent.
+  //
+  // Correct for ALL types: text → utf8 string; binary (Office docs, PDFs,
+  // images, archives, sqlite, …) → base64 with encoding:'base64'. This replaces
+  // OpenCode's editor-oriented /file/content, which returned empty content for
+  // every non-image binary. Binary classification = known binary extension OR a
+  // NUL byte in the first 8KB (git's heuristic).
+  app.get('/content', async (c) => {
+    const raw = c.req.query('path')
+    if (!raw) return c.json({ error: 'path query parameter is required' }, 400)
+
+    let resolved: string
+    try {
+      resolved = resolvePath(raw)
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 403)
+    }
+
+    const stat = await fs.stat(resolved).catch(() => null)
+    if (!stat) return c.json({ error: 'File not found' }, 404)
+    if (stat.isDirectory()) return c.json({ error: 'Path is a directory' }, 400)
+
+    let data: Buffer
+    try {
+      data = await fs.readFile(resolved)
+    } catch (err) {
+      logger.warn('[files] content read failed', { path: resolved, error: (err as Error).message })
+      return c.json({ error: (err as Error).message }, 500)
+    }
+
+    const binary = isLikelyBinary(data, resolved)
+    if (binary) {
+      return c.json({
+        type: 'binary',
+        content: data.toString('base64'),
+        encoding: 'base64',
+        mimeType: mimeTypeFor(resolved, true),
+        size: stat.size,
+      })
+    }
+    return c.json({
+      type: 'text',
+      content: data.toString('utf8'),
+      mimeType: mimeTypeFor(resolved, false),
+      size: stat.size,
+    })
+  })
+
+  // GET /file?path=<dir> — list a directory as FileNode[] (worktree-relative
+  // `path`, absolute `absolute`, `ignored` from git). Mirrors OpenCode's list.
+  app.get('/', async (c) => {
+    const raw = c.req.query('path') ?? '.'
+
+    let resolved: string
+    try {
+      resolved = resolvePath(raw)
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 403)
+    }
+
+    let entries: import('node:fs').Dirent[]
+    try {
+      entries = await fs.readdir(resolved, { withFileTypes: true })
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') return c.json({ error: 'Directory not found' }, 404)
+      if (code === 'ENOTDIR') return c.json({ error: 'Path is not a directory' }, 400)
+      return c.json({ error: (err as Error).message }, 500)
+    }
+
+    // Directories first, then alphabetical — matches typical explorer ordering.
+    entries.sort((a, b) => {
+      const ad = a.isDirectory() ? 0 : 1
+      const bd = b.isDirectory() ? 0 : 1
+      return ad - bd || a.name.localeCompare(b.name)
+    })
+
+    const absolutes = entries.map((e) => path.join(resolved, e.name))
+    const ignored = await gitIgnoredSet(workspace, absolutes)
+
+    const nodes = entries.map((e, i) => {
+      const absolute = absolutes[i]!
+      const rel = path.relative(workspace, absolute)
+      return {
+        name: e.name,
+        path: rel,
+        absolute,
+        type: e.isDirectory() ? 'directory' : 'file',
+        // .git is never gitignored but should never surface as a normal folder.
+        ignored: ignored.has(absolute) || e.name === '.git',
+      }
+    })
+    return c.json(nodes)
+  })
+
+  // GET /file/status — uncommitted changes as GitFileStatus[] (path, added,
+  // removed, status). Empty when the workspace isn't a git repo.
+  app.get('/status', async (c) => {
+    try {
+      return c.json(await gitWorkingStatus(workspace))
+    } catch (err) {
+      logger.warn('[files] status failed', { error: (err as Error).message })
+      return c.json([])
+    }
+  })
 
   // POST /file/upload — upload one or more files via multipart form data.
   //

@@ -155,8 +155,8 @@ const ModalContentInner = React.forwardRef<
       <div className="absolute top-3 right-3 flex items-center justify-end gap-2">
         {closeButtonChildren}
         {showCloseButton && (
-          <ModalClose>
-            <Hint label="Close" className="z-[9999]" side="top">
+          <Hint label="Close" className="z-[9999]" side="top">
+            <ModalClose asChild>
               <Button
                 variant="ghost"
                 className={cn(
@@ -167,8 +167,8 @@ const ModalContentInner = React.forwardRef<
                 <Icon.Close className="text-primary size-4 stroke-1" />
                 <span className="sr-only">Close</span>
               </Button>
-            </Hint>
-          </ModalClose>
+            </ModalClose>
+          </Hint>
         )}
       </div>
     </DialogPrimitive.Content>

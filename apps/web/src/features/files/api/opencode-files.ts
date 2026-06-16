@@ -45,20 +45,34 @@ function unwrap<T>(result: { data?: T; error?: unknown }): T {
 // ---------------------------------------------------------------------------
 
 /**
+ * GET a daemon JSON endpoint (list / status / find) via authenticatedFetch,
+ * surfacing the server's error message on non-2xx. The daemon owns these
+ * routes; we no longer go through the OpenCode SDK for file ops.
+ */
+async function fetchDaemonJson<T>(relUrl: string): Promise<T> {
+  const baseUrl = getActiveOpenCodeUrl();
+  const response = await authenticatedFetch(`${baseUrl}${relUrl}`);
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    let parsed: any = null;
+    try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+    const message = parsed?.error || text || response.statusText || `HTTP ${response.status}`;
+    throw new Error(message);
+  }
+  return response.json() as Promise<T>;
+}
+
+/**
  * List files and directories at a given path.
  *
- * OpenCode's `file.list` resolves `path` RELATIVE to the worktree (/workspace):
- * passing the absolute "/workspace" makes it look for "/workspace/workspace" and
- * return [] (this is why the explorer showed an empty folder). So we strip the
- * workspace prefix to a repo-relative path (root → ".") for the request, then
- * map the repo-relative results back onto the absolute "/workspace/..." form the
- * rest of the app navigates and reads with. (File *reads* accept absolute paths;
- * only `list` is worktree-relative.)
+ * The daemon's `GET /file` resolves `path` RELATIVE to the worktree (/workspace),
+ * so we strip the workspace prefix to a repo-relative path (root → ".") for the
+ * request, then map the repo-relative results back onto the absolute
+ * "/workspace/..." form the rest of the app navigates and reads with.
  */
 export async function listFiles(dirPath: string): Promise<FileNode[]> {
-  const client = getClient();
-  const result = await client.file.list({ path: toWorkspaceRelative(dirPath) || '.' });
-  const nodes = unwrap(result) as FileNode[];
+  const rel = toWorkspaceRelative(dirPath) || '.';
+  const nodes = await fetchDaemonJson<FileNode[]>(`/file?path=${encodeURIComponent(rel)}`);
   return nodes.map((node) => ({
     ...node,
     path: node.absolute || `/workspace/${node.path}`,
@@ -67,7 +81,7 @@ export async function listFiles(dirPath: string): Promise<FileNode[]> {
 
 /**
  * Strip the "/workspace" prefix down to a worktree-relative path ("" = root).
- * OpenCode's read/list endpoints resolve `path` relative to the worktree.
+ * The daemon's read/list endpoints resolve `path` relative to the worktree.
  */
 function toWorkspaceRelative(filePath: string): string {
   let s = filePath || '';
@@ -111,16 +125,23 @@ export async function readFile(filePath: string): Promise<FileContent> {
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch a file as a Blob (binary previews — PDF, video, audio, images, …).
+ * Fetch a file as a Blob (downloads + binary previews — PDF, Office docs, video,
+ * audio, images, sqlite, …).
  *
- * Goes through the JSON `/file/content` endpoint, which returns base64-encoded
- * content for binary files. We deliberately do NOT use `/file/raw`: in the
- * sandbox proxy that route isn't reliably served and falls through to an HTML
- * SPA shell (HTTP 200, `text/html`) — which `response.ok` would happily hand
- * back as a corrupt "image" blob, so every image/file in chat failed to load.
- * `readFile` also handles the worktree-relative path quirk for us.
+ * Prefers the daemon's `GET /file/raw` byte stream — correct and efficient for
+ * ALL types (no base64 bloat over the wire). If `/file/raw` is unavailable
+ * (e.g. an older sandbox image whose daemon predates it) we fall back to the
+ * JSON `/file/content` endpoint, which the daemon also serves correctly
+ * (base64 for binary). `readFileRaw` guards against the SPA-shell-as-bytes trap
+ * by rejecting `text/html` responses, so a misroute degrades to the fallback
+ * rather than returning a corrupt blob.
  */
 export async function readFileAsBlob(filePath: string): Promise<Blob> {
+  try {
+    return await readFileRaw(filePath);
+  } catch {
+    // Fall back to the JSON content endpoint (also daemon-served, correct).
+  }
   const result = await readFile(filePath);
   if (result.encoding === 'base64' && result.content) {
     const bytes = Uint8Array.from(atob(result.content), (c) => c.charCodeAt(0));
@@ -132,6 +153,41 @@ export async function readFileAsBlob(filePath: string): Promise<Blob> {
   return new Blob([result.content ?? ''], {
     type: result.mimeType || 'text/plain;charset=utf-8',
   });
+}
+
+/**
+ * Fetch a file's raw bytes from the daemon's direct-filesystem read route
+ * (`GET /file/raw`) — the canonical byte source for downloads/previews. Sends
+ * the same worktree-relative path `readFile()` uses. Throws (so the caller can
+ * fall back) when the route is unavailable or returns the SPA shell.
+ */
+async function readFileRaw(filePath: string, fallbackMime?: string): Promise<Blob> {
+  const baseUrl = getActiveOpenCodeUrl();
+  const relativePath = toWorkspaceRelative(filePath);
+  const url = `${baseUrl}/file/raw?path=${encodeURIComponent(relativePath)}`;
+  const response = await authenticatedFetch(url);
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    let parsed: any = null;
+    try { parsed = JSON.parse(text); } catch { /* not JSON */ }
+    const message = parsed?.error || text || response.statusText || `HTTP ${response.status}`;
+    throw new Error(message);
+  }
+
+  // A misrouted /file/raw can fall through to the web SPA shell (HTTP 200,
+  // text/html). Never hand that back as file bytes — it'd be a corrupt blob.
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('text/html')) {
+    throw new Error('File could not be loaded (raw byte route unavailable)');
+  }
+
+  const blob = await response.blob();
+  // Prefer the mime opencode reported when the daemon couldn't infer one.
+  if (fallbackMime && (!blob.type || blob.type === 'application/octet-stream')) {
+    return new Blob([blob], { type: fallbackMime });
+  }
+  return blob;
 }
 
 /**
@@ -391,11 +447,10 @@ export async function renameFile(from: string, to: string): Promise<boolean> {
 
 /**
  * Get git file status — lists files with uncommitted changes.
+ * Daemon `GET /file/status` (was OpenCode `file.status`).
  */
 export async function getFileStatus(): Promise<GitFileStatus[]> {
-  const client = getClient();
-  const result = await client.file.status();
-  return unwrap(result) as GitFileStatus[];
+  return fetchDaemonJson<GitFileStatus[]>(`/file/status`);
 }
 
 // ---------------------------------------------------------------------------
@@ -404,20 +459,17 @@ export async function getFileStatus(): Promise<GitFileStatus[]> {
 
 /**
  * Find files and directories by name (fuzzy match).
- * Uses the server-side /find/file endpoint.
+ * Daemon `GET /find/file` (was OpenCode `find.files`).
  */
 export async function findFiles(
   query: string,
   options?: { type?: 'file' | 'directory'; limit?: number },
 ): Promise<string[]> {
   try {
-    const client = getClient();
-    const result = await client.find.files({
-      query,
-      type: options?.type,
-      limit: options?.limit,
-    });
-    return unwrap(result);
+    const params = new URLSearchParams({ query });
+    if (options?.type) params.set('type', options.type);
+    if (options?.limit) params.set('limit', String(options.limit));
+    return await fetchDaemonJson<string[]>(`/find/file?${params.toString()}`);
   } catch {
     return [];
   }
@@ -425,11 +477,11 @@ export async function findFiles(
 
 /**
  * Search for text patterns across project files (ripgrep).
+ * Daemon `GET /find` (was OpenCode `find.text`). The mapping tolerates both the
+ * flat shape the daemon returns and the nested ripgrep-JSON shape.
  */
 export async function findText(pattern: string): Promise<FindMatch[]> {
-  const client = getClient();
-  const result = await client.find.text({ pattern });
-  const raw = unwrap(result) as any[];
+  const raw = await fetchDaemonJson<any[]>(`/find?pattern=${encodeURIComponent(pattern)}`);
   return raw.map((item) => ({
     path: typeof item.path === 'string' ? item.path : (item.path?.text ?? ''),
     lines:

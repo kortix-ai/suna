@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SpreadsheetComponent } from '@syncfusion/ej2-react-spreadsheet';
-import { readFile, uploadFile } from '@/features/files';
+import { readFileAsBlob, uploadFile } from '@/features/files';
 
 interface SyncState {
   status: 'idle' | 'syncing' | 'synced' | 'error' | 'offline' | 'conflict';
@@ -187,9 +187,6 @@ export function useSpreadsheetSync({
     }
 
     try {
-      // Use OpenCode readFile API
-      const result = await readFile(filePath);
-
       const rawFileName = filePath.split('/').pop() || 'spreadsheet.xlsx';
       // Trim whitespace, newlines, and other control characters
       const fileName = rawFileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '') || 'spreadsheet.xlsx';
@@ -204,17 +201,10 @@ export function useSpreadsheetSync({
         mimeType = 'text/csv';
       }
 
-      let fileBlob: Blob;
-      if (result.encoding === 'base64') {
-        const binary = atob(result.content);
-        const bytes = new Uint8Array(binary.length);
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-        fileBlob = new Blob([bytes], { type: mimeType });
-      } else if (typeof result.content === 'string') {
-        fileBlob = new Blob([result.content], { type: mimeType });
-      } else {
-        fileBlob = new Blob([JSON.stringify(result.content)], { type: mimeType });
-      }
+      // readFileAsBlob returns the real bytes for xlsx/xls (which opencode's
+      // /file/content returns empty for) via the daemon's /file/raw route, and
+      // the text content for csv — then we re-tag with the spreadsheet mime.
+      const fileBlob = new Blob([await readFileAsBlob(filePath)], { type: mimeType });
 
       const hash = await generateHash(fileBlob);
       lastKnownHashRef.current = hash;
@@ -562,19 +552,11 @@ export function useSpreadsheetSync({
       }
 
       try {
-        // Use OpenCode readFile API
-        const result = await readFile(filePath);
-        let blob: Blob;
-        if (result.encoding === 'base64') {
-          const binary = atob(result.content);
-          const bytes = new Uint8Array(binary.length);
-          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-          blob = new Blob([bytes], { type: 'application/octet-stream' });
-        } else if (typeof result.content === 'string') {
-          blob = new Blob([result.content], { type: 'application/octet-stream' });
-        } else {
-          blob = new Blob([JSON.stringify(result.content)], { type: 'application/octet-stream' });
-        }
+        // Real bytes via the daemon's /file/raw route for binary spreadsheets
+        // (opencode's /file/content returns them empty) — hash them to detect
+        // external edits. The old base64-only read always hashed empty content
+        // for xlsx, so external changes were never picked up.
+        const blob = await readFileAsBlob(filePath);
 
         const hash = await generateHash(blob);
 

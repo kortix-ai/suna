@@ -11,6 +11,7 @@ import { createEnvRouter } from './routes/env'
 import { createGitRouter } from './routes/git'
 import { createPortProxyRouter } from './routes/port-proxy'
 import { createFilesRouter } from './routes/files'
+import { createFindRouter } from './routes/find'
 import webProxyRouter from './routes/web-proxy'
 import type { ProjectEnvStore } from './project-env'
 import {
@@ -104,12 +105,17 @@ export function buildOpencodeApp(
   // so external sites embed cleanly inside the internal browser iframe.
   app.route('/web-proxy', webProxyRouter)
 
-  // /file/* WRITE routes — upload / delete / mkdir / rename. OpenCode only
-  // serves READ file endpoints, so these must be handled by the daemon
-  // (the catch-all below would otherwise forward them to OpenCode → 404).
-  // Only the write methods/paths are registered; GET /file and
-  // GET /file/content still fall through to the OpenCode reverse proxy.
+  // /file/* — the daemon owns the ENTIRE file API: reads (GET / list,
+  // /content, /raw, /status) and writes (upload, delete, mkdir, rename). We do
+  // NOT forward file reads to OpenCode — its /file/content base64-inlines
+  // images only and returns empty content for every other binary, breaking
+  // Office-doc/PDF previews and downloads. Serving off disk here is correct for
+  // all types. (/project/current + /global/health still fall through.)
   app.route('/file', createFilesRouter(cfg))
+
+  // /find/* — daemon-served search (file-by-name + ripgrep text search), also
+  // formerly forwarded to OpenCode.
+  app.route('/find', createFindRouter(cfg))
 
   // Reverse-proxy catch-all → OpenCode. Stream both directions so SSE works.
   // If opencode hasn't bound its port yet (state !== 'ok') we 503 instead of

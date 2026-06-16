@@ -151,9 +151,12 @@ const envSchema = z.object({
   SLACK_CLIENT_ID:             optStr,
   SLACK_CLIENT_SECRET:         optStr,
   SLACK_REDIRECT_URI:          optStr,
-  // Must stay in sync with the Slack app manifest used during channel setup;
-  // anything narrower here means OAuth grants fewer scopes than the bot needs.
-  SLACK_OAUTH_SCOPES:          optStrDefault('app_mentions:read,channels:history,channels:read,channels:join,chat:write,chat:write.public,files:read,files:write,groups:history,groups:read,im:history,im:read,im:write,mpim:history,mpim:read,reactions:read,reactions:write,users:read'),
+  // Must stay in sync with the Slack app manifest used during channel setup
+  // (slack-app-manifest.json / generateSlackManifest); anything narrower here
+  // means OAuth grants fewer scopes than the bot needs. 100% bot-token scopes —
+  // the integration never requests a user token (no user_scope= param), so this
+  // list intentionally contains no user scopes.
+  SLACK_OAUTH_SCOPES:          optStrDefault('app_mentions:read,assistant:write,bookmarks:read,bookmarks:write,calls:read,calls:write,canvases:read,canvases:write,channels:history,channels:join,channels:manage,channels:read,chat:write,chat:write.customize,chat:write.public,commands,conversations.connect:manage,conversations.connect:read,conversations.connect:write,dnd:read,emoji:read,files:read,files:write,groups:history,groups:read,groups:write,im:history,im:read,im:write,links.embed:write,links:read,links:write,lists:read,lists:write,metadata.message:read,mpim:history,mpim:read,mpim:write,pins:read,pins:write,reactions:read,reactions:write,reminders:read,reminders:write,remote_files:read,remote_files:share,remote_files:write,team.billing:read,team.preferences:read,team:read,usergroups:read,usergroups:write,users.profile:read,users:read,users:read.email,users:write,workflow.steps:execute'),
   // Optional banner image rendered at the top of the App Home tab. Must be a
   // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
   SLACK_HOME_HERO_URL:         optStr,

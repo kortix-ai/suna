@@ -16,7 +16,6 @@ import {
 import { useSidebar } from '@/components/ui/sidebar';
 import { isDesktop, desktopPlatform } from '@/lib/desktop';
 import {
-  getProjectSessionSandbox,
   listProjectSessions,
   type ProjectSession,
 } from '@/lib/projects-client';
@@ -124,15 +123,14 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
   // routes + cached sandbox metadata instead of a cold compile + fetch.
   // In dev this is the bulk of the perceived close lag.
   useEffect(() => {
+    // Only prefetch the ROUTE (free, just warms Next's compile/router). Do NOT
+    // prefetch /start per tab — it provisions/wakes/ensures, and across many open
+    // tabs that floods the API into timeouts. The session page calls /start once
+    // when you actually open a tab.
     openTabIds.forEach((id) => {
       router.prefetch(`/projects/${projectId}/sessions/${id}`);
-      queryClient.prefetchQuery({
-        queryKey: ['project', 'session-sandbox', projectId, id],
-        queryFn: () => getProjectSessionSandbox(projectId, id),
-        staleTime: 15_000,
-      });
     });
-  }, [openTabIds, projectId, router, queryClient]);
+  }, [openTabIds, projectId, router]);
 
   // Load session metadata so tabs can show the real title instead of a UUID.
   const { data: sessions } = useQuery({

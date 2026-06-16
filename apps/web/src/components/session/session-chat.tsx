@@ -79,7 +79,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SessionStartingLoader } from '@/components/session/session-starting-loader';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -5954,11 +5954,11 @@ export function SessionChat({
         allSessions={allSessions}
       />
 
-      {/* Content area — loading, not-found, or actual messages */}
+      {/* Content area — loading, not-found, or actual messages. The single
+          session loader (SessionStartingLoader) carries through here on its
+          "Connecting" phase so there's never a second, different loader. */}
       {isDataLoading ? (
-        <div className="flex-1 flex items-center justify-center min-h-0">
-          <KortixLoader size="small" />
-        </div>
+        <SessionStartingLoader stage="ready" />
       ) : isNotFound ? (
         <div className="flex-1 flex flex-col items-center justify-center min-h-0 gap-3 text-center px-6">
           <div className="text-sm text-muted-foreground">

@@ -10,7 +10,7 @@ describe('request context observability fields', () => {
   test('normalizes incoming traceparent and exposes downstream trace headers', () => {
     runWithContext(
       'GET',
-      '/v1/projects/project-1/sessions/session-1/sandbox',
+      '/v1/projects/project-1/sessions/session-1/start',
       () => {
         const headers = getTraceHeaders();
         expect(headers.traceparent).toMatch(/^00-11111111111111111111111111111111-[0-9a-f]{16}-01$/);
