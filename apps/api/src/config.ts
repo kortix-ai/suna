@@ -121,8 +121,11 @@ const envSchema = z.object({
   KORTIX_GIT_PROXY:                optBoolFalse,
   // Warm sandbox pool (docs/specs/warm-pool.md). ON by default — no enable flag.
   // Default warm sandboxes per active project (operator default; the per-project
-  // UI value overrides it).
-  KORTIX_WARM_POOL_SIZE:           optInt(1),
+  // UI value overrides it). Default 2 so a rapid second create (and the ~25s
+  // refill window after a claim) still lands on a fully-parked box instead of a
+  // mid-boot one — the dominant cause of a slow "warmed" start. Trades ~2x warm
+  // idle cost; tune down with KORTIX_WARM_POOL_SIZE or per-project in the UI.
+  KORTIX_WARM_POOL_SIZE:           optInt(2),
   // Global cap on total warm (pre-booted, unclaimed) sandboxes across all
   // projects — bounds idle cost + the Daytona quota. Doubles as the kill switch:
   // set to 0 to disable the warm pool fleet-wide.

@@ -24,7 +24,12 @@ import { provisionSessionSandbox } from './session-sandbox';
 const POOL_BOOT_TIMEOUT_MS = 8 * 60 * 1000; // booting longer than this → failed → reap
 const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle (snapshot drift)
 const READY_PROBE_TIMEOUT_MS = 5 * 60 * 1000;
-const READY_PROBE_INTERVAL_MS = 3000;
+// How often we probe a booting box for readiness before flipping it to 'parked'.
+// Kept tight: at 3s a box could sit runtimeReady (but still unclaimable-as-parked,
+// with no pre-created opencode session pin) for up to ~3s, so a click in that
+// window claims it as 'booting' and pays a missing-pin ensure-opencode round-trip.
+// 600ms shrinks that dead window to near-zero with only minor extra probe traffic.
+const READY_PROBE_INTERVAL_MS = 600;
 const resumedPromotions = new Set<string>();
 
 // Warm pool is ON by default — there's no enable flag. The fleet-wide kill

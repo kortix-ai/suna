@@ -24,6 +24,16 @@ import type {
   ProvisioningStatus,
 } from './index';
 
+// Short-TTL cache for getStatus on the session-open hot path. POST /sessions/:id/start
+// is polled ~every 800ms and each poll did an UNCACHED daytona.get() (~150-600ms)
+// just to confirm a freshly-claimed warm box is still running — pure overhead that
+// dominates the warm-start server cost. Box state changes far slower than the poll
+// cadence, so caching the 'running' verdict briefly collapses ~2/3 of those
+// provider round-trips. Only 'running' is cached (never 'stopped'/'unknown'), so
+// idle-stop / wake detection always reads fresh; start/stop/remove bust the entry.
+const STATUS_CACHE_TTL_MS = 1500;
+const runningStatusCache = new Map<string, number>(); // externalId → cachedAt (ms)
+
 export class DaytonaProvider implements SandboxProvider {
   readonly name: ProviderName = 'daytona';
 
@@ -255,29 +265,38 @@ export class DaytonaProvider implements SandboxProvider {
   }
 
   async start(externalId: string): Promise<void> {
+    runningStatusCache.delete(externalId);
     const daytona = getDaytona();
     const sandbox = await daytona.get(externalId);
     await sandbox.start();
   }
 
   async stop(externalId: string): Promise<void> {
+    runningStatusCache.delete(externalId);
     const daytona = getDaytona();
     const sandbox = await daytona.get(externalId);
     await sandbox.stop();
   }
 
   async remove(externalId: string): Promise<void> {
+    runningStatusCache.delete(externalId);
     const daytona = getDaytona();
     const sandbox = await daytona.get(externalId);
     await daytona.delete(sandbox);
   }
 
   async getStatus(externalId: string): Promise<SandboxStatus> {
+    const cachedAt = runningStatusCache.get(externalId);
+    if (cachedAt !== undefined && Date.now() - cachedAt < STATUS_CACHE_TTL_MS) return 'running';
     try {
       const daytona = getDaytona();
       const sandbox = await daytona.get(externalId);
       const state = String(sandbox.state ?? '').toLowerCase();
-      if (state.includes('start') || state.includes('running') || state.includes('active')) return 'running';
+      if (state.includes('start') || state.includes('running') || state.includes('active')) {
+        runningStatusCache.set(externalId, Date.now());
+        return 'running';
+      }
+      runningStatusCache.delete(externalId);
       if (state.includes('stop') || state.includes('archive')) return 'stopped';
       return 'unknown';
     } catch {
