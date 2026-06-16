@@ -150,13 +150,23 @@ start_tunnel_watchdog() {
   (
     while :; do
       sleep 60
-      url="$(cat "$TUNNEL_URL_FILE" 2>/dev/null)" || continue
-      curl -fsS -m 8 "$url/health" >/dev/null 2>&1 && continue
-      # API itself down? Then it's not the tunnel — don't rotate.
+      # If the local API is down it's not the tunnel's fault — skip.
       curl -fsS -m 2 "http://localhost:${PORT:-8008}/health" >/dev/null 2>&1 || continue
-      sleep 5
-      curl -fsS -m 8 "$url/health" >/dev/null 2>&1 && continue
-      echo "[dev] ⚠️  tunnel $url is DEAD — rotating cloudflared + restarting API..."
+      url="$(cat "$TUNNEL_URL_FILE" 2>/dev/null || true)"
+      cf_alive() { pgrep -f 'cloudflared tunnel --no-autoupdate' >/dev/null 2>&1; }
+      # FAA: healthy = url present AND cloudflared alive AND the url answers.
+      # The old `cat … || continue` skipped a MISSING url-file forever, and it
+      # never checked whether cloudflared itself had died — so a silently-rotted
+      # tunnel left every new session stuck on a dead/empty KORTIX_URL with no
+      # recovery. Now any of {missing url, dead cloudflared, dead url} triggers
+      # a (re)establish, so the stack self-heals within ~1 min instead of needing
+      # a hand restart.
+      if [[ -n "$url" ]] && cf_alive && curl -fsS -m 8 "$url/health" >/dev/null 2>&1; then continue; fi
+      # Confirm (avoid a transient blip) before bouncing the stack.
+      if [[ -n "$url" ]] && cf_alive; then
+        sleep 5; curl -fsS -m 8 "$url/health" >/dev/null 2>&1 && continue
+      fi
+      echo "[dev] ⚠️  tunnel ${url:-<none>} DEAD/MISSING (cloudflared $(pgrep -fc 'cloudflared tunnel' 2>/dev/null || echo 0) procs) — (re)establishing + restarting API..."
       [[ -n "${TUNNEL_PID:-}" ]] && kill "$TUNNEL_PID" 2>/dev/null || true
       pkill -f 'cloudflared tunnel --no-autoupdate' 2>/dev/null || true
       TUNNEL_LOG="$(mktemp -t kortix-tunnel.XXXXXX)"
