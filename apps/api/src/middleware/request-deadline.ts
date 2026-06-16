@@ -74,8 +74,8 @@ const EXEMPT_FRAGMENTS = [
   '/turn-question',
   '/provision-stream',
   '/provision',               // managed repo create + sandbox boot
-  '/wake',                    // cold sandbox resume
-  '/ensure-opencode',         // in-sandbox runtime (re)start
+  '/start',                   // unified session open: provision/resume + pin
+                              // resolve (replaces /wake + /ensure-opencode)
   '/commit-push',             // host-driven git commit+push
   '/deployments',             // app deploys (build + upload)
   '/snapshots',               // sandbox template builds

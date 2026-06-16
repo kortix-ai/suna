@@ -452,6 +452,21 @@ export async function isRepoMaterialized(target: string): Promise<boolean> {
   return pathExists(`${target}/.git`)
 }
 
+/**
+ * Remove a STALE git lock before a checkout. A `.git/index.lock` left behind by
+ * a git process that crashed or was killed mid-op (e.g. the daemon was OOM-killed
+ * or restarted during materialization) makes every later `git checkout` fail with
+ * "Unable to create '.../index.lock': File exists" — which surfaced to users as
+ * "failed to create local session branch … Another git process seems to be
+ * running". Safe here: the session-branch checkout is the sole sequential git op
+ * on a freshly-materialized workspace, so any lock present is necessarily stale.
+ */
+async function clearStaleGitLock(target: string): Promise<void> {
+  for (const lock of ['index.lock', 'HEAD.lock']) {
+    await rm(join(target, '.git', lock), { force: true }).catch(() => {})
+  }
+}
+
 async function checkoutSessionBranch(
   cfg: Config,
   target: string,
@@ -472,6 +487,7 @@ async function checkoutSessionBranch(
   ], { timeoutMs: 30_000 })
 
   if (fetched.code === 0) {
+    await clearStaleGitLock(target)
     const checkout = await gitWithAuth(token, cfg.repoUrl, [
       '-C',
       target,
@@ -495,6 +511,7 @@ async function checkoutSessionBranch(
     })
   }
 
+  await clearStaleGitLock(target)
   const local = await gitWithAuth(token, cfg.repoUrl, [
     '-C',
     target,
@@ -509,6 +526,7 @@ async function checkoutSessionBranch(
 }
 
 async function checkoutLocalSessionBranch(target: string, branch: string): Promise<void> {
+  await clearStaleGitLock(target)
   const local = await execGit([
     '-C',
     target,

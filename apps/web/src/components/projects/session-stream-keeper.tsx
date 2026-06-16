@@ -7,7 +7,7 @@ import type { Event as OpenCodeEvent } from '@opencode-ai/sdk/v2/client';
 
 import { getClientForUrl } from '@/lib/opencode-sdk';
 import { getSandboxUrlForExternalId } from '@/stores/server-store';
-import { getProjectSessionSandbox } from '@/lib/projects-client';
+import { listProjectSessions } from '@/lib/projects-client';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import {
   useProjectSessionTabsStore,
@@ -58,20 +58,24 @@ function BackgroundSessionStream({
   projectId: string;
   sessionId: string;
 }) {
-  // Reuses the session-sandbox query the route already populates (same key),
-  // so this is almost always a cache hit — no extra round-trip.
-  const { data: sandbox } = useQuery({
-    queryKey: ['project', 'session-sandbox', projectId, sessionId],
-    queryFn: () => getProjectSessionSandbox(projectId, sessionId),
+  // Derive the live sandbox URL from the project's session LIST (one shared
+  // query across all tabs — React Query dedupes the key), NOT a per-tab call.
+  // CRITICAL: a background tab must NEVER call /start — that provisions/wakes/
+  // ensures and, multiplied across many open tabs, floods the API into timeouts.
+  // We just piggyback on the already-loaded list to find a running session's
+  // external_id; provisioning/stopped tabs simply don't background-stream until
+  // you actually open them.
+  const { data: sessions } = useQuery({
+    queryKey: ['project-sessions', projectId],
+    queryFn: () => listProjectSessions(projectId),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
-    refetchInterval: (q) =>
-      q.state.data && q.state.data.status === 'provisioning' ? 2_000 : false,
   });
-
-  // Cloud sandboxes expose an OpenCode proxy derived purely from external_id.
+  const session = sessions?.find((s) => s.session_id === sessionId);
   const externalId =
-    sandbox && sandbox.status === 'active' ? sandbox.external_id : null;
+    session?.status === 'running'
+      ? session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] ?? null
+      : null;
 
   useEffect(() => {
     if (!externalId) return;

@@ -8,7 +8,7 @@ import { db } from '../../shared/db';
 import { extractApps } from '../apps';
 import { extractTriggers, loadProjectTriggers, type ParsedManifest } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
-import { projectTriggerRuntime, sessionSandboxes } from '@kortix/db';
+import { projectSessions, projectTriggerRuntime, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser } from '../lib/access';
 import { AnyObject, AppSchema, TriggerSchema, projectsApp } from '../lib/app';
@@ -440,6 +440,24 @@ projectsApp.openapi(
     const status = body.status === 'error' ? 'error' : 'idle';
     const ok = await relayTurnEnd(sessionId, status, body.opencode_session_id?.trim() || undefined);
     return c.json({ ok });
+  }
+
+  // `opencode_session` carries the canonical opencode ROOT id the sandbox just
+  // bootstrapped (or reused after a restart). Persist it as the durable pin so
+  // the Kortix session resolves to the LIVE root with NO dependency on a browser
+  // ever opening it — closing the null-pin gap that left Slack/trigger/cron
+  // sessions resolving lazily onto the wrong (orphaned) root. The sandbox token
+  // is already scoped to this project (checked above); the daemon only ever
+  // reports its own pin-file root, never a subagent.
+  if (body.kind === 'opencode_session') {
+    const ocId = body.opencode_session_id?.trim();
+    if (!ocId) return c.json({ error: 'opencode_session_id is required' }, 400);
+    const updated = await db
+      .update(projectSessions)
+      .set({ opencodeSessionId: ocId, updatedAt: new Date() })
+      .where(and(eq(projectSessions.sessionId, sessionId), eq(projectSessions.projectId, projectId)))
+      .returning({ sessionId: projectSessions.sessionId });
+    return c.json({ ok: updated.length > 0 });
   }
 
   const text = (body.text ?? '').trim();

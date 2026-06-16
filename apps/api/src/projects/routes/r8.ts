@@ -14,110 +14,48 @@ import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { resolveProjectGitAuth, withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
-import { kickProvisionOnOpen, refreshCrTips, resumeStoppedSandbox } from './shared';
+import { kickProvisionOnOpen, openSession, refreshCrTips, resumeStoppedSandbox } from './shared';
+
+
+// POST /v1/projects/:projectId/sessions/:sessionId/start
+// THE unified session-open endpoint. One idempotent call that provisions a
+// missing sandbox, resumes a hibernated/idle one, and resolves the OpenCode pin
+// once reachable — returning a single readiness payload { stage, sandbox,
+// opencode_session_id, retriable } the client polls until stage='ready'. Replaces
+// the old GET /sandbox + POST /wake + POST /ensure-opencode three-call dance.
 
 projectsApp.openapi(
   createRoute({
     method: 'post',
-    path: '/{projectId}/sessions/{sessionId}/wake',
+    path: '/{projectId}/sessions/{sessionId}/start',
     tags: ['sessions'],
-    summary: 'POST /:projectId/sessions/:sessionId/wake',
+    summary: 'POST /:projectId/sessions/:sessionId/start',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      },
-    responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 402, 404),
-    },
+    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+    responses: { 200: json(z.any(), 'OK'), ...errors(400, 402, 404) },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
 
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
-  const wakeVisible = await loadVisibleSession(loaded, sessionId);
-  if (!wakeVisible) return c.json({ error: 'Not found' }, 404);
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const visible = await loadVisibleSession(loaded, sessionId);
+    if (!visible) return c.json({ error: 'Not found' }, 404);
 
-  // Billing v2 — same gate as session create. An unsubscribed account can
-  // own a stopped sandbox (e.g. they cancelled their sub after creating it),
-  // but they shouldn't be able to resume it without re-activating billing.
-  // Body shape mirrors createProjectSession's 402 (see note there).
-  const billingCheck = await checkBillingActive(loaded.row.accountId);
-  if (!billingCheck.ok) {
-    return c.json(
-      {
-        error: billingCheck.message,
-        message: billingCheck.message,
-        code: billingCheck.reason,
-        balance: billingCheck.balance,
-      },
-      402,
-    );
-  }
-
-  const [row] = await db
-    .select()
-    .from(sessionSandboxes)
-    .where(and(
-      eq(sessionSandboxes.sessionId, sessionId),
-      eq(sessionSandboxes.projectId, projectId),
-      eq(sessionSandboxes.accountId, loaded.row.accountId),
-    ))
-    .limit(1);
-
-  // Dormant session with no sandbox yet (e.g. a migrated legacy session) —
-  // provision one on open (same trigger as GET /sandbox).
-  if (!row) {
-    if (wakeVisible.row.status === 'stopped') {
-      await kickProvisionOnOpen(loaded, wakeVisible.row, projectId, sessionId);
-      return c.json({ status: 'provisioning' });
+    // Same gate as wake/create: resuming or provisioning spends compute.
+    const billing = await checkBillingActive(loaded.row.accountId);
+    if (!billing.ok) {
+      return c.json(
+        { error: billing.message, message: billing.message, code: billing.reason, balance: billing.balance },
+        402,
+      );
     }
-    return c.json({ status: 'unknown' });
-  }
 
-  if (!row.externalId) return c.json({ status: 'unknown' });
-
-  const providerName = row.provider as SandboxProviderName;
-  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
-    return c.json({ status: 'unknown' });
-  }
-  const provider = getProvider(providerName);
-
-  let status: string;
-  try {
-    status = await provider.getStatus(row.externalId);
-  } catch {
-    return c.json({ status: 'unknown' });
-  }
-  if (status === 'running') return c.json({ status: 'running' });
-
-  // Explicitly hibernated session (row status='stopped' — Stop button / idle
-  // maintenance): resume IN PLACE through the shared path so the row flips back
-  // to active, the session returns to 'running', and compute metering reopens.
-  // Without this, a stopped row would also be a candidate for delete+reprovision
-  // on the GET poll — we want resume, not a cold reboot.
-  if (row.status === 'stopped') {
-    await resumeStoppedSandbox({
-      sandboxId: row.sandboxId,
-      sessionId,
-      accountId: row.accountId,
-      provider: row.provider,
-      externalId: row.externalId,
-    });
-    return c.json({ status: 'waking' });
-  }
-
-  // Idle auto-stop by the provider (DB row still reads 'active'): just kick the
-  // start in the background so the caller gets an instant answer and the health
-  // poll observes readiness. Don't block on the provider start (~10-30s).
-  void provider.start(row.externalId).catch((err) =>
-    console.warn(`[wake] failed to start sandbox ${row.externalId} (session ${sessionId}):`, err),
-  );
-  return c.json({ status: 'waking' });
-},
+    const result = await openSession({ loaded, visible, projectId, sessionId });
+    return c.json(result, 200);
+  },
 );
 
 // POST /v1/projects/:projectId/sessions/:sessionId/restart

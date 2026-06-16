@@ -10,7 +10,7 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import { ProjectShell } from '@/components/projects/project-shell';
 import { SessionChat } from '@/components/session/session-chat';
 import { SessionLayout } from '@/components/session/session-layout';
-import { SessionLoadingSkeleton } from '@/components/session/session-loading-skeleton';
+import { SessionStartingLoader } from '@/components/session/session-starting-loader';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAccountState } from '@/hooks/billing';
@@ -25,10 +25,9 @@ import { setActiveInstanceCookie } from '@/lib/instance-routes';
 import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
 import {
   getProjectDetail,
-  getProjectSessionSandbox,
   restartProjectSession,
+  startProjectSession,
   syncOpencodeSessionData,
-  wakeProjectSession,
 } from '@/lib/projects-client';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import {
@@ -84,61 +83,75 @@ export default function ProjectSessionPage() {
   const accountLoaded = !!accountState;
   const noPlan = isBillingEnabled() && accountLoaded && !accountState.subscription?.subscription_id;
 
+  // ONE session-open call. POST /start idempotently provisions/resumes the
+  // sandbox AND resolves the OpenCode pin server-side, returning a single
+  // readiness payload we poll until `stage==='ready'`. This replaces the old
+  // three-call dance (GET /sandbox poll + POST /wake + POST /ensure-opencode).
   // session_id == sandbox_id by construction (see session-sandbox.ts).
-  const { data: sandbox, isLoading } = useQuery({
-    queryKey: ['project', 'session-sandbox', projectId, sessionId],
-    queryFn: () => getProjectSessionSandbox(projectId!, sessionId!),
+  const { data: start, isLoading } = useQuery({
+    queryKey: ['session-start', projectId, sessionId],
+    queryFn: () => startProjectSession(projectId!, sessionId!),
     enabled: !!user && !!sessionId && !!projectId && !noPlan,
     staleTime: 0,
-    // Poll while the row is missing (returns null) OR while still provisioning.
-    // Tight cadence so the UI flips to the sandbox the instant the backend
-    // marks it active — the provisioning wall is the backend's, not ours.
+    // Poll until the runtime is ready or a terminal stage. `retriable` is the
+    // backend's authoritative "still making progress" signal; null = a transient
+    // failure, so retry shortly.
     refetchInterval: (query) => {
       const data = query.state.data;
-      if (!data) return 300;
-      return data.status === 'provisioning' ? 300 : false;
+      if (!data) return 500;
+      return data.retriable ? 800 : false;
     },
+  });
+  const sandbox = start?.sandbox ?? null;
+  const startStage = start?.stage ?? 'provisioning';
+
+  // Subscribe to the store so we can BOTH render-gate the dashboard mount and
+  // drive the active-server switch off the real success condition (the active
+  // server actually points at THIS sandbox). Every downstream hook reads from
+  // this store. Declared above the switch effect so the effect can depend on it.
+  const activeInstanceId = useServerStore((s) => {
+    const active = s.servers.find((entry) => entry.id === s.activeServerId);
+    return active?.instanceId;
   });
 
   // When the sandbox is active, register it as the active server so any
-  // sandbox-coupled UI inside the dashboard reads ITS OpenCode URL.
-  // CRITICAL: clear the legacy `kortix-active-instance` cookie afterwards
-  // (and on every render). With it set, middleware can hijack client-side
-  // navigation away from the project/session URL. We never want that.
-  const switchedRef = useRef<string | null>(null);
+  // sandbox-coupled UI reads ITS OpenCode URL. This RE-ATTEMPTS until the store
+  // actually points at this sandbox, rather than latching on the first attempt.
+  // The previous one-shot ref wedged the page on the loading skeleton forever —
+  // recoverable ONLY by a hard refresh — whenever the switch no-oped: the row
+  // read as `active` before `external_id` was written, a stale activeServerId
+  // rehydrated from a prior session (the store is persisted), or a competing
+  // switch stole it. Nothing ever re-asserted this session's sandbox.
+  // switchToSessionSandboxAsync is idempotent (fast-paths when already active),
+  // so re-running until activeInstanceId matches is safe.
+  const switchingRef = useRef(false);
   useEffect(() => {
     if (!sandbox || !projectId) return;
-    if (sandbox.status !== 'active') return;
-    if (switchedRef.current === sandbox.sandbox_id) return;
-    switchedRef.current = sandbox.sandbox_id;
+    // Wait for a fully-usable row; do NOT record any "attempted" state here, or
+    // a transient active-without-external_id read would block every later retry.
+    if (sandbox.status !== 'active' || !sandbox.external_id) return;
+    if (activeInstanceId === sandbox.sandbox_id) return; // already switched — done
+    if (switchingRef.current) return; // a switch is already in flight
+    switchingRef.current = true;
     sessionMark(sandbox.session_id, 'sandbox-active');
     (async () => {
-      markProvisioningVerified();
-      // No cache teardown here anymore. OpenCode caches (query keys + the
-      // localStorage placeholders) and the message sync store are now scoped
-      // per-sandbox (see opencodeKeys / activeServerKey), so the previous
-      // sandbox's data can't bleed into this one — and keeping it cached is
-      // exactly what makes switching back to an already-open session instant
-      // instead of reloading.
-      // Pass the already-fetched row so the switch skips a duplicate
-      // GET /sessions/:id/sandbox on first open.
-      await switchToSessionSandboxAsync(projectId, sandbox.sandbox_id, sandbox);
-      // Hard-clear the cookie so no subsequent navigation can be hijacked.
-      setActiveInstanceCookie(null);
+      try {
+        markProvisioningVerified();
+        // Pass the already-fetched row so the switch skips a duplicate
+        // GET /sessions/:id/sandbox on first open. OpenCode caches are scoped
+        // per-sandbox (opencodeKeys / activeServerKey), so no teardown needed.
+        await switchToSessionSandboxAsync(projectId, sandbox.sandbox_id, sandbox);
+        // Hard-clear the legacy cookie so no later navigation can be hijacked.
+        setActiveInstanceCookie(null);
+      } finally {
+        switchingRef.current = false;
+      }
     })();
-  }, [sandbox, projectId, queryClient]);
+  }, [sandbox, projectId, activeInstanceId]);
 
   // Belt-and-suspenders: every render on this route force-clears the cookie.
   useEffect(() => {
     setActiveInstanceCookie(null);
-  });
-
-  // Subscribe to the store so we can render-gate the dashboard mount until
-  // the active server has actually flipped to THIS sandbox (see the docblock
-  // at the top — every downstream hook reads from this store).
-  const activeInstanceId = useServerStore((s) => {
-    const active = s.servers.find((entry) => entry.id === s.activeServerId);
-    return active?.instanceId;
   });
 
   useEffect(() => {
@@ -147,19 +160,8 @@ export default function ProjectSessionPage() {
     }
   }, [activeInstanceId, sandbox]);
 
-  // Wake-on-open: the DB row reads `active` even after the provider auto-stops
-  // an idle sandbox, so opening such a session would spin the health poll
-  // against a dead container. Fire a best-effort wake once when the row is
-  // active — a running sandbox is a cheap no-op; a stopped one starts warming
-  // immediately while the health poll picks up readiness.
-  const wokeRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!sandbox || !projectId) return;
-    if (sandbox.status !== 'active') return;
-    if (wokeRef.current === sandbox.sandbox_id) return;
-    wokeRef.current = sandbox.sandbox_id;
-    void wakeProjectSession(projectId, sandbox.session_id).catch(() => {});
-  }, [sandbox, projectId]);
+  // (Wake-on-open removed: POST /start now resumes an idle/hibernated box as part
+  // of the single open call — no separate best-effort wake round-trip.)
 
   // The moment we know there's no plan, pop the one Team plan modal — don't
   // wait for a sandbox boot + 402 (which made it look like a session got
@@ -177,7 +179,7 @@ export default function ProjectSessionPage() {
   const sandboxLabel = sandbox ? `session ${sandbox.sandbox_id.slice(0, 8)}` : undefined;
   const inner = (() => {
     if (authLoading || !user) {
-      return <SessionLoadingSkeleton />;
+      return <SessionStartingLoader />;
     }
 
     // No plan → don't spin on a sandbox that will never provision. Show a calm
@@ -201,11 +203,11 @@ export default function ProjectSessionPage() {
     }
 
     if (isLoading || !sandbox) {
-      return <SessionLoadingSkeleton />;
+      return <SessionStartingLoader stage={startStage} />;
     }
 
     if (sandbox.status === 'provisioning') {
-      return <SessionLoadingSkeleton />;
+      return <SessionStartingLoader stage={startStage} />;
     }
 
     if (sandbox.status === 'error') {
@@ -236,14 +238,18 @@ export default function ProjectSessionPage() {
     // Active — wait until the server-store has actually flipped to this
     // sandbox before mounting the chat (downstream hooks read from the store).
     if (activeInstanceId !== sandbox.sandbox_id) {
-      return <SessionLoadingSkeleton />;
+      return <SessionStartingLoader stage={startStage} />;
     }
 
     return (
       <ProjectSessionRuntimeConnection>
         <OpenCodeEventStreamProvider />
         <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <ActiveSessionChat projectId={projectId} sessionId={sessionId} />
+          <ActiveSessionChat
+            projectId={projectId}
+            sessionId={sessionId}
+            pinFromStart={start?.opencode_session_id ?? null}
+          />
         </div>
       </ProjectSessionRuntimeConnection>
     );
@@ -296,7 +302,15 @@ function InlineSessionError({
  * first runtime-ready render so the user lands inside the conversation UI
  * immediately.
  */
-function ActiveSessionChat({ projectId, sessionId }: { projectId: string; sessionId: string }) {
+function ActiveSessionChat({
+  projectId,
+  sessionId,
+  pinFromStart,
+}: {
+  projectId: string;
+  sessionId: string;
+  pinFromStart: string | null;
+}) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const runtimeReady = useSandboxConnectionStore(
     (s) => s.status === 'connected' && s.healthy === true,
@@ -316,7 +330,7 @@ function ActiveSessionChat({ projectId, sessionId }: { projectId: string; sessio
     isLoading: sessionsLoading,
     listed: sessionsListed,
     error: runtimeError,
-  } = useCanonicalOpenCodeSession({ projectId, sessionId });
+  } = useCanonicalOpenCodeSession({ projectId, sessionId, pinFromStart });
 
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId, sessionId),
@@ -485,8 +499,12 @@ function ActiveSessionChat({ projectId, sessionId }: { projectId: string; sessio
     );
   }
 
+  // Sandbox is up + switched; we're waiting on the runtime health + the canonical
+  // OpenCode pin. Keep the SAME single progress loader on its final "Connecting"
+  // phase rather than swapping to a second, different skeleton — one continuous
+  // 0→100% loader until the conversation is actually ready.
   if (!chatSessionId) {
-    return <SessionLoadingSkeleton />;
+    return <SessionStartingLoader stage="ready" />;
   }
 
   return (
