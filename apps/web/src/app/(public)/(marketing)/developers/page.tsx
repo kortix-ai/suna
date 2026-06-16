@@ -35,6 +35,7 @@ import { HiArrowRight } from 'react-icons/hi';
 const GITHUB_URL = 'https://github.com/kortix-ai/suna';
 const DOCS_URL = '/docs';
 const DEFAULT_INSTALL_HOST = 'kortix.com';
+const fav = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 
 const C = {
   c: 'text-muted-foreground/70',
@@ -322,6 +323,97 @@ function Step({
   );
 }
 
+const KORTIX_TOML = `name = "acme-ops"
+
+[sandbox]
+image = ".kortix/Dockerfile"
+
+[[agents]]
+name   = "support-triage"
+model  = "anthropic/claude-opus-4-8"
+skills = ["ticket-triage", "kortix-memory"]
+
+[[triggers]]
+type     = "cron"
+schedule = "0 8 * * *"
+agent    = "support-triage"
+
+[connectors]
+slack  = true
+linear = true`;
+
+const REPO_TREE: [string, number, 'dir' | 'file' | 'accent'][] = [
+  ['acme-ops', 0, 'dir'],
+  ['kortix.toml', 1, 'accent'],
+  ['.kortix', 1, 'dir'],
+  ['opencode', 2, 'dir'],
+  ['agents', 3, 'dir'],
+  ['support-triage.md', 4, 'file'],
+  ['skills', 3, 'dir'],
+  ['ticket-triage', 4, 'dir'],
+  ['tools', 3, 'dir'],
+  ['web_search.ts', 4, 'file'],
+  ['Dockerfile', 2, 'file'],
+];
+
+function HeroWorkspace() {
+  return (
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+      {/* repo tree */}
+      <div className="border-border bg-card overflow-hidden rounded-lg border">
+        <div className="border-border text-muted-foreground flex items-center gap-2 border-b px-4 py-2.5 font-mono text-xs">
+          <GitBranch className="size-3.5" /> the repo is the product
+        </div>
+        <div className="p-4 font-mono text-sm">
+          {REPO_TREE.map(([name, depth, kind], i) => (
+            <div
+              key={i}
+              className="flex items-center gap-2 py-0.5"
+              style={{ paddingLeft: `${depth * 14}px` }}
+            >
+              {kind === 'dir' ? (
+                <Boxes className="text-muted-foreground/60 size-3.5 shrink-0" />
+              ) : (
+                <FileCode2
+                  className={cn(
+                    'size-3.5 shrink-0',
+                    kind === 'accent' ? 'text-kortix-green' : 'text-muted-foreground/60',
+                  )}
+                />
+              )}
+              <span
+                className={cn(
+                  kind === 'accent'
+                    ? 'text-foreground font-medium'
+                    : kind === 'dir'
+                      ? 'text-foreground/80'
+                      : 'text-muted-foreground',
+                )}
+              >
+                {name}
+                {kind === 'dir' ? '/' : ''}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* kortix.toml */}
+      <div className="border-border bg-card overflow-hidden rounded-lg border">
+        <div className="border-border flex items-center gap-2 border-b px-4 py-2.5">
+          <span className="bg-foreground text-background rounded px-2.5 py-0.5 font-mono text-xs font-medium">
+            kortix.toml
+          </span>
+          <span className="text-muted-foreground font-mono text-xs">declare it once</span>
+        </div>
+        <div className="overflow-x-auto p-2 text-sm">
+          <CodeBlockCode code={KORTIX_TOML} language="toml" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DevelopersPage() {
   const { copied, copy } = useCopy();
   const [installHost, setInstallHost] = useState(DEFAULT_INSTALL_HOST);
@@ -357,15 +449,20 @@ export default function DevelopersPage() {
               Use Claude Code, Codex, Cursor, or opencode locally. Package the agent as code. Deploy
               it to Slack with Kortix.
             </p> */}
+            <Badge variant="update" className="rounded-full">
+              For developers · Open source
+            </Badge>
             <h1 className="text-foreground mt-5 text-4xl leading-[1.1] font-medium tracking-tight md:text-5xl">
-              {tHome('heroCommandCenter')}
+              One kortix.toml. One Git repo.
               <br />
-              <span className="text-muted-foreground">{tHome('heroAiWorkforce')}</span>
+              <span className="text-muted-foreground">Your entire AI workforce, as code.</span>
             </h1>
             <p className="text-muted-foreground mt-6 max-w-xl text-lg leading-relaxed">
-              {tHome('heroDescription')}
+              Agents, skills, tools, connectors, schedules — all just files in a repo. Edit them in
+              your IDE, run them locally, ship to the cloud with one command. Open source,
+              self-hostable, yours.
             </p>
-            <div className="mt-8 flex flex-wrap gap-3">
+            <div className="mt-8 flex flex-wrap items-center gap-3">
               <div className="bg-card flex items-center gap-4 rounded-sm border p-3 px-5">
                 <div className="flex gap-3">
                   <span className="text-foreground font-mono text-sm">$ </span>
@@ -375,10 +472,21 @@ export default function DevelopersPage() {
                   {copied ? <Check className="text-primary size-4" /> : <Copy className="size-4" />}
                 </Button>
               </div>
+              <Button size="lg" variant="secondary" asChild>
+                <Link href={DOCS_URL}>
+                  Read the docs <HiArrowRight className="size-4" />
+                </Link>
+              </Button>
             </div>
           </section>
 
-          <div id="demo" className="relative z-10 mt-14 h-full w-full scroll-mt-24 sm:mt-20">
+          <div className="relative z-10 mt-12 sm:mt-14">
+            <Reveal>
+              <HeroWorkspace />
+            </Reveal>
+          </div>
+
+          <div id="demo" className="relative z-10 mt-6 h-full w-full scroll-mt-24 sm:mt-8">
             <CliDemo />
           </div>
         </div>
@@ -600,6 +708,211 @@ export default function DevelopersPage() {
             </Link>
           </div>
         </Reveal>
+      </section>
+
+      {/* Scalability */}
+      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+        <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
+          <Reveal>
+            <Eyebrow>Scale</Eyebrow>
+            <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+              1 session = 1 sandbox = 1 branch
+            </h2>
+            <p className="text-muted-foreground mt-4 max-w-md text-base leading-relaxed">
+              Every session runs in its own isolated sandbox — real, isolated compute — on its own
+              Git branch off main. Spin up millions in parallel; nothing collides.
+            </p>
+            <ul className="mt-6 max-w-md space-y-2.5">
+              {[
+                'Anything worth keeping comes back as a change request — and merges into main',
+                'Main is always the source of truth: every agent action is auditable Git history',
+                'It’s all Git under the hood — branch, diff, review, merge',
+                'The same Kortix CLI runs inside every sandbox — so running locally and in the cloud is identical',
+                'Isolated compute per session; one runaway agent can’t touch another',
+              ].map((b, i) => (
+                <li key={b} className="text-muted-foreground flex gap-2.5 text-[15px] leading-relaxed">
+                  <KortixAsterisk index={i} />
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+          <Reveal delay={0.1}>
+            <CodeWindowFrame tab="git log --graph">
+              <Line>
+                <span className={C.s}>*</span>
+                <span className={C.f}>{'  c7e2  CR #84 merged'}</span>
+                <span className={C.c}>{'   (main)'}</span>
+              </Line>
+              <Line>
+                <span className={C.c}>{'|\\'}</span>
+              </Line>
+              <Line>
+                <span className={C.c}>{'| *  s_7f2a  '}</span>
+                <span className={C.f}>triage 14 tickets</span>
+              </Line>
+              <Line>
+                <span className={C.c}>{'| *  s_3c1d  '}</span>
+                <span className={C.f}>build board deck</span>
+              </Line>
+              <Line>
+                <span className={C.c}>{'| *  s_9a04  '}</span>
+                <span className={C.f}>draft outreach</span>
+              </Line>
+              <Line>
+                <span className={C.c}>{'|/'}</span>
+              </Line>
+              <Line>
+                <span className={C.s}>*</span>
+                <span className={C.f}>{'  a1f3  baseline'}</span>
+                <span className={C.c}>{'   (main)'}</span>
+              </Line>
+              <Line>&nbsp;</Line>
+              <Line>
+                <span className={C.c}>… millions of branches, one source of truth</span>
+              </Line>
+            </CodeWindowFrame>
+          </Reveal>
+        </div>
+      </section>
+
+      {/* Connectors */}
+      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+        <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2 lg:gap-16">
+          <Reveal className="lg:order-2">
+            <Eyebrow>Connectors</Eyebrow>
+            <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+              Every tool, behind one interface
+            </h2>
+            <p className="text-muted-foreground mt-4 max-w-md text-base leading-relaxed">
+              Kortix connectors put 3,000+ apps — plus any MCP, OpenAPI, GraphQL or raw HTTP
+              endpoint — behind a single Executor interface your agents call like any other tool.
+            </p>
+            <ul className="mt-6 max-w-md space-y-2.5">
+              {[
+                '3,000+ one-click apps via Pipedream — OAuth handled for you',
+                'Or bring any MCP, OpenAPI, GraphQL or HTTP endpoint — same interface',
+                'Credentials live server-side and never reach the sandbox',
+                'Agents hold one scoped Kortix token; connect once, shared org-wide, self-healing',
+              ].map((b, i) => (
+                <li key={b} className="text-muted-foreground flex gap-2.5 text-[15px] leading-relaxed">
+                  <KortixAsterisk index={i} />
+                  <span>{b}</span>
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+          <Reveal delay={0.1} className="lg:order-1">
+            <div className="border-border bg-card space-y-2.5 rounded-lg border p-5">
+              <div className="border-border bg-background flex items-center gap-2.5 rounded-md border p-3">
+                <Boxes className="text-muted-foreground/70 size-4 shrink-0" />
+                <span className="text-foreground text-sm font-medium">sandbox</span>
+                <span className="border-border bg-muted/40 text-muted-foreground ml-auto flex items-center gap-1.5 rounded px-2 py-1 font-mono text-[11px]">
+                  <KeyRound className="size-3" /> KORTIX_TOKEN
+                </span>
+              </div>
+              <div className="text-muted-foreground flex items-center justify-center gap-2 text-[11px]">
+                <ArrowRight className="size-3.5 rotate-90" /> only a scoped token leaves the box
+              </div>
+              <div className="border-border bg-background flex items-center gap-2.5 rounded-md border p-3">
+                <Server className="text-foreground size-4 shrink-0" />
+                <span className="text-foreground text-sm font-medium">Kortix Executor</span>
+                <span className="text-muted-foreground ml-auto text-xs">connect proxy · gateway</span>
+              </div>
+              <div className="text-muted-foreground flex items-center justify-center">
+                <ArrowRight className="size-3.5 rotate-90" />
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  ['slack.com', 'Slack'],
+                  ['github.com', 'GitHub'],
+                  ['salesforce.com', 'Salesforce'],
+                  ['notion.so', 'Notion'],
+                  ['stripe.com', 'Stripe'],
+                  ['linear.app', 'Linear'],
+                ].map(([d, n]) => (
+                  <div
+                    key={n}
+                    className="border-border/60 bg-background flex items-center gap-2 rounded-md border p-2"
+                  >
+                    <img src={fav(d)} alt={n} width={16} height={16} loading="lazy" className="size-4" />
+                    <span className="text-foreground truncate text-xs font-medium">{n}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {['App', 'MCP', 'OpenAPI', 'GraphQL', 'HTTP'].map((t) => (
+                  <Badge key={t} variant={t === 'App' ? 'highlight' : 'outline'} size="sm">
+                    {t}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </Reveal>
+        </div>
+      </section>
+
+      <section className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-16 sm:gap-12 sm:py-24 lg:px-0">
+        <Reveal>
+          <div className="mb-2 max-w-2xl">
+            <Eyebrow>It&apos;s all code</Eyebrow>
+            <h2 className="text-foreground mt-3 text-2xl leading-tight font-medium tracking-tight sm:text-3xl md:text-4xl">
+              A platform that improves itself
+            </h2>
+            <p className="text-muted-foreground mt-4 text-base leading-relaxed">
+              Because everything is code in a repo, the system can read its own blueprint, extend
+              itself, and stay healthy as it grows. 100% extensible, controllable, self-hostable —
+              nothing is a black box.
+            </p>
+          </div>
+        </Reveal>
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[
+            {
+              icon: FileCode2,
+              title: 'Everything is files',
+              body: 'Agents, skills, tools, connectors and schedules live in the repo. Edit in your IDE, in the web UI, or let an agent edit them.',
+            },
+            {
+              icon: Workflow,
+              title: 'Agents edit themselves',
+              body: 'Describe a change and an agent ships it — referencing what already exists, reusing patterns, opening a PR you review.',
+            },
+            {
+              icon: GitPullRequest,
+              title: 'Skills, git-backed and invisible',
+              body: 'Non-devs publish skills as markdown; Kortix handles the branch, PR and merge behind the scenes. Versioned, reviewable, auditable.',
+            },
+            {
+              icon: Plug,
+              title: 'Self-healing integrations',
+              body: 'When a token expires or a service blips, Kortix refreshes it or asks you to reconnect in plain language — never a cryptic error.',
+            },
+            {
+              icon: Cpu,
+              title: 'Quality gates built in',
+              body: 'Type checks, lint, docs validation and dedup run before anything merges, so a fast-moving, agent-written codebase stays coherent.',
+            },
+            {
+              icon: TerminalIcon,
+              title: 'Every feature is a conversation',
+              body: 'The UI is a reference, not a requirement. Anything you can do in a menu, you can do with a message.',
+            },
+          ].map((f) => (
+            <Reveal key={f.title}>
+              <div className="border-border bg-card flex h-full flex-col rounded-sm border p-6">
+                <span className="border-border bg-background text-foreground flex size-10 items-center justify-center rounded-lg border">
+                  <f.icon className="size-5" />
+                </span>
+                <h3 className="text-foreground mt-4 text-base font-medium tracking-tight">
+                  {f.title}
+                </h3>
+                <p className="text-muted-foreground mt-2 text-sm leading-relaxed">{f.body}</p>
+              </div>
+            </Reveal>
+          ))}
+        </div>
       </section>
 
       <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">

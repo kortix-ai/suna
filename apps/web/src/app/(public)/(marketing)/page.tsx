@@ -1,103 +1,75 @@
 'use client';
 
-import { Reveal } from '@/components/home/reveal';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/marketing/button';
-import KortixGrid from '@/components/ui/marketing/gridder';
-import { Separator } from '@/components/ui/separator';
+import { Capabilities } from '@/features/marketing/capabilities';
+import { ClosingCta } from '@/features/marketing/closing-cta';
+import { Comparison } from '@/features/marketing/comparison';
+import { EveryTool } from '@/features/marketing/every-tool';
+import { Faq } from '@/features/marketing/faq';
 import Hero from '@/features/marketing/hero';
-import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
+import { Moat } from '@/features/marketing/moat';
+import { Problem } from '@/features/marketing/problem';
+import { RealOutput } from '@/features/marketing/real-output';
 import Security from '@/features/marketing/security/security';
-import { USP } from '@/features/marketing/usp/usp';
-import { useAuth } from '@/features/providers/auth-provider';
-import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { useTranslations } from 'next-intl';
-import Link from 'next/link';
-import { useCallback } from 'react';
-import { HiArrowRight } from 'react-icons/hi2';
+import { Skillify } from '@/features/marketing/skillify';
+import { TrustStrip } from '@/features/marketing/trust-strip';
+import { UseCases } from '@/features/marketing/use-cases';
+import { HomeWalkthrough } from '@/features/marketing/walkthrough';
+import { WorkspaceShowcase } from '@/features/marketing/workspace-showcase';
+import { Separator } from '@/components/ui/separator';
+
+function SectionDivider() {
+  return (
+    <div className="mx-auto max-w-6xl">
+      <Separator />
+    </div>
+  );
+}
 
 export default function Home() {
-  const { user } = useAuth();
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const tHome = useCallback(
-    (key: string) => tHardcodedUi.raw(`appHomePage.${key}`),
-    [tHardcodedUi],
-  );
-
-  const handleLaunch = useCallback(() => {
-    trackCtaSignup();
-    window.location.href = user ? '/projects' : '/auth';
-  }, [user]);
-
   return (
-    <>
-      <div className="bg-background relative">
-        <Hero />
+    <div className="bg-background relative">
+      <Hero />
+      <TrustStrip />
 
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
+      <SectionDivider />
+      <HomeWalkthrough />
 
-        <HowItWorks />
+      <SectionDivider />
+      <RealOutput />
 
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
+      <EveryTool />
 
-        <USP />
+      <SectionDivider />
+      <Skillify />
 
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
+      <SectionDivider />
+      <Capabilities />
 
-        <Security />
+      <SectionDivider />
+      <Problem />
 
-        <div className="mx-auto max-w-6xl">
-          <Separator />
-        </div>
+      <SectionDivider />
+      <Comparison />
 
-        <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 lg:px-0">
-          <Reveal>
-            <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
-              <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
-                <div className="col-span-4 flex flex-col items-start justify-start space-y-4 p-6 *:text-left">
-                  <div className="space-y-2">
-                    <Badge variant="update" className="rounded">
-                      {tHome('ctaBadge')}
-                    </Badge>
-                    <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                      {tHome('line331JsxTextGiveYourCompanyAWorkforce')}
-                    </h2>
-                    <p className="text-muted-foreground mt-4 text-sm leading-relaxed">
-                      {tHome('line334JsxTextFreeToSelfHostManagedCloudFrom20')}
-                    </p>
-                  </div>
+      <SectionDivider />
+      <UseCases />
 
-                  <p className="text-muted-foreground font-mono text-xs tracking-wider">
-                    {tHome('line342JsxTextOpenSourceSSORBACOnPremNoLock')}
-                  </p>
+      <SectionDivider />
+      <WorkspaceShowcase />
 
-                  <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-                    <Button size="lg" className="w-full" onClick={handleLaunch}>
-                      {tHome('line337JsxTextGetStarted')}
-                      <HiArrowRight className="size-4" />
-                    </Button>
-                    <Button asChild size="lg" className="w-full" variant="accent">
-                      <Link href={'/enterprise'}>{tHome('line338JsxTextTalkToSales')}</Link>
-                    </Button>
-                  </div>
-                </div>
-                <div className="col-span-1 hidden md:block" />
-                <div className="col-span-7 mask-y-from-90% mask-x-from-90%">
-                  <KortixGrid count={58} seed={4228} />
-                </div>
-              </div>
-            </div>
-          </Reveal>
-        </section>
+      <SectionDivider />
+      <Moat />
 
-        <div className="h-24 sm:h-28" />
-      </div>
-    </>
+      <SectionDivider />
+      <Security />
+
+      <SectionDivider />
+      <Faq />
+
+      <SectionDivider />
+      <ClosingCta />
+
+      <div className="h-24 sm:h-28" />
+    </div>
   );
 }
