@@ -36,7 +36,17 @@ const messageRehydrateLastAt = new Map<string, number>();
 let projectMetadataRefetchLastAt = 0;
 let projectMetadataRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 
-function syncOpenCodeSessionSnapshot(info: Session): void {
+function syncOpenCodeSessionSnapshot(
+  info: Session,
+  queryClient?: QueryClient,
+  // When the opencode-side title changed (e.g. auto-generated after the first
+  // message), refetch the KORTIX session list so the sidebar tabs + project
+  // sidebar pick up the new name immediately — otherwise the name only refreshed
+  // on the next session-create invalidation ("title shows up only after I start
+  // a new session"). project_sessions rows are the mirror target; refetch them
+  // AFTER the mirror POST lands so we read the freshly-written name.
+  refreshKortixSessions = false,
+): void {
   void syncOpencodeSessionData([
     {
       opencode_session_id: info.id,
@@ -47,7 +57,16 @@ function syncOpenCodeSessionSnapshot(info: Session): void {
       updated_at: info.time?.updated ?? null,
       archived_at: info.time?.archived ?? null,
     },
-  ]).catch(() => {});
+  ])
+    .then(() => {
+      if (refreshKortixSessions && queryClient) {
+        // Prefix match → refreshes ['project-sessions', projectId] (tabs +
+        // sidebar) and ['project-session', …] for every active query.
+        queryClient.refetchQueries({ queryKey: ['project-sessions'], type: 'active' });
+        queryClient.refetchQueries({ queryKey: ['project-session'], type: 'active' });
+      }
+    })
+    .catch(() => {});
 }
 
 function reserveMessageRehydrate(sessionID: string): boolean {
@@ -669,7 +688,8 @@ export function useOpenCodeEventStream() {
               return [info, ...old].sort((a, b) => b.time.updated - a.time.updated);
             });
             queryClient.setQueryData(opencodeKeys.session(info.id), info);
-            syncOpenCodeSessionSnapshot(info);
+            // New session → the Kortix session list changed; refresh it.
+            syncOpenCodeSessionSnapshot(info, queryClient, true);
           }
           break;
         }
@@ -677,6 +697,15 @@ export function useOpenCodeEventStream() {
         case 'session.updated': {
           const info = (event.properties as any)?.info as Session | undefined;
           if (info) {
+            // Did the title change? (opencode auto-titles after the first
+            // message via session.updated.) Capture BEFORE we overwrite caches.
+            const prevTitle =
+              queryClient
+                .getQueryData<Session[]>(opencodeKeys.sessions())
+                ?.find((s) => s.id === info.id)?.title ??
+              queryClient.getQueryData<Session>(opencodeKeys.session(info.id))?.title ??
+              null;
+            const titleChanged = !!info.title && info.title !== prevTitle;
             // Only update individual session cache (cheap, targeted)
             queryClient.setQueryData(opencodeKeys.session(info.id), info);
             // Update session list only if the session actually changed
@@ -690,7 +719,10 @@ export function useOpenCodeEventStream() {
               next[idx] = info;
               return next.sort((a, b) => b.time.updated - a.time.updated);
             });
-            syncOpenCodeSessionSnapshot(info);
+            // Mirror + (only when the name actually changed) refresh the Kortix
+            // session list so tabs/sidebar show the new title without waiting for
+            // the next create. titleChanged gate keeps streaming churn cheap.
+            syncOpenCodeSessionSnapshot(info, queryClient, titleChanged);
           }
           break;
         }
