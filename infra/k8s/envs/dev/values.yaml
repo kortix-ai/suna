@@ -6,7 +6,7 @@
 # Immutable dev tag (CI bumps to dev-<sha8> on each main push). Bootstrap value
 # is :dev-latest until the first deploy-dev-eks run pins an immutable sha.
 image:
-  tag: "dev-f3b9d7a5"
+  tag: "dev-c4aa4ad6"
 kortixVersion: ""
 env:
   internalKortixEnv: dev
