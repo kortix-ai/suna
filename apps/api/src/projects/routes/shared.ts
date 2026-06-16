@@ -125,7 +125,11 @@ export const syncOpencodeSessionsHandler = async (c: any) => {
     const rootId = rootByOcId.get(ocId) ?? ocId;
     const current = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
     const rootEntry = desiredByOcId.get(ocId);
-    const desired = rootEntry ? rootEntry.title : current;
+    // Title mirror is MONOTONIC: a row that's in the snapshot but still has a
+    // null title (OpenCode hasn't auto-titled it yet) must NOT erase a name we
+    // already wrote. `?? current` keeps the existing name until a real title
+    // arrives — fixes "title generated then vanishes on a later list snapshot".
+    const desired = (rootEntry ? rootEntry.title : current) ?? current;
     const scopedSessions = Array.from(desiredByOcId.values())
       .filter((entry) => (rootByOcId.get(entry.id) ?? entry.id) === rootId)
       .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
@@ -134,7 +138,7 @@ export const syncOpencodeSessionsHandler = async (c: any) => {
     if (desired === current && currentSessions === nextSessions) continue;
     const nextMetadata: Record<string, unknown> = { ...(row.metadata ?? {}) };
     if (desired) nextMetadata.name = desired;
-    else delete nextMetadata.name;
+    // no `else delete` — never wipe an existing name because a snapshot lacked a title.
     nextMetadata.opencode_sessions = scopedSessions;
     await db
       .update(projectSessions)

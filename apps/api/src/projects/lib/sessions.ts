@@ -440,8 +440,9 @@ export async function createProjectSession(input: {
     });
     if (!claimed) {
       // Pool was empty (cold miss) — start warming one now so the *next* create
-      // rides it. Fire-and-forget; the cold path below handles this session.
-      void refillProjectPool(projectId).catch(() => {});
+      // rides it. Warm for THIS user so they can claim it. Fire-and-forget; the
+      // cold path below handles this session.
+      void refillProjectPool(projectId, userId).catch(() => {});
     }
     if (claimed) {
       const W = claimed.sandboxId;
@@ -477,7 +478,7 @@ export async function createProjectSession(input: {
         // when it parked, which may now be stale) + refill the pool. Both
         // fire-and-forget so the create returns immediately.
         void syncClaimedBoxToBase(claimed.externalId, userId).catch(() => {});
-        void refillProjectPool(projectId).catch(() => {});
+        void refillProjectPool(projectId, userId).catch(() => {});
         return { row, headers: responseHeaders };
       } catch (err) {
         // Insert raced/failed — recycle the box and fall through to cold path.
