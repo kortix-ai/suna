@@ -77,8 +77,8 @@ export function GameOfLife() {
         // size is predictable and the simulation reads it crisply. We size the
         // logo as a fraction of the grid and clamp so it always fits, then
         // center it exactly.
-        const widthFactor = isMobile ? 0.6 : 0.32; // fraction of grid width
-        const maxHeightFactor = isMobile ? 0.4 : 0.4; // fraction of grid height
+        const widthFactor = isMobile ? 0.72 : 0.5; // fraction of grid width
+        const maxHeightFactor = isMobile ? 0.5 : 0.55; // fraction of grid height
 
         let logoCols = Math.round(cols * widthFactor);
         let logoRows = Math.round(logoCols / aspectRatio);
