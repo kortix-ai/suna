@@ -12,7 +12,7 @@ import { applyScaffold } from '../scaffold.ts';
 import { prompt, confirm } from '../prompts.ts';
 import { selectMultiFromList } from '../tui-select.ts';
 import {
-  installAgentSkills,
+  wireCodingAgents,
   SUPPORTED_AGENTS,
   DEFAULT_PRIMARY,
   type CodingAgent,
@@ -23,13 +23,13 @@ import { C, status } from '../style.ts';
 function agentSublabel(agent: CodingAgent): string {
   switch (agent) {
     case 'opencode':
-      return 'wrapper at .opencode/skills/kortix/';
+      return 'symlink .opencode → .kortix/opencode';
     case 'claude':
-      return 'wrapper at .claude/skills/kortix/';
+      return 'symlink .claude → .kortix/opencode';
     case 'codex':
-      return 'AGENTS.md pointer';
+      return 'symlink .agents → .kortix/opencode + AGENTS.md';
     case 'cursor':
-      return '.cursor/rules/kortix.mdc pointer';
+      return 'AGENTS.md (read natively — no rule file)';
     default:
       return '';
   }
@@ -48,10 +48,14 @@ Arguments:
   project-name         Your project's name — and the directory it's created
                        in. Prompted if omitted.
 
+Pick the coding agent(s) to wire up. The OpenCode config dir is symlinked into
+each agent's native location (.opencode / .claude; codex wires .agents) so its
+skills and agents are shared; Codex and Cursor also get a root AGENTS.md pointer
+they read natively.
+
 Options:
   --name <project>     Alias for the positional project-name.
-  --primary <agent>    Primary coding agent — featured in the get-started
-                       panel (${SUPPORTED_AGENTS.join('|')}).
+  --primary <agent>    Primary coding agent to wire up (${SUPPORTED_AGENTS.join('|')}).
   --agents <list>      Comma-separated extras to wire up alongside --primary.
                        Example: --agents claude,cursor
   --template <name>    Starter template: general-knowledge-worker (default) or minimal.
@@ -191,12 +195,12 @@ function printAgentPreamble(): void {
   const opts = SUPPORTED_AGENTS.map((a) => `${bold}${a}${reset}`).join(`  ${dim}·${reset}  `);
   const lines = [
     '',
-    `  Pick your local coding agent to configure this Kortix project.`,
+    `  Pick the coding agent(s) to wire into this Kortix project.`,
     '',
-    `  ${dim}It picks up the Kortix skill — ask it to scaffold triggers,${reset}`,
+    `  ${dim}Each one is symlinked to the project's OpenCode config dir, so it${reset}`,
+    `  ${dim}shares the same skills + agents — ask it to scaffold triggers,${reset}`,
     `  ${dim}custom agents, or edit kortix.toml for you.${reset}`,
     `  ${dim}(Kortix itself runs opencode inside every sandbox session.)${reset}`,
-    `  ${dim}You can add more agents on the next prompt.${reset}`,
     '',
     `  ${opts}`,
     '',
@@ -281,20 +285,19 @@ export async function runInit(argv: string[]): Promise<number> {
   // One picker, space toggles, Enter confirms. First toggled is the
   // "primary" used in the get-started panel. Order returned from the
   // TUI is toggle-order, so primary = chosen[0].
-  let primary: CodingAgent;
   let chosenAgents: CodingAgent[];
 
   if (flags.primary || flags.agents || flags.yes) {
     // Headless / flag-driven path. Honor --primary + --agents.
-    primary = flags.primary ?? DEFAULT_PRIMARY;
+    const primary = flags.primary ?? DEFAULT_PRIMARY;
     const extras = (flags.agents ?? []).filter((a) => a !== primary);
     chosenAgents = [primary, ...extras];
   } else {
     printAgentPreamble();
     const initialIdx = SUPPORTED_AGENTS.indexOf(DEFAULT_PRIMARY);
     const picked = await selectMultiFromList<CodingAgent>({
-      title: 'Pick the coding agent(s) you want the Kortix skill wired into',
-      searchHint: `${C.dim}↑/↓ navigate · Space toggle · Enter confirm · first toggled = primary${C.reset}`,
+      title: 'Pick the coding agent(s) to wire into this Kortix project',
+      searchHint: `${C.dim}↑/↓ navigate · Space toggle · Enter confirm${C.reset}`,
       items: SUPPORTED_AGENTS.map((a) => ({
         value: a,
         label: a,
@@ -307,7 +310,6 @@ export async function runInit(argv: string[]): Promise<number> {
       process.stderr.write(`${status.err('No coding agent selected.')}\n`);
       return 1;
     }
-    primary = picked[0]!;
     chosenAgents = picked;
   }
 
@@ -332,8 +334,10 @@ export async function runInit(argv: string[]): Promise<number> {
     preserveExisting: !flags.overwrite,
   });
 
-  // ── Wire up local coding agents to the canonical skill ───────────────
-  const agentInstall = installAgentSkills({
+  // ── Wire up the chosen coding agents ─────────────────────────────────
+  // Symlink the OpenCode config dir into each agent's native location
+  // (.opencode/.claude; codex wires .agents) + an AGENTS.md pointer for Codex & Cursor.
+  const agentInstall = wireCodingAgents({
     repoRoot: cwd,
     agents: chosenAgents,
     overwrite: flags.overwrite,

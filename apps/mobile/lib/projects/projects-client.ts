@@ -271,30 +271,34 @@ export function createProjectSession(projectId: string, input: CreateProjectSess
   });
 }
 
-export type EnsureOpencodeReason =
-  | 'unchanged'
-  | 'healed'
-  | 'created'
-  | 'not_ready'
-  | 'unreachable';
+export type SessionStartStage = 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
 
-export interface EnsureOpencodeResult extends ProjectSession {
-  ensure?: { reason: EnsureOpencodeReason; changed: boolean; pin: string | null };
+export interface SessionStartResult {
+  stage: SessionStartStage;
+  retriable: boolean;
+  sandbox: ProjectSessionSandbox | null;
+  opencode_session_id: string | null;
+  reason?: string;
 }
 
 /**
- * Backend-owned OpenCode↔Kortix mapping (web parity). The API resolves the
- * sandbox's canonical OpenCode root id and persists it to opencode_session_id,
- * creating one if missing / healing a stale pin. Idempotent. The returned row
- * carries the authoritative `opencode_session_id`; `ensure.reason` is
- * `not_ready`/`unreachable` while the sandbox/runtime is still warming — the
- * caller should retry. Clients must NOT set the pin themselves.
+ * THE session-open call (web parity). Idempotently provisions/resumes the
+ * sandbox AND resolves the OpenCode pin SERVER-SIDE, returning one readiness
+ * payload to poll until stage='ready'. Replaces the old getProjectSessionSandbox
+ * + wakeProjectSession + ensureOpencodeSession three-call dance.
  */
-export function ensureOpencodeSession(projectId: string, sessionId: string) {
-  return apiFetch<EnsureOpencodeResult>(
-    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/ensure-opencode`,
-    { method: 'POST', body: JSON.stringify({}) },
-  );
+export async function startProjectSession(
+  projectId: string,
+  sessionId: string,
+): Promise<SessionStartResult | null> {
+  try {
+    return await apiFetch<SessionStartResult>(
+      `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
+      { method: 'POST', body: JSON.stringify({}) },
+    );
+  } catch {
+    return null;
+  }
 }
 
 export interface ProjectSessionSandbox {
@@ -310,42 +314,6 @@ export interface ProjectSessionSandbox {
   metadata?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
-}
-
-/**
- * Fetch a session's sandbox runtime row. CRITICAL (web parity): this GET has a
- * SIDE EFFECT — when there's no usable sandbox it kicks (re)provisioning on the
- * backend (kickProvisionOnOpen). The web's session page polls it every ~300ms,
- * which is what actually drives the sandbox to 'active'. Returns null on 404
- * ('not provisioned yet' — keep polling).
- */
-export async function getProjectSessionSandbox(
-  projectId: string,
-  sessionId: string,
-): Promise<ProjectSessionSandbox | null> {
-  try {
-    return await apiFetch<ProjectSessionSandbox>(
-      `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/sandbox`,
-    );
-  } catch {
-    return null;
-  }
-}
-
-export type WakeStatus = 'running' | 'waking' | 'provisioning' | 'unknown';
-
-/**
- * Wake a sandbox the provider auto-stopped while idle (web parity). The DB row
- * still reads `running` after an idle auto-stop, so opening hits a dead
- * container and ensure-opencode spins on `not_ready`/`unreachable` forever. This
- * returns instantly — a running sandbox is a no-op; a stopped one is started in
- * the background while the ensure retry picks up readiness.
- */
-export function wakeProjectSession(projectId: string, sessionId: string) {
-  return apiFetch<{ status: WakeStatus }>(
-    `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/wake`,
-    { method: 'POST', body: JSON.stringify({}) },
-  );
 }
 
 /**

@@ -105,8 +105,8 @@ import type { SandboxProviderName } from '@/lib/platform/client';
 import { getSandboxUrl } from '@/lib/platform/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useProjectSessions, useCreateProjectSession, useProject, useAccounts, projectKeys } from '@/lib/projects/hooks';
-import { ensureOpencodeSession, wakeProjectSession, getProjectSessionSandbox, restartProjectSession, deleteProjectSession } from '@/lib/projects/projects-client';
-import type { ProjectSession, ProjectSessionStatus, EnsureOpencodeResult } from '@/lib/projects/projects-client';
+import { startProjectSession, restartProjectSession, deleteProjectSession } from '@/lib/projects/projects-client';
+import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
 import { Avatar } from '@/components/ui/Avatar';
 import {
   Eye, EyeOff, RefreshCw, Upload, Image, FolderPlus, FilePlus, LayoutGrid, List,
@@ -1287,18 +1287,20 @@ export default function ProjectSessionScreen() {
     ensuringRef.current = sessionId;
     const startedAt = Date.now();
     const MAX_WAIT_MS = 4 * 60_000;
-    let lastWokeAt = 0;
     try {
       let attempt = 0;
       while (Date.now() - startedAt < MAX_WAIT_MS) {
         if (ensuringRef.current !== sessionId) return; // superseded by another open
         attempt += 1;
 
-        // 1) Poll the sandbox endpoint — drives (re)provisioning on open + gives
-        //    the authoritative status. null = 404 'not provisioned yet'.
-        const sandbox = await getProjectSessionSandbox(projectId, sessionId);
+        // ONE server call: POST /start idempotently provisions/resumes the
+        // sandbox AND resolves the OpenCode pin server-side. We just poll it until
+        // stage='ready' (replaces the old sandbox-poll + wake + ensure-opencode
+        // three-call dance — all that lifting is now on the server).
+        const start = await startProjectSession(projectId, sessionId);
+        const sandbox = start?.sandbox ?? null;
 
-        if (sandbox?.status === 'error') {
+        if (start?.stage === 'failed' || sandbox?.status === 'error') {
           failConnect(sessionId, {
             title: 'Session failed to start',
             message: 'The sandbox could not be provisioned.',
@@ -1309,15 +1311,6 @@ export default function ProjectSessionScreen() {
         if (sandbox?.status === 'active' && sandbox.external_id) {
           const sandboxUrl = getSandboxUrl(sandbox.external_id);
 
-          // 2) Wake an idle-auto-stopped sandbox (row still reads active) +
-          //    keep the proxy warm/routed (web: useSandboxConnection).
-          if (Date.now() - lastWokeAt > 25_000) {
-            lastWokeAt = Date.now();
-            wakeProjectSession(projectId, sessionId).then(
-              (w) => log.log('🌅 [connect] wake →', w?.status),
-              () => {},
-            );
-          }
           const health = await probeSandboxHealth(sandboxUrl);
 
           // Fatal runtime boot failure (e.g. repo materialization / git clone
@@ -1333,30 +1326,24 @@ export default function ProjectSessionScreen() {
             return;
           }
 
-          // 3) Resolve the OpenCode pin.
-          let updated: EnsureOpencodeResult | null = null;
-          try {
-            updated = await ensureOpencodeSession(projectId, sessionId);
-          } catch (err: any) {
-            log.log('🔄 [connect] ensure-opencode error:', err?.message || err);
-          }
           log.log(
-            `💓 [connect] attempt ${attempt}: sandbox=active health=${health.status} reason=${updated?.ensure?.reason ?? '-'} pin=${updated?.opencode_session_id ? 'ok' : '-'}`,
+            `💓 [connect] attempt ${attempt}: stage=${start?.stage} health=${health.status} pin=${start?.opencode_session_id ? 'ok' : '-'}`,
           );
 
-          if (updated?.opencode_session_id) {
-            connectToProjectSession({ ...updated, sandbox_url: sandboxUrl });
-            return;
-          }
-          if (updated?.status === 'failed') {
-            failConnect(sessionId, {
-              title: 'Session failed to start',
-              message: updated.error || 'The sandbox could not be provisioned.',
-            });
+          if (start?.stage === 'ready' && start.opencode_session_id) {
+            connectToProjectSession({
+              session_id: sessionId,
+              sandbox_id: sandbox.sandbox_id,
+              sandbox_url: sandboxUrl,
+              opencode_session_id: start.opencode_session_id,
+              sandbox_provider: sandbox.provider ?? 'daytona',
+              created_at: sandbox.created_at,
+              updated_at: sandbox.updated_at,
+            } as ProjectSession);
             return;
           }
         } else {
-          log.log(`💓 [connect] attempt ${attempt}: sandbox=${sandbox?.status ?? 'provisioning'}`);
+          log.log(`💓 [connect] attempt ${attempt}: stage=${start?.stage ?? 'provisioning'}`);
         }
 
         await new Promise((r) => setTimeout(r, 1_500));

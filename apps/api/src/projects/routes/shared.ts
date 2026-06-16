@@ -11,8 +11,9 @@ import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { resolveProjectGitAuth } from '../lib/git';
-import { ProjectRow, isPlainObject, normalizeString, readBody } from '../lib/serializers';
+import { ProjectRow, isPlainObject, normalizeString, readBody, serializeSessionSandboxConfig } from '../lib/serializers';
 import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import { ensureOpencodeSessionPin } from '../opencode-mapping';
 
 export const syncOpencodeSessionsHandler = async (c: any) => {
   const userId = c.get('userId') as string;
@@ -264,6 +265,140 @@ export async function kickProvisionOnOpen(
         .where(eq(projectSessions.sessionId, sessionId)).catch(() => {});
     }
   })();
+}
+
+// ── Unified session-open orchestration ──────────────────────────────────────
+
+export type SessionStartStage = 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
+
+export interface SessionStartResult {
+  /** Coarse lifecycle stage the client renders + polls on. */
+  stage: SessionStartStage;
+  /** Whether polling /start again can make progress (false = terminal). */
+  retriable: boolean;
+  /** Serialized session_sandboxes row (same shape as GET /sandbox), or null. */
+  sandbox: Record<string, unknown> | null;
+  /** Canonical OpenCode root pin (resolved client-side once the box is ready). */
+  opencode_session_id: string | null;
+  reason?: string;
+}
+
+function serializeSandboxRow(row: typeof sessionSandboxes.$inferSelect): Record<string, unknown> {
+  return {
+    sandbox_id: row.sandboxId,
+    session_id: row.sessionId,
+    project_id: row.projectId,
+    account_id: row.accountId,
+    provider: row.provider,
+    external_id: row.externalId,
+    base_url: row.baseUrl,
+    status: row.status,
+    config: serializeSessionSandboxConfig(row.config),
+    metadata: row.metadata ?? {},
+    last_used_at: row.lastUsedAt?.toISOString() ?? null,
+    created_at: row.createdAt.toISOString(),
+    updated_at: row.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * THE authoritative session-open path — the single call the dashboard uses to
+ * bring a session's runtime up. Idempotent: provisions a missing sandbox,
+ * resumes a hibernated/idle one, and resolves the canonical OpenCode pin once the
+ * box is reachable. Returns ONE readiness payload the client polls until `ready`.
+ * Collapses the old GET /sandbox + POST /wake + POST /ensure-opencode dance into
+ * one orchestration so the client makes a single call instead of three racing ones.
+ */
+export async function openSession(args: {
+  loaded: { row: { accountId: string; repoUrl: string; defaultBranch: string; manifestPath: string; metadata?: unknown }; userId: string };
+  visible: { row: { status: string; sandboxProvider: string; baseRef: string | null; agentName: string | null; opencodeSessionId: string | null; accountId: string } };
+  projectId: string;
+  sessionId: string;
+}): Promise<SessionStartResult> {
+  const { loaded, visible, projectId, sessionId } = args;
+  const accountId = visible.row.accountId;
+
+  let [row] = await db
+    .select()
+    .from(sessionSandboxes)
+    .where(and(
+      eq(sessionSandboxes.sessionId, sessionId),
+      eq(sessionSandboxes.projectId, projectId),
+      eq(sessionSandboxes.accountId, accountId),
+    ))
+    .limit(1);
+
+  // Resume a hibernated box in place (keeps its disk/workspace).
+  if (row && row.status === 'stopped' && row.externalId
+      && (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) {
+    await resumeStoppedSandbox({
+      sandboxId: row.sandboxId, sessionId: row.sessionId, accountId: row.accountId,
+      provider: row.provider, externalId: row.externalId,
+    });
+    const [resumed] = await db.select().from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sandboxId, row.sandboxId)).limit(1);
+    if (resumed) row = resumed;
+  }
+
+  // No usable box → provision on open (or report a terminal state).
+  const usable = row && (row.status === 'provisioning' || row.status === 'active');
+  if (!usable) {
+    if (['failed', 'stopped', 'completed'].includes(visible.row.status)) {
+      return { stage: visible.row.status === 'failed' ? 'failed' : 'stopped', retriable: false, sandbox: null, opencode_session_id: null };
+    }
+    if (visible.row.status !== 'provisioning') {
+      if (row) await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sessionId)).catch(() => {});
+      await kickProvisionOnOpen(loaded, visible.row, projectId, sessionId);
+    }
+    return { stage: 'provisioning', retriable: true, sandbox: null, opencode_session_id: null };
+  }
+
+  // Still provisioning, or active but external_id not yet written.
+  if (row.status === 'provisioning' || !row.externalId) {
+    return { stage: 'provisioning', retriable: true, sandbox: serializeSandboxRow(row), opencode_session_id: null };
+  }
+
+  // Active + external_id. The provider may have idle-auto-stopped the box while
+  // the row still reads 'active' (the row lies until the next health probe), so
+  // confirm with a lightweight provider status check and wake it in place if
+  // needed. We deliberately do NOT do the heavy daemon round-trip (OpenCode pin
+  // resolve) here — that would block this endpoint for ~8s on a still-booting box
+  // and it's polled every second. OpenCode readiness is the client health poll's
+  // job; the canonical-pin hook resolves the root once the box reports healthy.
+  const provider = getProvider(row.provider as SandboxProviderName);
+  let providerStatus: string;
+  try {
+    providerStatus = await provider.getStatus(row.externalId);
+  } catch {
+    providerStatus = 'unknown';
+  }
+
+  if (providerStatus !== 'running') {
+    // Idle auto-stop: kick the start in the background; the client keeps polling.
+    void provider.start(row.externalId).catch((err) =>
+      console.warn(`[start] failed to wake sandbox ${row.externalId} (session ${sessionId}):`, err),
+    );
+    return { stage: 'starting', retriable: true, sandbox: serializeSandboxRow(row), opencode_session_id: null };
+  }
+
+  // Box is provider-running. Resolve OpenCode readiness + the canonical pin
+  // server-side — safe now that the box is confirmed up, so the daemon answers
+  // FAST (a 503 'not_ready' while OpenCode is still booting, not an 8s timeout
+  // against a dead box). This keeps ALL the lifecycle logic server-side: the
+  // client just polls until stage='ready' and gets the pin handed to it.
+  const ensured = await ensureOpencodeSessionPin({
+    projectId, sessionId, accountId,
+    externalId: row.externalId, userId: loaded.userId,
+    currentPin: visible.row.opencodeSessionId ?? null,
+  });
+  const booting = ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
+  return {
+    stage: booting ? 'starting' : 'ready',
+    retriable: booting,
+    sandbox: serializeSandboxRow(row),
+    opencode_session_id: ensured.pin,
+    reason: ensured.reason,
+  };
 }
 
 

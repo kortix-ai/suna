@@ -707,13 +707,15 @@ describe('project session API contract', () => {
     expect(invalidSession.status).toBe(400);
     expect(await invalidSession.json()).toMatchObject({ error: 'Invalid session id' });
 
-    const invalidSandbox = await app.request(`/v1/projects/${PROJECT_ID}/sessions/not-a-uuid/sandbox`);
+    const invalidSandbox = await app.request(`/v1/projects/${PROJECT_ID}/sessions/not-a-uuid/start`, { method: 'POST' });
     expect(invalidSandbox.status).toBe(400);
     expect(await invalidSandbox.json()).toMatchObject({ error: 'Invalid session id' });
 
-    const pendingSandbox = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/sandbox`);
-    expect(pendingSandbox.status).toBe(404);
-    expect(await pendingSandbox.json()).toMatchObject({ error: 'Not found' });
+    // /start is idempotent: a session with no usable sandbox yet returns a
+    // readiness payload (stage='provisioning'), not a 404 — the client polls it.
+    const pendingSandbox = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    expect(pendingSandbox.status).toBe(200);
+    expect(await pendingSandbox.json()).toMatchObject({ stage: 'provisioning' });
 
     sessionRow = null;
     const missingSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);

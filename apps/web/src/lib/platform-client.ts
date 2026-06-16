@@ -12,7 +12,7 @@ import type { ServerEntry } from '@/stores/server-store';
 import {
   createProjectSession,
   deleteProjectSession,
-  getProjectSessionSandbox,
+  startProjectSession,
   listProjectSessions,
   listProjects,
   restartProjectSession,
@@ -215,7 +215,10 @@ async function listProjectSessionSandboxes(): Promise<Array<{
   for (const project of projects) {
     const sessions = await listProjectSessions(project.project_id).catch(() => []);
     for (const session of sessions) {
-      const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
+      // Derive runtime info from the session row — do NOT call /start here, or
+      // listing would wake every sandbox across every project. The single-session
+      // open/create paths below use /start; a passive list must not.
+      const runtime = null;
       rows.push({
         project,
         session,
@@ -355,7 +358,7 @@ export async function ensureSandbox(opts?: {
   const session = await createProjectSession(project.project_id, {
     ...(opts?.provider ? { agent_name: opts.provider } : {}),
   });
-  const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
+  const runtime = (await startProjectSession(project.project_id, session.session_id))?.sandbox ?? null;
   return { sandbox: projectSessionToSandboxInfo(project, session, runtime), created: true };
 }
 
