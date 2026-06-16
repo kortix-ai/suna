@@ -96,7 +96,18 @@ export default function ProjectSessionPage() {
     refetchInterval: (query) => {
       const data = query.state.data;
       if (!data) return 300;
-      return data.status === 'provisioning' ? 300 : false;
+      if (data.status === 'provisioning') return 300;
+      // Active row, but the server-store switch hasn't landed yet — e.g. the row
+      // reads `active` before its external_id is persisted, so
+      // switchToSessionSandboxAsync no-ops and activeInstanceId never flips.
+      // Keep polling so the switch effect re-fires the moment the row carries
+      // external_id, instead of stranding the page on the loading skeleton.
+      if (data.status === 'active') {
+        const st = useServerStore.getState();
+        const active = st.servers.find((e) => e.id === st.activeServerId);
+        if (active?.instanceId !== data.sandbox_id) return 500;
+      }
+      return false;
     },
   });
 
@@ -106,11 +117,14 @@ export default function ProjectSessionPage() {
   // (and on every render). With it set, middleware can hijack client-side
   // navigation away from the project/session URL. We never want that.
   const switchedRef = useRef<string | null>(null);
+  const switchingRef = useRef(false);
   useEffect(() => {
     if (!sandbox || !projectId) return;
     if (sandbox.status !== 'active') return;
     if (switchedRef.current === sandbox.sandbox_id) return;
-    switchedRef.current = sandbox.sandbox_id;
+    if (switchingRef.current) return; // an attempt is already in flight
+    let cancelled = false;
+    switchingRef.current = true;
     sessionMark(sandbox.session_id, 'sandbox-active');
     (async () => {
       markProvisioningVerified();
@@ -122,10 +136,26 @@ export default function ProjectSessionPage() {
       // instead of reloading.
       // Pass the already-fetched row so the switch skips a duplicate
       // GET /sessions/:id/sandbox on first open.
-      await switchToSessionSandboxAsync(projectId, sandbox.sandbox_id, sandbox);
+      const res = await switchToSessionSandboxAsync(
+        projectId,
+        sandbox.sandbox_id,
+        sandbox,
+      ).catch(() => null);
+      switchingRef.current = false;
+      if (cancelled) return;
+      // Commit the one-shot guard ONLY when the switch actually landed. If it
+      // returned null (active row whose external_id isn't persisted yet, or a
+      // transient miss), leave the guard UNSET so the polling sandbox query
+      // re-fires this effect once the row carries external_id — otherwise a
+      // single early miss strands the page on the loading skeleton forever.
+      if (!res) return;
+      switchedRef.current = sandbox.sandbox_id;
       // Hard-clear the cookie so no subsequent navigation can be hijacked.
       setActiveInstanceCookie(null);
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [sandbox, projectId, queryClient]);
 
   // Belt-and-suspenders: every render on this route force-clears the cookie.
