@@ -66,8 +66,8 @@ export function Step6OwnCli() {
                   {...enter(i)}
                   className="flex items-start gap-3 px-4 py-3"
                 >
-                  <span className="border-border bg-background text-muted-foreground flex size-7 shrink-0 items-center justify-center rounded-lg border">
-                    <item.icon className="size-3.5" />
+                  <span className="border-border bg-background text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md border">
+                    <item.icon className="size-4" />
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">

@@ -59,17 +59,19 @@ function clampPosition(x: number, y: number, containerW: number, containerH: num
   };
 }
 
+export type DraggableCliPanelProps = {
+  containerRef: React.RefObject<HTMLElement | null>;
+  children: (props: { dragHandleProps: CliDragHandleProps; dragging: boolean }) => React.ReactNode;
+  show?: boolean;
+  initialAnchor?: CliPanelAnchor;
+};
+
 export function DraggableCliPanel({
   containerRef,
   children,
   show = false,
   initialAnchor = 'bottom-right',
-}: {
-  containerRef: React.RefObject<HTMLElement | null>;
-  children: (props: { dragHandleProps: CliDragHandleProps; dragging: boolean }) => React.ReactNode;
-  show?: boolean;
-  initialAnchor?: CliPanelAnchor;
-}) {
+}: DraggableCliPanelProps) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [entranceReady, setEntranceReady] = useState(false);
   const [dragging, setDragging] = useState(false);

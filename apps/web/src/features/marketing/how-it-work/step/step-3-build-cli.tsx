@@ -70,7 +70,7 @@ export function Step3BuildCli() {
                 >
                   <span
                     className={cn(
-                      'flex size-8 shrink-0 items-center justify-center rounded-lg border',
+                      'flex size-8 shrink-0 items-center justify-center rounded-md border',
                       skill.featured
                         ? 'border-kortix-green/20 bg-kortix-green/10 text-kortix-green'
                         : 'border-border bg-background text-muted-foreground',
