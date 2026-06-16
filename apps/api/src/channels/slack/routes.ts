@@ -2,6 +2,8 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq } from 'drizzle-orm';
 import { chatInstalls } from '@kortix/db';
 import { db } from '../../shared/db';
+import { config } from '../../config';
+import { generateSlackManifest, resolveBaseUrl } from '../slack-manifest';
 import { loadSlackSigningSecretForProject } from '../install-store';
 import { slackOauthMode } from '../slack-oauth-mode';
 import { json, errors } from '../../openapi';
@@ -298,5 +300,33 @@ slackWebhookApp.openapi(
   }
   runInteractivityBody(rawBody);
   return c.json({ ok: true });
+},
+);
+
+// The per-project (BYO) Slack manifest — served from the SAME builder the
+// canonical app uses, so the in-sandbox `kortix-agent slack manifest` command
+// fetches this instead of carrying its own copy. No secrets, no DB: it's a
+// scaffolding template (the project may not have Slack configured yet), so it's
+// intentionally unauthenticated and works for any projectId.
+slackWebhookApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/manifest',
+    tags: ['channels'],
+    summary: 'Per-project (BYO app) Slack app manifest (single source of truth)',
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({ name: z.string().optional() }),
+    },
+    responses: {
+      200: json(z.any(), 'Slack app manifest JSON'),
+    },
+  }),
+  async (c: any) => {
+  const projectId = c.req.param('projectId');
+  const name = c.req.query('name') || undefined;
+  // Prefer the configured public URL; fall back to the request host.
+  const baseUrl = resolveBaseUrl(new URL(c.req.url), config.KORTIX_URL || undefined);
+  return c.json(generateSlackManifest({ baseUrl, projectId, appName: name, botName: name }));
 },
 );

@@ -104,10 +104,6 @@
     }
   },
   "settings": {
-    "interactivity": {
-      "is_enabled": true,
-      "request_url": "https://api.kortix.com/v1/webhooks/slack/interactivity"
-    },
     "event_subscriptions": {
       "request_url": "https://api.kortix.com/v1/webhooks/slack",
       "bot_events": [
@@ -125,6 +121,10 @@
         "file_shared",
         "link_shared"
       ]
+    },
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://api.kortix.com/v1/webhooks/slack/interactivity"
     },
     "org_deploy_enabled": false,
     "socket_mode_enabled": false,
