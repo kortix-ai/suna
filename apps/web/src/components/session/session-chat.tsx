@@ -5914,14 +5914,25 @@ export function SessionChat({
   const isTransitioningFromWelcome =
     !prevHasChatContentRef.current && hasChatContent;
   // The welcome wallpaper is the EMPTY-STATE backdrop for a *resolved* session.
-  // It must never render while we're still loading/connecting — its oversized
-  // brandmark SVG draws in behind the loader (the "glitchy arcs over a white
-  // page" bug) — nor on the not-found screen. Show a clean loader while loading;
-  // only paint the wallpaper once the session is actually resolved and empty.
+  // The loading/connecting phase never reaches here (it early-returns the loader
+  // below), so this only needs to exclude the not-found screen.
   const shouldShowWelcomeOverlay =
-    !isDataLoading &&
     !isNotFound &&
     (!hasChatContent || welcomeFadeActive || isTransitioningFromWelcome);
+
+  // While the session is still connecting / loading its content, render ONLY the
+  // staged loader — never the session shell (header + input) at the same time.
+  // Showing both reads as "loaded and loading at once" (the very contradiction
+  // the loader exists to avoid). The connection keeps running in the parent
+  // ProjectSessionRuntimeConnection, so as soon as the runtime is ready
+  // isDataLoading flips and the full shell renders in one shot.
+  if (isDataLoading) {
+    return (
+      <div className="relative flex flex-col h-full bg-background" data-testid="session-chat">
+        <SessionStartingLoader stage="ready" />
+      </div>
+    );
+  }
 
   return (
     <div className="relative flex flex-col h-full bg-background" data-testid="session-chat">
@@ -5964,9 +5975,7 @@ export function SessionChat({
       {/* Content area — loading, not-found, or actual messages. The single
           session loader (SessionStartingLoader) carries through here on its
           "Connecting" phase so there's never a second, different loader. */}
-      {isDataLoading ? (
-        <SessionStartingLoader stage="ready" />
-      ) : isNotFound ? (
+      {isNotFound ? (
         <div className="flex-1 flex flex-col items-center justify-center min-h-0 gap-3 text-center px-6">
           <div className="text-sm text-muted-foreground">
             {tHardcodedUi.raw('componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow')}</div>
