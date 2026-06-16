@@ -5913,8 +5913,15 @@ export function SessionChat({
   const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome =
     !prevHasChatContentRef.current && hasChatContent;
+  // The welcome wallpaper is the EMPTY-STATE backdrop for a *resolved* session.
+  // It must never render while we're still loading/connecting — its oversized
+  // brandmark SVG draws in behind the loader (the "glitchy arcs over a white
+  // page" bug) — nor on the not-found screen. Show a clean loader while loading;
+  // only paint the wallpaper once the session is actually resolved and empty.
   const shouldShowWelcomeOverlay =
-    !hasChatContent || welcomeFadeActive || isTransitioningFromWelcome;
+    !isDataLoading &&
+    !isNotFound &&
+    (!hasChatContent || welcomeFadeActive || isTransitioningFromWelcome);
 
   return (
     <div className="relative flex flex-col h-full bg-background" data-testid="session-chat">
