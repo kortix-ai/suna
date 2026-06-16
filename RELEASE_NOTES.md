@@ -1,3 +1,7 @@
-Smoother session loading — chat input no longer jumps
+Smoother, more reliable session loading
 
-The 'Kortix Computer is starting' loader briefly collapsed the chat content area during load, which let the message input snap to the top of the page and then jump back to the bottom. The loader's container now always holds its space, so the input stays pinned to the bottom while a session connects — no layout jump.
+Session loading is now clean end-to-end:
+- The chat input no longer jumps to the top of the page while a session connects.
+- No more brandmark 'arcs' bleeding through behind the loader on a fresh session.
+- The loader and the session shell never show at the same time — connecting shows just the loader, ready shows the full session, never both at once.
+- More reliable Slack session handling (session lifecycle now goes through the unified openSession path).

@@ -438,7 +438,7 @@ projectsApp.openapi(
   // session id for the server-side root-session guard.)
   if (body.kind === 'end' || body.kind === 'turn_end') {
     const status = body.status === 'error' ? 'error' : 'idle';
-    const ok = await relayTurnEnd(sessionId, status, body.opencode_session_id?.trim() || undefined);
+    const ok = await relayTurnEnd(sessionId, status);
     return c.json({ ok });
   }
 

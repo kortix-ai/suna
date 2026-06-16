@@ -92,8 +92,7 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
-const { finalizeTurn, repaintLivePlan } = await import('../channels/slack/turn');
-const { relayTurnEnd, relayTurnStep } = await import('../channels/slack/questions');
+const { finalizeTurn, repaintLivePlan, relayTurnEnd, relayTurnStep } = await import('../channels/slack/turn');
 
 function liveHandle(overrides: Record<string, unknown> = {}) {
   return {
@@ -258,12 +257,11 @@ describe('relayTurnEnd', () => {
   test('idle gracefully closes a turn as Task complete via chat.update', async () => {
     dbResults = [
       [streamRow()], // loadTurn
-      [{ pinned: 'oc-root' }], // canonical pin lookup
       [{ sessionId: 'sess-1' }], // claimFinalize
       [], // deleteTurn
     ];
 
-    const ok = await relayTurnEnd('sess-1', 'idle', 'oc-root');
+    const ok = await relayTurnEnd('sess-1', 'idle');
     expect(ok).toBe(true);
     expect(calls('stopStream').length).toBe(0);
     expect(calls('updateBlocks')[0]!.args[3]).toBe('Task complete');
@@ -271,26 +269,30 @@ describe('relayTurnEnd', () => {
     expect(calls('addReaction').length).toBe(0);
   });
 
-  test('a subagent session cannot close the stream', async () => {
+  // The server no longer re-checks the relayed opencode id against the DB pin —
+  // the sandbox filters subagents by parentID before relaying, and a stale-pin
+  // re-check here is exactly what used to drop a real turn's idle and spin the ⏳
+  // forever. So a relayed root idle ALWAYS finalizes, with no pin lookup.
+  test('finalizes unconditionally — no pin lookup gates the close', async () => {
     dbResults = [
       [streamRow()], // loadTurn
-      [{ pinned: 'oc-root' }], // pin lookup — mismatch
+      [{ sessionId: 'sess-1' }], // claimFinalize
+      [], // deleteTurn
     ];
 
-    const ok = await relayTurnEnd('sess-1', 'idle', 'oc-subagent');
-    expect(ok).toBe(false);
-    expect(slackCalls.length).toBe(0);
+    const ok = await relayTurnEnd('sess-1', 'idle');
+    expect(ok).toBe(true);
+    expect(calls('removeReaction').length).toBe(1);
   });
 
   test('idle on a turn with no plan message + no steps just clears ⏳', async () => {
     dbResults = [
       [streamRow({ messageTs: null, steps: [] })], // loadTurn
-      [{ pinned: 'oc-root' }], // pin lookup
       [{ sessionId: 'sess-1' }], // claimFinalize
       [], // deleteTurn
     ];
 
-    const ok = await relayTurnEnd('sess-1', 'idle', 'oc-root');
+    const ok = await relayTurnEnd('sess-1', 'idle');
     expect(ok).toBe(true);
     expect(calls('updateBlocks').length).toBe(0);
     expect(calls('postMessage').length).toBe(0);
@@ -300,12 +302,11 @@ describe('relayTurnEnd', () => {
   test('error close on a turn with no plan message posts failure copy fresh', async () => {
     dbResults = [
       [streamRow({ messageTs: null, steps: [] })], // loadTurn
-      [{ pinned: 'oc-root' }], // pin lookup
       [{ sessionId: 'sess-1' }], // claimFinalize
       [], // deleteTurn
     ];
 
-    const ok = await relayTurnEnd('sess-1', 'error', 'oc-root');
+    const ok = await relayTurnEnd('sess-1', 'error');
     expect(ok).toBe(true);
     const posted = calls('postMessage')[0]!;
     expect(String(posted.args[2])).toContain('error');
