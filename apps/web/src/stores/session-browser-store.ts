@@ -44,9 +44,12 @@ export interface SessionFileOpenRequest {
 interface SessionBrowserState {
   /** Active view per session. Defaults to 'actions' when unset. */
   viewBySession: Record<string, SessionPanelView>;
+  /** Dedicated side-panel terminal PTY per OpenCode chat session. */
+  terminalPtyBySession: Record<string, string>;
 
   setView: (sessionId: string, view: SessionPanelView) => void;
   getView: (sessionId: string) => SessionPanelView;
+  setTerminalPty: (sessionId: string, ptyId: string | null) => void;
 
   /** Pending file-open request per session (transient — not persisted). */
   fileOpenBySession: Record<string, SessionFileOpenRequest>;
@@ -71,6 +74,7 @@ export const useSessionBrowserStore = create<SessionBrowserState>()(
   persist(
     (set, get) => ({
       viewBySession: {},
+      terminalPtyBySession: {},
       fileOpenBySession: {},
       activeSessionId: null,
 
@@ -82,6 +86,14 @@ export const useSessionBrowserStore = create<SessionBrowserState>()(
         })),
 
       getView: (sessionId) => get().viewBySession[sessionId] ?? 'actions',
+
+      setTerminalPty: (sessionId, ptyId) =>
+        set((state) => {
+          const next = { ...state.terminalPtyBySession };
+          if (ptyId) next[sessionId] = ptyId;
+          else delete next[sessionId];
+          return { terminalPtyBySession: next };
+        }),
 
       requestFileOpen: (sessionId, path, line) =>
         set((state) => ({
@@ -99,8 +111,11 @@ export const useSessionBrowserStore = create<SessionBrowserState>()(
     {
       name: 'kortix-session-browser',
       storage: createSafeJSONStorage(),
-      // Persist only the per-session view choice; file-open requests are transient.
-      partialize: (state) => ({ viewBySession: state.viewBySession }),
+      // Persist stable per-session UI choices; file-open requests are transient.
+      partialize: (state) => ({
+        viewBySession: state.viewBySession,
+        terminalPtyBySession: state.terminalPtyBySession,
+      }),
     },
   ),
 );
