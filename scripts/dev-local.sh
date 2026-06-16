@@ -82,10 +82,20 @@ ensure_dev_tunnel() {
   local api_origin="http://localhost:${api_port}"
   local default_provider="${ALLOWED_SANDBOX_PROVIDERS%%,*}"
 
-  # Respect an explicit public KORTIX_URL (named tunnel, staging API, …).
+  # Respect an explicit public KORTIX_URL (named tunnel, staging API, …) — but
+  # only if it actually ANSWERS. FAA: a stale/bogus value (e.g. a dead quick-
+  # tunnel URL or a leftover like https://api.trycloudflare.com baked into .env)
+  # used to be trusted blindly, so no tunnel started and every sandbox got a 404
+  # callback URL — sessions reach 'running' in ~2s but the UI panel loads a dead
+  # URL → infinite spinner that looks like "kortix is broken". Probe it first;
+  # fall through to a fresh quick tunnel if it's unreachable.
   if [[ -n "${KORTIX_URL:-}" && "$KORTIX_URL" != http://localhost:* && "$KORTIX_URL" != http://127.0.0.1:* ]]; then
-    echo "[dev] Using KORTIX_URL from environment: $KORTIX_URL"
-    return 0
+    if curl -fsS -m 6 "${KORTIX_URL%/}/health" >/dev/null 2>&1; then
+      echo "[dev] Using KORTIX_URL from environment: $KORTIX_URL"
+      return 0
+    fi
+    echo "[dev] ⚠️  KORTIX_URL=$KORTIX_URL is set but UNREACHABLE (sandboxes would get a dead callback URL → blank session UI) — ignoring it and starting a fresh tunnel."
+    unset KORTIX_URL
   fi
 
   # Local-docker sandboxes run on this machine — no public callback needed.
