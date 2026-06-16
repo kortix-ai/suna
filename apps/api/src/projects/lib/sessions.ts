@@ -10,7 +10,6 @@ import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/a
 import { recordAuditEvent } from '../../shared/audit';
 import { db } from '../../shared/db';
 import { DEFAULT_SANDBOX_SLUG, resolveTemplate } from '../../snapshots/builder';
-import { createRemoteSessionBranch } from '../git';
 import { listProjectSecretsSnapshotForUser } from '../secrets';
 import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
@@ -396,9 +395,6 @@ export async function createProjectSession(input: {
     return { error: { status: 400, body: { error: 'Invalid session id' } } };
   }
   const sessionId = requestedSessionId ?? randomUUID();
-  const branchAlreadyCreated =
-    body.branch_already_created === true ||
-    body.branchAlreadyCreated === true;
 
   const initialPrompt = normalizeString(body.initial_prompt ?? body.initialPrompt);
   const opencodeModel = normalizeString(body.opencode_model ?? body.opencodeModel);
@@ -527,17 +523,13 @@ export async function createProjectSession(input: {
   void (async () => {
     const tl = new ProvisionTimeline(sessionId, 'session-create');
     try {
-      // Resolve git auth and user env concurrently. Git auth is needed for
-      // background freshness checks / remote branch publishing, but a warm
-      // session can boot from an existing ready snapshot without waiting for it.
+      // Resolve git auth and user env concurrently. Git auth is needed for the
+      // sandbox's clone credential, but a warm session can boot from an existing
+      // ready snapshot without waiting for it.
       const gitAuthPromise = resolveProjectGitAuth(project).then((gitAuth) => {
         tl.mark('git-auth');
         return gitAuth;
       });
-      const projectWithGitAuthPromise = gitAuthPromise.then((gitAuth) => ({
-        ...project,
-        gitAuthToken: gitAuth.auth?.token ?? null,
-      }));
       const envPromise = buildSessionSandboxEnvVars({
         accountId,
         projectId,
@@ -572,33 +564,15 @@ export async function createProjectSession(input: {
           .where(eq(projectSessions.sessionId, sessionId));
       };
 
-      // Origin branch creation is publishing work, not readiness work. The
-      // sandbox now creates the session branch locally from the base checkout
-      // immediately, so this remote push runs fully in the background. The
-      // metadata writes that record success/failure are pure telemetry —
-      // fire-and-forget so they never block the IIFE itself.
-      const branchPromise: Promise<void> = branchAlreadyCreated
-        ? Promise.resolve()
-        : projectWithGitAuthPromise.then((projectWithGitAuth) =>
-            createRemoteSessionBranch(projectWithGitAuth, sessionId, baseRef),
-          ).then(() => {
-            tl.mark('branch-pushed');
-            void mergeSessionMetadata({
-              remote_branch: { status: 'ready', branch: sessionId, updated_at: new Date().toISOString() },
-            }).catch(() => {});
-          });
-      branchPromise.catch((err) => {
-        const message = err instanceof Error ? err.message : String(err);
-        console.warn(`[projects] Remote branch creation failed for session ${sessionId}:`, err);
-        void mergeSessionMetadata({
-          remote_branch: {
-            status: 'failed',
-            branch: sessionId,
-            error: message.slice(0, 500),
-            updated_at: new Date().toISOString(),
-          },
-        }).catch(() => {});
-      });
+      // NOTE: the session branch is NOT pushed to origin here. The sandbox
+      // creates it locally from the base checkout at boot, and the agent works
+      // entirely on that local branch. It's published to origin lazily — on the
+      // first commit-push / `kortix` CLI push / when a change request is opened
+      // (see POST /sessions/:id/commit-push + commitFileToBranch, which create
+      // the remote branch on demand). Pushing at session-create was redundant
+      // work on the hot path: it bought nothing readiness-wise, and on a not-yet-
+      // seeded repo it just failed and wrote noise. Keep session start local +
+      // fast; pay the network cost only when there's real work to publish.
 
       const extraEnvVars = {
         ...(await envPromise),
