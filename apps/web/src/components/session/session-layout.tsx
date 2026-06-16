@@ -39,11 +39,15 @@ import { X } from 'lucide-react';
 
 interface SessionLayoutProps {
   sessionId: string;
+  projectId?: string;
+  projectSessionId?: string;
   children: React.ReactNode;
 }
 
 export const SessionLayout = memo(function SessionLayout({
   sessionId,
+  projectId,
+  projectSessionId,
   children,
 }: SessionLayoutProps) {
   const isMobile = useIsMobile();
@@ -269,9 +273,17 @@ export const SessionLayout = memo(function SessionLayout({
   // is layered on top and toggled with `hidden` (display:none) rather than
   // unmounted, keeping its connection alive across view switches.
   const nonTerminalBody = showBrowser ? (
-    <PreviewTabContent tabId={sessionPreviewTabId(sessionId)} />
+    <PreviewTabContent
+      tabId={sessionPreviewTabId(sessionId)}
+      projectId={projectId}
+      projectSessionId={projectSessionId}
+    />
   ) : showExplorer ? (
-    <SessionFilesExplorer chatSessionId={sessionId} />
+    <SessionFilesExplorer
+      chatSessionId={sessionId}
+      projectId={projectId}
+      projectSessionId={projectSessionId}
+    />
   ) : (
     <SessionActionsPanel sessionId={sessionId} messages={messages} />
   );

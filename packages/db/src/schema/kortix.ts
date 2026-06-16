@@ -531,6 +531,41 @@ export const projectSessionGrants = kortixSchema.table(
   ],
 );
 
+export const projectSessionPublicShares = kortixSchema.table(
+  'project_session_public_shares',
+  {
+    shareId: uuid('share_id').defaultRandom().primaryKey(),
+    tokenHash: text('token_hash').notNull(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by'),
+    resourceType: text('resource_type').default('preview').notNull(),
+    label: text('label').default('App preview').notNull(),
+    port: integer('port'),
+    path: text('path').default('/').notNull(),
+    filePath: text('file_path'),
+    mode: text('mode').default('view').notNull(),
+    allowWebsocket: boolean('allow_websocket').default(false).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_project_session_public_shares_token_hash').on(table.tokenHash),
+    index('idx_project_session_public_shares_session').on(table.sessionId),
+    index('idx_project_session_public_shares_project').on(table.projectId),
+  ],
+);
+
 /**
  * Runtime state for triggers defined in the project repo
  * (.opencode/triggers/<slug>.md). The repo holds the trigger config; this

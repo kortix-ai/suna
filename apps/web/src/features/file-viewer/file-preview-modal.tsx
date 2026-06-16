@@ -1,6 +1,7 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
+import { PublicShareLinkButton } from '@/components/projects/public-share-link-button';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { cn } from '@/lib/utils';
 import { dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
@@ -18,6 +19,7 @@ import {
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentType,
@@ -59,6 +61,8 @@ export interface FilePreviewModalProps extends FilePreviewState {
   statusSlot?: ReactNode;
   /** Optional extra toolbar actions, shown before Download (e.g. open-in-tab). */
   extraActions?: ReactNode;
+  /** Public share context. Omit for non-session file surfaces. */
+  shareContext?: { projectId: string; sessionId: string };
   /** History button tooltip. */
   historyLabel?: string;
   /**
@@ -102,6 +106,7 @@ export function FilePreviewModal({
   renderFileIcon,
   statusSlot,
   extraActions,
+  shareContext,
   historyLabel = 'History',
   embedded = false,
 }: FilePreviewModalProps) {
@@ -120,6 +125,16 @@ export function FilePreviewModal({
   const [historyPath, setHistoryPath] = useState<string | null>(null);
   const [markdownPreview, setMarkdownPreview] = useState(true);
   const isMarkdownFile = getLanguageFromExt(fileName) === 'markdown';
+  const shareInput = useMemo(() => {
+    if (!selectedFilePath || !shareContext) return null;
+    return {
+      file: {
+        label: fileName || selectedFilePath,
+        path: selectedFilePath,
+      },
+      mode: 'view' as const,
+    };
+  }, [fileName, selectedFilePath, shareContext]);
 
   // The dialog surface — focus target for the trap and the focus-on-open below.
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -327,6 +342,15 @@ export function FilePreviewModal({
         >
           <Download className="h-4 w-4" />
         </Button>
+        {shareContext && (
+          <PublicShareLinkButton
+            projectId={shareContext.projectId}
+            sessionId={shareContext.sessionId}
+            input={shareInput}
+            tooltip="Copy a public view-only link for this file"
+            className="text-muted-foreground hover:text-foreground"
+          />
+        )}
         {extraActions}
         {embedded && (
           <Button

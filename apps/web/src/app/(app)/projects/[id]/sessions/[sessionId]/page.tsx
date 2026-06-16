@@ -579,7 +579,12 @@ function ActiveSessionChat({
   // mounts exactly once per session and only remounts on a genuine session switch,
   // so the optimistic first-message bubble + in-flight send are never torn down.
   return (
-    <SessionLayout key={chatSessionId} sessionId={chatSessionId}>
+    <SessionLayout
+      key={chatSessionId}
+      sessionId={chatSessionId}
+      projectId={projectId}
+      projectSessionId={sessionId}
+    >
       <SessionChat key={chatSessionId} sessionId={chatSessionId} />
     </SessionLayout>
   );

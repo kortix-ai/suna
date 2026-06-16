@@ -45,6 +45,7 @@ export {
   chatEventDedup,
   projectSessions,
   projectSessionGrants,
+  projectSessionPublicShares,
   projectSessionVisibilityEnum,
   projectSnapshotBuilds,
   sandboxTemplates,
