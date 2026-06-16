@@ -24,8 +24,16 @@
         "command": "/kortix-dev",
         "url": "https://dev-api.kortix.com/v1/webhooks/slack/commands",
         "description": "Manage your Kortix project from Slack",
-        "usage_hint": "[projects | switch | unbind | sessions | whoami | help]",
+        "usage_hint": "[projects | switch | agents | models | session | whoami | help]",
         "should_escape": false
+      }
+    ],
+    "shortcuts": [
+      {
+        "name": "Open in Kortix",
+        "type": "message",
+        "callback_id": "open_session",
+        "description": "Open this thread's Kortix session on the web"
       }
     ]
   },

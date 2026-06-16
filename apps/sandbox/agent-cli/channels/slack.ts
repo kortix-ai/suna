@@ -280,12 +280,31 @@ function manifest(opts: { url?: string; projectId?: string; name?: string }) {
       description: 'Kortix project bot',
       background_color: '#0a0a0a',
     },
-    features: { bot_user: { display_name: opts.name ?? 'kortix', always_online: true } },
+    features: {
+      bot_user: { display_name: opts.name ?? 'kortix', always_online: true },
+      slash_commands: [
+        {
+          command: '/kortix',
+          url: `${requestUrl}/commands`,
+          description: 'Manage your Kortix project from Slack',
+          usage_hint: '[projects | switch | agents | models | session | whoami | help]',
+          should_escape: false,
+        },
+      ],
+      shortcuts: [
+        {
+          name: 'Open in Kortix',
+          type: 'message',
+          callback_id: 'open_session',
+          description: "Open this thread's Kortix session on the web",
+        },
+      ],
+    },
     oauth_config: {
       scopes: {
         bot: [
           'app_mentions:read', 'channels:history', 'channels:read', 'channels:join',
-          'chat:write', 'chat:write.public', 'files:read', 'files:write',
+          'chat:write', 'chat:write.public', 'commands', 'files:read', 'files:write',
           'groups:history', 'groups:read', 'im:history', 'im:read', 'im:write',
           'mpim:history', 'mpim:read', 'reactions:read', 'reactions:write', 'users:read',
         ],
@@ -298,6 +317,10 @@ function manifest(opts: { url?: string; projectId?: string; name?: string }) {
           'app_mention', 'message.im', 'message.channels', 'message.groups', 'message.mpim',
           'reaction_added', 'reaction_removed', 'member_joined_channel', 'file_shared',
         ],
+      },
+      interactivity: {
+        is_enabled: true,
+        request_url: `${requestUrl}/interactivity`,
       },
       org_deploy_enabled: false,
       socket_mode_enabled: false,

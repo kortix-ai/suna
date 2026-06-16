@@ -4,6 +4,7 @@ import { db } from '../../shared/db';
 import { createProjectSession, resolveGitTriggerActor } from '../../projects';
 import { deliverPromptToSession } from '../../projects/session-delivery';
 import { EVENT_DEDUPE_TTL_MS } from './app';
+import { currentChannelSelection } from './selection';
 import { buildSlackTurnEnv, finalizeTurn, saveTurn, startTurn } from './turn';
 import type { SlackEnvelope, SlackEvent } from './types';
 
@@ -77,12 +78,19 @@ export async function createOrJoinThreadSession(input: {
 
   const handle = await startTurn(projectId, teamId, event, 'Spinning up a sandbox');
 
+  // Per-channel agent + model overrides (set via `/kortix agents` / `models`).
+  // Null/unset falls back to the project's default agent and configured model.
+  const selection = event.channel
+    ? await currentChannelSelection({ teamId, channelId: event.channel })
+    : null;
+
   const result = await createProjectSession({
     project,
     userId,
     body: {
       base_ref: project.defaultBranch,
-      agent_name: 'default',
+      agent_name: selection?.agentName ?? 'default',
+      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
       initial_prompt: renderAgentPrompt(envelope, event, revived),
     },
     enforceAccountCap: false,

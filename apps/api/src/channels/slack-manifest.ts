@@ -6,6 +6,14 @@ export interface SlackManifest {
   };
   features: {
     bot_user: { display_name: string; always_online: boolean };
+    slash_commands: Array<{
+      command: string;
+      url: string;
+      description: string;
+      usage_hint?: string;
+      should_escape?: boolean;
+    }>;
+    shortcuts: Array<{ name: string; type: string; callback_id: string; description: string }>;
   };
   oauth_config: {
     scopes: { bot: string[] };
@@ -14,6 +22,10 @@ export interface SlackManifest {
     event_subscriptions: {
       request_url: string;
       bot_events: string[];
+    };
+    interactivity: {
+      is_enabled: boolean;
+      request_url: string;
     };
     org_deploy_enabled: boolean;
     socket_mode_enabled: boolean;
@@ -106,6 +118,23 @@ export function generateSlackManifest(input: GenerateManifestInput): SlackManife
     },
     features: {
       bot_user: { display_name: input.botName ?? 'kortix', always_online: true },
+      slash_commands: [
+        {
+          command: '/kortix',
+          url: `${requestUrl}/commands`,
+          description: 'Manage your Kortix project from Slack',
+          usage_hint: '[projects | switch | agents | models | session | whoami | help]',
+          should_escape: false,
+        },
+      ],
+      shortcuts: [
+        {
+          name: 'Open in Kortix',
+          type: 'message',
+          callback_id: 'open_session',
+          description: "Open this thread's Kortix session on the web",
+        },
+      ],
     },
     oauth_config: {
       scopes: { bot: scopes },
@@ -126,6 +155,10 @@ export function generateSlackManifest(input: GenerateManifestInput): SlackManife
           'member_joined_channel',
           'file_shared',
         ],
+      },
+      interactivity: {
+        is_enabled: true,
+        request_url: `${requestUrl}/interactivity`,
       },
       org_deploy_enabled: false,
       socket_mode_enabled: false,

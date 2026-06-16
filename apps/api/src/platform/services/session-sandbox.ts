@@ -48,8 +48,8 @@ import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 
 // Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
-// Mirrors a sensible Daytona default (1 vCPU / 2 GB / 10 GB).
-const DEFAULT_METERING_SPEC = { cpuCores: 1, memoryGb: 2, diskGb: 10, gpuCount: 0 };
+// Mirrors the platform default sandbox size (2 vCPU / 6 GB / 20 GB).
+const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 6, diskGb: 20, gpuCount: 0 };
 
 async function openComputeSessionForSandbox(
   sandboxId: string,

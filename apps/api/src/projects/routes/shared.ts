@@ -1,18 +1,30 @@
-import { reopenComputeForSandbox } from '../../billing/services/compute-metering';
+import {
+  endComputeSession,
+  reopenComputeForSandbox,
+} from '../../billing/services/compute-metering';
 import { config, type SandboxProviderName } from '../../config';
 import { PROJECT_ACTIONS, authorize } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { auth, json } from '../../openapi';
-import { getProvider } from '../../platform/providers';
+import { getProvider, type SandboxStatus } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray } from 'drizzle-orm';
 import { resolveProjectGitAuth } from '../lib/git';
-import { ProjectRow, isPlainObject, normalizeString, readBody, serializeSessionSandboxConfig } from '../lib/serializers';
+import {
+  ProjectRow,
+  isPlainObject,
+  normalizeString,
+  readBody,
+  serializeSessionSandboxConfig,
+} from '../lib/serializers';
 import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
-import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
+import {
+  buildSessionSandboxEnvVars,
+  sandboxCallbackUnreachableReason,
+} from '../lib/sessions';
 import { ensureOpencodeSessionPin } from '../opencode-mapping';
 
 export const syncOpencodeSessionsHandler = async (c: any) => {
@@ -41,23 +53,30 @@ export const syncOpencodeSessionsHandler = async (c: any) => {
     );
     if (!opencodeSessionId) continue;
     const title = normalizeString(raw.title);
-    const parentId = normalizeString(raw.parent_id ?? raw.parentID ?? raw.parentId);
-    const projectId = normalizeString(raw.project_id ?? raw.projectID ?? raw.projectId);
-    const createdAt = typeof raw.created_at === 'number'
-      ? raw.created_at
-      : typeof raw.createdAt === 'number'
-        ? raw.createdAt
-        : null;
-    const updatedAt = typeof raw.updated_at === 'number'
-      ? raw.updated_at
-      : typeof raw.updatedAt === 'number'
-        ? raw.updatedAt
-        : null;
-    const archivedAt = typeof raw.archived_at === 'number'
-      ? raw.archived_at
-      : typeof raw.archivedAt === 'number'
-        ? raw.archivedAt
-        : null;
+    const parentId = normalizeString(
+      raw.parent_id ?? raw.parentID ?? raw.parentId,
+    );
+    const projectId = normalizeString(
+      raw.project_id ?? raw.projectID ?? raw.projectId,
+    );
+    const createdAt =
+      typeof raw.created_at === 'number'
+        ? raw.created_at
+        : typeof raw.createdAt === 'number'
+          ? raw.createdAt
+          : null;
+    const updatedAt =
+      typeof raw.updated_at === 'number'
+        ? raw.updated_at
+        : typeof raw.updatedAt === 'number'
+          ? raw.updatedAt
+          : null;
+    const archivedAt =
+      typeof raw.archived_at === 'number'
+        ? raw.archived_at
+        : typeof raw.archivedAt === 'number'
+          ? raw.archivedAt
+          : null;
     desiredByOcId.set(opencodeSessionId, {
       id: opencodeSessionId,
       title,
@@ -96,7 +115,12 @@ export const syncOpencodeSessionsHandler = async (c: any) => {
   const rows = await db
     .select()
     .from(projectSessions)
-    .where(inArray(projectSessions.opencodeSessionId, Array.from(new Set([...ids, ...rootIds]))));
+    .where(
+      inArray(
+        projectSessions.opencodeSessionId,
+        Array.from(new Set([...ids, ...rootIds])),
+      ),
+    );
   if (rows.length === 0) return c.json({ updated: 0 });
 
   // Per-row IAM authz. The engine answers from a per-request cache
@@ -123,7 +147,8 @@ export const syncOpencodeSessionsHandler = async (c: any) => {
     const ocId = row.opencodeSessionId;
     if (!ocId) continue;
     const rootId = rootByOcId.get(ocId) ?? ocId;
-    const current = typeof row.metadata?.name === 'string' ? row.metadata.name : null;
+    const current =
+      typeof row.metadata?.name === 'string' ? row.metadata.name : null;
     const rootEntry = desiredByOcId.get(ocId);
     // Title mirror is MONOTONIC: a row that's in the snapshot but still has a
     // null title (OpenCode hasn't auto-titled it yet) must NOT erase a name we
@@ -133,7 +158,9 @@ export const syncOpencodeSessionsHandler = async (c: any) => {
     const scopedSessions = Array.from(desiredByOcId.values())
       .filter((entry) => (rootByOcId.get(entry.id) ?? entry.id) === rootId)
       .sort((a, b) => (b.updated_at ?? 0) - (a.updated_at ?? 0));
-    const currentSessions = JSON.stringify(row.metadata?.opencode_sessions ?? []);
+    const currentSessions = JSON.stringify(
+      row.metadata?.opencode_sessions ?? [],
+    );
     const nextSessions = JSON.stringify(scopedSessions);
     if (desired === current && currentSessions === nextSessions) continue;
     const nextMetadata: Record<string, unknown> = { ...(row.metadata ?? {}) };
@@ -148,7 +175,6 @@ export const syncOpencodeSessionsHandler = async (c: any) => {
   }
   return c.json({ updated });
 };
-
 
 /**
  * Resume a hibernated (status='stopped') session sandbox IN PLACE instead of
@@ -176,15 +202,26 @@ export async function resumeStoppedSandbox(row: {
   externalId: string | null;
 }): Promise<boolean> {
   if (!row.externalId) return false;
-  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) return false;
+  if (
+    !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
+      row.provider,
+    )
+  )
+    return false;
 
+  const externalId = row.externalId;
   const now = new Date();
   // Conditional update = the lock: only the request that flips stopped→active
   // proceeds to start the VM. Concurrent polls see `active` and just return it.
   const [won] = await db
     .update(sessionSandboxes)
     .set({ status: 'active', updatedAt: now })
-    .where(and(eq(sessionSandboxes.sandboxId, row.sandboxId), eq(sessionSandboxes.status, 'stopped')))
+    .where(
+      and(
+        eq(sessionSandboxes.sandboxId, row.sandboxId),
+        eq(sessionSandboxes.status, 'stopped'),
+      ),
+    )
     .returning();
   if (!won) return false;
 
@@ -192,21 +229,45 @@ export async function resumeStoppedSandbox(row: {
     .update(projectSessions)
     .set({ status: 'running', updatedAt: now })
     .where(eq(projectSessions.sessionId, row.sessionId))
-    .catch((err) => console.warn(`[projects] failed to mark session running on resume for ${row.sessionId}:`, err));
+    .catch((err) =>
+      console.warn(
+        `[projects] failed to mark session running on resume for ${row.sessionId}:`,
+        err,
+      ),
+    );
 
-  void reopenComputeForSandbox(row.sandboxId, row.accountId, row.sessionId).catch((err) =>
+  void reopenComputeForSandbox(
+    row.sandboxId,
+    row.accountId,
+    row.sessionId,
+  ).catch((err) =>
     console.warn(`[projects] compute reopen failed for ${row.sandboxId}:`, err),
   );
 
   const provider = getProvider(row.provider as SandboxProviderName);
-  void provider.start(row.externalId).catch(async (err) => {
-    console.warn(`[projects] failed to resume sandbox ${row.externalId} for session ${row.sessionId}:`, err);
+  void provider.start(externalId).catch(async (err) => {
+    console.warn(
+      `[projects] failed to resume sandbox ${externalId} for session ${row.sessionId}:`,
+      err,
+    );
+    if (isMissingRuntimeError(err)) {
+      await retireSessionSandboxRow(
+        { sandboxId: row.sandboxId, externalId },
+        'resume_missing_runtime',
+      ).catch(() => {});
+      return;
+    }
     // Revert so a later open retries the resume instead of spinning the health
     // poll against a VM that never came up.
     await db
       .update(sessionSandboxes)
       .set({ status: 'stopped', updatedAt: new Date() })
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, row.sandboxId),
+          eq(sessionSandboxes.externalId, externalId),
+        ),
+      )
       .catch(() => {});
   });
   return true;
@@ -214,23 +275,38 @@ export async function resumeStoppedSandbox(row: {
 
 export async function allocateRuntimeOnOpen(
   loaded: { row: ProjectRow; userId: string },
-  session: { sandboxProvider: string; baseRef: string | null; agentName: string | null; metadata?: Record<string, unknown> | null },
+  session: {
+    sandboxProvider: string;
+    baseRef: string | null;
+    agentName: string | null;
+    metadata?: Record<string, unknown> | null;
+  },
   projectId: string,
   sessionId: string,
 ): Promise<void> {
   const providerName = session.sandboxProvider as SandboxProviderName;
-  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) return;
+  if (
+    !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
+      providerName,
+    )
+  )
+    return;
   if (sandboxCallbackUnreachableReason()) return;
-  await db.update(projectSessions)
+  await db
+    .update(projectSessions)
     .set({ status: 'provisioning', error: null, updatedAt: new Date() })
     .where(eq(projectSessions.sessionId, sessionId));
   // Migrated session — restore its original chat as part of provisioning, before
   // the sandbox goes 'active' (so the frontend's ensure-opencode pin survives).
-  const legacySandboxId = (loaded.row as { metadata?: { legacy_migration?: { source_sandbox_id?: unknown } } })
-    .metadata?.legacy_migration?.source_sandbox_id;
-  const opencodeModel = typeof session.metadata?.opencode_model === 'string'
-    ? session.metadata.opencode_model
-    : null;
+  const legacySandboxId = (
+    loaded.row as {
+      metadata?: { legacy_migration?: { source_sandbox_id?: unknown } };
+    }
+  ).metadata?.legacy_migration?.source_sandbox_id;
+  const opencodeModel =
+    typeof session.metadata?.opencode_model === 'string'
+      ? session.metadata.opencode_model
+      : null;
   const runtimeMetadata = { opened_at: new Date().toISOString() };
   const sessionMetadata = { ...(session.metadata ?? {}), ...runtimeMetadata };
 
@@ -245,26 +321,39 @@ export async function allocateRuntimeOnOpen(
     agentName: session.agentName ?? 'default',
     runtimeMetadata,
     sessionMetadata,
-    buildEnvVars: () => buildSessionSandboxEnvVars({
-      accountId: loaded.row.accountId,
-      projectId,
-      sessionId,
-      userId: loaded.userId,
-      repoUrl: loaded.row.repoUrl,
-      baseRef: session.baseRef ?? loaded.row.defaultBranch,
-      agentName: session.agentName ?? 'default',
-      opencodeModel,
-    }),
-    resolveGitAuthToken: async () => (await resolveProjectGitAuth(loaded.row)).auth?.token ?? null,
-    beforeActive: typeof legacySandboxId === 'string'
-      ? (externalId) => rehydrateSessionChat({ sessionId, legacySandboxId, newExternalId: externalId })
-      : undefined,
+    buildEnvVars: () =>
+      buildSessionSandboxEnvVars({
+        accountId: loaded.row.accountId,
+        projectId,
+        sessionId,
+        userId: loaded.userId,
+        repoUrl: loaded.row.repoUrl,
+        baseRef: session.baseRef ?? loaded.row.defaultBranch,
+        agentName: session.agentName ?? 'default',
+        opencodeModel,
+      }),
+    resolveGitAuthToken: async () =>
+      (await resolveProjectGitAuth(loaded.row)).auth?.token ?? null,
+    beforeActive:
+      typeof legacySandboxId === 'string'
+        ? (externalId) =>
+            rehydrateSessionChat({
+              sessionId,
+              legacySandboxId,
+              newExternalId: externalId,
+            })
+        : undefined,
   });
 }
 
 // ── Unified session-open orchestration ──────────────────────────────────────
 
-export type SessionStartStage = 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
+export type SessionStartStage =
+  | 'provisioning'
+  | 'starting'
+  | 'ready'
+  | 'stopped'
+  | 'failed';
 
 export interface SessionStartResult {
   /** Coarse lifecycle stage the client renders + polls on. */
@@ -278,7 +367,65 @@ export interface SessionStartResult {
   reason?: string;
 }
 
-function serializeSandboxRow(row: typeof sessionSandboxes.$inferSelect): Record<string, unknown> {
+export function isMissingRuntimeError(error: unknown): boolean {
+  const err = error as
+    | {
+        statusCode?: unknown;
+        status?: unknown;
+        code?: unknown;
+        message?: unknown;
+      }
+    | null
+    | undefined;
+  const status = err?.statusCode ?? err?.status;
+  if (status === 404) return true;
+  const code = typeof err?.code === 'string' ? err.code.toLowerCase() : '';
+  if (code === 'not_found' || code === 'notfound') return true;
+  const message =
+    typeof err?.message === 'string'
+      ? err.message.toLowerCase()
+      : String(error ?? '').toLowerCase();
+  return (
+    message.includes('no such container') ||
+    message.includes('container not found') ||
+    message.includes('sandbox container not found') ||
+    message.includes('failed to inspect sandbox container') ||
+    message.includes('not found')
+  );
+}
+
+export async function retireSessionSandboxRow(
+  row: Pick<typeof sessionSandboxes.$inferSelect, 'sandboxId' | 'externalId'>,
+  reason: string,
+): Promise<void> {
+  await endComputeSession(row.sandboxId).catch((err) =>
+    console.warn(
+      `[projects] failed to close compute session while retiring sandbox ${row.sandboxId} (${reason}):`,
+      err,
+    ),
+  );
+  if (row.externalId) {
+    await db
+      .delete(sessionSandboxes)
+      .where(
+        and(
+          eq(sessionSandboxes.sandboxId, row.sandboxId),
+          eq(sessionSandboxes.externalId, row.externalId),
+        ),
+      );
+    return;
+  }
+  console.warn(
+    `[projects] retiring session sandbox ${row.sandboxId} without external_id (${reason})`,
+  );
+  await db
+    .delete(sessionSandboxes)
+    .where(eq(sessionSandboxes.sandboxId, row.sandboxId));
+}
+
+function serializeSandboxRow(
+  row: typeof sessionSandboxes.$inferSelect,
+): Record<string, unknown> {
   return {
     sandbox_id: row.sandboxId,
     session_id: row.sessionId,
@@ -296,6 +443,37 @@ function serializeSandboxRow(row: typeof sessionSandboxes.$inferSelect): Record<
   };
 }
 
+async function replaceStaleRuntimeOnOpen(
+  loaded: { row: ProjectRow; userId: string },
+  visible: {
+    row: {
+      sandboxProvider: string;
+      baseRef: string | null;
+      agentName: string | null;
+      metadata?: Record<string, unknown> | null;
+    };
+  },
+  projectId: string,
+  sessionId: string,
+  row: typeof sessionSandboxes.$inferSelect,
+  reason: string,
+): Promise<SessionStartResult> {
+  await retireSessionSandboxRow(row, reason).catch((err) =>
+    console.warn(
+      `[projects] failed to retire stale runtime ${row.externalId} for session ${sessionId}:`,
+      err,
+    ),
+  );
+  await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
+  return {
+    stage: 'provisioning',
+    retriable: true,
+    sandbox: null,
+    opencode_session_id: null,
+    reason,
+  };
+}
+
 /**
  * THE authoritative session-open path — the single call the dashboard uses to
  * bring a session's runtime up. Idempotent: provisions a missing sandbox,
@@ -306,7 +484,17 @@ function serializeSandboxRow(row: typeof sessionSandboxes.$inferSelect): Record<
  */
 export async function openSession(args: {
   loaded: { row: ProjectRow; userId: string };
-  visible: { row: { status: string; sandboxProvider: string; baseRef: string | null; agentName: string | null; opencodeSessionId: string | null; accountId: string; metadata?: Record<string, unknown> | null } };
+  visible: {
+    row: {
+      status: string;
+      sandboxProvider: string;
+      baseRef: string | null;
+      agentName: string | null;
+      opencodeSessionId: string | null;
+      accountId: string;
+      metadata?: Record<string, unknown> | null;
+    };
+  };
   projectId: string;
   sessionId: string;
 }): Promise<SessionStartResult> {
@@ -316,41 +504,75 @@ export async function openSession(args: {
   let [row] = await db
     .select()
     .from(sessionSandboxes)
-    .where(and(
-      eq(sessionSandboxes.sessionId, sessionId),
-      eq(sessionSandboxes.projectId, projectId),
-      eq(sessionSandboxes.accountId, accountId),
-    ))
+    .where(
+      and(
+        eq(sessionSandboxes.sessionId, sessionId),
+        eq(sessionSandboxes.projectId, projectId),
+        eq(sessionSandboxes.accountId, accountId),
+      ),
+    )
     .limit(1);
 
   // Resume a hibernated box in place (keeps its disk/workspace).
-  if (row && row.status === 'stopped' && row.externalId
-      && (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(row.provider)) {
+  if (
+    row &&
+    row.status === 'stopped' &&
+    row.externalId &&
+    (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
+      row.provider,
+    )
+  ) {
     await resumeStoppedSandbox({
-      sandboxId: row.sandboxId, sessionId: row.sessionId, accountId: row.accountId,
-      provider: row.provider, externalId: row.externalId,
+      sandboxId: row.sandboxId,
+      sessionId: row.sessionId,
+      accountId: row.accountId,
+      provider: row.provider,
+      externalId: row.externalId,
     });
-    const [resumed] = await db.select().from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sandboxId, row.sandboxId)).limit(1);
+    const [resumed] = await db
+      .select()
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sandboxId, row.sandboxId))
+      .limit(1);
     if (resumed) row = resumed;
   }
 
   // No usable box → provision on open (or report a terminal state).
-  const usable = row && (row.status === 'provisioning' || row.status === 'active');
+  const usable =
+    row && (row.status === 'provisioning' || row.status === 'active');
   if (!usable) {
     if (['failed', 'stopped', 'completed'].includes(visible.row.status)) {
-      return { stage: visible.row.status === 'failed' ? 'failed' : 'stopped', retriable: false, sandbox: null, opencode_session_id: null };
+      return {
+        stage: visible.row.status === 'failed' ? 'failed' : 'stopped',
+        retriable: false,
+        sandbox: null,
+        opencode_session_id: null,
+      };
     }
     if (visible.row.status !== 'provisioning') {
-      if (row) await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, sessionId)).catch(() => {});
+      if (row)
+        await db
+          .delete(sessionSandboxes)
+          .where(eq(sessionSandboxes.sandboxId, sessionId))
+          .catch(() => {});
       await allocateRuntimeOnOpen(loaded, visible.row, projectId, sessionId);
     }
-    return { stage: 'provisioning', retriable: true, sandbox: null, opencode_session_id: null };
+    return {
+      stage: 'provisioning',
+      retriable: true,
+      sandbox: null,
+      opencode_session_id: null,
+    };
   }
 
   // Still provisioning, or active but external_id not yet written.
   if (row.status === 'provisioning' || !row.externalId) {
-    return { stage: 'provisioning', retriable: true, sandbox: serializeSandboxRow(row), opencode_session_id: null };
+    return {
+      stage: 'provisioning',
+      retriable: true,
+      sandbox: serializeSandboxRow(row),
+      opencode_session_id: null,
+    };
   }
 
   // Active + external_id. The provider may have idle-auto-stopped the box while
@@ -361,19 +583,58 @@ export async function openSession(args: {
   // and it's polled every second. OpenCode readiness is the client health poll's
   // job; the canonical-pin hook resolves the root once the box reports healthy.
   const provider = getProvider(row.provider as SandboxProviderName);
-  let providerStatus: string;
+  let providerStatus: SandboxStatus;
   try {
     providerStatus = await provider.getStatus(row.externalId);
   } catch {
     providerStatus = 'unknown';
   }
 
+  if (providerStatus === 'removed') {
+    return replaceStaleRuntimeOnOpen(
+      loaded,
+      visible,
+      projectId,
+      sessionId,
+      row,
+      'runtime_removed',
+    );
+  }
+
   if (providerStatus !== 'running') {
     // Idle auto-stop: kick the start in the background; the client keeps polling.
-    void provider.start(row.externalId).catch((err) =>
-      console.warn(`[start] failed to wake sandbox ${row.externalId} (session ${sessionId}):`, err),
-    );
-    return { stage: 'starting', retriable: true, sandbox: serializeSandboxRow(row), opencode_session_id: null };
+    void provider.start(row.externalId).catch(async (err) => {
+      console.warn(
+        `[start] failed to wake sandbox ${row.externalId} (session ${sessionId}):`,
+        err,
+      );
+      if (isMissingRuntimeError(err)) {
+        await retireSessionSandboxRow(row, 'wake_missing_runtime').catch(
+          () => {},
+        );
+        await allocateRuntimeOnOpen(
+          loaded,
+          visible.row,
+          projectId,
+          sessionId,
+        ).catch((allocErr) =>
+          console.warn(
+            `[start] failed to reallocate missing runtime for session ${sessionId}:`,
+            allocErr,
+          ),
+        );
+      }
+    });
+    return {
+      stage: 'starting',
+      retriable: true,
+      sandbox: null,
+      opencode_session_id: null,
+      reason:
+        providerStatus === 'stopped'
+          ? 'runtime_waking'
+          : 'runtime_status_unknown',
+    };
   }
 
   // Box is provider-running. Resolve OpenCode readiness + the canonical pin
@@ -382,11 +643,15 @@ export async function openSession(args: {
   // against a dead box). This keeps ALL the lifecycle logic server-side: the
   // client just polls until stage='ready' and gets the pin handed to it.
   const ensured = await ensureOpencodeSessionPin({
-    projectId, sessionId, accountId,
-    externalId: row.externalId, userId: loaded.userId,
+    projectId,
+    sessionId,
+    accountId,
+    externalId: row.externalId,
+    userId: loaded.userId,
     currentPin: visible.row.opencodeSessionId ?? null,
   });
-  const booting = ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
+  const booting =
+    ensured.reason === 'not_ready' || ensured.reason === 'unreachable';
   return {
     stage: booting ? 'starting' : 'ready',
     retriable: booting,
@@ -395,7 +660,6 @@ export async function openSession(args: {
     reason: ensured.reason,
   };
 }
-
 
 export async function refreshCrTips(input: {
   cr: typeof changeRequests.$inferSelect;
@@ -417,7 +681,11 @@ export async function refreshCrTips(input: {
     if (cr.headCommitSha === headSha && cr.baseCommitSha === baseSha) return;
     await db
       .update(changeRequests)
-      .set({ headCommitSha: headSha, baseCommitSha: baseSha, updatedAt: new Date() })
+      .set({
+        headCommitSha: headSha,
+        baseCommitSha: baseSha,
+        updatedAt: new Date(),
+      })
       .where(eq(changeRequests.crId, cr.crId));
   } catch (error) {
     // Repo unreachable or branch missing — leave the CR alone so the UI can

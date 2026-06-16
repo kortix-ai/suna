@@ -593,6 +593,11 @@ export const chatChannelBindings = kortixSchema.table(
     channelName: varchar('channel_name', { length: 256 }),
     channelType: varchar('channel_type', { length: 32 }),
     pickerTs: varchar('picker_ts', { length: 64 }),
+    // Per-channel agent + model overrides. Null = use the project/platform
+    // default. Sessions started from this channel inherit these so different
+    // channels bound to the same project can run different agents/models.
+    agentName: varchar('agent_name', { length: 128 }),
+    opencodeModel: varchar('opencode_model', { length: 128 }),
     installedAt: timestamp('installed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

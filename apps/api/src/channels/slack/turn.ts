@@ -1,6 +1,8 @@
 import { and, eq, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
+import { config } from '../../config';
+import { sessionWebUrl } from './util';
 import { loadSlackTokenForProject } from '../install-store';
 import {
   addReaction,
@@ -309,6 +311,15 @@ function buildFinalPlanBlocks(
     for (const b of opts.blocks) blocks.push(b as Record<string, unknown>);
   } else if (body) {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: body } });
+  }
+  // Footer: a link to open this session on the web. Lets anyone in the thread
+  // jump straight to the full session (logs, files, diff) in Kortix.
+  if (handle.projectId && handle.sessionId) {
+    const url = sessionWebUrl(config.KORTIX_URL, handle.projectId, handle.sessionId);
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `<${url}|Open session in Kortix ↗>` }],
+    });
   }
   return blocks;
 }
