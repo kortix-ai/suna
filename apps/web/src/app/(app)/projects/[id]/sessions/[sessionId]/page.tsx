@@ -34,6 +34,7 @@ import {
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
 import {
   markProvisioningVerified,
+  markRuntimeReadyVerified,
   useSandboxConnectionStore,
 } from '@/stores/sandbox-connection-store';
 import { switchToSessionSandboxAsync, useServerStore } from '@/stores/server-store';
@@ -138,7 +139,16 @@ export default function ProjectSessionPage() {
     sessionMark(sandbox.session_id, 'sandbox-active');
     (async () => {
       try {
-        markProvisioningVerified();
+        // If /start already resolved the runtime as ready (warm claim: the box
+        // was pre-warmed and the pin handed to us), seed the connection store
+        // connected+healthy through the switch so the chat shows without an extra
+        // client /kortix/health RTT. Otherwise fall back to provisioning-verified
+        // (the health poller resolves readiness). The poller runs either way.
+        if (start?.stage === 'ready' && start?.opencode_session_id) {
+          markRuntimeReadyVerified();
+        } else {
+          markProvisioningVerified();
+        }
         // Pass the already-fetched row so the switch skips a duplicate
         // GET /sessions/:id/sandbox on first open. OpenCode caches are scoped
         // per-sandbox (opencodeKeys / activeServerKey), so no teardown needed.
