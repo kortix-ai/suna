@@ -1,0 +1,21 @@
+services:
+  data:
+    image: nginx:alpine
+    volumes:
+      - ./data:/usr/share/nginx/html:ro
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_INSTALL_PLUGINS=yesoreyeram-infinity-datasource
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_USERS_DEFAULT_THEME=dark
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/test-suite.json
+    volumes:
+      - ./provisioning:/etc/grafana/provisioning
+    depends_on:
+      - data

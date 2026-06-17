@@ -15,6 +15,9 @@ import { renderStepSummary, writeResults } from "../src/core/report";
 import { describeEnv, loadEnv } from "../src/core/env";
 import { log } from "../src/core/log";
 import { runCoverage } from "../src/coverage/check-coverage";
+import { writeCatalog } from "../src/core/catalog";
+import { writeAllureResults, writeAllureFromResults } from "../src/core/allure";
+import { writeUiData } from "../src/core/ui-data";
 import { runGc } from "../src/fixtures/gc";
 
 function parseArgs(argv: string[]): { _: string[]; flags: Record<string, string | boolean> } {
@@ -61,8 +64,37 @@ async function main() {
   }
 
   if (cmd === "coverage") {
-    const ok = await runCoverage();
+    const ok = await runCoverage({
+      updateBaseline: !!flags["update-baseline"],
+      json: !!flags.json,
+    });
     process.exit(ok ? 0 : 1);
+  }
+
+  if (cmd === "catalog") {
+    const out = (flags.out as string) ?? resolve(import.meta.dir, "../test-results/catalog.html");
+    const cat = await writeCatalog(out);
+    log.info(`catalog → ${out}`);
+    log.info(`${cat.totalFlows} flows · ${cat.totalSteps} cases · ${cat.totalRoutes} routes · ${cat.domains.length} domains`);
+    return;
+  }
+
+  if (cmd === "ui-data") {
+    const dir = (flags.out as string) ?? resolve(import.meta.dir, "../ui/data");
+    const r = await writeUiData(dir);
+    log.info(`ui data → ${dir}`);
+    log.info(`${r.flows} flows (${r.passed} passed, ${r.skipped} gated/skipped)`);
+    return;
+  }
+
+  if (cmd === "allure") {
+    const out = (flags.out as string) ?? resolve(import.meta.dir, "../test-results/allure-results");
+    const from = typeof flags.from === "string" ? resolve(flags.from) : undefined;
+    const r = from ? await writeAllureFromResults(from, out) : await writeAllureResults(out);
+    log.info(`allure-results → ${out}`);
+    log.info(`${r.flows} flows (${r.passed} passed, ${r.failed} failed, ${r.skipped} skipped)`);
+    log.info(log.dim(from ? "real run results" : "catalog preview — pass --from <results.json> for real run data"));
+    return;
   }
 
   if (cmd === "gc") {

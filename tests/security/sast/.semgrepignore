@@ -1,0 +1,14 @@
+node_modules/
+**/node_modules/
+.git/
+dist/
+build/
+.next/
+**/.next/
+coverage/
+test-results/
+pnpm-lock.yaml
+package-lock.json
+bun.lock
+tests/security-audit/
+.deepsec/

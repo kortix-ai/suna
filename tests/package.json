@@ -9,18 +9,48 @@
   },
   "scripts": {
     "ke2e": "bun bin/ke2e.ts",
-    "e2e": "bun bin/ke2e.ts run",
     "coverage": "bun bin/ke2e.ts coverage",
     "gc": "bun bin/ke2e.ts gc",
     "report": "bun bin/ke2e.ts report",
     "list": "bun bin/ke2e.ts list",
-    "typecheck": "tsc --noEmit"
+    "catalog": "bun bin/ke2e.ts catalog",
+    "allure": "bun bin/ke2e.ts allure",
+    "typecheck": "tsc --noEmit",
+    "test:unit": "vitest run --config unit/vitest.config.ts",
+    "test:unit:cov": "vitest run --config unit/vitest.config.ts --coverage",
+    "test:integration": "vitest run --config integration/vitest.config.ts",
+    "test:api": "bun bin/ke2e.ts run",
+    "test:api:example": "bun test api/example.api.test.ts --reporter=junit --reporter-outfile=test-results/api/junit.xml",
+    "test:contract": "vitest run --config contract/vitest.config.ts",
+    "test:smoke": "bun smoke/smoke.ts",
+    "test:e2e": "playwright test --config e2e/examples/playwright.config.ts",
+    "test:visual": "playwright test --config visual/playwright.config.ts",
+    "test:a11y": "playwright test --config accessibility/playwright.config.ts",
+    "test:perf": "bash performance/run.sh load",
+    "test:security": "bash security/run.sh --static",
+    "test:security:dast": "bash security/run.sh --dast",
+    "test:migration": "bash migration/run.sh",
+    "test:infra": "bash infra/run.sh",
+    "test:chaos": "bash chaos/resilience-toxiproxy.sh",
+    "test:mutation": "stryker run mutation/stryker.conf.json",
+    "quality-gates": "bash scripts/quality-gates.sh"
   },
   "dependencies": {
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.3",
+    "@pact-foundation/pact": "^15.0.1",
+    "@playwright/test": "^1.61.0",
+    "@stryker-mutator/core": "^8.7.0",
+    "@stryker-mutator/vitest-runner": "^8.7.0",
+    "@testcontainers/postgresql": "^11.0.0",
     "@types/bun": "latest",
-    "typescript": "^5.5.0"
+    "@types/pg": "^8.11.0",
+    "@vitest/coverage-v8": "^3.2.0",
+    "allure": "^3.11.0",
+    "pg": "^8.13.0",
+    "typescript": "^5.5.0",
+    "vitest": "^3.2.0"
   }
 }

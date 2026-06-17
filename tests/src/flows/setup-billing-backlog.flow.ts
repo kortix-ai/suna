@@ -167,7 +167,7 @@ flow(
  * negative (4xx) rather than a 403; the permissive SET documents the real behavior.
  */
 flow(
-  "BILL-9",
+  "BILL-9b",
   {
     domain: "billing",
     serial: true,
