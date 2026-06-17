@@ -1,9 +1,11 @@
 node_modules/
 test-results/
+contract/pacts/*.json
 *.log
 .env
 .env.*
 !.env.example
+!contract/pacts/.gitkeep
 
 # coverage-gate source, not istanbul output — root .gitignore "coverage/" must not swallow it
 !src/coverage/

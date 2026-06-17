@@ -1,12 +1,17 @@
-name: QA — main
+name: QA - main
 
-# On merge to main: heavier regression that needs a browser / DB — full E2E UI,
-# visual regression, accessibility, and DB migration tests. Mirrors `make ci-main`.
+# Heavier regression after merge to main. Browser tests run only when a deployed
+# web target is configured; DB migration tests always run against throwaway Docker.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      web_base_url:
+        description: "Frontend URL for e2e/visual/a11y, for example https://dev.kortix.com"
+        required: false
+        type: string
 
 concurrency:
   group: qa-main
@@ -19,16 +24,26 @@ jobs:
   ui:
     name: e2e + visual + a11y
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     env:
-      E2E_BASE_URL: ${{ vars.E2E_BASE_URL || 'http://localhost:3000' }}
+      E2E_BASE_URL: ${{ inputs.web_base_url || vars.QA_WEB_BASE_URL || vars.E2E_BASE_URL }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: npm --prefix tests install
-      - run: cd tests && npx playwright install --with-deps chromium
-      - run: make e2e visual a11y
-        continue-on-error: true
+        with:
+          node-version: 22
+      - name: Install test dependencies
+        run: npm --prefix tests ci
+      - name: Install Playwright Chromium
+        run: cd tests && npx playwright install --with-deps chromium
+      - name: Run browser regression when configured
+        run: |
+          set -euo pipefail
+          if [ -z "${E2E_BASE_URL:-}" ]; then
+            echo "::notice::QA_WEB_BASE_URL/E2E_BASE_URL is not set; skipping browser regression."
+            exit 0
+          fi
+          make e2e visual a11y
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -39,9 +54,11 @@ jobs:
   migration:
     name: db migration tests
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - run: make migration
+      - name: Run migration tests
+        run: make migration
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -50,7 +67,7 @@ jobs:
           retention-days: 30
 
   publish-report:
-    name: publish Allure report (history + S3)
+    name: publish Allure report
     runs-on: ubuntu-latest
     needs: [ui, migration]
     if: always()
@@ -62,17 +79,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: 20 }
-      - run: npm --prefix tests install
+        with:
+          node-version: 22
+      - name: Install test dependencies
+        run: npm --prefix tests ci
       - uses: actions/download-artifact@v4
-        with: { path: tests/test-results, merge-multiple: true }
+        with:
+          path: tests/test-results
+          merge-multiple: true
+      - name: Convert JUnit to Allure results
+        run: npm --prefix tests run allure:junit
       - name: AWS auth (skipped if QA_REPORTS_ROLE_ARN unset)
         if: ${{ env.QA_REPORTS_ROLE_ARN != '' }}
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
           aws-region: ${{ vars.QA_AWS_REGION }}
-      - name: Generate (history-carried) + publish to S3
+      - name: Generate and optionally publish report
         run: bash tests/scripts/publish-allure.sh
         env:
           S3_BUCKET: ${{ vars.QA_REPORTS_BUCKET }}
