@@ -238,6 +238,16 @@ const envSchema = z.object({
   // from the full-size Dockerfile image instead (slower refills, 2/4/20 spec).
   KORTIX_WARM_POOL_FULL_SIZE:  optBoolFalse,
 
+  // When a template's content hash changes and a fresh snapshot is built, drop
+  // the now-superseded predecessor immediately (reap-on-repoint) instead of
+  // leaving it for the lazy, pressure-gated quota GC. Keeps steady state at ~1
+  // snapshot per lineage so the org-wide 100-snapshot quota can't fill with
+  // stale builds (dev auto-deploys churn the default ~20×/day). Best-effort;
+  // only deletes managed (kortix-default-/tpl-/wproj-) names that no other
+  // template row still references. On by default; boot auto-heal covers the rare
+  // cross-env race where another env's row pointed at the reaped (identical) name.
+  KORTIX_SNAPSHOT_REAP_PREDECESSOR: optBoolTrue,
+
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
   // pt_live_… key; PLATINUM_API_URL is the control-plane base
@@ -583,6 +593,7 @@ export const config = {
   DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
   DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
   KORTIX_WARM_POOL_FULL_SIZE: env.KORTIX_WARM_POOL_FULL_SIZE,
+  KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
 
   // Sandbox lifecycle intervals (minutes) — see schema comment above.
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
