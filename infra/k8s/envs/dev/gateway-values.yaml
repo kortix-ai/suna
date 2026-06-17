@@ -25,10 +25,13 @@ resources:
     cpu: "1"
     memory: "512Mi"
 
+# Public, direct. Dev sandboxes hit the gateway straight at this host
+# (LLM_GATEWAY_BASE_URL=https://gateway-dev.kortix.com/v1/llm) so LLM streams
+# live on gateway pods, not the API — API deploys don't cut in-flight streams.
 ingress:
   enabled: true
-  host: gateway-dev-eks.kortix.com
-  # ACM cert ARN for gateway-dev-eks.kortix.com — provision on the dev-eks
-  # cluster layer and paste the ARN here.
+  host: gateway-dev.kortix.com
+  # ACM cert ARN for gateway-dev.kortix.com — provision on the dev-eks cluster
+  # layer (module.acm, like the API's) and paste the ARN here.
   certificateArn: ""
   cloudflareProxied: true

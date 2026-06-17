@@ -586,10 +586,13 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
   const { createInternalGatewayRoutes } = await import('./llm-gateway/internal-routes');
   app.route('/internal/gateway', createInternalGatewayRoutes());
 
-  if (config.LLM_GATEWAY_PROXY_PORT) {
+  if (config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET) {
+    const proxyBase = (
+      config.LLM_GATEWAY_PROXY_TARGET || `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`
+    ).replace(/\/+$/, '');
     app.all('/v1/llm-gateway/*', async (c) => {
       const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
-      const target = `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}${tail}`;
+      const target = `${proxyBase}${tail}`;
       const init: RequestInit & { duplex?: 'half' } = {
         method: c.req.method,
         headers: c.req.raw.headers,

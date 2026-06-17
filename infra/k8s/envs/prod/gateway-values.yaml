@@ -22,10 +22,13 @@ resources:
     cpu: "1"
     memory: "1Gi"
 
+# Public, direct. Prod sandboxes hit the gateway straight at this host
+# (LLM_GATEWAY_BASE_URL=https://gateway.kortix.com/v1/llm) so LLM streams live
+# on gateway pods, not the API — API deploys don't cut in-flight streams.
 ingress:
   enabled: true
-  host: gateway-eks.kortix.com
-  # ACM cert ARN for gateway-eks.kortix.com — provision a cert for this host
+  host: gateway.kortix.com
+  # ACM cert ARN for gateway.kortix.com — provision a cert for this host
   # (infra/terraform … module.acm, same as the API's) and paste the ARN here.
   certificateArn: ""
   cloudflareProxied: true
