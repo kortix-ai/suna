@@ -90,8 +90,9 @@ module "platform" {
   oidc_provider_url = local.cluster.oidc_provider_url
   api_domain        = local.cluster.api_domain
   # Let external-dns also auto-manage per-PR preview records
-  # (pr-<n>.preview-api.kortix.com) — created/deleted with each preview Ingress.
-  extra_domain_filters = ["preview-api.kortix.com"]
+  # (pr-<n>.preview-api.kortix.com) — created/deleted with each preview Ingress —
+  # and the standalone LLM gateway host (gateway-dev.kortix.com).
+  extra_domain_filters = ["preview-api.kortix.com", "gateway-dev.kortix.com"]
 
   cloudflare_api_token = var.cloudflare_api_token
   cloudflare_zone_id   = var.cloudflare_zone_id
