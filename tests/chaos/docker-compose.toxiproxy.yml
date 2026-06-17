@@ -1,0 +1,12 @@
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.11.0
+    container_name: kortix-toxiproxy
+    ports:
+      - "8474:8474"
+      - "15432:15432"
+      - "16379:16379"
+      - "18008:18008"
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    volumes:
+      - ./toxiproxy.json:/config/toxiproxy.json:ro

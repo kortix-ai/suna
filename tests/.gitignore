@@ -3,3 +3,8 @@ test-results/
 *.log
 .env
 .env.*
+!.env.example
+
+# coverage-gate source, not istanbul output — root .gitignore "coverage/" must not swallow it
+!src/coverage/
+!src/coverage/**

@@ -1,0 +1,37 @@
+name: kortix-test-services
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: kortix-test-postgres
+    environment:
+      POSTGRES_USER: ${TEST_DB_USER:-kortix_test}
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD:-kortix_test}
+      POSTGRES_DB: ${TEST_DB_NAME:-kortix_test}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+    command:
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - fsync=off
+      - -c
+      - synchronous_commit=off
+      - -c
+      - full_page_writes=off
+    ports:
+      - "127.0.0.1:${TEST_DB_PORT:-55432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_DB_USER:-kortix_test} -d ${TEST_DB_NAME:-kortix_test}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks:
+      - kortix-test
+
+networks:
+  kortix-test:
+    name: kortix-test
