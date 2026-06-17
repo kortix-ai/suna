@@ -9,6 +9,28 @@ export const siteConfig = {
       { id: 2, name: 'Enterprise', href: '/enterprise' },
       { id: 3, name: 'Pricing', href: '/pricing' },
       { id: 4, name: 'Docs', href: '/docs' },
+      {
+        id: 5,
+        name: 'Compare',
+        href: [
+          {
+            name: 'ChatGPT',
+            href: '/compare/chatgpt',
+          },
+          {
+            name: 'Zapier',
+            href: '/compare/zapier',
+          },
+          {
+            name: 'Viktor',
+            href: '/compare/viktor',
+          },
+          {
+            name: 'OpenClaw',
+            href: '/compare/openclaw',
+          },
+        ],
+      },
     ],
   },
   hero: {
