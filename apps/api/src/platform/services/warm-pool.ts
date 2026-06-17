@@ -35,7 +35,7 @@ import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { ensureSandboxImage, DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
-import { resolvePreviewLink, resolveServiceKey } from '../../sandbox-proxy/backend';
+import { resolvePreviewLink } from '../../sandbox-proxy/backend';
 import { resolvePreviewUserContext } from '../../shared/preview-ownership';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import { randomUUID } from 'node:crypto';
