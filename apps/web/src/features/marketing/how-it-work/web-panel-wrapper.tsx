@@ -2,14 +2,16 @@
 
 import type { PageId } from '@/components/home/interactive-demo/types';
 import { cn } from '@/lib/utils';
-import { Blocks, MessageSquare } from 'lucide-react';
+import { Blocks, Brain, GitPullRequest, MessageSquare } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import { MdShield } from 'react-icons/md';
 import { PiChatCircleDotsFill } from 'react-icons/pi';
 import { RiCpuLine, RiFolder3Fill, RiRobot3Fill } from 'react-icons/ri';
 
-const DEMO_PANEL_TABS: Record<PageId, { label: string; icon: ReactNode }> = {
+type MarketingPanelTab = PageId | 'review' | 'memory';
+
+const DEMO_PANEL_TABS: Record<MarketingPanelTab, { label: string; icon: ReactNode }> = {
   home: { label: 'Home', icon: null },
   projects: { label: 'Projects', icon: <RiFolder3Fill className="size-4" /> },
   chat: { label: 'Chat', icon: <PiChatCircleDotsFill className="size-4" /> },
@@ -20,6 +22,8 @@ const DEMO_PANEL_TABS: Record<PageId, { label: string; icon: ReactNode }> = {
   scheduling: { label: 'Scheduling', icon: null },
   channels: { label: 'Channels', icon: <MessageSquare className="size-4" /> },
   security: { label: 'Security', icon: <MdShield className="size-4" /> },
+  review: { label: 'Review', icon: <GitPullRequest className="size-4" /> },
+  memory: { label: 'Memory', icon: <Brain className="size-4" /> },
 };
 
 function TabScallopEdge({ side }: { side: 'left' | 'right' }) {
@@ -43,7 +47,7 @@ export function WebPanelWrapper({
   children,
   className,
 }: {
-  activeTab: PageId;
+  activeTab: MarketingPanelTab;
   children: ReactNode;
   className?: string;
 }) {
@@ -52,7 +56,7 @@ export function WebPanelWrapper({
   return (
     <div className={cn('flex h-full flex-1 flex-col', className)}>
       <div className="bg-border dark:bg-background flex h-full w-full flex-col rounded-xl p-1">
-        <div className="shadow-custom flex w-full items-center gap-0.5 overflow-hidden">
+        <div className="shadow-custom flex w-full items-center justify-between gap-0.5 overflow-hidden">
           <span
             aria-current="page"
             className="text-foreground hit-area-3 relative flex shrink-0 items-stretch"
@@ -63,6 +67,10 @@ export function WebPanelWrapper({
             </span>
             <TabScallopEdge side="right" />
           </span>
+
+          {activeTab === 'memory' && (
+            <span className="text-kortix-green mr-3 text-xs font-medium">Syned 2 minutes ago</span>
+          )}
         </div>
 
         <div

@@ -3,15 +3,18 @@ import { Button } from '@/components/ui/marketing/button';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
 import { useAuth } from '@/features/providers/auth-provider';
-import { useCopy } from '@/hooks/use-copy';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { Check, Copy } from 'lucide-react';
+import { MessageSquare, PanelTop, Terminal } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback } from 'react';
 import { HiArrowRight } from 'react-icons/hi2';
 
-const DEFAULT_INSTALL_HOST = 'kortix.com';
+const SURFACES = [
+  { label: 'Slack', icon: MessageSquare },
+  { label: 'Web workspace', icon: PanelTop },
+  { label: 'CLI', icon: Terminal },
+] as const;
 
 const Hero = () => {
   const { user } = useAuth();
@@ -25,15 +28,6 @@ const Hero = () => {
     trackCtaSignup();
     window.location.href = user ? '/projects' : '/auth';
   }, [user]);
-
-  const { copied, copy } = useCopy();
-  const [installHost, setInstallHost] = useState(DEFAULT_INSTALL_HOST);
-
-  const installCmd = `curl -fsSL https://${installHost}/install | bash`;
-
-  useEffect(() => {
-    setInstallHost(window.location.host);
-  }, []);
 
   return (
     <section id="hero" className="relative overflow-hidden px-6 pt-32 pb-12 sm:py-36">
@@ -55,22 +49,6 @@ const Hero = () => {
             {tHome('heroDescription')}
           </p>
 
-          <div className="bg-card mt-14 flex w-full max-w-xl min-w-0 items-center gap-4 rounded-sm border p-3 px-5">
-            <div className="flex min-w-0 flex-1 gap-3 overflow-hidden">
-              <span className="text-foreground shrink-0 font-mono text-sm">$ </span>
-              <span className="text-foreground min-w-0 truncate font-mono text-sm select-all">
-                {installCmd}
-              </span>
-            </div>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="shrink-0"
-              onClick={() => copy(installCmd)}
-            >
-              {copied ? <Check className="text-primary size-4" /> : <Copy className="size-4" />}
-            </Button>
-          </div>
           <div className="mt-8 flex flex-wrap gap-3">
             <Button size="xl" onClick={handleLaunch}>
               {tHome('startBuildingCta')}

@@ -5,8 +5,8 @@
 
 # Immutable release tag (promote bumps this). NOT :latest / :dev-latest in GitOps.
 image:
-  tag: "0.9.57"
-kortixVersion: "0.9.57"
+  tag: "0.9.58"
+kortixVersion: "0.9.58"
 env:
   internalKortixEnv: prod
 # PRE-CUTOVER: api-eks is the candidate while api.kortix.com is still served by

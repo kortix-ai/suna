@@ -7,7 +7,7 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/marketing/button';
-import { ProgressiveBlur } from '@/components/ui/progressive-blur';
+import { Heatmap } from '@paper-design/shaders-react';
 import { Eye, Key, Layers2, Server, Shield } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
@@ -27,112 +27,28 @@ const Block = ({ tab }: { tab: string }) => {
     case 'isolation':
       return (
         <div className="relative flex h-full min-h-full w-full items-center justify-center">
-          <ProgressiveBlur height="20%" className="absolute top-0 z-20 rotate-180" />
-          <div className="from-kortix-base via-kortix-green/30 dark:via-kortix-green to-kortix-base absolute inset-y-px left-1/2 z-10 w-5 -translate-x-1/2 bg-linear-to-b">
-            <div className="bg-card absolute top-1/2 right-0 left-0 h-[80px] -translate-y-1/2" />
-          </div>
-
-          <svg
-            stroke="currentColor"
-            fill="currentColor"
-            strokeWidth="0"
-            viewBox="0 0 512 512"
-            height="200px"
-            width="200px"
-            className="text-foreground relative z-20 size-30"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="32"
-              d="m434.8 137.65-149.36-68.1c-16.19-7.4-42.69-7.4-58.88 0L77.3 137.65c-17.6 8-17.6 21.09 0 29.09l148 67.5c16.89 7.7 44.69 7.7 61.58 0l148-67.5c17.52-8 17.52-21.1-.08-29.09zM160 308.52l-82.7 37.11c-17.6 8-17.6 21.1 0 29.1l148 67.5c16.89 7.69 44.69 7.69 61.58 0l148-67.5c17.6-8 17.6-21.1 0-29.1l-79.94-38.47"
-            />
-            <path
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="32"
-              d="m160 204.48-82.8 37.16c-17.6 8-17.6 21.1 0 29.1l148 67.49c16.89 7.7 44.69 7.7 61.58 0l148-67.49c17.7-8 17.7-21.1.1-29.1L352 204.48"
-            />
-          </svg>
-
-          <ProgressiveBlur height="20%" className="absolute bottom-0 z-20" />
+          Isolation
         </div>
       );
 
     case 'soc2':
       return (
         <div className="relative flex h-full min-h-full w-full items-center justify-center">
-          <ProgressiveBlur height="20%" className="absolute top-0 z-20 rotate-180" />
-          <div className="from-kortix-base via-kortix-purple/30 dark:via-kortix-purple to-kortix-base absolute inset-y-px left-1/2 z-10 w-5 -translate-x-1/2 bg-linear-to-b">
-            <div className="bg-card absolute top-1/2 right-0 left-0 h-[80px] -translate-y-1/2" />
-          </div>
-
-          <svg
-            stroke="currentColor"
-            fill="currentColor"
-            strokeWidth="0"
-            viewBox="0 0 24 24"
-            height="200px"
-            width="200px"
-            xmlns="http://www.w3.org/2000/svg"
-            className="text-foreground relative z-20 size-30"
-          >
-            <path d="M11.998 2l.118 .007l.059 .008l.061 .013l.111 .034a.993 .993 0 0 1 .217 .112l.104 .082l.255 .218a11 11 0 0 0 7.189 2.537l.342 -.01a1 1 0 0 1 1.005 .717a13 13 0 0 1 -9.208 16.25a1 1 0 0 1 -.502 0a13 13 0 0 1 -9.209 -16.25a1 1 0 0 1 1.005 -.717a11 11 0 0 0 7.531 -2.527l.263 -.225l.096 -.075a.993 .993 0 0 1 .217 -.112l.112 -.034a.97 .97 0 0 1 .119 -.021l.115 -.007zm3.71 7.293a1 1 0 0 0 -1.415 0l-3.293 3.292l-1.293 -1.292l-.094 -.083a1 1 0 0 0 -1.32 1.497l2 2l.094 .083a1 1 0 0 0 1.32 -.083l4 -4l.083 -.094a1 1 0 0 0 -.083 -1.32z"></path>
-          </svg>
-          <ProgressiveBlur height="20%" className="absolute bottom-0 z-30" />
+          SOC2
         </div>
       );
 
     case 'selfhost':
       return (
         <div className="relative flex h-full min-h-full w-full items-center justify-center">
-          <ProgressiveBlur height="20%" className="absolute top-0 z-20 rotate-180" />
-          <div className="from-kortix-base via-kortix-yellow/30 dark:via-kortix-yellow to-kortix-base absolute inset-y-px left-1/2 z-10 w-5 -translate-x-1/2 bg-linear-to-b" />
-          <div className="bg-foreground text-background border-border/25 dark:border-border relative z-20 flex w-fit shrink-0 items-center justify-center rounded-lg px-8 py-4">
-            <h1 className="text-background text-5xl font-medium tracking-tight">kortix ship</h1>
-          </div>
-          <ProgressiveBlur height="20%" className="absolute bottom-0 z-20" />
+          Self-host
         </div>
       );
 
     default:
       return (
         <div className="relative flex h-full min-h-full w-full items-center justify-center">
-          <ProgressiveBlur height="20%" className="absolute top-0 z-20 rotate-180" />
-          <div className="from-kortix-base via-kortix-green/30 dark:via-kortix-green to-kortix-base absolute inset-y-px left-1/2 z-10 w-5 -translate-x-1/2 bg-linear-to-b">
-            <div className="bg-card absolute top-1/2 right-0 left-0 h-[140px] -translate-y-1/2" />
-          </div>
-
-          <svg
-            stroke="currentColor"
-            fill="currentColor"
-            strokeWidth="0"
-            viewBox="0 0 512 512"
-            height="200px"
-            width="200px"
-            className="text-foreground relative z-20"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="32"
-              d="m434.8 137.65-149.36-68.1c-16.19-7.4-42.69-7.4-58.88 0L77.3 137.65c-17.6 8-17.6 21.09 0 29.09l148 67.5c16.89 7.7 44.69 7.7 61.58 0l148-67.5c17.52-8 17.52-21.1-.08-29.09zM160 308.52l-82.7 37.11c-17.6 8-17.6 21.1 0 29.1l148 67.5c16.89 7.69 44.69 7.69 61.58 0l148-67.5c17.6-8 17.6-21.1 0-29.1l-79.94-38.47"
-            />
-            <path
-              fill="none"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="32"
-              d="m160 204.48-82.8 37.16c-17.6 8-17.6 21.1 0 29.1l148 67.49c16.89 7.7 44.69 7.7 61.58 0l148-67.49c17.7-8 17.7-21.1.1-29.1L352 204.48"
-            />
-          </svg>
-
-          <ProgressiveBlur height="20%" className="absolute bottom-0 z-20" />
+          Default
         </div>
       );
   }
@@ -144,7 +60,6 @@ const Security = () => {
     (key: string) => tHardcodedUi.raw(`appHomePage.${key}`),
     [tHardcodedUi],
   );
-
   const [activeId, setActiveId] = useState<string>(ACCORDION[0].id);
 
   return (
@@ -162,11 +77,31 @@ const Security = () => {
       </div>
 
       <div className="border-border bg-card grid min-h-[390px] w-full overflow-hidden rounded-sm border lg:grid-cols-12">
-        <div className="relative hidden w-full border-b lg:col-span-5 lg:block lg:border-r lg:border-b-0">
-          <Block tab={activeId} />
+        <div className="bg-foreground relative hidden h-full w-full overflow-hidden rounded-sm border-b lg:col-span-4 lg:block lg:border-r lg:border-b-0">
+          <div className="relative flex h-full w-full items-center justify-center lg:scale-90">
+            <Heatmap
+              speed={1}
+              contour={0.5}
+              angle={0}
+              noise={0}
+              innerGlow={0.5}
+              outerGlow={0.05}
+              scale={0.65}
+              image="https://app.paper.design/file-assets/01KSZX87JES96T455ZX3RRGMPP/01KT47X1FY5YNJN6EPP8TW6ZB1.svg"
+              frame={407072.499999992}
+              colors={['var(--kortix-orange)', '#fafafa', '#242424']}
+              colorBack="#ffffff00"
+              className="shrink-0"
+              style={{
+                // backgroundColor: 'var(--card)',
+                height: '182px',
+                width: '220px',
+              }}
+            />
+          </div>
         </div>
 
-        <div className="flex h-full min-h-0 flex-1 flex-col space-y-6 lg:col-span-7">
+        <div className="flex h-full min-h-0 flex-1 flex-col space-y-6 lg:col-span-8">
           <Accordion
             type="single"
             collapsible
