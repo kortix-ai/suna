@@ -131,8 +131,13 @@ resource "helm_release" "external_dns" {
       }
     }]
     domainFilters = concat([var.api_domain], var.extra_domain_filters)
-    zoneIdFilters = var.cloudflare_zone_id != "" ? [var.cloudflare_zone_id] : []
-    policy        = "sync"
+    # Pin the kortix.com zone by ID via extraArgs (the chart silently drops a
+    # top-level `zoneIdFilters` value, so it never reached the container). REQUIRED:
+    # the domainFilters are subdomains, so without --zone-id-filter external-dns
+    # matches the zone NAME (kortix.com) against them, finds no match, discards the
+    # zone, and manages nothing.
+    extraArgs = var.cloudflare_zone_id != "" ? ["--zone-id-filter=${var.cloudflare_zone_id}"] : []
+    policy    = "sync"
     registry      = "txt"
     txtOwnerId    = var.cluster_name
     # Cloudflare proxying is decided per-record via the Ingress annotation
