@@ -136,6 +136,12 @@ describe('daemon proxy auth gate', () => {
       '-c',
       `http.https://github.com/.extraheader=AUTHORIZATION: basic ${encoded}`,
     ])
+    expect(buildGitAuthArgs('https://api.kortix.test/v1/git/project-123.git', 'secret-token')).toEqual([
+      '-c',
+      `http.https://api.kortix.test/.extraheader=AUTHORIZATION: basic ${encoded}`,
+      '-c',
+      `http.extraheader=AUTHORIZATION: basic ${encoded}`,
+    ])
   })
 
   it('fetches clone credentials from the API v1 project endpoint', async () => {

@@ -22,24 +22,16 @@ import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
-import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
+import { restartSession, startSession } from '../session-lifecycle';
 import {
-  buildSessionSandboxEnvVars,
-  sandboxCallbackUnreachableReason,
-} from '../lib/sessions';
-import {
-  isMissingRuntimeError,
-  openSession,
   refreshCrTips,
-  retireSessionSandboxRow,
 } from './shared';
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
 // THE unified session-open endpoint. One idempotent call that provisions a
 // missing sandbox, resumes a hibernated/idle one, and resolves the OpenCode pin
 // once reachable — returning a single readiness payload { stage, sandbox,
-// opencode_session_id, retriable } the client polls until stage='ready'. Replaces
-// the old GET /sandbox + POST /wake + POST /ensure-opencode three-call dance.
+// opencode_session_id, retriable } the client polls until stage='ready'.
 
 projectsApp.openapi(
   createRoute({
@@ -78,8 +70,8 @@ projectsApp.openapi(
       );
     }
 
-    const result = await openSession({ loaded, visible, projectId, sessionId });
-    return c.json(result, 200);
+    const result = await startSession({ source: 'ui', loaded, visible, projectId, sessionId });
+    return c.json(result.start, 200);
   },
 );
 
@@ -125,210 +117,13 @@ projectsApp.openapi(
         403,
       );
     }
-    const session = visible.row;
-
-    const providerName = session.sandboxProvider as SandboxProviderName;
-    if (
-      !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
-        providerName,
-      )
-    ) {
-      return c.json(
-        { error: `Restart is not supported for provider ${providerName}` },
-        400,
-      );
-    }
-
-    // Same loopback-callback guard as create: restarting into an unreachable
-    // KORTIX_URL just rebuilds the same dead sandbox.
-    const restartUnreachable = sandboxCallbackUnreachableReason();
-    if (restartUnreachable) {
-      return c.json(
-        { error: restartUnreachable, code: 'KORTIX_URL_UNREACHABLE' },
-        503,
-      );
-    }
-
-    const [existingSandbox] = await db
-      .select()
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sandboxId, sessionId))
-      .limit(1);
-
-    const provisionReplacementRuntime = async () => {
-      // Re-inject the initial prompt ONLY if this session never bootstrapped its
-      // OpenCode conversation (no pin yet — the box died before the first message
-      // ever ran). Once `opencodeSessionId` is set, the first message already ran, so
-      // a rebuild from the durable git branch must NOT replay it — that replay is the
-      // "opening the session resets & reruns the same thing" bug. The first cold
-      // create is the only path that delivers the initial prompt to a live box.
-      const initialPrompt = session.opencodeSessionId
-        ? null
-        : typeof session.metadata?.initial_prompt === 'string'
-          ? (session.metadata.initial_prompt as string)
-          : null;
-      const opencodeModel =
-        typeof session.metadata?.opencode_model === 'string'
-          ? (session.metadata.opencode_model as string)
-          : null;
-
-      await db
-        .update(projectSessions)
-        .set({
-          status: 'provisioning',
-          error: null,
-          sandboxUrl: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(projectSessions.sessionId, sessionId));
-
-      const runtimeMetadata = { restarted_at: new Date().toISOString() };
-      allocateSessionRuntime({
-        sessionId,
-        accountId: loaded.row.accountId,
-        projectId,
-        userId: loaded.userId,
-        project: loaded.row,
-        providerName,
-        baseRef: session.baseRef ?? loaded.row.defaultBranch,
-        agentName: session.agentName ?? 'default',
-        runtimeMetadata,
-        sessionMetadata: { ...(session.metadata ?? {}), ...runtimeMetadata },
-        buildEnvVars: () =>
-          buildSessionSandboxEnvVars({
-            accountId: loaded.row.accountId,
-            projectId,
-            sessionId,
-            userId: loaded.userId,
-            repoUrl: loaded.row.repoUrl,
-            baseRef: session.baseRef ?? loaded.row.defaultBranch,
-            agentName: session.agentName ?? 'default',
-            initialPrompt,
-            opencodeModel,
-          }),
-        resolveGitAuthToken: async () =>
-          (await withProjectGitAuth(loaded.row)).gitAuthToken ?? null,
-      });
-    };
-
-    // In-place restart: reboot the EXISTING box via the provider SDK (stop+start)
-    // instead of destroying + cold-reprovisioning it. The disk — repo clone,
-    // installed deps, opencode — persists across a stop/start, so this is a fast
-    // reboot, not a cold boot, and we NEVER remove the box (removal is reserved
-    // for explicit session deletion). The same compute row and sandbox keys carry
-    // over, so there's nothing to finalize or rotate.
-    if (
-      existingSandbox?.externalId &&
-      (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
-        existingSandbox.provider,
-      )
-    ) {
-      const externalId = existingSandbox.externalId;
-      const provider = getProvider(
-        existingSandbox.provider as SandboxProviderName,
-      );
-      const providerStatus = await provider
-        .getStatus(externalId)
-        .catch(() => 'unknown' as const);
-      if (providerStatus === 'removed') {
-        await retireSessionSandboxRow(
-          existingSandbox,
-          'restart_removed_runtime',
-        ).catch((err) =>
-          console.warn(
-            `[projects] failed to retire removed runtime ${externalId} for session ${sessionId}:`,
-            err,
-          ),
-        );
-        await provisionReplacementRuntime();
-        return c.json(
-          {
-            ok: true,
-            session_id: sessionId,
-            status: 'provisioning',
-            reason: 'runtime_removed',
-          },
-          202,
-        );
-      }
-      // Flip to provisioning so the dashboard's connecting screen re-engages while
-      // the VM reboots; GET …/sandbox keeps returning the row ('provisioning' is a
-      // usable state) so no reprovision is triggered underneath us.
-      await db
-        .update(sessionSandboxes)
-        .set({ status: 'provisioning', updatedAt: new Date() })
-        .where(eq(sessionSandboxes.sandboxId, sessionId));
-      await db
-        .update(projectSessions)
-        .set({
-          status: 'provisioning',
-          error: null,
-          sandboxUrl: null,
-          updatedAt: new Date(),
-        })
-        .where(eq(projectSessions.sessionId, sessionId));
-      void (async () => {
-        try {
-          await provider.stop(externalId).catch(() => {}); // best-effort clean down→up cycle
-          await provider.start(externalId);
-          await db
-            .update(sessionSandboxes)
-            .set({ status: 'active', updatedAt: new Date() })
-            .where(eq(sessionSandboxes.sandboxId, sessionId));
-          await db
-            .update(projectSessions)
-            .set({ status: 'running', updatedAt: new Date() })
-            .where(eq(projectSessions.sessionId, sessionId));
-        } catch (err) {
-          console.warn(
-            `[projects] restart-in-place failed for ${sessionId}:`,
-            err,
-          );
-          if (isMissingRuntimeError(err)) {
-            await retireSessionSandboxRow(
-              existingSandbox,
-              'restart_missing_runtime',
-            ).catch(() => {});
-            await provisionReplacementRuntime().catch((allocErr) =>
-              console.warn(
-                `[projects] failed to reallocate missing runtime for session ${sessionId}:`,
-                allocErr,
-              ),
-            );
-            return;
-          }
-          // Leave it resumable — a 'stopped' row reopens via the GET resume path.
-          await db
-            .update(sessionSandboxes)
-            .set({ status: 'stopped', updatedAt: new Date() })
-            .where(
-              and(
-                eq(sessionSandboxes.sandboxId, sessionId),
-                eq(sessionSandboxes.externalId, externalId),
-              ),
-            )
-            .catch(() => {});
-          await db
-            .update(projectSessions)
-            .set({ status: 'stopped', updatedAt: new Date() })
-            .where(eq(projectSessions.sessionId, sessionId))
-            .catch(() => {});
-        }
-      })();
-      return c.json(
-        { ok: true, session_id: sessionId, status: 'provisioning' },
-        202,
-      );
-    }
-
-    // No existing box (deleted / never provisioned) → provision a fresh one so
-    // restart still recovers a dead session from the preserved git branch.
-    await provisionReplacementRuntime();
-
-    return c.json(
-      { ok: true, session_id: sessionId, status: 'provisioning' },
-      202,
-    );
+    const result = await restartSession({
+      loaded,
+      session: visible.row,
+      projectId,
+      sessionId,
+    });
+    return c.json(result.body, result.status as any);
   },
 );
 
