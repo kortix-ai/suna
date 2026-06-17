@@ -376,7 +376,19 @@ export async function refillProjectPool(projectId: string, forUserId?: string | 
     // Deduped + custom-template-aware inside kickProjectWarmBake.
     {
       const { readProjectWarmPointer, kickProjectWarmBake } = await import('../../snapshots/warm-project');
-      if (!readProjectWarmPointer(project.metadata)) kickProjectWarmBake(project);
+      const ptr = readProjectWarmPointer(project.metadata);
+      // Re-bake when the snapshot is MISSING or has drifted past a staleness
+      // window. The per-project warm snapshot is otherwise only re-baked on
+      // CR-merge, so a long-lived project would boot an increasingly stale
+      // checkout and pay a heavier post-boot /kortix/refresh. 6h mirrors
+      // POOL_MAX_AGE_MS (boxes already cycle at 6h), bounding snapshot drift to
+      // the same budget. The bake is deduped (inflightProjectBakes) and no-ops
+      // when the tip is unchanged (it just re-arms baked_at), so an idle-but-
+      // unchanged project never churns.
+      const WARM_SNAPSHOT_STALE_MS = 6 * 60 * 60 * 1000;
+      const bakedAtMs = ptr?.baked_at ? Date.parse(ptr.baked_at) : NaN;
+      const stale = Number.isFinite(bakedAtMs) && Date.now() - bakedAtMs > WARM_SNAPSHOT_STALE_MS;
+      if (!ptr || stale) kickProjectWarmBake(project);
     }
     // Size the deficit off the PARKED (instantly claimable) count, NOT live
     // (parked + booting). A just-spawned booting replacement isn't claimable for
