@@ -1,0 +1,77 @@
+name: QA — PR
+
+# Fast feedback on every PR: lint, typecheck, unit, integration, API, contract,
+# static security scans, then aggregate quality gates. Mirrors `make ci-pr`.
+
+on:
+  pull_request:
+    branches: [main, prod]
+  workflow_dispatch:
+
+concurrency:
+  group: qa-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    name: lint + typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm --prefix tests install
+      - run: make lint typecheck
+
+  tests:
+    name: unit + integration + api + contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm --prefix tests install
+      - run: make unit integration contract
+      - name: API coverage gate (ke2e spec ↔ flow ↔ route parity)
+        run: bun bin/ke2e.ts coverage
+        working-directory: tests
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-pr-results
+          path: tests/test-results/**
+          retention-days: 14
+
+  security:
+    name: static security scans
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/security/run.sh --static
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-pr-security
+          path: tests/test-results/security/**
+          retention-days: 14
+      - name: Upload SARIF to code scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: tests/test-results/security
+        continue-on-error: true
+
+  gate:
+    name: quality gates
+    runs-on: ubuntu-latest
+    needs: [static, tests, security]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: tests/test-results, merge-multiple: true }
+      - run: make gates
