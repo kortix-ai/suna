@@ -107,6 +107,7 @@ export async function deliverPromptToSession(input: {
         agentName: projectSessions.agentName,
         opencodeSessionId: projectSessions.opencodeSessionId,
         accountId: projectSessions.accountId,
+        metadata: projectSessions.metadata,
       })
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, sessionId))

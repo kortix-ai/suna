@@ -315,7 +315,7 @@ function serializeSandboxRow(row: typeof sessionSandboxes.$inferSelect): Record<
  */
 export async function openSession(args: {
   loaded: { row: { accountId: string; repoUrl: string; defaultBranch: string; manifestPath: string; metadata?: unknown }; userId: string };
-  visible: { row: { status: string; sandboxProvider: string; baseRef: string | null; agentName: string | null; opencodeSessionId: string | null; accountId: string } };
+  visible: { row: { status: string; sandboxProvider: string; baseRef: string | null; agentName: string | null; opencodeSessionId: string | null; accountId: string; metadata?: unknown } };
   projectId: string;
   sessionId: string;
 }): Promise<SessionStartResult> {
@@ -383,6 +383,46 @@ export async function openSession(args: {
       console.warn(`[start] failed to wake sandbox ${row.externalId} (session ${sessionId}):`, err),
     );
     return { stage: 'starting', retriable: true, sandbox: serializeSandboxRow(row), opencode_session_id: null };
+  }
+
+  // Warm fast-path. A freshly-claimed pool box was pre-warmed at park time: its
+  // OpenCode session was created IN this very box (promoteWhenReady) and pinned
+  // onto the row, and the box has NOT restarted since the claim (claiming only
+  // clears pool_state; the post-claim base sync runs with restart=0). So the pin
+  // is guaranteed to still resolve — the full in-sandbox `/session` LIST that
+  // ensureOpencodeSessionPin does on EVERY readiness poll is pure wasted work
+  // here. Trust the pin and return `ready` immediately, skipping that round-trip.
+  //
+  // Fire AT MOST ONCE: clear the flag in the same step so a LATER open (e.g.
+  // after a provider idle-stop, where row.status can read 'active' while OpenCode
+  // has actually restarted and the pin is stale) always takes the full verify
+  // path below. getStatus already confirmed 'running' above (cache-cheap), so we
+  // never short-circuit a box the provider stopped out from under us. If the
+  // flag-clear write fails we fall through to the safe verify path rather than
+  // risk firing the fast-path twice.
+  const visibleMeta = (visible.row.metadata ?? null) as Record<string, unknown> | null;
+  const warmPin = visible.row.opencodeSessionId ?? null;
+  if (visibleMeta?.warm_pool_claimed === true && warmPin) {
+    try {
+      await db
+        .update(projectSessions)
+        .set({ metadata: { ...visibleMeta, warm_pool_claimed: false }, updatedAt: new Date() })
+        .where(and(
+          eq(projectSessions.sessionId, sessionId),
+          eq(projectSessions.projectId, projectId),
+          eq(projectSessions.accountId, accountId),
+        ));
+      return {
+        stage: 'ready',
+        retriable: false,
+        sandbox: serializeSandboxRow(row),
+        opencode_session_id: warmPin,
+        reason: 'warm_pinned',
+      };
+    } catch (err) {
+      console.warn(`[start] warm fast-path flag-clear failed for ${sessionId}; using full verify:`, err);
+      // fall through to ensureOpencodeSessionPin
+    }
   }
 
   // Box is provider-running. Resolve OpenCode readiness + the canonical pin
