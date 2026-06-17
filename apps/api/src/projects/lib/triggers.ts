@@ -1,19 +1,18 @@
 import { config } from '../../config';
 import { auth, errors } from '../../openapi';
-import { maxConcurrentSessionsForTier, resolveAccountTier } from '../../shared/account-limits';
 import { db } from '../../shared/db';
 import { runProjectAppSweep } from '../app-sweep';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
 import { KNOWN_SCHEMA_VERSION, MANIFEST_FILENAME, loadProjectTriggers, readManifest, serializeManifest, triggerSpecToTomlEntry, type GitTriggerSpec, type ParsedManifest } from '../triggers';
-import { accountMembers, projectTriggerRuntime, projects } from '@kortix/db';
+import { projectTriggerRuntime, projects } from '@kortix/db';
 import { Cron } from 'croner';
 import { and, eq } from 'drizzle-orm';
 import { Context } from 'hono';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
 import { ProjectRow, RequestAuditContext, deriveKortixApiRoot, isPlainObject, normalizeBoolean, normalizeString } from './serializers';
-import { countActiveProjectSessions, countProvisioningProjectSessions, createProjectSession } from './sessions';
+import { createSession, drainSessionLifecycleQueue, resolveProjectAutomationActor, sessionBackpressureState } from '../session-lifecycle';
 
 export function normalizeSignatureHeader(value: string | null): string | null {
   const header = normalizeString(value);
@@ -124,28 +123,8 @@ export function webhookPayload(c: Context, rawBody: string) {
 }
 
 
-export function triggerBackpressureLimit() {
-  const configured = Number((config as any).KORTIX_TRIGGER_MAX_PROVISIONING_SESSIONS_PER_PROJECT);
-  return Number.isFinite(configured) && configured > 0 ? Math.floor(configured) : 3;
-}
-
-
 export async function triggerBackpressureState(accountId: string, projectId: string) {
-  const [provisioning, active, tier] = await Promise.all([
-    countProvisioningProjectSessions(projectId),
-    countActiveProjectSessions(accountId),
-    resolveAccountTier(accountId),
-  ]);
-  const projectProvisioningLimit = triggerBackpressureLimit();
-  const accountActiveLimit = maxConcurrentSessionsForTier(tier);
-  return {
-    shouldQueue: provisioning >= projectProvisioningLimit || active >= accountActiveLimit,
-    provisioning,
-    projectProvisioningLimit,
-    active,
-    accountActiveLimit,
-    tier,
-  };
+  return sessionBackpressureState(accountId, projectId);
 }
 
 // POST /v1/webhooks/projects/:projectId/:slug
@@ -274,15 +253,7 @@ export async function runProjectConnectorSweep(): Promise<{ scanned: number; syn
  */
 
 export async function resolveGitTriggerActor(accountId: string): Promise<string | null> {
-  const [row] = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(and(
-      eq(accountMembers.accountId, accountId),
-      eq(accountMembers.accountRole, 'owner'),
-    ))
-    .limit(1);
-  return row?.userId ?? null;
+  return resolveProjectAutomationActor(accountId);
 }
 
 
@@ -341,26 +312,17 @@ export async function fireGitTrigger(input: {
   payload: Record<string, unknown>;
   renderedPrompt: string;
   source: 'cron' | 'webhook' | 'manual';
+  idempotencyKey?: string | null;
   request?: RequestAuditContext;
-}): Promise<{ status: 'fired' | 'backpressure' | 'failed'; sessionId?: string; error?: string; reason?: string }> {
+}): Promise<{ status: 'fired' | 'queued' | 'failed'; sessionId?: string; commandId?: string; error?: string; reason?: string; deduped?: boolean }> {
   const { spec, project, payload, renderedPrompt, source } = input;
-  const backpressure = await triggerBackpressureState(project.accountId, project.projectId);
-
-  if (backpressure.shouldQueue) {
-    return {
-      status: 'backpressure',
-      reason: backpressure.provisioning >= backpressure.projectProvisioningLimit
-        ? 'project provisioning backpressure'
-        : 'account session cap',
-    };
-  }
-
   const actor = await resolveGitTriggerActor(project.accountId);
   if (!actor) {
     return { status: 'failed', error: 'No account owner available to own the session' };
   }
 
-  const sessionResult = await createProjectSession({
+  const sessionResult = await createSession({
+    source: `trigger:${source}`,
     project,
     userId: actor,
     enforceAccountCap: false,
@@ -368,6 +330,8 @@ export async function fireGitTrigger(input: {
     // make them project-visible so the whole team can find them.
     visibility: 'project',
     request: input.request,
+    queuePolicy: 'on_backpressure',
+    idempotencyKey: input.idempotencyKey ?? null,
     body: {
       agent_name: spec.agent,
       initial_prompt: renderedPrompt,
@@ -387,13 +351,27 @@ export async function fireGitTrigger(input: {
     },
   });
 
+  if (sessionResult.status === 'queued' || sessionResult.status === 'pending') {
+    return {
+      status: 'queued',
+      commandId: sessionResult.commandId,
+      sessionId: sessionResult.sessionId,
+      reason: sessionResult.reason,
+      deduped: sessionResult.deduped,
+    };
+  }
   if (sessionResult.error) {
     return {
       status: 'failed',
       error: String(sessionResult.error.body.error ?? 'Failed to create trigger session'),
     };
   }
-  return { status: 'fired', sessionId: sessionResult.row!.sessionId };
+  return {
+    status: 'fired',
+    sessionId: sessionResult.sessionId ?? sessionResult.row?.sessionId,
+    commandId: sessionResult.commandId,
+    deduped: sessionResult.deduped,
+  };
 }
 
 
@@ -454,6 +432,7 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
         trigger: { slug: spec.slug, type: spec.type, kind: 'git' },
       };
       const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
+      const scheduledAt = now.toISOString();
 
       const result = await fireGitTrigger({
         spec,
@@ -461,11 +440,13 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
         payload,
         renderedPrompt,
         source: 'cron',
+        idempotencyKey: `trigger:cron:${project.projectId}:${spec.slug}:${scheduledAt}`,
       });
       if (result.status === 'fired') {
         await markGitTriggerFired(project.projectId, spec.slug, now);
         accumulator.fired += 1;
-      } else if (result.status === 'backpressure') accumulator.queued += 1;
+      }
+      else if (result.status === 'queued') accumulator.queued += 1;
       else accumulator.failed += 1;
     }
   }
@@ -478,6 +459,14 @@ export function startProjectTriggerScheduler(): void {
     clearInterval(globalForProjectTriggers.__kortixProjectTriggerSchedulerTimer);
   }
   triggerSchedulerTimer = setInterval(() => {
+    drainSessionLifecycleQueue({ limit: 10 }).then((result) => {
+      if (result.claimed || result.failed) {
+        console.log('[session-lifecycle] queue drain completed', result);
+      }
+    }).catch((error) => {
+      console.error('[session-lifecycle] queue drain failed:', error);
+    });
+
     runProjectTriggerSweep().then((result) => {
       if (result.fired || result.queued || result.failed) {
         console.log('[project-triggers] sweep completed', result);

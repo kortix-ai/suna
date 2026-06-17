@@ -46,6 +46,14 @@ export {
   createProjectSession,
 } from './lib/sessions';
 
+export {
+  createSession,
+  startSession,
+  continueSession,
+  drainSessionLifecycleQueue,
+  resolveProjectAutomationActor,
+} from './session-lifecycle';
+
 // Trigger + manifest helpers (consumed by channels / executor / the boot
 // sequence in src/index.ts).
 export {

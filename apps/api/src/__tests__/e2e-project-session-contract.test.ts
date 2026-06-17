@@ -41,6 +41,7 @@ let secretRows: Array<typeof projectSecrets.$inferSelect>;
 let secretValues: Map<string, string>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
+let freestyleCalls: Array<{ path: string; method: string; body?: unknown }>;
 let lastProvisionInput: {
   sandboxId: string;
   accountId: string;
@@ -110,6 +111,7 @@ function resetState() {
   secretValues = new Map();
   gitConnectionRows = [];
   gitCredentialRows = [];
+  freestyleCalls = [];
 }
 
 mock.module('../middleware/auth', () => ({
@@ -304,6 +306,27 @@ mock.module('../repositories/account-tokens', () => ({
   listAccountTokens: async () => [],
   revokeAccountToken: async () => true,
   validateAccountToken: async () => null,
+}));
+
+mock.module('../deployments/providers/freestyle', () => ({
+  getFreestyleApiKey: async () => 'test-freestyle-key',
+  getFreestyleApiUrl: () => 'https://api.freestyle.sh',
+  callFreestyle: async (
+    path: string,
+    options: { method: string; body?: unknown },
+  ) => {
+    freestyleCalls.push({ path, method: options.method, body: options.body });
+    return new Response(JSON.stringify({ token: 'freestyle-managed-token' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+  freestyleProvider: {
+    name: 'freestyle',
+    deploy: async () => ({}),
+    stop: async () => undefined,
+    logs: async () => ({}),
+  },
 }));
 
 // Pin the concurrent-session cap to 1 regardless of env mode so this test
@@ -655,6 +678,7 @@ mock.module('../shared/db', () => ({
 }));
 
 const { projectsApp } = await import('../projects/index');
+const { encryptProjectSecret } = await import('../projects/secrets');
 
 function createApp() {
   const app = new Hono();
@@ -847,6 +871,157 @@ describe('project session API contract', () => {
         type: 'basic',
       },
     });
+  });
+
+  test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
+    projectRow.repoUrl = 'https://git.freestyle.sh/legacy-private-project';
+    projectRow.metadata = {};
+    secretRows = [
+      {
+        secretId: '00000000-0000-4000-a000-000000000402',
+        projectId: PROJECT_ID,
+        name: 'KORTIX_GIT_AUTH_TOKEN',
+        valueEnc: encryptProjectSecret(PROJECT_ID, 'legacy-freestyle-token'),
+        scope: 'runtime',
+        shareScope: 'project',
+        ownerUserId: null,
+        active: true,
+        createdBy: USER_ID,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    const app = createApp();
+
+    const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(createRes.status).toBe(201);
+
+    await flushUntil(() => lastProvisionInput !== null);
+    const env = lastProvisionInput!.extraEnvVars ?? {};
+    expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
+
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: sessionRow!.sessionId,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'provisioning',
+        poolState: null,
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+
+    const cloneRes = await app.request(
+      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
+      {
+        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      },
+    );
+    expect(cloneRes.status).toBe(200);
+    expect(await cloneRes.json()).toMatchObject({
+      repo_url: 'https://git.freestyle.sh/legacy-private-project',
+      source: 'project_credential',
+      auth: {
+        username: 'x-access-token',
+        token: 'legacy-freestyle-token',
+        type: 'basic',
+      },
+    });
+  });
+
+  test('mints managed Freestyle credentials for legacy project git connections', async () => {
+    projectRow.repoUrl = 'https://git.freestyle.sh/freestyle-repo-id';
+    projectRow.metadata = {
+      git: {
+        provider: 'freestyle',
+        auth: { method: 'managed', ref: 'freestyle-identity-id' },
+        repo_id: 'freestyle-repo-id',
+      },
+    };
+    gitConnectionRows = [
+      {
+        connectionId: '00000000-0000-4000-a000-000000000502',
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'freestyle',
+        repoUrl: 'https://git.freestyle.sh/freestyle-repo-id',
+        upstreamUrl: null,
+        managed: false,
+        repoOwner: null,
+        repoName: null,
+        externalRepoId: 'freestyle-repo-id',
+        defaultBranch: 'main',
+        authMethod: 'managed',
+        installationId: null,
+        credentialRef: 'freestyle-identity-id',
+        permissions: {},
+        visibility: 'private',
+        webhookId: null,
+        status: 'connected',
+        lastValidatedAt: new Date('2026-01-02T00:00:00Z'),
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        metadata: {},
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'provisioning',
+        poolState: null,
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    const app = createApp();
+
+    const cloneRes = await app.request(
+      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
+      {
+        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      },
+    );
+
+    expect(cloneRes.status).toBe(200);
+    expect(await cloneRes.json()).toMatchObject({
+      repo_url: 'https://git.freestyle.sh/freestyle-repo-id',
+      source: 'managed',
+      auth: {
+        username: 'x-access-token',
+        token: 'freestyle-managed-token',
+        type: 'basic',
+      },
+    });
+    expect(freestyleCalls).toEqual([
+      {
+        path: '/git/v1/identity/freestyle-identity-id/tokens',
+        method: 'POST',
+        body: undefined,
+      },
+    ]);
   });
 
   test('rejects reserved platform secret names', async () => {
@@ -1286,7 +1461,11 @@ describe('project session API contract', () => {
     // injects the single sandbox KORTIX_TOKEN at the provider boundary.
     expect(env.KORTIX_PROJECT_ID).toBe(PROJECT_ID);
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
-    expect(env.KORTIX_REPO_URL).toBe(projectRow.repoUrl);
+    const expectedRepoUrl =
+      process.env.KORTIX_GIT_PROXY === 'true'
+        ? new URL(`/v1/git/${PROJECT_ID}.git`, process.env.KORTIX_URL ?? 'https://test.kortix.local').toString()
+        : projectRow.repoUrl;
+    expect(env.KORTIX_REPO_URL).toBe(expectedRepoUrl);
     expect(env.KORTIX_BASE_REF).toBe('main');
     // LLM/tool-router URLs are no longer injected — the sandbox derives any
     // router endpoint it needs from KORTIX_API_URL.

@@ -88,8 +88,7 @@ export default function ProjectSessionPage() {
 
   // ONE session-open call. POST /start idempotently provisions/resumes the
   // sandbox AND resolves the OpenCode pin server-side, returning a single
-  // readiness payload we poll until `stage==='ready'`. This replaces the old
-  // three-call dance (GET /sandbox poll + POST /wake + POST /ensure-opencode).
+  // readiness payload we poll until `stage==='ready'`.
   // session_id == sandbox_id by construction (see session-sandbox.ts).
   const { data: start } = useQuery({
     queryKey: sessionStartKey(projectId, sessionId),

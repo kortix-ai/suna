@@ -65,6 +65,17 @@ export const projectSessionStatusEnum = kortixSchema.enum('project_session_statu
   'completed',
 ]);
 
+export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
+  'session_lifecycle_command_status',
+  [
+    'queued',
+    'running',
+    'succeeded',
+    'failed',
+    'dead_lettered',
+  ],
+);
+
 export const projectRoleEnum = kortixSchema.enum('project_role', [
   'manager',
   'editor',
@@ -591,6 +602,43 @@ export const projectTriggerRuntime = kortixSchema.table(
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
+  ],
+);
+
+export const sessionLifecycleCommands = kortixSchema.table(
+  'session_lifecycle_commands',
+  {
+    commandId: uuid('command_id').defaultRandom().primaryKey(),
+    commandType: varchar('command_type', { length: 64 }).notNull(),
+    source: varchar('source', { length: 64 }).notNull(),
+    status: sessionLifecycleCommandStatusEnum('status').default('queued').notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    sessionId: text('session_id').references(() => projectSessions.sessionId, {
+      onDelete: 'set null',
+    }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    actorUserId: uuid('actor_user_id'),
+    idempotencyKey: text('idempotency_key'),
+    payload: jsonb('payload').default({}).notNull().$type<Record<string, unknown>>(),
+    result: jsonb('result').default({}).notNull().$type<Record<string, unknown>>(),
+    attempts: integer('attempts').default(0).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true }).defaultNow().notNull(),
+    lockedBy: text('locked_by'),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_session_lifecycle_commands_idempotency').on(table.idempotencyKey),
+    index('idx_session_lifecycle_commands_due').on(table.status, table.availableAt),
+    index('idx_session_lifecycle_commands_project').on(table.projectId),
+    index('idx_session_lifecycle_commands_session').on(table.sessionId),
+    index('idx_session_lifecycle_commands_locked').on(table.lockedUntil),
   ],
 );
 
