@@ -4,19 +4,16 @@
 
 # Immutable dev tag (CI bumps to dev-<sha8>). Bootstrap value until the first run.
 image:
-  tag: "dev-latest"
-
+  tag: "dev-31c206ff"
 # Dev sizing (≤100 users): 1-replica floor, burst to 2.
 replicas: 1
 autoscaling:
   enabled: true
   minReplicas: 1
   maxReplicas: 2
-
 # No PDB on a 1-replica dev (minAvailable would block node drains).
 pdb:
   enabled: false
-
 resources:
   requests:
     cpu: "250m"
@@ -24,7 +21,6 @@ resources:
   limits:
     cpu: "1"
     memory: "512Mi"
-
 # Public, direct. Dev sandboxes hit the gateway straight at this host
 # (LLM_GATEWAY_BASE_URL=https://gateway-dev.kortix.com/v1/llm) so LLM streams
 # live on gateway pods, not the API — API deploys don't cut in-flight streams.
