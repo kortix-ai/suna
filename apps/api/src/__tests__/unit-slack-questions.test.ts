@@ -41,6 +41,7 @@ mock.module('../channels/slack/dispatch', () => ({
 
 mock.module('../channels/install-store', () => ({
   loadSlackTokenForProject: async () => 'xoxb-test',
+  saveSlackOauthInstall: async () => {},
 }));
 
 // ─── DB mock (FIFO) ───────────────────────────────────────────────────────────

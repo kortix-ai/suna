@@ -120,14 +120,18 @@ const envSchema = z.object({
   // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
   // OFF leaves the direct clone-credential token flow untouched).
   KORTIX_GIT_PROXY:                optBoolFalse,
-  // Warm sandbox pool (docs/specs/warm-pool.md). ON by default — no enable flag.
-  // Default warm sandboxes per active project (operator default; the per-project
-  // UI value overrides it).
-  KORTIX_WARM_POOL_SIZE:           optInt(1),
-  // Global cap on total warm (pre-booted, unclaimed) sandboxes across all
-  // projects — bounds idle cost + the Daytona quota. Doubles as the kill switch:
-  // set to 0 to disable the warm pool fleet-wide.
-  KORTIX_WARM_POOL_MAX_TOTAL:      optInt(50),
+  // Warm sandbox pool (re-introduced behind the session runtime allocator: a
+  // spare boots in the daemon's KORTIX_WARM_POOL mode, parks, and is CLAIMED +
+  // bound to a session id on create — decoupled from the durable session row).
+  // Per-project desired spare count (operator default; per-project UI value
+  // overrides). Only matters once MAX_TOTAL > 0.
+  KORTIX_WARM_POOL_SIZE:           optInt(2),
+  // Global cap on total warm (pre-booted, unclaimed) spares across all projects
+  // — bounds idle cost + the Daytona quota. MASTER KILL SWITCH: default 0 =
+  // warm pool DISABLED fleet-wide (warmPoolEnabled() false → the allocator's
+  // claim path is skipped and every create cold-provisions, byte-identically to
+  // today). Set > 0 to enable — only after live-validating the claim path.
+  KORTIX_WARM_POOL_MAX_TOTAL:      optInt(0),
   // Presence window: only keep a warm pool while a user has touched the project
   // (authenticated portal activity) within this many minutes. Closing the tab
   // lets the pool reap, so we never hold idle boxes 24/7 for absent users.

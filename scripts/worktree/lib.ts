@@ -189,6 +189,39 @@ export async function runMigrate(worktreePath: string, ports: Ports): Promise<nu
   });
 }
 
+export async function startSupabaseDb(name: string): Promise<number> {
+  return run(['supabase', '--workdir', supaWorkdir(name), 'db', 'start']);
+}
+
+export async function startSupabaseFullStack(name: string, ports: Ports): Promise<number> {
+  if (!portInUse(ports.sbApi).inUse) {
+    await run(['supabase', '--workdir', supaWorkdir(name), 'stop']);
+  }
+  return run(['supabase', '--workdir', supaWorkdir(name), 'start']);
+}
+
+export function hasKortixSchema(ports: Ports): boolean {
+  const sql = "select 1 from information_schema.tables where table_schema='kortix' limit 1";
+  return sh([
+    'bash',
+    '-lc',
+    `psql "postgresql://postgres:postgres@127.0.0.1:${ports.sbDb}/postgres" -tAc ${JSON.stringify(sql)} 2>/dev/null`,
+  ]).stdout.trim() === '1';
+}
+
+export async function ensureRuntimeArtifacts(worktreePath: string): Promise<number> {
+  const builds: Array<[string, string]> = [
+    ['sandbox agent', '@kortix/sandbox-agent-server'],
+    ['CLI', '@kortix/cli'],
+  ];
+  for (const [label, filter] of builds) {
+    console.log(`  building ${label} runtime artifact`);
+    const code = await run(['pnpm', '--filter', filter, 'build'], { cwd: worktreePath });
+    if (code !== 0) return code;
+  }
+  return 0;
+}
+
 export interface Tunnel { url: string; proc: ReturnType<typeof Bun.spawn>; }
 
 export async function startTunnel(apiPort: number): Promise<Tunnel | null> {

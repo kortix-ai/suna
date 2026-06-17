@@ -3,6 +3,7 @@ import { eq } from 'drizzle-orm';
 import { projectSessions } from '@kortix/db';
 import { ProvisionTimeline } from '../../platform/services/provision-timeline';
 import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
+import { claimSpareForSession, refillProjectPool, warmPoolEnabled } from '../../platform/services/warm-pool';
 import { readProjectWarmPointer } from '../../snapshots/warm-project';
 import { db } from '../../shared/db';
 import type { SandboxProviderName } from '../../config';
@@ -56,6 +57,33 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       ...(await envPromise),
       ...(input.extraEnvVars ?? {}),
     };
+
+    // Warm fast-path (gated off by default — KORTIX_WARM_POOL_MAX_TOTAL=0).
+    // Claim a pre-booted spare and bind it to THIS session id, staging the exact
+    // env the cold path would inject. Any miss/error returns null and falls
+    // through to the unchanged cold provisionSessionSandbox below.
+    if (warmPoolEnabled()) {
+      try {
+        const claimed = await claimSpareForSession({
+          sessionId: input.sessionId,
+          accountId: input.accountId,
+          projectId: input.projectId,
+          userId: input.userId,
+          provider: input.providerName,
+          builtEnvVars: extraEnvVars,
+          sessionMetadata: input.sessionMetadata,
+        });
+        if (claimed) {
+          tl.mark('warm-claim');
+          void refillProjectPool(input.projectId, input.userId).catch(() => {});
+          const warmTimeline = tl.log();
+          void mergeSessionMetadata(input.sessionId, { session_start_timeline: warmTimeline }).catch(() => {});
+          return;
+        }
+      } catch (err) {
+        console.warn(`[warm-pool] claim failed for session ${input.sessionId}; cold fallback:`, err instanceof Error ? err.message : err);
+      }
+    }
 
     await provisionSessionSandbox({
       sandboxId: input.sessionId,

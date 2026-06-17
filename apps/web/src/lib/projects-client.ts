@@ -2220,8 +2220,7 @@ export interface SessionStartResult {
 /**
  * THE session-open call. Idempotently provisions/resumes the sandbox and resolves
  * the OpenCode pin server-side, returning ONE readiness payload to poll until
- * stage='ready'. Replaces getProjectSessionSandbox + wakeProjectSession +
- * ensureOpencodeSession (the old three-call open dance).
+ * stage='ready'.
  */
 export async function startProjectSession(
   projectId: string,

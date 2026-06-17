@@ -53,10 +53,10 @@ export default function ProjectIndexPage() {
         // (not a client-generated one): with the warm pool, create may hand
         // back a pre-booted sandbox whose id is server-authoritative.
         const created = await createProjectSession(projectId, {
+          initial_prompt: text,
           ...(options?.sandbox_slug ? { sandbox_slug: options.sandbox_slug } : {}),
         });
         const sessionId = created.session_id;
-        sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
         queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
         // Kick the runtime boot DURING the route transition, not after the
         // session page paints (shared helper keeps the query key in sync with
