@@ -291,6 +291,39 @@ const PRERESUME_THROTTLE_MS = 30_000;
  * open. Scoped to the user's OWN sessions (never speculatively resumes someone
  * else's). Most-recent-first, capped at KORTIX_PRERESUME_MAX_PER_PROJECT.
  */
+/**
+ * The pre-resume candidates: the user's OWN most-recently-used STOPPED session
+ * sandboxes in a project (status='stopped', a provider box still attached, not a
+ * warm-pool row). Most-recent-first, capped at `limit`. Pure DB read, no side
+ * effects — exported so the selection (ordering/scoping/status filter) is
+ * testable without provisioning real sandboxes.
+ */
+export async function selectPreResumeTargets(
+  projectId: string,
+  userId: string,
+  limit: number,
+): Promise<Array<{ sandboxId: string; sessionId: string; accountId: string; provider: string; externalId: string | null }>> {
+  return db
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      sessionId: sessionSandboxes.sessionId,
+      accountId: sessionSandboxes.accountId,
+      provider: sessionSandboxes.provider,
+      externalId: sessionSandboxes.externalId,
+    })
+    .from(sessionSandboxes)
+    .innerJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
+    .where(and(
+      eq(sessionSandboxes.projectId, projectId),
+      eq(sessionSandboxes.status, 'stopped'),
+      isNotNull(sessionSandboxes.externalId),
+      isNull(sessionSandboxes.poolState),
+      eq(projectSessions.createdBy, userId),
+    ))
+    .orderBy(desc(sessionSandboxes.lastUsedAt))
+    .limit(Math.max(1, limit));
+}
+
 export function preResumeRecentStoppedSessions(projectId: string, userId?: string | null): void {
   if (!config.KORTIX_PRERESUME_ENABLED || !projectId || !userId) return;
   const nowMs = Date.now();
@@ -298,26 +331,7 @@ export function preResumeRecentStoppedSessions(projectId: string, userId?: strin
   preResumeThrottle.set(projectId, nowMs);
   void (async () => {
     try {
-      const limit = Math.max(1, config.KORTIX_PRERESUME_MAX_PER_PROJECT);
-      const rows = await db
-        .select({
-          sandboxId: sessionSandboxes.sandboxId,
-          sessionId: sessionSandboxes.sessionId,
-          accountId: sessionSandboxes.accountId,
-          provider: sessionSandboxes.provider,
-          externalId: sessionSandboxes.externalId,
-        })
-        .from(sessionSandboxes)
-        .innerJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
-        .where(and(
-          eq(sessionSandboxes.projectId, projectId),
-          eq(sessionSandboxes.status, 'stopped'),
-          isNotNull(sessionSandboxes.externalId),
-          isNull(sessionSandboxes.poolState),
-          eq(projectSessions.createdBy, userId),
-        ))
-        .orderBy(desc(sessionSandboxes.lastUsedAt))
-        .limit(limit);
+      const rows = await selectPreResumeTargets(projectId, userId, config.KORTIX_PRERESUME_MAX_PER_PROJECT);
       let kicked = 0;
       for (const row of rows) {
         const won = await resumeStoppedSandbox(row).catch((err) => {
