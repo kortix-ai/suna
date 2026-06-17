@@ -370,6 +370,71 @@ const GROUPS: Group[] = [
       },
     ],
   },
+  {
+    title: 'Show (output viewer)',
+    rows: [
+      {
+        label: 'show (markdown)',
+        node: part(
+          'show',
+          done(
+            {
+              type: 'markdown',
+              title: 'Launch plan',
+              content:
+                '# Launch plan\n\n## This week\n\n- Ship the new pricing page\n- Wire up the checkout flow\n- QA on mobile + desktop\n\n## Next week\n\n1. Announcement post\n2. Email the waitlist\n3. Monitor conversion\n\n> The actions panel should stretch this content to the full height of the panel, with its own internal scroll.\n\n```ts\nexport const ready = true;\n```\n',
+            },
+            '',
+          ),
+        ),
+      },
+      {
+        label: 'show (code)',
+        node: part(
+          'show',
+          done(
+            {
+              type: 'code',
+              title: 'server.ts',
+              language: 'typescript',
+              content:
+                "import { serve } from 'bun';\n\nserve({\n  port: 3000,\n  fetch(req) {\n    const url = new URL(req.url);\n    if (url.pathname === '/health') return new Response('ok');\n    return new Response('Hello, Kortix', {\n      headers: { 'content-type': 'text/plain' },\n    });\n  },\n});\n",
+            },
+            '',
+          ),
+        ),
+      },
+      {
+        label: 'show (url)',
+        node: part(
+          'show',
+          done(
+            {
+              type: 'url',
+              title: 'Kortix',
+              description: 'Your AI workforce, in one place.',
+              url: 'https://kortix.com',
+            },
+            '',
+          ),
+        ),
+      },
+      {
+        label: 'show (error)',
+        node: part(
+          'show',
+          done(
+            {
+              type: 'error',
+              title: 'Build failed',
+              content: 'Error: Cannot find module "@/lib/missing"\n  at /workspace/src/app.ts:3:1',
+            },
+            '',
+          ),
+        ),
+      },
+    ],
+  },
 ];
 
 export default function DebugToolsPage() {

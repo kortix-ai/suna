@@ -28,17 +28,33 @@ import { SessionDiffViewer } from '@/components/session/session-diff-viewer';
  */
 export function SessionFilesExplorer({
   chatSessionId,
+  projectId,
+  projectSessionId,
 }: {
   chatSessionId?: string;
+  projectId?: string;
+  projectSessionId?: string;
 } = {}) {
   return (
     <FilesStoreProvider>
-      <SessionFilesExplorerInner chatSessionId={chatSessionId} />
+      <SessionFilesExplorerInner
+        chatSessionId={chatSessionId}
+        projectId={projectId}
+        projectSessionId={projectSessionId}
+      />
     </FilesStoreProvider>
   );
 }
 
-function SessionFilesExplorerInner({ chatSessionId }: { chatSessionId?: string }) {
+function SessionFilesExplorerInner({
+  chatSessionId,
+  projectId,
+  projectSessionId,
+}: {
+  chatSessionId?: string;
+  projectId?: string;
+  projectSessionId?: string;
+}) {
   const rawView = useSessionBrowserStore((s) =>
     chatSessionId ? s.viewBySession[chatSessionId] : undefined,
   );
@@ -76,7 +92,18 @@ function SessionFilesExplorerInner({ chatSessionId }: { chatSessionId?: string }
         onModeChange={onModeChange}
       />
       <div className="min-h-0 flex-1">
-        {showDiff ? <SessionDiffViewer sessionId={chatSessionId!} /> : <FileExplorerPage embedded />}
+        {showDiff ? (
+          <SessionDiffViewer sessionId={chatSessionId!} />
+        ) : (
+          <FileExplorerPage
+            embedded
+            shareContext={
+              projectId && projectSessionId
+                ? { projectId, sessionId: projectSessionId }
+                : undefined
+            }
+          />
+        )}
       </div>
     </div>
   );

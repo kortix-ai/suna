@@ -55,6 +55,7 @@ const PUBLIC_ROUTES = [
   '/security', // Security & trust page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
+  '/game-of-life', // Conway's Game of Life seeded from the Kortix logo — public, unauthenticated
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
 

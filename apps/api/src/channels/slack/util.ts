@@ -61,3 +61,27 @@ export function formatRelativeTime(d: Date): string {
 export function escapeMrkdwn(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
+/** POST a (possibly delayed) response to a Slack response_url. Best-effort. */
+export async function respondViaUrl(url: string | undefined, body: unknown): Promise<void> {
+  if (!url) return;
+  try {
+    await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    console.warn('[slack-webhook] response_url POST failed', err);
+  }
+}
+
+/** Dashboard base URL (no trailing slash) for building project/session links. */
+export function dashboardBase(kortixUrl?: string): string {
+  return (kortixUrl || 'https://kortix.com').replace(/\/$/, '');
+}
+
+/** Web URL for a Kortix session. */
+export function sessionWebUrl(kortixUrl: string | undefined, projectId: string, sessionId: string): string {
+  return `${dashboardBase(kortixUrl)}/projects/${projectId}/sessions/${sessionId}`;
+}

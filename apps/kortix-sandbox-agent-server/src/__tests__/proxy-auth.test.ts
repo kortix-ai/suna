@@ -193,6 +193,41 @@ describe('daemon proxy auth gate', () => {
     }
   })
 
+  it('boots from an EMPTY upstream by initializing a fresh local repo', async () => {
+    // A managed repo that was provisioned but never seeded: it exists upstream
+    // but has no `main` branch. A cold clone would fail with "Remote branch main
+    // not found in upstream origin" — materializeRepo must NOT hard-fail; it
+    // should init a local repo at base + fork the session branch off it so the
+    // session still boots (100% local). resolveCloneToken short-circuits to
+    // undefined here (no apiUrl), so no network is touched.
+    const root = mkdtempSync(join(tmpdir(), 'kortix-clone-empty-'))
+    try {
+      const remote = join(root, 'remote.git')
+      const target = join(root, 'workspace')
+      git(['init', '--bare', remote]) // empty: no branches, no commits
+
+      await materializeRepo(baseConfig({
+        autoClone: true,
+        projectTarget: target,
+        repoUrl: remote,
+        defaultBranch: 'main',
+        branchName: 'session-abc',
+      }))
+
+      // Repo materialized locally with a HEAD to work from.
+      expect(existsSync(join(target, '.git'))).toBe(true)
+      expect(gitOutput(['-C', target, 'log', '-1', '--format=%s'])).toBe('chore: initialize Kortix project')
+      // Checked out on the session branch (forked from the empty base commit).
+      expect(gitOutput(['-C', target, 'rev-parse', '--abbrev-ref', 'HEAD'])).toBe('session-abc')
+      // Origin still wired up so the background publish / agent push can seed it.
+      expect(gitOutput(['-C', target, 'remote', 'get-url', 'origin'])).toBe(remote)
+      // Identity configured so the agent's commits are attributed.
+      expect(gitOutput(['-C', target, 'config', 'user.name'])).toBe('Kortix Agent')
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('uses a baked git checkout without fetching clone credentials', async () => {
     const root = mkdtempSync(join(tmpdir(), 'kortix-baked-checkout-'))
     const originalFetch = globalThis.fetch

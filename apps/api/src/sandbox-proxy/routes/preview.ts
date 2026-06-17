@@ -226,15 +226,23 @@ function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: str
 
 // === Core HTTP forwarder ======================================================
 //
-// Forwards one request to a sandbox port with ownership enforcement, the full
-// upstream auth header set, auto-wake retries, redirect rewriting, and CORS
-// injection. Exported so both proxy edges use it: the path-based Hono route
-// below and the subdomain handler (src/sandbox-proxy/subdomain.ts).
+// Forwards one request to a sandbox port with the full upstream auth header set,
+// auto-wake retries, redirect rewriting, and CORS injection. Exported so both
+// proxy edges use it: the path-based Hono route below and the subdomain handler
+// (src/sandbox-proxy/subdomain.ts).
+
+export type PreviewProxyAccess =
+  | { kind: 'principal'; userId: string }
+  | { kind: 'public_share' };
+
+function principalUserId(access: PreviewProxyAccess): string {
+  return access.kind === 'principal' ? access.userId : '';
+}
 
 export async function forwardToSandbox(
   sandboxId: string,
   port: number,
-  userId: string,
+  access: PreviewProxyAccess,
   method: string,
   remainingPath: string,
   queryString: string,
@@ -259,7 +267,11 @@ export async function forwardToSandbox(
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404);
   }
-  if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
+  const userId = principalUserId(access);
+  if (
+    access.kind === 'principal'
+    && !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
+  ) {
     throw new HTTPException(403, {
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
     });
@@ -269,6 +281,7 @@ export async function forwardToSandbox(
   // REST side), not just account membership — closes the window where a member
   // whose access was revoked/downgraded replays captured ids on the data path.
   if (
+    access.kind === 'principal' &&
     port === 8000 &&
     !(await canAccessSandboxSession({
       sessionId: record.sessionId,
@@ -625,7 +638,7 @@ preview.all('/:sandboxId/:port/*', async (c) => {
   const publicOrigin = `${proto}://${host}`;
 
   return forwardToSandbox(
-    sandboxId, port, userId, method, remainingPath, queryString,
+    sandboxId, port, { kind: 'principal', userId }, method, remainingPath, queryString,
     c.req.raw.headers, body, origin,
     undefined, // redirectPrefix → default `/v1/p/{sandbox}/{port}`
     publicOrigin,

@@ -167,7 +167,7 @@ async function postPrompt(
   const res = await forwardToSandbox(
     externalId,
     DAEMON_PORT,
-    userId,
+    { kind: 'principal', userId },
     'POST',
     `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
     `?directory=${encodeURIComponent(WORKSPACE)}`,

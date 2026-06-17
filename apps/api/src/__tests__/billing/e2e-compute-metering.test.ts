@@ -75,6 +75,13 @@ mock.module('../../billing/repositories/compute-sessions', () => ({
   },
   getOpenComputeSession: async (sandboxId: string) =>
     sessions.find((s) => s.sandboxId === sandboxId && s.endedAt === null) ?? null,
+  getLatestComputeSession: async (sandboxId: string) =>
+    sessions
+      .filter((s) => s.sandboxId === sandboxId)
+      .sort(
+        (a, b) =>
+          new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+      )[0] ?? null,
   updateComputeSession: async (id: string, patch: any) => {
     const row = sessions.find((s) => s.id === id);
     if (!row) return;
