@@ -174,7 +174,13 @@ export async function buildWorld(env: Env, flows: RegisteredFlow[]): Promise<Wor
           log.warn(`teardown run account ${acct} failed: ${(err as Error)?.message ?? err}`);
         }
       }
-      for (const uid of [...provisioned.supabaseUserIds, ...extraUserIds]) await adminDeleteUser(env, uid);
+      for (const uid of [...provisioned.supabaseUserIds, ...extraUserIds]) {
+        try {
+          await adminDeleteUser(env, uid);
+        } catch (err) {
+          log.warn(`teardown user ${uid} failed: ${(err as Error)?.message ?? err}`);
+        }
+      }
     },
   };
 }
