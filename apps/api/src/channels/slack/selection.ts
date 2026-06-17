@@ -23,19 +23,27 @@ export interface ChannelCtx {
 /** The channel's bound project + its agent/model overrides, or null if unbound. */
 export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelSelection | null> {
   if (!ctx.channelId) return null;
-  const [binding] = await db
-    .select({
-      projectId: chatChannelBindings.projectId,
-      agentName: chatChannelBindings.agentName,
-      opencodeModel: chatChannelBindings.opencodeModel,
-    })
-    .from(chatChannelBindings)
-    .where(and(
-      eq(chatChannelBindings.platform, 'slack'),
-      eq(chatChannelBindings.workspaceId, ctx.teamId),
-      eq(chatChannelBindings.channelId, ctx.channelId),
-    ))
-    .limit(1);
+  let binding: { projectId: string | null; agentName: string | null; opencodeModel: string | null } | undefined;
+  try {
+    [binding] = await db
+      .select({
+        projectId: chatChannelBindings.projectId,
+        agentName: chatChannelBindings.agentName,
+        opencodeModel: chatChannelBindings.opencodeModel,
+      })
+      .from(chatChannelBindings)
+      .where(and(
+        eq(chatChannelBindings.platform, 'slack'),
+        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.channelId, ctx.channelId),
+      ))
+      .limit(1);
+  } catch (err) {
+    if (!isMissingSelectionColumnError(err)) throw err;
+    console.warn('[slack-selection] optional channel override columns missing; falling back to project-only routing');
+    const projectId = await currentChannelProjectId(ctx);
+    return projectId ? { projectId, agentName: null, opencodeModel: null } : null;
+  }
   if (!binding?.projectId) return null;
   return {
     projectId: binding.projectId,
@@ -51,31 +59,68 @@ export async function currentChannelSelection(ctx: ChannelCtx): Promise<ChannelS
  */
 export async function setChannelAgent(ctx: ChannelCtx, agentName: string | null): Promise<boolean> {
   if (!ctx.channelId) return false;
-  const rows = await db
-    .update(chatChannelBindings)
-    .set({ agentName })
-    .where(and(
-      eq(chatChannelBindings.platform, 'slack'),
-      eq(chatChannelBindings.workspaceId, ctx.teamId),
-      eq(chatChannelBindings.channelId, ctx.channelId),
-    ))
-    .returning({ id: chatChannelBindings.bindingId });
-  return rows.length > 0;
+  try {
+    const rows = await db
+      .update(chatChannelBindings)
+      .set({ agentName })
+      .where(and(
+        eq(chatChannelBindings.platform, 'slack'),
+        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.channelId, ctx.channelId),
+      ))
+      .returning({ id: chatChannelBindings.bindingId });
+    return rows.length > 0;
+  } catch (err) {
+    if (!isMissingSelectionColumnError(err)) throw err;
+    console.warn('[slack-selection] agent override column missing; ignoring channel override update');
+    return false;
+  }
 }
 
 /** Update the channel binding's model (null clears → project/platform default). */
 export async function setChannelModel(ctx: ChannelCtx, opencodeModel: string | null): Promise<boolean> {
   if (!ctx.channelId) return false;
-  const rows = await db
-    .update(chatChannelBindings)
-    .set({ opencodeModel })
+  try {
+    const rows = await db
+      .update(chatChannelBindings)
+      .set({ opencodeModel })
+      .where(and(
+        eq(chatChannelBindings.platform, 'slack'),
+        eq(chatChannelBindings.workspaceId, ctx.teamId),
+        eq(chatChannelBindings.channelId, ctx.channelId),
+      ))
+      .returning({ id: chatChannelBindings.bindingId });
+    return rows.length > 0;
+  } catch (err) {
+    if (!isMissingSelectionColumnError(err)) throw err;
+    console.warn('[slack-selection] model override column missing; ignoring channel override update');
+    return false;
+  }
+}
+
+async function currentChannelProjectId(ctx: ChannelCtx): Promise<string | null> {
+  const [binding] = await db
+    .select({ projectId: chatChannelBindings.projectId })
+    .from(chatChannelBindings)
     .where(and(
       eq(chatChannelBindings.platform, 'slack'),
       eq(chatChannelBindings.workspaceId, ctx.teamId),
       eq(chatChannelBindings.channelId, ctx.channelId),
     ))
-    .returning({ id: chatChannelBindings.bindingId });
-  return rows.length > 0;
+    .limit(1);
+  return binding?.projectId ?? null;
+}
+
+function isMissingSelectionColumnError(err: unknown): boolean {
+  const parts = [
+    (err as any)?.message,
+    (err as any)?.cause?.message,
+    (err as any)?.cause?.cause?.message,
+  ].filter(Boolean).join('\n');
+  return (
+    parts.includes('column "agent_name" does not exist') ||
+    parts.includes('column "opencode_model" does not exist')
+  );
 }
 
 export interface ProjectAgent {

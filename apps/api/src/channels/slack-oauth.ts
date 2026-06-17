@@ -103,30 +103,58 @@ slackOauthApp.openapi(
   });
   if (mode.redirectUri) exchangeBody.set('redirect_uri', mode.redirectUri);
 
-  const tokenRes = await fetch('https://slack.com/api/oauth.v2.access', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: exchangeBody.toString(),
-  });
-  const tokenJson = (await tokenRes.json()) as SlackOauthResponse;
+  let tokenJson: SlackOauthResponse;
+  try {
+    const tokenRes = await fetch('https://slack.com/api/oauth.v2.access', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: exchangeBody.toString(),
+    });
+    tokenJson = (await tokenRes.json()) as SlackOauthResponse;
+  } catch (err) {
+    console.error('[slack-oauth] token exchange failed', {
+      projectId: payload.projectId,
+      error: (err as Error).message,
+    });
+    return redirectToDashboard(c, { projectId: payload.projectId, error: 'oauth_exchange_failed' });
+  }
   if (!tokenJson.ok || !tokenJson.access_token || !tokenJson.team?.id) {
     return redirectToDashboard(c, { error: tokenJson.error ?? 'oauth_exchange_failed' });
   }
 
-  const [project] = await db
-    .select({ projectId: projects.projectId })
-    .from(projects)
-    .where(eq(projects.projectId, payload.projectId))
-    .limit(1);
+  let project: { projectId: string } | undefined;
+  try {
+    [project] = await db
+      .select({ projectId: projects.projectId })
+      .from(projects)
+      .where(eq(projects.projectId, payload.projectId))
+      .limit(1);
+  } catch (err) {
+    console.error('[slack-oauth] project lookup failed', {
+      projectId: payload.projectId,
+      workspaceId: tokenJson.team.id,
+      error: (err as Error).message,
+    });
+    return redirectToDashboard(c, { projectId: payload.projectId, error: 'project_lookup_failed' });
+  }
   if (!project) return redirectToDashboard(c, { error: 'project_not_found' });
 
-  await saveSlackOauthInstall({
-    projectId: payload.projectId,
-    workspaceId: tokenJson.team.id,
-    botToken: tokenJson.access_token,
-    botUserId: tokenJson.bot_user_id ?? '',
-    teamName: tokenJson.team.name ?? null,
-  });
+  try {
+    await saveSlackOauthInstall({
+      projectId: payload.projectId,
+      workspaceId: tokenJson.team.id,
+      botToken: tokenJson.access_token,
+      botUserId: tokenJson.bot_user_id ?? '',
+      teamName: tokenJson.team.name ?? null,
+    });
+  } catch (err) {
+    console.error('[slack-oauth] install save failed', {
+      projectId: payload.projectId,
+      workspaceId: tokenJson.team.id,
+      error: (err as Error).message,
+    });
+    return redirectToDashboard(c, { projectId: payload.projectId, error: 'slack_install_save_failed' });
+  }
 
   return redirectToDashboard(c, { projectId: payload.projectId, success: '1' });
 },
