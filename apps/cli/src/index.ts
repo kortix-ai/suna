@@ -22,6 +22,7 @@ import { runSessions } from './commands/sessions.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runShip } from './commands/ship.ts';
 import { runTriggers } from './commands/triggers.ts';
+import { runTunnel } from './commands/tunnel.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
@@ -68,6 +69,7 @@ const COMMANDS: readonly Command[] = [
   { name: 'apps', args: '<subcommand>', blurb: 'Manage deployable apps (experimental)' },
   { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
   { name: 'access', args: '<subcommand>', blurb: 'Manage who can use this project (invite/grant/revoke)' },
+  { name: 'tunnel', args: '<subcommand>', blurb: 'See & drive your fleet of registered computers (Agent Tunnel)' },
   { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
   { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
   { name: 'help', blurb: 'Show this help' },
@@ -177,6 +179,9 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'triggers') {
     return runTriggers(argv.slice(1));
   }
+  if (argv[0] === 'tunnel') {
+    return runTunnel(argv.slice(1));
+  }
   if (argv[0] === 'channels') {
     return runChannels(argv.slice(1));
   }
@@ -213,7 +218,6 @@ async function main(argv: string[]): Promise<number> {
   const RESERVED_FUTURE_COMMANDS = new Set([
     'accounts',
     'mcp',
-    'tunnel',
     'logs',
     'start',
     'stop',

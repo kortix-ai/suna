@@ -103,12 +103,6 @@ const STATIC_TAB_ROUTES: Record<string, TabDescriptor> = {
     type: 'page',
     href: '/board',
   },
-  '/tunnel': {
-    id: 'page:/tunnel',
-    title: 'Tunnel',
-    type: 'page',
-    href: '/tunnel',
-  },
   '/deployments': {
     id: 'page:/deployments',
     title: 'Deployments',
@@ -208,19 +202,6 @@ const DYNAMIC_RESOLVERS: DynamicResolver[] = [
       title: 'Terminal',
       type: 'terminal',
       href: `/terminal/${ptyId}`,
-    };
-  },
-
-  // /tunnel/<id>
-  (pathname) => {
-    const m = pathname.match(/^\/tunnel\/([^/]+)$/);
-    if (!m) return null;
-    const tunnelId = m[1];
-    return {
-      id: `page:/tunnel/${tunnelId}`,
-      title: 'Tunnel',
-      type: 'page',
-      href: `/tunnel/${tunnelId}`,
     };
   },
 
