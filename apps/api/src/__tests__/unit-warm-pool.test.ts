@@ -1,19 +1,23 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveWarmConfig, warmBoxReapReason } from '../platform/services/warm-pool';
+import { resolveWarmConfig, warmBoxReapReason, warmPoolEnabled } from '../platform/services/warm-pool';
+
+test('sandbox-level warm pool is retired from the session lifecycle', () => {
+  expect(warmPoolEnabled()).toBe(false);
+});
 
 describe('resolveWarmConfig', () => {
   // Default size comes from KORTIX_WARM_POOL_SIZE (operator default), so just
   // assert the per-project UI value is honored over it.
-  test('honors the per-project UI value', () => {
+  test('honors the per-project UI size while keeping the retired pool disabled', () => {
     expect(resolveWarmConfig({ warm_pool: { enabled: false, size: 3 } })).toEqual({ enabled: false, size: 3 });
-    expect(resolveWarmConfig({ warm_pool: { enabled: true, size: 0 } })).toEqual({ enabled: true, size: 0 });
+    expect(resolveWarmConfig({ warm_pool: { enabled: true, size: 0 } })).toEqual({ enabled: false, size: 0 });
   });
   test('clamps oversized size', () => {
-    expect(resolveWarmConfig({ warm_pool: { enabled: true, size: 999 } })).toEqual({ enabled: true, size: 25 });
+    expect(resolveWarmConfig({ warm_pool: { enabled: true, size: 999 } })).toEqual({ enabled: false, size: 25 });
   });
-  test('defaults to enabled when unset', () => {
-    expect(resolveWarmConfig(null).enabled).toBe(true);
-    expect(resolveWarmConfig({}).enabled).toBe(true);
+  test('defaults to disabled when unset', () => {
+    expect(resolveWarmConfig(null).enabled).toBe(false);
+    expect(resolveWarmConfig({}).enabled).toBe(false);
   });
 });
 

@@ -53,6 +53,9 @@ const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
 // Keep in sync with snapshots/providers/daytona.ts + dockerfile-layer.ts.
 const OPENCODE_VERSION = '1.15.10';
 const AGENT_BROWSER_VERSION = '0.27.0';
+// Chromium for agent-browser, sourced from Playwright (cross-arch; Chrome for
+// Testing has no linux-arm64 build). Keep in sync with dockerfile-layer.ts.
+const PLAYWRIGHT_VERSION = '1.60.0';
 
 const RUNTIME_HOME = '/opt/kortix/home';
 export const OPENCODE_PORT = 4096;
@@ -319,7 +322,27 @@ if [ "$(agent-browser --version 2>/dev/null | grep -oE '[0-9.]+$')" = "${AGENT_B
 else
   sudo npm install -g --no-audit --no-fund agent-browser@${AGENT_BROWSER_VERSION} >/tmp/ab.log 2>&1
 fi
-agent-browser --version`,
+agent-browser --version
+# Bake a real Chromium for agent-browser (cross-arch via Playwright; Chrome for
+# Testing has no linux-arm64 build). Wire it BOTH via a stable /usr/local/bin
+# symlink AND agent-browser's own cache (chrome-linux64) so its auto-detect finds
+# it at runtime with no env var (vercel-labs/agent-browser#422 made the env var
+# unreliable). Idempotent: skipped when chromium already resolves.
+if [ -x /usr/local/bin/chromium ] && /usr/local/bin/chromium --version >/dev/null 2>&1; then
+  echo "chromium: skip (already baked)"
+else
+  sudo env PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers HOME=${RUNTIME_HOME} npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium >/tmp/pw.log 2>&1 || { echo "chromium: playwright install FAILED"; tail -25 /tmp/pw.log; exit 1; }
+  pw_chrome="$(sudo find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)"
+  [ -n "$pw_chrome" ] || { echo "chromium: binary not found after install"; tail -25 /tmp/pw.log; exit 1; }
+  sudo ln -sf "$pw_chrome" /usr/local/bin/chromium
+  sudo mkdir -p ${RUNTIME_HOME}/.agent-browser/browsers
+  sudo ln -sf "$(dirname "$pw_chrome")" ${RUNTIME_HOME}/.agent-browser/browsers/chrome-linux64
+  sudo chown -h daytona:daytona ${RUNTIME_HOME}/.agent-browser/browsers/chrome-linux64
+fi
+/usr/local/bin/chromium --version
+# Match the resolved PATH, not the browser name ("Chromium" on arm64 vs "Google
+# Chrome for Testing" on x64). Reads the detection line, not the launch verdict.
+env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=${RUNTIME_HOME} agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'`,
       600, onLog);
 
     // Upload + install the Kortix binaries + source trees.

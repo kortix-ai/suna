@@ -33,6 +33,8 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useSessionWallpaperLayer } from '@/components/session/session-wallpaper-layer';
 import { usePathname, useRouter } from 'next/navigation';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { SandboxImage } from '@/components/session/sandbox-image';
@@ -4860,6 +4862,10 @@ export function SessionChat({
   const hasAnyMessages = turns.length > 0;
   const hasChatContent =
     hasAnyMessages || (!!optimisticPrompt && !hasAnyMessages);
+  // Full-bleed wallpaper layer mounted by SessionLayout (null on mobile /
+  // standalone). When present, the welcome wallpaper is portaled into it so it
+  // spans the entire session width instead of shrinking with the chat panel.
+  const wallpaperLayer = useSessionWallpaperLayer();
   const WELCOME_FADE_MS = 900;
   const [welcomeFadeActive, setWelcomeFadeActive] = useState(false);
   const welcomeFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -5900,6 +5906,22 @@ export function SessionChat({
     !isNotFound &&
     (!hasChatContent || welcomeFadeActive || isTransitioningFromWelcome);
 
+  // The welcome wallpaper. When SessionLayout provides a root-level wallpaper
+  // layer we portal it in there so it spans the FULL session width (never
+  // squished into the chat panel when the side panel is open); otherwise it
+  // renders inline (mobile / standalone, where the chat panel is full width).
+  const welcomeWallpaper = shouldShowWelcomeOverlay ? (
+    <div
+      className={cn(
+        'absolute inset-0 z-0 pointer-events-none transition-opacity ease-out',
+        hasChatContent ? 'opacity-0' : 'opacity-100',
+      )}
+      style={{ transitionDuration: `${WELCOME_FADE_MS}ms` }}
+    >
+      <SessionWelcome />
+    </div>
+  ) : null;
+
   // While the session is still connecting / loading its content, render ONLY the
   // staged loader — never the session shell (header + input) at the same time.
   // Showing both reads as "loaded and loading at once" (the very contradiction
@@ -5915,21 +5937,24 @@ export function SessionChat({
   }
 
   return (
-    <div className="relative flex flex-col h-full bg-background" data-testid="session-chat">
+    <div
+      className={cn(
+        'relative flex flex-col h-full',
+        // Transparent in the welcome state so the root-level full-bleed wallpaper
+        // (portaled into SessionLayout) reads through; solid once real content
+        // takes over. Same base color either way, so non-welcome is unchanged.
+        shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+      )}
+      data-testid="session-chat"
+    >
       {/* Full-bleed welcome wallpaper — spans the entire session (behind header,
           messages, project selector, and chat input). Input renders as frosted
-          glass so the wallpaper reads through uninterrupted. */}
-      {shouldShowWelcomeOverlay && (
-        <div
-          className={cn(
-            'absolute inset-0 z-0 pointer-events-none transition-opacity ease-out',
-            hasChatContent ? 'opacity-0' : 'opacity-100',
-          )}
-          style={{ transitionDuration: `${WELCOME_FADE_MS}ms` }}
-        >
-          <SessionWelcome />
-        </div>
-      )}
+          glass so the wallpaper reads through uninterrupted. Portaled into
+          SessionLayout's root layer when present so it stays full width even
+          with the side panel open; falls back to inline otherwise. */}
+      {wallpaperLayer
+        ? welcomeWallpaper && createPortal(welcomeWallpaper, wallpaperLayer)
+        : welcomeWallpaper}
 
       {/* Session header — always mounted */}
       {!hideHeader && (

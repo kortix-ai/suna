@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
 
 /**
  * Running sandbox version.
@@ -134,12 +135,6 @@ const envSchema = z.object({
   // (authenticated portal activity) within this many minutes. Closing the tab
   // lets the pool reap, so we never hold idle boxes 24/7 for absent users.
   KORTIX_WARM_POOL_PRESENCE_MINUTES: optInt(15),
-  // Grace window (>= presence): after a user leaves, keep ONE parked box per
-  // project alive this long so their first click on return lands warm instead of
-  // cold, without paying to hold the full pool. The grace floor yields to active
-  // demand (skipped when the global pool is near its cap). 0 disables the floor
-  // (revert to reaping the whole pool at the presence cutoff).
-  KORTIX_WARM_POOL_GRACE_MINUTES:   optInt(45),
 
   // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
   // The new backend has no JustAVPS provider, but it must reach legacy VMs to
@@ -160,12 +155,11 @@ const envSchema = z.object({
   SLACK_CLIENT_ID:             optStr,
   SLACK_CLIENT_SECRET:         optStr,
   SLACK_REDIRECT_URI:          optStr,
-  // Must stay in sync with the Slack app manifest used during channel setup
-  // (slack-app-manifest.json / generateSlackManifest); anything narrower here
-  // means OAuth grants fewer scopes than the bot needs. 100% bot-token scopes —
-  // the integration never requests a user token (no user_scope= param), so this
-  // list intentionally contains no user scopes.
-  SLACK_OAUTH_SCOPES:          optStrDefault('app_mentions:read,assistant:write,bookmarks:read,bookmarks:write,calls:read,calls:write,canvases:read,canvases:write,channels:history,channels:join,channels:manage,channels:read,chat:write,chat:write.customize,chat:write.public,commands,conversations.connect:manage,conversations.connect:read,conversations.connect:write,dnd:read,emoji:read,files:read,files:write,groups:history,groups:read,groups:write,im:history,im:read,im:write,links.embed:write,links:read,links:write,lists:read,lists:write,metadata.message:read,mpim:history,mpim:read,mpim:write,pins:read,pins:write,reactions:read,reactions:write,reminders:read,reminders:write,remote_files:read,remote_files:share,remote_files:write,team.billing:read,team.preferences:read,team:read,usergroups:read,usergroups:write,users.profile:read,users:read,users:read.email,users:write,workflow.steps:execute'),
+  // Derived from the SINGLE scope source of truth (SLACK_BOT_SCOPES in
+  // channels/slack-manifest.ts) so OAuth always grants exactly what the manifest
+  // declares — no hand-synced drift. 100% bot-token scopes; the integration
+  // never requests a user token (no user_scope= param).
+  SLACK_OAUTH_SCOPES:          optStrDefault(SLACK_BOT_SCOPES.join(',')),
   // Optional banner image rendered at the top of the App Home tab. Must be a
   // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
   SLACK_HOME_HERO_URL:         optStr,
@@ -499,7 +493,6 @@ export const config = {
   KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
   KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
   KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
-  KORTIX_WARM_POOL_GRACE_MINUTES: env.KORTIX_WARM_POOL_GRACE_MINUTES,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
   JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,

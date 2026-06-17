@@ -447,8 +447,8 @@ adminApp.openapi(
       getProvider(oldProvider as any).remove(oldExternalId).catch((e: any) => console.warn('[migrate] old remove failed:', e?.message ?? e));
     }
     await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId));
-    const { kickProvisionOnOpen } = await import('../projects/routes/shared');
-    await kickProvisionOnOpen(
+    const { allocateRuntimeOnOpen } = await import('../projects/routes/shared');
+    await allocateRuntimeOnOpen(
       { row: proj as any, userId: sess.createdBy ?? '' },
       { sandboxProvider: target, baseRef: sess.baseRef, agentName: sess.agentName },
       sess.projectId, sessionId,

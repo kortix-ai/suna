@@ -107,7 +107,6 @@ export async function deliverPromptToSession(input: {
         agentName: projectSessions.agentName,
         opencodeSessionId: projectSessions.opencodeSessionId,
         accountId: projectSessions.accountId,
-        metadata: projectSessions.metadata,
       })
       .from(projectSessions)
       .where(eq(projectSessions.sessionId, sessionId))
@@ -168,7 +167,7 @@ async function postPrompt(
   const res = await forwardToSandbox(
     externalId,
     DAEMON_PORT,
-    userId,
+    { kind: 'principal', userId },
     'POST',
     `/session/${encodeURIComponent(opencodeSessionId)}/prompt_async`,
     `?directory=${encodeURIComponent(WORKSPACE)}`,

@@ -1,16 +1,34 @@
-import { and, desc, eq, inArray } from 'drizzle-orm';
-import { chatChannelBindings, chatInstalls, chatThreads, projects } from '@kortix/db';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { chatChannelBindings, chatInstalls, chatThreads, projectSessions, projects } from '@kortix/db';
 import { db } from '../../shared/db';
 import { config } from '../../config';
-import { escapeMrkdwn, formatRelativeTime, repoLabel, repoOgImage } from './util';
+import { escapeMrkdwn, formatRelativeTime, repoLabel, repoOgImage, respondViaUrl, sessionWebUrl } from './util';
+import {
+  RECOMMENDED_MODELS,
+  currentChannelSelection,
+  isValidModelId,
+  listProjectAgents,
+  modelLabel,
+  setChannelAgent,
+  setChannelModel,
+} from './selection';
 import type { SlashResponse } from './types';
+
+export interface SlashCtx {
+  teamId: string;
+  channelId: string;
+  command: string;
+  // Slack slash response_url — valid ~30 min / 5 uses. Used to post a deferred
+  // reply for subcommands too slow for the synchronous 3s window (agent list
+  // touches git). DB-only subcommands answer synchronously and ignore it.
+  responseUrl?: string;
+}
 
 export async function handleSlashCommand(
   sub: string,
   arg: string,
-  ctx: { teamId: string; channelId: string; command: string },
+  ctx: SlashCtx,
 ): Promise<SlashResponse> {
-  void arg; // reserved for future subcommands that take an argument
   switch (sub) {
     case 'projects':
     case 'list':
@@ -23,9 +41,23 @@ export async function handleSlashCommand(
       return slashUnbind(ctx);
     case 'sessions':
       return slashSessions(ctx);
+    case 'session':
+      return slashSession(ctx);
     case 'whoami':
     case 'who':
       return slashWhoami(ctx);
+    case 'agents':
+      return slashAgents(ctx, arg);
+    case 'agent':
+    case 'use-agent':
+    case 'set-agent':
+      return slashSetAgent(ctx, arg);
+    case 'models':
+      return slashModels(ctx);
+    case 'model':
+    case 'use-model':
+    case 'set-model':
+      return slashSetModel(ctx, arg);
     case 'help':
     case '':
       return slashHelp(ctx.command);
@@ -57,8 +89,13 @@ function slashHelp(command: string): SlashResponse {
         { cmd: `${command} projects`, desc: 'List every Kortix project connected to this workspace.' },
         { cmd: `${command} switch`,   desc: 'Bind this channel to a different project (opens a picker).' },
         { cmd: `${command} unbind`,   desc: 'Clear this channel\'s project binding.' },
+        { cmd: `${command} agents`,   desc: 'List this project\'s agents and pick which one answers here.' },
+        { cmd: `${command} agent <name>`, desc: 'Set the agent for this channel (`default` to reset).' },
+        { cmd: `${command} models`,   desc: 'List models and pick which one this channel uses.' },
+        { cmd: `${command} model <id>`, desc: 'Set the model, e.g. `anthropic/claude-opus-4-8` (`default` to reset).' },
+        { cmd: `${command} session`,  desc: 'Show this channel\'s most recent session + open it on the web.' },
         { cmd: `${command} sessions`, desc: 'Show the last 5 sessions started in this workspace.' },
-        { cmd: `${command} whoami`,   desc: 'What project is currently bound to this channel.' },
+        { cmd: `${command} whoami`,   desc: 'What project, agent, and model are set for this channel.' },
         { cmd: `${command} help`,     desc: 'This message.' },
       ].map((r) => ({
         type: 'section',
@@ -307,8 +344,9 @@ async function slashSessions(ctx: { teamId: string; channelId: string }): Promis
   };
 }
 
-async function slashWhoami(ctx: { teamId: string; channelId: string; command: string }): Promise<SlashResponse> {
-  const currentId = await currentChannelProjectId(ctx);
+async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
+  const selection = await currentChannelSelection(ctx);
+  const currentId = selection?.projectId ?? null;
   const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
   if (!currentId) {
     return {
@@ -341,6 +379,8 @@ async function slashWhoami(ctx: { teamId: string; channelId: string; command: st
     };
   }
   const og = repoOgImage(p.repoUrl);
+  const agentLabel = selection?.agentName ?? 'default';
+  const modelLabelText = selection?.opencodeModel ? modelLabel(selection.opencodeModel) : 'project default';
   const section: Record<string, unknown> = {
     type: 'section',
     text: {
@@ -353,6 +393,14 @@ async function slashWhoami(ctx: { teamId: string; channelId: string; command: st
     response_type: 'ephemeral',
     blocks: [
       section,
+      {
+        type: 'context',
+        elements: [
+          { type: 'mrkdwn', text: `🤖  Agent: *${escapeMrkdwn(agentLabel)}*` },
+          { type: 'mrkdwn', text: `🧠  Model: *${escapeMrkdwn(modelLabelText)}*` },
+          { type: 'mrkdwn', text: `Change with \`${ctx.command} agents\` · \`${ctx.command} models\`` },
+        ],
+      },
       {
         type: 'actions',
         elements: [
@@ -373,6 +421,227 @@ async function slashWhoami(ctx: { teamId: string; channelId: string; command: st
       },
     ],
   };
+}
+
+// ── Session (singular) ───────────────────────────────────────────────────────
+// The most recent session started FROM THIS CHANNEL (sessions stamp the Slack
+// channel into metadata.slack.channel), with a button to open it on the web.
+const SESSION_STATUS_EMOJI: Record<string, string> = {
+  queued: '🟡',
+  branching: '🟡',
+  provisioning: '🟡',
+  running: '🟢',
+  completed: '✅',
+  stopped: '⚪',
+  failed: '🔴',
+};
+
+async function slashSession(ctx: SlashCtx): Promise<SlashResponse> {
+  const selection = await currentChannelSelection(ctx);
+  if (!selection) {
+    return {
+      response_type: 'ephemeral',
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No project bound to this channel.*\nRun \`${ctx.command} switch\` to pick one, then \`@\`-mention me to start a session.` } }],
+    };
+  }
+  const [s] = await db
+    .select({
+      sessionId: projectSessions.sessionId,
+      status: projectSessions.status,
+      agentName: projectSessions.agentName,
+      createdAt: projectSessions.createdAt,
+    })
+    .from(projectSessions)
+    .where(and(
+      eq(projectSessions.projectId, selection.projectId),
+      sql`${projectSessions.metadata}->'slack'->>'channel' = ${ctx.channelId}`,
+    ))
+    .orderBy(desc(projectSessions.createdAt))
+    .limit(1);
+  if (!s) {
+    return {
+      response_type: 'ephemeral',
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No sessions started in this channel yet.*\n\`@\`-mention me to start one.` } }],
+    };
+  }
+  const url = sessionWebUrl(config.KORTIX_URL, selection.projectId, s.sessionId);
+  const emoji = SESSION_STATUS_EMOJI[s.status] ?? '•';
+  return {
+    response_type: 'ephemeral',
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `${emoji}  *Latest session in this channel*  ·  ${formatRelativeTime(s.createdAt)}\nStatus: \`${s.status}\`  ·  Agent: \`${escapeMrkdwn(s.agentName)}\``,
+        },
+      },
+      {
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: { type: 'plain_text', text: 'Open session ↗', emoji: true },
+            style: 'primary',
+            url,
+            action_id: 'session_open',
+          },
+        ],
+      },
+    ],
+  };
+}
+
+// ── Agents ───────────────────────────────────────────────────────────────────
+
+async function slashAgents(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
+  // `/kortix agents <name>` is a convenient alias for setting the agent.
+  if (arg.trim()) return slashSetAgent(ctx, arg);
+
+  const selection = await currentChannelSelection(ctx);
+  if (!selection) {
+    return {
+      response_type: 'ephemeral',
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No project bound to this channel.*\nRun \`${ctx.command} switch\` first, then pick an agent.` } }],
+    };
+  }
+  // Listing agents touches git — too slow for the synchronous 3s window. Ack
+  // immediately and post the real picker to the response_url.
+  void (async () => {
+    let agents: Awaited<ReturnType<typeof listProjectAgents>> = [];
+    try {
+      agents = await listProjectAgents(selection.projectId);
+    } catch (err) {
+      console.warn('[slack-webhook] listProjectAgents failed', err);
+    }
+    await respondViaUrl(ctx.responseUrl, {
+      response_type: 'ephemeral',
+      replace_original: true,
+      blocks: buildAgentPickerBlocks(ctx, selection.agentName, agents),
+    });
+  })();
+  return { response_type: 'ephemeral', text: 'Loading agents…' };
+}
+
+function buildAgentPickerBlocks(
+  ctx: SlashCtx,
+  currentAgent: string | null,
+  agents: Array<{ name: string; description: string | null }>,
+): Array<Record<string, unknown>> {
+  // `default` is the always-available implicit agent. Listed first.
+  const rows: Array<{ name: string; description: string | null }> = [
+    { name: 'default', description: 'The project\'s default agent.' },
+    ...agents.filter((a) => a.name !== 'default'),
+  ];
+  const current = currentAgent ?? 'default';
+  const blocks: Array<Record<string, unknown>> = [
+    { type: 'header', text: { type: 'plain_text', text: 'Agents', emoji: true } },
+    { type: 'context', elements: [{ type: 'mrkdwn', text: `Pick which agent answers in this channel. Current: *${escapeMrkdwn(current)}*` }] },
+  ];
+  for (const a of rows) {
+    const isCurrent = a.name === current;
+    const value = JSON.stringify({ c: ctx.channelId, a: a.name === 'default' ? '' : a.name });
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `${isCurrent ? '✓ ' : ''}*${escapeMrkdwn(a.name)}*${a.description ? `\n_${escapeMrkdwn(a.description.slice(0, 140))}_` : ''}` },
+      accessory: {
+        type: 'button',
+        text: { type: 'plain_text', text: isCurrent ? '✓ Current' : 'Use this', emoji: true },
+        style: isCurrent ? undefined : 'primary',
+        action_id: `set_agent_${a.name === 'default' ? 'default' : a.name}`.slice(0, 250),
+        value,
+      },
+    });
+  }
+  return blocks;
+}
+
+async function slashSetAgent(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
+  const name = arg.trim();
+  if (!name) {
+    return { response_type: 'ephemeral', text: `Usage: \`${ctx.command} agent <name>\` (or \`${ctx.command} agents\` to pick).` };
+  }
+  const selection = await currentChannelSelection(ctx);
+  if (!selection) {
+    return { response_type: 'ephemeral', text: `Bind a project first with \`${ctx.command} switch\`.` };
+  }
+  const value = name.toLowerCase() === 'default' ? null : name;
+  const ok = await setChannelAgent(ctx, value);
+  if (!ok) {
+    return { response_type: 'ephemeral', text: `Bind a project first with \`${ctx.command} switch\`.` };
+  }
+  return {
+    response_type: 'ephemeral',
+    text: value ? `Agent for this channel set to *${escapeMrkdwn(value)}*. New sessions will use it.` : 'Agent reset to the project default.',
+  };
+}
+
+// ── Models ───────────────────────────────────────────────────────────────────
+
+async function slashModels(ctx: SlashCtx): Promise<SlashResponse> {
+  const selection = await currentChannelSelection(ctx);
+  if (!selection) {
+    return {
+      response_type: 'ephemeral',
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No project bound to this channel.*\nRun \`${ctx.command} switch\` first, then pick a model.` } }],
+    };
+  }
+  const current = selection.opencodeModel;
+  const blocks: Array<Record<string, unknown>> = [
+    { type: 'header', text: { type: 'plain_text', text: 'Models', emoji: true } },
+    { type: 'context', elements: [{ type: 'mrkdwn', text: `Pick a model for this channel. Current: *${current ? escapeMrkdwn(modelLabel(current)) : 'project default'}*` }] },
+  ];
+  // "Project default" clears the override.
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: `${current ? '' : '✓ '}*Project default*\n_Whatever the repo's opencode config sets._` },
+    accessory: {
+      type: 'button',
+      text: { type: 'plain_text', text: current ? 'Reset' : '✓ Current', emoji: true },
+      style: current ? 'primary' : undefined,
+      action_id: 'set_model_default',
+      value: JSON.stringify({ c: ctx.channelId, m: '' }),
+    },
+  });
+  for (const m of RECOMMENDED_MODELS) {
+    const isCurrent = current === m.id;
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `${isCurrent ? '✓ ' : ''}*${escapeMrkdwn(m.label)}*  ·  _${escapeMrkdwn(m.hint)}_\n\`${escapeMrkdwn(m.id)}\`` },
+      accessory: {
+        type: 'button',
+        text: { type: 'plain_text', text: isCurrent ? '✓ Current' : 'Use this', emoji: true },
+        style: isCurrent ? undefined : 'primary',
+        action_id: `set_model_${m.id}`.slice(0, 250),
+        value: JSON.stringify({ c: ctx.channelId, m: m.id }),
+      },
+    });
+  }
+  blocks.push({
+    type: 'context',
+    elements: [{ type: 'mrkdwn', text: `Any model works: \`${ctx.command} model provider/model-id\` (availability depends on your project's connected providers).` }],
+  });
+  return { response_type: 'ephemeral', blocks };
+}
+
+async function slashSetModel(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
+  const id = arg.trim();
+  if (!id) return slashModels(ctx);
+  const selection = await currentChannelSelection(ctx);
+  if (!selection) {
+    return { response_type: 'ephemeral', text: `Bind a project first with \`${ctx.command} switch\`.` };
+  }
+  if (id.toLowerCase() === 'default') {
+    const ok = await setChannelModel(ctx, null);
+    if (!ok) return { response_type: 'ephemeral', text: `Bind a project first with \`${ctx.command} switch\`.` };
+    return { response_type: 'ephemeral', text: 'Model reset to the project default.' };
+  }
+  if (!isValidModelId(id)) {
+    return { response_type: 'ephemeral', text: `\`${escapeMrkdwn(id)}\` doesn't look like a model id. Use \`provider/model\`, e.g. \`anthropic/claude-opus-4-8\`.` };
+  }
+  const ok = await setChannelModel(ctx, id);
+  if (!ok) return { response_type: 'ephemeral', text: `Bind a project first with \`${ctx.command} switch\`.` };
+  return { response_type: 'ephemeral', text: `Model for this channel set to *${escapeMrkdwn(modelLabel(id))}* (\`${escapeMrkdwn(id)}\`). New sessions will use it.` };
 }
 
 export async function listWorkspaceProjects(teamId: string): Promise<Array<{ projectId: string; name: string; repoUrl: string }>> {

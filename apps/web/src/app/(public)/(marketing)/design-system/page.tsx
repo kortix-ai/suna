@@ -328,19 +328,19 @@ const LOGO_ASSETS: LogoAsset[] = [
     dark: true,
   },
   {
-    id: 'wordmark-black',
-    label: 'Wordmark',
+    id: 'logo-black',
+    label: 'Logo',
     variant: 'Black',
-    svgSrc: '/brandkit/Logo/Wordmark/SVG/Wordmark Black.svg',
-    pngSrc: '/brandkit/Logo/Wordmark/PNG/Wordmark Black.png',
+    svgSrc: '/brandkit/Logo/Logomark/SVG/Logomark Black.svg',
+    pngSrc: '/brandkit/Logo/Logomark/PNG/Logomark Black.png',
     dark: false,
   },
   {
-    id: 'wordmark-white',
-    label: 'Wordmark',
+    id: 'logo-white',
+    label: 'Logo',
     variant: 'White',
-    svgSrc: '/brandkit/Logo/Wordmark/SVG/Wordmark White.svg',
-    pngSrc: '/brandkit/Logo/Wordmark/PNG/Wordmark White.png',
+    svgSrc: '/brandkit/Logo/Logomark/SVG/Logomark White.svg',
+    pngSrc: '/brandkit/Logo/Logomark/PNG/Logomark White.png',
     dark: true,
   },
 ];
@@ -635,7 +635,7 @@ function Hex({ value }: { value: string }) {
 }
 
 function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
-  const isWordmark = asset.label === 'Wordmark';
+  const isWide = asset.label !== 'Symbol';
   const downloadHref = fmt === 'png' ? asset.pngSrc : asset.svgSrc;
   const downloadName = `kortix-${asset.label.toLowerCase()}-${asset.variant.toLowerCase()}.${fmt}`;
 
@@ -644,7 +644,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
       <div
         className={cn(
           'relative flex aspect-[3/2] items-center justify-center overflow-hidden rounded-lg transition-colors',
-          isWordmark ? 'px-6 py-8' : 'p-10',
+          isWide ? 'px-6 py-8' : 'p-10',
           asset.dark
             ? 'border border-white/[0.06] bg-neutral-950'
             : 'border bg-white ring-black/[0.06]',
@@ -656,7 +656,7 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
           alt={`Kortix ${asset.label} ${asset.variant}`}
           className={cn(
             'object-contain',
-            isWordmark ? 'max-h-8 w-full md:max-h-10' : 'max-h-10 w-auto md:max-h-12',
+            isWide ? 'max-h-8 w-full md:max-h-10' : 'max-h-10 w-auto md:max-h-12',
           )}
         />
 
@@ -673,6 +673,43 @@ function LogoCard({ asset, fmt }: { asset: LogoAsset; fmt: LogoFormat }) {
 
       <div className="mt-2 flex items-baseline gap-1.5 px-0.5">
         <span className="text-foreground text-xs font-medium">{asset.label}</span>
+        <span className="text-muted-foreground font-mono text-xs">{asset.variant}</span>
+      </div>
+    </div>
+  );
+}
+
+function SocialCard({ asset }: { asset: SocialAsset }) {
+  const downloadName = `kortix-avatar-${asset.variant.toLowerCase()}.png`;
+
+  return (
+    <div className="group relative">
+      <div
+        className={cn(
+          'relative aspect-square overflow-hidden rounded-lg',
+          asset.dark ? 'border border-white/[0.06]' : 'border ring-black/[0.06]',
+        )}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={asset.pngSrc}
+          alt={`Kortix avatar ${asset.variant}`}
+          className="size-full object-cover"
+        />
+
+        <a
+          href={asset.pngSrc}
+          download={downloadName}
+          className="absolute inset-0 flex cursor-pointer items-center justify-center rounded-lg bg-black/[0.04] opacity-0 transition-opacity group-hover:opacity-100 dark:bg-white/[0.04]"
+        >
+          <span className="bg-background ring-border flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium shadow-sm ring-1">
+            <Download className="size-3" /> PNG
+          </span>
+        </a>
+      </div>
+
+      <div className="mt-2 flex items-baseline gap-1.5 px-0.5">
+        <span className="text-foreground text-xs font-medium">Avatar</span>
         <span className="text-muted-foreground font-mono text-xs">{asset.variant}</span>
       </div>
     </div>
@@ -1038,6 +1075,23 @@ export default function BrandPage() {
                   'appHomeDesignSystemPage.line739JsxTextTPracticalNeverStretchRotateOrRecolorIt',
                 )}
               </p>
+
+              {/* Social avatars — symbol centred on a solid field, square 1:1 */}
+              <div className="mt-10">
+                <h3 className="text-muted-foreground mb-5 text-xs tracking-widest uppercase">
+                  Social Avatar
+                </h3>
+                <p className="text-muted-foreground mb-6 text-base leading-relaxed">
+                  The symbol centred on a solid field, square 1:1 — drop it straight into a profile
+                  picture or social handle. Hover to download the ready-made PNG (1000&times;1000,
+                  &lt;1&nbsp;MB).
+                </p>
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                  {SOCIAL_ASSETS.map((a) => (
+                    <SocialCard key={a.id} asset={a} />
+                  ))}
+                </div>
+              </div>
             </section>
 
             <section id="colors">

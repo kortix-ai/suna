@@ -73,6 +73,8 @@ export interface SlackEvent {
 
 export interface SlackInteractionPayload {
   type: string;
+  // Present on shortcuts / message actions (type === 'message_action').
+  callback_id?: string;
   team?: { id: string };
   user?: { id: string };
   channel?: { id: string };

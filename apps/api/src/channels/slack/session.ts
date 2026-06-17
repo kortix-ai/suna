@@ -4,6 +4,7 @@ import { db } from '../../shared/db';
 import { createProjectSession, resolveGitTriggerActor } from '../../projects';
 import { deliverPromptToSession } from '../../projects/session-delivery';
 import { EVENT_DEDUPE_TTL_MS } from './app';
+import { currentChannelSelection } from './selection';
 import { buildSlackTurnEnv, finalizeTurn, saveTurn, startTurn } from './turn';
 import type { SlackEnvelope, SlackEvent } from './types';
 
@@ -77,12 +78,19 @@ export async function createOrJoinThreadSession(input: {
 
   const handle = await startTurn(projectId, teamId, event, 'Spinning up a sandbox');
 
+  // Per-channel agent + model overrides (set via `/kortix agents` / `models`).
+  // Null/unset falls back to the project's default agent and configured model.
+  const selection = event.channel
+    ? await currentChannelSelection({ teamId, channelId: event.channel })
+    : null;
+
   const result = await createProjectSession({
     project,
     userId,
     body: {
       base_ref: project.defaultBranch,
-      agent_name: 'default',
+      agent_name: selection?.agentName ?? 'default',
+      ...(selection?.opencodeModel ? { opencode_model: selection.opencodeModel } : {}),
       initial_prompt: renderAgentPrompt(envelope, event, revived),
     },
     enforceAccountCap: false,
@@ -197,13 +205,13 @@ const TURN_INSTRUCTIONS = [
   '- When the PREVIOUS step finished with a result, surface it:',
   '    slack step "Drafting summary" --output "Found 3 incidents, 1 P0"',
   '  Add `--source URL|TITLE` (repeatable) to cite the URLs you used.',
-  '- **Need to ask the user something? In Slack a question is just a message.**',
-  '  Post your question with `slack send` (lay out the choices as a short list, or a',
-  '  Block Kit message with bullets), then END your turn. The user\'s reply arrives as',
-  '  a normal follow-up message — you receive it as the NEXT turn, with full context,',
-  '  and continue from there. Slack threads are async: ask, stop, resume when they reply.',
-  '  Do NOT use the built-in `question` tool on a Slack turn — it is a synchronous,',
-  '  blocking construct for the web UI; in a Slack thread it just stalls the turn.',
+  '- **Need to ask the user something? Use `slack send`, then END your turn.** Slack',
+  '  questions are async: ask, stop, and resume when they reply — their reply arrives as',
+  '  a fresh turn with full context. The built-in `question` tool is DISABLED in Slack',
+  '  (it is a synchronous web-UI construct with no answerer in a thread); calling it just',
+  '  fails. Post your question with `slack send` — plain text, or a Block Kit message; for',
+  '  discrete choices add an `actions` block of buttons and a click resumes the thread on',
+  '  the next turn. Never sit waiting for an answer inside a turn.',
   '- Deliver the answer as a rich Block Kit message whenever the response',
   '  benefits from structure (headers, sections, lists, links, bullets):',
   '    slack send --text "fallback summary" --blocks-file /tmp/answer.json',

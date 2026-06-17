@@ -14,7 +14,7 @@ import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExp
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, isProjectRole, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
 import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
-import { kickProvisionOnOpen, resumeStoppedSandbox, syncOpencodeSessionsHandler } from './shared';
+import { syncOpencodeSessionsHandler } from './shared';
 
 projectsApp.openapi(
   createRoute({

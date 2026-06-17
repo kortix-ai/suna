@@ -22,7 +22,6 @@ import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-event
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { isBillingEnabled } from '@/lib/config';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
-import { cn } from '@/lib/utils';
 import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
 import {
   getProjectDetail,
@@ -32,6 +31,7 @@ import {
   syncOpencodeSessionData,
 } from '@/lib/projects-client';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
+import { cn } from '@/lib/utils';
 import {
   markProvisioningVerified,
   markRuntimeReadyVerified,
@@ -295,9 +295,7 @@ export default function ProjectSessionPage() {
               chatReady ? 'pointer-events-none opacity-0' : 'opacity-100',
             )}
           >
-            <SessionStartingLoader
-              stage={authLoading || !user ? 'provisioning' : startStage}
-            />
+            <SessionStartingLoader stage={authLoading || !user ? 'provisioning' : startStage} />
           </div>
         )}
       </div>
@@ -387,11 +385,21 @@ function ActiveSessionChat({
 
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId, sessionId),
+    onMutate: () => {
+      queryClient.setQueryData(sessionStartKey(projectId, sessionId), {
+        stage: 'provisioning',
+        retriable: true,
+        sandbox: null,
+        opencode_session_id: null,
+        reason: 'restart_requested',
+      });
+    },
     onSuccess: () => {
       // Restart tears down the runtime: re-enable the one-shot ensure for the
       // (new) sandbox and drop the now-stale OpenCode caches.
       clearOpencodeEnsureGuard();
       queryClient.removeQueries({ queryKey: ['opencode'] });
+      queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
       queryClient.invalidateQueries({
         queryKey: ['project', 'session-sandbox', projectId, sessionId],
       });
@@ -458,9 +466,7 @@ function ActiveSessionChat({
   // to render (so the error replaces the loader smoothly too). setState in the
   // parent is idempotent, so re-firing on re-render is a harmless no-op.
   const chatShowable =
-    (!!chatSessionId && runtimeReady) ||
-    !!runtimeError ||
-    (!runtimeReady && !!runtimeBootError);
+    (!!chatSessionId && runtimeReady) || !!runtimeError || (!runtimeReady && !!runtimeBootError);
   useEffect(() => {
     if (chatShowable) onChatReady?.();
   }, [chatShowable, onChatReady]);
@@ -588,7 +594,12 @@ function ActiveSessionChat({
   // mounts exactly once per session and only remounts on a genuine session switch,
   // so the optimistic first-message bubble + in-flight send are never torn down.
   return (
-    <SessionLayout key={chatSessionId} sessionId={chatSessionId}>
+    <SessionLayout
+      key={chatSessionId}
+      sessionId={chatSessionId}
+      projectId={projectId}
+      projectSessionId={sessionId}
+    >
       <SessionChat key={chatSessionId} sessionId={chatSessionId} />
     </SessionLayout>
   );
