@@ -4,6 +4,7 @@ import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
 import { getBackend, managedGithubInstallId, managedGithubToken, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
+import { mintCodeStorageGitToken } from '../git-backends/code-storage';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
 import { decryptProjectSecret, encryptProjectSecret } from '../secrets';
 import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
@@ -408,6 +409,28 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
   authSource: 'app_installation' | 'pat' | 'managed' | 'project_credential' | 'none';
 }> {
   const remote = getProjectGitRemote(project, await getProjectGitConnection(project.projectId));
+
+  // Managed code.storage: mint a fresh repo-scoped git JWT (self-signed, no
+  // network). Used by host-side git that can't self-sign per-request — the
+  // mirror (file viewer / prebuild) and the direct-mode clone-credential. The
+  // proxy path doesn't rely on this (its buildUpstream self-signs).
+  if (remote.provider === 'codestorage') {
+    let repoId = remote.repoName;
+    if (!repoId) {
+      try {
+        repoId = new URL(remote.upstreamUrl ?? project.repoUrl).pathname.replace(/^\/+/, '').replace(/\.git$/, '');
+      } catch {
+        repoId = null;
+      }
+    }
+    if (!repoId) return { authSource: 'none' };
+    try {
+      return { auth: { token: mintCodeStorageGitToken(repoId, 'write'), source: 'managed' }, authSource: 'managed' };
+    } catch (err) {
+      console.warn(`[projects] failed to mint code.storage token for ${project.projectId}:`, err);
+      return { authSource: 'none' };
+    }
+  }
 
   // Managed GitHub repos (Kortix-provisioned, under the managed org). Two
   // server-side credential models:

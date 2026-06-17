@@ -26,6 +26,10 @@ export interface KortixProject {
   account_id: string;
   name: string;
   repo_url: string;
+  /** Client-facing git origin. When the Kortix git proxy is on, this is the
+   *  proxy URL (`…/v1/git/<projectId>.git`) you clone with a Kortix token —
+   *  the real upstream (`repo_url`) is never directly reachable by users. */
+  git_origin_url?: string;
   default_branch: string;
   manifest_path: string;
   status: 'active' | 'archived';

@@ -114,6 +114,16 @@ const envSchema = z.object({
   // over the GitHub App for managed-org admin ops (create/delete repo, invite
   // collaborator). Leave blank to use the App installation instead.
   MANAGED_GIT_GITHUB_TOKEN:        optStr,
+  // code.storage (Pierre) managed backend (apps/api/src/projects/git-backends/code-storage.md).
+  // Real git repos behind customer-signed ES256 JWTs — we hold the private key,
+  // code.storage verifies with the public key registered in the Pierre Admin
+  // Panel. _ORG is the org slug (the JWT `iss` + the `<org>.code.storage`
+  // subdomain); _PRIVATE_KEY is the EC P-256 PEM. _API_URL / _GIT_HOST override
+  // the derived `https://api.<org>.code.storage` / `<org>.code.storage` hosts.
+  MANAGED_GIT_CODESTORAGE_ORG:         optStr,
+  MANAGED_GIT_CODESTORAGE_PRIVATE_KEY: optStr,
+  MANAGED_GIT_CODESTORAGE_API_URL:     optStr,
+  MANAGED_GIT_CODESTORAGE_GIT_HOST:    optStr,
   // When true, runtime clients (sandbox + `kortix` CLI) use the Kortix git
   // proxy as their git origin (auth = KORTIX_TOKEN) instead of the real host —
   // so a real GitHub credential never reaches a sandbox. Requires a
@@ -486,6 +496,10 @@ export const config = {
   MANAGED_GIT_GITHUB_OWNER: env.MANAGED_GIT_GITHUB_OWNER,
   MANAGED_GIT_GITHUB_INSTALL_ID: env.MANAGED_GIT_GITHUB_INSTALL_ID,
   MANAGED_GIT_GITHUB_TOKEN: env.MANAGED_GIT_GITHUB_TOKEN,
+  MANAGED_GIT_CODESTORAGE_ORG: env.MANAGED_GIT_CODESTORAGE_ORG,
+  MANAGED_GIT_CODESTORAGE_PRIVATE_KEY: env.MANAGED_GIT_CODESTORAGE_PRIVATE_KEY,
+  MANAGED_GIT_CODESTORAGE_API_URL: env.MANAGED_GIT_CODESTORAGE_API_URL,
+  MANAGED_GIT_CODESTORAGE_GIT_HOST: env.MANAGED_GIT_CODESTORAGE_GIT_HOST,
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
   KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
