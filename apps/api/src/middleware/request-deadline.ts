@@ -35,7 +35,7 @@ import { HTTPException } from 'hono/http-exception';
 // because each individual statement is fast — it's the unbounded FIFO wait in
 // front of the pool that grows. A wall-clock deadline is the only layer that
 // bounds the *total* wait. Long synchronous operations (provision, session
-// create/wake, deployments, migrations, webhooks) are enumerated below as
+// create/start, deployments, migrations, webhooks) are enumerated below as
 // exemptions; everything else answers a browser whose own abort fires at 30s,
 // so a 25s server bound changes nothing for successful requests and turns
 // eternal hangs into clean, retryable 503s.
@@ -75,7 +75,7 @@ const EXEMPT_FRAGMENTS = [
   '/provision-stream',
   '/provision',               // managed repo create + sandbox boot
   '/start',                   // unified session open: provision/resume + pin
-                              // resolve (replaces /wake + /ensure-opencode)
+                              // resolve
   '/commit-push',             // host-driven git commit+push
   '/deployments',             // app deploys (build + upload)
   '/snapshots',               // sandbox template builds

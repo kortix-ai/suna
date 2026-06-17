@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   Check,
   ChevronDown,
@@ -17,10 +17,10 @@ import { Label } from '@/components/ui/label';
 import { SectionCard } from '@/components/ui/section-card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
-import { getEnv } from '@/lib/env-config';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
 import {
   useSlackInstall,
+  useSlackManifest,
   useSlackMode,
   useConnectSlack,
   useDisconnectSlack,
@@ -221,12 +221,13 @@ function SelfInstall({ projectId }: { projectId: string }) {
   const [signingSecret, setSigningSecret] = useState('');
   const [error, setError] = useState<string | null>(null);
   const connect = useConnectSlack();
+  const manifest = useSlackManifest(projectId);
 
-  const manifest = useMemo(() => buildSlackManifest(projectId), [projectId]);
+  const manifestText = manifest.data ?? '';
 
   const copyManifest = async () => {
-    if (!manifest) return;
-    await navigator.clipboard.writeText(manifest);
+    if (!manifestText) return;
+    await navigator.clipboard.writeText(manifestText);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -260,6 +261,7 @@ function SelfInstall({ projectId }: { projectId: string }) {
                 variant="ghost"
                 size="sm"
                 onClick={copyManifest}
+                disabled={!manifestText}
                 className="h-7 gap-1.5"
               >
                 {copied ? (
@@ -283,7 +285,11 @@ function SelfInstall({ projectId }: { projectId: string }) {
             </div>
           </div>
           <pre className="max-h-64 overflow-auto rounded-2xl border border-border bg-muted/30 p-3 text-xs leading-relaxed">
-            {manifest}
+            {manifest.isLoading
+              ? 'Loading manifest...'
+              : manifest.error
+                ? `Failed to load manifest: ${(manifest.error as Error).message}`
+                : manifestText}
           </pre>
         </div>
 
@@ -375,73 +381,4 @@ function SelfInstall({ projectId }: { projectId: string }) {
       </div>
     </div>
   );
-}
-
-function buildSlackManifest(projectId: string): string {
-  const env = getEnv();
-  // Slack must reach this webhook from the public internet. Prefer the public API
-  // origin (WEBHOOK_BASE_URL — the dev Cloudflare tunnel locally, the real API
-  // origin in prod), because BACKEND_URL in local dev is intentionally localhost
-  // so the BROWSER talks to the API directly. Normalize to the ORIGIN: strip a
-  // trailing slash AND a trailing `/v1`, so either `https://host` or
-  // `https://host/v1` yields a single `/v1/webhooks/...` (was producing
-  // `/v1/v1/webhooks/...` when the base ended in /v1).
-  const apiOrigin = (env.WEBHOOK_BASE_URL || env.BACKEND_URL || '')
-    .replace(/\/+$/, '')
-    .replace(/\/v1$/, '');
-  const requestUrl = apiOrigin
-    ? `${apiOrigin}/v1/webhooks/slack/${projectId}`
-    : `<set BACKEND_URL in env>/v1/webhooks/slack/${projectId}`;
-  const manifest = {
-    display_information: {
-      name: 'Kortix',
-      description: 'Run a Kortix project from Slack',
-      background_color: '#0a0a0a',
-    },
-    features: { bot_user: { display_name: 'kortix', always_online: true } },
-    oauth_config: {
-      scopes: {
-        bot: [
-          'app_mentions:read',
-          'channels:history',
-          'channels:read',
-          'channels:join',
-          'chat:write',
-          'chat:write.public',
-          'files:read',
-          'files:write',
-          'groups:history',
-          'groups:read',
-          'im:history',
-          'im:read',
-          'im:write',
-          'mpim:history',
-          'mpim:read',
-          'reactions:read',
-          'reactions:write',
-          'users:read',
-        ],
-      },
-    },
-    settings: {
-      event_subscriptions: {
-        request_url: requestUrl,
-        bot_events: [
-          'app_mention',
-          'message.im',
-          'message.channels',
-          'message.groups',
-          'message.mpim',
-          'reaction_added',
-          'reaction_removed',
-          'member_joined_channel',
-          'file_shared',
-        ],
-      },
-      org_deploy_enabled: false,
-      socket_mode_enabled: false,
-      token_rotation_enabled: false,
-    },
-  };
-  return JSON.stringify(manifest, null, 2);
 }

@@ -1,9 +1,9 @@
-Session reliability, Slack polish, and shareable previews
+Slack webhook reliability and unified invocation engine
 
-**Sessions** — more reliable runtime recovery and a refactored session lifecycle; terminal PTYs are now isolated per session; session branches are local-first and publish to origin lazily; the show tool fills the Actions panel height; the welcome wallpaper stays full-width when the side panel is open.
+**Slack** — fixed the dev/prod stuck-hourglass path by shipping the Slack schema/runtime hotfix and preserving canonical + bring-your-own webhook parity.
 
-**Browser & sharing** — the browser preview stays mounted across panel switches; added public preview and file share links; Chromium for agent-browser is now baked into every session image.
+**Invocation lifecycle** — reapplied the unified session invocation engine so Slack, manual triggers, cron, webhooks, CLI, mobile, and web session creation share the same durable lifecycle path.
 
-**Slack** — clearer channel intro and App Home copy; unified canonical + bring-your-own into one manifest builder with per-project parity; the question tool no longer auto-answers outside Slack and is disabled in-thread.
+**Triggers** — webhook/manual/cron trigger fires now use durable queued invocation semantics under backpressure and record accepted queued fires in trigger runtime state.
 
-**Web** — restored social avatar downloads and the full logo; added a /game-of-life page seeded from the Kortix logo.
+**Verification** — dev API is serving `0.9.57-dev.845b5eda`; `/v1/health` sampled cleanly; Slack canonical route rejects unsigned requests with 401; BYO manifest emits production/dev API webhook URLs correctly; trigger E2E and API typecheck passed before merge.

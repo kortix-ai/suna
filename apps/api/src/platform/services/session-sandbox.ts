@@ -186,18 +186,14 @@ export async function provisionSessionSandbox(opts: {
   ) {
     if (opts.projectWarmSnapshot) {
       try {
-        const { getDaytonaWarm, warmSnapshotsEnabled } = await import('../../shared/daytona');
+        const { warmSnapshotsEnabled } = await import('../../shared/daytona');
         if (warmSnapshotsEnabled()) {
-          const { warmBaseUsable } = await import('../../snapshots/warm-bake');
-          // Bound the provider lookup — a degraded region must not hang the
-          // (request-blocking) provision path waiting on snapshot.get.
-          const snap = await Promise.race([
-            getDaytonaWarm().snapshot.get(opts.projectWarmSnapshot),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('snapshot.get timeout')), 4_000),
-            ),
-          ]);
-          if (warmBaseUsable(snap)) {
+          // Cached + bounded + region-keyed (warmSnapshotUsableCached): a warm hit
+          // is a pure in-process check, and a degraded region times out in 4s AND
+          // pauses the warm path — so the generic-base lookup below short-circuits
+          // instead of paying a SECOND serial probe on the request-blocking path.
+          const { warmSnapshotUsableCached } = await import('../../snapshots/warm-bake');
+          if (await warmSnapshotUsableCached(opts.projectWarmSnapshot)) {
             warmBase = opts.projectWarmSnapshot;
             warmIsProjectSnapshot = true;
           }
