@@ -87,8 +87,6 @@ export default async function ComparePage(props: PageProps) {
   const c = COMPETITORS.find((x) => x.slug === slug);
   if (!c) notFound();
 
-  const others = COMPETITORS.filter((x) => x.slug !== c.slug);
-
   const faqSchema = {
     '@context': 'https://schema.org',
     '@type': 'FAQPage',
@@ -176,11 +174,13 @@ export default async function ComparePage(props: PageProps) {
           <div className="grid grid-cols-[1.3fr_1fr_1fr] sm:grid-cols-[1.2fr_1fr_1fr]">
             <div className="px-2.5 pb-4 sm:px-5" />
             <div className="flex items-end px-2.5 pb-4 sm:px-5">
-              <span className="text-muted-foreground text-xs font-medium sm:text-sm">{c.name}</span>
+              <span className="text-muted-foreground text-sm font-medium sm:text-base">
+                {c.name}
+              </span>
             </div>
             <div className="bg-foreground flex items-center gap-2 rounded-t-2xl px-2.5 pt-5 pb-4 shadow-sm sm:px-5">
               <KortixLogo size={15} variant="logomark" className="text-background" />
-              <span className="text-background text-xs font-medium sm:text-sm">Kortix</span>
+              {/* <span className="text-background text-xs font-medium sm:text-sm">Kortix</span> */}
             </div>
 
             {c.rows.map((row, i) => {

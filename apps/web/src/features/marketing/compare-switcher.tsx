@@ -49,10 +49,14 @@ export function CompareSwitcher({
           aria-label={`Comparing Kortix with ${current.name}. Change competitor`}
           className="group inline-flex items-center gap-2 px-3 py-1 transition-colors outline-none focus-within:ring-0 focus-within:outline-none focus:outline-none focus-visible:ring-0 focus-visible:outline-none sm:gap-3 sm:px-4 sm:py-1.5"
         >
+          <span className="[&_svg]:size-16">{compareIcon(current.slug)}</span>
           <span className="text-foreground">{current.name}</span>
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-72 p-1.5 bg-sidebar/10 backdrop-blur-xl">
+      <DropdownMenuContent
+        align="start"
+        className="border-border/50 bg-background/70 supports-backdrop-filter:bg-background/50 dark:bg-background/60 w-72 rounded-xl p-1.5 shadow-xl shadow-black/10 backdrop-blur-2xl"
+      >
         {options.map((opt) => {
           const active = opt.slug === current.slug;
           return (
