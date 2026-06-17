@@ -1,0 +1,243 @@
+name: Emergency Hotfix to Production
+
+# Break-glass production hotfix. This bypasses the full release gate, but not all
+# safety: a production-hotfix environment approval, explicit typed acknowledgement,
+# fast tests, and exact dev-<sha> images are required before pushing prod. The
+# push to prod triggers deploy-prod.yml, so release tagging/deploy stays centralized.
+#
+# Repo setup required:
+# - Create a GitHub Environment named production-hotfix with required reviewers.
+# - If prod branch protection blocks GITHUB_TOKEN pushes, add PROD_HOTFIX_TOKEN
+#   as a fine-grained token allowed to bypass protection for emergency use.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Hotfix ref/SHA to publish"
+        required: true
+        default: main
+        type: string
+      version:
+        description: "Version to publish, X.Y.Z. Blank bumps prod patch by 1."
+        required: false
+        type: string
+      title:
+        description: "Release title"
+        required: true
+        type: string
+      notes:
+        description: "Release notes / incident summary"
+        required: true
+        type: string
+      reason:
+        description: "Why this bypasses the full release gate"
+        required: true
+        type: string
+      surfaces:
+        description: "Comma list of images to rebuild: api,gateway,frontend. Default builds all."
+        required: false
+        default: api,gateway,frontend
+        type: string
+      run_integration:
+        description: "Run Docker-backed integration tests before deploy"
+        required: true
+        default: true
+        type: boolean
+      confirm:
+        description: "Type HOTFIX PROD to confirm this can push prod"
+        required: true
+        type: string
+
+concurrency:
+  group: emergency-hotfix-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  hotfix:
+    name: validate, build, and push prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    environment:
+      name: production-hotfix
+    env:
+      PUSH_TOKEN: ${{ secrets.PROD_HOTFIX_TOKEN || github.token }}
+      SURFACES: ${{ inputs.surfaces }}
+    steps:
+      - name: Checkout hotfix ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          fetch-depth: 0
+          token: ${{ secrets.PROD_HOTFIX_TOKEN || github.token }}
+          submodules: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Resolve and validate hotfix release
+        id: rel
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CONFIRM: ${{ inputs.confirm }}
+          HOTFIX_REASON: ${{ inputs.reason }}
+        run: |
+          set -euo pipefail
+          if [ "$INPUT_CONFIRM" != "HOTFIX PROD" ]; then
+            echo "::error::confirm must be exactly: HOTFIX PROD"
+            exit 1
+          fi
+          if [ -z "${HOTFIX_REASON// }" ]; then
+            echo "::error::A hotfix reason is required."
+            exit 1
+          fi
+          git fetch --no-tags origin prod >/dev/null 2>&1 || true
+          base="$(git show origin/prod:VERSION 2>/dev/null | tr -d '[:space:]' || true)"
+          [ -n "$base" ] || base="$(tr -d '[:space:]' < VERSION)"
+          if [ -n "$INPUT_VERSION" ]; then
+            version="${INPUT_VERSION#v}"
+          else
+            IFS='.' read -r major minor patch <<< "$base"
+            : "${major:=0}"; : "${minor:=0}"; : "${patch:=0}"
+            version="${major}.${minor}.$((patch + 1))"
+          fi
+          echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "::error::Version '$version' is not X.Y.Z"
+            exit 1
+          }
+          sha="$(git rev-parse HEAD)"
+          sha8="${sha:0:8}"
+          tag="v${version}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "sha8=$sha8" >> "$GITHUB_OUTPUT"
+          echo "branch=hotfix/$tag" >> "$GITHUB_OUTPUT"
+          echo "Hotfix $tag from $sha (prod currently $base)"
+
+      - name: Install test dependencies
+        run: npm --prefix tests ci
+
+      - name: Fast safety checks
+        run: make typecheck unit contract api-coverage
+
+      - name: Docker-backed integration checks
+        if: inputs.run_integration
+        run: make integration
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build exact API image
+        if: contains(inputs.surfaces, 'api')
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            SERVICE=apps/api
+            KORTIX_VERSION=${{ steps.rel.outputs.version }}
+            KORTIX_COMMIT=${{ steps.rel.outputs.source_sha }}
+          tags: |
+            kortix/kortix-api:dev-${{ steps.rel.outputs.sha8 }}
+
+      - name: Build exact gateway image
+        if: contains(inputs.surfaces, 'gateway')
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/llm-gateway/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            KORTIX_VERSION=${{ steps.rel.outputs.version }}
+            KORTIX_COMMIT=${{ steps.rel.outputs.source_sha }}
+          tags: |
+            kortix/kortix-gateway:dev-${{ steps.rel.outputs.sha8 }}
+
+      - name: Build frontend standalone output
+        if: contains(inputs.surfaces, 'frontend')
+        run: |
+          set -euo pipefail
+          corepack enable pnpm
+          pnpm install --frozen-lockfile
+          pnpm --filter ./apps/web build
+        env:
+          npm_config_engine_strict: "false"
+          NEXT_PUBLIC_BACKEND_URL: https://api.kortix.com/v1
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: local-build-placeholder-anon-key
+          NEXT_PUBLIC_BILLING_ENABLED: "false"
+          NEXT_PUBLIC_KORTIX_VERSION: ${{ steps.rel.outputs.version }}
+          NEXT_OUTPUT: standalone
+
+      - name: Build exact frontend image
+        if: contains(inputs.surfaces, 'frontend')
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            kortix/kortix-frontend:dev-${{ steps.rel.outputs.sha8 }}
+
+      - name: Push hotfix release commit to prod
+        env:
+          VERSION: ${{ steps.rel.outputs.version }}
+          TAG: ${{ steps.rel.outputs.tag }}
+          RELBR: ${{ steps.rel.outputs.branch }}
+          SOURCE_SHA: ${{ steps.rel.outputs.source_sha }}
+          IN_TITLE: ${{ inputs.title }}
+          IN_NOTES: ${{ inputs.notes }}
+        run: |
+          set -euo pipefail
+          git config user.name "kortix-hotfix[bot]"
+          git config user.email "kortix-hotfix[bot]@users.noreply.github.com"
+          git checkout -B "$RELBR"
+          git merge -s ours --no-edit origin/prod -m "chore(hotfix): supersede prod with $TAG" || true
+
+          printf '%s\n' "$VERSION" > VERSION
+          printf '%s\n\n%s\n' "$IN_TITLE" "$IN_NOTES" > RELEASE_NOTES.md
+          printf '%s\n' "$SOURCE_SHA" > RELEASE_SOURCE_SHA
+
+          if [ -f infra/k8s/envs/prod/values.yaml ]; then
+            VERSION="$VERSION" yq -i '.image.tag = strenv(VERSION) | .kortixVersion = strenv(VERSION)' infra/k8s/envs/prod/values.yaml
+          fi
+          if [ -f infra/k8s/envs/prod/gateway-values.yaml ]; then
+            VERSION="$VERSION" yq -i '.image.tag = strenv(VERSION)' infra/k8s/envs/prod/gateway-values.yaml
+          fi
+
+          git add VERSION RELEASE_NOTES.md RELEASE_SOURCE_SHA
+          git add infra/k8s/envs/prod/values.yaml 2>/dev/null || true
+          git add infra/k8s/envs/prod/gateway-values.yaml 2>/dev/null || true
+          git commit -m "hotfix: $TAG"
+
+          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin "HEAD:prod"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Emergency hotfix pushed"
+            echo "- Version: \`${{ steps.rel.outputs.tag }}\`"
+            echo "- Source: \`${{ inputs.ref }}\` @ \`${{ steps.rel.outputs.source_sha }}\`"
+            echo "- Images requested: \`${{ inputs.surfaces }}\`"
+            echo "- deploy-prod.yml will publish and deploy from the prod push."
+          } >> "$GITHUB_STEP_SUMMARY"

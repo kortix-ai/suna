@@ -33,7 +33,9 @@
     "test:infra": "bash infra/run.sh",
     "test:chaos": "bash chaos/resilience-toxiproxy.sh",
     "test:mutation": "stryker run mutation/stryker.conf.json",
-    "quality-gates": "bash scripts/quality-gates.sh"
+    "quality-gates": "bash scripts/quality-gates.sh",
+    "allure:junit": "node scripts/junit-to-allure.mjs test-results",
+    "test:pentest": "bun pentest/pentest.ts"
   },
   "dependencies": {
     "zod": "^3.23.8"

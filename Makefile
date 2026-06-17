@@ -3,8 +3,8 @@ NPM := npm --prefix $(TESTS)
 
 .DEFAULT_GOAL := help
 .PHONY: help install fast all ci-pr ci-main ci-nightly ci-release \
-        lint typecheck unit integration api contract smoke e2e visual a11y \
-        performance security security-dast migration infra chaos mutation \
+        lint typecheck unit integration api api-coverage contract smoke e2e visual a11y \
+        performance security security-dast pentest migration infra chaos mutation \
         coverage gates report portal-up portal-down clean
 
 help: ## Show this help
@@ -16,17 +16,25 @@ install: ## Install all test dependencies (node deps + Playwright browsers)
 	cd $(TESTS) && npx playwright install --with-deps chromium || true
 
 ## ---- one-shot lanes ---------------------------------------------------------
-fast: lint typecheck unit smoke ## Fast local loop: lint + typecheck + unit + smoke
+fast: lint typecheck unit contract api-coverage ## Fast local loop: no live services
 	@echo "fast suite complete"
 
-all: lint typecheck unit integration api contract smoke e2e visual a11y migration infra security ## Everything runnable without a cloud target
+all: lint typecheck unit integration api contract smoke e2e visual a11y migration infra security pentest ## Broad suite for a configured local/staging target
 	@$(MAKE) gates
 
 ## ---- CI cadences ------------------------------------------------------------
-ci-pr: lint typecheck unit integration api contract security gates ## On every PR
-ci-main: e2e visual a11y migration ## On merge to main (full regression + UI)
-ci-nightly: performance security-dast mutation chaos ## Scheduled / nightly
-ci-release: all e2e visual a11y performance security security-dast gates ## Pre-release full gate
+ci-pr: ## On every PR
+	@$(MAKE) clean
+	@$(MAKE) lint typecheck unit integration contract api-coverage gates
+ci-main: ## On merge to main (full regression + UI)
+	@$(MAKE) clean
+	@$(MAKE) e2e visual a11y migration
+ci-nightly: ## Scheduled / nightly
+	@$(MAKE) clean
+	@$(MAKE) security pentest performance security-dast mutation chaos
+ci-release: ## Pre-release full gate
+	@$(MAKE) clean
+	@$(MAKE) lint typecheck unit integration api contract smoke e2e visual a11y migration infra security pentest performance security-dast mutation gates
 
 ## ---- per category -----------------------------------------------------------
 lint: ## Lint all workspaces (best-effort)
@@ -39,6 +47,8 @@ integration: ## Integration tests (vitest + testcontainers)
 	$(NPM) run test:integration
 api: ## API tests (ke2e REST suite)
 	$(NPM) run test:api
+api-coverage: ## API route coverage gate (no live target)
+	$(NPM) run coverage
 contract: ## Consumer-driven contract tests (Pact)
 	$(NPM) run test:contract
 smoke: ## Smoke / liveness checks
@@ -55,6 +65,8 @@ security: ## Static security scans (SAST/deps/secrets/container)
 	$(NPM) run test:security
 security-dast: ## Dynamic security scan + API fuzz (needs TARGET_URL)
 	$(NPM) run test:security:dast
+pentest: ## Enterprise black-box pentest probes (needs PENTEST_TARGET_URL)
+	$(NPM) run test:pentest
 migration: ## Database migration tests (throwaway Postgres)
 	$(NPM) run test:migration
 infra: ## Infrastructure / IaC tests (tflint/checkov/kubeconform)

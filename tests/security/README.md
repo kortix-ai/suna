@@ -23,6 +23,7 @@ tests/security/run.sh --sast --deps
 | Secrets | [`secrets/`](secrets/) | gitleaks (MIT) | `zricethezav/gitleaks:v8.30.1` | No | `gitleaks.sarif` |
 | Container | [`container/`](container/) | Trivy image (Apache-2.0) | `aquasec/trivy:0.58.0` | No (builds `apps/*/Dockerfile`) | `trivy-image-{api,web,sandbox}.sarif` |
 | DAST | [`dast/`](dast/) | OWASP ZAP baseline + Schemathesis (Apache-2.0 / MIT) | `ghcr.io/zaproxy/zaproxy:2.16.0`, `schemathesis/schemathesis:3.39.5` | **Yes — `TARGET_URL`** | `zap-baseline.{html,json}`, `schemathesis-junit.xml` |
+| Automated pentest | [`../pentest/`](../pentest/) | Kortix black-box adversarial probes | Bun | **Yes — `PENTEST_TARGET_URL`** | `pentest/junit.xml`, `pentest/results.json` |
 
 Static vs dynamic: the first four lanes are **static** and safe to run anywhere
 (including CI on every PR). The **DAST** lane is dynamic — it sends live,
@@ -65,6 +66,18 @@ them.
 | **gitleaks** (`.gitleaks.toml` + `.github/workflows/secret-scan.yml`) | Secret scan on PR commit ranges | The `secrets/` lane reuses the **same** root `.gitleaks.toml` (same rules + allowlists, same 8.30.1) so local and CI agree. |
 | **.deepsec** (`.deepsec/`) | AI-assisted code scanner (LLM triage of findings) | Orthogonal: deepsec is AI-judgement-based; this lane is deterministic tool-based. Run both; cross-check findings. |
 | **security-audit** (`tests/security-audit/`) | 40 hand-written adversarial integration tests (auth, JWT, CORS, injection, proxy, business-logic, cross-user) | These are app-specific assertions; the DAST lane adds generic, spec-driven black-box scanning/fuzzing on top. |
+| **pentest** (`tests/pentest/`) | Enterprise automated black-box pentest lane for CI evidence | Promotes the security-audit intent into a repeatable, target-configurable release/nightly gate with JUnit/JSON artifacts. |
+
+## Enterprise pentest evidence
+
+For compliance, use three layers:
+
+1. Deterministic static gates here (`make security`).
+2. Dynamic automated gates against staging (`make security-dast` and `make pentest`).
+3. Independent manual/external penetration test reports with remediation evidence.
+
+The automated lanes are release/nightly controls. They are not a replacement for human-led
+penetration testing, but they provide recurring evidence that known attack classes stay fixed.
 
 ## Conventions
 

@@ -13,13 +13,13 @@ installed locally.
 
 ```bash
 make install      # node deps + Playwright chromium
-make fast         # lint + typecheck + unit + smoke  (the local loop)
-make all          # everything runnable without a cloud target, then quality gates
+make fast         # lint + typecheck + unit + contract + route coverage (no live target)
+make all          # broad suite for a configured local/staging target, then quality gates
 make help         # list every target
 ```
 
 One target per category: `make unit integration api contract smoke e2e visual a11y performance
-security migration infra chaos mutation`.
+security security-dast pentest migration infra chaos mutation`.
 
 ## Categories
 
@@ -36,6 +36,7 @@ security migration infra chaos mutation`.
 | Performance / load | `tests/performance` | k6 (Docker) | `make performance` | docker, target |
 | Security (SAST/deps/secrets/container) | `tests/security` | Semgrep, Trivy, gitleaks, OSV | `make security` | docker |
 | Security (DAST/fuzz) | `tests/security/dast` | OWASP ZAP, Schemathesis | `make security-dast` | docker, target |
+| Enterprise automated pentest | `tests/pentest` | Bun black-box adversarial probes | `make pentest` | dedicated target |
 | Migration | `tests/migration` | psql (Docker) | `make migration` | docker |
 | Infra / IaC | `tests/infra` | tflint, checkov, kubeconform | `make infra` | docker |
 | Chaos / resilience | `tests/chaos` | Toxiproxy, pumba (Docker) | `make chaos` | docker, target |
@@ -53,13 +54,36 @@ Workflows mirror the `make` cadence targets, so CI == local.
 
 | Workflow | Trigger | Runs |
 |---|---|---|
-| `.github/workflows/qa-pr.yml` | every PR | lint, typecheck, unit, integration, api, contract, static security, **quality gates** |
-| `.github/workflows/qa-main.yml` | merge to `main` | e2e, visual, a11y, migration, publish Allure report |
-| `.github/workflows/qa-nightly.yml` | nightly cron | performance/load, DAST + fuzz, mutation, chaos |
-| `.github/workflows/qa-release.yml` | release / dispatch | full suite + **blocking quality gates** |
+| `.github/workflows/qa-pr.yml` | every PR | lint, typecheck, unit, integration, contract, route coverage, **quality gates** |
+| `.github/workflows/qa-main.yml` | merge to `main` | browser regression when a dev/staging web target is configured, migration tests, Allure report |
+| `.github/workflows/qa-nightly.yml` | nightly cron / dispatch | static security, automated pentest, performance/load, DAST + fuzz, mutation, chaos when dedicated targets are configured |
+| `.github/workflows/qa-release.yml` | PR into `prod` / dispatch | full suite against staging + **blocking quality gates** before the release PR can merge |
+| `.github/workflows/hotfix-prod.yml` | manual dispatch | emergency production hotfix: approval + fast checks + exact image build, then push `prod` to trigger deploy |
 
 The existing `e2e.yml` (ke2e) and `ci.yml` build/typecheck gates remain; these add the broader QA
 matrix alongside them.
+
+Every PR builds an Allure report from its JUnit outputs and uploads it as a workflow artifact. To
+also post a stable clickable PR report link, configure:
+
+- `QA_REPORTS_ROLE_ARN` secret — OIDC role allowed to write report objects.
+- `QA_REPORTS_BUCKET` repo variable — S3 bucket for reports.
+- `QA_REPORTS_PUBLIC_BASE_URL` repo variable — public CloudFront/site base URL for that bucket.
+- `QA_REPORTS_PREFIX` repo variable — optional, defaults to `reports`.
+
+### Production release and hotfix model
+
+- Normal release: run `Promote to Production`, which opens a PR into `prod`. The `qa-release`
+  workflow runs on that PR and should be required by branch protection. Merging the PR triggers
+  `deploy-prod.yml`, which publishes the tag/release and deploys.
+- Emergency hotfix: run `Emergency Hotfix to Production` only when waiting for the full release gate
+  would materially prolong a production incident. It requires a `production-hotfix` environment
+  approval, a typed `HOTFIX PROD` acknowledgement, fast tests, and exact `dev-<sha>` images before it
+  pushes `prod`. The same `deploy-prod.yml` still handles the actual publish/deploy.
+- Recommended GitHub setup: protect `prod`; require the release QA check for normal PR merges; create
+  the `production-hotfix` environment with senior/on-call reviewers; if branch protection blocks
+  workflow pushes, store a tightly scoped `PROD_HOTFIX_TOKEN` that can bypass protection only for the
+  hotfix workflow.
 
 ## Quality gates
 
@@ -83,6 +107,22 @@ surface as JUnit failures and are caught by gate #1.
 - **Catalog** (browse all flows/cases): `bun bin/ke2e.ts catalog`.
 - **Screenshots / videos / traces** for failed E2E are retained under `test-results/e2e/artifacts`.
 
+## Penetration Testing Evidence
+
+`make pentest` is the enterprise automated penetration-style e2e lane. It runs black-box probes
+against a dedicated staging/QA target and produces JUnit/JSON evidence under
+`tests/test-results/pentest/`. Coverage includes auth bypass, admin exposure, malformed tokens,
+CORS reflection, header/info disclosure, sensitive path traversal, injection/content-type abuse,
+method fuzzing, open-relay behavior, and setup/bootstrap leakage.
+
+This lane is required in `qa-release` and scheduled in `qa-nightly`. It intentionally refuses
+production-looking URLs and requires `PENTEST_LIVE_CONFIRM=ci` because it sends adversarial traffic.
+
+Compliance boundary: automated pentest evidence is necessary but not sufficient for enterprise
+assurance. Keep an annual or major-release external/manual penetration-test report with remediation
+tracking for SOC 2 / ISO customer evidence. The automated lane proves continuous regression coverage;
+the external report proves expert human review of chained exploits and business-logic abuse.
+
 ## Writing a test
 
 1. Pick the category folder; copy its example.
@@ -99,7 +139,7 @@ surface as JUnit failures and are caught by gate #1.
   production traffic shapes.
 - **DR/failover game-days** — `tests/chaos/dr-runbook.md` lists drills; the destructive ones (region
   loss, restore-from-backup) need a human-run staging exercise.
-- **Pen-test depth** — automated DAST/fuzz covers the breadth; periodic manual pentest is still
-  recommended for business-logic abuse.
+- **Manual pen-test depth** — automated DAST/fuzz/pentest covers continuous regression. Periodic
+  independent manual pentest remains required for chained exploit discovery and customer evidence.
 - **Visual baselines** must be generated on a consistent renderer (CI container) and reviewed by a
   human on first creation.

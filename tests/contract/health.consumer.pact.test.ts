@@ -20,7 +20,7 @@ describe("contract: kortix-api health", () => {
       .withRequest({ method: "GET", path: "/v1/health" })
       .willRespondWith({
         status: 200,
-        headers: { "Content-Type": like("application/json") },
+        headers: { "Content-Type": "application/json" },
         body: like({
           status: string("ok"),
           service: string("kortix-api"),
