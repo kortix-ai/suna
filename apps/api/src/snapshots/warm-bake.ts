@@ -633,31 +633,57 @@ async function reapStaleWarmBases(currentName: string, log: (l: string) => void)
   }
 }
 
+// Distinct markers the warm-restore script emits on stdout. The Daytona SDK can
+// return an undefined exitCode, so the provider drives every recreate-vs-commit
+// decision off these PARSED STRINGS — never off the exit code.
+export const WARM_RESTORE_MARKERS = {
+  noRuntime: 'KORTIX_NO_RUNTIME', // baked runtime dropped by the restore → recreate
+  envFail: 'KORTIX_ENV_FAIL',     // session-env write failed → hard error
+  wrote: 'KORTIX_WROTE',          // session-env written
+  started: 'KORTIX_STARTED',      // daemon launch issued
+} as const;
+
 /**
- * Build the per-session env-file + daemon-start commands for a warm sandbox.
- * Daytona's executeCommand env param does NOT propagate, and memory-restore
- * freezes baked env, so we write the session identity to a file and start the
- * daemon sourcing it. Exported for the Daytona provider's warm create path.
+ * Build the ONE post-restore in-box command for a warm sandbox: probe the baked
+ * runtime, reset the frozen clock, write the per-session env file, and launch the
+ * daemon — collapsed into a single round-trip (was four serial executeCommands).
+ *
+ * Daytona's executeCommand env param does NOT propagate, and a memory-restore
+ * freezes baked env + the VM clock, so we write the session identity to a file
+ * and start the daemon sourcing it, after resetting the clock. Exported for the
+ * Daytona provider's warm create path; `nowEpochSeconds` is the real wall-clock
+ * time to set (captured by the caller per attempt).
+ *
+ * The script emits WARM_RESTORE_MARKERS the caller parses. The runtime gate runs
+ * and bails with `noRuntime` BEFORE the backgrounded daemon exec — because
+ * `exec … &` returns success whether or not the entrypoint binary exists, so the
+ * launch itself can never reveal a dropped runtime.
  */
-export function warmDaemonStartCommands(env: Record<string, string>): { writeEnv: string; startDaemon: string } {
+export function warmRestoreScript(env: Record<string, string>, nowEpochSeconds: number): string {
   const sh = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
   const envFile = Object.entries(env).map(([k, v]) => `export ${k}=${sh(v)}`).join('\n');
   const b64 = Buffer.from(envFile, 'utf8').toString('base64');
-  return {
-    writeEnv: `echo ${b64} | base64 -d | sudo tee /opt/kortix/session.env >/dev/null && sudo chmod 600 /opt/kortix/session.env && echo wrote`,
-    // Run the daemon as ROOT, matching the normal Kortix sandbox (Dockerfile
-    // `USER root`). The entrypoint anchors cwd at `/` and the daemon creates its
-    // clone work-tree relative to cwd (`/.kortix-clone-…`); the base image's
-    // default `daytona` user can't write to root-owned `/`, so the clone fails
-    // with EACCES. sudo (passwordless on these images) restores parity.
-    //
-    // RUNTIME_ENV mirrors the static `ENV` lines the Dockerfile bakes (which the
-    // imperative bake can't bake into the image) — exported first so the
-    // per-session `session.env` still wins on any overlap. Notably
-    // AGENT_BROWSER_ARGS, without which the agent's browser tool crashes in a
-    // sandboxed container.
-    startDaemon:
-      `setsid sudo bash -c '${RUNTIME_ENV} set -a; source /opt/kortix/session.env; set +a; cd /; exec /usr/local/bin/kortix-entrypoint' ` +
-      `</dev/null >/tmp/kortix-agent.log 2>&1 & echo started`,
-  };
+  const M = WARM_RESTORE_MARKERS;
+  return [
+    // 1. Runtime present? If the restore dropped the filesystem layer, bail with
+    //    the recreate marker BEFORE touching env or launching anything.
+    `if ! ( test -x /usr/local/bin/kortix-agent && test -x /usr/local/bin/kortix-entrypoint && command -v opencode >/dev/null ); then echo ${M.noRuntime}; exit 0; fi`,
+    // 2. Reset the frozen clock before anything time-sensitive (the entrypoint
+    //    validates TLS/JWT; the session env may carry short-lived tokens).
+    `sudo date -s @${nowEpochSeconds} >/dev/null 2>&1 || true`,
+    // 3. Write the per-session identity env file; bail hard if it fails.
+    `if ! ( echo ${b64} | base64 -d | sudo tee /opt/kortix/session.env >/dev/null && sudo chmod 600 /opt/kortix/session.env ); then echo ${M.envFail}; exit 0; fi`,
+    `echo ${M.wrote}`,
+    // 4. Launch the daemon as ROOT (matches the normal Kortix sandbox, Dockerfile
+    //    `USER root`: the entrypoint anchors cwd at `/` and writes its clone
+    //    work-tree there, which the base image's `daytona` user can't). RUNTIME_ENV
+    //    mirrors the Dockerfile's static `ENV` lines (the imperative bake can't),
+    //    exported first so the per-session env still wins on overlap — notably
+    //    AGENT_BROWSER_ARGS, without which the agent's browser tool crashes.
+    //    Backgrounded with stdio redirected so executeCommand returns immediately;
+    //    the `started` marker only proves the launch was issued (hence the gate
+    //    in step 1 is load-bearing).
+    `setsid sudo bash -c '${RUNTIME_ENV} set -a; source /opt/kortix/session.env; set +a; cd /; exec /usr/local/bin/kortix-entrypoint' </dev/null >/tmp/kortix-agent.log 2>&1 &`,
+    `echo ${M.started}`,
+  ].join('\n');
 }
