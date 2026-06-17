@@ -94,8 +94,14 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
     request: requestAuditContext(c),
   });
 
-  if (result.status === 'queued') {
-    return c.json({ status: 'queued', reason: result.reason ?? null }, 202);
+  if (result.status === 'backpressure') {
+    c.header('Retry-After', '30');
+    return c.json({
+      error: 'Trigger is temporarily backpressured',
+      code: 'trigger_backpressure',
+      reason: result.reason ?? null,
+      retryable: true,
+    }, 503);
   }
   if (result.status === 'failed') {
     return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);

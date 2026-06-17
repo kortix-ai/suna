@@ -688,6 +688,33 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(runtimeRows[0]!.lastFiredAt).toBeTruthy();
   });
 
+  test('manual fire returns retryable backpressure instead of pretending to queue', async () => {
+    seedManifest(cronEntry({
+      slug: 'daily',
+      name: 'Daily',
+      cron: '* * * * * *',
+      prompt: 'Run at {{ fired_at }}',
+    }));
+    provisioningSessionCount = 3;
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/daily/fire`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(503);
+    expect(res.headers.get('retry-after')).toBe('30');
+    const body = await res.json();
+    expect(body).toMatchObject({
+      code: 'trigger_backpressure',
+      retryable: true,
+      reason: 'project provisioning backpressure',
+    });
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(runtimeRows).toHaveLength(0);
+  });
+
   test('cron sweep fires due git-backed triggers', async () => {
     seedManifest(cronEntry({
       slug: 'sweep',
@@ -701,6 +728,30 @@ describe('git-backed triggers — runtime fire paths', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('Sweep run');
+  });
+
+  test('cron sweep under backpressure does not advance last_fired_at', async () => {
+    seedManifest(cronEntry({
+      slug: 'sweep',
+      name: 'Sweep',
+      cron: '* * * * * *',
+      prompt: 'Sweep run',
+    }));
+    provisioningSessionCount = 3;
+
+    const result = await runProjectTriggerSweep(new Date('2026-01-01T00:00:30Z'));
+    expect(result).toMatchObject({ scanned: 1, fired: 0, queued: 1, failed: 0 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(runtimeRows).toHaveLength(0);
+
+    provisioningSessionCount = 0;
+    const retry = await runProjectTriggerSweep(new Date('2026-01-01T00:00:31Z'));
+    expect(retry).toMatchObject({ scanned: 1, fired: 1, queued: 0, failed: 0 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(runtimeRows).toHaveLength(1);
+    expect(runtimeRows[0]!.lastFiredAt?.toISOString()).toBe('2026-01-01T00:00:31.000Z');
   });
 
   test('webhook fires verify the HMAC signature and reject impostors', async () => {
@@ -758,6 +809,38 @@ describe('git-backed triggers — runtime fire paths', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');
+  });
+
+  test('webhook under backpressure returns retryable 503 instead of silent queued', async () => {
+    seedManifest(webhookEntry({
+      slug: 'hook',
+      name: 'Hook',
+      secretEnv: 'HOOK_SECRET',
+      prompt: 'New {{ body.action }}',
+    }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    provisioningSessionCount = 3;
+    const app = createApp();
+
+    const rawBody = JSON.stringify({ action: 'opened' });
+    const res = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+      },
+      body: rawBody,
+    });
+    expect(res.status).toBe(503);
+    expect(res.headers.get('retry-after')).toBe('30');
+    const body = await res.json();
+    expect(body).toMatchObject({
+      code: 'trigger_backpressure',
+      retryable: true,
+      reason: 'project provisioning backpressure',
+    });
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(runtimeRows).toHaveLength(0);
   });
 
   test('webhook accepts a valid static token (no HMAC) and rejects a wrong one', async () => {
