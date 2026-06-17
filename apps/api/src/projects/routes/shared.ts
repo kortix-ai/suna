@@ -479,6 +479,8 @@ async function replaceStaleRuntimeOnOpen(
  * bring a session's runtime up. Idempotent: provisions a missing sandbox,
  * resumes a hibernated/idle one, and resolves the canonical OpenCode pin once the
  * box is reachable. Returns ONE readiness payload the client polls until `ready`.
+ * Collapses the old GET /sandbox + POST /wake + POST /ensure-opencode dance into
+ * one orchestration so the client makes a single call instead of three racing ones.
  */
 export async function openSession(args: {
   loaded: { row: ProjectRow; userId: string };

@@ -181,41 +181,29 @@ async function sessionsNew(
     return surfaceApiError(err);
   }
 
-  // --wait: drive the same canonical /start lifecycle endpoint the dashboard
-  // polls. Row status alone can say "running" before OpenCode is actually ready.
-  if (wait) {
+  // --wait: block until the sandbox is running (or fails / times out) so the
+  // next step (chat/log) can act immediately. Orchestrators spawning subagents
+  // use `--json --wait` to get back a ready session id in a single call.
+  if (wait && created.status !== 'running') {
     if (!json) {
       process.stderr.write(`${C.dim}  waiting for the sandbox to come up…${C.reset}\n`);
     }
     for (let i = 0; i < 75; i += 1) {
-      if (i > 0) await new Promise((r) => setTimeout(r, 4000));
+      await new Promise((r) => setTimeout(r, 4000));
       try {
-        const start = await ctx.client.post<{
-          stage: 'provisioning' | 'starting' | 'ready' | 'stopped' | 'failed';
-          reason?: string;
-        }>(
-          `/projects/${ctx.projectId}/sessions/${created.session_id}/start`,
-          {},
-        );
         created = await ctx.client.get<ProjectSession>(
           `/projects/${ctx.projectId}/sessions/${created.session_id}`,
         );
-        if (start.stage === 'ready') break;
-        if (start.stage === 'failed' || start.stage === 'stopped') {
-          if (json) {
-            emitJson(created);
-          } else {
-            const detail = start.reason ? `: ${start.reason}` : created.error ? `: ${created.error}` : '';
-            process.stderr.write(`${status.err(`Session ${start.stage}${detail}.`)}\n`);
-          }
-          return 1;
-        }
       } catch (err) {
+        return surfaceApiError(err);
+      }
+      if (created.status === 'running') break;
+      if (created.status === 'failed' || created.status === 'stopped') {
         if (json) {
           emitJson(created);
         } else {
           process.stderr.write(
-            `${status.err((err as Error).message || 'Failed while waiting for session readiness')}\n`,
+            `${status.err(`Session ${created.status}${created.error ? `: ${created.error}` : ''}.`)}\n`,
           );
         }
         return 1;

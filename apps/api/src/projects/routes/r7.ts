@@ -1,16 +1,19 @@
+import { pauseComputeSession } from '../../billing/services/compute-metering';
+import { config, type SandboxProviderName } from '../../config';
 import { isSessionVisibleTo, loadSessionGrants, parseSharingIntent, resolveShareSubject, setSessionSharing } from '../../executor/share';
 import { PROJECT_ACTIONS, assertAuthorized } from '../../iam';
 import { auth, errors, json } from '../../openapi';
+import { getProvider } from '../../platform/providers';
 import { db } from '../../shared/db';
 import { roleAllows } from '../access';
+import { ensureOpencodeSessionPin } from '../opencode-mapping';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGroupMembers, accountGroups, accountMembers, projectGroupGrants, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession, lookupEmailsByUserIds, parseExpiresAtBody } from '../lib/access';
 import { AnyObject, GroupGrantSchema, SessionSchema, projectsApp } from '../lib/app';
 import { UUID_V4_REGEX, hasOwn, isProjectRole, normalizeString, readBody, requestAuditContext, serializeSession, serializeSessionSandboxConfig } from '../lib/serializers';
-import { sendSessionCreateError } from '../lib/sessions';
-import { createSession, deleteSession } from '../session-lifecycle';
+import { createProjectSession, sendSessionCreateError } from '../lib/sessions';
 import { syncOpencodeSessionsHandler } from './shared';
 
 projectsApp.openapi(
@@ -318,31 +321,18 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
-  const result = await createSession({
-    source: 'ui',
+  const result = await createProjectSession({
     project: loaded.row,
     userId: loaded.userId,
     body,
     request: requestAuditContext(c),
-    idempotencyKey: c.req.header('idempotency-key') ?? null,
   });
   if (result.error) return sendSessionCreateError(c, result.error);
   for (const [key, value] of Object.entries(result.headers ?? {})) {
     c.header(key, value);
   }
-  if (!result.row) {
-    return c.json(
-      {
-        status: result.status,
-        command_id: result.commandId ?? null,
-        session_id: result.sessionId ?? null,
-        reason: result.reason ?? null,
-      },
-      202,
-    );
-  }
   return c.json(
-      serializeSession(result.row, {
+    serializeSession(result.row!, {
       viewerId: loaded.userId,
       canManageProject: roleAllows(loaded.effectiveRole, 'manage'),
     }),
@@ -679,14 +669,89 @@ projectsApp.openapi(
     return c.json({ error: 'Only the session owner or a project manager can stop this session' }, 403);
   }
 
-  const result = await deleteSession({
-    projectId,
-    sessionId,
-    accountId: loaded.row.accountId,
-    userId: loaded.userId,
-    metadata: visible.row.metadata,
-  });
-  if ('error' in result) return c.json({ error: result.error }, result.status as any);
-  return c.json(result);
+  const [sandbox] = await db
+    .select()
+    .from(sessionSandboxes)
+    .where(and(
+      eq(sessionSandboxes.sessionId, sessionId),
+      eq(sessionSandboxes.projectId, projectId),
+      eq(sessionSandboxes.accountId, loaded.row.accountId),
+    ))
+    .limit(1);
+
+  const deletedAt = new Date();
+  const [row] = await db
+    .update(projectSessions)
+    .set({
+      status: 'stopped',
+      metadata: {
+        ...(visible.row.metadata ?? {}),
+        deletedAt: deletedAt.toISOString(),
+        deletedBy: loaded.userId,
+      },
+      updatedAt: deletedAt,
+    })
+    .where(and(
+      eq(projectSessions.sessionId, sessionId),
+      eq(projectSessions.projectId, projectId),
+      eq(projectSessions.accountId, loaded.row.accountId),
+    ))
+    .returning();
+
+  if (!row) return c.json({ error: 'Not found' }, 404);
+
+  if (sandbox) {
+    await db
+      .update(sessionSandboxes)
+      .set({
+        // 'archived' — NOT 'stopped'. Explicit session deletion is the one case
+        // where we remove the provider box (below), so the disk is gone. Marking
+        // it 'archived' (vs the 'stopped' = hibernated-and-resumable state used
+        // by idle/maintenance) tells GET …/sandbox NOT to attempt a resume of a
+        // box that no longer exists; reopening a deleted session cold-reprovisions
+        // fresh from the preserved git branch instead.
+        status: 'archived',
+        metadata: {
+          ...(sandbox.metadata ?? {}),
+          stoppedAt: deletedAt.toISOString(),
+          initStatus: sandbox.status === 'active' ? 'ready' : 'failed',
+          ...(sandbox.status === 'active'
+            ? {}
+            : { lastInitError: 'Session was stopped before sandbox initialization completed' }),
+        },
+        updatedAt: new Date(),
+      })
+      .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId))
+      .catch((err) => {
+        console.warn(`[projects] failed to mark session sandbox archived for ${sessionId}:`, err);
+      });
+
+    if (sandbox.externalId && (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(sandbox.provider)) {
+      const provider = getProvider(sandbox.provider as SandboxProviderName);
+      // Explicit user session deletion is the ONLY place we remove the provider
+      // box. Everywhere else (idle auto-stop, maintenance, restart) hibernates
+      // instead, because a stopped Daytona box auto-archives to cheap cold
+      // storage and can be resumed in place. Here the user has chosen to delete
+      // the session, so we free the compute outright — the work is safe on the
+      // git branch, which we deliberately preserve.
+      void provider.remove(sandbox.externalId).catch((err) => {
+        console.warn(`[projects] failed to remove provider sandbox ${sandbox.externalId} for deleted session ${sessionId}:`, err);
+      });
+    }
+  }
+
+  void pauseComputeSession(sessionId).catch((err) =>
+    console.warn(`[projects] compute pause failed for ${sessionId}:`, err),
+  );
+
+  return c.json({ ok: true });
 },
 );
+
+// POST /v1/projects/:projectId/sessions/:sessionId/wake
+// Wake a sandbox that the provider auto-stopped while idle. The DB row still
+// reads `active` (nothing updates it when Daytona auto-stops after ~15min), so
+// opening such a session would otherwise hit a dead container and spin on the
+// health poll. The frontend fires this on open: a running sandbox is a cheap
+// status no-op; a stopped one gets started in the background while the health
+// poll picks up readiness — so the request returns instantly either way.

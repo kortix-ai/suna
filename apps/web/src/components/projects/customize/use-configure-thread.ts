@@ -73,7 +73,10 @@ export function useConfigureThread(projectId: string): ConfigureThread {
       if (pending) return;
       setPending(true);
       try {
-        const session = await createProjectSession(projectId, { initial_prompt: prompt });
+        const session = await createProjectSession(projectId);
+        // The active-session chat reads this and auto-sends once the runtime
+        // is ready (same contract the project-home composer uses).
+        sessionStorage.setItem(`project_pending_prompt:${session.session_id}`, prompt);
         queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
         prefetchSessionStart(queryClient, projectId, session.session_id);
         closeCustomize();

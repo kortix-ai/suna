@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
-import { createHmac, randomUUID } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -11,7 +11,6 @@ import {
   projectSessions,
   projectTriggerRuntime,
   projects,
-  sessionLifecycleCommands,
 } from '@kortix/db';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
@@ -33,7 +32,6 @@ let sandboxProvisionCalls = 0;
 let lastProvisionEnv: Record<string, string> | null = null;
 let runtimeRows: Array<{ projectId: string; slug: string; lastFiredAt: Date | null; updatedAt: Date }>;
 let sessionRows: Array<typeof projectSessions.$inferSelect>;
-let lifecycleCommandRows: Array<typeof sessionLifecycleCommands.$inferSelect>;
 let activeSessionCount = 0;
 let provisioningSessionCount = 0;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
@@ -70,7 +68,6 @@ function resetState() {
   lastProvisionEnv = null;
   runtimeRows = [];
   sessionRows = [];
-  lifecycleCommandRows = [];
   activeSessionCount = 0;
   provisioningSessionCount = 0;
   secretRows = [];
@@ -264,19 +261,10 @@ mock.module('../shared/db', () => ({
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => {
-          const result: any[] & { orderBy?: () => any; limit?: () => Promise<any[]> } = [];
-          result.orderBy = () => {
-            const rows =
-              table === sessionLifecycleCommands
-                ? lifecycleCommandRows
-                : table === projectSessions
-                  ? sessionRows
-                  : [];
-            const ordered = {
-              limit: async (limit: number) => rows.slice(0, limit),
-              then: (resolve: (rows: any[]) => unknown) => resolve(rows),
-            };
-            return ordered as any;
+          const result: any[] & { orderBy?: () => Promise<any[]>; limit?: () => Promise<any[]> } = [];
+          result.orderBy = async () => {
+            if (table === projectSessions) return sessionRows;
+            return [];
           };
           result.limit = async () => {
             if (fields && Object.keys(fields).includes('activeCount')) {
@@ -286,22 +274,17 @@ mock.module('../shared/db', () => ({
               return [{ provisioningCount: provisioningSessionCount }];
             }
             if (table === projects) return [projectRow];
-            if (table === accountMembers) {
-              return [{ accountId: ACCOUNT_ID, accountRole: 'owner', userId: USER_ID }];
-            }
+            if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner', userId: USER_ID }];
             if (table === accountGithubInstallations) return [];
             if (table === projectMembers) return [];
-            if (table === sessionLifecycleCommands) return lifecycleCommandRows.slice(0, 1);
             return [];
           };
           // Some callers `await` directly without orderBy/limit (e.g. select
           // from runtime table). Make `result` a thenable that resolves to
           // the runtime rows for that table when iterated.
           (result as any).then = (resolve: (rows: any[]) => unknown) => {
-            if (table === projectTriggerRuntime) {
-              resolve(runtimeRows.filter((r) => r.projectId === PROJECT_ID));
-            } else if (table === projectSecrets) resolve(secretRows);
-            else if (table === sessionLifecycleCommands) resolve(lifecycleCommandRows);
+            if (table === projectTriggerRuntime) resolve(runtimeRows.filter((r) => r.projectId === PROJECT_ID));
+            else if (table === projectSecrets) resolve(secretRows);
             else resolve([]);
           };
           return result;
@@ -335,64 +318,8 @@ mock.module('../shared/db', () => ({
             sessionRows.push(row);
             return [row];
           }
-          if (table === sessionLifecycleCommands) {
-            const row: typeof sessionLifecycleCommands.$inferSelect = {
-              commandId: values.commandId ?? randomUUID(),
-              commandType: values.commandType,
-              source: values.source,
-              status: values.status ?? 'queued',
-              projectId: values.projectId,
-              sessionId: values.sessionId ?? null,
-              accountId: values.accountId,
-              actorUserId: values.actorUserId ?? null,
-              idempotencyKey: values.idempotencyKey ?? null,
-              payload: values.payload ?? {},
-              result: values.result ?? {},
-              attempts: values.attempts ?? 0,
-              availableAt: values.availableAt ?? now,
-              lockedBy: values.lockedBy ?? null,
-              lockedUntil: values.lockedUntil ?? null,
-              lastError: values.lastError ?? null,
-              createdAt: values.createdAt ?? now,
-              updatedAt: values.updatedAt ?? now,
-            };
-            lifecycleCommandRows.push(row);
-            return [row];
-          }
           return [];
         },
-        onConflictDoNothing: () => ({
-          returning: async () => {
-            if (table !== sessionLifecycleCommands || !values.idempotencyKey) return [];
-            const existing = lifecycleCommandRows.find(
-              (row) => row.idempotencyKey === values.idempotencyKey,
-            );
-            if (existing) return [];
-            const now = new Date('2026-01-02T00:00:00Z');
-            const row: typeof sessionLifecycleCommands.$inferSelect = {
-              commandId: values.commandId ?? randomUUID(),
-              commandType: values.commandType,
-              source: values.source,
-              status: values.status ?? 'queued',
-              projectId: values.projectId,
-              sessionId: values.sessionId ?? null,
-              accountId: values.accountId,
-              actorUserId: values.actorUserId ?? null,
-              idempotencyKey: values.idempotencyKey ?? null,
-              payload: values.payload ?? {},
-              result: values.result ?? {},
-              attempts: values.attempts ?? 0,
-              availableAt: values.availableAt ?? now,
-              lockedBy: values.lockedBy ?? null,
-              lockedUntil: values.lockedUntil ?? null,
-              lastError: values.lastError ?? null,
-              createdAt: values.createdAt ?? now,
-              updatedAt: values.updatedAt ?? now,
-            };
-            lifecycleCommandRows.push(row);
-            return [row];
-          },
-        }),
         onConflictDoUpdate: ({ set }: { set: any }) => {
           // Production code awaits this directly without calling .returning()
           // (`db.insert(...).values(...).onConflictDoUpdate({...})`). Make the
@@ -422,40 +349,22 @@ mock.module('../shared/db', () => ({
         },
       }),
     }),
-    update: (table: unknown) => ({
-      set: (setValues: any) => ({
+    update: () => ({
+      set: () => ({
         where: () => ({
-          returning: async () => {
-            if (table === sessionLifecycleCommands) {
-              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
-              return lifecycleCommandRows;
-            }
-            return [];
-          },
-          then: (resolve: (rows: any[]) => unknown) => {
-            if (table === sessionLifecycleCommands) {
-              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
-            }
-            return resolve([]);
-          },
+          returning: async () => [],
         }),
       }),
     }),
     delete: (table: unknown) => ({
       where: async () => {
         if (table === projectTriggerRuntime) runtimeRows = [];
-        if (table === sessionLifecycleCommands) lifecycleCommandRows = [];
       },
     }),
   },
 }));
 
-const {
-  drainSessionLifecycleQueue,
-  projectsApp,
-  projectWebhooksApp,
-  runProjectTriggerSweep,
-} = await import('../projects/index');
+const { projectsApp, projectWebhooksApp, runProjectTriggerSweep } = await import('../projects/index');
 
 function createApp() {
   const app = new Hono();
@@ -840,7 +749,6 @@ describe('git-backed triggers — runtime fire paths', () => {
       headers: {
         'Content-Type': 'application/json',
         'X-Kortix-Signature': sign(rawBody, 'shhh'),
-        'X-Kortix-Delivery-Id': 'delivery-1',
       },
       body: rawBody,
     });
@@ -850,60 +758,6 @@ describe('git-backed triggers — runtime fire paths', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');
-
-    const duplicate = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Kortix-Signature': sign(rawBody, 'shhh'),
-        'X-Kortix-Delivery-Id': 'delivery-1',
-      },
-      body: rawBody,
-    });
-    expect(duplicate.status).toBe(202);
-    const duplicateBody = await duplicate.json();
-    expect(duplicateBody.status).toBe('deduped');
-    await new Promise((r) => setTimeout(r, 0));
-    expect(sandboxProvisionCalls).toBe(1);
-  });
-
-  test('webhook trigger queues under backpressure and queue drain creates one session', async () => {
-    seedManifest(webhookEntry({
-      slug: 'hook',
-      name: 'Hook',
-      secretEnv: 'HOOK_SECRET',
-      prompt: 'New {{ body.action }}',
-    }));
-    secretValues.set('HOOK_SECRET', 'shhh');
-    provisioningSessionCount = 3;
-    const app = createApp();
-
-    const rawBody = JSON.stringify({ action: 'opened' });
-    const res = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Kortix-Signature': sign(rawBody, 'shhh'),
-        'X-Kortix-Delivery-Id': 'queued-delivery-1',
-      },
-      body: rawBody,
-    });
-    expect(res.status).toBe(202);
-    const body = await res.json();
-    expect(body.status).toBe('queued');
-    expect(body.command_id).toBeTruthy();
-    expect(sandboxProvisionCalls).toBe(0);
-    expect(lifecycleCommandRows).toHaveLength(1);
-    expect(lifecycleCommandRows[0]!.status).toBe('queued');
-
-    provisioningSessionCount = 0;
-    const drained = await drainSessionLifecycleQueue({ workerId: 'test-worker', limit: 1 });
-    expect(drained).toEqual({ claimed: 1, succeeded: 1, failed: 0, queued: 0 });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');
-    expect(lifecycleCommandRows[0]!.status).toBe('succeeded');
-    expect(lifecycleCommandRows[0]!.sessionId).toBeTruthy();
   });
 
   test('webhook accepts a valid static token (no HMAC) and rejects a wrong one', async () => {

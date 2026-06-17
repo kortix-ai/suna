@@ -1259,8 +1259,10 @@ export default function ProjectSessionScreen() {
     return true;
   }, [switchSandbox, navigateToSession]);
 
-  // Resolve the session's canonical runtime through the unified /start endpoint,
-  // then open the chat. The sandbox can still be warming, so retry patiently.
+  // Resolve the session's canonical OpenCode root (web parity: POST
+  // ensure-opencode is the sole authority that writes opencode_session_id), then
+  // open the chat. The sandbox/runtime can still be warming, so retry on
+  // not_ready/unreachable with backoff — mirrors useCanonicalOpenCodeSession.
   const ensuringRef = useRef<string | null>(null);
   // End a connect loop in the inline failure state (web parity: InlineSessionError).
   // Keeps connectingProjectSessionId set so the connecting branch renders the
@@ -1269,9 +1271,15 @@ export default function ProjectSessionScreen() {
     erroredSessionRef.current = sessionId;
     setConnectError(err);
   }, []);
-  // Bring a project session online and open it. POST /start is the only open
-  // driver: it provisions/resumes runtime, resolves opencode_session_id, and
-  // returns a readiness payload. The client only polls that one contract.
+  // Bring a project session online and open it, mirroring the web's session boot
+  // (app/projects/[id]/sessions/[sessionId]/page.tsx + useSandboxConnection):
+  //   1. POLL GET /sessions/:id/sandbox — this GET DRIVES (re)provisioning on the
+  //      backend (kickProvisionOnOpen) and returns the authoritative sandbox
+  //      status. The web hammers it ~300ms; that polling is what advances the
+  //      sandbox to 'active'. The list endpoint we poll elsewhere does NOT.
+  //   2. once 'active': wake (idle auto-stop) + health-poll the proxy (warm/route),
+  //   3. ensure-opencode resolves opencode_session_id once the runtime is up,
+  //   4. switch + navigate + deliver the stashed prompt.
   // A cold boot can take minutes, so we poll patiently and fail only on a
   // definitive error/timeout.
   const ensureAndOpen = useCallback(async (sessionId: string) => {
@@ -1287,7 +1295,8 @@ export default function ProjectSessionScreen() {
 
         // ONE server call: POST /start idempotently provisions/resumes the
         // sandbox AND resolves the OpenCode pin server-side. We just poll it until
-        // stage='ready'; provisioning, resume, and OpenCode pinning are server-side.
+        // stage='ready' (replaces the old sandbox-poll + wake + ensure-opencode
+        // three-call dance — all that lifting is now on the server).
         const start = await startProjectSession(projectId, sessionId);
         const sandbox = start?.sandbox ?? null;
 
@@ -1373,13 +1382,15 @@ export default function ProjectSessionScreen() {
   }, [navigateToSession]);
 
   // Start an agent-led config session (New / Edit from the Agents/Skills/
-  // Commands pages). Mirrors web's useConfigureThread: create the session with
-  // the seed prompt and drop into the connecting state.
+  // Commands pages). Mirrors web's useConfigureThread: create a session, stash
+  // the seed prompt (delivered by connectToProjectSession once OpenCode is up),
+  // and drop into the connecting state.
   const handleConfigureSession = useCallback(async (prompt: string) => {
     if (!projectId) return;
     try {
       haptics.tap();
-      const session = await createProjectSession.mutateAsync({ initial_prompt: prompt });
+      const session = await createProjectSession.mutateAsync({});
+      pendingPromptsRef.current[session.session_id] = prompt;
       setActiveProjectSessionId(session.session_id);
       navigateToSession(null);
       setConnectError(null);
@@ -1513,10 +1524,11 @@ export default function ProjectSessionScreen() {
     );
   }, [activeProjectSession, projectId, closeTab, navigateToSession, queryClient]);
 
-  // Drive the connecting state. ensureAndOpen polls /start and opens the chat.
-  // It guards against concurrent runs, so re-firing on re-render is harmless. A
-  // session that ended in an error is skipped so we don't immediately re-loop it;
-  // recovery is the explicit Restart button.
+  // Drive the connecting state: ensureAndOpen polls GET /sandbox (which provisions
+  // on open), resolves the OpenCode pin, and opens the chat. It guards against
+  // concurrent runs, so re-firing on re-render is harmless. A session that ended
+  // in an error is skipped so we don't immediately re-loop it — recovery is the
+  // explicit Restart button.
   useEffect(() => {
     if (!connectingProjectSessionId) return;
     if (erroredSessionRef.current === connectingProjectSessionId) return;
@@ -1597,10 +1609,18 @@ export default function ProjectSessionScreen() {
       setIsDashboardSending(true);
 
       try {
-        const session = await createProjectSession.mutateAsync({ initial_prompt: finalText });
+        // Create a BLANK project session (web parity). We deliberately do NOT
+        // pass initial_prompt: that sets KORTIX_INITIAL_PROMPT, which makes the
+        // sandbox run a boot-time agent step before marking OpenCode ready — and
+        // that path can leave the runtime perpetually not-ready. Instead we stash
+        // the prompt and deliver it once the session's OpenCode root exists (see
+        // connectToProjectSession), exactly like the web home composer.
+        const session = await createProjectSession.mutateAsync({});
+        pendingPromptsRef.current[session.session_id] = finalText;
         setActiveProjectSessionId(session.session_id);
-        // Enter the connecting state — the effect drives provisioning and opens
-        // the server-created session once ready.
+        // Enter the connecting state — the effect drives provisioning (GET
+        // /sandbox), resolves the OpenCode pin, opens the chat, and delivers the
+        // stashed prompt.
         navigateToSession(null);
         setConnectingProjectSessionId(session.session_id);
       } catch (err: any) {

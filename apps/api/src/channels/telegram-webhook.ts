@@ -4,9 +4,9 @@ import { eq } from 'drizzle-orm';
 import { projects } from '@kortix/db';
 import { db } from '../shared/db';
 import {
-  createSession,
-  resolveProjectAutomationActor,
-} from '../projects/session-lifecycle';
+  createProjectSession,
+  resolveGitTriggerActor,
+} from '../projects';
 import { loadTelegramWebhookSecretForProject } from './install-store';
 import { makeOpenApiApp, json, errors } from '../openapi';
 
@@ -70,7 +70,7 @@ async function spawnAgentTurn(
     .limit(1);
   if (!project) return;
 
-  const userId = await resolveProjectAutomationActor(project.accountId);
+  const userId = await resolveGitTriggerActor(project.accountId);
   if (!userId) {
     console.warn('[telegram-webhook] no actor for project', projectId);
     return;
@@ -78,8 +78,7 @@ async function spawnAgentTurn(
 
   const initialPrompt = renderAgentPrompt(update, message);
 
-  const result = await createSession({
-    source: 'telegram',
+  const result = await createProjectSession({
     project,
     userId,
     body: {
@@ -88,8 +87,6 @@ async function spawnAgentTurn(
       initial_prompt: initialPrompt,
     },
     enforceAccountCap: false,
-    queuePolicy: 'on_backpressure',
-    idempotencyKey: `telegram:${projectId}:${update.update_id}`,
     // Channel sessions are team-facing — project-visible, not private to the
     // stand-in owner the session is attributed to.
     visibility: 'project',
