@@ -209,6 +209,14 @@ const USE_CASES: [string, string][] = [
   ['legal', 'draft the contract and route it for review'],
   ['marketing', "schedule this week's posts"],
   ['recruiting', 'screen the new applicants and send replies'],
+  ['sales', 'enrich these leads and add them to the pipeline'],
+  ['engineering', 'summarize the open pull requests'],
+  ['finance', 'close the books for last month'],
+  ['support', 'draft replies to the new emails'],
+  ['ops', 'create the new-hire onboarding checklist'],
+  ['data', 'refresh the exec dashboard'],
+  ['people', 'send the offer letter and track sign-off'],
+  ['marketing', "pull last week's traffic numbers"],
 ];
 
 function UseCaseCard({ channel, ask }: { channel: string; ask: string }) {
