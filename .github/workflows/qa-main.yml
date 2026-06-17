@@ -1,0 +1,85 @@
+name: QA — main
+
+# On merge to main: heavier regression that needs a browser / DB — full E2E UI,
+# visual regression, accessibility, and DB migration tests. Mirrors `make ci-main`.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: qa-main
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  ui:
+    name: e2e + visual + a11y
+    runs-on: ubuntu-latest
+    env:
+      E2E_BASE_URL: ${{ vars.E2E_BASE_URL || 'http://localhost:3000' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm --prefix tests install
+      - run: cd tests && npx playwright install --with-deps chromium
+      - run: make e2e visual a11y
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-main-ui
+          path: tests/test-results/**
+          retention-days: 30
+
+  migration:
+    name: db migration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make migration
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-main-migration
+          path: tests/test-results/migration/**
+          retention-days: 30
+
+  publish-report:
+    name: publish Allure report (history + S3)
+    runs-on: ubuntu-latest
+    needs: [ui, migration]
+    if: always()
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      QA_REPORTS_ROLE_ARN: ${{ secrets.QA_REPORTS_ROLE_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm --prefix tests install
+      - uses: actions/download-artifact@v4
+        with: { path: tests/test-results, merge-multiple: true }
+      - name: AWS auth (skipped if QA_REPORTS_ROLE_ARN unset)
+        if: ${{ env.QA_REPORTS_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.QA_REPORTS_ROLE_ARN }}
+          aws-region: ${{ vars.QA_AWS_REGION }}
+      - name: Generate (history-carried) + publish to S3
+        run: bash tests/scripts/publish-allure.sh
+        env:
+          S3_BUCKET: ${{ vars.QA_REPORTS_BUCKET }}
+          RUN_ID: ${{ github.sha }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: allure-report
+          path: tests/test-results/allure-report/**
+          retention-days: 30

@@ -1,0 +1,57 @@
+name: QA — release gate
+
+# Before a release: run the full suite and enforce every quality gate. A red gate
+# blocks the release. Mirrors `make ci-release`.
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-suite:
+    name: full suite + quality gates
+    runs-on: ubuntu-latest
+    env:
+      TARGET_URL: ${{ secrets.QA_TARGET_URL }}
+      BASE_URL: ${{ vars.QA_TARGET_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: make install
+
+      - name: Static + functional (lint, typecheck, unit, integration, api, contract, security)
+        run: make lint typecheck unit integration api contract security
+
+      - name: UI (e2e, visual, a11y)
+        run: make e2e visual a11y
+        continue-on-error: true
+
+      - name: DB migrations + IaC
+        run: make migration infra
+        continue-on-error: true
+
+      - name: Performance + DAST
+        run: make performance security-dast
+        if: env.TARGET_URL != ''
+        continue-on-error: true
+
+      - name: Quality gates (blocking)
+        run: make gates
+
+      - name: Build + upload Allure report
+        if: always()
+        run: cd tests && npx allure generate test-results/allure-results || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-report
+          path: |
+            tests/test-results/allure-report/**
+            tests/test-results/**/junit*.xml
+          retention-days: 90

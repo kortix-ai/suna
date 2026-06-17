@@ -1,0 +1,75 @@
+name: QA — nightly
+
+# Scheduled, expensive, or destructive suites that don't belong on PRs:
+# performance/load, dynamic security (DAST) + API fuzzing, mutation testing,
+# and chaos/resilience. Mirrors `make ci-nightly`. DAST/perf hit a dedicated
+# staging target — never shared prod. Set the QA_TARGET_URL secret/var.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: "Staging target (incl. /v1 for the API)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  performance:
+    name: performance / load (k6)
+    runs-on: ubuntu-latest
+    env:
+      BASE_URL: ${{ github.event.inputs.target_url || vars.QA_TARGET_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash tests/performance/run.sh load "$BASE_URL"
+      - run: bash tests/performance/run.sh stress "$BASE_URL"
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: qa-nightly-perf, path: tests/test-results/performance/**, retention-days: 30 }
+
+  dast:
+    name: DAST + API fuzz
+    runs-on: ubuntu-latest
+    env:
+      TARGET_URL: ${{ github.event.inputs.target_url || secrets.QA_TARGET_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard — require a non-prod target
+        run: |
+          if [ -z "$TARGET_URL" ]; then echo "::warning::no QA_TARGET_URL set; skipping DAST"; exit 0; fi
+          case "$TARGET_URL" in *prod*) echo "::error::refusing to scan a prod target"; exit 1;; esac
+      - run: bash tests/security/run.sh --dast
+        if: env.TARGET_URL != ''
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: qa-nightly-dast, path: tests/test-results/security/**, retention-days: 30 }
+
+  mutation:
+    name: mutation testing (Stryker)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm --prefix tests install
+      - run: make mutation
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: qa-nightly-mutation, path: tests/test-results/mutation/**, retention-days: 30 }
+
+  chaos:
+    name: chaos / resilience
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make chaos
+        continue-on-error: true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: qa-nightly-chaos, path: tests/test-results/chaos/**, retention-days: 30 }
