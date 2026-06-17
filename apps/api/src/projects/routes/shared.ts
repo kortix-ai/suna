@@ -11,7 +11,7 @@ import { db } from '../../shared/db';
 import { resolveBranchTip } from '../git';
 import { rehydrateSessionChat } from '../legacy-migration-rehydrate';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import { resolveProjectGitAuth } from '../lib/git';
 import {
   ProjectRow,
@@ -271,6 +271,67 @@ export async function resumeStoppedSandbox(row: {
       .catch(() => {});
   });
   return true;
+}
+
+// ── Pre-resume on presence ───────────────────────────────────────────────────
+// Throttle pre-resume per project so portal activity doesn't re-kick on every
+// request. The resume itself is idempotent (resumeStoppedSandbox only acts on a
+// stopped→active transition), so this is purely to avoid wasted DB lookups.
+const preResumeThrottle = new Map<string, number>();
+const PRERESUME_THROTTLE_MS = 30_000;
+
+/**
+ * When a user returns to a project, proactively resume their most-recently-used
+ * STOPPED session sandbox(es) so the ~8s in-place resume (VM restart + opencode
+ * re-warm) overlaps the user's navigation and the session is ready by the time
+ * they open it. Reuses resumeStoppedSandbox (idempotent with the on-open resume:
+ * if the box is already resuming/active, the conditional stopped→active lock
+ * simply no-ops). Best-effort + fire-and-forget; GATED OFF by default
+ * (KORTIX_PRERESUME_ENABLED) since it spends compute on a box the user might not
+ * open. Scoped to the user's OWN sessions (never speculatively resumes someone
+ * else's). Most-recent-first, capped at KORTIX_PRERESUME_MAX_PER_PROJECT.
+ */
+export function preResumeRecentStoppedSessions(projectId: string, userId?: string | null): void {
+  if (!config.KORTIX_PRERESUME_ENABLED || !projectId || !userId) return;
+  const nowMs = Date.now();
+  if (nowMs - (preResumeThrottle.get(projectId) ?? 0) < PRERESUME_THROTTLE_MS) return;
+  preResumeThrottle.set(projectId, nowMs);
+  void (async () => {
+    try {
+      const limit = Math.max(1, config.KORTIX_PRERESUME_MAX_PER_PROJECT);
+      const rows = await db
+        .select({
+          sandboxId: sessionSandboxes.sandboxId,
+          sessionId: sessionSandboxes.sessionId,
+          accountId: sessionSandboxes.accountId,
+          provider: sessionSandboxes.provider,
+          externalId: sessionSandboxes.externalId,
+        })
+        .from(sessionSandboxes)
+        .innerJoin(projectSessions, eq(projectSessions.sessionId, sessionSandboxes.sessionId))
+        .where(and(
+          eq(sessionSandboxes.projectId, projectId),
+          eq(sessionSandboxes.status, 'stopped'),
+          isNotNull(sessionSandboxes.externalId),
+          isNull(sessionSandboxes.poolState),
+          eq(projectSessions.createdBy, userId),
+        ))
+        .orderBy(desc(sessionSandboxes.lastUsedAt))
+        .limit(limit);
+      let kicked = 0;
+      for (const row of rows) {
+        const won = await resumeStoppedSandbox(row).catch((err) => {
+          console.warn(`[pre-resume] resume ${row.sandboxId.slice(0, 8)} failed:`, err instanceof Error ? err.message : err);
+          return false;
+        });
+        if (won) kicked++;
+      }
+      if (kicked) console.log(`[pre-resume] kicked ${kicked} resume(s) for project ${projectId.slice(0, 8)}`);
+    } catch (err) {
+      console.warn('[pre-resume] failed:', err instanceof Error ? err.message : err);
+      preResumeThrottle.delete(projectId); // let the next presence retry
+    }
+  })();
 }
 
 export async function allocateRuntimeOnOpen(
