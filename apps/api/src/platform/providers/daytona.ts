@@ -24,6 +24,35 @@ import type {
   ProvisioningStatus,
 } from './index';
 
+/**
+ * Daytona sandbox lifecycle policy, applied as SDK create() params so a box
+ * self-manages even when the API/tunnel that created it dies — orphaned
+ * local-dev and ephemeral-env sessions are the dominant leak source, and the
+ * idle sweep can't see boxes it has no DB row for.
+ *
+ *  - autoStopInterval: idle → stop (compute billing ends). CLAMPED to >= 1 so a
+ *    box is NEVER created persistent. A 0 here (the old warm-pool "stay ready
+ *    until claimed" value) leaked 500+ never-stopping boxes that nothing reaped.
+ *    This is the setting that actually stops the money burn.
+ *  - autoArchiveInterval: stopped → archived to cold storage after a few days
+ *    (cheap, still resumable). Until then the stopped box stays warm-resumable.
+ *  - autoDeleteInterval: -1 by default → NEVER auto-delete. An idle box is
+ *    nearly free once stopped + cold-archived, so we never destroy its disk;
+ *    a session is only removed when the user explicitly deletes it.
+ */
+export function daytonaLifecycle(autoStopOverride?: number): {
+  autoStopInterval: number;
+  autoArchiveInterval: number;
+  autoDeleteInterval: number;
+} {
+  const stop = autoStopOverride ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES;
+  return {
+    autoStopInterval: Math.max(1, stop || config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15),
+    autoArchiveInterval: config.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
+    autoDeleteInterval: config.KORTIX_SANDBOX_AUTODELETE_MINUTES,
+  };
+}
+
 export class DaytonaProvider implements SandboxProvider {
   readonly name: ProviderName = 'daytona';
 
@@ -105,13 +134,11 @@ export class DaytonaProvider implements SandboxProvider {
       {
         snapshot,
         envVars,
-        // Idle → stop (hibernate, disk kept). Stopped → archive to cold storage
-        // (disk still kept, resumable). NEVER auto-delete: a sandbox is only ever
-        // removed when a user explicitly deletes the session. -1 disables Daytona
-        // auto-delete explicitly so no account-level default can drop a box.
-        autoStopInterval: opts.autoStopInterval ?? 15,
-        autoArchiveInterval: 30,
-        autoDeleteInterval: -1,
+        // Idle → stop → archive → delete. See daytonaLifecycle(): auto-stop is
+        // clamped to >= 1 so this box can never be created persistent, and a
+        // finite auto-delete lets the SDK reclaim it if the API/tunnel that
+        // created it dies. Intervals are env-tunable (KORTIX_SANDBOX_AUTO*).
+        ...daytonaLifecycle(opts.autoStopInterval),
         public: false,
       },
       { timeout: createTimeoutSeconds },
@@ -163,9 +190,7 @@ export class DaytonaProvider implements SandboxProvider {
         box = await daytona.create(
           {
             snapshot: warmBaseSnapshot,
-            autoStopInterval: opts.autoStopInterval ?? 15,
-            autoArchiveInterval: 30,
-            autoDeleteInterval: -1,
+            ...daytonaLifecycle(opts.autoStopInterval),
             public: false,
           },
           { timeout },

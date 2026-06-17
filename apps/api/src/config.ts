@@ -235,6 +235,23 @@ const envSchema = z.object({
   SANDBOX_PORT_BASE:           optInt(14000),
   SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
 
+  // ── Sandbox lifecycle (Daytona auto-stop / auto-archive / auto-delete) ────
+  // Set as SDK create() params so a box self-manages even if the API/tunnel
+  // that created it dies (orphaned local-dev & ephemeral-env sessions are the
+  // main leak source). All in MINUTES.
+  //   autostop   → idle box stops, compute billing ends. CLAMPED to >=1 at the
+  //                use site so a box is NEVER created persistent (a 0 here once
+  //                leaked 500+ never-stopping boxes via the warm-pool path).
+  //                This is what actually stops the money burn.
+  //   autoarchive→ stopped box moves to cold storage after a few days (cheap,
+  //                still resumable; kept warm-resumable in the meantime).
+  //   autodelete → NEVER (-1). A sandbox is only ever removed when a user
+  //                explicitly deletes the session — auto-stop + cold archive
+  //                make an idle box nearly free, so we never destroy disk.
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(15),
+  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(4320),   // 3 days
+  KORTIX_SANDBOX_AUTODELETE_MINUTES:  optInt(-1),     // never auto-delete
+
   // ── Internal Service Key (auto-generated if missing — never fails) ───────
   INTERNAL_SERVICE_KEY:        optStr,
 
@@ -536,6 +553,11 @@ export const config = {
   DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
   DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
   KORTIX_WARM_POOL_FULL_SIZE: env.KORTIX_WARM_POOL_FULL_SIZE,
+
+  // Sandbox lifecycle intervals (minutes) — see schema comment above.
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
+  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
+  KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
 
   PLATINUM_API_KEY: env.PLATINUM_API_KEY,
   PLATINUM_API_URL: env.PLATINUM_API_URL,
