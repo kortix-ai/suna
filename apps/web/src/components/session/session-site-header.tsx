@@ -25,7 +25,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { RenameSessionModal } from '@/features/co-worker/project-sidebar/modal/rename-session-modal';
-import { SessionShareModal } from '@/features/co-worker/project-sidebar/modal/session-share-modal';
+import { ShareSessionModal } from '@/features/co-worker/project-sidebar/modal/share-session-modal';
 import {
   deleteProjectSession,
   listProjectSessions,
@@ -259,7 +259,7 @@ export function SessionSiteHeader({
       <CompactDialog sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} />
       {isProjectSession && (
         <>
-          <SessionShareModal
+          <ShareSessionModal
             projectId={projectId!}
             session={projectSession}
             open={shareOpen}

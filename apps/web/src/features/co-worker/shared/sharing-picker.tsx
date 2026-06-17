@@ -101,11 +101,7 @@ export function SharingPicker({
 
   return (
     <div className="space-y-3">
-      {showHeading && (
-        <Label className="text-muted-foreground/70 text-xs font-medium tracking-wide uppercase">
-          {c.heading}
-        </Label>
-      )}
+      {showHeading && <Label>{c.heading}</Label>}
       <RadioGroup
         value={value.mode}
         onValueChange={(v) => onChange({ ...value, mode: v as SharingMode })}

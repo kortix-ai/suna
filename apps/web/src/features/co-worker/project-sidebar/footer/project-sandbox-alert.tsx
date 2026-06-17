@@ -195,7 +195,7 @@ function SandboxAlertContent({
   );
 }
 
-export function ProjectSandboxAlertNavItem({ projectId }: { projectId: string }) {
+export function ProjectSandboxAlert({ projectId }: { projectId: string }) {
   const { data } = useSandboxHealth(projectId);
   const severity = severityOf(data);
   if (!severity || !data) return null;

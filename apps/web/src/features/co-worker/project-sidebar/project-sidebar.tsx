@@ -32,7 +32,7 @@ import { ProjectAppsNavItem } from '@/features/co-worker/project-sidebar/footer/
 import { ProjectChangeRequestsNavItem } from '@/features/co-worker/project-sidebar/footer/project-change-requests-nav';
 import { ProjectCustomizeNavItem } from '@/features/co-worker/project-sidebar/footer/project-customize-nav';
 import { OnboardingSetupNavItem } from '@/features/co-worker/project-sidebar/footer/project-onboarding-setup';
-import { ProjectSandboxAlertNavItem } from '@/features/co-worker/project-sidebar/footer/project-sandbox-alert-nav';
+import { ProjectSandboxAlert } from '@/features/co-worker/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/co-worker/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/co-worker/project-sidebar/project-switcher';
 import { Icon } from '@/features/icon/icon';
@@ -246,7 +246,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                   className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 flex items-center justify-center border-[1.2px] text-center !text-sm [&_svg]:!size-5"
                 >
                   {createSession.isPending ? 'Creating…' : 'New session'}
-                  <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2">
+                  <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover/menu-button:opacity-100">
                     <Kbd>{modSymbol}</Kbd>
                     <Kbd>J</Kbd>
                   </KbdGroup>
@@ -326,7 +326,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
 
           <SidebarGroup className="mt-auto py-0.5">
             <SidebarMenu>
-              <ProjectSandboxAlertNavItem projectId={projectId} />
+              <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectAppsNavItem projectId={projectId} />
               <OnboardingSetupNavItem projectId={projectId} />

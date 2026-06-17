@@ -1,6 +1,6 @@
 /**
  * SessionShareSheet — bottom sheet to set who can see/open a session.
- * Ported from web's SessionShareModal + SharingPicker:
+ * Ported from web's ShareSessionModal + SharingPicker:
  * PUT /projects/:id/sessions/:sid/sharing with
  *   { mode: 'project' } | { mode: 'private', ownerId } | { mode: 'members', memberIds }.
  * Members come from the same project-access list the Members page uses.

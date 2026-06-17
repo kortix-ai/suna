@@ -68,7 +68,7 @@ export function SessionVisibilityBadge({ session }: { session: ProjectSession })
 }
 
 
-export function SessionShareModal({
+export function ShareSessionModal({
   projectId,
   session,
   open,

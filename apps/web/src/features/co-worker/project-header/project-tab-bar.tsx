@@ -7,13 +7,13 @@ import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { sessionDisplayLabel } from '@/components/projects/session-label';
-import {
-  SessionShareModal,
-  SessionVisibilityBadge,
-} from '@/features/co-worker/project-sidebar/modal/session-share-modal';
 import { Button } from '@/components/ui/button';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import {
+  SessionVisibilityBadge,
+  ShareSessionModal,
+} from '@/features/co-worker/project-sidebar/modal/share-session-modal';
 import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
 import { desktopPlatform, isDesktop } from '@/lib/desktop';
 import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
@@ -243,7 +243,7 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
         )}
       </div>
 
-      <SessionShareModal
+      <ShareSessionModal
         projectId={projectId}
         session={activeSession}
         open={shareOpen}

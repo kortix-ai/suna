@@ -42,7 +42,7 @@ import { resetClientState } from '@/lib/utils/reset-client-state';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
-import { BookOpen, CogOneSolid, CreditCardSolid, HomeSolid } from '@mynaui/icons-react';
+import { BookOpen, CogOne, CreditCard, HomeSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Download, LifeBuoy, LogOut } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -216,7 +216,7 @@ export function UserMenu({
         </DropdownMenuItem>
 
         <DropdownMenuItem onSelect={() => openUserSettings('general')}>
-          <CogOneSolid />
+          <CogOne />
 
           {tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
         </DropdownMenuItem>
@@ -229,7 +229,7 @@ export function UserMenu({
               )
             }
           >
-            <CreditCardSolid />
+            <CreditCard />
             Billing
           </DropdownMenuItem>
         )}

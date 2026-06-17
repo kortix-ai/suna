@@ -23,7 +23,7 @@ import Loading from '@/components/ui/loading';
 import { errorToast, successToast } from '@/components/ui/toast';
 import { RenameSessionModal } from '@/features/co-worker/project-sidebar/modal/rename-session-modal';
 import { SessionDeleteModal } from '@/features/co-worker/project-sidebar/modal/session-delete-modal';
-import { SessionShareModal } from '@/features/co-worker/project-sidebar/modal/session-share-modal';
+import { ShareSessionModal } from '@/features/co-worker/project-sidebar/modal/share-session-modal';
 import { Icon } from '@/features/icon/icon';
 import {
   listProjectSessions,
@@ -184,7 +184,7 @@ export function ProjectSessionList({ projectId, filter = 'all' }: ProjectSession
         })}
       </FadedScrollArea>
 
-      <SessionShareModal
+      <ShareSessionModal
         projectId={projectId}
         session={sessionToShare}
         open={!!sessionToShare}

@@ -21,7 +21,7 @@ import { SandboxTemplateForm } from '@/components/projects/sandbox-template-form
 import { Button } from '@/components/ui/button';
 import { List } from '@/components/ui/list';
 import { Skeleton } from '@/components/ui/skeleton';
-import { useSandboxRecovery } from '@/features/co-worker/project-sidebar/footer/project-sandbox-alert-nav';
+import { useSandboxRecovery } from '@/features/co-worker/project-sidebar/footer/project-sandbox-alert';
 import {
   buildSandboxTemplate,
   deleteSandboxTemplate,
