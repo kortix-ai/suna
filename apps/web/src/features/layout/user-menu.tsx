@@ -42,13 +42,7 @@ import { resetClientState } from '@/lib/utils/reset-client-state';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
-import {
-  BookOpen,
-  ChevronsUpDown,
-  CogOneSolid,
-  CreditCardSolid,
-  HomeSolid,
-} from '@mynaui/icons-react';
+import { BookOpen, CogOneSolid, CreditCardSolid, HomeSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Download, LifeBuoy, LogOut } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -126,9 +120,9 @@ export function UserMenu({
   const trigger =
     variant === 'header' ? (
       <Button
+        variant="ghost"
         size="icon"
-        className="bg-background hover:bg-background dark:hover:bg-foreground dark:bg-foreground m-0 border-none p-0"
-        aria-label={tHardcodedUi.raw('componentsLayoutUserMenu.line142JsxAttrAriaLabelYourMenu')}
+        className="bg-background hover:bg-background dark:hover:bg-foreground dark:bg-foreground *:text-foreground *:dark:text-background m-0 size-8 overflow-hidden rounded-sm border"
       >
         <UserAvatar
           email={user.email}
@@ -142,8 +136,9 @@ export function UserMenu({
       <SidebarMenuButton
         size="lg"
         className={cn(
-          'group/user relative h-auto gap-2 rounded-2xl border border-transparent bg-transparent px-1.5 py-1',
-          'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
+          'group/user relative gap-2 px-2.5 py-1',
+          // 'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
+          'relative flex cursor-pointer items-center gap-2 rounded-md px-2 transition-colors duration-150',
           'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
         )}
       >
@@ -151,16 +146,15 @@ export function UserMenu({
           email={user.email}
           name={user.name}
           avatarUrl={user.avatar}
-          size="sm"
-          className="ring-border/40 ring-1"
+          size="md"
+          className="border-border border"
         />
-        <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
+        <div className="flex min-w-0 flex-1 flex-col items-start justify-start space-y-0 text-left leading-tight group-data-[collapsible=icon]:hidden">
           <span className="text-foreground truncate text-sm font-medium tracking-tight">
             {user.name}
           </span>
-          <span className="text-muted-foreground/80 mt-0.5 truncate text-xs">{user.email}</span>
+          <span className="text-muted-foreground/80 truncate text-xs">{user.email}</span>
         </div>
-        <ChevronsUpDown className="text-muted-foreground/30 ml-auto size-3 shrink-0 group-data-[collapsible=icon]:hidden" />
       </SidebarMenuButton>
     );
 

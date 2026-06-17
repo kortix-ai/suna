@@ -13,54 +13,34 @@ import { useTranslations } from 'next-intl';
  * Entity tiles use the design-system <EntityAvatar> (things are square).
  */
 
-import * as React from 'react';
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter, useParams, usePathname } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowUpRight, Check, ChevronsUpDown, FolderGit2, Loader2, Plus, Search } from 'lucide-react';
+import { ChevronsUpDown, FolderGit2, Search } from 'lucide-react';
+import { useParams, usePathname, useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { EntityAvatar } from '@/components/ui/entity-avatar';
 import { Input } from '@/components/ui/input';
+import Loading from '@/components/ui/loading';
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from '@/components/ui/sidebar';
+import { listAccounts, listProjectsForAccount, type KortixProject } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
-import {
-  listAccounts,
-  listProjectsForAccount,
-  type KortixProject,
-} from '@/lib/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
-import {
-  useIsSwitchingProject,
-  useProjectSwitchStore,
-} from '@/stores/project-switch-store';
+import { useIsSwitchingProject, useProjectSwitchStore } from '@/stores/project-switch-store';
+import { formatRelative } from '@kortix/shared';
+import { CheckCircleSolid, ChevronsUpDownSolid } from '@mynaui/icons-react';
 
 export type ProjectSwitcherVariant = 'header' | 'sidebar';
-
-function formatRelative(input: string | null | undefined) {
-  if (!input) return null;
-  const then = new Date(input).getTime();
-  if (Number.isNaN(then)) return null;
-  const diff = Date.now() - then;
-  const minute = 60_000;
-  const hour = 60 * minute;
-  const day = 24 * hour;
-  if (diff < minute) return 'just now';
-  if (diff < hour) return `${Math.floor(diff / minute)}m ago`;
-  if (diff < day) return `${Math.floor(diff / hour)}h ago`;
-  if (diff < 7 * day) return `${Math.floor(diff / day)}d ago`;
-  return new Date(input).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
 
 export function ProjectSwitcher({
   variant = 'header',
@@ -108,7 +88,7 @@ export function ProjectSwitcher({
   const activeProject = useMemo(
     () =>
       activeProjectId && projectsQuery.data
-        ? projectsQuery.data.find((p) => p.project_id === activeProjectId) ?? null
+        ? (projectsQuery.data.find((p) => p.project_id === activeProjectId) ?? null)
         : null,
     [projectsQuery.data, activeProjectId],
   );
@@ -153,32 +133,23 @@ export function ProjectSwitcher({
 
   const trigger =
     variant === 'header' ? (
-      <button
-        type="button"
-        className={cn(
-          'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-foreground transition-colors',
-          'hover:bg-muted/50 data-[state=open]:bg-muted/60',
-          className,
-        )}
-      >
+      <Button type="button" className={cn(className)}>
         {tile}
         <span className="max-w-40 truncate text-sm font-medium">{label}</span>
-        <ChevronsUpDown className="h-3 w-3 text-muted-foreground/50" />
-      </button>
+        <ChevronsUpDownSolid className="text-muted-foreground size-3" />
+      </Button>
     ) : (
       <SidebarMenuButton
         size="lg"
         className={cn(
-          'group/trigger relative h-auto gap-2 rounded-2xl border border-transparent bg-transparent px-1.5 py-1',
-          'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
-          'group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!px-0',
+          'group/trigger relative h-auto gap-2 border border-transparent bg-transparent px-1.5 py-1',
         )}
       >
         {tile}
-        <span className="min-w-0 flex-1 truncate text-left text-sm font-semibold tracking-tight text-foreground group-data-[collapsible=icon]:hidden">
+        <span className="text-foreground min-w-0 flex-1 truncate text-left text-sm font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
           {label}
         </span>
-        <ChevronsUpDown className="ml-auto size-3 shrink-0 text-muted-foreground/40 group-data-[collapsible=icon]:hidden" />
+        <ChevronsUpDown className="text-muted-foreground/40 ml-auto size-4 shrink-0 group-data-[collapsible=icon]:hidden" />
       </SidebarMenuButton>
     );
 
@@ -196,32 +167,33 @@ export function ProjectSwitcher({
       <DropdownMenuContent
         align="start"
         side="bottom"
-        sideOffset={6}
         className={cn(
-          'overflow-hidden rounded-2xl border-border/60 p-0',
-          variant === 'sidebar' ? 'w-(--radix-dropdown-menu-trigger-width) min-w-56 shadow-none' : 'w-64',
+          'overflow-hidden p-0 light:bg-background ',
+          variant === 'sidebar'
+            ? 'w-(--radix-dropdown-menu-trigger-width) min-w-64 shadow-none'
+            : 'w-64',
         )}
       >
         {showSearch && (
-          <div className="border-b border-border/40 px-2 py-2">
+          <div className="border-border/40 border-b px-2 py-2">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
+              <Search className="text-muted-foreground/50 pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
               <Input
                 autoFocus
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder={tHardcodedUi.raw('componentsLayoutProjectSwitcher.line210JsxAttrPlaceholderFindProject')}
-                className="h-8 pl-7 pr-2 text-sm placeholder:text-muted-foreground/50"
+                placeholder={tHardcodedUi.raw(
+                  'componentsLayoutProjectSwitcher.line210JsxAttrPlaceholderFindProject',
+                )}
+                className="placeholder:text-muted-foreground/50 h-8 pr-2 pl-7 text-sm"
               />
             </div>
           </div>
         )}
 
-        <div className="py-1.5">
-          <div className="px-3 pb-1 pt-1 text-xs font-semibold uppercase tracking-[0.06em] text-muted-foreground/50">
-            Projects
-          </div>
-          <div className="max-h-[280px] overflow-y-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Projects</DropdownMenuLabel>
+          <div className="max-h-[280px] [scrollbar-width:none] overflow-y-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {projectsQuery.isLoading ? (
               <div className="space-y-1 py-1">
                 {Array.from({ length: 3 }, (_, i) => (
@@ -229,70 +201,60 @@ export function ProjectSwitcher({
                 ))}
               </div>
             ) : filteredProjects.length === 0 ? (
-              <div className="px-2 py-3 text-xs text-muted-foreground/60">
+              <div className="text-muted-foreground/60 px-2 py-3 text-xs">
                 {query.trim() ? 'No projects match' : 'No projects yet'}
               </div>
             ) : (
               filteredProjects.map((project) => {
                 const active = project.project_id === activeProjectId;
                 const loading = switching && project.project_id !== activeProjectId;
-                const relative = formatRelative(project.last_opened_at);
+                const relative = formatRelative(project.last_opened_at, { maxRelativeDays: 7 });
                 return (
                   <DropdownMenuItem
                     key={project.project_id}
                     disabled={loading}
                     onSelect={() => switchProject(project)}
-                    className={cn(
-                      'flex h-9 cursor-pointer items-center gap-2.5 rounded-lg px-2 py-0',
-                      active && 'bg-muted/60',
-                      loading && 'pointer-events-none opacity-60',
-                    )}
+                    className={cn('cursor-pointer', active && 'bg-muted/60')}
                   >
-                    <EntityAvatar label={project.name} size="xs" />
+                    <EntityAvatar label={project.name} size="sm" />
                     <div className="grid min-w-0 flex-1 leading-tight">
                       <span className="truncate text-sm font-medium">{project.name}</span>
-                      {relative && (
-                        <span className="truncate text-xs text-muted-foreground/60">
-                          {relative}
-                        </span>
-                      )}
                     </div>
                     {loading ? (
-                      <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+                      <Loading className="text-muted-foreground size-3.5" />
                     ) : active ? (
-                      <Check className="size-3.5 shrink-0 text-foreground/70" />
+                      <CheckCircleSolid className="text-kortix-green size-3.5 shrink-0" />
                     ) : null}
                   </DropdownMenuItem>
                 );
               })
             )}
           </div>
-        </div>
+        </DropdownMenuGroup>
 
-        <div className="h-px bg-border/40" />
+        <DropdownMenuSeparator className="my-0" />
 
-        <div className="px-1 py-1">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Projects</DropdownMenuLabel>
           <DropdownMenuItem
+            className="cursor-pointer font-medium"
             onSelect={() => {
               close();
               router.push('/projects');
             }}
-            className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
-            <ArrowUpRight className="size-3.5" />
-            <span className="flex-1 truncate text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsLayoutProjectSwitcher.line281JsxTextAllProjects')}</span>
+            {tHardcodedUi.raw('componentsLayoutProjectSwitcher.line281JsxTextAllProjects')}
           </DropdownMenuItem>
           <DropdownMenuItem
+            className="cursor-pointer font-medium"
             onSelect={() => {
               close();
               router.push('/projects?new=1');
             }}
-            className="flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 py-0 [&_svg]:!text-muted-foreground/70"
           >
-            <Plus className="size-3.5" />
-            <span className="flex-1 truncate text-sm font-medium text-foreground/80">{tHardcodedUi.raw('componentsLayoutProjectSwitcher.line293JsxTextNewProject')}</span>
+            {tHardcodedUi.raw('componentsLayoutProjectSwitcher.line293JsxTextNewProject')}
           </DropdownMenuItem>
-        </div>
+        </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
   );

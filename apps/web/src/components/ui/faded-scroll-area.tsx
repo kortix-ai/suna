@@ -60,7 +60,7 @@ export const FadedScrollArea = React.forwardRef<
   }, [updateScrollFades]);
 
   return (
-    <div className="relative">
+    <div className="relative flex h-full min-h-0 flex-col">
       <div
         className={cn(
           'pointer-events-none absolute inset-x-0 top-0 z-10 h-10 bg-gradient-to-b to-transparent transition-opacity',
@@ -79,7 +79,7 @@ export const FadedScrollArea = React.forwardRef<
       />
       <div
         ref={setScrollRef}
-        className={cn('scrollbar-hide h-full min-h-0 flex-1 overflow-y-auto pb-0', className)}
+        className={cn('scrollbar-hide min-h-0 flex-1 overflow-y-auto pb-0', className)}
       >
         {children}
       </div>

@@ -1,40 +1,28 @@
 'use client';
 
-import { useCallback, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-
-import { ProjectShell } from '@/components/projects/project-shell';
-import { ProjectHome, type ProjectHomeSendOptions } from '@/components/projects/project-home';
-import { createProjectSession, getProjectDetail, prefetchSessionStart } from '@/lib/projects-client';
-import { toast } from '@/lib/toast';
+import { errorToast } from '@/components/ui/toast';
+import {
+  ProjectHome,
+  type ProjectHomeSendOptions,
+} from '@/features/co-worker/project-layout/project-home';
+import { ProjectShell } from '@/features/co-worker/project-layout/project-shell';
 import { useAccountState } from '@/hooks/billing';
-import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
 import { isBillingEnabled } from '@/lib/config';
+import {
+  createProjectSession,
+  getProjectDetail,
+  prefetchSessionStart,
+} from '@/lib/projects-client';
+import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useParams, useRouter } from 'next/navigation';
+import { useCallback, useState } from 'react';
 
-/**
- * Project root — the project home / dashboard.
- *
- * A welcome hero + a composer to start a session, over a grid of section tiles
- * (integrations, scheduled tasks, skills, Slack, team, agent) that tease the
- * feature and prompt setup, each docs-backed.
- *
- * Send flow: create the session FIRST, then navigate on success. We used to
- * navigate optimistically (mint id → push → POST in background) for perceived
- * speed, but that meant a no-plan account got dropped onto a dead session page
- * before the billing 402 came back. Now the backend's billing gate (which knows
- * THIS project's account) is authoritative: a 402 opens the Team plan modal and
- * we never navigate. The session id is client-minted so we can stash the pending
- * prompt; the API accepts client-provided ids via the `session_id` body field.
- */
 export default function ProjectIndexPage() {
   const { id: projectId } = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
-  // The account that OWNS this project (team account), not the viewer's primary
-  // account — so the "are you subscribed?" check and the upgrade dialog target
-  // the right wallet. Reuses ProjectShell's project-detail query (same key → no
-  // extra fetch).
+
   const { data: projectDetail } = useQuery({
     queryKey: ['project-detail', projectId],
     queryFn: () => getProjectDetail(projectId),
@@ -52,9 +40,7 @@ export default function ProjectIndexPage() {
 
       // Fast client-side pre-check (best-effort; backend is authoritative).
       const noPlan =
-        isBillingEnabled() &&
-        !!accountState &&
-        !accountState.subscription?.subscription_id;
+        isBillingEnabled() && !!accountState && !accountState.subscription?.subscription_id;
       if (noPlan) {
         openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId });
         return;
@@ -94,7 +80,7 @@ export default function ProjectIndexPage() {
         }
         // Out of credits on an existing plan (legacy/balance) → surface the
         // backend message ("Top up to continue"); don't pitch a subscription.
-        toast.error(err instanceof Error ? err.message : 'Failed to start session');
+        errorToast(err instanceof Error ? err.message : 'Failed to start session');
       }
     },
     [projectId, projectAccountId, queryClient, router, accountState, openUpgradeDialog, busy],

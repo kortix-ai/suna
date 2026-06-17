@@ -1,39 +1,29 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
-import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, ChevronRight, Home, Menu, X } from 'lucide-react';
-import { useParams, usePathname, useRouter } from 'next/navigation';
-import { Share2 } from 'lucide-react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { ChevronLeft, ChevronRight, Home, Menu, Share2, X } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useParams, usePathname, useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
 
-import { cn } from '@/lib/utils';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { useSidebar } from '@/components/ui/sidebar';
-import { isDesktop, desktopPlatform } from '@/lib/desktop';
-import {
-  listProjectSessions,
-  type ProjectSession,
-} from '@/lib/projects-client';
-import { Button } from '@/components/ui/button';
-import { SessionShareDialog, SessionVisibilityBadge } from '@/components/projects/session-share-dialog';
 import { sessionDisplayLabel } from '@/components/projects/session-label';
-import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
+import {
+  SessionShareModal,
+  SessionVisibilityBadge,
+} from '@/features/co-worker/project-sidebar/modal/session-share-modal';
+import { Button } from '@/components/ui/button';
+import { useSidebar } from '@/components/ui/sidebar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
+import { desktopPlatform, isDesktop } from '@/lib/desktop';
+import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
+import { cn } from '@/lib/utils';
+import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 
 interface ProjectTabBarProps {
   projectId: string;
 }
 
-/**
- * Hamburger that opens the project sidebar drawer on touch. The project
- * shell has no global right rail (per-session panels are toggled from the
- * session header), so this is the single mobile entry into the sidebar.
- */
 function MobileSidebarTrigger() {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const sidebar = useSidebar();
@@ -41,39 +31,24 @@ function MobileSidebarTrigger() {
     <button
       type="button"
       onClick={() => sidebar.setOpenMobile(true)}
-      className="flex items-center justify-center h-9 w-9 rounded-md text-muted-foreground/70 transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-      aria-label={tHardcodedUi.raw('componentsProjectsProjectTabBar.line38JsxAttrAriaLabelOpenMenu')}
+      className="text-muted-foreground/70 hover:bg-foreground/[0.05] hover:text-foreground flex h-9 w-9 items-center justify-center rounded-md transition-colors"
+      aria-label={tHardcodedUi.raw(
+        'componentsProjectsProjectTabBar.line38JsxAttrAriaLabelOpenMenu',
+      )}
     >
       <Menu className="h-5 w-5" />
     </button>
   );
 }
 
-/**
- * Slim mobile-only bar used when the tab selector is disabled. Without it,
- * mobile users would have no way to reach the sidebar drawer (the desktop
- * rail and Cmd/Ctrl+B shortcut don't apply on touch). Carries the top
- * safe-area inset so it clears the notch under `viewportFit: 'cover'`.
- */
 export function ProjectMobileMenuBar() {
   return (
-    <div className="flex md:hidden items-center bg-sidebar pl-1.5 h-[calc(38px+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)]">
+    <div className="bg-sidebar flex h-[calc(38px+env(safe-area-inset-top,0px))] items-center pt-[env(safe-area-inset-top,0px)] pl-1.5 md:hidden">
       <MobileSidebarTrigger />
     </div>
   );
 }
 
-/**
- * Project shell top strip.
- *
- * Holds session tabs (one per open project session). Clicking a session in
- * the left sidebar opens it as a tab here; navigating between tabs swaps
- * the chat view without unmounting the shell. Close (×) drops the tab and,
- * if it was active, routes back to the project sessions list.
- *
- * macOS-traffic-light spacing + mobile sidebar toggles mirror the legacy
- * dashboard's TabBar so the chrome height/density matches across surfaces.
- */
 export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
   const sidebar = useSidebar();
   const router = useRouter();
@@ -86,30 +61,17 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
   const optimisticActive = useProjectSessionTabsStore(
     (s) => s.optimisticActiveByProject[projectId] ?? null,
   );
-  const setOptimisticActive = useProjectSessionTabsStore(
-    (s) => s.setOptimisticActive,
-  );
-  const openTabIds = useMemo(
-    () => tabsByProject[projectId] ?? [],
-    [tabsByProject, projectId],
-  );
+  const setOptimisticActive = useProjectSessionTabsStore((s) => s.setOptimisticActive);
+  const openTabIds = useMemo(() => tabsByProject[projectId] ?? [], [tabsByProject, projectId]);
   const isProjectHome = pathname === `/projects/${projectId}`;
-  // Effective active id — optimistic pin wins until the URL catches up, so
-  // the highlight on the tab bar moves in lockstep with the close click
-  // instead of blanking for a frame.
+
   const effectiveActiveId = optimisticActive ?? activeSessionId;
   const closeProjectTab = useCloseProjectTab(projectId);
 
-  // Auto-open the current session as a tab whenever the URL points at one.
-  // Customize is no longer a tab — it's a full-screen overlay (see
-  // customize-store) — so nothing here tracks it.
   useEffect(() => {
     if (activeSessionId) openTab(projectId, activeSessionId);
   }, [projectId, activeSessionId, openTab]);
 
-  // Drop the optimistic pin once the real URL settles. Match OR mismatch
-  // both clear it — if the user navigated elsewhere mid-transition, the
-  // real route is the source of truth.
   useEffect(() => {
     if (optimisticActive !== null) {
       setOptimisticActive(projectId, null);
@@ -119,20 +81,12 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
 
   const queryClient = useQueryClient();
 
-  // Pre-warm open tabs so the click→render round-trip lands on cached
-  // routes + cached sandbox metadata instead of a cold compile + fetch.
-  // In dev this is the bulk of the perceived close lag.
   useEffect(() => {
-    // Only prefetch the ROUTE (free, just warms Next's compile/router). Do NOT
-    // prefetch /start per tab — it provisions/wakes/ensures, and across many open
-    // tabs that floods the API into timeouts. The session page calls /start once
-    // when you actually open a tab.
     openTabIds.forEach((id) => {
       router.prefetch(`/projects/${projectId}/sessions/${id}`);
     });
   }, [openTabIds, projectId, router]);
 
-  // Load session metadata so tabs can show the real title instead of a UUID.
   const { data: sessions } = useQuery({
     queryKey: ['project-sessions', projectId],
     queryFn: () => listProjectSessions(projectId),
@@ -147,9 +101,8 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
   }, [sessions]);
 
   const [shareOpen, setShareOpen] = useState(false);
-  const activeSession = activeSessionId ? sessionById.get(activeSessionId) ?? null : null;
+  const activeSession = activeSessionId ? (sessionById.get(activeSessionId) ?? null) : null;
 
-  // macOS desktop traffic-light spacing — mirrors tab-bar.tsx.
   const [isMacDesktop, setIsMacDesktop] = useState(false);
   useEffect(() => {
     setIsMacDesktop(isDesktop() && desktopPlatform() === 'macos');
@@ -162,20 +115,16 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
 
   return (
     <div
-      className="flex-shrink-0 flex items-stretch bg-sidebar h-[calc(38px+env(safe-area-inset-top,0px))] pt-[env(safe-area-inset-top,0px)] relative overflow-hidden"
+      className="bg-sidebar relative flex h-[calc(38px+env(safe-area-inset-top,0px))] flex-shrink-0 items-stretch overflow-hidden pt-[env(safe-area-inset-top,0px)]"
       role="tablist"
     >
-      {/* Mobile: open the sidebar drawer. */}
-      <div className="flex-shrink-0 flex items-center pl-1.5 pr-1 md:hidden">
+      <div className="flex flex-shrink-0 items-center pr-1 pl-1.5 md:hidden">
         <MobileSidebarTrigger />
       </div>
 
-      {/* Desktop back/forward + home. Back/forward are a directional pair
-          (kept tight); Home is a distinct destination, so it's set apart with
-          a little extra space — the same grouping browser chrome uses. */}
       <div
         className={cn(
-          'flex-shrink-0 items-center gap-0.5 pr-1 hidden md:flex',
+          'hidden flex-shrink-0 items-center gap-0.5 pr-1 md:flex',
           needsTrafficLightSpace ? 'pl-10' : 'pl-2',
         )}
       >
@@ -183,7 +132,7 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
           <TooltipTrigger asChild>
             <button
               onClick={() => window.history.back()}
-              className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+              className="text-muted-foreground/50 hover:text-muted-foreground flex h-6 w-6 cursor-pointer items-center justify-center rounded transition-colors"
             >
               <ChevronLeft className="h-3.5 w-3.5" />
             </button>
@@ -196,7 +145,7 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
           <TooltipTrigger asChild>
             <button
               onClick={() => window.history.forward()}
-              className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground/50 hover:text-muted-foreground transition-colors cursor-pointer"
+              className="text-muted-foreground/50 hover:text-muted-foreground flex h-6 w-6 cursor-pointer items-center justify-center rounded transition-colors"
             >
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
@@ -211,7 +160,7 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
             <button
               onClick={() => router.push(`/projects/${projectId}`)}
               className={cn(
-                'flex items-center justify-center w-6 h-6 rounded transition-colors cursor-pointer ml-1.5',
+                'ml-1.5 flex h-6 w-6 cursor-pointer items-center justify-center rounded transition-colors',
                 isProjectHome
                   ? 'text-foreground'
                   : 'text-muted-foreground/50 hover:text-muted-foreground',
@@ -227,17 +176,13 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
         </Tooltip>
       </div>
 
-      {/* Tabs — mirrors components/tabs/tab-bar.tsx OG styling: flat row,
-          bottom accent line on active, hover-fade close button. One tab per
-          open session (Customize is a full-screen overlay, not a tab). */}
-      <div className="flex-1 flex items-stretch overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
+      <div className="flex flex-1 [scrollbar-width:'none'] items-stretch overflow-x-auto px-1 [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
         {openTabIds.map((tabId) => {
           const isActive = isTabActive(tabId);
-          // Same label the sidebar shows (sessionDisplayLabel) so a session is
-          // called one thing everywhere; short-id fallback until the sessions
-          // query lands.
           const tabSession = sessionById.get(tabId);
-          const label = tabSession ? sessionDisplayLabel(tabSession) : `session ${tabId.slice(0, 8)}`;
+          const label = tabSession
+            ? sessionDisplayLabel(tabSession)
+            : `session ${tabId.slice(0, 8)}`;
 
           return (
             <div
@@ -246,9 +191,9 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
               aria-selected={isActive}
               onClick={() => router.push(hrefForTab(tabId))}
               className={cn(
-                'group relative flex items-center text-xs select-none cursor-pointer',
-                'transition-colors duration-150 h-full',
-                'gap-1.5 px-2.5 md:gap-2 md:px-3 max-w-[200px] min-w-[96px] md:min-w-[80px]',
+                'group relative flex cursor-pointer items-center text-xs select-none',
+                'h-full transition-colors duration-150',
+                'max-w-[200px] min-w-[96px] gap-1.5 px-2.5 md:min-w-[80px] md:gap-2 md:px-3',
                 isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -260,12 +205,10 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
                   closeProjectTab(tabId);
                 }}
                 className={cn(
-                  'flex-shrink-0 p-0.5 rounded-sm transition-colors duration-100 cursor-pointer',
+                  'flex-shrink-0 cursor-pointer rounded-sm p-0.5 transition-colors duration-100',
                   'hover:bg-foreground/10',
                   isActive
-                    // active tab: tappable close on touch, hover-dimmed on desktop
                     ? 'opacity-60 md:opacity-40 md:hover:opacity-80'
-                    // inactive tab: desktop hover only (no hover target on touch)
                     : 'hidden md:block md:opacity-0 md:group-hover:opacity-40 md:group-hover:hover:opacity-80',
                 )}
                 aria-label={`Close ${label}`}
@@ -273,16 +216,15 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
                 <X className="h-2.5 w-2.5" />
               </button>
 
-              {/* Active indicator — bottom accent line, same as OG */}
               {isActive && (
-                <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-foreground/80 rounded-full" />
+                <div className="bg-foreground/80 absolute right-2 bottom-0 left-2 h-[2px] rounded-full" />
               )}
             </div>
           );
         })}
       </div>
 
-      <div className="flex-shrink-0 flex items-center gap-1.5 pr-2 relative z-20 bg-sidebar pl-1 h-full">
+      <div className="bg-sidebar relative z-20 flex h-full flex-shrink-0 items-center gap-1.5 pr-2 pl-1">
         {activeSession && (
           <>
             <SessionVisibilityBadge session={activeSession} />
@@ -301,7 +243,7 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
         )}
       </div>
 
-      <SessionShareDialog
+      <SessionShareModal
         projectId={projectId}
         session={activeSession}
         open={shareOpen}

@@ -1,26 +1,10 @@
 'use client';
 
-/**
- * "Changes ready for main" — the sidebar nudge that appears whenever a project
- * has open change requests waiting to be reviewed and merged. Two surfaces
- * share one controller (mirrors {@link ProjectSetupNavItem}):
- *
- *   • <ProjectChangeRequestsNavItem>  — the expanded sidebar row.
- *   • <ProjectChangeRequestsRailItem> — the collapsed icon-rail button.
- *
- * Both hide themselves when there's nothing to merge, so a project that's all
- * caught up carries no extra chrome. Clicking opens the change request straight
- * away: a single open CR jumps right into the review/merge dialog; several open
- * CRs drop a compact chooser first. Hovering explains what's waiting.
- *
- * The sidebar lives ABOVE the project-files context, so this component mounts
- * its own <ProjectFilesProvider> to power the change-request hooks + dialog.
- */
-
 import * as React from 'react';
 import { useCallback, useState } from 'react';
 import { ArrowRight, GitBranch, GitMerge, GitPullRequest } from 'lucide-react';
 
+import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import {
   Popover,
   PopoverAnchor,
@@ -31,33 +15,24 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import { cn } from '@/lib/utils';
+import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
-import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import type { ChangeRequest } from '@/features/project-files/api/change-requests';
-
-// ---------------------------------------------------------------------------
-// Shared controller — list of open CRs + how a click resolves.
-// ---------------------------------------------------------------------------
+import { cn } from '@/lib/utils';
 
 interface CrController {
   crs: ChangeRequest[];
   count: number;
-  /** CR detail dialog target (null = closed). */
   selectedCrId: string | null;
   setSelectedCrId: (id: string | null) => void;
-  /** Multi-CR chooser popover. */
   listOpen: boolean;
   setListOpen: (open: boolean) => void;
-  /** One click: jump straight to the only CR, or open the chooser. */
   onActivate: () => void;
   openCr: (id: string) => void;
 }
 
 function useOpenCrController(): CrController {
-  // Poll for open CRs so the nudge appears (and clears) without a refresh.
   const { data } = useChangeRequests('open', { refetchInterval: 20_000 });
   const crs = data?.change_requests ?? [];
   const count = crs.length;
@@ -90,16 +65,11 @@ function useOpenCrController(): CrController {
   };
 }
 
-/** Hover copy — explains, in plain language, what's waiting. */
 function tooltipCopy(count: number): string {
   return count === 1
     ? 'A change is ready to merge into main. Click to review and merge it.'
     : `${count} changes are ready to merge into main. Click to review and merge them.`;
 }
-
-// ---------------------------------------------------------------------------
-// Chooser popover — only shown when more than one CR is open.
-// ---------------------------------------------------------------------------
 
 function OpenCrChooser({
   crs,
@@ -159,10 +129,6 @@ function OpenCrChooser({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Expanded sidebar row.
-// ---------------------------------------------------------------------------
-
 function NavItemInner() {
   const c = useOpenCrController();
 
@@ -180,15 +146,12 @@ function NavItemInner() {
               <SidebarMenuButton
                 onClick={c.onActivate}
                 className={cn(
-                  '!text-sm font-normal [&_svg]:!size-4',
-                  // Emerald accent so this stands apart from neutral nav rows —
-                  // it's an action that's waiting on the user, not just a link.
+                  '!text-sm [&_svg]:!size-4',
                   'bg-emerald-500/[0.07] text-foreground hover:bg-emerald-500/15',
                 )}
               >
                 <span className="relative flex">
                   <GitPullRequest className="text-emerald-600" />
-                  {/* Soft pulsing dot — draws the eye without nagging. */}
                   <span className="absolute -right-0.5 -top-0.5 flex size-1.5">
                     <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500/70" />
                     <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
@@ -222,10 +185,6 @@ function NavItemInner() {
     </SidebarMenuItem>
   );
 }
-
-// ---------------------------------------------------------------------------
-// Collapsed icon-rail button.
-// ---------------------------------------------------------------------------
 
 function RailItemInner() {
   const c = useOpenCrController();
@@ -276,11 +235,6 @@ function RailItemInner() {
   );
 }
 
-// ---------------------------------------------------------------------------
-// Public wrappers — each mounts the project-files context the hooks need.
-// ---------------------------------------------------------------------------
-
-/** Expanded sidebar row — renders an <li>; place inside a <SidebarMenu>. */
 export function ProjectChangeRequestsNavItem({ projectId }: { projectId: string }) {
   return (
     <ProjectFilesProvider value={{ projectId, ref: '' }}>
@@ -289,7 +243,6 @@ export function ProjectChangeRequestsNavItem({ projectId }: { projectId: string 
   );
 }
 
-/** Collapsed icon-rail button — mirrors the rail's other icon buttons. */
 export function ProjectChangeRequestsRailItem({ projectId }: { projectId: string }) {
   return (
     <ProjectFilesProvider value={{ projectId, ref: '' }}>

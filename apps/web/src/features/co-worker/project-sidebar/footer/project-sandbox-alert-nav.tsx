@@ -1,14 +1,5 @@
 'use client';
 
-/**
- * Project-level sandbox build health alert.
- *
- * Polls `/sandbox-health` which asks Daytona for the live state of the current
- * default-branch commit's expected image and surfaces the most recent failed
- * build from the append-only log. Renders nothing for the steady-state
- * (ready) case — only shows up when something needs attention.
- */
-
 import * as React from 'react';
 import { useCallback } from 'react';
 import { useRouter } from 'next/navigation';
@@ -16,22 +7,22 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, Loader2, RefreshCw, Sparkles } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
-import { useCustomizeStore } from '@/stores/customize-store';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
 import {
   fixSandboxWithAgent,
   getProjectSandboxHealth,
   rebuildProjectSnapshot,
   type ProjectSandboxHealth,
 } from '@/lib/projects-client';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { useCustomizeStore } from '@/stores/customize-store';
 
 export const SANDBOX_HEALTH_QUERY_KEY = (projectId: string) => ['sandbox-health', projectId];
 
@@ -72,7 +63,6 @@ const CATEGORY_LABEL: Record<string, string> = {
   unknown: 'Build failed',
 };
 
-/** Shared health query — pollable, used by the alert and the settings panel. */
 export function useSandboxHealth(projectId: string) {
   return useQuery<ProjectSandboxHealth>({
     queryKey: SANDBOX_HEALTH_QUERY_KEY(projectId),
@@ -88,7 +78,6 @@ export function useSandboxHealth(projectId: string) {
   });
 }
 
-/** Shared recovery mutations (retry + fix-with-agent) reused across surfaces. */
 export function useSandboxRecovery(projectId: string) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -121,7 +110,6 @@ export function useSandboxRecovery(projectId: string) {
   return { retry, fixWithAgent };
 }
 
-/** The popover body: what's wrong + how to recover. */
 function SandboxAlertContent({
   projectId,
   health,
@@ -207,7 +195,6 @@ function SandboxAlertContent({
   );
 }
 
-/** Expanded sidebar row — renders an <li>; place inside a <SidebarMenu>. */
 export function ProjectSandboxAlertNavItem({ projectId }: { projectId: string }) {
   const { data } = useSandboxHealth(projectId);
   const severity = severityOf(data);
@@ -218,7 +205,7 @@ export function ProjectSandboxAlertNavItem({ projectId }: { projectId: string })
     <SidebarMenuItem>
       <Popover>
         <PopoverTrigger asChild>
-          <SidebarMenuButton className={cn('!text-sm font-normal [&_svg]:!size-4', tone.text)}>
+          <SidebarMenuButton className={cn('!text-sm [&_svg]:!size-4', tone.text)}>
             {severity === 'building' ? (
               <Loader2 className="animate-spin" />
             ) : (
@@ -238,7 +225,6 @@ export function ProjectSandboxAlertNavItem({ projectId }: { projectId: string })
   );
 }
 
-/** Collapsed icon-rail button — mirrors the rail's other icon buttons. */
 export function ProjectSandboxAlertRailItem({ projectId }: { projectId: string }) {
   const { data } = useSandboxHealth(projectId);
   const severity = severityOf(data);

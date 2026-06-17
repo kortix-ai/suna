@@ -1,32 +1,31 @@
 'use client';
 
-import { useMutation } from '@tanstack/react-query';
-import { Globe, Loader2, Lock, Users } from 'lucide-react';
-import { useEffect, useState } from 'react';
-
 import {
   SharingPicker,
   intentToSelection,
   isSharingComplete,
   selectionToIntent,
   type SharingSelection,
-} from '@/components/projects/sharing-picker';
+} from '@/features/co-worker/shared/sharing-picker';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import Loading from '@/components/ui/loading';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  setProjectSessionSharing,
-  type ProjectSession,
-} from '@/lib/projects-client';
-import { toast } from '@/lib/toast';
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
+import { errorToast, successToast } from '@/components/ui/toast';
+import Hint from '@/components/ui/hint';
+import { setProjectSessionSharing, type ProjectSession } from '@/lib/projects-client';
+import { LockSolid, UsersSolid } from '@mynaui/icons-react';
+import { useMutation } from '@tanstack/react-query';
+import { Globe } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 const SESSION_SHARING_COPY = {
   heading: 'Who can access this session',
@@ -35,46 +34,41 @@ const SESSION_SHARING_COPY = {
   members: { label: 'Select members', desc: 'A chosen list of members' },
 };
 
-/** What a session's current visibility means, in one word + icon. */
 export function sessionVisibilityMeta(session: Pick<ProjectSession, 'visibility'>) {
   switch (session.visibility) {
     case 'project':
       return { icon: Globe, label: 'Team', tone: 'shared' as const };
     case 'restricted':
-      return { icon: Users, label: 'Shared', tone: 'shared' as const };
+      return { icon: UsersSolid, label: 'Shared', tone: 'shared' as const };
     default:
-      return { icon: Lock, label: 'Private', tone: 'private' as const };
+      return { icon: LockSolid, label: 'Private', tone: 'private' as const };
   }
 }
 
-/**
- * Tiny header/list affordance: shows how a session is shared within the org,
- * and "shared by X" when someone else owns it. Minimal by design.
- */
 export function SessionVisibilityBadge({ session }: { session: ProjectSession }) {
   const meta = sessionVisibilityMeta(session);
   const Icon = meta.icon;
-  // Private + mine = the default; no badge needed.
+
   if (session.visibility === 'private' && session.is_owner !== false) return null;
   const sharedBy =
     !session.is_owner && session.owner_email ? `Shared by ${session.owner_email}` : null;
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Badge variant="outline" size="sm" className="gap-1">
-          <Icon className="h-3 w-3" />
-          {meta.label}
-        </Badge>
-      </TooltipTrigger>
-      <TooltipContent side="bottom" className="text-xs">
-        {sharedBy ?? `${meta.label} · who can access this session`}
-      </TooltipContent>
-    </Tooltip>
+    <Hint
+      side="bottom"
+      sideOffset={6}
+      className="text-xs"
+      label={sharedBy ?? `${meta.label} · who can access this session`}
+    >
+      <Badge variant="outline" size="sm" className="gap-1">
+        <Icon className="h-3 w-3" />
+        {meta.label}
+      </Badge>
+    </Hint>
   );
 }
 
-/** Share dialog: pick session visibility (private | team | members). */
-export function SessionShareDialog({
+
+export function SessionShareModal({
   projectId,
   session,
   open,
@@ -102,50 +96,57 @@ export function SessionShareDialog({
       return setProjectSessionSharing(projectId, session!.session_id, selectionToIntent(sharing));
     },
     onSuccess: () => {
-      toast.success('Session sharing updated');
+      successToast('Session sharing updated');
       onSaved?.();
       onOpenChange(false);
     },
-    onError: (err: Error) => toast.error(err.message || 'Failed to update sharing'),
+    onError: (err: Error) => errorToast(err.message || 'Failed to update sharing'),
   });
 
   return (
-    <Dialog
+    <Modal
       open={open}
       onOpenChange={(o) => {
         if (!save.isPending) onOpenChange(o);
       }}
     >
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
-        <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-          <DialogTitle>Share session</DialogTitle>
-          <DialogDescription>
+      <ModalContent className="lg:max-w-md">
+        <ModalHeader>
+          <ModalTitle>Share session</ModalTitle>
+          <ModalDescription>
             Private to you by default. Grant read &amp; continue access to your whole team or
             specific members.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="max-h-[60vh] overflow-y-auto px-6 py-5">
+          </ModalDescription>
+        </ModalHeader>
+        <ModalBody className="max-h-[60vh] overflow-y-auto">
           <SharingPicker
             projectId={projectId}
             value={sharing}
             onChange={setSharing}
             copy={SESSION_SHARING_COPY}
           />
-        </div>
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={save.isPending}>
+        </ModalBody>
+        <ModalFooter className="sm:justify-between">
+          <Button
+            variant="outline-ghost"
+            size="sm"
+            className="w-full sm:w-auto"
+            onClick={() => onOpenChange(false)}
+            disabled={save.isPending}
+          >
             Cancel
           </Button>
           <Button
+            size="sm"
             onClick={() => save.mutate()}
             disabled={save.isPending || !isSharingComplete(sharing)}
-            className="gap-1.5"
+            className=" w-full sm:w-auto"
           >
-            {save.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
+            {save.isPending && <Loading />}
             Save
           </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
   );
 }

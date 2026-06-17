@@ -12,15 +12,17 @@ const DropdownMenuTrigger = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger>
 >(({ className, ...props }, ref) => (
-  <DropdownMenuPrimitive.Trigger
-    ref={ref}
-    className={cn('focus:border-kortix-blue focus:border-[0.6px]', className)}
-    {...props}
-  />
+  <DropdownMenuPrimitive.Trigger ref={ref} className={className} {...props} />
 ));
 DropdownMenuTrigger.displayName = DropdownMenuPrimitive.Trigger.displayName;
 
-const DropdownMenuGroup = DropdownMenuPrimitive.Group;
+const DropdownMenuGroup = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.Group>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Group>
+>(({ className, ...props }, ref) => (
+  <DropdownMenuPrimitive.Group ref={ref} className={cn('p-1', className)} {...props} />
+));
+DropdownMenuGroup.displayName = DropdownMenuPrimitive.Group.displayName;
 
 const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
 
@@ -182,7 +184,11 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn('px-2 py-1.5 text-sm font-semibold tracking-normal', inset && 'pl-8', className)}
+    className={cn(
+      'text-muted-foreground px-2.5 py-0.5 text-[13px] font-semibold tracking-normal',
+      inset && 'pl-8',
+      className,
+    )}
     {...props}
   />
 ));

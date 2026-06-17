@@ -32,18 +32,11 @@
  * stays, and is dismissible) rather than falsely ticking.
  */
 
-import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import {
-  Bot,
-  KeyRound,
-  Plug,
-  SquarePen,
-  Users,
-  Wand2,
-  type LucideIcon,
-} from 'lucide-react';
+import { KeyRound, Plug, SquarePen, Wand2, type LucideIcon } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 
+import type { CustomizeSection } from '@/lib/customize-sections';
 import {
   getProjectDetail,
   listConnectors,
@@ -51,15 +44,11 @@ import {
   listProjectSecrets,
   listProjectSessions,
 } from '@/lib/projects-client';
-import type { CustomizeSection } from '@/lib/customize-sections';
+import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
+import { IconType } from 'react-icons/lib';
+import { RiRobot2Fill } from 'react-icons/ri';
 
-export type ProjectSetupStepId =
-  | 'secrets'
-  | 'session'
-  | 'connector'
-  | 'team'
-  | 'agent'
-  | 'skill';
+export type ProjectSetupStepId = 'secrets' | 'session' | 'connector' | 'team' | 'agent' | 'skill';
 
 export interface ProjectSetupStep {
   id: ProjectSetupStepId;
@@ -68,7 +57,7 @@ export interface ProjectSetupStep {
   done: boolean;
   /** Recommended-but-not-required: shown, badged, excluded from completion. */
   optional: boolean;
-  icon: LucideIcon;
+  icon: LucideIcon | IconMynauiType | IconType;
   /** Customize overlay section that completes this step; null = handled by the
    *  caller (e.g. "session" starts a session rather than opening Customize). */
   section: CustomizeSection | null;
@@ -158,8 +147,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
   // Only the detail + sessions queries gate first paint; the optional surfaces
   // (connectors/team) can 403 for viewers and shouldn't hold the whole widget
   // hostage — they just read as "not done yet".
-  const isLoading =
-    enabled && (detail.isLoading || secrets.isLoading || sessions.isLoading);
+  const isLoading = enabled && (detail.isLoading || secrets.isLoading || sessions.isLoading);
 
   // Agent/skill counts ride along on the detail query (parsed from the repo —
   // no sandbox needed). We snapshot the starter's counts the first time we see
@@ -186,9 +174,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
     const secretsDone =
       !secretsApply ||
       requiredEnv.every((key) =>
-        secretItems.some(
-          (item) => item.name === key && (item.configured || item.usable_by_me),
-        ),
+        secretItems.some((item) => item.name === key && (item.configured || item.usable_by_me)),
       );
 
     const connectorCount = connectors.data?.connectors.length ?? 0;
@@ -221,7 +207,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         description: 'Bring teammates in so they can run sessions and review the work.',
         done: memberCount > 1,
         optional: false,
-        icon: Users,
+        icon: UsersSolid,
         section: 'members' as const,
         cta: 'Invite',
         learnHref: '/docs/concepts/accounts',
@@ -254,7 +240,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         description: 'Shape an agent around how your team works — give it a role and tools.',
         done: agentDone,
         optional: false,
-        icon: Bot,
+        icon: RiRobot2Fill,
         section: 'agents' as const,
         cta: 'Create',
         learnHref: '/docs/concepts/agents',

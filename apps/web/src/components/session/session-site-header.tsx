@@ -2,22 +2,10 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useState } from 'react';
-import { usePathname, useRouter } from 'next/navigation';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Button } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { sessionDisplayLabel } from '@/components/projects/session-label';
+import { CompactDialog } from '@/components/session/compact-dialog';
+import { ExportTranscriptDialog } from '@/components/session/export-transcript-dialog';
+import { SessionChangesIndicator } from '@/components/session/session-changes-indicator';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,23 +16,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { Button } from '@/components/ui/button';
 import {
-  PanelRight,
-  FileDown,
-  MoreHorizontal,
-  Layers,
-  Loader2,
-  Pencil,
-  RotateCcw,
-  Share2,
-  Trash2,
-} from 'lucide-react';
-import { SessionChangesIndicator } from '@/components/session/session-changes-indicator';
-import { ExportTranscriptDialog } from '@/components/session/export-transcript-dialog';
-import { CompactDialog } from '@/components/session/compact-dialog';
-import { SessionShareDialog } from '@/components/projects/session-share-dialog';
-import { RenameSessionDialog } from '@/components/projects/rename-session-dialog';
-import { sessionDisplayLabel } from '@/components/projects/session-label';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { RenameSessionModal } from '@/features/co-worker/project-sidebar/modal/rename-session-modal';
+import { SessionShareModal } from '@/features/co-worker/project-sidebar/modal/session-share-modal';
 import {
   deleteProjectSession,
   listProjectSessions,
@@ -52,6 +33,20 @@ import {
 } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  FileDown,
+  Layers,
+  Loader2,
+  MoreHorizontal,
+  PanelRight,
+  Pencil,
+  RotateCcw,
+  Share2,
+  Trash2,
+} from 'lucide-react';
+import { usePathname, useRouter } from 'next/navigation';
+import { useState } from 'react';
 
 interface SessionSiteHeaderProps {
   sessionId: string;
@@ -94,8 +89,7 @@ export function SessionSiteHeader({
     enabled: isProjectSession,
     staleTime: 10_000,
   });
-  const projectSession =
-    projectSessions?.find((s) => s.session_id === projectSessionId) ?? null;
+  const projectSession = projectSessions?.find((s) => s.session_id === projectSessionId) ?? null;
   const canShare = !!projectSession && projectSession.can_manage_sharing !== false;
 
   const restartMutation = useMutation({
@@ -124,11 +118,11 @@ export function SessionSiteHeader({
   return (
     <>
       {/* Floating actions overlaying the top edge of the session */}
-      <div className="absolute top-0 right-0 left-0 z-20 pointer-events-none">
+      <div className="pointer-events-none absolute top-0 right-0 left-0 z-20">
         <TooltipProvider delayDuration={300}>
-          <div className="flex items-center justify-between px-3 sm:px-4 pt-2">
+          <div className="flex items-center justify-between px-3 pt-2 sm:px-4">
             {/* Left: leading action + overflow menu */}
-            <div className="flex items-center gap-0.5 pointer-events-auto">
+            <div className="pointer-events-auto flex items-center gap-0.5">
               {leadingAction}
 
               {/* More actions dropdown */}
@@ -139,14 +133,18 @@ export function SessionSiteHeader({
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-8 w-8 cursor-pointer text-muted-foreground hover:text-foreground"
+                        className="text-muted-foreground hover:text-foreground h-8 w-8 cursor-pointer"
                       >
                         <MoreHorizontal className="h-4 w-4" />
                       </Button>
                     </DropdownMenuTrigger>
                   </TooltipTrigger>
                   <TooltipContent side="bottom" sideOffset={4}>
-                    <p>{tHardcodedUi.raw('componentsSessionSessionSiteHeader.line105JsxTextMoreActions')}</p>
+                    <p>
+                      {tHardcodedUi.raw(
+                        'componentsSessionSessionSiteHeader.line105JsxTextMoreActions',
+                      )}
+                    </p>
                   </TooltipContent>
                 </Tooltip>
 
@@ -186,18 +184,20 @@ export function SessionSiteHeader({
                   )}
 
                   {/* Export transcript */}
-                  <DropdownMenuItem
-                    className="cursor-pointer"
-                    onClick={() => setExportOpen(true)}
-                  >
-                    <FileDown className="h-4 w-4" />{tHardcodedUi.raw('componentsSessionSessionSiteHeader.line124JsxTextExportTranscript')}</DropdownMenuItem>
+                  <DropdownMenuItem className="cursor-pointer" onClick={() => setExportOpen(true)}>
+                    <FileDown className="h-4 w-4" />
+                    {tHardcodedUi.raw(
+                      'componentsSessionSessionSiteHeader.line124JsxTextExportTranscript',
+                    )}
+                  </DropdownMenuItem>
 
                   {/* Compact session */}
-                  <DropdownMenuItem
-                    className="cursor-pointer"
-                    onClick={() => setCompactOpen(true)}
-                  >
-                    <Layers className="h-4 w-4" />{tHardcodedUi.raw('componentsSessionSessionSiteHeader.line130JsxTextCompactSession')}</DropdownMenuItem>
+                  <DropdownMenuItem className="cursor-pointer" onClick={() => setCompactOpen(true)}>
+                    <Layers className="h-4 w-4" />
+                    {tHardcodedUi.raw(
+                      'componentsSessionSessionSiteHeader.line130JsxTextCompactSession',
+                    )}
+                  </DropdownMenuItem>
 
                   {/* Delete */}
                   {isProjectSession && (
@@ -216,7 +216,7 @@ export function SessionSiteHeader({
             {/* Right: panel toggle — always available, even on an empty
                 session with no tool calls, so the side panel (Actions /
                 Browser / Files / Terminal) is always one click away. */}
-            <div className="flex items-center gap-1.5 pointer-events-auto">
+            <div className="pointer-events-auto flex items-center gap-1.5">
               {/* Colored nudge — only shows when this thread has unsynced
                   changes, so it doubles as an at-a-glance diff indicator. */}
               <SessionChangesIndicator sessionId={sessionId} />
@@ -239,8 +239,9 @@ export function SessionSiteHeader({
                 <TooltipContent side="bottom" sideOffset={4}>
                   <p className="flex items-center gap-1.5">
                     {isSidePanelOpen ? 'Close' : 'Open'} panel
-                    <kbd className="rounded bg-muted px-1 py-0.5 font-mono text-[10px] text-muted-foreground">
-                      {tHardcodedUi.raw('componentsSessionSessionSiteHeader.line185JsxTextI')}</kbd>
+                    <kbd className="bg-muted text-muted-foreground rounded px-1 py-0.5 font-mono text-[10px]">
+                      {tHardcodedUi.raw('componentsSessionSessionSiteHeader.line185JsxTextI')}
+                    </kbd>
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -255,14 +256,10 @@ export function SessionSiteHeader({
         open={exportOpen}
         onOpenChange={setExportOpen}
       />
-      <CompactDialog
-        sessionId={sessionId}
-        open={compactOpen}
-        onOpenChange={setCompactOpen}
-      />
+      <CompactDialog sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} />
       {isProjectSession && (
         <>
-          <SessionShareDialog
+          <SessionShareModal
             projectId={projectId!}
             session={projectSession}
             open={shareOpen}
@@ -271,7 +268,7 @@ export function SessionSiteHeader({
               queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] })
             }
           />
-          <RenameSessionDialog
+          <RenameSessionModal
             projectId={projectId!}
             sessionId={projectSessionId!}
             currentName={projectSession ? sessionDisplayLabel(projectSession) : ''}
@@ -284,7 +281,7 @@ export function SessionSiteHeader({
                 <AlertDialogTitle>Delete session?</AlertDialogTitle>
                 <AlertDialogDescription>
                   This will permanently destroy the sandbox for{' '}
-                  <span className="font-medium text-foreground">{sessionTitle}</span>; the git
+                  <span className="text-foreground font-medium">{sessionTitle}</span>; the git
                   branch is preserved. This action cannot be undone.
                 </AlertDialogDescription>
               </AlertDialogHeader>
