@@ -460,20 +460,57 @@ export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: num
     .then(({ reapErroredWarmBoxes }) => reapErroredWarmBoxes(undefined, (l) => console.log(l)))
     .catch(() => {});
 
-  const presenceCutoff = new Date(now.getTime() - config.KORTIX_WARM_POOL_PRESENCE_MINUTES * 60_000);
-  const present = await db
+  // Two cutoffs. PRESENT (recent activity) keeps the full pool + drives refill.
+  // GRACE (a longer window after leaving) keeps ONE parked box as a warm floor so
+  // the user's first click on return lands warm instead of cold — without holding
+  // the whole pool for an absent user. Query once at the grace cutoff and split.
+  const graceMinutes = Math.max(config.KORTIX_WARM_POOL_PRESENCE_MINUTES, config.KORTIX_WARM_POOL_GRACE_MINUTES);
+  const presenceCutoffMs = now.getTime() - config.KORTIX_WARM_POOL_PRESENCE_MINUTES * 60_000;
+  const graceCutoff = new Date(now.getTime() - graceMinutes * 60_000);
+  const seenRows = await db
     .select({ projectId: projects.projectId, metadata: projects.metadata })
     .from(projects)
-    .where(sql`(${projects.metadata} ->> 'warm_pool_seen_at')::timestamptz > ${presenceCutoff.toISOString()}::timestamptz`);
-  const presentIds = new Set(present.map((p) => p.projectId));
+    .where(sql`(${projects.metadata} ->> 'warm_pool_seen_at')::timestamptz > ${graceCutoff.toISOString()}::timestamptz`);
+  const presentIds = new Set<string>();
+  const graceIds = new Set<string>();
+  const present: typeof seenRows = [];
+  for (const p of seenRows) {
+    const seenAt = Date.parse(((p.metadata as Record<string, unknown> | null)?.warm_pool_seen_at as string) ?? '');
+    if (!Number.isFinite(seenAt)) continue;
+    if (seenAt > presenceCutoffMs) {
+      presentIds.add(p.projectId);
+      present.push(p);
+    } else {
+      graceIds.add(p.projectId);
+    }
+  }
 
   // 1. Reap dead/aged/marked boxes + boxes whose project has no fresh presence.
   const poolRows = await db
     .select({ sandboxId: sessionSandboxes.sandboxId, projectId: sessionSandboxes.projectId, externalId: sessionSandboxes.externalId, provider: sessionSandboxes.provider, poolState: sessionSandboxes.poolState, status: sessionSandboxes.status, createdAt: sessionSandboxes.createdAt, updatedAt: sessionSandboxes.updatedAt })
     .from(sessionSandboxes)
     .where(inArray(sessionSandboxes.poolState, ['booting', 'parked', 'reap']));
+
+  // The grace floor yields to active demand: when the global pool is near its cap,
+  // don't hold idle boxes for absent users — present projects' refills win.
+  const liveWarm = poolRows.filter((r) => r.poolState === 'booting' || r.poolState === 'parked').length;
+  const graceAllowed = config.KORTIX_WARM_POOL_GRACE_MINUTES > 0 && liveWarm < config.KORTIX_WARM_POOL_MAX_TOTAL * 0.7;
+  const graceKept = new Map<string, number>(); // projectId → parked boxes kept as the floor
+
   for (const row of poolRows) {
-    const reason = warmBoxReapReason(row, now.getTime()) ?? (presentIds.has(row.projectId) ? null : 'absent');
+    let reason = warmBoxReapReason(row, now.getTime());
+    if (!reason && !presentIds.has(row.projectId)) {
+      // Not present. Keep AT MOST ONE parked box per grace-window project as the
+      // warm floor; reap booting grace boxes (don't pay to finish a boot for an
+      // absent user) and every box once the floor is met or grace is disallowed.
+      const isFloorCandidate =
+        graceAllowed && graceIds.has(row.projectId) && row.poolState === 'parked' && (graceKept.get(row.projectId) ?? 0) < 1;
+      if (isFloorCandidate) {
+        graceKept.set(row.projectId, (graceKept.get(row.projectId) ?? 0) + 1);
+      } else {
+        reason = 'absent';
+      }
+    }
     if (reason) {
       await reapWarmSandbox(row);
       reaped++;

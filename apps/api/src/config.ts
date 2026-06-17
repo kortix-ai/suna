@@ -134,6 +134,12 @@ const envSchema = z.object({
   // (authenticated portal activity) within this many minutes. Closing the tab
   // lets the pool reap, so we never hold idle boxes 24/7 for absent users.
   KORTIX_WARM_POOL_PRESENCE_MINUTES: optInt(15),
+  // Grace window (>= presence): after a user leaves, keep ONE parked box per
+  // project alive this long so their first click on return lands warm instead of
+  // cold, without paying to hold the full pool. The grace floor yields to active
+  // demand (skipped when the global pool is near its cap). 0 disables the floor
+  // (revert to reaping the whole pool at the presence cutoff).
+  KORTIX_WARM_POOL_GRACE_MINUTES:   optInt(45),
 
   // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
   // The new backend has no JustAVPS provider, but it must reach legacy VMs to
@@ -493,6 +499,7 @@ export const config = {
   KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
   KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
   KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
+  KORTIX_WARM_POOL_GRACE_MINUTES: env.KORTIX_WARM_POOL_GRACE_MINUTES,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
   JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,
