@@ -110,6 +110,7 @@ Kortix cloud state — not just files in the repo. Examples:
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
 | "deploy the marketing app" | `kortix apps deploy marketing-site` (when `[[apps]]` is enabled) |
 | "add / list connectors" | `kortix connectors add <slug> --provider …`, `kortix connectors ls`, `connectors show <slug>` |
+| **"add a connector NOW, no CR (like the UI)"** | agent: `add_connector` MCP tool / `executor add <slug> --provider pipedream --app <app>` · human: `kortix connectors add … --apply` — commits to `kortix.toml` on main + syncs server-side, live this session |
 | **"I need an API key the human has (e.g. `APOLLO_API_KEY`)"** | `request_secret` MCP tool / `secrets request NAME` / `kortix secrets request NAME` — mint a link, **surface it**. You never see the value. |
 | **"I need this app connected (Pipedream)"** | `connect` MCP tool / `executor connect <slug>` / `kortix connectors link <slug>` — mint a 1-click link, **surface it**. No "go to the dashboard". |
 | "set a connector's credential directly" | `kortix connectors credential <slug>` *(admin/login only — prefer the link above)* |

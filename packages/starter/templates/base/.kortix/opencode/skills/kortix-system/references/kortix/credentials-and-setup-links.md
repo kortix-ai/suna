@@ -69,9 +69,12 @@ single message.
 
 ## Minting a connect link (Pipedream Quick Connect)
 
-For an app you connect via Pipedream, mint a 1-click connect link. The connector
-must already be **declared in `kortix.toml`** — add it (`kortix connectors add
-<slug> --provider pipedream --app <app>`) and land the change request first.
+For an app you connect via Pipedream, mint a 1-click connect link. If the
+connector isn't on the project yet, **add it instantly first — no change
+request**: the `add_connector` tool / `executor add <slug> --provider pipedream
+--app <app>` (humans: `kortix connectors add … --apply`). That commits it to
+`kortix.toml` on main and syncs the catalog server-side, exactly like the
+dashboard's "Add app" — it's live this session. Then mint the connect link.
 
 **Preferred — the `connect` tool on the `kortix-executor` MCP:**
 
