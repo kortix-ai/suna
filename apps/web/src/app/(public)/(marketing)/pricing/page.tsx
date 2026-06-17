@@ -32,7 +32,7 @@ const PLANS = [
   },
   {
     name: 'Cloud',
-    price: '$20',
+    price: '$40',
     unit: '/ seat / mo + usage',
     note: 'Your command center, managed for you.',
     cta: 'Get started',
