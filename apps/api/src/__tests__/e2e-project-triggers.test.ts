@@ -213,6 +213,10 @@ mock.module('../platform/services/session-sandbox', () => ({
   },
 }));
 
+mock.module('../platform/services/provider-balancer', () => ({
+  selectProvider: async () => 'local_docker',
+}));
+
 mock.module('../shared/resolve-account', () => ({
   resolveAccountId: async () => ACCOUNT_ID,
 }));
@@ -779,7 +783,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(runtimeRows[0]!.lastFiredAt).toBeTruthy();
   });
 
-  test('manual fire returns retryable backpressure instead of pretending to queue', async () => {
+  test('manual fire queues durably under backpressure', async () => {
     seedManifest(cronEntry({
       slug: 'daily',
       name: 'Daily',
@@ -794,16 +798,16 @@ describe('git-backed triggers — runtime fire paths', () => {
       headers: { 'Content-Type': 'application/json' },
       body: '{}',
     });
-    expect(res.status).toBe(503);
-    expect(res.headers.get('retry-after')).toBe('30');
+    expect(res.status).toBe(202);
     const body = await res.json();
     expect(body).toMatchObject({
-      code: 'trigger_backpressure',
-      retryable: true,
+      status: 'queued',
       reason: 'project provisioning backpressure',
+      deduped: false,
     });
+    expect(body.command_id).toBeTruthy();
     expect(sandboxProvisionCalls).toBe(0);
-    expect(runtimeRows).toHaveLength(0);
+    expect(runtimeRows).toHaveLength(1);
   });
 
   test('cron sweep fires due git-backed triggers', async () => {
@@ -821,7 +825,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('Sweep run');
   });
 
-  test('cron sweep under backpressure does not advance last_fired_at', async () => {
+  test('cron sweep under backpressure queues and records accepted fire', async () => {
     seedManifest(cronEntry({
       slug: 'sweep',
       name: 'Sweep',
@@ -834,7 +838,8 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(result).toMatchObject({ scanned: 1, fired: 0, queued: 1, failed: 0 });
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(0);
-    expect(runtimeRows).toHaveLength(0);
+    expect(runtimeRows).toHaveLength(1);
+    expect(runtimeRows[0]!.lastFiredAt?.toISOString()).toBe('2026-01-01T00:00:30.000Z');
 
     provisioningSessionCount = 0;
     const retry = await runProjectTriggerSweep(new Date('2026-01-01T00:00:31Z'));
@@ -957,7 +962,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(lifecycleCommandRows[0]!.sessionId).toBeTruthy();
   });
 
-  test('webhook under backpressure returns retryable 503 instead of silent queued', async () => {
+  test('webhook under backpressure queues durably', async () => {
     seedManifest(webhookEntry({
       slug: 'hook',
       name: 'Hook',
@@ -977,16 +982,16 @@ describe('git-backed triggers — runtime fire paths', () => {
       },
       body: rawBody,
     });
-    expect(res.status).toBe(503);
-    expect(res.headers.get('retry-after')).toBe('30');
+    expect(res.status).toBe(202);
     const body = await res.json();
     expect(body).toMatchObject({
-      code: 'trigger_backpressure',
-      retryable: true,
+      status: 'queued',
       reason: 'project provisioning backpressure',
+      deduped: false,
     });
+    expect(body.command_id).toBeTruthy();
     expect(sandboxProvisionCalls).toBe(0);
-    expect(runtimeRows).toHaveLength(0);
+    expect(runtimeRows).toHaveLength(1);
   });
 
   test('webhook accepts a valid static token (no HMAC) and rejects a wrong one', async () => {

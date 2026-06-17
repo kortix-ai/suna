@@ -446,7 +446,10 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
         await markGitTriggerFired(project.projectId, spec.slug, now);
         accumulator.fired += 1;
       }
-      else if (result.status === 'queued') accumulator.queued += 1;
+      else if (result.status === 'queued') {
+        await markGitTriggerFired(project.projectId, spec.slug, now);
+        accumulator.queued += 1;
+      }
       else accumulator.failed += 1;
     }
   }

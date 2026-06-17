@@ -112,6 +112,7 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   });
 
   if (result.status === 'queued') {
+    await markGitTriggerFired(project.projectId, spec.slug, new Date());
     return c.json({
       status: 'queued',
       command_id: result.commandId ?? null,
