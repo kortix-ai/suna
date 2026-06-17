@@ -16,7 +16,7 @@ import { loadProjectTriggers } from '../triggers';
 import { createRoute, z } from '@hono/zod-openapi';
 import { accountGithubInstallations, projectMembers, projects } from '@kortix/db';
 import { and, desc, eq, inArray } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { enforceProjectQuota, grantProjectRole, loadProjectForUser, resolveProjectAccount } from '../lib/access';
 import { AnyObject, ProjectSchema, projectWebhooksApp, projectsApp } from '../lib/app';
 import { GitHubInstallationRequiredError, buildConnectionRef, consumeGitHubInstallationState, createGitHubInstallationInstallUrl, getAccountGitHubInstallation, getProjectGitConnection, getProjectGitRemote, listAccountGitHubInstallations, registerGitHubLinkedProject, resolveGitHubImport, resolveProjectGitAuth, resolveProjectUpstream, upsertProjectGitConnection, withProjectGitAuth } from '../lib/git';
@@ -84,6 +84,22 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
     fired_at: new Date().toISOString(),
   };
   const renderedPrompt = renderPromptTemplate(spec.promptTemplate, payload);
+  const deliveryId =
+    c.req.header('x-kortix-delivery-id') ??
+    c.req.header('x-github-delivery') ??
+    c.req.header('x-request-id') ??
+    null;
+  const staticAuthFingerprint =
+    c.req.header('x-kortix-token') ??
+    c.req.header('authorization') ??
+    '';
+  const idempotencyKey = deliveryId
+    ? `trigger:webhook:${project.projectId}:${spec.slug}:${deliveryId}`
+    : `trigger:webhook:${project.projectId}:${spec.slug}:${createHash('sha256')
+        .update(rawBody)
+        .update(signatureHeader ?? '')
+        .update(staticAuthFingerprint)
+        .digest('hex')}`;
 
   const result = await fireGitTrigger({
     spec,
@@ -91,11 +107,19 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
     payload,
     renderedPrompt,
     source: 'webhook',
+    idempotencyKey,
     request: requestAuditContext(c),
   });
 
   if (result.status === 'queued') {
-    return c.json({ status: 'queued', reason: result.reason ?? null }, 202);
+    await markGitTriggerFired(project.projectId, spec.slug, new Date());
+    return c.json({
+      status: 'queued',
+      command_id: result.commandId ?? null,
+      session_id: result.sessionId ?? null,
+      reason: result.reason ?? null,
+      deduped: result.deduped ?? false,
+    }, 202);
   }
   if (result.status === 'failed') {
     return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
@@ -103,7 +127,12 @@ projectWebhooksApp.post('/projects/:projectId/:slug', async (c) => {
   // Stamp runtime last_fired_at so the UI's "last fired N ago" matches the
   // cron-fire path even when the webhook is the actual source.
   await markGitTriggerFired(project.projectId, spec.slug, new Date());
-  return c.json({ status: 'fired', session_id: result.sessionId ?? null }, 202);
+  return c.json({
+    status: result.deduped ? 'deduped' : 'fired',
+    command_id: result.commandId ?? null,
+    session_id: result.sessionId ?? null,
+    deduped: result.deduped ?? false,
+  }, 202);
 });
 
 
@@ -283,8 +312,8 @@ projectsApp.openapi(
 
   // Start the warm pool NOW instead of waiting for portal presence — "first
   // session right after creating a project" was exactly the cold moment users
-  // felt. Fire-and-forget; no-op when the pool is disabled.
-  notePoolPresence(row.projectId);
+  // felt. Fire-and-forget; no-op when the pool is disabled. Warm for the creator.
+  notePoolPresence(row.projectId, scope.userId);
 
   return c.json(serializeProject(row, { projectRole: 'manager', effectiveRole: 'manager' }), 201);
 },

@@ -19,6 +19,12 @@ createNamespace: true
 env:
   internalKortixEnv: preview
 
+extraEnv:
+  # Internal proxy: previews have churny per-PR hosts, so the gateway stays
+  # internal and the API reverse-proxies /v1/llm-gateway/* to it. The sandbox
+  # reaches it via the API's own per-PR origin — no per-PR gateway host/cert.
+  LLM_GATEWAY_PROXY_TARGET: "http://kortix-gateway:8090"
+
 # API-only — an ephemeral preview must never run the dev-tier singleton workers.
 workers:
   enabled: false

@@ -230,7 +230,7 @@ async function startSessionRuntime(
       return
     }
   }
-  const ready = await waitForOpencodeReady(opencode, cfg.projectTarget)
+  const ready = await waitForOpencodeReady(opencode, cfg.projectTarget, () => bootMark('opencode-listening'))
   if (ready) {
     bootMark('opencode-ready')
     logger.info('[boot] opencode ready', { opencodePid: opencode.getPid(), timeline: bootState.timeline })
@@ -241,9 +241,12 @@ async function startSessionRuntime(
 }
 
 // Read KEY=VALUE lines from the per-session env file into process.env. The warm
-// pool stages the claimant's session env there on claim (proven: PUT /files →
-// writeFile lands), so a fresh loadConfig() resolves the claimant's KORTIX_*.
-function reloadSessionEnv(path = '/etc/dnah-env'): void {
+// pool stages the claimant's session env there on claim (the API POSTs it via
+// the daemon's /file/upload endpoint), so a fresh loadConfig() resolves the
+// claimant's KORTIX_*. Lives under /tmp (NOT /etc): /file/upload's allowed-roots
+// gate (routes/files.ts) permits /tmp + the workspace but rejects /etc, so the
+// claim-write must target a /tmp path the file router will accept.
+function reloadSessionEnv(path = '/tmp/dnah-env'): void {
   let txt: string
   try { txt = readFileSync(path, 'utf8') } catch { return }
   for (const line of txt.split('\n')) {
@@ -313,7 +316,7 @@ async function runPoolMode(
   process.on('SIGHUP', () => claim('sighup'))
   const poll = setInterval(() => {
     let txt = ''
-    try { txt = readFileSync('/etc/dnah-env', 'utf8') } catch { return }
+    try { txt = readFileSync('/tmp/dnah-env', 'utf8') } catch { return }
     if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); claim('env-poll') }
   }, 1000)
 }
@@ -585,43 +588,54 @@ async function waitForInitialSessionCreate(baseUrl: string, workspace: string): 
   throw new Error(lastError)
 }
 
-// Relay an opencode question.asked event to apps/api. apps/api blocks until
-// the user submits the Slack form, returns the captured `answers: string[][]`.
-// We then POST those answers to opencode's /question/{id}/reply so the agent
-// resumes naturally — same flow the dashboard uses, just over Slack.
-async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
+// The relay context for a SLACK-originated session, or null when this is not
+// one. Slack sessions carry SLACK_* env injected by the dispatcher; the four
+// KORTIX_* vars are what we need to reach apps/api. Everywhere else (the web
+// dashboard, the CLI) this returns null so the sandbox stays out of the way and
+// the opencode event is handled natively. Shared by the question + turn-end
+// relays so BOTH gate on Slack identically — the question relay used to skip
+// this gate, which auto-answered the `question` tool in non-Slack sessions.
+function slackRelayContext(): { projectId: string; sessionId: string; token: string; apiRoot: string } | null {
+  if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return null
   const projectId = process.env.KORTIX_PROJECT_ID?.trim()
   const sessionId = process.env.KORTIX_SESSION_ID?.trim()
   const token = (process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_TOKEN || '').trim()
   const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
   if (!projectId || !sessionId || !token || !apiUrl) {
-    logger.warn('[opencode-events] missing env to relay question', {
+    logger.warn('[opencode-events] missing env to relay to apps/api', {
       hasProject: !!projectId, hasSession: !!sessionId, hasToken: !!token, hasApi: !!apiUrl,
     })
-    return
+    return null
   }
   const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  return { projectId, sessionId, token, apiRoot }
+}
+
+// Relay an opencode `question.asked` event for a SLACK session: post the
+// question(s) into the thread and resume the agent's (blocking) `question` tool
+// with a sentinel so the turn ends — the user's in-thread reply / button click
+// arrives as a new turn.
+//
+// "Is this a Slack session?" is read straight from the sandbox env, which IS the
+// session metadata: a Slack session is tagged `metadata.slack` at creation, and
+// the API projects that into SLACK_THREAD_TS / SLACK_CHANNEL_ID on EVERY
+// (re)provision (buildSessionChannelEnv). A web/dashboard session has no such
+// metadata, so it has no such env — `slackRelayContext()` returns null and we
+// return WITHOUT touching opencode's question. That's the whole fix: the
+// dashboard answers `question.asked` interactively over opencode's own SSE, and
+// auto-answering it here was the "every question is auto-answered even outside
+// Slack" bug. No round-trip, no status codes — the env is the source of truth.
+async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
+  const ctx = slackRelayContext()
+  if (!ctx) return
+  const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-question`
   logger.info('[opencode-events] relaying question.asked', {
     requestId: req.id, questions: req.questions.length,
   })
-  // A Slack thread is ASYNC: we must NEVER block the agent waiting for an inline
-  // answer. The old flow waited up to 15 min and — on any failure path — returned
-  // WITHOUT replying to opencode, leaving the `question` tool hung forever until a
-  // human killed it in the web UI. Instead: post the question into the thread
-  // (best-effort) and resume the tool IMMEDIATELY with a sentinel that tells the
-  // agent to end its turn. The user's reply lands as a normal follow-up message
-  // (a new turn) — the natural Slack model.
-  const sentinel =
-    '(Posted to the Slack thread. In Slack, questions are async — the user replies ' +
-    'as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
-    'wait for an answer here; finish this turn now. Next time, just ask with ' +
-    '`slack send` rather than the question tool.)'
-  const answers: string[][] = req.questions.map(() => [sentinel])
 
-  // Best-effort: surface the question(s) in the thread so the user sees them even
-  // when the agent used the (discouraged) question tool. Short timeout; the agent
-  // is resumed regardless of whether this succeeds.
+  // Best-effort: render the question(s) into the thread. Independent of the
+  // resume below — a Slack turn must never hang waiting on this.
   try {
     await fetch(url, {
       method: 'POST',
@@ -638,8 +652,15 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
     logger.warn('[opencode-events] turn-question post failed (non-fatal)', { err: (err as Error).message })
   }
 
-  // ALWAYS reply to opencode so the question tool can never hang — this is the
-  // core fix for "stuck until I kill it manually".
+  // Resume opencode's (blocking) question tool with a sentinel so the turn ends;
+  // the user's reply / button click lands as a new turn. ALWAYS reply — a Slack
+  // question must never hang (that was "stuck until I kill it manually").
+  const sentinel =
+    '(Posted to the Slack thread. In Slack, questions are async — the user replies ' +
+    'as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
+    'wait for an answer here; finish this turn now. Next time, just ask with ' +
+    '`slack send` rather than the question tool.)'
+  const answers: string[][] = req.questions.map(() => [sentinel])
   const replyUrl = `http://127.0.0.1:${cfg.opencodeInternalPort}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
   try {
     const r = await fetch(replyUrl, {
@@ -674,54 +695,55 @@ async function relayTurnEndToApi(
   opencode: Pick<Opencode, 'getInternalUrl'>,
   cfg: Config,
 ): Promise<void> {
-  if (!(process.env.SLACK_THREAD_TS || process.env.SLACK_CHANNEL_ID)) return
-  // Only the root turn closes the Slack stream. A subagent going idle mid-task
-  // must NOT finalize the user-facing stream. apps/api re-checks the relayed
-  // opencode session id against its canonical pin as the server-side guard.
+  const ctx = slackRelayContext()
+  if (!ctx) return
+  // Only the ROOT turn closes the Slack stream — a subagent going idle mid-task
+  // must NOT finalize the user-facing stream. Detected by parentID (objective),
+  // not pin-equality, so an orphaned-root re-pin can't filter out the real idle.
   if (!(await isRootOpencodeSession(opencodeSessionId, opencode, cfg))) return
 
-  const projectId = process.env.KORTIX_PROJECT_ID?.trim()
-  const sessionId = process.env.KORTIX_SESSION_ID?.trim()
-  const token = (process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_TOKEN || '').trim()
-  const apiUrl = process.env.KORTIX_API_URL?.replace(/\/$/, '')
-  if (!projectId || !sessionId || !token || !apiUrl) return
-
-  const apiRoot = apiUrl.endsWith('/v1') ? apiUrl : `${apiUrl}/v1`
+  const { projectId, sessionId, token, apiRoot } = ctx
   const url = `${apiRoot}/projects/${encodeURIComponent(projectId)}/turn-stream`
-  try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        session_id: sessionId,
-        kind: 'end',
-        status,
-        opencode_session_id: opencodeSessionId,
-      }),
-      signal: AbortSignal.timeout(15_000),
-    })
-    if (!res.ok) {
-      logger.warn('[opencode-events] turn-end relay non-ok', { status: res.status })
-      return
+  const payload = JSON.stringify({ session_id: sessionId, kind: 'end', status, opencode_session_id: opencodeSessionId })
+  // This is the ONLY signal that finalizes a turn the agent ended without
+  // `slack send` (otherwise the ⏳ lingers until the 30-min GC). It must not be
+  // best-effort: retry with backoff before giving up. A non-ok HTTP response is
+  // a definitive answer from apps/api (e.g. already finalized), so we stop on any
+  // `res.ok`; only network/5xx failures are retried.
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: payload,
+        signal: AbortSignal.timeout(15_000),
+      })
+      if (res.ok) {
+        const data = (await res.json().catch(() => null)) as { ok?: boolean } | null
+        if (data?.ok) logger.info('[opencode-events] turn end relayed', { status, opencodeSessionId, attempt })
+        return
+      }
+      logger.warn('[opencode-events] turn-end relay non-ok', { status: res.status, attempt })
+    } catch (err) {
+      logger.warn('[opencode-events] turn-end relay fetch failed', { err: (err as Error).message, attempt })
     }
-    const data = (await res.json().catch(() => null)) as { ok?: boolean } | null
-    if (data?.ok) logger.info('[opencode-events] turn end relayed', { status, opencodeSessionId })
-  } catch (err) {
-    logger.warn('[opencode-events] turn-end relay fetch failed', { err: (err as Error).message })
+    if (attempt < 4) await new Promise((r) => setTimeout(r, 1_000 * attempt))
   }
+  logger.error('[opencode-events] turn-end relay gave up after retries', { sessionId, status })
 }
 
-// Is this opencode session the root turn session (not a subagent child)? Prefer
-// the boot-pinned id (cheap, no I/O); fall back to asking opencode whether the
-// session has a parentID. On any uncertainty, return false so we never close the
-// stream prematurely — the watchdog remains the backstop.
+// Is this opencode session the ROOT turn session (not a subagent child)? A root
+// has no parentID; Task-tool children do. We ask opencode directly rather than
+// comparing against the boot-pinned id: an opencode restart can mint a NEW root
+// and orphan the old pin, and gating turn-end on pin-equality then filters out
+// the REAL turn's `session.idle` — the Slack message then loads forever. parentID
+// is the objective signal that survives a re-pin. On any uncertainty, return
+// false so we never close the stream prematurely — the GC sweep is the backstop.
 async function isRootOpencodeSession(
   opencodeSessionId: string,
   opencode: Pick<Opencode, 'getInternalUrl'>,
   cfg: Config,
 ): Promise<boolean> {
-  const pinned = readPinnedOpencodeSessionId()
-  if (pinned) return opencodeSessionId === pinned
   try {
     const url = `${opencode.getInternalUrl()}/session/${encodeURIComponent(opencodeSessionId)}?directory=${encodeURIComponent(cfg.workspace)}`
     const res = await fetch(url, { signal: AbortSignal.timeout(5_000) })

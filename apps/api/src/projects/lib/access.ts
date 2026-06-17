@@ -333,7 +333,7 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   // to start a session — keep a warm box ready. No-op unless the pool is on;
   // throttled internally. Only members who can launch sessions count.
   if (action !== 'read' || roleAllows(effectiveRole as ProjectRole, 'write')) {
-    notePoolPresence(projectId);
+    notePoolPresence(projectId, userId);
   }
 
   return {

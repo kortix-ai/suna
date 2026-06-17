@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { ProjectShell } from '@/components/projects/project-shell';
 import { SessionChat } from '@/components/session/session-chat';
@@ -26,12 +26,15 @@ import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
 import {
   getProjectDetail,
   restartProjectSession,
+  sessionStartKey,
   startProjectSession,
   syncOpencodeSessionData,
 } from '@/lib/projects-client';
 import { finishSessionTiming, sessionMark } from '@/lib/session-timing';
+import { cn } from '@/lib/utils';
 import {
   markProvisioningVerified,
+  markRuntimeReadyVerified,
   useSandboxConnectionStore,
 } from '@/stores/sandbox-connection-store';
 import { switchToSessionSandboxAsync, useServerStore } from '@/stores/server-store';
@@ -85,11 +88,10 @@ export default function ProjectSessionPage() {
 
   // ONE session-open call. POST /start idempotently provisions/resumes the
   // sandbox AND resolves the OpenCode pin server-side, returning a single
-  // readiness payload we poll until `stage==='ready'`. This replaces the old
-  // three-call dance (GET /sandbox poll + POST /wake + POST /ensure-opencode).
+  // readiness payload we poll until `stage==='ready'`.
   // session_id == sandbox_id by construction (see session-sandbox.ts).
-  const { data: start, isLoading } = useQuery({
-    queryKey: ['session-start', projectId, sessionId],
+  const { data: start } = useQuery({
+    queryKey: sessionStartKey(projectId, sessionId),
     queryFn: () => startProjectSession(projectId!, sessionId!),
     enabled: !!user && !!sessionId && !!projectId && !noPlan,
     staleTime: 0,
@@ -136,7 +138,16 @@ export default function ProjectSessionPage() {
     sessionMark(sandbox.session_id, 'sandbox-active');
     (async () => {
       try {
-        markProvisioningVerified();
+        // If /start already resolved the runtime as ready (warm claim: the box
+        // was pre-warmed and the pin handed to us), seed the connection store
+        // connected+healthy through the switch so the chat shows without an extra
+        // client /kortix/health RTT. Otherwise fall back to provisioning-verified
+        // (the health poller resolves readiness). The poller runs either way.
+        if (start?.stage === 'ready' && start?.opencode_session_id) {
+          markRuntimeReadyVerified();
+        } else {
+          markProvisioningVerified();
+        }
         // Pass the already-fetched row so the switch skips a duplicate
         // GET /sessions/:id/sandbox on first open. OpenCode caches are scoped
         // per-sandbox (opencodeKeys / activeServerKey), so no teardown needed.
@@ -149,10 +160,15 @@ export default function ProjectSessionPage() {
     })();
   }, [sandbox, projectId, activeInstanceId]);
 
-  // Belt-and-suspenders: every render on this route force-clears the cookie.
+  // Belt-and-suspenders: clear the legacy cookie once on mount for this route.
+  // setActiveInstanceCookie already force-clears on any /projects path and is the
+  // sole writer of this cookie, so a one-shot clear is sufficient — nothing can
+  // re-set it while we're on the session route (the switch effect also clears it).
+  // Previously this ran on EVERY render, firing a redundant document.cookie write
+  // on each /start poll tick and crossfade state flip during start.
   useEffect(() => {
     setActiveInstanceCookie(null);
-  });
+  }, []);
 
   useEffect(() => {
     if (sandbox && activeInstanceId === sandbox.sandbox_id) {
@@ -173,18 +189,41 @@ export default function ProjectSessionPage() {
     openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId });
   }, [noPlan, openUpgradeDialog, projectAccountId]);
 
+  // ── Crossfade: ONE persistent loader fades out as the chat fades in ───────
+  // The loader is rendered at a SINGLE stable tree position for the whole
+  // pre-ready lifecycle, so it never remounts → never re-blanks its delay gate
+  // (the old "disappears for a second then reappears" bug). The chat mounts
+  // UNDER the loader the moment the sandbox is switched, warms up invisibly,
+  // then crossfades in once ActiveSessionChat reports it's actually ready.
+  const [chatReady, setChatReady] = useState(false);
+  const [loaderMounted, setLoaderMounted] = useState(true);
+  // Reset the crossfade when the route's session changes (render-phase, idempotent).
+  const lifecycleForRef = useRef<string | null>(null);
+  if (lifecycleForRef.current !== sessionId) {
+    lifecycleForRef.current = sessionId;
+    if (chatReady) setChatReady(false);
+    if (!loaderMounted) setLoaderMounted(true);
+  }
+
+  // Terminal/gated states fully REPLACE the content (no chat to fade to).
+  const gated = !authLoading && !!user && noPlan;
+  const fatal =
+    !authLoading &&
+    !!user &&
+    !!sandbox &&
+    (sandbox.status === 'error' || sandbox.status === 'stopped');
+  // Mount the chat subtree only once the server store points at THIS sandbox —
+  // every sandbox-coupled hook reads the active server at render time.
+  const canMountChat =
+    !!sandbox && sandbox.status === 'active' && activeInstanceId === sandbox.sandbox_id;
+
   // From the first paint we mount ProjectShell so the project's sidebar is
-  // always visible — no full-page "Preparing workspace" flash. The inner
-  // content swaps between an inline loader, an error card, and the chat.
+  // always visible — no full-page "Preparing workspace" flash.
   const sandboxLabel = sandbox ? `session ${sandbox.sandbox_id.slice(0, 8)}` : undefined;
   const inner = (() => {
-    if (authLoading || !user) {
-      return <SessionStartingLoader />;
-    }
-
     // No plan → don't spin on a sandbox that will never provision. Show a calm
     // gated screen (the Team plan modal is already opening over it).
-    if (noPlan) {
+    if (gated) {
       return (
         <InlineSessionError
           title="Subscribe to start sessions"
@@ -202,17 +241,9 @@ export default function ProjectSessionPage() {
       );
     }
 
-    if (isLoading || !sandbox) {
-      return <SessionStartingLoader stage={startStage} />;
-    }
-
-    if (sandbox.status === 'provisioning') {
-      return <SessionStartingLoader stage={startStage} />;
-    }
-
-    if (sandbox.status === 'error') {
-      const meta = (sandbox.metadata as Record<string, unknown>) ?? {};
-      return (
+    if (fatal) {
+      const meta = (sandbox!.metadata as Record<string, unknown>) ?? {};
+      return sandbox!.status === 'error' ? (
         <InlineSessionError
           title={`Couldn't start ${sandboxLabel ?? 'session'}`}
           message={
@@ -221,11 +252,7 @@ export default function ProjectSessionPage() {
             'Something went wrong while provisioning this session.'
           }
         />
-      );
-    }
-
-    if (sandbox.status === 'stopped') {
-      return (
+      ) : (
         <InlineSessionError
           title={`${sandboxLabel ?? 'session'} is stopped`}
           message={tHardcodedUi.raw(
@@ -235,23 +262,42 @@ export default function ProjectSessionPage() {
       );
     }
 
-    // Active — wait until the server-store has actually flipped to this
-    // sandbox before mounting the chat (downstream hooks read from the store).
-    if (activeInstanceId !== sandbox.sandbox_id) {
-      return <SessionStartingLoader stage={startStage} />;
-    }
-
+    // Dual-layer: the chat mounts under a persistent loader and crossfades in.
     return (
-      <ProjectSessionRuntimeConnection>
-        <OpenCodeEventStreamProvider />
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-          <ActiveSessionChat
-            projectId={projectId}
-            sessionId={sessionId}
-            pinFromStart={start?.opencode_session_id ?? null}
-          />
-        </div>
-      </ProjectSessionRuntimeConnection>
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        {canMountChat && (
+          <div
+            className={cn(
+              'absolute inset-0 flex min-h-0 flex-1 flex-col overflow-hidden transition-opacity duration-300 ease-out',
+              chatReady ? 'opacity-100' : 'pointer-events-none opacity-0',
+            )}
+          >
+            <ProjectSessionRuntimeConnection>
+              <OpenCodeEventStreamProvider />
+              <ActiveSessionChat
+                projectId={projectId}
+                sessionId={sessionId}
+                pinFromStart={start?.opencode_session_id ?? null}
+                onChatReady={() => setChatReady(true)}
+              />
+            </ProjectSessionRuntimeConnection>
+          </div>
+        )}
+
+        {loaderMounted && (
+          <div
+            onTransitionEnd={() => {
+              if (chatReady) setLoaderMounted(false);
+            }}
+            className={cn(
+              'absolute inset-0 flex flex-col transition-opacity duration-300 ease-out',
+              chatReady ? 'pointer-events-none opacity-0' : 'opacity-100',
+            )}
+          >
+            <SessionStartingLoader stage={authLoading || !user ? 'provisioning' : startStage} />
+          </div>
+        )}
+      </div>
     );
   })();
 
@@ -306,10 +352,14 @@ function ActiveSessionChat({
   projectId,
   sessionId,
   pinFromStart,
+  onChatReady,
 }: {
   projectId: string;
   sessionId: string;
   pinFromStart: string | null;
+  /** Called once the chat is actually showable (resolved + healthy, or erroring)
+   *  so the page can crossfade it in over the loader. */
+  onChatReady?: () => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const runtimeReady = useSandboxConnectionStore(
@@ -334,11 +384,21 @@ function ActiveSessionChat({
 
   const restartMutation = useMutation({
     mutationFn: () => restartProjectSession(projectId, sessionId),
+    onMutate: () => {
+      queryClient.setQueryData(sessionStartKey(projectId, sessionId), {
+        stage: 'provisioning',
+        retriable: true,
+        sandbox: null,
+        opencode_session_id: null,
+        reason: 'restart_requested',
+      });
+    },
     onSuccess: () => {
       // Restart tears down the runtime: re-enable the one-shot ensure for the
       // (new) sandbox and drop the now-stale OpenCode caches.
       clearOpencodeEnsureGuard();
       queryClient.removeQueries({ queryKey: ['opencode'] });
+      queryClient.invalidateQueries({ queryKey: sessionStartKey(projectId, sessionId) });
       queryClient.invalidateQueries({
         queryKey: ['project', 'session-sandbox', projectId, sessionId],
       });
@@ -352,7 +412,34 @@ function ActiveSessionChat({
   const selectedSession = selectedOpenCodeSessionId
     ? opencodeSessions.find((session) => session.id === selectedOpenCodeSessionId)
     : null;
-  const chatSessionId = selectedSession?.id ?? rootSessionId ?? null;
+  // Pin the FIRST resolved root id so the pinFromStart(null)→pin transition can
+  // never re-key SessionChat mid-start — a re-key would remount it, dropping the
+  // optimistic first-message bubble and interrupting the send (so OpenCode never
+  // auto-titles the session). ?oc deep-links still override. Reset per route.
+  const pinRef = useRef<{ sid: string; id: string | null }>({ sid: sessionId, id: null });
+  if (pinRef.current.sid !== sessionId) pinRef.current = { sid: sessionId, id: null };
+  if (!pinRef.current.id && rootSessionId) pinRef.current.id = rootSessionId;
+  const chatSessionId = selectedSession?.id ?? pinRef.current.id ?? rootSessionId ?? null;
+
+  // Migrate the home-composer prompt onto SessionChat's consumer key DURING
+  // RENDER — before SessionChat (a child) mounts — so its pending-prompt effect
+  // always finds it, instead of racing a parent effect that runs AFTER the child.
+  // Idempotent + guarded (runs once per resolved chatSessionId) → StrictMode-safe.
+  const promptMigratedForRef = useRef<string | null>(null);
+  if (
+    typeof window !== 'undefined' &&
+    chatSessionId &&
+    promptMigratedForRef.current !== chatSessionId
+  ) {
+    promptMigratedForRef.current = chatSessionId;
+    const fromKey = `project_pending_prompt:${sessionId}`;
+    const pending = sessionStorage.getItem(fromKey);
+    if (pending) {
+      const toKey = `opencode_pending_prompt:${chatSessionId}`;
+      if (sessionStorage.getItem(toKey) === null) sessionStorage.setItem(toKey, pending);
+      sessionStorage.removeItem(fromKey);
+    }
+  }
 
   // ── Readiness benchmarking marks ───────────────────────────────────────
   useEffect(() => {
@@ -372,6 +459,16 @@ function ActiveSessionChat({
     ]);
     finishSessionTiming(sessionId, sb?.metadata?.provisionTimeline);
   }, [chatSessionId, sessionId, projectId, queryClient]);
+
+  // Tell the page to crossfade the chat in once it's genuinely showable — the
+  // session id is resolved AND the runtime is healthy, OR an error card is about
+  // to render (so the error replaces the loader smoothly too). setState in the
+  // parent is idempotent, so re-firing on re-render is a harmless no-op.
+  const chatShowable =
+    (!!chatSessionId && runtimeReady) || !!runtimeError || (!runtimeReady && !!runtimeBootError);
+  useEffect(() => {
+    if (chatShowable) onChatReady?.();
+  }, [chatShowable, onChatReady]);
 
   useEffect(() => {
     if (!selectedOpenCodeSessionId) return;
@@ -423,23 +520,9 @@ function ActiveSessionChat({
       .catch(() => {});
   }, [opencodeSessions, activeTitle, queryClient, projectId, sessionId]);
 
-  // First-message handoff from the project index composer (/projects/[id]). It
-  // stashes the prompt under the PROJECT session id because the opencode
-  // session id doesn't exist yet at navigation time. Once the chat session is
-  // created, move it onto the `opencode_pending_prompt:<chatSessionId>` key that
-  // SessionChat's pending-prompt effect consumes (its 250ms retry loop covers
-  // the brief gap before this runs). Files ride along via usePendingFilesStore.
-  const promptMovedRef = useRef(false);
-  useEffect(() => {
-    if (!chatSessionId || promptMovedRef.current) return;
-    if (typeof window === 'undefined') return;
-    const key = `project_pending_prompt:${sessionId}`;
-    const pending = sessionStorage.getItem(key);
-    if (!pending) return;
-    promptMovedRef.current = true;
-    sessionStorage.setItem(`opencode_pending_prompt:${chatSessionId}`, pending);
-    sessionStorage.removeItem(key);
-  }, [chatSessionId, sessionId]);
+  // (The home-composer first-message handoff is migrated synchronously during
+  // render above — see promptMigratedForRef — so SessionChat's consumer always
+  // finds the key before it mounts, instead of racing a post-mount effect.)
 
   if (!runtimeReady && runtimeBootError) {
     return (
@@ -499,17 +582,24 @@ function ActiveSessionChat({
     );
   }
 
-  // Sandbox is up + switched; we're waiting on the runtime health + the canonical
-  // OpenCode pin. Keep the SAME single progress loader on its final "Connecting"
-  // phase rather than swapping to a second, different skeleton — one continuous
-  // 0→100% loader until the conversation is actually ready.
+  // Sandbox up + switched, still resolving runtime health + the canonical pin.
+  // Render NOTHING here (not a second loader) — the page's single persistent
+  // loader is on top and crossfades out once chatShowable flips onChatReady.
   if (!chatSessionId) {
-    return <SessionStartingLoader stage="ready" />;
+    return null;
   }
 
+  // Key by chatSessionId (pinned, so stable through the whole start) — SessionChat
+  // mounts exactly once per session and only remounts on a genuine session switch,
+  // so the optimistic first-message bubble + in-flight send are never torn down.
   return (
-    <SessionLayout sessionId={chatSessionId}>
-      <SessionChat sessionId={chatSessionId} />
+    <SessionLayout
+      key={chatSessionId}
+      sessionId={chatSessionId}
+      projectId={projectId}
+      projectSessionId={sessionId}
+    >
+      <SessionChat key={chatSessionId} sessionId={chatSessionId} />
     </SessionLayout>
   );
 }

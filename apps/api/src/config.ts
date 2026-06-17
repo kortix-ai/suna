@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SLACK_BOT_SCOPES } from './channels/slack-manifest';
 
 /**
  * Running sandbox version.
@@ -119,14 +120,18 @@ const envSchema = z.object({
   // daemon snapshot that returns KORTIX_TOKEN for the proxy host (back-compat:
   // OFF leaves the direct clone-credential token flow untouched).
   KORTIX_GIT_PROXY:                optBoolFalse,
-  // Warm sandbox pool (docs/specs/warm-pool.md). ON by default — no enable flag.
-  // Default warm sandboxes per active project (operator default; the per-project
-  // UI value overrides it).
-  KORTIX_WARM_POOL_SIZE:           optInt(1),
-  // Global cap on total warm (pre-booted, unclaimed) sandboxes across all
-  // projects — bounds idle cost + the Daytona quota. Doubles as the kill switch:
-  // set to 0 to disable the warm pool fleet-wide.
-  KORTIX_WARM_POOL_MAX_TOTAL:      optInt(50),
+  // Warm sandbox pool (re-introduced behind the session runtime allocator: a
+  // spare boots in the daemon's KORTIX_WARM_POOL mode, parks, and is CLAIMED +
+  // bound to a session id on create — decoupled from the durable session row).
+  // Per-project desired spare count (operator default; per-project UI value
+  // overrides). Only matters once MAX_TOTAL > 0.
+  KORTIX_WARM_POOL_SIZE:           optInt(2),
+  // Global cap on total warm (pre-booted, unclaimed) spares across all projects
+  // — bounds idle cost + the Daytona quota. MASTER KILL SWITCH: default 0 =
+  // warm pool DISABLED fleet-wide (warmPoolEnabled() false → the allocator's
+  // claim path is skipped and every create cold-provisions, byte-identically to
+  // today). Set > 0 to enable — only after live-validating the claim path.
+  KORTIX_WARM_POOL_MAX_TOTAL:      optInt(0),
   // Presence window: only keep a warm pool while a user has touched the project
   // (authenticated portal activity) within this many minutes. Closing the tab
   // lets the pool reap, so we never hold idle boxes 24/7 for absent users.
@@ -151,12 +156,11 @@ const envSchema = z.object({
   SLACK_CLIENT_ID:             optStr,
   SLACK_CLIENT_SECRET:         optStr,
   SLACK_REDIRECT_URI:          optStr,
-  // Must stay in sync with the Slack app manifest used during channel setup
-  // (slack-app-manifest.json / generateSlackManifest); anything narrower here
-  // means OAuth grants fewer scopes than the bot needs. 100% bot-token scopes —
-  // the integration never requests a user token (no user_scope= param), so this
-  // list intentionally contains no user scopes.
-  SLACK_OAUTH_SCOPES:          optStrDefault('app_mentions:read,assistant:write,bookmarks:read,bookmarks:write,calls:read,calls:write,canvases:read,canvases:write,channels:history,channels:join,channels:manage,channels:read,chat:write,chat:write.customize,chat:write.public,commands,conversations.connect:manage,conversations.connect:read,conversations.connect:write,dnd:read,emoji:read,files:read,files:write,groups:history,groups:read,groups:write,im:history,im:read,im:write,links.embed:write,links:read,links:write,lists:read,lists:write,metadata.message:read,mpim:history,mpim:read,mpim:write,pins:read,pins:write,reactions:read,reactions:write,reminders:read,reminders:write,remote_files:read,remote_files:share,remote_files:write,team.billing:read,team.preferences:read,team:read,usergroups:read,usergroups:write,users.profile:read,users:read,users:read.email,users:write,workflow.steps:execute'),
+  // Derived from the SINGLE scope source of truth (SLACK_BOT_SCOPES in
+  // channels/slack-manifest.ts) so OAuth always grants exactly what the manifest
+  // declares — no hand-synced drift. 100% bot-token scopes; the integration
+  // never requests a user token (no user_scope= param).
+  SLACK_OAUTH_SCOPES:          optStrDefault(SLACK_BOT_SCOPES.join(',')),
   // Optional banner image rendered at the top of the App Home tab. Must be a
   // public HTTPS URL Slack can fetch (no auth). Recommended 1600×400 PNG.
   SLACK_HOME_HERO_URL:         optStr,
@@ -170,6 +174,17 @@ const envSchema = z.object({
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
   LLM_GATEWAY_ENABLED:         optBoolFalse,
+  // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
+  // gateway's public base (…/v1/llm) to route every sandbox model call there.
+  LLM_GATEWAY_BASE_URL:        optStr,
+  // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
+  // so sandboxes reach it through the API's own tunnel (no separate tunnel).
+  LLM_GATEWAY_PROXY_PORT:      optInt(0),
+  // Where the /v1/llm-gateway/* reverse-proxy forwards. Defaults to
+  // 127.0.0.1:LLM_GATEWAY_PROXY_PORT (local, gateway same host). In K8s set to
+  // the in-cluster gateway service, e.g. http://kortix-gateway:8090, so the
+  // gateway stays internal and sandboxes reach it via the API's public origin.
+  LLM_GATEWAY_PROXY_TARGET:    optStr,
   ANTHROPIC_API_URL:           optUrl('https://api.anthropic.com/v1'),
   ANTHROPIC_API_KEY:           optStr,
   OPENAI_API_URL:              optUrl('https://api.openai.com/v1'),
@@ -234,6 +249,23 @@ const envSchema = z.object({
   // and deployments router which still reference it.
   SANDBOX_PORT_BASE:           optInt(14000),
   SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
+
+  // ── Sandbox lifecycle (Daytona auto-stop / auto-archive / auto-delete) ────
+  // Set as SDK create() params so a box self-manages even if the API/tunnel
+  // that created it dies (orphaned local-dev & ephemeral-env sessions are the
+  // main leak source). All in MINUTES.
+  //   autostop   → idle box stops, compute billing ends. CLAMPED to >=1 at the
+  //                use site so a box is NEVER created persistent (a 0 here once
+  //                leaked 500+ never-stopping boxes via the warm-pool path).
+  //                This is what actually stops the money burn.
+  //   autoarchive→ stopped box moves to cold storage after a few days (cheap,
+  //                still resumable; kept warm-resumable in the meantime).
+  //   autodelete → NEVER (-1). A sandbox is only ever removed when a user
+  //                explicitly deletes the session — auto-stop + cold archive
+  //                make an idle box nearly free, so we never destroy disk.
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(15),
+  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(4320),   // 3 days
+  KORTIX_SANDBOX_AUTODELETE_MINUTES:  optInt(-1),     // never auto-delete
 
   // ── Internal Service Key (auto-generated if missing — never fails) ───────
   INTERNAL_SERVICE_KEY:        optStr,
@@ -511,6 +543,9 @@ export const config = {
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
+  LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
+  LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
+  LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
   ANTHROPIC_API_URL: env.ANTHROPIC_API_URL,
   ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
   OPENAI_API_URL: env.OPENAI_API_URL,
@@ -536,6 +571,11 @@ export const config = {
   DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
   DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
   KORTIX_WARM_POOL_FULL_SIZE: env.KORTIX_WARM_POOL_FULL_SIZE,
+
+  // Sandbox lifecycle intervals (minutes) — see schema comment above.
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
+  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
+  KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
 
   PLATINUM_API_KEY: env.PLATINUM_API_KEY,
   PLATINUM_API_URL: env.PLATINUM_API_URL,

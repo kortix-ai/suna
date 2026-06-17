@@ -10,7 +10,21 @@ import {
   ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
-import { Button } from '@/components/ui/marketing/button';
+import {
+  Disclosure,
+  DisclosureBody,
+  DisclosureContent,
+  DisclosureTrigger,
+} from '@/components/ui/disclosure';
+import { Button, marketingButtonVariants } from '@/components/ui/marketing/button';
+import {
+  NavigationMenu,
+  NavigationMenuContent,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  NavigationMenuList,
+  NavigationMenuTrigger,
+} from '@/components/ui/navigation-menu';
 import { Icon } from '@/features/icon/icon';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useIsMobile } from '@/hooks/utils';
@@ -23,7 +37,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 
 const SCROLL_THRESHOLD_DOWN = 50;
 const SCROLL_THRESHOLD_UP = 20;
@@ -91,6 +105,23 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
       href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/'),
     [pathname],
   );
+
+  const compareIcon = (slug: string) => {
+    switch (slug) {
+      case 'zapier':
+        return <Icon.Zapier />;
+      case 'openclaw':
+        return <Icon.OpenClaw />;
+      case 'viktor':
+        return <Icon.Viktor />;
+      case 'chatgpt':
+        return <Icon.ChatGPT />;
+      case 'claude':
+        return <Icon.Claude />;
+      default:
+        return null;
+    }
+  };
 
   const handleScroll = useCallback(() => {
     const currentScrollY = window.scrollY;
@@ -236,24 +267,59 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
             </ContextMenu>
 
             <nav className="hidden items-center justify-center gap-2 md:flex">
-              {filteredNavLinks.map((item) => (
-                <Button
-                  key={item.id}
-                  variant="ghost"
-                  size="sm"
-                  asChild
-                  className={cn(
-                    'font-medium',
-                    pathname === item.href
-                      ? 'text-foreground'
-                      : 'text-foreground/90 hover:text-foreground',
-                  )}
-                >
-                  <Link key={item.id} href={item.href}>
-                    {item.name}
-                  </Link>
-                </Button>
-              ))}
+              {filteredNavLinks.map((item) =>
+                typeof item.href === 'string' ? (
+                  <Button
+                    key={item.id}
+                    variant="ghost"
+                    size="sm"
+                    asChild
+                    className={cn(
+                      'font-medium',
+                      isNavActive(item.href)
+                        ? 'text-foreground'
+                        : 'text-foreground/90 hover:text-foreground',
+                    )}
+                  >
+                    <Link href={item.href}>{item.name}</Link>
+                  </Button>
+                ) : (
+                  <NavigationMenu key={item.id} viewport={false} className="max-w-none flex-none">
+                    <NavigationMenuList>
+                      <NavigationMenuItem>
+                        <NavigationMenuTrigger
+                          className={cn(
+                            marketingButtonVariants({ variant: 'ghost', size: 'sm' }),
+                            'font-medium',
+                            item.href.some((link) => isNavActive(link.href))
+                              ? 'text-foreground'
+                              : 'text-foreground/90 hover:text-foreground data-[state=open]:text-foreground',
+                          )}
+                        >
+                          {item.name}
+                        </NavigationMenuTrigger>
+                        <NavigationMenuContent className="min-w-56">
+                          {item.href.map((link) => (
+                            <NavigationMenuLink key={link.href} asChild>
+                              <Link
+                                href={link.href}
+                                className={cn(
+                                  'flex flex-row items-center justify-start gap-2',
+                                  isNavActive(link.href) && 'bg-accent/50 text-accent-foreground',
+                                )}
+                              >
+                                {item.name === 'Compare' &&
+                                  compareIcon(link.href.split('/').pop() || '')}
+                                {link.name}
+                              </Link>
+                            </NavigationMenuLink>
+                          ))}
+                        </NavigationMenuContent>
+                      </NavigationMenuItem>
+                    </NavigationMenuList>
+                  </NavigationMenu>
+                ),
+              )}
             </nav>
           </div>
 
@@ -331,39 +397,92 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
 
               <motion.nav className="flex-1 space-y-6 p-2" variants={drawerMenuContainerVariants}>
                 <ul className="flex flex-col gap-6">
-                  {filteredNavLinks.map((item) => (
-                    <motion.li key={item.id} variants={drawerMenuVariants}>
-                      <Link
-                        href={item.href}
-                        onClick={(e) => {
-                          if (!item.href.startsWith('#')) {
-                            setIsDrawerOpen(false);
-                            return;
-                          }
-                          e.preventDefault();
-                          if (pathname !== '/') {
-                            router.push(`/${item.href}`);
-                            setIsDrawerOpen(false);
-                            return;
-                          }
-                          const element = document.getElementById(item.href.substring(1));
-                          element?.scrollIntoView({ behavior: 'smooth' });
+                  {filteredNavLinks.map((item) => {
+                    const handleDrawerNavClick =
+                      (href: string) => (e: MouseEvent<HTMLAnchorElement>) => {
+                        if (!href.startsWith('#')) {
                           setIsDrawerOpen(false);
-                        }}
-                        className={cn(
-                          // 'block py-3 text-4xl font-medium tracking-tight transition-colors',
-                          'group flex items-center justify-between text-2xl',
-                          isNavActive(item.href)
-                            ? 'text-foreground'
-                            : 'text-muted-foreground hover:text-foreground',
-                        )}
-                      >
-                        {item.name}
+                          return;
+                        }
+                        e.preventDefault();
+                        if (pathname !== '/') {
+                          router.push(`/${href}`);
+                          setIsDrawerOpen(false);
+                          return;
+                        }
+                        const element = document.getElementById(href.substring(1));
+                        element?.scrollIntoView({ behavior: 'smooth' });
+                        setIsDrawerOpen(false);
+                      };
 
-                        <ChevronRight className="size-8 shrink-0 opacity-0 transition-transform group-hover:opacity-100" />
-                      </Link>
-                    </motion.li>
-                  ))}
+                    if (typeof item.href === 'string') {
+                      return (
+                        <motion.li key={item.id} variants={drawerMenuVariants}>
+                          <Link
+                            href={item.href}
+                            onClick={handleDrawerNavClick(item.href)}
+                            className={cn(
+                              'group flex items-center justify-between text-2xl',
+                              isNavActive(item.href)
+                                ? 'text-foreground'
+                                : 'text-muted-foreground hover:text-foreground',
+                            )}
+                          >
+                            {item.name}
+
+                            <ChevronRight className="size-8 shrink-0 opacity-0 transition-transform group-hover:opacity-100" />
+                          </Link>
+                        </motion.li>
+                      );
+                    }
+
+                    return (
+                      <motion.li key={item.id} variants={drawerMenuVariants}>
+                        <Disclosure
+                          className="group w-full"
+                          open={item.href.some((link) => isNavActive(link.href))}
+                        >
+                          <DisclosureTrigger>
+                            <button
+                              type="button"
+                              className={cn(
+                                'group/trigger flex w-full items-center justify-between text-2xl',
+                                item.href.some((link) => isNavActive(link.href))
+                                  ? 'text-foreground'
+                                  : 'text-muted-foreground hover:text-foreground',
+                              )}
+                            >
+                              {item.name}
+                              <ChevronRight className="size-8 shrink-0 transition-transform group-aria-expanded/trigger:rotate-90" />
+                            </button>
+                          </DisclosureTrigger>
+                          <DisclosureContent>
+                            <DisclosureBody className="p-0 pt-4">
+                              <ul className="flex flex-col gap-4">
+                                {item.href.map((link) => (
+                                  <li key={link.href}>
+                                    <Link
+                                      href={link.href}
+                                      onClick={handleDrawerNavClick(link.href)}
+                                      className={cn(
+                                        'group flex items-center justify-between text-xl',
+                                        isNavActive(link.href)
+                                          ? 'text-foreground'
+                                          : 'text-muted-foreground hover:text-foreground',
+                                      )}
+                                    >
+                                      {link.name}
+                                      <ChevronRight className="size-6 shrink-0 opacity-0 transition-transform group-hover:opacity-100" />
+                                    </Link>
+                                  </li>
+                                ))}
+                              </ul>
+                            </DisclosureBody>
+                          </DisclosureContent>
+                        </Disclosure>
+                      </motion.li>
+                    );
+                  })}
                 </ul>
               </motion.nav>
 

@@ -1,101 +1,96 @@
 /**
- * Warm sandbox pool — per-project pre-booted sandboxes ready to claim instantly.
- * See docs/specs/warm-pool.md.
+ * Warm sandbox pre-warm — API driver for the daemon's KORTIX_WARM_POOL mode.
  *
- * A warm sandbox is a normal session boot for a pre-allocated id `W` (which is
- * both its sandbox_id AND its future session_id, preserving the
- * sandbox_id == session_id == branch invariant), minus the project_sessions row
- * and minus the initial prompt. It clones base + creates branch W + warms
- * opencode, then waits in `pool_state='parked'`.
+ * GATED OFF BY DEFAULT (config.KORTIX_WARM_POOL_MAX_TOTAL = 0 ⇒ warmPoolEnabled()
+ * false). When disabled, every exported entry point is inert: the allocator
+ * skips the claim path and cold-provisions byte-identically to today, and
+ * reconcile only reaps stray pool rows. Enable (MAX_TOTAL > 0) ONLY after
+ * live-validating the claim path on a real deploy — the daemon runPoolMode claim
+ * behaviour (clone + opencode warm post-claim) can't be unit-tested.
  *
- * Claim is a pure DB op (no call into the sandbox): flip parked→claimed and
- * insert the project_sessions row. On by default; the fleet kill switch is
- * KORTIX_WARM_POOL_MAX_TOTAL=0.
+ * Design (decoupled from the durable session id — unlike the retired pool):
+ *   - spawnSpare:  provision a SESSION-LESS box with env KORTIX_WARM_POOL=1 so the
+ *                  daemon boots runPoolMode (opencode + proxy up, parked). The
+ *                  row's sandbox_id is a throwaway SPARE uuid (NOT a session id).
+ *   - claim:       createProjectSession owns the session id; the allocator calls
+ *                  claimSpareForSession, which atomically grabs a parked spare,
+ *                  stages the session env into the box (/tmp/dnah-env via the
+ *                  daemon /file/upload — the daemon's env-poll then clones +
+ *                  warms), and BINDS a fresh session_sandboxes row keyed
+ *                  sandbox_id == session_id at the spare's external_id.
+ *   - any miss/error ⇒ return null ⇒ allocator cold-falls-back unchanged.
+ *
+ * The box keeps its PARK-time KORTIX_TOKEN (the claim env deliberately omits it),
+ * so the claimed row's config.serviceKey MUST stay the park key — the proxy
+ * authenticates upstream with it.
  */
-import { randomUUID } from 'node:crypto';
 import { and, eq, inArray, sql } from 'drizzle-orm';
-import { accountMembers, projects, sessionSandboxes } from '@kortix/db';
+
+import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
+import { config, type SandboxProviderName } from '../../config';
 import { db } from '../../shared/db';
-import { config } from '../../config';
 import { getProvider } from '../providers';
 import { selectProvider } from './provider-balancer';
-import { provisionSessionSandbox } from './session-sandbox';
+import { createApiKey } from '../../repositories/api-keys';
+import { createAccountToken } from '../../repositories/account-tokens';
+import { accountEntitledToLlmGateway } from '../../shared/account-limits';
+import { ensureSandboxImage, DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
+import { resolvePreviewLink } from '../../sandbox-proxy/backend';
+import { resolvePreviewUserContext } from '../../shared/preview-ownership';
+import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
+import { randomUUID } from 'node:crypto';
 
-const POOL_BOOT_TIMEOUT_MS = 8 * 60 * 1000; // booting longer than this → failed → reap
+const POOL_BOOT_TIMEOUT_MS = 8 * 60 * 1000; // booting/parked longer than this → reap
 const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle (snapshot drift)
-const READY_PROBE_TIMEOUT_MS = 5 * 60 * 1000;
-const READY_PROBE_INTERVAL_MS = 3000;
-const resumedPromotions = new Set<string>();
-
-// Warm pool is ON by default — there's no enable flag. The fleet-wide kill
-// switch is KORTIX_WARM_POOL_MAX_TOTAL=0. Each project can still opt in/out and
-// pick a size from the UI (Customize → Sandbox), stored in
-// projects.metadata.warm_pool — DB only, never in kortix.toml.
-export const warmPoolEnabled = (): boolean => config.KORTIX_WARM_POOL_MAX_TOTAL > 0;
-
-// Per-project sanity cap on warm size. The real fleet bound is the operator's
-// KORTIX_WARM_POOL_MAX_TOTAL; this just stops a typo from warming a huge pool.
+const CLAIM_STALE_MS = 2 * 60 * 1000; // a 'claiming' row older than this → the claimant died → reap
+const READY_PROBE_INTERVAL_MS = 2000;
 const MAX_WARM_SIZE = 25;
+const DNAH_ENV_PATH = '/tmp/dnah-env'; // MUST match the daemon (main.ts reloadSessionEnv + poll)
+const DAEMON_PORT = 8000;
+
 export interface WarmPoolConfig {
   enabled: boolean;
   size: number;
 }
 
-/** Effective per-project warm config: the UI value (projects.metadata.warm_pool)
- * over the operator default (enabled / KORTIX_WARM_POOL_SIZE). */
+/** Master gate. False at the default (MAX_TOTAL=0) ⇒ the whole driver is inert. */
+export const warmPoolEnabled = (): boolean => config.KORTIX_WARM_POOL_MAX_TOTAL > 0;
+
+/** Effective per-project warm config. `enabled` is false unless the pool is on
+ *  AND the project hasn't opted out (projects.metadata.warm_pool.enabled). */
 export function resolveWarmConfig(metadata: unknown): WarmPoolConfig {
   const defaultSize = Math.max(0, config.KORTIX_WARM_POOL_SIZE);
   const wp = (metadata as Record<string, unknown> | null | undefined)?.warm_pool;
   if (wp && typeof wp === 'object' && !Array.isArray(wp)) {
     const raw = wp as Record<string, unknown>;
-    const enabled = typeof raw.enabled === 'boolean' ? raw.enabled : true;
+    const optedOut = raw.enabled === false;
     const size =
       typeof raw.size === 'number' && Number.isInteger(raw.size) && raw.size >= 0
         ? Math.min(raw.size, MAX_WARM_SIZE)
         : defaultSize;
-    return { enabled, size };
+    return { enabled: warmPoolEnabled() && !optedOut, size };
   }
-  return { enabled: true, size: defaultSize };
+  return { enabled: warmPoolEnabled(), size: defaultSize };
 }
 
-/**
- * Why a parked/booting box should be reaped, or null to keep it. Pure so it's
- * unit-testable. `pool_state='reap'` is set by a failed readiness promotion.
- */
+/** Why a pool row should be reaped, or null to keep it. Pure (unit-testable). */
 export function warmBoxReapReason(
   row: { poolState: string | null; status: string; createdAt: Date; updatedAt: Date },
   now: number,
-  opts: { bootTimeoutMs?: number; maxAgeMs?: number } = {},
+  opts: { bootTimeoutMs?: number; maxAgeMs?: number; claimStaleMs?: number } = {},
 ): string | null {
   const bootTimeoutMs = opts.bootTimeoutMs ?? POOL_BOOT_TIMEOUT_MS;
   const maxAgeMs = opts.maxAgeMs ?? POOL_MAX_AGE_MS;
+  const claimStaleMs = opts.claimStaleMs ?? CLAIM_STALE_MS;
   if (row.poolState === 'reap') return 'marked';
   if (row.status === 'error') return 'errored';
   if (row.poolState === 'booting' && now - row.createdAt.getTime() > bootTimeoutMs) return 'boot-timeout';
+  if (row.poolState === 'claiming' && now - row.updatedAt.getTime() > claimStaleMs) return 'claim-timeout';
   if (row.poolState === 'parked' && now - row.createdAt.getTime() > maxAgeMs) return 'aged-out';
   return null;
 }
 
-async function getProjectOwnerUserId(accountId: string): Promise<string | null> {
-  const [owner] = await db
-    .select({ userId: accountMembers.userId })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.accountId, accountId), eq(accountMembers.accountRole, 'owner')))
-    .limit(1);
-  return owner?.userId ?? null;
-}
-
-async function countGlobalWarm(): Promise<number> {
-  const [row] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(sessionSandboxes)
-    .where(inArray(sessionSandboxes.poolState, ['booting', 'parked']))
-    .limit(1);
-  return Number(row?.n ?? 0);
-}
-
-/** Live warm-pool counts for a project: `ready` (parked, claimable) +
- * `warming` (booting). Surfaced in the Customize → Sandbox card. */
+/** Live counts for a project: `ready` (parked, claimable) + `warming` (booting). */
 export async function getWarmPoolCounts(projectId: string): Promise<{ ready: number; warming: number }> {
   const rows = await db
     .select({ poolState: sessionSandboxes.poolState, n: sql<number>`count(*)::int` })
@@ -111,213 +106,13 @@ export async function getWarmPoolCounts(projectId: string): Promise<{ ready: num
   return { ready, warming };
 }
 
-/**
- * Atomically claim a warm sandbox for `projectId` on behalf of `userId`.
- *
- * GREEDY: prefer a fully-parked box (instant), but if none is ready yet, claim
- * one that's still `booting` — it already has a head start (clone + opencode in
- * flight), so the session rides it to ready far faster than a fresh cold boot.
- * This is what makes "every create assumes a warm one" hold even during the
- * ~25s warm-up window right after a user opens a project. Only claims boxes
- * booted for the same user (owner), which carry that user's executor/LLM tokens.
- * Returns the claimed sandbox, or null (→ cold path).
- */
-export async function claimWarmSandbox(input: {
-  projectId: string;
-  userId: string;
-  /** Template slug the session wants ('default' = platform default). Boxes
-   * record the slug they were spawned for — a claim only matches a box built
-   * for the SAME template. */
-  slug?: string;
-}): Promise<{ sandboxId: string; externalId: string | null; accountId: string; sandboxStatus: string; opencodeSessionId: string | null } | null> {
-  if (!warmPoolEnabled()) return null;
-  const wantedSlug = (input.slug ?? '').trim() || 'default';
-  // Single statement, locked with SKIP LOCKED so concurrent claims never
-  // collide. Prefer parked over booting, and oldest-first (= most booted).
-  // Clearing pool_state hands the box to the session (the idle sweep then
-  // hibernates it normally; promoteWhenReady sees it's no longer 'booting' and
-  // stops without reaping). status='error' boxes are never claimed.
-  const claimed = await db.execute(sql`
-    UPDATE kortix.session_sandboxes
-    SET pool_state = NULL, updated_at = now()
-    WHERE sandbox_id = (
-      SELECT s.sandbox_id FROM kortix.session_sandboxes s
-      WHERE s.project_id = ${input.projectId}
-        AND s.pool_state IN ('parked', 'booting')
-        AND s.status <> 'error'
-        AND (s.metadata->'warmPool'->>'ownerUserId') = ${input.userId}
-        AND coalesce(s.metadata->'warmPool'->>'slug', 'default') = ${wantedSlug}
-      ORDER BY (s.pool_state = 'parked') DESC, s.created_at ASC
-      LIMIT 1
-      FOR UPDATE SKIP LOCKED
-    )
-    RETURNING sandbox_id, external_id, account_id, status, metadata
-  `);
-  const r = (claimed as unknown as { rows?: any[] }).rows ?? (claimed as unknown as any[]);
-  const row = Array.isArray(r) ? r[0] : undefined;
-  if (!row) return null;
-  const meta = (row.metadata ?? {}) as Record<string, any>;
-  return {
-    sandboxId: row.sandbox_id as string,
-    externalId: (row.external_id ?? null) as string | null,
-    accountId: row.account_id as string,
-    sandboxStatus: (row.status ?? 'provisioning') as string,
-    // Pin pre-warmed at park time (see promoteWhenReady) → claim skips ensure-opencode.
-    opencodeSessionId: (meta.warmPool?.opencodeSessionId ?? null) as string | null,
-  };
-}
-
-/**
- * After claiming a warm box, fast-forward its workspace to the LATEST base tip.
- * The box cloned base when it parked, so base may have advanced since — without
- * this, a claimed session opens on a stale checkout. Fire-and-forget + no
- * opencode restart (the daemon's file watcher picks up the changed files).
- */
-export async function syncClaimedBoxToBase(externalId: string | null, userId: string | undefined): Promise<void> {
-  if (!externalId) return;
-  try {
-    const { sandboxOpencodeEndpoint } = await import('../../projects/opencode-mapping');
-    const ep = await sandboxOpencodeEndpoint(externalId, userId);
-    if (!ep) return;
-    const res = await fetch(`${ep.url}/kortix/refresh?base=1&restart=0`, {
-      method: 'POST',
-      headers: ep.headers,
-      signal: AbortSignal.timeout(25_000),
-    });
-    if (!res.ok) {
-      console.warn(`[warm-pool] base sync ${externalId.slice(0, 8)} -> ${res.status}`);
-    }
-  } catch (err) {
-    console.warn('[warm-pool] base sync failed:', err instanceof Error ? err.message : err);
-  }
-}
-
-/** Probe the daemon health through the local proxy using the sandbox key. */
-async function probeRuntimeReady(externalId: string, serviceKey: string): Promise<{ ready: boolean; error: string | null }> {
-  try {
-    const url = `http://127.0.0.1:${config.PORT}/v1/p/${externalId}/8000/kortix/health`;
-    const r = await fetch(url, { headers: { Authorization: `Bearer ${serviceKey}` } });
-    const b = (await r.json().catch(() => null)) as any;
-    return { ready: b?.runtimeReady === true, error: b?.boot_error ?? null };
-  } catch {
-    return { ready: false, error: null };
-  }
-}
-
-/** Background: poll until the booting box is runtimeReady, then mark it parked. */
-async function promoteWhenReady(sandboxId: string): Promise<void> {
-  const deadline = Date.now() + READY_PROBE_TIMEOUT_MS;
-  while (Date.now() < deadline) {
-    await new Promise((res) => setTimeout(res, READY_PROBE_INTERVAL_MS));
-    const [row] = await db
-      .select({ poolState: sessionSandboxes.poolState, externalId: sessionSandboxes.externalId, status: sessionSandboxes.status, config: sessionSandboxes.config, metadata: sessionSandboxes.metadata })
-      .from(sessionSandboxes)
-      .where(eq(sessionSandboxes.sandboxId, sandboxId))
-      .limit(1);
-    if (!row || row.poolState !== 'booting') return; // claimed/reaped/gone elsewhere
-    if (row.status === 'error') break;
-    const serviceKey = (row.config as Record<string, unknown> | null)?.serviceKey as string | undefined;
-    if (!row.externalId || !serviceKey) continue;
-    const { ready, error } = await probeRuntimeReady(row.externalId, serviceKey);
-    if (ready) {
-      const meta = (row.metadata ?? {}) as Record<string, any>;
-      // Pre-warm the opencode session so a claim skips the ensure-opencode
-      // round trip — the pin is already there → chat is usable immediately.
-      let opencodeSessionId: string | null = null;
-      try {
-        const { createSandboxOpencodeSession } = await import('../../projects/opencode-mapping');
-        opencodeSessionId = await createSandboxOpencodeSession(row.externalId, meta.warmPool?.ownerUserId);
-      } catch (err) {
-        console.warn(`[warm-pool] pre-warm opencode session failed for ${sandboxId.slice(0, 8)}:`, err instanceof Error ? err.message : err);
-      }
-      await db
-        .update(sessionSandboxes)
-        .set({
-          poolState: 'parked',
-          metadata: { ...meta, warmPool: { ...(meta.warmPool ?? {}), opencodeSessionId } },
-          updatedAt: new Date(),
-        })
-        .where(eq(sessionSandboxes.sandboxId, sandboxId));
-      console.log(`[warm-pool] parked ${sandboxId.slice(0, 8)}${opencodeSessionId ? ' (opencode pre-warmed)' : ''}`);
-      return;
-    }
-    if (error) break;
-  }
-  await db.update(sessionSandboxes).set({ poolState: 'reap', updatedAt: new Date() }).where(eq(sessionSandboxes.sandboxId, sandboxId)).catch(() => {});
-  console.warn(`[warm-pool] ${sandboxId.slice(0, 8)} never became ready → reap`);
-}
-
-/** Provision one warm sandbox for a project (booted for its owner). */
-async function spawnWarmSandbox(project: {
-  projectId: string;
-  accountId: string;
-  repoUrl: string | null;
-  defaultBranch: string;
-  manifestPath: string | null;
-  metadata?: unknown;
-}): Promise<boolean> {
-  const ownerUserId = await getProjectOwnerUserId(project.accountId);
-  if (!ownerUserId || !project.repoUrl) return false;
-  const W = randomUUID();
-  const provider = await selectProvider();
-  // The project's default template ([sandbox] default, synced to metadata by
-  // the TOML sync). Pool boxes boot THAT template, so custom-template projects
-  // get warm claims too — previously the pool was platform-default only.
-  const projMeta = (project.metadata ?? {}) as Record<string, unknown>;
-  const rawSlug = typeof projMeta.default_sandbox_slug === 'string' ? projMeta.default_sandbox_slug.trim() : '';
-  const poolSlug = rawSlug || 'default';
-  // Lazy import to avoid a load-time cycle with projects/index.ts.
-  const { buildSessionSandboxEnvVars } = await import('../../projects');
-  const extraEnvVars = await buildSessionSandboxEnvVars({
-    accountId: project.accountId,
-    projectId: project.projectId,
-    sessionId: W,
-    userId: ownerUserId,
-    repoUrl: project.repoUrl,
-    baseRef: project.defaultBranch,
-    agentName: 'default',
-    initialPrompt: null,
-  });
-  await provisionSessionSandbox({
-    sandboxId: W,
-    accountId: project.accountId,
-    projectId: project.projectId,
-    userId: ownerUserId,
-    provider,
-    extraEnvVars,
-    sandboxSlug: poolSlug === 'default' ? undefined : poolSlug,
-    // A pool box's whole value is opencode ALREADY RUNNING when claimed. It
-    // gets that by booting normally (clone → daemon → opencode) and parking.
-    // The experimental warm SNAPSHOT can't help here: it kills opencode before
-    // snapshotting (warm-project.ts) so a restored box re-starts opencode
-    // anyway, AND it lives on the flaky experimental region — so routing pool
-    // fills through it only adds failed attempts before falling back. Boot pool
-    // boxes COLD on the reliable default region: same time-to-parked, no flaky
-    // dependency, so the pool actually stays full (which is what makes claims
-    // ~2s). (Revisit if/when a memory-preserving restore that keeps opencode
-    // running lands on a stable region — then pool refills could skip the boot.)
-    disableWarmSnapshot: true,
-    poolState: 'booting',
-    metadata: {
-      warmPool: {
-        slug: poolSlug,
-        ownerUserId,
-        secretRevision: extraEnvVars.KORTIX_PROJECT_SECRETS_REVISION ?? null,
-        bootedAt: new Date().toISOString(),
-      },
-    },
-    gitProject: {
-      projectId: project.projectId,
-      repoUrl: project.repoUrl,
-      defaultBranch: project.defaultBranch,
-      manifestPath: project.manifestPath ?? '',
-      gitAuthToken: null,
-    },
-    baseRef: project.defaultBranch,
-  });
-  void promoteWhenReady(W).catch(() => {});
-  console.log(`[warm-pool] spawning ${W.slice(0, 8)} for project ${project.projectId.slice(0, 8)}`);
-  return true;
+async function countGlobalWarm(): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(sessionSandboxes)
+    .where(inArray(sessionSandboxes.poolState, ['booting', 'parked', 'claiming']))
+    .limit(1);
+  return Number(row?.n ?? 0);
 }
 
 async function reapWarmSandbox(row: { sandboxId: string; externalId: string | null; provider: string }): Promise<void> {
@@ -329,129 +124,395 @@ async function reapWarmSandbox(row: { sandboxId: string; externalId: string | nu
   await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, row.sandboxId)).catch(() => {});
 }
 
+// ── Spare provisioning ───────────────────────────────────────────────────────
+
+/** Provision one session-less spare for a project (boots the daemon's pool mode). */
+async function spawnSpare(project: {
+  projectId: string;
+  accountId: string;
+  repoUrl: string | null;
+  defaultBranch: string;
+  manifestPath: string | null;
+  metadata?: unknown;
+}, gitAuthToken: string | null): Promise<void> {
+  if (!project.repoUrl) return;
+  const spareId = randomUUID();
+  const provider = await selectProvider();
+  try {
+    // The spare's KORTIX_TOKEN (the box stays authenticated with this through the
+    // claim — the claim env never overwrites it), persisted as config.serviceKey
+    // so the proxy + the claim-write can authenticate to the box.
+    const sandboxKey = await createApiKey({ sandboxId: spareId, accountId: project.accountId, title: 'Warm Spare Token', type: 'sandbox' });
+
+    const projMeta = (project.metadata ?? {}) as Record<string, unknown>;
+    const rawSlug = typeof projMeta.default_sandbox_slug === 'string' ? projMeta.default_sandbox_slug.trim() : '';
+    const slug = rawSlug || DEFAULT_SANDBOX_SLUG;
+
+    await db.insert(sessionSandboxes).values({
+      sandboxId: spareId,
+      sessionId: spareId, // sentinel — satisfies NOT NULL/UNIQUE; the real session id is bound at claim
+      accountId: project.accountId,
+      projectId: project.projectId,
+      provider,
+      externalId: null,
+      status: 'provisioning',
+      poolState: 'booting',
+      baseUrl: null,
+      config: { serviceKey: sandboxKey.secretKey },
+      metadata: { warmSpare: true },
+    });
+
+    // Boot the project's normal Dockerfile snapshot (NOT the experimental warm
+    // base) so the box's env survives in process.env for the daemon to read.
+    const image = await ensureSandboxImage(
+      { projectId: project.projectId, repoUrl: project.repoUrl, defaultBranch: project.defaultBranch, manifestPath: project.manifestPath ?? '', gitAuthToken },
+      { slug, accountId: project.accountId, source: 'background', provider },
+    );
+
+    const result = await getProvider(provider).create({
+      accountId: project.accountId,
+      userId: '',
+      name: `warm-${spareId.slice(0, 8)}`,
+      envVars: { KORTIX_WARM_POOL: '1', KORTIX_TOKEN: sandboxKey.secretKey },
+      snapshot: image.snapshotName,
+      autoStopInterval: 0, // stay up until claimed/reaped
+    });
+
+    await db
+      .update(sessionSandboxes)
+      .set({ externalId: result.externalId, baseUrl: result.baseUrl || null, updatedAt: new Date() })
+      .where(eq(sessionSandboxes.sandboxId, spareId));
+
+    void promoteSpareWhenReady(spareId, result.externalId).catch(() => {});
+    console.log(`[warm-pool] spawned spare ${spareId.slice(0, 8)} for project ${project.projectId.slice(0, 8)}`);
+  } catch (err) {
+    console.warn(`[warm-pool] spawn spare ${spareId.slice(0, 8)} failed:`, err instanceof Error ? err.message : err);
+    await db.update(sessionSandboxes).set({ status: 'error', updatedAt: new Date() }).where(eq(sessionSandboxes.sandboxId, spareId)).catch(() => {});
+  }
+}
+
+/** Background: poll the spare's daemon until its pool runtime is up, then park it. */
+async function promoteSpareWhenReady(spareId: string, externalId: string): Promise<void> {
+  const deadline = Date.now() + POOL_BOOT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    await new Promise((res) => setTimeout(res, READY_PROBE_INTERVAL_MS));
+    const [row] = await db
+      .select({ poolState: sessionSandboxes.poolState, status: sessionSandboxes.status })
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sandboxId, spareId))
+      .limit(1);
+    if (!row || row.poolState !== 'booting') return; // claimed/reaped/gone elsewhere
+    if (row.status === 'error') return;
+    // /kortix/health bypasses the daemon auth gate, so it answers before claim.
+    let healthy = false;
+    try {
+      const { url } = await resolvePreviewLink(externalId, DAEMON_PORT);
+      const r = await fetch(`${url.replace(/\/$/, '')}/kortix/health`, { signal: AbortSignal.timeout(8_000) });
+      healthy = r.ok;
+    } catch {
+      healthy = false;
+    }
+    if (healthy) {
+      await db.update(sessionSandboxes).set({ poolState: 'parked', lastUsedAt: new Date(), updatedAt: new Date() }).where(eq(sessionSandboxes.sandboxId, spareId));
+      console.log(`[warm-pool] parked spare ${spareId.slice(0, 8)}`);
+      return;
+    }
+  }
+  console.warn(`[warm-pool] spare ${spareId.slice(0, 8)} never became ready → leaving for boot-timeout reap`);
+}
+
+// ── Claim ────────────────────────────────────────────────────────────────────
+
+interface ClaimedSpare {
+  spareSandboxId: string;
+  externalId: string;
+  baseUrl: string | null;
+  serviceKey: string; // the PARK key — stays the claimed row's serviceKey
+}
+
+/** Atomically take one parked spare (flip parked→claiming). Single statement +
+ *  SKIP LOCKED so concurrent creates never grab the same spare. */
+async function claimSpare(projectId: string): Promise<ClaimedSpare | null> {
+  const res = await db.execute(sql`
+    UPDATE kortix.session_sandboxes
+    SET pool_state = 'claiming', updated_at = now()
+    WHERE sandbox_id = (
+      SELECT s.sandbox_id FROM kortix.session_sandboxes s
+      WHERE s.project_id = ${projectId}
+        AND s.pool_state = 'parked'
+        AND s.status = 'provisioning'
+        AND s.external_id IS NOT NULL
+      ORDER BY s.created_at ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING sandbox_id, external_id, base_url, config
+  `);
+  const rows = (res as unknown as { rows?: any[] }).rows ?? (res as unknown as any[]);
+  const row = Array.isArray(rows) ? rows[0] : undefined;
+  if (!row) return null;
+  const serviceKey = ((row.config ?? {}) as Record<string, unknown>).serviceKey;
+  if (typeof serviceKey !== 'string') return null;
+  return { spareSandboxId: row.sandbox_id as string, externalId: row.external_id as string, baseUrl: (row.base_url ?? null) as string | null, serviceKey };
+}
+
+/** Release a claimed spare: back to 'parked' (still healthy) or 'reap' (dead). */
+async function releaseSpare(spareSandboxId: string, to: 'parked' | 'reap'): Promise<void> {
+  await db.update(sessionSandboxes).set({ poolState: to, updatedAt: new Date() }).where(eq(sessionSandboxes.sandboxId, spareSandboxId)).catch(() => {});
+}
+
+/** Stage the session env into the spare box's /tmp/dnah-env via the daemon's
+ *  /file/upload (field-name-as-path). The daemon's env-poll then adopts the
+ *  session (clone + opencode warm). Returns false on any failure → cold fallback. */
+async function stageClaimEnv(externalId: string, serviceKey: string, userId: string, envVars: Record<string, string>): Promise<boolean> {
+  // reloadSessionEnv is line-split with no unquoting — a value containing a
+  // newline would corrupt the file. Reject rather than write a torn env.
+  for (const v of Object.values(envVars)) {
+    if (v.includes('\n') || v.includes('\r')) {
+      console.warn('[warm-pool] claim env has a newline value — falling back to cold');
+      return false;
+    }
+  }
+  // KORTIX_API_URL is the daemon's poll sentinel (/^KORTIX_API_URL=\S/m) — write
+  // it LAST so the file is only "armed" once every other key has landed.
+  const sandboxApiBase = config.KORTIX_URL.replace(/\/+$/, '').replace(/\/v1\/router$/, '').replace(/\/v1$/, '');
+  const ordered: [string, string][] = [];
+  for (const [k, v] of Object.entries(envVars)) {
+    if (k === 'KORTIX_API_URL' || k === 'KORTIX_TOKEN') continue; // token stays the park key; api url written last
+    ordered.push([k, v]);
+  }
+  ordered.push(['KORTIX_API_URL', `${sandboxApiBase}/v1`]);
+  const body = ordered.map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
+
+  try {
+    const { url, token } = await resolvePreviewLink(externalId, DAEMON_PORT);
+    const headers: Record<string, string> = {
+      Authorization: `Bearer ${serviceKey}`,
+      'X-Daytona-Skip-Preview-Warning': 'true',
+      'X-Daytona-Disable-CORS': 'true',
+    };
+    if (token) headers['X-Daytona-Preview-Token'] = token;
+    const payload = await resolvePreviewUserContext(externalId, userId);
+    if (payload) headers[KORTIX_USER_CONTEXT_HEADER] = encodeKortixUserContext(payload, serviceKey);
+
+    const form = new FormData();
+    // field NAME is the destination path (files.ts field-name-as-path convention).
+    form.append(DNAH_ENV_PATH, new Blob([body], { type: 'text/plain' }), 'dnah-env');
+    const res = await fetch(`${url.replace(/\/$/, '')}/file/upload`, { method: 'POST', headers, body: form, signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) {
+      console.warn(`[warm-pool] claim env stage → ${res.status}`);
+      return false;
+    }
+    // writeUploadUnique never overwrites: a collision lands at a SUFFIXED path the
+    // daemon never reads. Confirm the bytes landed exactly at DNAH_ENV_PATH.
+    const out = (await res.json().catch(() => null)) as Array<{ path?: string }> | null;
+    const landed = Array.isArray(out) && out.some((r) => r?.path === DNAH_ENV_PATH);
+    if (!landed) {
+      console.warn('[warm-pool] claim env did not land at the expected path (collision?) — cold fallback');
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn('[warm-pool] claim env stage failed:', err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+/** Bind a claimed spare to the real session: insert the session_sandboxes row
+ *  (sandbox_id == session_id) at the spare's external_id, delete the spare row. */
+async function bindClaimedSpare(input: {
+  spare: ClaimedSpare;
+  sessionId: string;
+  accountId: string;
+  projectId: string;
+  provider: SandboxProviderName;
+  sessionMetadata: Record<string, unknown>;
+}): Promise<boolean> {
+  // The session may have been deleted mid-claim — don't bind a doomed session.
+  const [session] = await db.select({ status: projectSessions.status }).from(projectSessions).where(eq(projectSessions.sessionId, input.sessionId)).limit(1);
+  if (!session || session.status === 'stopped' || session.status === 'failed') {
+    await releaseSpare(input.spare.spareSandboxId, 'parked');
+    return false;
+  }
+  try {
+    // ATOMIC: insert the session row + delete the spare row in ONE tx. Both rows
+    // share the same external_id; if the spare row lingered (insert ok, delete
+    // failed) a later claim-timeout reap would provider.remove() the box out
+    // from under the now-bound session. The tx makes "bound" ⇒ "spare row gone".
+    await db.transaction(async (tx) => {
+      await tx.insert(sessionSandboxes).values({
+        sandboxId: input.sessionId, // sandbox_id == session_id (the invariant the proxy/pin/hibernation rely on)
+        sessionId: input.sessionId,
+        accountId: input.accountId,
+        projectId: input.projectId,
+        provider: input.provider,
+        externalId: input.spare.externalId,
+        baseUrl: input.spare.baseUrl,
+        // 'active': the box already exists + its daemon is up; the FE's opencode
+        // readiness poll waits out the post-claim clone+warm (same as a cold box
+        // mid-boot). poolState NULL re-enables idle hibernation (maintenance only
+        // hibernates poolState IS NULL).
+        status: 'active',
+        poolState: null,
+        config: { serviceKey: input.spare.serviceKey }, // PARK key — the box keeps authenticating with it
+        metadata: { ...input.sessionMetadata, claimed_from_spare: input.spare.spareSandboxId },
+        lastUsedAt: new Date(),
+      });
+      await tx.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, input.spare.spareSandboxId));
+    });
+    await db.update(projectSessions).set({ status: 'running', sandboxUrl: input.spare.baseUrl ?? null, updatedAt: new Date() }).where(eq(projectSessions.sessionId, input.sessionId)).catch(() => {});
+    return true;
+  } catch (err) {
+    console.warn(`[warm-pool] bind spare → session ${input.sessionId.slice(0, 8)} failed:`, err instanceof Error ? err.message : err);
+    await releaseSpare(input.spare.spareSandboxId, 'parked').catch(() => {});
+    return false;
+  }
+}
+
+export interface ClaimSpareForSessionInput {
+  sessionId: string;
+  accountId: string;
+  projectId: string;
+  userId: string;
+  provider: SandboxProviderName;
+  /** The exact env the cold path would inject (buildSessionSandboxEnvVars output). */
+  builtEnvVars: Record<string, string>;
+  sessionMetadata: Record<string, unknown>;
+}
+
 /**
- * Kick a single project's pool toward its desired size (best-effort, fire and
- * forget). Called reactively right after a claim so the pool refills fast.
+ * THE single entry the allocator calls. Returns { externalId } on a successful
+ * warm claim, or null on any miss/error (⇒ cold fallback). Never throws.
  */
-export async function refillProjectPool(projectId: string): Promise<void> {
+export async function claimSpareForSession(input: ClaimSpareForSessionInput): Promise<{ externalId: string } | null> {
+  if (!warmPoolEnabled()) return null;
+  let spare: ClaimedSpare | null = null;
+  try {
+    spare = await claimSpare(input.projectId);
+    if (!spare) return null;
+
+    // Per-session executor/LLM tokens — delivered via the claim env file and read
+    // fresh by the daemon's loadConfig on reload (NOT the sandbox KORTIX_TOKEN,
+    // which stays the spare's park key).
+    let executorToken: string | null = null;
+    try {
+      executorToken = (await createAccountToken({ accountId: input.accountId, userId: input.userId, projectId: input.projectId, name: `Executor Session ${input.sessionId.slice(0, 8)}` })).secretKey;
+    } catch (err) {
+      console.warn('[warm-pool] executor token mint failed:', err instanceof Error ? err.message : err);
+    }
+    const gatewayEntitled = config.LLM_GATEWAY_ENABLED ? await accountEntitledToLlmGateway(input.accountId).catch(() => false) : false;
+    const gatewayLlmKey = config.LLM_GATEWAY_ENABLED && gatewayEntitled ? executorToken : null;
+    const llmBaseUrl = `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/llm`;
+
+    const fullEnv: Record<string, string> = {
+      ...input.builtEnvVars,
+      ...(executorToken ? { KORTIX_EXECUTOR_TOKEN: executorToken, KORTIX_CLI_TOKEN: executorToken } : {}),
+      ...(gatewayLlmKey ? { KORTIX_LLM_API_KEY: gatewayLlmKey, KORTIX_LLM_BASE_URL: llmBaseUrl, KORTIX_YOLO_API_KEY: gatewayLlmKey, KORTIX_YOLO_URL: llmBaseUrl } : {}),
+    };
+    delete fullEnv.KORTIX_TOKEN; // never overwrite the box's park token
+
+    const staged = await stageClaimEnv(spare.externalId, spare.serviceKey, input.userId, fullEnv);
+    if (!staged) {
+      await releaseSpare(spare.spareSandboxId, 'parked');
+      return null;
+    }
+    const bound = await bindClaimedSpare({ spare, sessionId: input.sessionId, accountId: input.accountId, projectId: input.projectId, provider: input.provider, sessionMetadata: input.sessionMetadata });
+    if (!bound) return null;
+    console.log(`[warm-pool] claimed spare ${spare.spareSandboxId.slice(0, 8)} → session ${input.sessionId.slice(0, 8)}`);
+    return { externalId: spare.externalId };
+  } catch (err) {
+    console.warn('[warm-pool] claimSpareForSession failed:', err instanceof Error ? err.message : err);
+    if (spare) await releaseSpare(spare.spareSandboxId, 'parked').catch(() => {});
+    return null;
+  }
+}
+
+// ── Refill + presence + reconcile ────────────────────────────────────────────
+
+/** Per-instance presence map (projectId → last-seen ms) gating refill. */
+const presenceSeen = new Map<string, number>();
+const refillInFlight = new Set<string>();
+
+/** Record that a user is present in a project; kick a refill so a spare is ready. */
+export function notePoolPresence(projectId: string, userId?: string | null): void {
+  if (!warmPoolEnabled() || !projectId) return;
+  presenceSeen.set(projectId, Date.now());
+  void refillProjectPool(projectId, userId).catch(() => {});
+}
+
+/** Bring a project's parked spares toward its desired size (best-effort). */
+export async function refillProjectPool(projectId: string, _forUserId?: string | null): Promise<void> {
   if (!warmPoolEnabled()) return;
+  if (refillInFlight.has(projectId)) return;
+  refillInFlight.add(projectId);
   try {
     const [project] = await db
       .select({ projectId: projects.projectId, accountId: projects.accountId, repoUrl: projects.repoUrl, defaultBranch: projects.defaultBranch, manifestPath: projects.manifestPath, metadata: projects.metadata })
       .from(projects)
       .where(eq(projects.projectId, projectId))
       .limit(1);
-    if (!project) return;
+    if (!project || !project.repoUrl) return;
     const cfg = resolveWarmConfig(project.metadata);
     if (!cfg.enabled || cfg.size <= 0) return;
-    // Presence implies the user is (back) in this project — if its per-project
-    // warm snapshot was reclaimed while dormant (quota GC) or never baked, kick
-    // a re-bake now so upcoming sessions and pool refills boot clone-free.
-    // Deduped + custom-template-aware inside kickProjectWarmBake.
-    {
-      const { readProjectWarmPointer, kickProjectWarmBake } = await import('../../snapshots/warm-project');
-      if (!readProjectWarmPointer(project.metadata)) kickProjectWarmBake(project);
-    }
-    const desired = cfg.size;
-    const live = await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(sessionSandboxes)
-      .where(and(eq(sessionSandboxes.projectId, projectId), inArray(sessionSandboxes.poolState, ['booting', 'parked'])))
-      .then((rows) => Number(rows[0]?.n ?? 0));
+
+    const { ready, warming } = await getWarmPoolCounts(projectId);
     const globalRemaining = config.KORTIX_WARM_POOL_MAX_TOTAL - (await countGlobalWarm());
-    const want = Math.min(desired - live, Math.max(0, globalRemaining));
-    for (let i = 0; i < want; i++) {
-      await spawnWarmSandbox(project).catch((err) => console.warn('[warm-pool] spawn failed:', err instanceof Error ? err.message : err));
-    }
+    const want = Math.max(0, Math.min(cfg.size - (ready + warming), globalRemaining));
+    if (want <= 0) return;
+
+    // Resolve a git auth token once so spares can build the snapshot if needed.
+    let gitAuthToken: string | null = null;
+    try {
+      const { resolveProjectGitAuth } = await import('../../projects/lib/git');
+      gitAuthToken = (await resolveProjectGitAuth(project as any)).auth?.token ?? null;
+    } catch { /* cache-hit boots don't need it */ }
+
+    await Promise.allSettled(Array.from({ length: want }, () => spawnSpare(project, gitAuthToken)));
   } catch (err) {
     console.warn('[warm-pool] refill failed:', err instanceof Error ? err.message : err);
+  } finally {
+    refillInFlight.delete(projectId);
   }
 }
 
-/** Per-instance throttle so portal activity doesn't hammer the DB. */
-const presenceThrottle = new Map<string, number>();
-
 /**
- * Record that a user is *present* in a project (authenticated portal activity)
- * and kick a refill so a warm box is ready by the time they hit "send". The
- * presence timestamp gates reconcile: when no user has touched a project within
- * the presence window, its pool is reaped — so we never hold idle boxes 24/7
- * for absent users. Throttled to ~1 DB write per project per minute.
- */
-export function notePoolPresence(projectId: string): void {
-  if (!warmPoolEnabled() || !projectId) return;
-  const nowMs = Date.now();
-  if (nowMs - (presenceThrottle.get(projectId) ?? 0) < 60_000) return;
-  presenceThrottle.set(projectId, nowMs);
-  void (async () => {
-    try {
-      await db
-        .update(projects)
-        .set({ metadata: sql`jsonb_set(coalesce(${projects.metadata}, '{}'::jsonb), '{warm_pool_seen_at}', to_jsonb(now()))` })
-        .where(eq(projects.projectId, projectId));
-      await refillProjectPool(projectId);
-    } catch (err) {
-      console.warn('[warm-pool] notePresence failed:', err instanceof Error ? err.message : err);
-    }
-  })();
-}
-
-/**
- * Periodic reconcile (wired into the project-maintenance sweep). Best-effort,
- * bounded by the global cap:
- *   1. reap dead/aged/marked boxes, AND boxes for projects with no fresh
- *      presence (the user left → stop paying for idle boxes);
- *   2. refill projects where a user is currently present and the pool is enabled.
+ * Periodic reconcile (wired into project-maintenance). Reaps dead/aged/stuck pool
+ * rows; when enabled, refills present projects. When DISABLED, reaps every pool
+ * row (orphans from a prior enabled run) and creates nothing.
  */
 export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: number; projects: number }> {
-  if (!warmPoolEnabled()) return { reaped: 0, projects: 0 };
   let reaped = 0;
-
-  // 0. Sweep errored corpses from failed warm-snapshot creates (the flaky
-  //    experimental region fails ~half of creates and the SDK throws without a
-  //    box handle, so they linger in `error` state org-side). The opportunistic
-  //    reap in createWarm can't keep up on a busy env; this periodic pass keeps
-  //    the org converging to clean. Fire-and-forget — never blocks the pool.
-  void import('../../snapshots/warm-bake')
-    .then(({ reapErroredWarmBoxes }) => reapErroredWarmBoxes(undefined, (l) => console.log(l)))
-    .catch(() => {});
-
-  const presenceCutoff = new Date(now.getTime() - config.KORTIX_WARM_POOL_PRESENCE_MINUTES * 60_000);
-  const present = await db
-    .select({ projectId: projects.projectId, metadata: projects.metadata })
-    .from(projects)
-    .where(sql`(${projects.metadata} ->> 'warm_pool_seen_at')::timestamptz > ${presenceCutoff.toISOString()}::timestamptz`);
-  const presentIds = new Set(present.map((p) => p.projectId));
-
-  // 1. Reap dead/aged/marked boxes + boxes whose project has no fresh presence.
   const poolRows = await db
-    .select({ sandboxId: sessionSandboxes.sandboxId, projectId: sessionSandboxes.projectId, externalId: sessionSandboxes.externalId, provider: sessionSandboxes.provider, poolState: sessionSandboxes.poolState, status: sessionSandboxes.status, createdAt: sessionSandboxes.createdAt, updatedAt: sessionSandboxes.updatedAt })
+    .select({
+      sandboxId: sessionSandboxes.sandboxId,
+      projectId: sessionSandboxes.projectId,
+      externalId: sessionSandboxes.externalId,
+      provider: sessionSandboxes.provider,
+      poolState: sessionSandboxes.poolState,
+      status: sessionSandboxes.status,
+      createdAt: sessionSandboxes.createdAt,
+      updatedAt: sessionSandboxes.updatedAt,
+    })
     .from(sessionSandboxes)
-    .where(inArray(sessionSandboxes.poolState, ['booting', 'parked', 'reap']));
+    .where(inArray(sessionSandboxes.poolState, ['booting', 'parked', 'claiming', 'reap']));
+
+  const enabled = warmPoolEnabled();
   for (const row of poolRows) {
-    const reason = warmBoxReapReason(row, now.getTime()) ?? (presentIds.has(row.projectId) ? null : 'absent');
+    const reason = enabled ? warmBoxReapReason(row, now.getTime()) : 'disabled';
     if (reason) {
       await reapWarmSandbox(row);
       reaped++;
-      continue;
-    }
-    if (row.poolState === 'booting' && row.status === 'active' && !resumedPromotions.has(row.sandboxId)) {
-      resumedPromotions.add(row.sandboxId);
-      void promoteWhenReady(row.sandboxId)
-        .catch(() => {})
-        .finally(() => resumedPromotions.delete(row.sandboxId));
-      console.log(`[warm-pool] resumed promotion ${row.sandboxId.slice(0, 8)}`);
     }
   }
+  if (!enabled) return { reaped, projects: 0 };
 
-  // 2. Refill projects where a user is present right now and the pool is enabled
-  //    (per-project, set from the UI).
+  // Refill projects with fresh presence.
+  const cutoff = now.getTime() - config.KORTIX_WARM_POOL_PRESENCE_MINUTES * 60_000;
   let refilled = 0;
-  for (const p of present) {
-    if (resolveWarmConfig(p.metadata).enabled) {
-      await refillProjectPool(p.projectId);
-      refilled++;
-    }
+  for (const [projectId, seenAt] of presenceSeen) {
+    if (seenAt < cutoff) { presenceSeen.delete(projectId); continue; }
+    await refillProjectPool(projectId);
+    refilled++;
   }
   return { reaped, projects: refilled };
 }

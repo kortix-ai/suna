@@ -1,5 +1,6 @@
 'use client';
 
+import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
 import Link from 'next/link';
 import { ThemeToggle } from './theme-toggle';
@@ -14,6 +15,10 @@ type FooterSection = {
   title: string;
   links: FooterLinkItem[];
 };
+
+const compareNavItem = siteConfig.nav.links.find(
+  (item) => typeof item.href !== 'string' && item.name === 'Compare',
+);
 
 const FOOTER_SECTIONS: FooterSection[] = [
   {
@@ -35,6 +40,17 @@ const FOOTER_SECTIONS: FooterSection[] = [
       { label: 'Status', href: 'https://status.kortix.com', external: true },
     ],
   },
+  ...(compareNavItem && typeof compareNavItem.href !== 'string'
+    ? [
+        {
+          title: compareNavItem.name,
+          links: compareNavItem.href.map((link) => ({
+            label: link.name,
+            href: link.href,
+          })),
+        },
+      ]
+    : []),
   {
     title: 'Legal',
     links: [

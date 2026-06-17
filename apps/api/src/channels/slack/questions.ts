@@ -1,17 +1,5 @@
-import { eq } from 'drizzle-orm';
-import { projectSessions } from '@kortix/db';
-import { db } from '../../shared/db';
-import { postBlocks, type StreamTaskChunk } from '../slack-api';
-import { STREAM_TTL_MS } from './app';
-import {
-  claimFinalize,
-  deleteTurn,
-  finalizeTurn,
-  loadTurn,
-  openPlanMessage,
-  repaintLivePlan,
-  saveTurn,
-} from './turn';
+import { postBlocks } from '../slack-api';
+import { deleteTurn, finalizeTurn, loadTurn } from './turn';
 import { escapeMrkdwn } from './util';
 import type { QuestionInfo } from './types';
 
@@ -19,18 +7,25 @@ export type { QuestionInfo } from './types';
 
 // Post the agent's question(s) into the Slack thread and END the turn. A Slack
 // thread is async — we NEVER block waiting for an inline answer (that hung the
-// `question` tool until a human killed it). The user replies in-thread, which
-// arrives as a normal follow-up turn with full context. So the rendered message
-// is plain (no Submit form): the answer is just the user's next message.
-// Returned as the question tool's "answer" so the agent resumes and ends its
-// turn. Kept here (not just in the sandbox) so an OLD sandbox image — which
-// resumes opencode from THIS response's `answers` — stays unblocked during the
-// window between an API deploy and the sandbox template rebuild.
+// `question` tool until a human killed it). Each option renders as a CLICKABLE
+// button: a click fires a block_action the interactivity webhook routes back
+// into the thread as a follow-up turn carrying the chosen answer. A free-form
+// in-thread reply works too (for "Other"). Either way the answer arrives as a
+// normal follow-up turn with full context. The sentinel is returned as the
+// question tool's "answer" so the agent resumes and ends its turn. Kept here
+// (not just in the sandbox) so an OLD sandbox image — which resumes opencode
+// from THIS response's `answers` — stays unblocked during the window between an
+// API deploy and the sandbox template rebuild.
 const QUESTION_SENTINEL =
   '(Posted to the Slack thread. In Slack, questions are async — the user replies as ' +
   'a normal message, which reaches you as a NEW turn with full context. Do not wait ' +
   'for an answer here; finish this turn now.)';
 
+// Renders the agent's question(s) into the live Slack thread. The sandbox owns
+// the "is this Slack / auto-answer the tool" decision (via its env = the session
+// metadata) and resumes opencode itself, so this is purely the thread-render side
+// effect: it needs a live turn (for the channel/token) and is a best-effort no-op
+// when there isn't one (e.g. a second question after the first finalized).
 export async function postQuestion(
   sessionId: string,
   questions: QuestionInfo[],
@@ -53,141 +48,48 @@ export async function postQuestion(
   return { ok: true, answers: questions.map(() => [QUESTION_SENTINEL]) };
 }
 
-// Non-interactive rendering: question + options as a readable list, with a hint
-// to reply in-thread. `description` is optional (tolerated if the agent omits it).
+// Interactive rendering: question + each option as a CLICKABLE button. A click
+// fires a block_action (`action_id` = `qa_<q>_<o>`) the interactivity webhook
+// routes back into the thread as a follow-up turn carrying the chosen answer, so
+// the `question` tool behaves natively in Slack instead of dead-ending in a
+// bullet list. Option descriptions (a button shows only its label) are surfaced
+// above the buttons so each choice stays legible. `description` is optional.
 function buildQuestionBlocks(questions: QuestionInfo[]): Array<Record<string, unknown>> {
   const blocks: Array<Record<string, unknown>> = [];
-  questions.forEach((q) => {
+  questions.forEach((q, qi) => {
     blocks.push({
       type: 'section',
       text: { type: 'mrkdwn', text: `*${escapeMrkdwn(q.question)}*` },
     });
-    if (q.options.length > 0) {
-      const lines = q.options
-        .map((o) => `•  ${escapeMrkdwn(o.label)}${o.description ? ` — ${escapeMrkdwn(o.description)}` : ''}`)
+    const described = q.options.filter((o) => o.description);
+    if (described.length > 0) {
+      const lines = described
+        .map((o) => `•  *${escapeMrkdwn(o.label)}* — ${escapeMrkdwn(o.description as string)}`)
         .join('\n');
       blocks.push({ type: 'section', text: { type: 'mrkdwn', text: lines } });
+    }
+    if (q.options.length > 0) {
+      // Slack caps an actions block at 25 elements; AskUserQuestion stays well
+      // under that. Button text ≤75 chars; the value carries the question +
+      // answer so the click handler can synthesize a clean follow-up.
+      blocks.push({
+        type: 'actions',
+        elements: q.options.slice(0, 25).map((o, oi) => ({
+          type: 'button',
+          text: { type: 'plain_text', text: truncate(o.label, 75), emoji: true },
+          action_id: `qa_${qi}_${oi}`,
+          value: JSON.stringify({ q: q.question.slice(0, 300), a: o.label }).slice(0, 1900),
+        })),
+      });
     }
   });
   blocks.push({
     type: 'context',
-    elements: [{ type: 'mrkdwn', text: '↩︎  Reply in this thread to answer.' }],
+    elements: [{ type: 'mrkdwn', text: '↩︎  Click an option, or reply in this thread to answer.' }],
   });
   return blocks;
 }
 
-export async function relayTurnStep(
-  sessionId: string,
-  title: string,
-  opts: {
-    detail?: string;
-    outputForPrev?: string;
-    sourcesForPrev?: Array<{ url: string; text: string }>;
-  } = {},
-): Promise<boolean> {
-  const handle = await loadTurn(sessionId);
-  if (!handle || handle.finalized) {
-    console.warn('[slack-webhook] turn-stream step relay dropped — no active stream', {
-      sessionId,
-      title: title.slice(0, 80),
-      finalized: handle?.finalized ?? null,
-    });
-    return false;
-  }
-
-  // First `slack step` → create the plan-checklist message.
-  if (!handle.ts) {
-    const firstStep: StreamTaskChunk = {
-      type: 'task_update',
-      id: 'step-0',
-      title: title.slice(0, 200),
-      status: 'in_progress',
-    };
-    if (opts.detail) firstStep.details = opts.detail.slice(0, 500);
-    const opened = await openPlanMessage(handle, firstStep);
-    if (!opened) return false;
-    handle.expiry = Date.now() + STREAM_TTL_MS;
-    await saveTurn(handle);
-    return true;
-  }
-
-  // Subsequent step → mark the previous one complete (with its output/sources),
-  // append the new one, and repaint the whole plan via chat.update.
-  const last = handle.steps[handle.steps.length - 1];
-  if (last && last.status === 'in_progress') {
-    last.status = 'complete';
-    if (opts.outputForPrev) last.output = opts.outputForPrev.slice(0, 500);
-    if (opts.sourcesForPrev && opts.sourcesForPrev.length > 0) {
-      last.sources = opts.sourcesForPrev.slice(0, 8).map((s) => ({
-        type: 'url',
-        url: s.url,
-        text: s.text.slice(0, 80),
-      }));
-    }
-  }
-  const next: StreamTaskChunk = {
-    type: 'task_update',
-    id: `step-${handle.steps.length}`,
-    title: title.slice(0, 200),
-    status: 'in_progress',
-  };
-  if (opts.detail) next.details = opts.detail.slice(0, 500);
-  handle.steps.push(next);
-  handle.expiry = Date.now() + STREAM_TTL_MS;
-  await repaintLivePlan(handle);
-  await saveTurn(handle);
-  return true;
-}
-
-export async function relayTurnAnswer(
-  sessionId: string,
-  text: string,
-  blocks?: unknown[],
-): Promise<boolean> {
-  const handle = await loadTurn(sessionId);
-  if (!handle || handle.finalized) return false;
-  // Win the finalize race against a late session.idle/error relay (or a duplicate
-  // send) so the turn is closed exactly once.
-  if (!(await claimFinalize(sessionId))) return false;
-  await finalizeTurn(handle, { answer: text, blocks });
-  await deleteTurn(sessionId);
-  return true;
-}
-
-// Called when the agent's turn ends — opencode `session.idle` (finished) or
-// `session.error` (died) on the root session, relayed by the sandbox. If the
-// agent already delivered its reply via `slack send`, the turn is already
-// finalized and there's nothing to do. If it ended WITHOUT sending — e.g. it
-// judged the message needed no reply — close the plan message (clearing the ⏳).
-// Idle closes silently (no "_Done._" filler — see finalizeTurn's silent path);
-// error surfaces an honest failure line.
-export async function relayTurnEnd(
-  sessionId: string,
-  status: 'idle' | 'error' = 'idle',
-  opencodeSessionId?: string,
-): Promise<boolean> {
-  const handle = await loadTurn(sessionId);
-  if (!handle || handle.finalized) return false;
-
-  // Subagents emit idle/error for their own opencode sessions too. The sandbox
-  // already filters to the root session, but when the relay names a session,
-  // re-check it against the canonical pin as the server-side guard.
-  if (opencodeSessionId) {
-    const [row] = await db
-      .select({ pinned: projectSessions.opencodeSessionId })
-      .from(projectSessions)
-      .where(eq(projectSessions.sessionId, sessionId))
-      .limit(1);
-    if (row?.pinned && row.pinned !== opencodeSessionId) return false;
-  }
-
-  if (!(await claimFinalize(sessionId))) return false;
-  await finalizeTurn(
-    handle,
-    status === 'error'
-      ? { error: '_The run hit an error — open the session for details._' }
-      : {},
-  );
-  await deleteTurn(sessionId);
-  return true;
+function truncate(s: string, n: number): string {
+  return s.length > n ? `${s.slice(0, n - 1)}…` : s;
 }

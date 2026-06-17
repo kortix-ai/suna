@@ -9,7 +9,7 @@ import { DEPT_DOT, FOR_YOU, type UseCaseCard } from './section3-content';
 const { terminal, cards } = FOR_YOU;
 
 const ORBIT_SLOTS = 8;
-const ORBIT_RADIUS = 204;
+const ORBIT_RADIUS = 200;
 const CHIP_SWAP_MS = 1000;
 const CHIP_EASE = [0.23, 1, 0.32, 1] as const;
 
@@ -79,7 +79,7 @@ function AnimatedCardChip({ card }: { card: UseCaseCard }) {
   );
 }
 
-function StaticOrbit() {
+export function StaticOrbit() {
   return (
     <>
       {initialOrbitSlots().map((slot) => (
@@ -91,7 +91,7 @@ function StaticOrbit() {
   );
 }
 
-function LiveOrbit() {
+export function LiveOrbit() {
   const [slots, setSlots] = useState<OrbitSlot[]>(initialOrbitSlots);
   const nextKey = useRef(ORBIT_SLOTS);
 

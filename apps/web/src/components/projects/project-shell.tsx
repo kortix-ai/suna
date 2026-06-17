@@ -14,7 +14,7 @@ import { ProjectMobileMenuBar, ProjectTabBar } from '@/components/projects/proje
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import { createProjectSession, getProjectDetail } from '@/lib/projects-client';
+import { createProjectSession, getProjectDetail, prefetchSessionStart } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
@@ -94,6 +94,9 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     mutationFn: () => createProjectSession(projectId),
     onSuccess: (session) => {
       queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+      // Begin the runtime boot during navigation (warm pool claim / provision).
+      prefetchSessionStart(queryClient, projectId, session.session_id);
+      router.prefetch(`/projects/${projectId}/sessions/${session.session_id}`);
       router.push(`/projects/${projectId}/sessions/${session.session_id}`);
     },
     onError: (err) => {

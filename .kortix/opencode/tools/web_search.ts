@@ -1,6 +1,9 @@
 import { tool } from "@opencode-ai/plugin";
-import { tavily } from "@tavily/core";
 import { getEnv, getKortixRouterBase } from "./lib/get-env";
+// NOTE: @tavily/core is imported lazily inside execute() — a top-level import
+// makes opencode load this heavy SDK at sandbox boot (every tool module is
+// evaluated eagerly), which added ~seconds to cold session start. Deferring it
+// to first use keeps boot fast and only pays the cost when the tool is run.
 
 interface SearchResult {
   title: string;
@@ -88,6 +91,7 @@ export default tool({
       ? "Error: KORTIX_TOKEN not set."
       : "Error: TAVILY_API_KEY not set.";
 
+    const { tavily } = await import("@tavily/core");
     const client = tavily({ apiKey, ...(apiBaseURL ? { apiBaseURL } : {}) });
     const maxResults = Math.max(1, Math.min(args.num_results ?? 5, 20));
     const topic = (args.topic as "general" | "news" | "finance") ?? "general";

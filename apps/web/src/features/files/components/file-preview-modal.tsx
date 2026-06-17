@@ -15,7 +15,13 @@ import { getFileIcon } from './file-icon';
  * <FilePreviewModal> that supplies the workspace store, data source, history
  * popover and a git-status chip.
  */
-export function FilePreviewModal({ embedded = false }: { embedded?: boolean } = {}) {
+export function FilePreviewModal({
+  embedded = false,
+  shareContext,
+}: {
+  embedded?: boolean;
+  shareContext?: { projectId: string; sessionId: string };
+} = {}) {
   const selectedFilePath = useFilesStore((s) => s.selectedFilePath);
   const panelMode = useFilesStore((s) => s.panelMode);
   const goBackToBrowser = useFilesStore((s) => s.goBackToBrowser);
@@ -61,6 +67,7 @@ export function FilePreviewModal({ embedded = false }: { embedded?: boolean } = 
       HistoryContent={FileHistoryPopoverContent}
       renderFileIcon={(name) => getFileIcon(name, { className: 'h-4 w-4 shrink-0', variant: 'monochrome' })}
       statusSlot={statusSlot}
+      shareContext={shareContext}
       historyLabel="History"
       embedded={embedded}
     />

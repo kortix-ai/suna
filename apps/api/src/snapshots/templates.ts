@@ -60,9 +60,14 @@ const AGENT_BROWSER_VERSION = '0.27.0';
 // itself is not hashed into the snapshot fingerprint, so a layer change needs a
 // manual version bump to invalidate cached images). v2: bake OpenCode config
 // deps into /opt/kortix/opencode-config-deps for offline boot-time install.
-const RUNTIME_LAYER_VERSION = 'baked-oc-migration-v9-noka-ab';
+// v10: warm a real opencode project instance at build time (instance-warm) so the
+// one-time first-instance plugin/model/ripgrep cost is cached into the image
+// instead of paid on the session hot path (6–60s → ~2–4s cold start).
+// v11: bake a real Chromium (Playwright, cross-arch) for agent-browser so the
+// browser-automation skill works out of the box with no runtime download.
+const RUNTIME_LAYER_VERSION = 'baked-chromium-v11';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
-const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
+const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
 
 function readPositiveIntEnv(name: string, fallback: number): number {

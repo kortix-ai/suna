@@ -438,7 +438,7 @@ projectsApp.openapi(
   // session id for the server-side root-session guard.)
   if (body.kind === 'end' || body.kind === 'turn_end') {
     const status = body.status === 'error' ? 'error' : 'idle';
-    const ok = await relayTurnEnd(sessionId, status, body.opencode_session_id?.trim() || undefined);
+    const ok = await relayTurnEnd(sessionId, status);
     return c.json({ ok });
   }
 
@@ -562,9 +562,12 @@ projectsApp.openapi(
     const optionsRaw = Array.isArray(obj.options) ? obj.options : [];
     const options = optionsRaw
       .map((o) => (o && typeof o === 'object' ? (o as Record<string, unknown>) : null))
-      .filter((o): o is Record<string, unknown> => !!o && typeof o.label === 'string')
+      // opencode's QuestionInfo carries `value` (required) + optional `label`. The
+      // harness `question` tool uses `label`. Accept EITHER so an option that only
+      // has `value` still renders a button instead of silently vanishing.
+      .filter((o): o is Record<string, unknown> => !!o && (typeof o.label === 'string' || typeof o.value === 'string'))
       .map((o) => ({
-        label: String(o.label),
+        label: String(o.label ?? o.value),
         description: typeof o.description === 'string' ? String(o.description) : undefined,
       }));
     questions.push({
@@ -640,13 +643,25 @@ projectsApp.openapi(
   });
 
   if (result.status === 'queued') {
-    return c.json({ status: 'queued', reason: result.reason ?? null }, 202);
+    await markGitTriggerFired(projectId, slug, now);
+    return c.json({
+      status: 'queued',
+      command_id: result.commandId ?? null,
+      session_id: result.sessionId ?? null,
+      reason: result.reason ?? null,
+      deduped: result.deduped ?? false,
+    }, 202);
   }
   if (result.status === 'failed') {
     return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
   }
   await markGitTriggerFired(projectId, slug, now);
-  return c.json({ status: 'fired', session_id: result.sessionId ?? null }, 202);
+  return c.json({
+    status: result.deduped ? 'deduped' : 'fired',
+    command_id: result.commandId ?? null,
+    session_id: result.sessionId ?? null,
+    deduped: result.deduped ?? false,
+  }, 202);
 },
 );
 

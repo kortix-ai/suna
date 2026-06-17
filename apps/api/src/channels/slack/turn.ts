@@ -1,6 +1,8 @@
 import { and, eq, lt } from 'drizzle-orm';
 import { chatEventDedup, chatTurnStreams } from '@kortix/db';
 import { db } from '../../shared/db';
+import { config } from '../../config';
+import { sessionWebUrl } from './util';
 import { loadSlackTokenForProject } from '../install-store';
 import {
   addReaction,
@@ -223,33 +225,43 @@ export async function finalizeTurn(
   const ev = handle.originatingEvent;
   const threadRoot = ev.thread_ts ?? ev.ts ?? handle.triggerTs;
 
-  if (handle.ts && handle.steps.length > 0) {
-    // A plan message exists — close out the last in-progress step and render the
-    // final plan (+ answer/error) into it via chat.update.
-    const last = handle.steps[handle.steps.length - 1];
-    if (last && last.status === 'in_progress') last.status = opts.error ? 'error' : 'complete';
-    await updateBlocks(
-      handle.token,
-      handle.channel,
-      handle.ts,
-      planTitleFor(opts),
-      buildFinalPlanBlocks(handle, body, opts),
-    );
-  } else if (hasContent) {
-    // The agent posted no `slack step` (no plan message) but has a reply — post
-    // it fresh in-thread.
-    if (opts.blocks && opts.blocks.length > 0) {
-      await postBlocks(handle.token, handle.channel, body, opts.blocks, threadRoot);
-    } else {
-      await postMessage(handle.token, handle.channel, body, threadRoot);
+  // Render the result — BEST-EFFORT. The row is already claimed-finalized by the
+  // time we get here, so a Slack API hiccup while rendering must not throw: that
+  // would skip the caller's deleteTurn AND (before this) strand the ⏳ forever,
+  // since the GC only sweeps UN-finalized rows. We log and fall through to always
+  // clear the ⏳ below.
+  try {
+    if (handle.ts && handle.steps.length > 0) {
+      // A plan message exists — close out the last in-progress step and render the
+      // final plan (+ answer/error) into it via chat.update.
+      const last = handle.steps[handle.steps.length - 1];
+      if (last && last.status === 'in_progress') last.status = opts.error ? 'error' : 'complete';
+      await updateBlocks(
+        handle.token,
+        handle.channel,
+        handle.ts,
+        planTitleFor(opts),
+        buildFinalPlanBlocks(handle, body, opts),
+      );
+    } else if (hasContent) {
+      // The agent posted no `slack step` (no plan message) but has a reply — post
+      // it fresh in-thread.
+      if (opts.blocks && opts.blocks.length > 0) {
+        await postBlocks(handle.token, handle.channel, body, opts.blocks, threadRoot);
+      } else {
+        await postMessage(handle.token, handle.channel, body, threadRoot);
+      }
     }
+    // A silent finalize with no plan message and no content leaves the thread
+    // untouched — we just clear the ⏳ below.
+    if (opts.answer && !opts.error) {
+      await addReaction(handle.token, handle.channel, handle.triggerTs, 'white_check_mark');
+    }
+  } catch (err) {
+    console.warn('[slack-webhook] finalize render failed (turn still closed)', { sessionId: handle.sessionId, err: (err as Error)?.message });
   }
-  // A silent finalize with no plan message and no content leaves the thread
-  // untouched — we just clear the ⏳ below.
-  await removeReaction(handle.token, handle.channel, handle.triggerTs, WORKING_EMOJI);
-  if (opts.answer && !opts.error) {
-    await addReaction(handle.token, handle.channel, handle.triggerTs, 'white_check_mark');
-  }
+  // ALWAYS clear the ⏳ — even if the render above failed.
+  await removeReaction(handle.token, handle.channel, handle.triggerTs, WORKING_EMOJI).catch(() => {});
 }
 
 function planTitleFor(opts: { answer?: string; error?: string }): string {
@@ -300,5 +312,122 @@ function buildFinalPlanBlocks(
   } else if (body) {
     blocks.push({ type: 'section', text: { type: 'mrkdwn', text: body } });
   }
+  // Footer: a link to open this session on the web. Lets anyone in the thread
+  // jump straight to the full session (logs, files, diff) in Kortix.
+  if (handle.projectId && handle.sessionId) {
+    const url = sessionWebUrl(config.KORTIX_URL, handle.projectId, handle.sessionId);
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `<${url}|Open session in Kortix ↗>` }],
+    });
+  }
   return blocks;
+}
+
+// ── Turn-stream relays ──────────────────────────────────────────────────────
+// Driven by the in-sandbox agent CLI (POST /turn-stream: `step`/`answer`) and by
+// the sandbox's opencode session.idle/error watcher (`end`). They own the live
+// in-thread message lifecycle, so they live with the rest of it here in turn.ts.
+
+export async function relayTurnStep(
+  sessionId: string,
+  title: string,
+  opts: {
+    detail?: string;
+    outputForPrev?: string;
+    sourcesForPrev?: Array<{ url: string; text: string }>;
+  } = {},
+): Promise<boolean> {
+  const handle = await loadTurn(sessionId);
+  if (!handle || handle.finalized) {
+    console.warn('[slack-webhook] turn-stream step relay dropped — no active stream', {
+      sessionId,
+      title: title.slice(0, 80),
+      finalized: handle?.finalized ?? null,
+    });
+    return false;
+  }
+
+  // First `slack step` → create the plan-checklist message.
+  if (!handle.ts) {
+    const firstStep: StreamTaskChunk = {
+      type: 'task_update',
+      id: 'step-0',
+      title: title.slice(0, 200),
+      status: 'in_progress',
+    };
+    if (opts.detail) firstStep.details = opts.detail.slice(0, 500);
+    const opened = await openPlanMessage(handle, firstStep);
+    if (!opened) return false;
+    handle.expiry = Date.now() + STREAM_TTL_MS;
+    await saveTurn(handle);
+    return true;
+  }
+
+  // Subsequent step → mark the previous one complete (with its output/sources),
+  // append the new one, and repaint the whole plan via chat.update.
+  const last = handle.steps[handle.steps.length - 1];
+  if (last && last.status === 'in_progress') {
+    last.status = 'complete';
+    if (opts.outputForPrev) last.output = opts.outputForPrev.slice(0, 500);
+    if (opts.sourcesForPrev && opts.sourcesForPrev.length > 0) {
+      last.sources = opts.sourcesForPrev.slice(0, 8).map((s) => ({
+        type: 'url',
+        url: s.url,
+        text: s.text.slice(0, 80),
+      }));
+    }
+  }
+  const next: StreamTaskChunk = {
+    type: 'task_update',
+    id: `step-${handle.steps.length}`,
+    title: title.slice(0, 200),
+    status: 'in_progress',
+  };
+  if (opts.detail) next.details = opts.detail.slice(0, 500);
+  handle.steps.push(next);
+  handle.expiry = Date.now() + STREAM_TTL_MS;
+  await repaintLivePlan(handle);
+  await saveTurn(handle);
+  return true;
+}
+
+export async function relayTurnAnswer(
+  sessionId: string,
+  text: string,
+  blocks?: unknown[],
+): Promise<boolean> {
+  const handle = await loadTurn(sessionId);
+  if (!handle || handle.finalized) return false;
+  // Win the finalize race against a late session.idle/error relay (or a duplicate
+  // send) so the turn is closed exactly once.
+  if (!(await claimFinalize(sessionId))) return false;
+  await finalizeTurn(handle, { answer: text, blocks });
+  await deleteTurn(sessionId);
+  return true;
+}
+
+// Called when the agent's turn ends — opencode `session.idle` (finished) or
+// `session.error` (died) on the ROOT session, relayed by the sandbox. The
+// sandbox already filters to the root by opencode's parentID before relaying, so
+// we finalize unconditionally: there is NO server-side pin re-check. Comparing
+// the relayed id against a possibly-stale DB pin is exactly what used to drop a
+// real turn's idle and leave the ⏳ spinning forever. If the agent already
+// replied via `slack send`, claimFinalize makes this a no-op. Idle closes
+// silently (finalizeTurn's silent path); error surfaces an honest failure line.
+export async function relayTurnEnd(
+  sessionId: string,
+  status: 'idle' | 'error' = 'idle',
+): Promise<boolean> {
+  const handle = await loadTurn(sessionId);
+  if (!handle || handle.finalized) return false;
+  if (!(await claimFinalize(sessionId))) return false;
+  await finalizeTurn(
+    handle,
+    status === 'error'
+      ? { error: '_The run hit an error — open the session for details._' }
+      : {},
+  );
+  await deleteTurn(sessionId);
+  return true;
 }

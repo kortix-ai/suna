@@ -1,3 +1,5 @@
+import type { QueryClient } from '@tanstack/react-query';
+
 import { backendApi } from '@/lib/api-client';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
@@ -1220,6 +1222,13 @@ export async function getProjectSandboxHealth(projectId: string) {
   return unwrap(
     await backendApi.get<ProjectSandboxHealth>(
       `/projects/${projectId}/sandbox-health`,
+      {
+        // Background poll used by alerts/settings. React Query owns retry/error
+        // state; the global error handler would otherwise spam console.error
+        // during transient dev boot or provider stalls.
+        showErrors: false,
+        timeout: 15_000,
+      },
     ),
   );
 }
@@ -1642,6 +1651,13 @@ export async function listChangeRequests(
   return unwrap(
     await backendApi.get<{ change_requests: ChangeRequest[] }>(
       `/projects/${projectId}/change-requests${query}`,
+      {
+        // This is often a badge/background poll. Keep failures visible to the
+        // query consumer without turning temporary poll misses into global API
+        // errors in the browser console.
+        showErrors: false,
+        timeout: 15_000,
+      },
     ),
   );
 }
@@ -1834,6 +1850,94 @@ export async function setProjectSessionSharing(
     await backendApi.put<ProjectSession>(
       `/projects/${projectId}/sessions/${sessionId}/sharing`,
       intent,
+    ),
+  );
+}
+
+export interface SessionPreviewCandidate {
+  id: string;
+  label: string;
+  port: number;
+  path: string;
+  status: 'online' | 'offline' | 'unknown';
+  source: string;
+}
+
+export interface SessionPublicShare {
+  share_id: string;
+  session_id: string;
+  project_id: string;
+  resource_type: 'preview' | 'file' | string;
+  label: string;
+  port: number | null;
+  path: string;
+  file_path: string | null;
+  mode: 'view' | 'interactive' | string;
+  allow_websocket: boolean;
+  expires_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+  public_token?: string;
+  public_path?: string;
+  proxy_path?: string;
+}
+
+export interface CreateSessionPublicShareInput {
+  preview_id?: string;
+  preview?: {
+    label?: string;
+    url?: string;
+    port?: number;
+    path?: string;
+  };
+  file?: {
+    label?: string;
+    path: string;
+  };
+  mode?: 'view' | 'interactive';
+  label?: string;
+  expires_at?: string | null;
+}
+
+export async function getSessionPreviewCandidates(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.get<{ candidates: SessionPreviewCandidate[] }>(
+      `/projects/${projectId}/sessions/${sessionId}/previews`,
+    ),
+  );
+}
+
+export async function listSessionPublicShares(projectId: string, sessionId: string) {
+  return unwrap(
+    await backendApi.get<{ shares: SessionPublicShare[] }>(
+      `/projects/${projectId}/sessions/${sessionId}/public-shares`,
+      { showErrors: false },
+    ),
+  );
+}
+
+export async function createSessionPublicShare(
+  projectId: string,
+  sessionId: string,
+  input: CreateSessionPublicShareInput,
+) {
+  return unwrap(
+    await backendApi.post<{ share: SessionPublicShare }>(
+      `/projects/${projectId}/sessions/${sessionId}/public-shares`,
+      input,
+    ),
+  );
+}
+
+export async function revokeSessionPublicShare(
+  projectId: string,
+  sessionId: string,
+  shareId: string,
+) {
+  return unwrap(
+    await backendApi.delete<{ share: SessionPublicShare }>(
+      `/projects/${projectId}/sessions/${sessionId}/public-shares/${shareId}`,
     ),
   );
 }
@@ -2116,8 +2220,7 @@ export interface SessionStartResult {
 /**
  * THE session-open call. Idempotently provisions/resumes the sandbox and resolves
  * the OpenCode pin server-side, returning ONE readiness payload to poll until
- * stage='ready'. Replaces getProjectSessionSandbox + wakeProjectSession +
- * ensureOpencodeSession (the old three-call open dance).
+ * stage='ready'.
  */
 export async function startProjectSession(
   projectId: string,
@@ -2132,6 +2235,35 @@ export async function startProjectSession(
   );
   if (!response.success || !response.data) return null;
   return response.data;
+}
+
+/**
+ * Stable React Query key for the session-open (`/start`) poll. Shared by the
+ * session page's useQuery AND every create→navigate site that prefetches it, so
+ * the keys can never drift — a mismatch would issue a SECOND `/start` POST
+ * instead of adopting the in-flight one.
+ */
+export function sessionStartKey(projectId: string, sessionId: string) {
+  return ['session-start', projectId, sessionId] as const;
+}
+
+/**
+ * Begin the session runtime boot DURING the route transition (before the session
+ * page mounts), so provisioning overlaps navigation instead of starting after the
+ * page paints. Idempotent + fire-and-forget: React Query dedupes against the
+ * session page's own query (same key), and `/start` is idempotent server-side.
+ * Also warms the route bundle. Use at every createProjectSession→navigate site.
+ */
+export function prefetchSessionStart(
+  queryClient: QueryClient,
+  projectId: string,
+  sessionId: string,
+): void {
+  void queryClient.prefetchQuery({
+    queryKey: sessionStartKey(projectId, sessionId),
+    queryFn: () => startProjectSession(projectId, sessionId),
+    staleTime: 0,
+  });
 }
 
 export async function createProject(input: ProjectInput) {

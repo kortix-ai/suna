@@ -48,8 +48,8 @@ import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { readManifest } from '../../projects/triggers';
 
 // Fallback spec for sandboxes that don't declare [sandbox] in kortix.toml.
-// Mirrors a sensible Daytona default (1 vCPU / 2 GB / 10 GB).
-const DEFAULT_METERING_SPEC = { cpuCores: 1, memoryGb: 2, diskGb: 10, gpuCount: 0 };
+// Mirrors the platform default sandbox size (2 vCPU / 6 GB / 20 GB).
+const DEFAULT_METERING_SPEC = { cpuCores: 2, memoryGb: 6, diskGb: 20, gpuCount: 0 };
 
 async function openComputeSessionForSandbox(
   sandboxId: string,
@@ -116,12 +116,6 @@ export async function provisionSessionSandbox(opts: {
    */
   gitProject: GitBackedProject;
   resolveGitAuthToken?: () => Promise<string | null>;
-  /**
-   * Warm-pool lifecycle state for the inserted row. Pass 'booting' to provision
-   * a pre-booted pool sandbox (no project_sessions row); leave undefined for a
-   * normal session sandbox. See docs/specs/warm-pool.md.
-   */
-  poolState?: string;
   baseRef?: string;
   /**
    * Slug of the sandbox template to boot from. Resolves against the project's
@@ -135,10 +129,6 @@ export async function provisionSessionSandbox(opts: {
    * so a stale pointer just falls back. See snapshots/warm-project.ts.
    */
   projectWarmSnapshot?: string | null;
-  /** Skip the warm-snapshot paths entirely (boot the Dockerfile image). Used by
-   * pool spawns when KORTIX_WARM_POOL_FULL_SIZE is set — warm boxes are capped
-   * at 1 vCPU / 1 GiB by Daytona (see snapshots/warm-bake.ts). */
-  disableWarmSnapshot?: boolean;
   /**
    * Runs after the provider sandbox is created but BEFORE the row is flipped to
    * `active`. Used by legacy migration to restore the original opencode store
@@ -192,23 +182,18 @@ export async function provisionSessionSandbox(opts: {
   if (
     providerName === 'daytona' &&
     slug === DEFAULT_SANDBOX_SLUG &&
-    !opts.disableWarmSnapshot &&
     !warmPathPaused()
   ) {
     if (opts.projectWarmSnapshot) {
       try {
-        const { getDaytonaWarm, warmSnapshotsEnabled } = await import('../../shared/daytona');
+        const { warmSnapshotsEnabled } = await import('../../shared/daytona');
         if (warmSnapshotsEnabled()) {
-          const { warmBaseUsable } = await import('../../snapshots/warm-bake');
-          // Bound the provider lookup — a degraded region must not hang the
-          // (request-blocking) provision path waiting on snapshot.get.
-          const snap = await Promise.race([
-            getDaytonaWarm().snapshot.get(opts.projectWarmSnapshot),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error('snapshot.get timeout')), 4_000),
-            ),
-          ]);
-          if (warmBaseUsable(snap)) {
+          // Cached + bounded + region-keyed (warmSnapshotUsableCached): a warm hit
+          // is a pure in-process check, and a degraded region times out in 4s AND
+          // pauses the warm path — so the generic-base lookup below short-circuits
+          // instead of paying a SECOND serial probe on the request-blocking path.
+          const { warmSnapshotUsableCached } = await import('../../snapshots/warm-bake');
+          if (await warmSnapshotUsableCached(opts.projectWarmSnapshot)) {
             warmBase = opts.projectWarmSnapshot;
             warmIsProjectSnapshot = true;
           }
@@ -251,7 +236,6 @@ export async function provisionSessionSandbox(opts: {
         provider: providerName,
         externalId: null,
         status: 'provisioning',
-        poolState: opts.poolState ?? null,
         baseUrl: null,
         config: {},
         metadata: {
@@ -291,7 +275,11 @@ export async function provisionSessionSandbox(opts: {
   const [sandbox] = sandboxRows;
   tl.mark('row+tokens');
 
-  const llmBaseUrl = `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/llm`;
+  const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
+  const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
+  const llmBaseUrl =
+    config.LLM_GATEWAY_BASE_URL ||
+    (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`);
 
   // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is
   // injected (otherwise OpenCode falls back to showing only its built-in Zen
@@ -340,9 +328,6 @@ export async function provisionSessionSandbox(opts: {
           }
         : {}),
     },
-    // Warm-pool boxes disable provider auto-stop so they stay ready until
-    // claimed; once claimed (pool_state cleared) our idle sweep hibernates them.
-    ...(opts.poolState ? { autoStopInterval: 0 } : {}),
   };
 
   // Detach the actual provisioning — the API caller navigates immediately
@@ -546,8 +531,8 @@ export async function provisionSessionSandbox(opts: {
         .catch(() => {});
 
       // Project warm snapshot: the baked workspace is at BAKE-time tip. Fast-
-      // forward it to the CURRENT base tip in the background (same fast-forward
-      // a warm-pool claim does) so commits merged since the bake are present.
+      // forward it to the CURRENT base tip in the background so commits merged
+      // since the bake are present.
       if (warmIsProjectSnapshot && result.externalId) {
         void import('../../snapshots/warm-project')
           .then(({ refreshRestoredWorkspace }) => refreshRestoredWorkspace(result.externalId, userId))

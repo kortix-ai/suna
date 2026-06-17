@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ProjectShell } from '@/components/projects/project-shell';
 import { ProjectHome, type ProjectHomeSendOptions } from '@/components/projects/project-home';
-import { createProjectSession, getProjectDetail } from '@/lib/projects-client';
+import { createProjectSession, getProjectDetail, prefetchSessionStart } from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 import { useAccountState } from '@/hooks/billing';
 import { useUpgradeDialogStore } from '@/stores/upgrade-dialog-store';
@@ -67,11 +67,17 @@ export default function ProjectIndexPage() {
         // (not a client-generated one): with the warm pool, create may hand
         // back a pre-booted sandbox whose id is server-authoritative.
         const created = await createProjectSession(projectId, {
+          initial_prompt: text,
           ...(options?.sandbox_slug ? { sandbox_slug: options.sandbox_slug } : {}),
         });
         const sessionId = created.session_id;
-        sessionStorage.setItem(`project_pending_prompt:${sessionId}`, text);
         queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+        // Kick the runtime boot DURING the route transition, not after the
+        // session page paints (shared helper keeps the query key in sync with
+        // the session page so RQ dedupes instead of double-POSTing). Plus warm
+        // the route bundle so navigation is instant.
+        prefetchSessionStart(queryClient, projectId, sessionId);
+        router.prefetch(`/projects/${projectId}/sessions/${sessionId}`);
         router.push(`/projects/${projectId}/sessions/${sessionId}`);
       } catch (err) {
         setBusy(false);

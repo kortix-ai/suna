@@ -24,10 +24,15 @@ import { join, dirname, basename } from 'node:path';
 
 export const STRIDE = 100;
 export const BASE = {
-  web: 13000, api: 13008,
+  web: 13000, api: 13008, gateway: 13009,
   sbApi: 13321, sbDb: 13322, sbStudio: 13323, sbInbucket: 13324,
   sbAnalytics: 13327, sbPooler: 13329,
 } as const;
+
+// Shared dev token: the API and the standalone gateway authenticate to each
+// other with it (gateway → API /internal/gateway/*). The worktree injects the
+// SAME value into both, overriding whatever .env carries, so they always match.
+export const DEV_GATEWAY_INTERNAL_TOKEN = 'dev-local-gateway-internal-token-please-32c';
 export type PortName = keyof typeof BASE;
 export type Ports = Record<PortName, number>;
 
@@ -189,6 +194,39 @@ export async function runMigrate(worktreePath: string, ports: Ports): Promise<nu
   });
 }
 
+export async function startSupabaseDb(name: string): Promise<number> {
+  return run(['supabase', '--workdir', supaWorkdir(name), 'db', 'start']);
+}
+
+export async function startSupabaseFullStack(name: string, ports: Ports): Promise<number> {
+  if (!portInUse(ports.sbApi).inUse) {
+    await run(['supabase', '--workdir', supaWorkdir(name), 'stop']);
+  }
+  return run(['supabase', '--workdir', supaWorkdir(name), 'start']);
+}
+
+export function hasKortixSchema(ports: Ports): boolean {
+  const sql = "select 1 from information_schema.tables where table_schema='kortix' limit 1";
+  return sh([
+    'bash',
+    '-lc',
+    `psql "postgresql://postgres:postgres@127.0.0.1:${ports.sbDb}/postgres" -tAc ${JSON.stringify(sql)} 2>/dev/null`,
+  ]).stdout.trim() === '1';
+}
+
+export async function ensureRuntimeArtifacts(worktreePath: string): Promise<number> {
+  const builds: Array<[string, string]> = [
+    ['sandbox agent', '@kortix/sandbox-agent-server'],
+    ['CLI', '@kortix/cli'],
+  ];
+  for (const [label, filter] of builds) {
+    console.log(`  building ${label} runtime artifact`);
+    const code = await run(['pnpm', '--filter', filter, 'build'], { cwd: worktreePath });
+    if (code !== 0) return code;
+  }
+  return 0;
+}
+
 export interface Tunnel { url: string; proc: ReturnType<typeof Bun.spawn>; }
 
 export async function startTunnel(apiPort: number): Promise<Tunnel | null> {
@@ -315,6 +353,27 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     KORTIX_BILLING_INTERNAL_ENABLED: billing ? 'true' : 'false',
     ...(billing ? { STRIPE_WEBHOOK_SECRET: opts.stripeWebhookSecret! } : {}),
     CORS_ALLOWED_ORIGINS: `http://localhost:${ports.web}`,
+    // Route sandbox model calls through the local standalone gateway. Proxy mode
+    // (no BASE_URL): the API reverse-proxies /v1/llm-gateway/* to 127.0.0.1:gateway,
+    // and sandboxes reach it via the API's tunnel origin. Overrides .env so the
+    // worktree is self-contained.
+    LLM_GATEWAY_ENABLED: 'true',
+    LLM_GATEWAY_BASE_URL: '',
+    LLM_GATEWAY_PROXY_PORT: String(ports.gateway),
+    GATEWAY_INTERNAL_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,
+  };
+}
+
+// Env for the standalone LLM gateway (apps/llm-gateway). It has no .env of its
+// own, so everything it needs comes from here: its port, the in-worktree API URL
+// it calls back for auth/resolution, and the shared internal token. LANGFUSE_*
+// (optional tracing) passes through from the parent shell if set.
+export function gatewayLaunchEnv(ports: Ports): Record<string, string> {
+  return {
+    PORT: String(ports.gateway),
+    KORTIX_API_URL: `http://localhost:${ports.api}`,
+    GATEWAY_INTERNAL_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,
+    GATEWAY_API_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,
   };
 }
 

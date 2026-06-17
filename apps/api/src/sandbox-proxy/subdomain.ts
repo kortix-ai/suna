@@ -1,5 +1,5 @@
 /**
- * Subdomain preview proxy — `p{port}-{sandboxId}.localhost:{apiPort}/...`
+ * Subdomain preview proxy — `p{port}-{sandboxId}.{apiHost}/...`
  *
  * Carried over from main, trimmed to what this branch actually needs:
  *   - Parse the `Host` header at the Bun.serve level (before Hono routing
@@ -20,10 +20,15 @@
 
 import { authenticatePreviewPrincipal, extractPreviewToken } from './preview-auth';
 import { forwardToSandbox } from './routes/preview';
+import {
+  PUBLIC_SHARE_BLOCKED_PORTS,
+  resolvePublicShare,
+  touchPublicShare,
+} from '../shared/session-public-shares';
 
 // ── Subdomain parsing ───────────────────────────────────────────────────────
 
-const SUBDOMAIN_REGEX = /^p(\d+)-([^.]+)\.localhost/;
+const SUBDOMAIN_REGEX = /^p(\d+)-([^.]+)\./;
 
 export function parsePreviewSubdomain(host: string): { port: number; sandboxId: string } | null {
   const match = host.match(SUBDOMAIN_REGEX);
@@ -40,14 +45,14 @@ export function parsePreviewSubdomain(host: string): { port: number; sandboxId: 
 // downstream `forwardToSandbox` can sign X-Kortix-User-Context with the right
 // identity (the agent-server's auth gate verifies that header).
 
-interface AuthState {
-  userId: string;
-  expiresAt: number;
-}
+type AuthState =
+  | { kind: 'principal'; userId: string; expiresAt: number }
+  | { kind: 'public_share'; shareId: string; mode: string; expiresAt: number };
 
 // In-memory subdomain auth gate (see authenticatePreviewPrincipal / markAuthedSubdomain).
 const authedSubdomains = new Map<string, AuthState>();
 const AUTH_SESSION_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
+const PUBLIC_SHARE_SESSION_TTL_MS = 15 * 60 * 1000;
 
 function key(sandboxId: string, port: number): string {
   return `p${port}-${sandboxId}`;
@@ -65,9 +70,52 @@ function getAuthedSubdomain(sandboxId: string, port: number): AuthState | null {
 
 function markAuthedSubdomain(sandboxId: string, port: number, userId: string): void {
   authedSubdomains.set(key(sandboxId, port), {
+    kind: 'principal',
     userId,
     expiresAt: Date.now() + AUTH_SESSION_TTL_MS,
   });
+}
+
+function markPublicShareSubdomain(sandboxId: string, port: number, share: {
+  shareId: string;
+  mode: string;
+  expiresAt: Date | null;
+}): AuthState {
+  const expiresAt = Math.min(
+    Date.now() + PUBLIC_SHARE_SESSION_TTL_MS,
+    share.expiresAt?.getTime() ?? Number.POSITIVE_INFINITY,
+  );
+  const state: AuthState = {
+    kind: 'public_share',
+    shareId: share.shareId,
+    mode: share.mode,
+    expiresAt,
+  };
+  authedSubdomains.set(key(sandboxId, port), state);
+  return state;
+}
+
+async function authenticatePublicShareSubdomain(
+  token: string | null,
+  sandboxId: string,
+  port: number,
+): Promise<AuthState | null> {
+  if (!token) return null;
+  const resolved = await resolvePublicShare(token);
+  if (!resolved.ok) return null;
+
+  const share = resolved.row;
+  if (
+    share.resourceType !== 'preview'
+    || share.externalId !== sandboxId
+    || share.port !== port
+    || PUBLIC_SHARE_BLOCKED_PORTS.has(port)
+  ) {
+    return null;
+  }
+
+  void touchPublicShare(share.shareId).catch(() => {});
+  return markPublicShareSubdomain(sandboxId, port, share);
 }
 
 // Periodic cleanup of expired entries — keeps the map from growing
@@ -118,7 +166,17 @@ export async function handleSubdomainRequest(
 
   let authed = getAuthedSubdomain(sandboxId, port);
 
-  // Not authed yet — try to validate from token in headers or query.
+  // Not authed yet — first honor a public share token, then fall back to normal
+  // logged-in preview auth. Public shares deliberately use the same transparent
+  // subdomain proxy as the internal Browser so root-mounted apps (Next/Vite)
+  // do not break under path-prefix rewrites.
+  if (!authed) {
+    authed = await authenticatePublicShareSubdomain(
+      url.searchParams.get('public_share'),
+      sandboxId,
+      port,
+    );
+  }
   if (!authed) {
     const token = extractPreviewToken(req, url);
     const validatedUserId = await authenticatePreviewPrincipal(token, sandboxId);
@@ -136,7 +194,7 @@ export async function handleSubdomainRequest(
       );
     }
     markAuthedSubdomain(sandboxId, port, validatedUserId);
-    authed = { userId: validatedUserId, expiresAt: Date.now() + AUTH_SESSION_TTL_MS };
+    authed = { kind: 'principal', userId: validatedUserId, expiresAt: Date.now() + AUTH_SESSION_TTL_MS };
   }
 
   // Body (read once, before retries inside forwardToSandbox).
@@ -149,6 +207,7 @@ export async function handleSubdomainRequest(
   // so the sandbox app never sees it. Everything else passes through.
   const forwardSearchParams = new URLSearchParams(url.search);
   forwardSearchParams.delete('token');
+  forwardSearchParams.delete('public_share');
   const forwardSearch = forwardSearchParams.toString();
   const queryString = forwardSearch ? `?${forwardSearch}` : '';
 
@@ -170,7 +229,9 @@ export async function handleSubdomainRequest(
     return await forwardToSandbox(
       sandboxId,
       port,
-      authed.userId,
+      authed.kind === 'principal'
+        ? { kind: 'principal', userId: authed.userId }
+        : { kind: 'public_share' },
       req.method,
       url.pathname,
       queryString,

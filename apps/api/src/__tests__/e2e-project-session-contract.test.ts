@@ -1,5 +1,8 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
+import {
+  mockIamEngineAllowAll,
+  mockIamMembershipSyncNoop,
+} from './helpers/iam-mocks';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -28,6 +31,9 @@ process.env.API_KEY_SECRET = 'test-project-secret-key-material-32-bytes';
 
 let branchCreateCalls = 0;
 let sandboxProvisionCalls = 0;
+let providerStartCalls = 0;
+let providerStatus = 'stopped';
+let providerStartError: Error | null = null;
 let activeSessionCount = 0;
 let sessionRow: typeof projectSessions.$inferSelect | null;
 let sessionSandboxRows: Array<typeof sessionSandboxes.$inferSelect>;
@@ -35,6 +41,7 @@ let secretRows: Array<typeof projectSecrets.$inferSelect>;
 let secretValues: Map<string, string>;
 let gitConnectionRows: Array<typeof projectGitConnections.$inferSelect>;
 let gitCredentialRows: Array<typeof projectGitCredentials.$inferSelect>;
+let freestyleCalls: Array<{ path: string; method: string; body?: unknown }>;
 let lastProvisionInput: {
   sandboxId: string;
   accountId: string;
@@ -53,7 +60,12 @@ const projectRow: typeof projects.$inferSelect = {
   defaultBranch: 'main',
   manifestPath: 'kortix.toml',
   status: 'active',
-  metadata: { github: { auth_source: 'pat', full_name: `${TEST_GITHUB_OWNER}/contract-project` } },
+  metadata: {
+    github: {
+      auth_source: 'pat',
+      full_name: `${TEST_GITHUB_OWNER}/contract-project`,
+    },
+  },
   lastOpenedAt: null,
   createdAt: new Date('2026-01-01T00:00:00Z'),
   updatedAt: new Date('2026-01-01T00:00:00Z'),
@@ -62,11 +74,19 @@ const projectRow: typeof projects.$inferSelect = {
 function resetState() {
   branchCreateCalls = 0;
   sandboxProvisionCalls = 0;
+  providerStartCalls = 0;
+  providerStatus = 'stopped';
+  providerStartError = null;
   activeSessionCount = 0;
   lastProvisionInput = null;
   projectRow.repoUrl = `https://github.com/${TEST_GITHUB_OWNER}/contract-project.git`;
   projectRow.defaultBranch = 'main';
-  projectRow.metadata = { github: { auth_source: 'pat', full_name: `${TEST_GITHUB_OWNER}/contract-project` } };
+  projectRow.metadata = {
+    github: {
+      auth_source: 'pat',
+      full_name: `${TEST_GITHUB_OWNER}/contract-project`,
+    },
+  };
   sessionRow = {
     sessionId: SESSION_ID,
     accountId: ACCOUNT_ID,
@@ -91,6 +111,7 @@ function resetState() {
   secretValues = new Map();
   gitConnectionRows = [];
   gitCredentialRows = [];
+  freestyleCalls = [];
 }
 
 mock.module('../middleware/auth', () => ({
@@ -150,26 +171,55 @@ mock.module('../projects/git', () => ({
   commitFileToBranch: async () => ({ commitSha: 'a'.repeat(40) }),
 }));
 
-mock.module("../snapshots/builder", () => ({
-  ensureSandboxImage: async () => ({ snapshotName: "kortix-default-test", slug: "default", contentHash: "a".repeat(64), built: false, isDefault: true }),
-  deleteSandboxImage: async () => ({ deleted: false, snapshotName: "kortix-default-test", slug: "default" }),
+mock.module('../snapshots/builder', () => ({
+  ensureSandboxImage: async () => ({
+    snapshotName: 'kortix-default-test',
+    slug: 'default',
+    contentHash: 'a'.repeat(64),
+    built: false,
+    isDefault: true,
+  }),
+  deleteSandboxImage: async () => ({
+    deleted: false,
+    snapshotName: 'kortix-default-test',
+    slug: 'default',
+  }),
   listSnapshotBuilds: async () => [],
   listSandboxTemplates: async () => [],
-  resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
+  resolveTemplate: async () => ({ slug: 'default', spec: {}, isDefault: true }),
   kickPreBuild: () => {},
-  resolveCommitSha: async () => "a".repeat(40),
-  DEFAULT_SANDBOX_SLUG: "default",
+  kickProjectTemplatePrebuilds: () => {},
+  kickStartupPreBuild: () => {},
+  reconcileProjectTemplates: async () => undefined,
+  reconcileStaleBuilds: async () => undefined,
+  ensurePlatformDefaultImage: async () => undefined,
+  resolveCommitSha: async () => 'a'.repeat(40),
+  DEFAULT_SANDBOX_SLUG: 'default',
 }));
 
 mock.module('../projects/github', () => ({
-  buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
+  parseGitHubRepoUrl: (repoUrl: string) => ({
+    owner: TEST_GITHUB_OWNER,
+    repo:
+      repoUrl
+        .split('/')
+        .pop()
+        ?.replace(/\.git$/, '') ?? 'contract-project',
+  }),
+  buildGitHubAppInstallUrl: () =>
+    'https://github.com/apps/kortix-test/installations/new',
   verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
     accountId: state,
     nonce: 'test-nonce',
     issuedAt: Math.floor(Date.now() / 1000),
   }),
-  getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
+  createGitHubAppJwt: () => 'jwt-test',
+  getGitHubPatAuthContext: () => ({
+    token: 'pat-token',
+    source: 'pat',
+    owner: 'kortix-org',
+  }),
   deleteFile: async () => undefined,
   commitFile: async () => undefined,
   createInstallationToken: async () => ({ token: 'installation-token' }),
@@ -196,6 +246,11 @@ mock.module('../projects/github', () => ({
   listInstallationRepositories: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
+  isOrgAccount: async () => true,
+  deleteRepo: async () => undefined,
+  addCollaborator: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
 }));
 
 mock.module('../platform/services/session-sandbox', () => ({
@@ -203,6 +258,18 @@ mock.module('../platform/services/session-sandbox', () => ({
     sandboxProvisionCalls += 1;
     lastProvisionInput = input;
   },
+}));
+
+mock.module('../platform/providers', () => ({
+  getProvider: () => ({
+    getStatus: async () => providerStatus,
+    start: async () => {
+      providerStartCalls += 1;
+      if (providerStartError) throw providerStartError;
+    },
+    stop: async () => undefined,
+    remove: async () => undefined,
+  }),
 }));
 
 // Session create runs the billing gate. Return a billing-active account so the
@@ -217,7 +284,11 @@ mock.module('../billing/repositories/credit-accounts', () => ({
     stripeSubscriptionId: 'sub_test',
     stripeSubscriptionStatus: 'active',
   }),
-  getCreditBalance: async () => ({ balance: 1_000_000, granted: 1_000_000, used: 0 }),
+  getCreditBalance: async () => ({
+    balance: 1_000_000,
+    granted: 1_000_000,
+    used: 0,
+  }),
   updateCreditAccount: async () => {},
 }));
 
@@ -234,6 +305,28 @@ mock.module('../repositories/account-tokens', () => ({
   createAccountToken: async () => ({ secretKey: PROJECT_RUNTIME_PAT }),
   listAccountTokens: async () => [],
   revokeAccountToken: async () => true,
+  validateAccountToken: async () => null,
+}));
+
+mock.module('../deployments/providers/freestyle', () => ({
+  getFreestyleApiKey: async () => 'test-freestyle-key',
+  getFreestyleApiUrl: () => 'https://api.freestyle.sh',
+  callFreestyle: async (
+    path: string,
+    options: { method: string; body?: unknown },
+  ) => {
+    freestyleCalls.push({ path, method: options.method, body: options.body });
+    return new Response(JSON.stringify({ token: 'freestyle-managed-token' }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  },
+  freestyleProvider: {
+    name: 'freestyle',
+    deploy: async () => ({}),
+    stop: async () => undefined,
+    logs: async () => ({}),
+  },
 }));
 
 // Pin the concurrent-session cap to 1 regardless of env mode so this test
@@ -243,6 +336,9 @@ mock.module('../shared/account-limits', () => ({
   resolveAccountTier: async () => 'free',
   maxConcurrentSessionsForTier: () => 1,
   sessionLlmPolicyForTier: () => ({ limit: 60, windowMs: 60_000 }),
+  maxProjectsForAccount: async () => 100,
+  accountEntitledToLlmGateway: async () => true,
+  FREE_TIER_PROJECT_LIMIT: 1,
   clearAccountLimitCache: () => undefined,
 }));
 
@@ -250,37 +346,56 @@ mock.module('../shared/supabase', () => ({
   getSupabase: () => ({
     auth: {
       admin: {
-        getUserById: async () => ({ data: { user: { email: 'contract@example.test' } } }),
+        getUserById: async () => ({
+          data: { user: { email: 'contract@example.test' } },
+        }),
       },
     },
   }),
 }));
 
 mock.module('../shared/db', () => ({
+  hasDatabase: () => true,
   db: {
+    execute: async () => [],
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => ({
-          then: (resolve: (value: unknown[]) => unknown, reject?: (reason: unknown) => unknown) => {
-            Promise.resolve(table === projectSecrets ? secretRows : []).then(resolve, reject);
+          then: (
+            resolve: (value: unknown[]) => unknown,
+            reject?: (reason: unknown) => unknown,
+          ) => {
+            Promise.resolve(table === projectSecrets ? secretRows : []).then(
+              resolve,
+              reject,
+            );
           },
           orderBy: async () => {
             if (table === projectSecrets) return secretRows;
-            if (table === projectSessions) return sessionRow ? [sessionRow] : [];
+            if (table === projectSessions)
+              return sessionRow ? [sessionRow] : [];
             return [];
-	          },
-	          limit: async () => {
-            if (fields && Object.keys(fields).includes('activeCount')) return [{ activeCount: activeSessionCount }];
+          },
+          limit: async () => {
+            if (fields && Object.keys(fields).includes('activeCount'))
+              return [{ activeCount: activeSessionCount }];
             if (table === projectSecrets) {
-              return secretRows.filter((row) => row.name === 'KORTIX_GIT_AUTH_TOKEN').slice(0, 1);
+              return secretRows
+                .filter((row) => row.name === 'KORTIX_GIT_AUTH_TOKEN')
+                .slice(0, 1);
             }
-            if (table === projectGitConnections) return gitConnectionRows.slice(0, 1);
-            if (table === projectGitCredentials) return gitCredentialRows.slice(0, 1);
-            if (table === sessionSandboxes) return sessionSandboxRows.slice(0, 1);
+            if (table === projectGitConnections)
+              return gitConnectionRows.slice(0, 1);
+            if (table === projectGitCredentials)
+              return gitCredentialRows.slice(0, 1);
+            if (table === sessionSandboxes)
+              return sessionSandboxRows.slice(0, 1);
             if (table === projects) return [projectRow];
-            if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
+            if (table === accountMembers)
+              return [{ accountId: ACCOUNT_ID, accountRole: 'owner' }];
             if (table === projectMembers) return [];
-            if (table === projectSessions) return sessionRow ? [sessionRow] : [];
+            if (table === projectSessions)
+              return sessionRow ? [sessionRow] : [];
             return [];
           },
         }),
@@ -295,12 +410,15 @@ mock.module('../shared/db', () => ({
       values: (values: any) => ({
         returning: async () => {
           if (table === projectGitConnections) {
-            const existingIndex = gitConnectionRows.findIndex((row) => row.projectId === values.projectId);
+            const existingIndex = gitConnectionRows.findIndex(
+              (row) => row.projectId === values.projectId,
+            );
             const now = new Date('2026-01-02T00:00:00Z');
             const row = {
-              connectionId: existingIndex >= 0
-                ? gitConnectionRows[existingIndex]!.connectionId
-                : '00000000-0000-4000-a000-000000000501',
+              connectionId:
+                existingIndex >= 0
+                  ? gitConnectionRows[existingIndex]!.connectionId
+                  : '00000000-0000-4000-a000-000000000501',
               accountId: values.accountId,
               projectId: values.projectId,
               provider: values.provider,
@@ -320,7 +438,10 @@ mock.module('../shared/db', () => ({
               lastErrorCode: values.lastErrorCode ?? null,
               lastErrorMessage: values.lastErrorMessage ?? null,
               metadata: values.metadata ?? {},
-              createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
+              createdAt:
+                existingIndex >= 0
+                  ? gitConnectionRows[existingIndex]!.createdAt
+                  : now,
               updatedAt: values.updatedAt ?? now,
             } as typeof projectGitConnections.$inferSelect;
             if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
@@ -328,21 +449,27 @@ mock.module('../shared/db', () => ({
             return [row];
           }
           if (table === projectGitCredentials) {
-            const existingIndex = gitCredentialRows.findIndex((row) =>
-              row.projectId === values.projectId && row.provider === values.provider,
+            const existingIndex = gitCredentialRows.findIndex(
+              (row) =>
+                row.projectId === values.projectId &&
+                row.provider === values.provider,
             );
             const now = new Date('2026-01-02T00:00:00Z');
             const row = {
-              credentialId: existingIndex >= 0
-                ? gitCredentialRows[existingIndex]!.credentialId
-                : '00000000-0000-4000-a000-000000000601',
+              credentialId:
+                existingIndex >= 0
+                  ? gitCredentialRows[existingIndex]!.credentialId
+                  : '00000000-0000-4000-a000-000000000601',
               accountId: values.accountId,
               projectId: values.projectId,
               provider: values.provider,
               authMethod: values.authMethod ?? 'token',
               valueEnc: values.valueEnc,
               createdBy: values.createdBy ?? null,
-              createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
+              createdAt:
+                existingIndex >= 0
+                  ? gitCredentialRows[existingIndex]!.createdAt
+                  : now,
               updatedAt: values.updatedAt ?? now,
             } as typeof projectGitCredentials.$inferSelect;
             if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
@@ -371,15 +498,22 @@ mock.module('../shared/db', () => ({
           };
           return [sessionRow];
         },
-        onConflictDoUpdate: ({ set }: { set: Partial<typeof projectSecrets.$inferInsert> }) => ({
+        onConflictDoUpdate: ({
+          set,
+        }: {
+          set: Partial<typeof projectSecrets.$inferInsert>;
+        }) => ({
           returning: async () => {
             if (table === projectGitConnections) {
-              const existingIndex = gitConnectionRows.findIndex((row) => row.projectId === values.projectId);
+              const existingIndex = gitConnectionRows.findIndex(
+                (row) => row.projectId === values.projectId,
+              );
               const now = new Date('2026-01-02T00:00:00Z');
               const row = {
-                connectionId: existingIndex >= 0
-                  ? gitConnectionRows[existingIndex]!.connectionId
-                  : '00000000-0000-4000-a000-000000000501',
+                connectionId:
+                  existingIndex >= 0
+                    ? gitConnectionRows[existingIndex]!.connectionId
+                    : '00000000-0000-4000-a000-000000000501',
                 accountId: values.accountId,
                 projectId: values.projectId,
                 provider: values.provider,
@@ -399,7 +533,10 @@ mock.module('../shared/db', () => ({
                 lastErrorCode: values.lastErrorCode ?? null,
                 lastErrorMessage: values.lastErrorMessage ?? null,
                 metadata: values.metadata ?? {},
-                createdAt: existingIndex >= 0 ? gitConnectionRows[existingIndex]!.createdAt : now,
+                createdAt:
+                  existingIndex >= 0
+                    ? gitConnectionRows[existingIndex]!.createdAt
+                    : now,
                 updatedAt: values.updatedAt ?? now,
               } as typeof projectGitConnections.$inferSelect;
               if (existingIndex >= 0) gitConnectionRows[existingIndex] = row;
@@ -407,21 +544,27 @@ mock.module('../shared/db', () => ({
               return [row];
             }
             if (table === projectGitCredentials) {
-              const existingIndex = gitCredentialRows.findIndex((row) =>
-                row.projectId === values.projectId && row.provider === values.provider,
+              const existingIndex = gitCredentialRows.findIndex(
+                (row) =>
+                  row.projectId === values.projectId &&
+                  row.provider === values.provider,
               );
               const now = new Date('2026-01-02T00:00:00Z');
               const row = {
-                credentialId: existingIndex >= 0
-                  ? gitCredentialRows[existingIndex]!.credentialId
-                  : '00000000-0000-4000-a000-000000000601',
+                credentialId:
+                  existingIndex >= 0
+                    ? gitCredentialRows[existingIndex]!.credentialId
+                    : '00000000-0000-4000-a000-000000000601',
                 accountId: values.accountId,
                 projectId: values.projectId,
                 provider: values.provider,
                 authMethod: values.authMethod ?? 'token',
                 valueEnc: values.valueEnc,
                 createdBy: values.createdBy ?? null,
-                createdAt: existingIndex >= 0 ? gitCredentialRows[existingIndex]!.createdAt : now,
+                createdAt:
+                  existingIndex >= 0
+                    ? gitCredentialRows[existingIndex]!.createdAt
+                    : now,
                 updatedAt: values.updatedAt ?? now,
               } as typeof projectGitCredentials.$inferSelect;
               if (existingIndex >= 0) gitCredentialRows[existingIndex] = row;
@@ -429,12 +572,16 @@ mock.module('../shared/db', () => ({
               return [row];
             }
             if (table !== projectSecrets) return [];
-            const existingIndex = secretRows.findIndex((row) =>
-              row.projectId === values.projectId && row.name === values.name,
+            const existingIndex = secretRows.findIndex(
+              (row) =>
+                row.projectId === values.projectId && row.name === values.name,
             );
             const now = new Date('2026-01-02T00:00:00Z');
             const row: typeof projectSecrets.$inferSelect = {
-              secretId: existingIndex >= 0 ? secretRows[existingIndex]!.secretId : '00000000-0000-4000-a000-000000000401',
+              secretId:
+                existingIndex >= 0
+                  ? secretRows[existingIndex]!.secretId
+                  : '00000000-0000-4000-a000-000000000401',
               projectId: values.projectId!,
               name: values.name!,
               valueEnc: (set.valueEnc ?? values.valueEnc)!,
@@ -443,7 +590,8 @@ mock.module('../shared/db', () => ({
               ownerUserId: values.ownerUserId ?? null,
               active: values.active ?? true,
               createdBy: values.createdBy ?? null,
-              createdAt: existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
+              createdAt:
+                existingIndex >= 0 ? secretRows[existingIndex]!.createdAt : now,
               updatedAt: (set.updatedAt ?? values.updatedAt ?? now) as Date,
             };
             if (existingIndex >= 0) secretRows[existingIndex] = row;
@@ -456,20 +604,72 @@ mock.module('../shared/db', () => ({
     delete: (table: unknown) => ({
       where: async () => {
         if (table === projectSecrets) secretRows = [];
+        if (table === sessionSandboxes) sessionSandboxRows = [];
       },
     }),
     update: (table: unknown) => ({
-      set: (updates: Partial<typeof projectSessions.$inferSelect>) => ({
+      set: (
+        updates: Partial<typeof projectSessions.$inferSelect> &
+          Partial<typeof sessionSandboxes.$inferSelect>,
+      ) => ({
         where: () => ({
           returning: async () => {
-            if (table !== projectSessions) return [];
-            if (!sessionRow) return [];
-            sessionRow = {
-              ...sessionRow,
-              ...updates,
-              updatedAt: updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
-            };
-            return [sessionRow];
+            if (table === projectSessions) {
+              if (!sessionRow) return [];
+              sessionRow = {
+                ...sessionRow,
+                ...updates,
+                updatedAt:
+                  updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+              };
+              return [sessionRow];
+            }
+            if (table === sessionSandboxes) {
+              const row = sessionSandboxRows[0];
+              if (!row) return [];
+              sessionSandboxRows[0] = {
+                ...row,
+                ...updates,
+                updatedAt:
+                  updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+              };
+              return [sessionSandboxRows[0]];
+            }
+            return [];
+          },
+          then: async (
+            resolve: (value: unknown[]) => unknown,
+            reject?: (reason: unknown) => unknown,
+          ) => {
+            try {
+              const rows = await (async () => {
+                if (table === projectSessions) {
+                  if (!sessionRow) return [];
+                  sessionRow = {
+                    ...sessionRow,
+                    ...updates,
+                    updatedAt:
+                      updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                  };
+                  return [sessionRow];
+                }
+                if (table === sessionSandboxes) {
+                  const row = sessionSandboxRows[0];
+                  if (!row) return [];
+                  sessionSandboxRows[0] = {
+                    ...row,
+                    ...updates,
+                    updatedAt:
+                      updates.updatedAt ?? new Date('2026-01-02T00:00:00Z'),
+                  };
+                  return [sessionSandboxRows[0]];
+                }
+                return [];
+              })();
+              return resolve(rows);
+            } catch (err) {
+              return reject?.(err);
+            }
           },
         }),
       }),
@@ -478,13 +678,17 @@ mock.module('../shared/db', () => ({
 }));
 
 const { projectsApp } = await import('../projects/index');
+const { encryptProjectSecret } = await import('../projects/secrets');
 
 function createApp() {
   const app = new Hono();
   app.route('/v1/projects', projectsApp);
   app.onError((err, c) => {
     if (err instanceof HTTPException) {
-      return c.json({ error: true, message: err.message, status: err.status }, err.status);
+      return c.json(
+        { error: true, message: err.message, status: err.status },
+        err.status,
+      );
     }
     return c.json({ error: true, message: (err as Error).message }, 500);
   });
@@ -493,7 +697,10 @@ function createApp() {
 
 /** Poll until predicate holds (or timeout) — robustly flushes the
  *  fire-and-forget sandbox-provision IIFE instead of a single racy tick. */
-async function flushUntil(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+async function flushUntil(
+  predicate: () => boolean,
+  timeoutMs = 2000,
+): Promise<void> {
   const start = Date.now();
   while (!predicate() && Date.now() - start < timeoutMs) {
     await new Promise((r) => setTimeout(r, 5));
@@ -540,8 +747,12 @@ describe('project session API contract', () => {
     const listRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets`);
     expect(listRes.status).toBe(200);
     const listed = await listRes.json();
-    const openAiSecret = listed.items.find((item: any) => item.name === 'OPENAI_API_KEY');
-    const gitAuthSecret = listed.items.find((item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN');
+    const openAiSecret = listed.items.find(
+      (item: any) => item.name === 'OPENAI_API_KEY',
+    );
+    const gitAuthSecret = listed.items.find(
+      (item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN',
+    );
     expect(openAiSecret).toBeTruthy();
     expect(openAiSecret.value).toBeUndefined();
     expect(openAiSecret.value_enc).toBeUndefined();
@@ -549,9 +760,12 @@ describe('project session API contract', () => {
     expect(Array.isArray(listed.required)).toBe(true);
     expect(Array.isArray(listed.optional)).toBe(true);
 
-    const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/openai_api_key`, {
-      method: 'DELETE',
-    });
+    const deleteRes = await app.request(
+      `/v1/projects/${PROJECT_ID}/secrets/openai_api_key`,
+      {
+        method: 'DELETE',
+      },
+    );
     expect(deleteRes.status).toBe(200);
     expect(await deleteRes.json()).toEqual({ ok: true });
     expect(secretRows).toHaveLength(0);
@@ -559,19 +773,28 @@ describe('project session API contract', () => {
 
   test('stores provider-neutral git credentials outside runtime project secrets', async () => {
     projectRow.repoUrl = 'https://gitlab.com/acme/private-project.git';
-    projectRow.metadata = { git: { provider: 'gitlab', auth: { method: 'none' } } };
+    projectRow.metadata = {
+      git: { provider: 'gitlab', auth: { method: 'none' } },
+    };
     const app = createApp();
 
     const before = await app.request(`/v1/projects/${PROJECT_ID}/secrets`);
     expect(before.status).toBe(200);
     const beforeBody = await before.json();
-    expect(beforeBody.items.find((item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN')).toBeUndefined();
+    expect(
+      beforeBody.items.find(
+        (item: any) => item.name === 'KORTIX_GIT_AUTH_TOKEN',
+      ),
+    ).toBeUndefined();
 
-    const writeRes = await app.request(`/v1/projects/${PROJECT_ID}/git-credential`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: 'gitlab-project-token' }),
-    });
+    const writeRes = await app.request(
+      `/v1/projects/${PROJECT_ID}/git-credential`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: 'gitlab-project-token' }),
+      },
+    );
     expect(writeRes.status).toBe(200);
     const written = await writeRes.json();
     expect(written).toMatchObject({
@@ -590,9 +813,12 @@ describe('project session API contract', () => {
     expect(gitCredentialRows).toHaveLength(1);
     expect(gitConnectionRows).toHaveLength(1);
 
-    const deleteRes = await app.request(`/v1/projects/${PROJECT_ID}/secrets/KORTIX_GIT_AUTH_TOKEN`, {
-      method: 'DELETE',
-    });
+    const deleteRes = await app.request(
+      `/v1/projects/${PROJECT_ID}/secrets/KORTIX_GIT_AUTH_TOKEN`,
+      {
+        method: 'DELETE',
+      },
+    );
     expect(deleteRes.status).toBe(403);
     expect(secretRows).toHaveLength(0);
 
@@ -610,26 +836,31 @@ describe('project session API contract', () => {
     expect(env.KORTIX_CLI_TOKEN).toBeUndefined();
     expect(env.KORTIX_TOKEN).toBeUndefined();
 
-    sessionSandboxRows = [{
-      sandboxId: SESSION_ID,
-      sessionId: sessionRow!.sessionId,
-      accountId: ACCOUNT_ID,
-      projectId: PROJECT_ID,
-      provider: 'daytona',
-      externalId: null,
-      baseUrl: null,
-      status: 'provisioning',
-      poolState: null,
-      config: {},
-      metadata: {},
-      lastUsedAt: null,
-      createdAt: new Date('2026-01-02T00:00:00Z'),
-      updatedAt: new Date('2026-01-02T00:00:00Z'),
-    }];
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: sessionRow!.sessionId,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'provisioning',
+        poolState: null,
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
 
-    const cloneRes = await app.request(`/v1/projects/${PROJECT_ID}/git/clone-credential`, {
-      headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
-    });
+    const cloneRes = await app.request(
+      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
+      {
+        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      },
+    );
     expect(cloneRes.status).toBe(200);
     expect(await cloneRes.json()).toMatchObject({
       repo_url: 'https://gitlab.com/acme/private-project.git',
@@ -640,6 +871,157 @@ describe('project session API contract', () => {
         type: 'basic',
       },
     });
+  });
+
+  test('resolves legacy git auth secret server-side without injecting it into sandbox env', async () => {
+    projectRow.repoUrl = 'https://git.freestyle.sh/legacy-private-project';
+    projectRow.metadata = {};
+    secretRows = [
+      {
+        secretId: '00000000-0000-4000-a000-000000000402',
+        projectId: PROJECT_ID,
+        name: 'KORTIX_GIT_AUTH_TOKEN',
+        valueEnc: encryptProjectSecret(PROJECT_ID, 'legacy-freestyle-token'),
+        scope: 'runtime',
+        shareScope: 'project',
+        ownerUserId: null,
+        active: true,
+        createdBy: USER_ID,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    const app = createApp();
+
+    const createRes = await app.request(`/v1/projects/${PROJECT_ID}/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'daytona', base_ref: 'main' }),
+    });
+    expect(createRes.status).toBe(201);
+
+    await flushUntil(() => lastProvisionInput !== null);
+    const env = lastProvisionInput!.extraEnvVars ?? {};
+    expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
+
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: sessionRow!.sessionId,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'provisioning',
+        poolState: null,
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+
+    const cloneRes = await app.request(
+      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
+      {
+        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      },
+    );
+    expect(cloneRes.status).toBe(200);
+    expect(await cloneRes.json()).toMatchObject({
+      repo_url: 'https://git.freestyle.sh/legacy-private-project',
+      source: 'project_credential',
+      auth: {
+        username: 'x-access-token',
+        token: 'legacy-freestyle-token',
+        type: 'basic',
+      },
+    });
+  });
+
+  test('mints managed Freestyle credentials for legacy project git connections', async () => {
+    projectRow.repoUrl = 'https://git.freestyle.sh/freestyle-repo-id';
+    projectRow.metadata = {
+      git: {
+        provider: 'freestyle',
+        auth: { method: 'managed', ref: 'freestyle-identity-id' },
+        repo_id: 'freestyle-repo-id',
+      },
+    };
+    gitConnectionRows = [
+      {
+        connectionId: '00000000-0000-4000-a000-000000000502',
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'freestyle',
+        repoUrl: 'https://git.freestyle.sh/freestyle-repo-id',
+        upstreamUrl: null,
+        managed: false,
+        repoOwner: null,
+        repoName: null,
+        externalRepoId: 'freestyle-repo-id',
+        defaultBranch: 'main',
+        authMethod: 'managed',
+        installationId: null,
+        credentialRef: 'freestyle-identity-id',
+        permissions: {},
+        visibility: 'private',
+        webhookId: null,
+        status: 'connected',
+        lastValidatedAt: new Date('2026-01-02T00:00:00Z'),
+        lastErrorCode: null,
+        lastErrorMessage: null,
+        metadata: {},
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: null,
+        baseUrl: null,
+        status: 'provisioning',
+        poolState: null,
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    const app = createApp();
+
+    const cloneRes = await app.request(
+      `/v1/projects/${PROJECT_ID}/git/clone-credential`,
+      {
+        headers: { Authorization: `Bearer ${PROJECT_SANDBOX_TOKEN}` },
+      },
+    );
+
+    expect(cloneRes.status).toBe(200);
+    expect(await cloneRes.json()).toMatchObject({
+      repo_url: 'https://git.freestyle.sh/freestyle-repo-id',
+      source: 'managed',
+      auth: {
+        username: 'x-access-token',
+        token: 'freestyle-managed-token',
+        type: 'basic',
+      },
+    });
+    expect(freestyleCalls).toEqual([
+      {
+        path: '/git/v1/identity/freestyle-identity-id/tokens',
+        method: 'POST',
+        body: undefined,
+      },
+    ]);
   });
 
   test('rejects reserved platform secret names', async () => {
@@ -659,20 +1041,41 @@ describe('project session API contract', () => {
 
   test('rejects server-managed and unknown PATCH fields', async () => {
     const app = createApp();
-    const forbiddenBodies: Array<{ body: Record<string, unknown>; message: string }> = [
-      { body: { status: 'running' }, message: 'field is server-managed: status' },
-      { body: { sandbox_url: 'https://sandbox.example' }, message: 'field is server-managed: sandbox_url' },
-      { body: { sandboxUrl: 'https://sandbox.example' }, message: 'field is server-managed: sandboxUrl' },
-      { body: { error: 'client-owned' }, message: 'field is server-managed: error' },
-      { body: { random: 'field' }, message: 'field is not user-editable: random' },
+    const forbiddenBodies: Array<{
+      body: Record<string, unknown>;
+      message: string;
+    }> = [
+      {
+        body: { status: 'running' },
+        message: 'field is server-managed: status',
+      },
+      {
+        body: { sandbox_url: 'https://sandbox.example' },
+        message: 'field is server-managed: sandbox_url',
+      },
+      {
+        body: { sandboxUrl: 'https://sandbox.example' },
+        message: 'field is server-managed: sandboxUrl',
+      },
+      {
+        body: { error: 'client-owned' },
+        message: 'field is server-managed: error',
+      },
+      {
+        body: { random: 'field' },
+        message: 'field is not user-editable: random',
+      },
     ];
 
     for (const { body, message } of forbiddenBodies) {
-      const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+      const res = await app.request(
+        `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+      );
       expect(res.status).toBe(400);
       expect(await res.json()).toMatchObject({ error: message });
     }
@@ -681,7 +1084,9 @@ describe('project session API contract', () => {
   test('returns deterministic read errors for invalid or missing sessions and pending sandboxes', async () => {
     const app = createApp();
 
-    const listSessions = await app.request(`/v1/projects/${PROJECT_ID}/sessions`);
+    const listSessions = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions`,
+    );
     expect(listSessions.status).toBe(200);
     const sessions = await listSessions.json();
     expect(sessions).toHaveLength(1);
@@ -693,7 +1098,9 @@ describe('project session API contract', () => {
       status: 'provisioning',
     });
 
-    const readSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
+    const readSession = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
+    );
     expect(readSession.status).toBe(200);
     expect(await readSession.json()).toMatchObject({
       session_id: SESSION_ID,
@@ -703,44 +1110,291 @@ describe('project session API contract', () => {
       status: 'provisioning',
     });
 
-    const invalidSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/not-a-uuid`);
+    const invalidSession = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/not-a-uuid`,
+    );
     expect(invalidSession.status).toBe(400);
-    expect(await invalidSession.json()).toMatchObject({ error: 'Invalid session id' });
+    expect(await invalidSession.json()).toMatchObject({
+      error: 'Invalid session id',
+    });
 
-    const invalidSandbox = await app.request(`/v1/projects/${PROJECT_ID}/sessions/not-a-uuid/start`, { method: 'POST' });
+    const invalidSandbox = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/not-a-uuid/start`,
+      { method: 'POST' },
+    );
     expect(invalidSandbox.status).toBe(400);
-    expect(await invalidSandbox.json()).toMatchObject({ error: 'Invalid session id' });
+    expect(await invalidSandbox.json()).toMatchObject({
+      error: 'Invalid session id',
+    });
 
     // /start is idempotent: a session with no usable sandbox yet returns a
     // readiness payload (stage='provisioning'), not a 404 — the client polls it.
-    const pendingSandbox = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`, { method: 'POST' });
+    const pendingSandbox = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
     expect(pendingSandbox.status).toBe(200);
-    expect(await pendingSandbox.json()).toMatchObject({ stage: 'provisioning' });
+    expect(await pendingSandbox.json()).toMatchObject({
+      stage: 'provisioning',
+    });
 
     sessionRow = null;
-    const missingSession = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`);
+    const missingSession = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
+    );
     expect(missingSession.status).toBe(404);
     expect(await missingSession.json()).toMatchObject({ error: 'Not found' });
   });
 
+  test('dashboard start of an existing sandbox wakes in place and never allocates a second runtime', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-existing',
+        baseUrl: null,
+        status: 'active',
+        poolState: null,
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'stopped';
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+    });
+    expect(providerStartCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(branchCreateCalls).toBe(0);
+  });
+
+  test('dashboard start does not expose a stale sandbox while the provider is waking', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-existing',
+        baseUrl: null,
+        status: 'active',
+        poolState: null,
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'stopped';
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'starting',
+      retriable: true,
+      sandbox: null,
+      reason: 'runtime_waking',
+    });
+    expect(providerStartCalls).toBe(1);
+    expect(sandboxProvisionCalls).toBe(0);
+  });
+
+  test('dashboard start retires a provider-removed sandbox and reallocates through the canonical runtime path', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+      metadata: {
+        existing: true,
+        initial_prompt: 'DO NOT REPLAY',
+        opencode_model: 'anthropic/claude-sonnet-4-6',
+      },
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-deleted',
+        baseUrl: null,
+        status: 'active',
+        poolState: null,
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'provisioning',
+      retriable: true,
+      sandbox: null,
+      reason: 'runtime_removed',
+    });
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(providerStartCalls).toBe(0);
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(sessionSandboxRows).toHaveLength(0);
+    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
+    expect(
+      lastProvisionInput?.extraEnvVars?.KORTIX_INITIAL_PROMPT,
+    ).toBeUndefined();
+    expect(lastProvisionInput?.extraEnvVars?.KORTIX_OPENCODE_MODEL).toBe(
+      'anthropic/claude-sonnet-4-6',
+    );
+  });
+
+  test('restart of a provider-removed sandbox provisions a replacement instead of leaving the session stopped', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+    };
+    sessionSandboxRows = [
+      {
+        sandboxId: SESSION_ID,
+        sessionId: SESSION_ID,
+        accountId: ACCOUNT_ID,
+        projectId: PROJECT_ID,
+        provider: 'daytona',
+        externalId: 'box-deleted',
+        baseUrl: null,
+        status: 'active',
+        poolState: null,
+        config: {},
+        metadata: {},
+        lastUsedAt: null,
+        createdAt: new Date('2026-01-02T00:00:00Z'),
+        updatedAt: new Date('2026-01-02T00:00:00Z'),
+      },
+    ];
+    providerStatus = 'removed';
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/restart`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(202);
+    expect(await res.json()).toMatchObject({
+      ok: true,
+      session_id: SESSION_ID,
+      status: 'provisioning',
+      reason: 'runtime_removed',
+    });
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(providerStartCalls).toBe(0);
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(sessionRow?.status).toBe('provisioning');
+    expect(sessionSandboxRows).toHaveLength(0);
+  });
+
+  test('dashboard start recovery of an already-bootstrapped session provisions without replaying the initial prompt', async () => {
+    const app = createApp();
+    sessionRow = {
+      ...sessionRow!,
+      sandboxProvider: 'daytona',
+      status: 'running',
+      opencodeSessionId: 'ses_root_existing',
+      metadata: {
+        existing: true,
+        initial_prompt: 'DO NOT REPLAY',
+        opencode_model: 'anthropic/claude-sonnet-4-6',
+      },
+    };
+    sessionSandboxRows = [];
+
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}/start`,
+      { method: 'POST' },
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      stage: 'provisioning',
+      retriable: true,
+    });
+
+    await flushUntil(() => sandboxProvisionCalls === 1);
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(branchCreateCalls).toBe(0);
+    expect(lastProvisionInput?.sandboxId).toBe(SESSION_ID);
+    const env = lastProvisionInput?.extraEnvVars ?? {};
+    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
+    expect(env.KORTIX_INITIAL_PROMPT).toBeUndefined();
+    expect(env.KORTIX_OPENCODE_MODEL).toBe('anthropic/claude-sonnet-4-6');
+  });
+
   test('allows only user-owned PATCH fields', async () => {
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'Human name',
-        opencode_session_id: 'oc-123',
-        metadata: { custom: 'ok' },
-      }),
-    });
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Human name',
+          metadata: { custom: 'ok' },
+        }),
+      },
+    );
 
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.name).toBe('Human name');
-    expect(body.opencode_session_id).toBe('oc-123');
+    expect(body.opencode_session_id).toBeNull();
     expect(body.status).toBe('provisioning');
-    expect(body.metadata).toEqual({ existing: true, custom: 'ok', name: 'Human name' });
+    expect(body.metadata).toEqual({
+      existing: true,
+      custom: 'ok',
+      custom_name: 'Human name',
+    });
   });
 
   test('rejects unknown providers before creating a git branch', async () => {
@@ -807,7 +1461,11 @@ describe('project session API contract', () => {
     // injects the single sandbox KORTIX_TOKEN at the provider boundary.
     expect(env.KORTIX_PROJECT_ID).toBe(PROJECT_ID);
     expect(env.KORTIX_SESSION_ID).toBeTruthy();
-    expect(env.KORTIX_REPO_URL).toBe(projectRow.repoUrl);
+    const expectedRepoUrl =
+      process.env.KORTIX_GIT_PROXY === 'true'
+        ? new URL(`/v1/git/${PROJECT_ID}.git`, process.env.KORTIX_URL ?? 'https://test.kortix.local').toString()
+        : projectRow.repoUrl;
+    expect(env.KORTIX_REPO_URL).toBe(expectedRepoUrl);
     expect(env.KORTIX_BASE_REF).toBe('main');
     // LLM/tool-router URLs are no longer injected — the sandbox derives any
     // router endpoint it needs from KORTIX_API_URL.
@@ -819,7 +1477,7 @@ describe('project session API contract', () => {
     expect(env.KORTIX_API_URL).toBeTruthy();
     expect(env.KORTIX_GIT_AUTH_TOKEN).toBeUndefined();
     expect(env.KORTIX_GITHUB_TOKEN).toBeUndefined();
-    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBeUndefined();
+    expect(env.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
     expect(env.KORTIX_INITIAL_PROMPT).toBeUndefined();
 
     // 6. User can't shadow a platform var — POST /secrets rejects KORTIX_*.
@@ -858,12 +1516,16 @@ describe('project session API contract', () => {
     expect(body.sandbox_provider).toBe('daytona');
     expect(body.status).toBe('provisioning');
     expect(body.name).toBe('Contract session');
-    expect(branchCreateCalls).toBe(1);
+    expect(branchCreateCalls).toBe(0);
 
     await flushUntil(() => sandboxProvisionCalls === 1);
     expect(sandboxProvisionCalls).toBe(1);
-    expect(lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION).toBe('1');
-    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe('Review the repo');
+    expect(
+      lastProvisionInput!.extraEnvVars?.KORTIX_BOOTSTRAP_OPENCODE_SESSION,
+    ).toBe('1');
+    expect(lastProvisionInput!.extraEnvVars?.KORTIX_INITIAL_PROMPT).toBe(
+      'Review the repo',
+    );
   });
 
   test('accepts a client-created session branch without recreating it server-side', async () => {
@@ -891,9 +1553,12 @@ describe('project session API contract', () => {
 
   test('stops a session without deleting its preserved branch row', async () => {
     const app = createApp();
-    const res = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-      method: 'DELETE',
-    });
+    const res = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
+      {
+        method: 'DELETE',
+      },
+    );
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
@@ -901,9 +1566,12 @@ describe('project session API contract', () => {
     expect(sessionRow?.branchName).toBe(SESSION_ID);
 
     sessionRow = null;
-    const missing = await app.request(`/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`, {
-      method: 'DELETE',
-    });
+    const missing = await app.request(
+      `/v1/projects/${PROJECT_ID}/sessions/${SESSION_ID}`,
+      {
+        method: 'DELETE',
+      },
+    );
     expect(missing.status).toBe(404);
     expect(await missing.json()).toMatchObject({ error: 'Not found' });
   });

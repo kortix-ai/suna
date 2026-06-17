@@ -42,14 +42,20 @@ const PUBLIC_ROUTES = [
   '/install.sh',
   '/download', // Desktop installer redirector (per-platform latest)
   '/design-system', // Living design system / brand guidelines should be public
+  '/presentation', // Standalone product deck (/presentation) should be public
   '/contact', // Request-a-demo / contact page should be public
   '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
   '/enterprise', // Enterprise page should be public
   '/pricing', // Pricing page should be public
   '/use-cases', // Use cases page should be public
+  '/solutions', // Solutions / persona landing pages should be public
+  '/compare', // Competitor comparison pages should be public
+  '/integrations', // Integrations directory + per-tool pages should be public
+  '/security', // Security & trust page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
+  '/game-of-life', // Conway's Game of Life seeded from the Kortix logo — public, unauthenticated
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
 

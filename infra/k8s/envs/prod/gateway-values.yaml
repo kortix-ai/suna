@@ -1,0 +1,33 @@
+# Prod values for the kortix-gateway chart. Runs in the SAME namespace as
+# kortix-api (kortix-prod), reusing its ServiceAccount (kortix-api) + synced
+# secret (kortix-api-env). Deployed by Argo CD — a PR bumping image.tag IS the
+# deploy; git revert is the rollback.
+
+# Immutable release tag (promote bumps this). NOT :latest in GitOps.
+image:
+  tag: "0.9.38"
+
+# Prod HA: 3-replica floor, burst to 12 (matches the API's envelope).
+replicas: 3
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 12
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+  limits:
+    cpu: "1"
+    memory: "1Gi"
+
+# Public, direct. Prod sandboxes hit the gateway straight at this host
+# (LLM_GATEWAY_BASE_URL=https://gateway.kortix.com/v1/llm) so LLM streams live
+# on gateway pods, not the API — API deploys don't cut in-flight streams.
+ingress:
+  enabled: true
+  host: gateway.kortix.com
+  # ACM cert for gateway.kortix.com (prod-eks/cluster module.acm_gateway).
+  certificateArn: "arn:aws:acm:us-west-2:935064898258:certificate/440f9346-5271-40bd-aff2-47993f14748d"
+  cloudflareProxied: true

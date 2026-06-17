@@ -1,0 +1,15 @@
+export const OPENAI_COMPATIBLE_NPM = new Set([
+  '@ai-sdk/openai-compatible',
+  '@ai-sdk/openai',
+  '@ai-sdk/azure',
+  '@ai-sdk/groq',
+  '@ai-sdk/mistral',
+  '@ai-sdk/xai',
+  '@ai-sdk/cerebras',
+  '@ai-sdk/togetherai',
+  '@ai-sdk/deepinfra',
+  '@ai-sdk/perplexity',
+  '@ai-sdk/vercel',
+  '@ai-sdk/gateway',
+  '@openrouter/ai-sdk-provider',
+]);

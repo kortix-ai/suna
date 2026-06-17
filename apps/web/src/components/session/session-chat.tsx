@@ -33,6 +33,8 @@ import {
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useSessionWallpaperLayer } from '@/components/session/session-wallpaper-layer';
 import { usePathname, useRouter } from 'next/navigation';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 import { SandboxImage } from '@/components/session/sandbox-image';
@@ -4179,11 +4181,6 @@ export function SessionChat({
       const pendingPrompt = sessionStorage.getItem(
         `opencode_pending_prompt:${sessionId}`,
       );
-      console.log('[session-chat] pending prompt check', {
-        sessionId,
-        hasPending: !!pendingPrompt,
-        attempt,
-      });
       if (!pendingPrompt) {
         // Retry up to 5 times with 50ms delay to handle race condition
         if (attempt < 5) {
@@ -4300,11 +4297,6 @@ export function SessionChat({
         .getState()
         .consumePendingFiles();
 
-      console.log('[session-chat] sending promptAsync for pending prompt', {
-        sessionId,
-        pendingFileCount: pendingFiles.length,
-      });
-
       // Upload local files and build the parts array (text + file refs)
       const sendPendingPrompt = async () => {
         const parts: Array<
@@ -4376,22 +4368,12 @@ export function SessionChat({
           } as any),
         )
         .then((res: any) => {
-          console.log('[session-chat] promptAsync resolved', {
-            sessionId,
-            status: res?.response?.status,
-            hasError: !!res?.error,
-            res,
-          });
           // The SDK resolves (not rejects) on HTTP errors, returning
           // { error: ... } instead of throwing. Handle this case so
           // the UI doesn't stay stuck on "busy" forever.
           if (res?.error) handlePromptError();
         })
-        .catch((err: any) => {
-          console.error('[session-chat] promptAsync rejected', {
-            sessionId,
-            err,
-          });
+        .catch(() => {
           handlePromptError();
         });
     };
@@ -4880,6 +4862,10 @@ export function SessionChat({
   const hasAnyMessages = turns.length > 0;
   const hasChatContent =
     hasAnyMessages || (!!optimisticPrompt && !hasAnyMessages);
+  // Full-bleed wallpaper layer mounted by SessionLayout (null on mobile /
+  // standalone). When present, the welcome wallpaper is portaled into it so it
+  // spans the entire session width instead of shrinking with the chat panel.
+  const wallpaperLayer = useSessionWallpaperLayer();
   const WELCOME_FADE_MS = 900;
   const [welcomeFadeActive, setWelcomeFadeActive] = useState(false);
   const welcomeFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
@@ -5913,25 +5899,62 @@ export function SessionChat({
   const showOptimistic = !!optimisticPrompt && !hasMessages;
   const isTransitioningFromWelcome =
     !prevHasChatContentRef.current && hasChatContent;
+  // The welcome wallpaper is the EMPTY-STATE backdrop for a *resolved* session.
+  // The loading/connecting phase never reaches here (it early-returns the loader
+  // below), so this only needs to exclude the not-found screen.
   const shouldShowWelcomeOverlay =
-    !hasChatContent || welcomeFadeActive || isTransitioningFromWelcome;
+    !isNotFound &&
+    (!hasChatContent || welcomeFadeActive || isTransitioningFromWelcome);
+
+  // The welcome wallpaper. When SessionLayout provides a root-level wallpaper
+  // layer we portal it in there so it spans the FULL session width (never
+  // squished into the chat panel when the side panel is open); otherwise it
+  // renders inline (mobile / standalone, where the chat panel is full width).
+  const welcomeWallpaper = shouldShowWelcomeOverlay ? (
+    <div
+      className={cn(
+        'absolute inset-0 z-0 pointer-events-none transition-opacity ease-out',
+        hasChatContent ? 'opacity-0' : 'opacity-100',
+      )}
+      style={{ transitionDuration: `${WELCOME_FADE_MS}ms` }}
+    >
+      <SessionWelcome />
+    </div>
+  ) : null;
+
+  // While the session is still connecting / loading its content, render ONLY the
+  // staged loader — never the session shell (header + input) at the same time.
+  // Showing both reads as "loaded and loading at once" (the very contradiction
+  // the loader exists to avoid). The connection keeps running in the parent
+  // ProjectSessionRuntimeConnection, so as soon as the runtime is ready
+  // isDataLoading flips and the full shell renders in one shot.
+  if (isDataLoading) {
+    return (
+      <div className="relative flex flex-col h-full bg-background" data-testid="session-chat">
+        <SessionStartingLoader stage="ready" />
+      </div>
+    );
+  }
 
   return (
-    <div className="relative flex flex-col h-full bg-background" data-testid="session-chat">
+    <div
+      className={cn(
+        'relative flex flex-col h-full',
+        // Transparent in the welcome state so the root-level full-bleed wallpaper
+        // (portaled into SessionLayout) reads through; solid once real content
+        // takes over. Same base color either way, so non-welcome is unchanged.
+        shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
+      )}
+      data-testid="session-chat"
+    >
       {/* Full-bleed welcome wallpaper — spans the entire session (behind header,
           messages, project selector, and chat input). Input renders as frosted
-          glass so the wallpaper reads through uninterrupted. */}
-      {shouldShowWelcomeOverlay && (
-        <div
-          className={cn(
-            'absolute inset-0 z-0 pointer-events-none transition-opacity ease-out',
-            hasChatContent ? 'opacity-0' : 'opacity-100',
-          )}
-          style={{ transitionDuration: `${WELCOME_FADE_MS}ms` }}
-        >
-          <SessionWelcome />
-        </div>
-      )}
+          glass so the wallpaper reads through uninterrupted. Portaled into
+          SessionLayout's root layer when present so it stays full width even
+          with the side panel open; falls back to inline otherwise. */}
+      {wallpaperLayer
+        ? welcomeWallpaper && createPortal(welcomeWallpaper, wallpaperLayer)
+        : welcomeWallpaper}
 
       {/* Session header — always mounted */}
       {!hideHeader && (
@@ -5957,9 +5980,7 @@ export function SessionChat({
       {/* Content area — loading, not-found, or actual messages. The single
           session loader (SessionStartingLoader) carries through here on its
           "Connecting" phase so there's never a second, different loader. */}
-      {isDataLoading ? (
-        <SessionStartingLoader stage="ready" />
-      ) : isNotFound ? (
+      {isNotFound ? (
         <div className="flex-1 flex flex-col items-center justify-center min-h-0 gap-3 text-center px-6">
           <div className="text-sm text-muted-foreground">
             {tHardcodedUi.raw('componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow')}</div>

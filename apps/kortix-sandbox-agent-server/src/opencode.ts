@@ -22,7 +22,16 @@ export const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
 export const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
 export const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
 
-export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | undefined {
+// Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
+// opencode at spawn. It MERGES over the repo's own opencode config and has three
+// independent contributors, any of which may apply:
+//   1. the Kortix Executor MCP server   (when KORTIX_EXECUTOR_TOKEN + API url)
+//   2. the Kortix LLM gateway provider  (when KORTIX_LLM_* env)
+//   3. a Slack permission override      (when this is a Slack session)
+// If NONE apply there's nothing to inject, so we return undefined and opencode
+// just uses the repo config as-is. Async: the gateway provider fetches its model
+// catalog live (see fetchGatewayModels).
+export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promise<string | undefined> {
   const executorToken = env.KORTIX_EXECUTOR_TOKEN
   const apiUrl = env.KORTIX_API_URL
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
@@ -30,7 +39,11 @@ export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | 
 
   const hasExecutor = !!executorToken && !!apiUrl
   const hasLlmGateway = !!llmBaseUrl && !!llmApiKey
-  if (!hasExecutor && !hasLlmGateway) return undefined
+  // A Slack-provisioned session carries SLACK_CHANNEL_ID / SLACK_THREAD_TS (the
+  // session identity the API hands us at boot; also what the in-sandbox `slack`
+  // CLI uses to post back to the thread). Contributor #3 keys off it.
+  const isSlackSession = !!(env.SLACK_THREAD_TS || env.SLACK_CHANNEL_ID)
+  if (!hasExecutor && !hasLlmGateway && !isSlackSession) return undefined
 
   let base: Record<string, unknown> = {}
   if (env.OPENCODE_CONFIG_CONTENT) {
@@ -44,6 +57,7 @@ export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | 
   }
   const out: Record<string, unknown> = { ...base }
 
+  // (1) Kortix Executor MCP server.
   if (hasExecutor) {
     const mcp =
       out.mcp && typeof out.mcp === 'object' && !Array.isArray(out.mcp)
@@ -63,6 +77,7 @@ export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | 
     }
   }
 
+  // (2) Kortix LLM gateway provider.
   if (hasLlmGateway) {
     const provider =
       out.provider && typeof out.provider === 'object' && !Array.isArray(out.provider)
@@ -77,7 +92,7 @@ export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | 
           baseURL: llmBaseUrl,
           apiKey: llmApiKey,
         },
-        models: KORTIX_GATEWAY_MODELS,
+        models: await fetchGatewayModels(llmBaseUrl, llmApiKey),
       },
     }
     if (!('model' in out) || typeof out.model !== 'string') {
@@ -85,7 +100,57 @@ export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | 
     }
   }
 
+  // (3) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread
+  // is async — there's no live form to answer a synchronous question, so the
+  // agent must ask via `slack send` instead; a `question` call would otherwise
+  // stall the turn. The web dashboard keeps the tool (it answers `question.asked`
+  // natively over opencode's SSE). This is the "make it impossible" half of the
+  // fix; the in-box question relay stays as a safety net (and the only path if a
+  // project's agent overrides this with its own `"*": "allow"`).
+  if (isSlackSession) {
+    const permission =
+      out.permission && typeof out.permission === 'object' && !Array.isArray(out.permission)
+        ? (out.permission as Record<string, unknown>)
+        : {}
+    out.permission = { ...permission, question: 'deny' }
+  }
+
   return JSON.stringify(out)
+}
+
+export const buildExecutorMcpConfigContent = buildOpencodeConfigContent
+
+const GATEWAY_MODELS_RETRY_DELAYS_MS = [500, 1000, 2000, 4000, 8000]
+
+async function fetchGatewayModels(
+  baseUrl: string,
+  apiKey: string,
+): Promise<Record<string, KortixGatewayModel>> {
+  const url = `${baseUrl.replace(/\/+$/, '')}/models`
+  const attempts = GATEWAY_MODELS_RETRY_DELAYS_MS.length + 1
+  logger.info(`[opencode] fetching gateway models from ${url}`)
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const res = await fetch(url, { headers: { authorization: `Bearer ${apiKey}` } })
+      if (!res.ok) {
+        const detail = (await res.text().catch(() => '')).slice(0, 200)
+        throw new Error(`HTTP ${res.status}${detail ? ` ${detail}` : ''}`)
+      }
+      const body = (await res.json()) as { models?: Record<string, KortixGatewayModel> }
+      const models = body.models ?? {}
+      if (Object.keys(models).length === 0) throw new Error('gateway returned an empty catalog')
+      logger.info(`[opencode] fetched ${Object.keys(models).length} gateway models from ${url}`)
+      return models
+    } catch (err) {
+      logger.warn(
+        `[opencode] gateway models fetch failed (attempt ${attempt + 1}/${attempts}) ${url}: ${(err as Error).message}`,
+      )
+      const delay = GATEWAY_MODELS_RETRY_DELAYS_MS[attempt]
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
+  logger.error(`[opencode] gateway models unavailable after ${attempts} attempts (${url}); using minimal fallback`)
+  return MINIMAL_FALLBACK_MODELS
 }
 
 const DEFAULT_KORTIX_MODEL = 'kortix/anthropic/claude-opus-4.8'
@@ -99,89 +164,9 @@ type KortixGatewayModel = {
   limit?: { context?: number; output?: number }
 }
 
-const KORTIX_GATEWAY_MODELS: Record<string, KortixGatewayModel> = {
+const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
   'anthropic/claude-opus-4.8': {
     name: 'Claude Opus 4.8',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_000_000, output: 64_000 },
-  },
-  'anthropic/claude-sonnet-4.6': {
-    name: 'Claude Sonnet 4.6',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_000_000, output: 64_000 },
-  },
-  'openai/gpt-5.5': {
-    name: 'GPT-5.5',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_050_000, output: 64_000 },
-  },
-  'google/gemini-3.5-flash': {
-    name: 'Gemini 3.5 Flash',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 65_536 },
-  },
-  'google/gemini-3.1-pro-preview': {
-    name: 'Gemini 3.1 Pro',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 65_536 },
-  },
-  'deepseek/deepseek-v4-flash': {
-    name: 'DeepSeek V4 Flash',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'deepseek/deepseek-v4-pro': {
-    name: 'DeepSeek V4 Pro',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'minimax/minimax-m3': {
-    name: 'MiniMax M3',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 1_048_576, output: 64_000 },
-  },
-  'moonshotai/kimi-k2.6': {
-    name: 'Kimi K2.6',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 262_144, output: 64_000 },
-  },
-  'z-ai/glm-5.1': {
-    name: 'GLM 5.1',
-    reasoning: true,
-    tool_call: true,
-    attachment: true,
-    temperature: true,
-    limit: { context: 202_752, output: 64_000 },
-  },
-  'x-ai/grok-4.3': {
-    name: 'Grok 4.3',
     reasoning: true,
     tool_call: true,
     attachment: true,
@@ -194,7 +179,14 @@ function materializeOpencodeAuth(env: NodeJS.ProcessEnv) {
   const authJson = env[CODEX_AUTH_JSON_SECRET] ?? env[OPENCODE_AUTH_JSON_SECRET]
   delete env[CODEX_AUTH_JSON_SECRET]
   delete env[OPENCODE_AUTH_JSON_SECRET]
-  if (!authJson?.trim()) return
+  if (!authJson?.trim()) {
+    try {
+      unlinkSync(OPENCODE_AUTH_PATH)
+      logger.info('[opencode] cleared stale Codex auth.json (no credential present)')
+    } catch {
+    }
+    return
+  }
 
   try {
     const parsed = JSON.parse(authJson)
@@ -297,7 +289,7 @@ export function createOpencodeSupervisor(
     } catch {}
   }
 
-  function spawnChild(bin: string) {
+  async function spawnChild(bin: string) {
     sweepBunExtractions()
     try {
       mkdirSync(OPENCODE_HOME, { recursive: true })
@@ -327,10 +319,18 @@ export function createOpencodeSupervisor(
 
     materializeOpencodeAuth(env)
 
-    const executorConfig = buildExecutorMcpConfigContent(baseEnv)
-    if (executorConfig) {
-      env.OPENCODE_CONFIG_CONTENT = executorConfig
-      logger.info('[opencode] registered kortix-executor MCP server')
+    // Boot profiling: when KORTIX_OPENCODE_DEBUG=1, ask opencode to emit its own
+    // verbose startup logs (interleaved into the daemon log via inherited
+    // stdio) so a real cold boot reveals where the spawn→ready window goes.
+    // Opt-in only — no log noise in normal operation.
+    if (process.env.KORTIX_OPENCODE_DEBUG === '1') {
+      env.OPENCODE_LOG_LEVEL = 'DEBUG'
+    }
+
+    const opencodeConfig = await buildOpencodeConfigContent(baseEnv)
+    if (opencodeConfig) {
+      env.OPENCODE_CONFIG_CONTENT = opencodeConfig
+      logger.info('[opencode] applied inline config (executor MCP / LLM gateway / Slack permissions)')
     }
 
     const args = [
@@ -358,7 +358,7 @@ export function createOpencodeSupervisor(
       restartDelayMs = Math.min(restartDelayMs * 2, 30_000)
       logger.info('[opencode] restarting', { delayMs: delay })
       setTimeout(() => {
-        if (!stopping && binaryPath) spawnChild(binaryPath)
+        if (!stopping && binaryPath) void spawnChild(binaryPath)
       }, delay)
     })
 
@@ -407,7 +407,7 @@ export function createOpencodeSupervisor(
       binaryPath = bin
       opencodeCwd = await resolveOpencodeCwd(cfg)
       try {
-        spawnChild(bin)
+        await spawnChild(bin)
       } catch (err) {
         logger.error('[opencode] initial spawn failed', err)
       }
@@ -496,15 +496,46 @@ export async function probeOpencodeSessionApi(
 export async function waitForOpencodeReady(
   opencode: Opencode,
   directory?: string,
+  // Boot-profiling hook: fired once the moment opencode's port answers ANY
+  // HTTP (process bound + listening), which is strictly before /session serves
+  // 200 (== ready). The gap between this and `opencode-ready` localizes the
+  // cold-start cost: a big spawn→listening gap = process/runtime startup; a big
+  // listening→ready gap = opencode's internal app/session init.
+  onListening?: () => void,
 ): Promise<boolean> {
   const deadline = Date.now() + READY_TIMEOUT_MS
+  let listeningSeen = false
   while (Date.now() < deadline) {
     if (opencode.getState() === 'ok') return true
-    if (directory && await probeOpencodeSessionApi(opencode.getInternalUrl(), directory, 500)) {
-      opencode.markReady()
-      return true
+    if (directory) {
+      const probe = await probeOpencodeReadiness(opencode.getInternalUrl(), directory, 500)
+      if (probe !== 'down' && !listeningSeen) {
+        listeningSeen = true
+        onListening?.()
+      }
+      if (probe === 'ready') {
+        opencode.markReady()
+        return true
+      }
     }
     await new Promise((r) => setTimeout(r, directory ? BOOT_READY_POLL_MS : READY_POLL_MS))
   }
   return false
+}
+
+/** Richer boot probe: 'down' = port not answering at all, 'listening' = answers
+ *  HTTP but /session not 2xx yet, 'ready' = /session 2xx/3xx. */
+async function probeOpencodeReadiness(
+  baseUrl: string,
+  directory: string,
+  timeoutMs: number,
+): Promise<'down' | 'listening' | 'ready'> {
+  try {
+    const res = await fetch(`${baseUrl}/session?directory=${encodeURIComponent(directory)}`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    return res.status >= 200 && res.status < 400 ? 'ready' : 'listening'
+  } catch {
+    return 'down'
+  }
 }

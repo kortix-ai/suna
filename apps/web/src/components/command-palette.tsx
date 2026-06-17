@@ -7,6 +7,7 @@ import {
   listAccounts,
   listProjectSessions,
   listProjectsForAccount,
+  prefetchSessionStart,
   searchProjectFiles,
   type KortixAccount,
   type KortixProject,
@@ -734,7 +735,9 @@ export function CommandPalette() {
         // tab bar picks it up from the URL.
         const session = await createProjectSession(projectId);
         queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
+        prefetchSessionStart(queryClient, projectId, session.session_id);
         openProjectTab(projectId, session.session_id);
+        router.prefetch(`/projects/${projectId}/sessions/${session.session_id}`);
         router.push(`/projects/${projectId}/sessions/${session.session_id}`);
         close();
       } else {
