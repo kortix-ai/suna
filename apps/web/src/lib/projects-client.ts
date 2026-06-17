@@ -3,7 +3,7 @@ import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {

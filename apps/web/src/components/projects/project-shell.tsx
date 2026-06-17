@@ -209,6 +209,9 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
           when apps is disabled for the project. */}
         <AppsOverlay projectId={projectId} />
 
+        {/* Marketplace now lives inside Customize (rail section next to Skills /
+          Agents / Commands) — no separate overlay to mount here. */}
+
         {/* Guided onboarding wizard — auto-opens for new projects, fades out
           when customize is on top, dismissed forever once user clicks Skip. */}
         <ProjectOnboardingWizard projectId={projectId} />
