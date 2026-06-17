@@ -241,9 +241,12 @@ async function startSessionRuntime(
 }
 
 // Read KEY=VALUE lines from the per-session env file into process.env. The warm
-// pool stages the claimant's session env there on claim (proven: PUT /files →
-// writeFile lands), so a fresh loadConfig() resolves the claimant's KORTIX_*.
-function reloadSessionEnv(path = '/etc/dnah-env'): void {
+// pool stages the claimant's session env there on claim (the API POSTs it via
+// the daemon's /file/upload endpoint), so a fresh loadConfig() resolves the
+// claimant's KORTIX_*. Lives under /tmp (NOT /etc): /file/upload's allowed-roots
+// gate (routes/files.ts) permits /tmp + the workspace but rejects /etc, so the
+// claim-write must target a /tmp path the file router will accept.
+function reloadSessionEnv(path = '/tmp/dnah-env'): void {
   let txt: string
   try { txt = readFileSync(path, 'utf8') } catch { return }
   for (const line of txt.split('\n')) {
@@ -313,7 +316,7 @@ async function runPoolMode(
   process.on('SIGHUP', () => claim('sighup'))
   const poll = setInterval(() => {
     let txt = ''
-    try { txt = readFileSync('/etc/dnah-env', 'utf8') } catch { return }
+    try { txt = readFileSync('/tmp/dnah-env', 'utf8') } catch { return }
     if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); claim('env-poll') }
   }, 1000)
 }

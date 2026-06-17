@@ -1,12 +1,44 @@
 import { and, eq } from 'drizzle-orm';
 import { chatEventDedup, chatThreads, projects } from '@kortix/db';
 import { db } from '../../shared/db';
-import { createProjectSession, resolveGitTriggerActor } from '../../projects';
-import { deliverPromptToSession } from '../../projects/session-delivery';
+import {
+  continueSession as continueLifecycleSession,
+  createSession as createLifecycleSession,
+  resolveProjectAutomationActor as resolveLifecycleAutomationActor,
+} from '../../projects/session-lifecycle';
 import { EVENT_DEDUPE_TTL_MS } from './app';
 import { currentChannelSelection } from './selection';
 import { buildSlackTurnEnv, finalizeTurn, saveTurn, startTurn } from './turn';
 import type { SlackEnvelope, SlackEvent } from './types';
+
+const defaultSlackSessionLifecycle = {
+  continueSession: continueLifecycleSession,
+  createSession: createLifecycleSession,
+  resolveProjectAutomationActor: resolveLifecycleAutomationActor,
+};
+
+let slackSessionLifecycle = defaultSlackSessionLifecycle;
+
+export function setSlackSessionLifecycleForTest(overrides: Partial<typeof defaultSlackSessionLifecycle>) {
+  slackSessionLifecycle = { ...defaultSlackSessionLifecycle, ...overrides };
+}
+
+export function resetSlackSessionLifecycleForTest() {
+  slackSessionLifecycle = defaultSlackSessionLifecycle;
+}
+
+export async function deliverSlackFollowUpToSession(input: {
+  sessionId: string;
+  text: string;
+  userId?: string | null;
+}) {
+  return slackSessionLifecycle.continueSession({
+    source: 'slack',
+    sessionId: input.sessionId,
+    text: input.text,
+    userId: input.userId,
+  });
+}
 
 // Atomically create the durable session for a brand-new Slack thread — or, if a
 // concurrent event for the SAME thread is already creating it, JOIN that session
@@ -34,7 +66,7 @@ export async function createOrJoinThreadSession(input: {
     .limit(1);
   if (!project) return;
 
-  const userId = await resolveGitTriggerActor(project.accountId);
+  const userId = await slackSessionLifecycle.resolveProjectAutomationActor(project.accountId);
   if (!userId) {
     console.warn('[slack-webhook] no actor for project', projectId);
     return;
@@ -45,7 +77,7 @@ export async function createOrJoinThreadSession(input: {
   if (claimKey && !(await claimThreadCreate(claimKey))) {
     const sessionId = await waitForThreadSession(teamId, threadId);
     if (sessionId) {
-      await deliverPromptToSession({ sessionId, text: renderFollowUpPrompt(envelope, event) });
+      await deliverSlackFollowUpToSession({ sessionId, text: renderFollowUpPrompt(envelope, event) });
     } else {
       console.warn('[slack-webhook] lost thread-create claim but winner never published a session', {
         teamId,
@@ -71,7 +103,7 @@ export async function createOrJoinThreadSession(input: {
       )
       .limit(1);
     if (existing) {
-      await deliverPromptToSession({ sessionId: existing.sessionId, text: renderFollowUpPrompt(envelope, event) });
+      await deliverSlackFollowUpToSession({ sessionId: existing.sessionId, text: renderFollowUpPrompt(envelope, event) });
       return;
     }
   }
@@ -84,7 +116,8 @@ export async function createOrJoinThreadSession(input: {
     ? await currentChannelSelection({ teamId, channelId: event.channel })
     : null;
 
-  const result = await createProjectSession({
+  const result = await slackSessionLifecycle.createSession({
+    source: 'slack',
     project,
     userId,
     body: {
@@ -94,6 +127,11 @@ export async function createOrJoinThreadSession(input: {
       initial_prompt: renderAgentPrompt(envelope, event, revived),
     },
     enforceAccountCap: false,
+    queuePolicy: 'on_backpressure',
+    idempotencyKey: claimKey,
+    postCreate: teamId && threadId
+      ? [{ type: 'bind_chat_thread', platform: 'slack', workspaceId: teamId, threadId }]
+      : undefined,
     // Slack threads are team-facing — project-visible, not private to the
     // stand-in owner the session is attributed to.
     visibility: 'project',
@@ -120,31 +158,18 @@ export async function createOrJoinThreadSession(input: {
     return;
   }
 
-  if (result.row && handle) {
-    handle.sessionId = result.row.sessionId;
-    await saveTurn(handle);
+  if (result.status === 'queued' || result.status === 'pending') {
+    if (handle) {
+      await finalizeTurn(handle, {
+        answer: "I'm queued behind other project work. I'll reply here when the session starts.",
+      });
+    }
+    return;
   }
 
-  if (result.row && teamId && threadId) {
-    try {
-      // ON CONFLICT DO NOTHING — a thread maps to exactly ONE session for life.
-      // Never overwrite an existing mapping (overwriting is exactly what orphaned
-      // the live session and produced a reply from a thread you could never find).
-      await db
-        .insert(chatThreads)
-        .values({
-          projectId,
-          platform: 'slack',
-          workspaceId: teamId,
-          threadId,
-          sessionId: result.row.sessionId,
-        })
-        .onConflictDoNothing({
-          target: [chatThreads.platform, chatThreads.workspaceId, chatThreads.threadId],
-        });
-    } catch (err) {
-      console.warn('[slack-webhook] failed to record chat_threads row', err);
-    }
+  if (result.sessionId && handle) {
+    handle.sessionId = result.sessionId;
+    await saveTurn(handle);
   }
 }
 

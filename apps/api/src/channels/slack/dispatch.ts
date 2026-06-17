@@ -7,7 +7,6 @@ import {
   projects,
 } from '@kortix/db';
 import { db } from '../../shared/db';
-import { deliverPromptToSession } from '../../projects/session-delivery';
 import {
   loadSlackBotUserIdForProject,
   loadSlackTokenForProject,
@@ -19,7 +18,11 @@ import {
   postMessage,
 } from '../slack-api';
 import { PICKER_TTL_MS } from './app';
-import { createOrJoinThreadSession, renderFollowUpPrompt } from './session';
+import {
+  createOrJoinThreadSession,
+  deliverSlackFollowUpToSession,
+  renderFollowUpPrompt,
+} from './session';
 import {
   deleteTurn,
   finalizeTurn,
@@ -323,7 +326,7 @@ export async function spawnAgentTurn(
         handle.sessionId = existing.sessionId;
         await saveTurn(handle);
       }
-      const outcome = await deliverPromptToSession({
+      const outcome = await deliverSlackFollowUpToSession({
         sessionId: existing.sessionId,
         text: renderFollowUpPrompt(envelope, event),
       });
@@ -374,7 +377,7 @@ export async function spawnAgentTurn(
 
       // outcome === 'no-session': the durable projectSessions row itself is gone
       // (deleted; the chat_threads FK cascade should already have dropped this
-      // mapping). With the 404-heal in deliverPromptToSession a stale OpenCode
+      // mapping). With the 404-heal in the shared lifecycle delivery path a stale OpenCode
       // root no longer masquerades as 'no-session', so this is now ONLY a truly
       // deleted session. Drop the stale mapping and recreate — atomically, below,
       // so the recreate can never shadow a live session.

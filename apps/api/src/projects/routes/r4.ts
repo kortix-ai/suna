@@ -643,13 +643,25 @@ projectsApp.openapi(
   });
 
   if (result.status === 'queued') {
-    return c.json({ status: 'queued', reason: result.reason ?? null }, 202);
+    await markGitTriggerFired(projectId, slug, now);
+    return c.json({
+      status: 'queued',
+      command_id: result.commandId ?? null,
+      session_id: result.sessionId ?? null,
+      reason: result.reason ?? null,
+      deduped: result.deduped ?? false,
+    }, 202);
   }
   if (result.status === 'failed') {
     return c.json({ error: result.error ?? 'Failed to fire trigger' }, 500);
   }
   await markGitTriggerFired(projectId, slug, now);
-  return c.json({ status: 'fired', session_id: result.sessionId ?? null }, 202);
+  return c.json({
+    status: result.deduped ? 'deduped' : 'fired',
+    command_id: result.commandId ?? null,
+    session_id: result.sessionId ?? null,
+    deduped: result.deduped ?? false,
+  }, 202);
 },
 );
 
