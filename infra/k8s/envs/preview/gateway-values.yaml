@@ -1,0 +1,42 @@
+# Base values for an ephemeral per-PR gateway preview on dev-eks. Runs in the
+# SAME kortix-pr-<n> namespace as the API preview, reusing its ServiceAccount +
+# synced secret (kortix-api-env) — so the API preview must deploy alongside it
+# (the Argo CD ApplicationSet co-deploys both; Argo retries until the secret/SA
+# exist). The ApplicationSet overlays the per-PR bits: image.tag (pr-<head_sha>)
+# and ingress.host (pr-<number>.preview-gateway.kortix.com).
+
+image:
+  tag: preview # overridden per-PR by the ApplicationSet → pr-<head_sha>
+
+# Own the kortix-pr-<n> namespace as a chart resource so Argo prunes it on PR
+# close. (Harmless if the API preview also declares it — same name, same owner.)
+createNamespace: true
+
+# Ephemeral + low-traffic: one small replica, no HPA/PDB/spread.
+replicas: 1
+autoscaling:
+  enabled: false
+pdb:
+  enabled: false
+topologySpread:
+  enabled: false
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+
+ingress:
+  enabled: true
+  host: preview.preview-gateway.kortix.com # overridden per-PR by the ApplicationSet
+  # Wildcard cert *.preview-gateway.kortix.com (provision in TF, like the API's
+  # *.preview-api wildcard).
+  certificateArn: ""
+  # All gateway previews share ONE host-routed ALB.
+  albGroup: kortix-gateway-previews
+  # DNS-only (grey cloud) — the multi-level wildcard isn't covered by Cloudflare
+  # Universal SSL, so proxying would fail the edge TLS handshake.
+  cloudflareProxied: false

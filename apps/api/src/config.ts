@@ -174,6 +174,12 @@ const envSchema = z.object({
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
   LLM_GATEWAY_ENABLED:         optBoolFalse,
+  // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
+  // gateway's public base (…/v1/llm) to route every sandbox model call there.
+  LLM_GATEWAY_BASE_URL:        optStr,
+  // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
+  // so sandboxes reach it through the API's own tunnel (no separate tunnel).
+  LLM_GATEWAY_PROXY_PORT:      optInt(0),
   ANTHROPIC_API_URL:           optUrl('https://api.anthropic.com/v1'),
   ANTHROPIC_API_KEY:           optStr,
   OPENAI_API_URL:              optUrl('https://api.openai.com/v1'),
@@ -532,6 +538,8 @@ export const config = {
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
+  LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
+  LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
   ANTHROPIC_API_URL: env.ANTHROPIC_API_URL,
   ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
   OPENAI_API_URL: env.OPENAI_API_URL,

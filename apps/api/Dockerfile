@@ -61,6 +61,7 @@ COPY packages/db ./packages/db
 COPY packages/agent-tunnel ./packages/agent-tunnel
 COPY packages/starter ./packages/starter
 COPY packages/manifest-schema ./packages/manifest-schema
+COPY packages/llm-gateway ./packages/llm-gateway
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
@@ -124,6 +125,9 @@ COPY --from=deps /app/packages/starter/templates ./packages/starter/templates
 COPY --from=deps /app/packages/manifest-schema/src ./packages/manifest-schema/src
 COPY --from=deps /app/packages/manifest-schema/package.json ./packages/manifest-schema/package.json
 COPY --from=deps /app/packages/manifest-schema/tsconfig.json ./packages/manifest-schema/tsconfig.json
+COPY --from=deps /app/packages/llm-gateway/src ./packages/llm-gateway/src
+COPY --from=deps /app/packages/llm-gateway/package.json ./packages/llm-gateway/package.json
+COPY --from=deps /app/packages/llm-gateway/tsconfig.json ./packages/llm-gateway/tsconfig.json
 
 # Copy SQL migrations used by ensureSchema() at runtime.
 COPY supabase/migrations ./supabase/migrations
