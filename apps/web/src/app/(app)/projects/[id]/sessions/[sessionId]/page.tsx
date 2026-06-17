@@ -151,10 +151,15 @@ export default function ProjectSessionPage() {
     })();
   }, [sandbox, projectId, activeInstanceId]);
 
-  // Belt-and-suspenders: every render on this route force-clears the cookie.
+  // Belt-and-suspenders: clear the legacy cookie once on mount for this route.
+  // setActiveInstanceCookie already force-clears on any /projects path and is the
+  // sole writer of this cookie, so a one-shot clear is sufficient — nothing can
+  // re-set it while we're on the session route (the switch effect also clears it).
+  // Previously this ran on EVERY render, firing a redundant document.cookie write
+  // on each /start poll tick and crossfade state flip during start.
   useEffect(() => {
     setActiveInstanceCookie(null);
-  });
+  }, []);
 
   useEffect(() => {
     if (sandbox && activeInstanceId === sandbox.sandbox_id) {
