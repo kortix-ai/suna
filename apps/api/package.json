@@ -21,6 +21,7 @@
     "@daytonaio/sdk": "^0.184.0",
     "@hono/zod-openapi": "^0.19.10",
     "@kortix/db": "workspace:*",
+    "@kortix/llm-gateway": "workspace:*",
     "@kortix/manifest-schema": "workspace:*",
     "@kortix/shared": "workspace:*",
     "@kortix/starter": "workspace:*",

@@ -17,8 +17,10 @@ import { cn } from '@/lib/utils';
 import { Check, ChevronDown, Eye, EyeOff, Plus, SlidersHorizontal } from 'lucide-react';
 import { useParams } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 
 import { ProjectProviderModal } from '@/components/projects/project-provider-modal';
+import { listProjectSecrets } from '@/lib/projects-client';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
@@ -91,6 +93,8 @@ export function ManageModelsDialog({
 // Import from canonical UI component and re-export for consumers
 import { Tag } from '@/components/ui/tag';
 
+const SHOW_OPENCODE_ZEN = false;
+
 // ─── ModelSelector ───────────────────────────────────────────────────────────
 
 export interface ModelSelectorProps {
@@ -108,7 +112,11 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   // superseded models in a family). Off by default to keep the picker tidy.
   const [showHidden, setShowHidden] = useState(false);
   const openProviderModal = useProviderModalStore((s) => s.openProviderModal);
-  const modelStore = useModelStore(models);
+  const baseModels = useMemo(
+    () => (SHOW_OPENCODE_ZEN ? models : models.filter((m) => m.providerID !== 'opencode')),
+    [models],
+  );
+  const modelStore = useModelStore(baseModels);
 
   // When mounted under /projects/[id]/..., route the action buttons to the
   // per-project provider modal so credentials land in `project_secrets`. On
@@ -120,6 +128,19 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   const [projectModalTab, setProjectModalTab] = useState<'connected' | 'catalog' | 'models'>(
     'catalog',
   );
+  const [projectModalProviderId, setProjectModalProviderId] = useState<string | undefined>(undefined);
+
+  const secretsQuery = useQuery({
+    queryKey: ['project-secrets', projectId],
+    queryFn: () => listProjectSecrets(projectId as string),
+    enabled: !!projectId && open,
+    staleTime: 10_000,
+  });
+  const openaiConnected = useMemo(() => {
+    const data = secretsQuery.data;
+    const items = Array.isArray(data) ? data : (data?.items ?? []);
+    return items.some((secret) => secret.name === 'OPENAI_API_KEY');
+  }, [secretsQuery.data]);
 
   const current = models.find(
     (m) => m.providerID === selectedModel?.providerID && m.modelID === selectedModel?.modelID,
@@ -140,13 +161,13 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
   // "Show older models" footer — no point showing it when nothing is hidden.
   const hasHidden = useMemo(
     () =>
-      models.some((m) => !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })),
-    [models, modelStore],
+      baseModels.some((m) => !modelStore.isVisible({ providerID: m.providerID, modelID: m.modelID })),
+    [baseModels, modelStore],
   );
 
   const visibleModels = useMemo(() => {
     const q = search.toLowerCase();
-    return models
+    return baseModels
       .filter((m) => {
         // A search query reveals everything; otherwise respect visibility
         // unless the user expanded the "older models" section.
@@ -164,7 +185,7 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
         );
       })
       .sort((a, b) => a.modelName.localeCompare(b.modelName));
-  }, [models, search, showHidden, modelStore]);
+  }, [baseModels, search, showHidden, modelStore]);
 
   const grouped = useMemo(() => {
     const groups = new Map<
@@ -220,14 +241,29 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
     [projectId, openProviderModal],
   );
 
+  const openConnectOpenAI = useCallback(() => {
+    setOpen(false);
+    if (projectId) {
+      setProjectModalProviderId('openai');
+      setProjectModalTab('catalog');
+      setProjectModalOpen(true);
+      return;
+    }
+    openProviderModal('providers');
+  }, [projectId, openProviderModal]);
+
   return (
     <>
       {projectId && (
         <ProjectProviderModal
           projectId={projectId}
           open={projectModalOpen}
-          onOpenChange={setProjectModalOpen}
+          onOpenChange={(o) => {
+            setProjectModalOpen(o);
+            if (!o) setProjectModalProviderId(undefined);
+          }}
           defaultTab={projectModalTab}
+          initialProviderId={projectModalProviderId}
         />
       )}
       <CommandPopover open={open} onOpenChange={setOpen}>
@@ -369,6 +405,24 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                         </CommandItem>
                       );
                     })}
+                    {group.providerID === 'kortix' && !openaiConnected && (
+                      <CommandItem
+                        value="connect-openai"
+                        onSelect={() => openConnectOpenAI()}
+                        className="!pl-3"
+                      >
+                        <ProviderLogo providerID="openai" name="OpenAI" size="small" />
+                        <div className="min-w-0 flex-1 py-0.5">
+                          <div className="text-foreground/90 truncate text-sm font-medium leading-tight">
+                            Connect OpenAI
+                          </div>
+                          <p className="text-muted-foreground/55 mt-1 truncate text-xs leading-snug">
+                            Use your own OpenAI API key
+                          </p>
+                        </div>
+                        <Plus className="text-muted-foreground/50 size-3.5 shrink-0" />
+                      </CommandItem>
+                    )}
                   </CommandGroup>
                 ))}
               </>

@@ -16,7 +16,7 @@
 import {
   STRIDE, BASE, computePorts, loadRegistry, saveRegistry, withLock, sanitizeName,
   lowestFreeSlot, sh, run, which, portInUse, repoRoot, defaultWorktreePath, branchExists,
-  renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv,
+  renderSupabaseProject, runMigrate, supa, supaStatusEnv, slotCredsFromStatus, apiLaunchEnv, webLaunchEnv, gatewayLaunchEnv,
   writeMarker, ensureDeps, checkDeps, pnpmStore, supaWorkdir, slotDir, startTunnel, startStripeListen, WT_HOME, REGISTRY_PATH,
   startSupabaseDb, startSupabaseFullStack, hasKortixSchema, ensureRuntimeArtifacts,
   type Registry, type SlotEntry, type Ports, type Tunnel, type StripeListen,
@@ -27,6 +27,7 @@ import pc from 'picocolors';
 
 const API_FILTER = 'kortix-api';
 const WEB_FILTER = 'Kortix-Computer-Frontend';
+const GATEWAY_FILTER = '@kortix/llm-gateway-server';
 
 const step = (s: string) => console.log(`\n${pc.cyan('▸')} ${pc.bold(s)}`);
 const sub = (s: string) => console.log(`  ${pc.dim(s)}`);
@@ -314,7 +315,7 @@ async function cmdStart(a: Args) {
   if (await ensureRuntimeArtifacts(e.path) !== 0) die('runtime artifact build failed');
   const creds = slotCredsFromStatus(e.ports, supaStatusEnv(name));
 
-  for (const port of [e.ports.web, e.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
+  for (const port of [e.ports.web, e.ports.api, e.ports.gateway]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${u.pid} 2>/dev/null || true`]); }
   await withLock(() => { const r = loadRegistry(); if (r.slots[name]) { r.slots[name].status = 'running'; saveRegistry(r); } });
 
   let tunnel: Tunnel | null = null;
@@ -334,20 +335,22 @@ async function cmdStart(a: Args) {
   }
 
   console.log(`\n${pc.green('🚀')} ${pc.bold(name)}   web ${url('http://localhost:' + e.ports.web)}  ${pc.dim('·')}  api http://localhost:${e.ports.api}  ${pc.dim('·')}  studio http://localhost:${e.ports.sbStudio}`);
+  console.log(`${pc.dim('   llm gateway')} http://localhost:${e.ports.gateway} ${pc.dim('(internal · API proxies /v1/llm-gateway/*)')}`);
   if (tunnel) console.log(`${pc.dim('   sandbox callback')} ${url(tunnel.url)}`);
   if (stripe) console.log(`${pc.dim('   billing')} ${pc.green('on')} ${pc.dim('· stripe webhooks → :' + e.ports.api)}`);
   console.log(pc.dim('   (Ctrl+C stops the dev servers cleanly)\n'));
 
   const api = Bun.spawn(['pnpm', '--filter', API_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...apiLaunchEnv(e.ports, creds, { kortixUrl: tunnel?.url, stripeWebhookSecret: stripe?.secret }) }, stdout: 'inherit', stderr: 'inherit' });
+  const gateway = Bun.spawn(['pnpm', '--filter', GATEWAY_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...gatewayLaunchEnv(e.ports) }, stdout: 'inherit', stderr: 'inherit' });
   const web = Bun.spawn(['pnpm', '--filter', WEB_FILTER, 'dev'], { cwd: e.path, env: { ...process.env, ...webLaunchEnv(e.ports, creds, { billing: !!stripe }) }, stdout: 'inherit', stderr: 'inherit' });
-  const killListeners = (sig: string) => { for (const port of [e.ports.web, e.ports.api]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${sig} ${u.pid} 2>/dev/null || true`]); } };
+  const killListeners = (sig: string) => { for (const port of [e.ports.web, e.ports.api, e.ports.gateway]) { const u = portInUse(port); if (u.inUse && u.pid) sh(['bash', '-lc', `kill ${sig} ${u.pid} 2>/dev/null || true`]); } };
   let stopping = false;
   const shutdown = async () => {
     if (stopping) return; stopping = true;
     console.log(`\n${pc.yellow('▸')} stopping…`);
-    try { api.kill(); } catch {} try { web.kill(); } catch {} try { tunnel?.proc.kill(); } catch {} try { stripe?.proc.kill(); } catch {}
+    try { api.kill(); } catch {} try { gateway.kill(); } catch {} try { web.kill(); } catch {} try { tunnel?.proc.kill(); } catch {} try { stripe?.proc.kill(); } catch {}
     killListeners('');
-    await Promise.race([Promise.all([api.exited, web.exited]), Bun.sleep(6000)]);
+    await Promise.race([Promise.all([api.exited, gateway.exited, web.exited]), Bun.sleep(6000)]);
     killListeners('-9');
     await withLock(() => { const r = loadRegistry(); if (r.slots[name]) { r.slots[name].status = 'stopped'; saveRegistry(r); } });
     ok('stopped.');
@@ -355,7 +358,7 @@ async function cmdStart(a: Args) {
   };
   process.on('SIGINT', () => { void shutdown(); });
   process.on('SIGTERM', () => { void shutdown(); });
-  await Promise.race([api.exited, web.exited]);
+  await Promise.race([api.exited, gateway.exited, web.exited]);
   await shutdown();
 }
 

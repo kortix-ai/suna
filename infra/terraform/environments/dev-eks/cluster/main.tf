@@ -113,6 +113,21 @@ module "acm" {
   }
 }
 
+# ── TLS cert for gateway-dev.kortix.com (the dev LLM gateway's public ALB) ─────
+# Dev sandboxes hit the gateway directly here (mirrors prod). After
+# `terraform apply`, paste output `acm_gateway_certificate_arn` into
+# infra/k8s/envs/dev/gateway-values.yaml → ingress.certificateArn.
+module "acm_gateway" {
+  source      = "../../../modules/acm-cloudflare"
+  domain_name = "gateway-dev.kortix.com"
+  zone_id     = var.cloudflare_zone_id
+  tags        = local.tags
+  providers = {
+    aws        = aws
+    cloudflare = cloudflare
+  }
+}
+
 # ── TLS cert for the Argo CD UI (dev-ops.kortix.com) ──────────────────────────
 # Created for parity with prod-eks, but the dev Argo CD UI is OFF by default
 # (argocd_ui_enabled=false in the platform layer) — dev access is via

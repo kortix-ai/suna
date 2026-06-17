@@ -11,6 +11,8 @@ export interface CatalogProvider {
   name: string;
   env?: string[];
   doc?: string;
+  api?: string | null;
+  npm?: string | null;
   models: CatalogModel[];
 }
 
@@ -27,6 +29,7 @@ export const CATALOG = catalogJson as Catalog;
 export const MODEL_SELECTOR_PROVIDER_IDS = [
   'kortix-yolo',
   'kortix',
+  'codex',
   'anthropic',
   'openai',
   'github-copilot',
@@ -45,6 +48,7 @@ export const PROVIDER_LABELS: Record<string, string> = {
   opencode: 'OpenCode Zen',
   'kortix-yolo': 'Kortix Yolo',
   kortix: 'Kortix',
+  codex: 'ChatGPT Subscription',
   firmware: 'Firmware',
   bedrock: 'AWS Bedrock',
   openrouter: 'OpenRouter',

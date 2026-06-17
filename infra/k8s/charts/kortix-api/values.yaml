@@ -86,7 +86,11 @@ externalSecrets:
   refreshInterval: 1h
 
 # Always-injected non-secret env (PORT is also set from containerPort).
-extraEnv: {}
+# Gateway routing is per-env (set in envs/<env>/values.yaml):
+#   prod/dev → LLM_GATEWAY_BASE_URL=https://gateway[-dev].kortix.com/v1/llm (direct)
+#   preview  → LLM_GATEWAY_PROXY_TARGET=http://kortix-gateway:8090 (internal proxy)
+extraEnv:
+  LLM_GATEWAY_ENABLED: "true"
 
 # Environment profile. These render as explicit container env that OVERRIDE the
 # synced secret bundle (k8s `env` wins over `envFrom`), so an env can be made
