@@ -18,7 +18,10 @@ mock.module('../channels/slack/dispatch', () => ({
   pendingPickers: new Map(),
   spawnAgentTurn: async () => {},
 }));
-mock.module('../channels/install-store', () => ({ loadSlackTokenForProject: async () => 'xoxb' }));
+mock.module('../channels/install-store', () => ({
+  loadSlackTokenForProject: async () => 'xoxb',
+  saveSlackOauthInstall: async () => {},
+}));
 mock.module('../channels/slack-api', () => ({ updateMessage: async () => {} }));
 
 const setAgentCalls: Array<string | null> = [];

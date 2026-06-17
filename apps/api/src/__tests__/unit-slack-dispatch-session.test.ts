@@ -58,6 +58,7 @@ mock.module('../channels/slack/turn', () => ({
 mock.module('../channels/install-store', () => ({
   loadSlackBotUserIdForProject: async () => 'B1',
   loadSlackTokenForProject: async () => 'xoxb-test',
+  saveSlackOauthInstall: async () => {},
 }));
 mock.module('../channels/slack-api', () => ({
   deleteMessage: async () => {},
