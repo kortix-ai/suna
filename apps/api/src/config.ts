@@ -137,6 +137,26 @@ const envSchema = z.object({
   // lets the pool reap, so we never hold idle boxes 24/7 for absent users.
   KORTIX_WARM_POOL_PRESENCE_MINUTES: optInt(15),
 
+  // ── Pause / resume tuning ─────────────────────────────────────────────────
+  // Daytona idle→stop (hibernate) interval, minutes. Lower = hibernate sooner
+  // (saves compute); higher = a frequently-returning user's box stays running
+  // so resume is instant. Default keeps the prior 15.
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES:  optInt(15),
+  // Daytona stop→archive interval, minutes. A STOPPED box resumes fast (VM
+  // restart from preserved disk, ~1s + opencode re-warm); once ARCHIVED it must
+  // be restored from cold storage first (much slower). Bumped 30→120 so the
+  // common same-session return window stays in the fast "stopped" tier. Cost
+  // dial: a stopped box bills idle disk; dial down to archive sooner.
+  KORTIX_SANDBOX_ARCHIVE_MINUTES:   optInt(120),
+  // Pre-resume: on a user returning to a project, proactively provider.start
+  // their most-recently-stopped session(s) so the ~8s resume overlaps the
+  // user's navigation and the session is ready by the time they open it. Reuses
+  // resumeStoppedSandbox (idempotent with the on-open resume). GATED OFF by
+  // default (speculative compute — starts a box the user might not open). Enable
+  // after validating; tune how many recent sessions to pre-resume per project.
+  KORTIX_PRERESUME_ENABLED:         optBoolFalse,
+  KORTIX_PRERESUME_MAX_PER_PROJECT: optInt(1),
+
   // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
   // The new backend has no JustAVPS provider, but it must reach legacy VMs to
   // back them up. VMs are reachable via the CF proxy at {slug}.{proxy domain};
@@ -494,6 +514,10 @@ export const config = {
   KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
   KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
   KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
+  KORTIX_SANDBOX_ARCHIVE_MINUTES: env.KORTIX_SANDBOX_ARCHIVE_MINUTES,
+  KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,
+  KORTIX_PRERESUME_MAX_PER_PROJECT: env.KORTIX_PRERESUME_MAX_PER_PROJECT,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
   JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,

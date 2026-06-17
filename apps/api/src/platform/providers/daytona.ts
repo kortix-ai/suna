@@ -116,11 +116,14 @@ export class DaytonaProvider implements SandboxProvider {
         snapshot,
         envVars,
         // Idle → stop (hibernate, disk kept). Stopped → archive to cold storage
-        // (disk still kept, resumable). NEVER auto-delete: a sandbox is only ever
-        // removed when a user explicitly deletes the session. -1 disables Daytona
-        // auto-delete explicitly so no account-level default can drop a box.
-        autoStopInterval: opts.autoStopInterval ?? 15,
-        autoArchiveInterval: 30,
+        // (disk still kept, resumable but a SLOW restore). NEVER auto-delete: a
+        // sandbox is only ever removed when a user explicitly deletes the
+        // session. -1 disables Daytona auto-delete explicitly so no account-level
+        // default can drop a box. Intervals are config-tunable (see config.ts):
+        // a larger archive interval keeps a hibernated box in the fast-resume
+        // "stopped" tier longer instead of slow cold storage.
+        autoStopInterval: opts.autoStopInterval ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
+        autoArchiveInterval: config.KORTIX_SANDBOX_ARCHIVE_MINUTES,
         autoDeleteInterval: -1,
         public: false,
       },
@@ -174,8 +177,8 @@ export class DaytonaProvider implements SandboxProvider {
         box = await daytona.create(
           {
             snapshot: warmBaseSnapshot,
-            autoStopInterval: opts.autoStopInterval ?? 15,
-            autoArchiveInterval: 30,
+            autoStopInterval: opts.autoStopInterval ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
+            autoArchiveInterval: config.KORTIX_SANDBOX_ARCHIVE_MINUTES,
             autoDeleteInterval: -1,
             public: false,
           },
