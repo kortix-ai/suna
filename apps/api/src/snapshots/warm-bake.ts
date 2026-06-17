@@ -438,6 +438,63 @@ export function warmBaseUsable(snap: unknown): boolean {
   return !Array.isArray(regions) || regions.includes(config.DAYTONA_WARM_TARGET);
 }
 
+// Warm-snapshot usability is content-addressed + region-bound and changes only
+// on rebake / a DAYTONA_WARM_TARGET switch, yet both the generic-base and the
+// per-project warm routes used to re-verify it with an UNCACHED snapshot.get on
+// EVERY cold-miss provider create — a public-internet round-trip in series before
+// the box can even start, and unbounded (the generic-base probe had no timeout),
+// so a degraded region cost up to 4s + an unbounded hang per session. Cache the
+// POSITIVE verdict briefly (keyed by name + warm target so a region switch can
+// never serve a stale-region positive), bound the read, and on a timeout pause
+// the whole warm path so the SECOND probe is skipped — the strongest signal the
+// region is degraded. 404/transport errors are NOT a degradation signal: they
+// just mean a stale pointer, so they return false WITHOUT pausing (the caller
+// falls through to the generic base / cold path).
+const WARM_USABLE_TTL_MS = 45_000;
+const WARM_SNAPSHOT_GET_TIMEOUT_MS = 4_000;
+const WARM_SNAPSHOT_GET_TIMEOUT = Symbol('warm-snapshot-get-timeout');
+const warmUsableCache = new Map<string, number>(); // `${name}@${target}` → expiresAt(ms)
+
+function warmUsableKey(name: string): string {
+  return `${name}@${config.DAYTONA_WARM_TARGET}`;
+}
+
+/** Drop a cached usable-verdict (e.g. the snapshot was just deleted/rebaked). */
+export function invalidateWarmUsable(name: string): void {
+  warmUsableCache.delete(warmUsableKey(name));
+}
+
+/**
+ * True iff `name` is an active, warm-target-bootable snapshot — cached (positive
+ * only, short TTL) and bounded by a 4s timeout. A timeout pauses the warm path
+ * fleet-wide (region degraded); other throws just return false. Never throws.
+ */
+export async function warmSnapshotUsableCached(name: string): Promise<boolean> {
+  const key = warmUsableKey(name);
+  const exp = warmUsableCache.get(key);
+  if (exp !== undefined && Date.now() < exp) return true;
+  let snap: unknown;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    snap = await Promise.race([
+      getDaytonaWarm().snapshot.get(name),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(WARM_SNAPSHOT_GET_TIMEOUT), WARM_SNAPSHOT_GET_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (err) {
+    warmUsableCache.delete(key);
+    if (err === WARM_SNAPSHOT_GET_TIMEOUT) noteWarmPathFailure();
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+  const ok = warmBaseUsable(snap);
+  if (ok) warmUsableCache.set(key, Date.now() + WARM_USABLE_TTL_MS);
+  else warmUsableCache.delete(key);
+  return ok;
+}
+
 /**
  * Is the warm base ready to boot sessions from? Returns its name if the snapshot
  * is active on the warm target; otherwise kicks a background bake (deduped) and
@@ -449,10 +506,11 @@ export async function ensureWarmBaseReady(onLog?: (l: string) => void): Promise<
   if (Date.now() < warmPathPausedUntil) return null;
   try {
     const name = await warmBaseSnapshotName();
-    const snap = await getDaytonaWarm().snapshot.get(name);
-    if (warmBaseUsable(snap)) return name;
+    // Cached + bounded: a degraded region times out in 4s (and pauses warm) rather
+    // than hanging this request, and a warm hit is a pure in-process check.
+    if (await warmSnapshotUsableCached(name)) return name;
   } catch {
-    // fingerprint failed / not found / transient → fall through to bake
+    // fingerprint failed → fall through to bake
   }
   kickWarmBaseBuild(onLog);
   return null;
@@ -481,6 +539,7 @@ export function kickWarmBaseBuild(onLog?: (l: string) => void): void {
         // switch, or error/build_failed from a crashed bake). The re-bake would
         // collide on the name, so clear it first.
         log(`[warm-bake] warm base ${name} exists but is unusable (state=${state || 'unknown'}) — deleting before rebake`);
+        invalidateWarmUsable(name);
         await getDaytonaWarm().snapshot.delete(existing as never).catch((err: unknown) =>
           log(`[warm-bake] pre-bake delete failed: ${err instanceof Error ? err.message : String(err)}`),
         );
