@@ -110,14 +110,26 @@ Kortix cloud state — not just files in the repo. Examples:
 | "who am I? what project is this?" | `kortix whoami`, `kortix projects info` |
 | "deploy the marketing app" | `kortix apps deploy marketing-site` (when `[[apps]]` is enabled) |
 | "add / list connectors" | `kortix connectors add <slug> --provider …`, `kortix connectors ls`, `connectors show <slug>` |
-| "connect an app / set its credential" | `kortix connectors connect <slug>` (Pipedream) / `connectors credential <slug>` |
+| **"I need an API key the human has (e.g. `APOLLO_API_KEY`)"** | `request_secret` MCP tool / `secrets request NAME` / `kortix secrets request NAME` — mint a link, **surface it**. You never see the value. |
+| **"I need this app connected (Pipedream)"** | `connect` MCP tool / `executor connect <slug>` / `kortix connectors link <slug>` — mint a 1-click link, **surface it**. No "go to the dashboard". |
+| "set a connector's credential directly" | `kortix connectors credential <slug>` *(admin/login only — prefer the link above)* |
 | "who can use a connector" | `kortix connectors share <slug> --mode project\|private\|members` |
 | "shared profile vs each-member-BYO" | `kortix connectors mode <slug> shared\|per_user` |
 | "rename a connector" | `kortix connectors rename <slug> "Gmail (work)"` |
 | "control what a connector may do (per-tool / glob / regex)" | `kortix connectors policy <slug> set <match> allow\|ask\|block` · `policy <slug> ls\|rm\|clear` |
 | "project-wide execution rules" | `kortix connectors policy ls`, `policy set --default risk\|allow_all` |
 
-> **Connectors are fully CLI-configurable** — everything the dashboard's Customize → Connectors does (add/remove, connect, credential, profile model, who-can-use, rename, and per-tool/glob/**regex** Allow/Ask/Block permissions) has a `kortix connectors …` command. `add`/`rm`/`policy set --default` edit the local `kortix.toml` (then `kortix ship`); the rest apply immediately via the cloud. Connector *management* is an admin operation — it needs a **user login** (your laptop or the dashboard), not the project-scoped sandbox token. Inside a session the agent doesn't configure connectors; it **uses** them through the `kortix-executor` MCP (`connectors`/`discover`/`describe`/`call`), and the gateway enforces these policies on every call (returning a denial or pending-approval).
+> **Connectors are fully CLI-configurable** — everything the dashboard's Customize → Connectors does (add/remove, connect, credential, profile model, who-can-use, rename, and per-tool/glob/**regex** Allow/Ask/Block permissions) has a `kortix connectors …` command. `add`/`rm`/`policy set --default` edit the local `kortix.toml` (then `kortix ship`); the rest apply immediately via the cloud. Inside a session the agent **uses** connectors through the `kortix-executor` MCP (`connectors`/`discover`/`describe`/`call`), and the gateway enforces these policies on every call (returning a denial or pending-approval).
+
+> **Getting a credential — never punt to the dashboard.** When you need an API key
+> or an app connected, **mint a setup link and surface the URL in the same turn**
+> — don't tell the human to "open Customize → Connectors". Use the `request_secret`
+> / `connect` tools on the `kortix-executor` MCP (or `secrets request` /
+> `executor connect` / `kortix secrets request` / `kortix connectors link`). The
+> human gets a fill-in modal (web) or a tappable link (Slack); you never touch the
+> raw value. This is the streamlined default — do it automatically whenever you
+> add or need a tool. Full playbook in the
+> **credentials-and-setup-links** reference below.
 
 **Everything is scriptable — drive Kortix like the dashboard.** Every
 read/list command takes `--json` for machine-readable output (parse that,
@@ -220,6 +232,19 @@ The platform never reads opencode's config dir; OpenCode never reads `kortix.tom
 </contract>
 
 <references>
+
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md">
+  How to get a credential you don't have — an API key, or an app connected —
+  by minting a short-lived **setup link** and surfacing the URL, instead of
+  punting the human to the dashboard or asking them to paste a raw key. Covers
+  the two link kinds (secret intake / Pipedream Quick Connect), how to mint each
+  (the `request_secret` + `connect` MCP tools, the `secrets request` /
+  `executor connect` shims, the `kortix secrets request` / `kortix connectors
+  link` CLI), what the human sees (web modal vs Slack link), how to verify it
+  landed, the runtime-vs-connector scope choice, and the security model. Load
+  this whenever you hit "I need an API key / I need this app connected" — it is
+  the canonical, autonomous flow.
+</reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/sandbox.md">
   The session sandbox runtime environment — what you can run inside a

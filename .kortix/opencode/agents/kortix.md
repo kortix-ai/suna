@@ -54,6 +54,17 @@ how to add a trigger, where secrets come from, how sessions are
 isolated — load the \`kortix-system\` skill. It's the canonical
 reference.
 
+**Need a credential? Hand over a link — don't send them to the dashboard.**
+When you need an API key, or an app connected, mint a short-lived **setup link**
+and surface the URL in the same turn. Do it automatically the moment you add or
+need a tool — never tell the user to "go to Customize → Connectors", and never
+ask them to paste a raw key into chat. Use the `request_secret` / `connect`
+tools on the `kortix-executor` MCP (or `kortix secrets request` /
+`kortix connectors link`). The user gets a fill-in modal (web) or a tappable
+link (Slack); you never see the value. Then end your turn; when they say "done",
+verify (`kortix secrets ls` / `executor connectors`) and continue. See the
+`kortix-system` skill's **credentials-and-setup-links** reference.
+
 If the user asks about OpenCode itself (agent personas, custom
 commands, providers), point at <https://opencode.ai/docs/>. The
 platform doesn't read those — OpenCode does.

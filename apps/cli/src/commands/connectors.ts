@@ -72,6 +72,9 @@ Subcommands:
                                     no value; reads stdin with \`-\`).
   share <slug> --mode <m> [...]     Set who can use it (project|private|members).
   connect <slug>                    Start a Pipedream 1-click connect.
+  link <slug> [--expires <min>]     Mint a DURABLE shareable Quick Connect link
+                                    to hand a human (web: popup, Slack: link).
+                                    Auto-finalizes — no \`finalize\` needed.
   finalize <slug>                   Confirm a Pipedream connection completed.
   apps [<query>] [--json]           Browse the Pipedream app catalog.
   policy ls [--json]                Show project-wide execution policies.
@@ -274,6 +277,31 @@ export async function runConnectors(argv: string[]): Promise<number> {
         }
         process.stdout.write(
           `\n  ${C.dim}When done, run ${C.reset}${C.cyan}kortix connectors finalize ${slug}${C.reset}${C.dim} to confirm.${C.reset}\n\n`,
+        );
+        return 0;
+      }
+      case 'link': {
+        // Mint a DURABLE, shareable Quick Connect link (vs `connect`, which
+        // returns a raw short-lived Pipedream URL for the dashboard/SDK flow).
+        // Hand this to whoever should authorize — web opens a connect popup,
+        // Slack renders it as a tappable link, and it mints a fresh Pipedream
+        // token each open so it never goes stale. Auto-finalizes via webhook.
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const resp = await ctx.client.post<{ url: string; slug: string; app: string | null; expires_at: string }>(
+          `/projects/${ctx.projectId}/connect-requests`,
+          { slug, ...(f.expires ? { expires_in_minutes: Number(f.expires) } : {}) },
+        );
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
+        process.stdout.write(
+          `\n  ${C.bold}Hand this link to whoever should connect ${slug}${C.reset}` +
+            `${resp.app ? ` ${C.faded}(${resp.app})${C.reset}` : ''}\n` +
+            `  ${C.cyan}${resp.url}${C.reset}\n\n` +
+            `  ${C.dim}Web: opens a 1-click connect popup. Slack: a tappable link. No keys touch the repo.${C.reset}\n` +
+            `  ${C.dim}Expires ${resp.expires_at}.${C.reset}\n\n`,
         );
         return 0;
       }

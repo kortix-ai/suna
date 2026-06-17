@@ -16,7 +16,7 @@
  *   executor call stripe charges.create '{"amount":999,"currency":"usd"}'
  */
 import { createExecutorClient, ExecutorError } from '../../../../packages/executor-sdk/src/index';
-import { parseArgs, out, handleError, CliError, requireEnv, getEnv } from '../lib';
+import { parseArgs, out, handleError, CliError, requireEnv, getEnv, mintConnectLink } from '../lib';
 
 function apiBase(): string {
   const url = getEnv('KORTIX_API_URL')?.trim();
@@ -81,6 +81,27 @@ export async function main(argv = process.argv): Promise<void> {
       break;
     }
 
+    case 'connect': {
+      // Mint a Pipedream Quick Connect link for a declared connector and hand
+      // the URL to the human. SURFACE this url in your reply — in the web UI it
+      // opens a 1-click connect popup; in Slack it's a tappable link. The agent
+      // never touches the credential. The connector must already be declared in
+      // kortix.toml (add it + land the change request first).
+      const slug = args[0];
+      if (!slug) throw new CliError('usage: executor connect <connector-slug>', 'USAGE');
+      const expires = flags.expires ? Number(flags.expires) : undefined;
+      const link = await mintConnectLink({ slug, expiresInMinutes: expires });
+      out({
+        ok: true,
+        slug: link.slug,
+        app: link.app,
+        url: link.url,
+        expires_at: link.expires_at,
+        note: 'Surface this url to the human. It opens Pipedream Quick Connect (web: popup, Slack: link). No keys touch the sandbox.',
+      });
+      break;
+    }
+
     default:
       out({
         name: 'executor',
@@ -90,6 +111,7 @@ export async function main(argv = process.argv): Promise<void> {
           discover: 'executor discover "<intent>" — search tools by natural language',
           describe: 'executor describe <connector>.<action> — show a tool\'s input schema',
           call: 'executor call <connector> <action> \'<json-args>\' — run a tool',
+          connect: 'executor connect <connector-slug> — mint a Pipedream Quick Connect link to hand the human',
         },
       });
   }

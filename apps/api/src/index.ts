@@ -648,6 +648,13 @@ if (config.KORTIX_DEPLOYMENTS_ENABLED) {
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
 
+// Setup links — PUBLIC, token-gated. An agent-minted (encrypted, short-lived,
+// value-only) token is the bearer capability, so a human can fill in a secret
+// or 1-click a Pipedream connect from a Slack link with no login. The mint half
+// is authenticated, on projectsApp (/v1/projects/:id/{secret,connect}-requests).
+import { setupLinksPublicApp } from './setup-links/public-app';
+app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
+
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
 if (!config.KORTIX_BILLING_INTERNAL_ENABLED) {
