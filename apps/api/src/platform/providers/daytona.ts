@@ -6,7 +6,7 @@
  */
 
 import { getDaytona, getDaytonaWarm } from '../../shared/daytona';
-import { warmDaemonStartCommands } from '../../snapshots/warm-bake';
+import { warmRestoreScript, WARM_RESTORE_MARKERS } from '../../snapshots/warm-bake';
 import { serviceKeyForExternalId } from '../service-key';
 import { config, SANDBOX_VERSION } from '../../config';
 // (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
@@ -23,6 +23,16 @@ import type {
   ProvisioningTraits,
   ProvisioningStatus,
 } from './index';
+
+// Short-TTL cache for getStatus on the session-open hot path. POST /sessions/:id/start
+// is polled ~every 800ms and each poll did an UNCACHED daytona.get() (~150-600ms)
+// just to confirm a freshly-claimed warm box is still running — pure overhead that
+// dominates the warm-start server cost. Box state changes far slower than the poll
+// cadence, so caching the 'running' verdict briefly collapses ~2/3 of those
+// provider round-trips. Only 'running' is cached (never 'stopped'/'unknown'), so
+// idle-stop / wake detection always reads fresh; start/stop/remove bust the entry.
+const STATUS_CACHE_TTL_MS = 1500;
+const runningStatusCache = new Map<string, number>(); // externalId → cachedAt (ms)
 
 export class DaytonaProvider implements SandboxProvider {
   readonly name: ProviderName = 'daytona';
@@ -157,6 +167,7 @@ export class DaytonaProvider implements SandboxProvider {
     const MAX_WARM_ATTEMPTS = 4;
     let sb: Awaited<ReturnType<typeof daytona.create>> | null = null;
     let sawCreateFailure = false;
+    let envWriteFailed = false;
     for (let attempt = 1; attempt <= MAX_WARM_ATTEMPTS; attempt++) {
       let box: Awaited<ReturnType<typeof daytona.create>> | null = null;
       try {
@@ -180,15 +191,45 @@ export class DaytonaProvider implements SandboxProvider {
         );
         continue;
       }
-      if (await DaytonaProvider.warmRuntimePresent(box)) {
-        sb = box;
+
+      // ONE in-box round-trip does it all: probe the baked runtime, reset the
+      // frozen clock, write the session env, and launch the daemon (was four
+      // serial executeCommands). The decision is driven by PARSED MARKER STRINGS
+      // (never exitCode — the SDK can return it undefined).
+      let result = '';
+      try {
+        const script = warmRestoreScript(envVars, Math.floor(Date.now() / 1000));
+        const r = await box.process.executeCommand(script, undefined, undefined, 60);
+        result = r.result ?? '';
+      } catch (err) {
+        // Box unreachable / command failed mid-flight — treat like a dropped
+        // restore and recreate (don't trust a half-initialized box).
+        console.warn(
+          `[daytona] warm restore attempt ${attempt}/${MAX_WARM_ATTEMPTS} command failed:`,
+          err instanceof Error ? err.message : err,
+        );
+        await box.delete().catch(() => {});
+        continue;
+      }
+
+      if (result.includes(WARM_RESTORE_MARKERS.noRuntime)) {
+        console.warn(
+          `[daytona] warm box ${box.id} restored without runtime ` +
+          `(experimental snapshot flakiness) — attempt ${attempt}/${MAX_WARM_ATTEMPTS}, recreating`,
+        );
+        await box.delete().catch(() => {});
+        continue;
+      }
+      if (!result.includes(WARM_RESTORE_MARKERS.wrote) || !result.includes(WARM_RESTORE_MARKERS.started)) {
+        // Runtime WAS present (no recreate marker) but the env write or daemon
+        // launch didn't confirm — not a flaky-restore case, so don't burn
+        // retries; surface a hard error (the caller falls back to the cold path).
+        envWriteFailed = true;
+        await box.delete().catch(() => {});
         break;
       }
-      console.warn(
-        `[daytona] warm box ${box.id} restored without runtime ` +
-        `(experimental snapshot flakiness) — attempt ${attempt}/${MAX_WARM_ATTEMPTS}, recreating`,
-      );
-      await box.delete().catch(() => {});
+      sb = box; // KORTIX_WROTE + KORTIX_STARTED both seen → committed.
+      break;
     }
     if (sawCreateFailure) {
       // Fire-and-forget: clear the error-state corpses failed creates left in
@@ -197,26 +238,14 @@ export class DaytonaProvider implements SandboxProvider {
         .then(({ reapErroredWarmBoxes }) => reapErroredWarmBoxes(warmBaseSnapshot, (l) => console.log(l)))
         .catch(() => {});
     }
+    if (envWriteFailed) {
+      throw new Error('[daytona] warm create: session env write / daemon launch did not confirm');
+    }
     if (!sb) {
       throw new WarmRuntimeUnavailableError(
         `warm base ${warmBaseSnapshot} unavailable after ${MAX_WARM_ATTEMPTS} attempts (create failures and/or dropped-runtime restores)`,
       );
     }
-
-    // A memory-snapshot restore brings back the VM's FROZEN clock (stuck at bake
-    // time — hours behind). That breaks elapsed-time UI and, worse, time-based
-    // checks (JWT/token expiry, TLS cert validity). Reset to real wall-clock
-    // time before anything else runs. Best-effort.
-    await sb.process
-      .executeCommand(`sudo date -s @${Math.floor(Date.now() / 1000)} >/dev/null 2>&1 || true`, undefined, undefined, 15)
-      .catch(() => {});
-
-    const { writeEnv, startDaemon } = warmDaemonStartCommands(envVars);
-    const wrote = await sb.process.executeCommand(writeEnv, undefined, undefined, 30);
-    if (!(wrote.result ?? '').includes('wrote')) {
-      throw new Error(`[daytona] warm create: failed to write session env (${(wrote.result ?? '').slice(0, 200)})`);
-    }
-    await sb.process.executeCommand(startDaemon, undefined, undefined, 30);
 
     const externalId = sb.id;
     const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/8000`;
@@ -233,51 +262,39 @@ export class DaytonaProvider implements SandboxProvider {
     };
   }
 
-  /**
-   * True iff the baked Kortix runtime survived the warm-snapshot restore. The
-   * experimental region drops the filesystem layer ~half the time, so a restored
-   * box may be missing the daemon/entrypoint binaries entirely — booting it would
-   * fail with "kortix-entrypoint: No such file or directory". Cheap probe before
-   * we commit to a warm box.
-   */
-  private static async warmRuntimePresent(sb: { process: { executeCommand: (c: string, cwd?: string, env?: Record<string, string>, t?: number) => Promise<{ result?: string }> } }): Promise<boolean> {
-    try {
-      const r = await sb.process.executeCommand(
-        'test -x /usr/local/bin/kortix-agent && test -x /usr/local/bin/kortix-entrypoint && command -v opencode >/dev/null && echo ok',
-        undefined,
-        undefined,
-        30,
-      );
-      return (r.result ?? '').includes('ok');
-    } catch {
-      return false;
-    }
-  }
-
   async start(externalId: string): Promise<void> {
+    runningStatusCache.delete(externalId);
     const daytona = getDaytona();
     const sandbox = await daytona.get(externalId);
     await sandbox.start();
   }
 
   async stop(externalId: string): Promise<void> {
+    runningStatusCache.delete(externalId);
     const daytona = getDaytona();
     const sandbox = await daytona.get(externalId);
     await sandbox.stop();
   }
 
   async remove(externalId: string): Promise<void> {
+    runningStatusCache.delete(externalId);
     const daytona = getDaytona();
     const sandbox = await daytona.get(externalId);
     await daytona.delete(sandbox);
   }
 
   async getStatus(externalId: string): Promise<SandboxStatus> {
+    const cachedAt = runningStatusCache.get(externalId);
+    if (cachedAt !== undefined && Date.now() - cachedAt < STATUS_CACHE_TTL_MS) return 'running';
     try {
       const daytona = getDaytona();
       const sandbox = await daytona.get(externalId);
       const state = String(sandbox.state ?? '').toLowerCase();
-      if (state.includes('start') || state.includes('running') || state.includes('active')) return 'running';
+      if (state.includes('start') || state.includes('running') || state.includes('active')) {
+        runningStatusCache.set(externalId, Date.now());
+        return 'running';
+      }
+      runningStatusCache.delete(externalId);
       if (state.includes('stop') || state.includes('archive')) return 'stopped';
       return 'unknown';
     } catch {

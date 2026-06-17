@@ -503,6 +503,13 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_status').on(table.status),
     index('idx_project_sessions_created_by').on(table.createdBy),
     uniqueIndex('idx_project_sessions_project_branch').on(table.projectId, table.branchName),
+    // NOTE: a partial composite index `idx_project_sessions_account_active`
+    // ((account_id) WHERE status IN active-set) ALSO exists — created by the
+    // hand-written migration drizzle/20260617102106_account_active_session_index.sql
+    // to keep the concurrency-cap COUNT O(active) instead of O(full history).
+    // It is intentionally NOT declared here: re-adding it would make `db:generate`
+    // emit a conflicting `CREATE INDEX` against the already-built index. Manage it
+    // via that migration; its predicate mirrors ACTIVE_SESSION_STATUSES.
   ],
 );
 
