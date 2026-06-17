@@ -1,0 +1,80 @@
+# Defaults for the qa-portal chart. Environment-specific values (bucket, IRSA
+# role ARN, cert ARN, host) are filled from infra/k8s/envs/qa/values.yaml — see
+# the qa-portal RUNBOOK.md. The chart `fail`s fast if the IRSA role ARN, bucket,
+# or cert ARN are unset, so a misconfigured deploy never reaches the cluster.
+
+# ── Images ────────────────────────────────────────────────────────────────────
+image:
+  # nginx serving /usr/share/nginx/html (the synced static report).
+  repository: nginxinc/nginx-unprivileged
+  tag: "1.27-alpine"
+  pullPolicy: IfNotPresent
+
+# aws-cli image used by BOTH the initContainer (first sync) and the sidecar
+# (periodic resync). Pinned tag, not :latest, so reports/latest/ syncs are
+# reproducible.
+awsCli:
+  repository: amazon/aws-cli
+  tag: "2.17.0"
+  pullPolicy: IfNotPresent
+
+# ── S3 source ─────────────────────────────────────────────────────────────────
+# The sidecar runs `aws s3 sync s3://<bucket>/<prefix> /usr/share/nginx/html`.
+bucket: "" # REQUIRED — kortix-qa-reports (from terraform output bucket_name)
+s3Prefix: "reports/latest" # the generated static report to serve
+region: us-west-2
+
+# How often the sidecar re-syncs the latest report (seconds).
+syncIntervalSeconds: 120
+
+# ── Sizing ────────────────────────────────────────────────────────────────────
+# Stateless internal tool: a single replica is fine (the report is rebuilt in S3
+# and re-synced; nothing is lost on a pod restart). Bump for HA if desired.
+replicas: 1
+
+# emptyDir the report syncs into and nginx serves from (shared by all containers).
+htmlVolumeSizeLimit: 1Gi
+
+resources:
+  nginx:
+    requests:
+      cpu: "25m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "128Mi"
+  sync:
+    requests:
+      cpu: "25m"
+      memory: "64Mi"
+    limits:
+      cpu: "200m"
+      memory: "256Mi"
+
+containerPort: 8080 # nginx-unprivileged listens on 8080 by default
+terminationGracePeriodSeconds: 30
+
+health:
+  # nginx serves a 200 at / once the report (or the placeholder) is present.
+  path: /
+
+# ── ServiceAccount / IRSA ─────────────────────────────────────────────────────
+serviceAccount:
+  name: qa-portal
+  # IRSA role ARN (S3 read) from terraform output role_arn. REQUIRED.
+  roleArn: ""
+
+# ── Ingress (ALB, mirrors kortix-api) ─────────────────────────────────────────
+ingress:
+  enabled: true
+  host: qa.kortix.com
+  # ACM cert ARN for the ALB HTTPS listener. REQUIRED.
+  certificateArn: ""
+  # Cloudflare proxies the record (orange cloud) — external-dns sets this.
+  cloudflareProxied: true
+  idleTimeout: 60
+  # Lock ALB ingress to Cloudflare IP ranges (recommended for an internal tool so
+  # the raw ALB DNS can't be hit directly). Empty = open.
+  inboundCidrs: ""
+  # Join a shared ALB by group name. Empty = a dedicated ALB for this Ingress.
+  albGroup: ""

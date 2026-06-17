@@ -1,0 +1,54 @@
+# Argo CD Application for the internal QA report portal (qa.kortix.com).
+#
+# Multi-source (same pattern as prod.yaml): render the qa-portal Helm chart with
+# the qa env value file from the same repo. A PR editing
+# infra/k8s/envs/qa/values.yaml (bucket / roleArn / certArn / host) IS the
+# change; git revert is the rollback. Argo CD continuously reconciles + self-heals.
+#
+# project: `default` (NOT the `kortix` AppProject) — the kortix AppProject's
+# destination whitelist is scoped to kortix-prod/staging/dev and is intentionally
+# not modified here. The dev Application uses `default` for the same reason. If
+# you prefer this under the `kortix` project, add a `kortix-qa` destination to
+# infra/k8s/argocd/project.yaml in a separate change and switch project below.
+#
+# Synced by the app-of-apps (infra/k8s/argocd/applications is recursed). BOOTSTRAP:
+# until these manifests are merged to kortix-ai/suna, create with the same source
+# override the other apps use. See infra/GITOPS.md.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-qa
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/kortix-ai/suna.git
+      targetRevision: prod
+      path: infra/k8s/charts/qa-portal
+      helm:
+        releaseName: qa-portal
+        valueFiles:
+          - $values/infra/k8s/envs/qa/values.yaml
+    - repoURL: https://github.com/kortix-ai/suna.git
+      targetRevision: prod
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kortix-qa
+  # MANUAL sync until the qa-portal Terraform (S3 + IRSA) is applied and
+  # envs/qa/values.yaml is filled. Argo creates this app on merge but will NOT
+  # deploy until a human syncs it. Add the `automated` block below to enable
+  # auto-sync once the bucket/roleArn/cert values are real.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
