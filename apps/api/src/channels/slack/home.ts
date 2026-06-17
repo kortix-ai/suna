@@ -86,17 +86,17 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
       text: [
         '*Your AI command center, right here in Slack.*',
         '',
-        "`@`-mention me in any channel with a task and I'll read the repo, run the work in an isolated sandbox, and reply in the thread. Follow-ups stay in context.",
+        "`@`-mention me in any channel with a task and an agent gets on it — working across your connected tools and replying right in the thread. Follow-ups stay in context.",
       ].join('\n'),
     },
   });
   blocks.push({
     type: 'context',
     elements: [
-      { type: 'mrkdwn', text: '⚡  *Live plan streaming*' },
+      { type: 'mrkdwn', text: '⚡  *Live progress*' },
       { type: 'mrkdwn', text: '🧵  *Thread memory*' },
-      { type: 'mrkdwn', text: '📁  *File I/O*' },
-      { type: 'mrkdwn', text: '🔒  *Isolated sandbox*' },
+      { type: 'mrkdwn', text: '🔗  *Works across your tools*' },
+      { type: 'mrkdwn', text: '🔒  *Secure & isolated*' },
     ],
   });
 

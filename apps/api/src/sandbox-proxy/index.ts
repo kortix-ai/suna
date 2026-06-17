@@ -2,6 +2,7 @@ import { config, type SandboxProviderName } from '../config';
 import { combinedAuth } from '../middleware/auth';
 import { preview } from './routes/preview';
 import { getAuthToken } from './routes/auth';
+import { publicShareApp } from './routes/public-share';
 import { shareApp } from './routes/share';
 import { invalidateSandbox, loadSandbox } from './backend';
 import { createSandboxProxyRateLimitMiddleware } from '../shared/rate-limit';
@@ -19,6 +20,12 @@ sandboxProxyApp.route('/auth', getAuthToken);
 // ── Public URL share endpoint ───────────────────────────────────────────────
 // POST /v1/p/share — returns a shareable URL for a sandbox port.
 sandboxProxyApp.route('/share', shareApp);
+
+// ── Public session preview shares ───────────────────────────────────────────
+// GET /v1/p/public-share/:token and /v1/p/public-share/:token/:port/*
+// are token-gated public artifact previews, intentionally separate from the
+// authenticated /:sandboxId/:port proxy below.
+sandboxProxyApp.route('/public-share', publicShareApp);
 
 // ── Path-based proxy ────────────────────────────────────────────────────────
 // Auth middleware accepts Supabase JWT, kortix_ tokens, and cookies.

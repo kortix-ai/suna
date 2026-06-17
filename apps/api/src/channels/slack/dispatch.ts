@@ -219,9 +219,14 @@ async function postChannelIntro(projectId: string, channelId: string): Promise<v
       text: {
         type: 'mrkdwn',
         text: [
-          'Mention `@Kortix` with a task. The agent will read your repository, work in an isolated sandbox, and reply in-thread. Follow-up messages in the same thread continue the conversation.',
+          '`@`-mention Kortix with a task and an agent gets on it — working across your connected tools and replying right here in the thread. Follow-ups stay in the same conversation, with full context.',
           '',
-          'Run `/kortix help` to see available commands.',
+          'Try something like:',
+          '• `@Kortix summarize this thread and draft a reply to the customer`',
+          '• `@Kortix pull last week’s signups, group them by source, and drop a CSV here`',
+          '• `@Kortix put together a one-pager on our Q2 numbers`',
+          '',
+          'Run `/kortix help` to see commands.',
         ].join('\n'),
       },
     },

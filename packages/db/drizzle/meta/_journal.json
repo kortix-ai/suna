@@ -50,6 +50,20 @@
       "when": 1781483538836,
       "tag": "20260615003218_new_quasar",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1781626677169,
+      "tag": "20260616161757_preexisting_provider_events_drift",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1781626706975,
+      "tag": "20260616161826_slack_channel_agent_model",
+      "breakpoints": true
     }
   ]
 }

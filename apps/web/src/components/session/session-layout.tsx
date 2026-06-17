@@ -29,6 +29,7 @@ import {
 import { SessionFilesExplorer } from '@/components/session/session-files-explorer';
 import { SessionTerminalPanel } from '@/components/session/session-terminal-panel';
 import { SessionActionsPanel } from '@/components/session/session-actions-panel';
+import { SessionWallpaperLayerContext } from '@/components/session/session-wallpaper-layer';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { X } from 'lucide-react';
 
@@ -38,11 +39,15 @@ import { X } from 'lucide-react';
 
 interface SessionLayoutProps {
   sessionId: string;
+  projectId?: string;
+  projectSessionId?: string;
   children: React.ReactNode;
 }
 
 export const SessionLayout = memo(function SessionLayout({
   sessionId,
+  projectId,
+  projectSessionId,
   children,
 }: SessionLayoutProps) {
   const isMobile = useIsMobile();
@@ -104,6 +109,12 @@ export const SessionLayout = memo(function SessionLayout({
   const sidePanelRef = useRef<ResizablePrimitive.ImperativePanelHandle>(null);
   const panelGroupRef = useRef<HTMLDivElement>(null);
   const prevExpandedRef = useRef(isExpanded);
+
+  // Root-level full-bleed wallpaper layer. SessionChat portals its welcome
+  // wallpaper into this node so it spans the ENTIRE session width regardless of
+  // the resizable split (see session-wallpaper-layer.tsx). A state node (not a
+  // ref) so SessionChat re-renders the portal once the layer mounts.
+  const [wallpaperLayer, setWallpaperLayer] = useState<HTMLDivElement | null>(null);
 
   // Side panel is visible whenever the user has opened it — full stop. The
   // panel hosts Actions / Browser / Files / Terminal, all of which are useful
@@ -256,15 +267,27 @@ export const SessionLayout = memo(function SessionLayout({
     if (showTerminal) setTerminalActivated(true);
   }, [showTerminal]);
 
-  // The active side-panel body. "Actions" renders through the canonical
-  // ToolPartRenderer (via SessionActionsPanel) — the same handlers the chat
-  // uses — so there is exactly one tool-rendering implementation. The terminal
-  // is layered on top and toggled with `hidden` (display:none) rather than
-  // unmounted, keeping its connection alive across view switches.
-  const nonTerminalBody = showBrowser ? (
-    <PreviewTabContent tabId={sessionPreviewTabId(sessionId)} />
-  ) : showExplorer ? (
-    <SessionFilesExplorer chatSessionId={sessionId} />
+  // The browser preview is the same story: its iframe holds a live, loaded
+  // sandbox app (scroll position, client-side route, form/auth state). Swapping
+  // it out of the tree on every view switch re-mounts the iframe and reloads
+  // the page — a white flash and lost state each time. So once opened it stays
+  // MOUNTED and is toggled with `hidden` (display:none), exactly like the
+  // terminal; the iframe keeps its document alive in the background.
+  const [browserActivated, setBrowserActivated] = useState(false);
+  useEffect(() => {
+    if (showBrowser) setBrowserActivated(true);
+  }, [showBrowser]);
+
+  // The cheap, stateless views — "Actions" (the canonical ToolPartRenderer, the
+  // same handlers the chat uses) and the Files explorer — swap normally. The
+  // terminal and browser are layered on top and shown/hidden via `hidden`
+  // rather than unmounted, so their live state survives view switches.
+  const swappableBody = showExplorer ? (
+    <SessionFilesExplorer
+      chatSessionId={sessionId}
+      projectId={projectId}
+      projectSessionId={projectSessionId}
+    />
   ) : (
     <SessionActionsPanel sessionId={sessionId} messages={messages} />
   );
@@ -272,11 +295,25 @@ export const SessionLayout = memo(function SessionLayout({
     <div className="relative h-full w-full">
       {terminalActivated && (
         <div className={cn('absolute inset-0', !showTerminal && 'hidden')}>
-          <SessionTerminalPanel hidden={!showTerminal} />
+          <SessionTerminalPanel sessionId={sessionId} hidden={!showTerminal} />
         </div>
       )}
-      <div className={cn('absolute inset-0', showTerminal && 'hidden')}>
-        {nonTerminalBody}
+      {browserActivated && (
+        <div className={cn('absolute inset-0', !showBrowser && 'hidden')}>
+          <PreviewTabContent
+            tabId={sessionPreviewTabId(sessionId)}
+            projectId={projectId}
+            projectSessionId={projectSessionId}
+          />
+        </div>
+      )}
+      <div
+        className={cn(
+          'absolute inset-0',
+          (showTerminal || showBrowser) && 'hidden',
+        )}
+      >
+        {swappableBody}
       </div>
     </div>
   );
@@ -305,11 +342,22 @@ export const SessionLayout = memo(function SessionLayout({
 
   // Desktop: resizable split panel
   return (
-    <div className="flex flex-col h-full overflow-hidden bg-background" data-testid="session-layout">
-      <div ref={panelGroupRef} className="flex-1 min-h-0 flex overflow-hidden bg-background">
+    <SessionWallpaperLayerContext.Provider value={wallpaperLayer}>
+    <div className="relative flex flex-col h-full overflow-hidden bg-background" data-testid="session-layout">
+      {/* Full-bleed wallpaper layer — spans the ENTIRE session width, behind the
+          resizable split. SessionChat portals its welcome wallpaper in here so
+          the wallpaper always renders full-width and never shrinks/recrops when
+          the side panel opens. The transparent main panel reveals it; the opaque
+          side panel covers its own half. */}
+      <div
+        ref={setWallpaperLayer}
+        className="absolute inset-0 z-0 pointer-events-none overflow-hidden"
+        aria-hidden="true"
+      />
+      <div ref={panelGroupRef} className="relative z-10 flex-1 min-h-0 flex overflow-hidden">
         <ResizablePanelGroup
           direction="horizontal"
-          className="h-full bg-background"
+          className="h-full bg-transparent"
           style={{ transition: 'none' }}
         >
           {/* Main content panel (SessionChat) */}
@@ -363,6 +411,7 @@ export const SessionLayout = memo(function SessionLayout({
         </ResizablePanelGroup>
       </div>
     </div>
+    </SessionWallpaperLayerContext.Provider>
   );
 });
 

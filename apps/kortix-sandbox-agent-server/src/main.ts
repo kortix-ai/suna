@@ -608,14 +608,20 @@ function slackRelayContext(): { projectId: string; sessionId: string; token: str
   return { projectId, sessionId, token, apiRoot }
 }
 
-// Relay an opencode question.asked event into the Slack thread. Slack is async,
-// so we post the question(s) (best-effort) and IMMEDIATELY resume the agent's
-// `question` tool with a sentinel — the user's in-thread reply arrives as a new
-// turn. NON-SLACK sessions are deliberately left untouched: the web dashboard
-// surfaces `question.asked` over opencode's own SSE stream and replies via the
-// SDK, so the sandbox must NOT auto-answer it — doing so races that interactive
-// form and resolves the tool with a bogus Slack sentinel before the user ever
-// sees the question. Hence the Slack gate (the absence of which was the bug).
+// Relay an opencode `question.asked` event for a SLACK session: post the
+// question(s) into the thread and resume the agent's (blocking) `question` tool
+// with a sentinel so the turn ends — the user's in-thread reply / button click
+// arrives as a new turn.
+//
+// "Is this a Slack session?" is read straight from the sandbox env, which IS the
+// session metadata: a Slack session is tagged `metadata.slack` at creation, and
+// the API projects that into SLACK_THREAD_TS / SLACK_CHANNEL_ID on EVERY
+// (re)provision (buildSessionChannelEnv). A web/dashboard session has no such
+// metadata, so it has no such env — `slackRelayContext()` returns null and we
+// return WITHOUT touching opencode's question. That's the whole fix: the
+// dashboard answers `question.asked` interactively over opencode's own SSE, and
+// auto-answering it here was the "every question is auto-answered even outside
+// Slack" bug. No round-trip, no status codes — the env is the source of truth.
 async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<void> {
   const ctx = slackRelayContext()
   if (!ctx) return
@@ -624,23 +630,9 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
   logger.info('[opencode-events] relaying question.asked', {
     requestId: req.id, questions: req.questions.length,
   })
-  // A Slack thread is ASYNC: we must NEVER block the agent waiting for an inline
-  // answer. The old flow waited up to 15 min and — on any failure path — returned
-  // WITHOUT replying to opencode, leaving the `question` tool hung forever until a
-  // human killed it in the web UI. Instead: post the question into the thread
-  // (best-effort) and resume the tool IMMEDIATELY with a sentinel that tells the
-  // agent to end its turn. The user's reply lands as a normal follow-up message
-  // (a new turn) — the natural Slack model.
-  const sentinel =
-    '(Posted to the Slack thread. In Slack, questions are async — the user replies ' +
-    'as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
-    'wait for an answer here; finish this turn now. Next time, just ask with ' +
-    '`slack send` rather than the question tool.)'
-  const answers: string[][] = req.questions.map(() => [sentinel])
 
-  // Best-effort: surface the question(s) in the thread so the user sees them even
-  // when the agent used the (discouraged) question tool. Short timeout; the agent
-  // is resumed regardless of whether this succeeds.
+  // Best-effort: render the question(s) into the thread. Independent of the
+  // resume below — a Slack turn must never hang waiting on this.
   try {
     await fetch(url, {
       method: 'POST',
@@ -657,8 +649,15 @@ async function relayQuestionToApi(req: QuestionRequest, cfg: Config): Promise<vo
     logger.warn('[opencode-events] turn-question post failed (non-fatal)', { err: (err as Error).message })
   }
 
-  // ALWAYS reply to opencode so the question tool can never hang — this is the
-  // core fix for "stuck until I kill it manually".
+  // Resume opencode's (blocking) question tool with a sentinel so the turn ends;
+  // the user's reply / button click lands as a new turn. ALWAYS reply — a Slack
+  // question must never hang (that was "stuck until I kill it manually").
+  const sentinel =
+    '(Posted to the Slack thread. In Slack, questions are async — the user replies ' +
+    'as a normal message, which reaches you as a NEW turn with full context. Do NOT ' +
+    'wait for an answer here; finish this turn now. Next time, just ask with ' +
+    '`slack send` rather than the question tool.)'
+  const answers: string[][] = req.questions.map(() => [sentinel])
   const replyUrl = `http://127.0.0.1:${cfg.opencodeInternalPort}/question/${encodeURIComponent(req.id)}/reply?directory=${encodeURIComponent(cfg.workspace)}`
   try {
     const r = await fetch(replyUrl, {

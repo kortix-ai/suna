@@ -22,7 +22,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { setProjectSessionSharing, type ProjectSession } from '@/lib/projects-client';
+import {
+  setProjectSessionSharing,
+  type ProjectSession,
+} from '@/lib/projects-client';
 import { toast } from '@/lib/toast';
 
 const SESSION_SHARING_COPY = {

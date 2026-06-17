@@ -562,9 +562,12 @@ projectsApp.openapi(
     const optionsRaw = Array.isArray(obj.options) ? obj.options : [];
     const options = optionsRaw
       .map((o) => (o && typeof o === 'object' ? (o as Record<string, unknown>) : null))
-      .filter((o): o is Record<string, unknown> => !!o && typeof o.label === 'string')
+      // opencode's QuestionInfo carries `value` (required) + optional `label`. The
+      // harness `question` tool uses `label`. Accept EITHER so an option that only
+      // has `value` still renders a button instead of silently vanishing.
+      .filter((o): o is Record<string, unknown> => !!o && (typeof o.label === 'string' || typeof o.value === 'string'))
       .map((o) => ({
-        label: String(o.label),
+        label: String(o.label ?? o.value),
         description: typeof o.description === 'string' ? String(o.description) : undefined,
       }));
     questions.push({

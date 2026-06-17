@@ -83,7 +83,8 @@ describe('finalizeTurn — silent turn (the stuck "On it…" fix)', () => {
     expect(upd).toBeDefined();
     expect(upd.args[3]).toBe('Task complete');
     const blocks = upd.args[4] as Array<{ type: string; tasks?: Array<{ status: string }> }>;
-    expect(blocks.map((b) => b.type)).toEqual(['plan']); // no "_Done._" filler section
+    // no "_Done._" filler section; 'context' = the "Open session" footer link
+    expect(blocks.map((b) => b.type)).toEqual(['plan', 'context']);
     expect(blocks[0]!.tasks![0]!.status).toBe('complete'); // last step closed
   });
 
@@ -98,7 +99,8 @@ describe('finalizeTurn — silent turn (the stuck "On it…" fix)', () => {
     expect(upd.args[3]).toBe('Run failed');
     const blocks = upd.args[4] as Array<{ type: string; tasks?: Array<{ status: string }> }>;
     expect(blocks[0]!.tasks![0]!.status).toBe('error');
-    expect(blocks.map((b) => b.type)).toEqual(['plan', 'section']); // error rendered as a section
+    // error rendered as a section; 'context' = the "Open session" footer link
+    expect(blocks.map((b) => b.type)).toEqual(['plan', 'section', 'context']);
     // an error is not a success — no check reaction
     expect(calls.some((c) => c.fn === 'addReaction' && c.args[3] === 'white_check_mark')).toBe(false);
   });
@@ -113,7 +115,8 @@ describe('finalizeTurn — silent turn (the stuck "On it…" fix)', () => {
     const upd = calls.find((c) => c.fn === 'updateBlocks')!;
     expect(upd.args[3]).toBe('Task complete');
     const blocks = upd.args[4] as Array<{ type: string }>;
-    expect(blocks.map((b) => b.type)).toEqual(['plan', 'section']);
+    // answer section + 'context' = the "Open session" footer link
+    expect(blocks.map((b) => b.type)).toEqual(['plan', 'section', 'context']);
     expect(calls.some((c) => c.fn === 'addReaction' && c.args[3] === 'white_check_mark')).toBe(true);
   });
 

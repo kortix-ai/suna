@@ -1,13 +1,9 @@
-Faster, more reliable session start
+Session reliability, Slack polish, and shareable previews
 
-This release focuses entirely on making sessions start faster and more reliably.
+**Sessions** — more reliable runtime recovery and a refactored session lifecycle; terminal PTYs are now isolated per session; session branches are local-first and publish to origin lazily; the show tool fills the Actions panel height; the welcome wallpaper stays full-width when the side panel is open.
 
-## Improved
-- **Sessions open faster.** The computer behind a session now warms up earlier and is prefetched as you navigate, so there's less waiting before you can start typing. Under the hood we also trimmed cold-start time (lighter tool loading, a pre-warmed runtime baked into the image).
-- **A single, clearer loading screen.** Starting a session now shows one consistent loader with clear steps, instead of overlapping or flickering states.
-- **Titles appear right away.** A session picks up its title as soon as the agent names it, rather than staying unnamed until your next message.
+**Browser & sharing** — the browser preview stays mounted across panel switches; added public preview and file share links; Chromium for agent-browser is now baked into every session image.
 
-## Fixed
-- Sessions no longer get stuck on the loading screen — start-up now retries on its own when a transient hiccup (like a momentarily missing sandbox id) would previously leave it stranded.
-- Your first message stays visible while the session connects, instead of briefly disappearing.
-- Warm sandboxes are now prepared for the person actually opening the session, not always the project owner.
+**Slack** — clearer channel intro and App Home copy; unified canonical + bring-your-own into one manifest builder with per-project parity; the question tool no longer auto-answers outside Slack and is disabled in-thread.
+
+**Web** — restored social avatar downloads and the full logo; added a /game-of-life page seeded from the Kortix logo.

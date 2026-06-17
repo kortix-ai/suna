@@ -14,10 +14,12 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { PublicShareLinkButton } from '@/components/projects/public-share-link-button';
 import { useTabStore } from '@/stores/tab-store';
 import { useAuthenticatedPreviewUrl } from '@/hooks/use-authenticated-preview-url';
 import { INTERACTIVE_PREVIEW_IFRAME_SANDBOX } from '@/lib/security/iframe-sandbox';
 import { useSandboxProxy } from '@/hooks/use-sandbox-proxy';
+import type { CreateSessionPublicShareInput } from '@/lib/projects-client';
 import {
   parseLocalhostUrl,
   toInternalUrl,
@@ -31,6 +33,23 @@ import {
 
 interface PreviewTabContentProps {
   tabId: string;
+  projectId?: string;
+  projectSessionId?: string;
+}
+
+const APP_PREVIEW_TITLE = 'App preview';
+
+function normalizePreviewLabel(value: unknown): string {
+  if (typeof value !== 'string') return APP_PREVIEW_TITLE;
+  const trimmed = value.trim();
+  if (!trimmed || /^localhost:\d+$/i.test(trimmed)) return APP_PREVIEW_TITLE;
+  return trimmed;
+}
+
+function previewDisplayLabel(path: string, isEditing: boolean, addressValue: string) {
+  if (isEditing) return addressValue;
+  const cleanPath = path && path !== '/' ? path : '';
+  return `${APP_PREVIEW_TITLE}${cleanPath}`;
 }
 
 /**
@@ -40,7 +59,7 @@ interface PreviewTabContentProps {
  * The address bar shows the internal localhost:PORT URL and allows the user to type
  * any localhost:PORT address to navigate within the sandbox.
  */
-export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
+export function PreviewTabContent({ tabId, projectId, projectSessionId }: PreviewTabContentProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const tab = useTabStore((s) => s.tabs[tabId]);
   const updateTabMetadata = useTabStore((s) => s.openTab);
@@ -171,7 +190,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
 
     updateTabMetadata({
       id: tabId,
-      title: `localhost:${newPort}`,
+      title: APP_PREVIEW_TITLE,
       type: 'preview',
       href: `/p/${newPort}`,
       metadata: { url: newProxyUrl, port: newPort, originalUrl: newInternalUrl, path: newPath },
@@ -258,7 +277,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
         const internalUrl = toInternalUrl(parsed.port, parsed.path);
         updateTabMetadata({
           id: tabId,
-          title: `localhost:${parsed.port}`,
+          title: APP_PREVIEW_TITLE,
           type: 'preview',
           href: `/p/${parsed.port}`,
           metadata: { url: prevUrl, port: parsed.port, originalUrl: internalUrl, path: parsed.path },
@@ -304,7 +323,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
         const internalUrl = toInternalUrl(parsed.port, parsed.path);
         updateTabMetadata({
           id: tabId,
-          title: `localhost:${parsed.port}`,
+          title: APP_PREVIEW_TITLE,
           type: 'preview',
           href: `/p/${parsed.port}`,
           metadata: { url: nextUrl, port: parsed.port, originalUrl: internalUrl, path: parsed.path },
@@ -330,10 +349,25 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
 
   // Display URL (the internal localhost URL for clean look)
   const displayUrl = useMemo(() => {
-    if (isAddressEditing) return addressValue;
     if (isExternalBrowsing) return originalUrl;
-    return addressValue || (port ? `localhost:${port}` : rawPreviewUrl);
-  }, [isAddressEditing, addressValue, port, rawPreviewUrl, isExternalBrowsing, originalUrl]);
+    const parsed = parseLocalhostUrl(originalUrl || addressValue);
+    return previewDisplayLabel(parsed?.path || '/', isAddressEditing, addressValue);
+  }, [isAddressEditing, addressValue, port, isExternalBrowsing, originalUrl]);
+
+  const shareInput = useMemo<CreateSessionPublicShareInput | null>(() => {
+    if (isExternalBrowsing || port <= 0) return null;
+    const parsed = parseLocalhostUrl(originalUrl || addressValue);
+    const path = (tab?.metadata?.path as string) || parsed?.path || '/';
+    return {
+      mode: 'view',
+      preview: {
+        label: normalizePreviewLabel(tab?.title),
+        url: originalUrl || toInternalUrl(port, path),
+        port,
+        path,
+      },
+    };
+  }, [addressValue, isExternalBrowsing, originalUrl, port, tab?.metadata?.path, tab?.title]);
 
   // No "no preview URL available" empty state — when the tab doesn't exist
   // yet, the landing/no-previewUrl branch below renders the full browser
@@ -378,7 +412,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
                   setTimeout(() => addressInputRef.current?.select(), 0);
                 }}
                 onBlur={() => setIsAddressEditing(false)}
-                placeholder={tHardcodedUi.raw('componentsTabsPreviewTabContent.line357JsxAttrPlaceholderTypeAUrlOrLocalhostPort')}
+                placeholder="Type a port or app URL"
                 className="flex-1 bg-transparent outline-none text-foreground placeholder:text-muted-foreground"
                 autoFocus
               />
@@ -391,8 +425,10 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
           <div className="flex flex-col items-center gap-4 text-muted-foreground max-w-md text-center px-4">
             <Globe className="h-12 w-12 opacity-20" />
             <div>
-              <p className="text-sm font-medium text-foreground">{tHardcodedUi.raw('componentsTabsPreviewTabContent.line370JsxTextInternalBrowser')}</p>
-              <p className="text-xs mt-1.5 leading-relaxed">{tHardcodedUi.raw('componentsTabsPreviewTabContent.line372JsxTextBrowseAnyWebsiteOrServiceRunningInsideThe')}<span className="font-mono text-foreground/80">google.com</span> or <span className="font-mono text-foreground/80">localhost:3000</span>{tHardcodedUi.raw('componentsTabsPreviewTabContent.line373JsxTextInTheAddressBarAbove')}</p>
+              <p className="text-sm font-medium text-foreground">Preview browser</p>
+              <p className="text-xs mt-1.5 leading-relaxed">
+                Open an app preview from chat, or type a port like <span className="font-mono text-foreground/80">3000</span> if you know it.
+              </p>
             </div>
           </div>
         </div>
@@ -443,7 +479,7 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
         <form onSubmit={handleAddressSubmit} className="flex-1 flex items-center">
           <div
             className={cn(
-              'w-full flex items-center h-7 px-3 bg-background border rounded-2xl text-xs font-mono',
+              'w-full flex items-center h-7 px-3 bg-background border rounded-2xl text-xs',
               addressError && 'border-red-500 focus-within:border-red-500',
             )}
           >
@@ -475,12 +511,15 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
                   addressInputRef.current?.blur();
                 }
               }}
-              placeholder={tHardcodedUi.raw('componentsTabsPreviewTabContent.line451JsxAttrPlaceholderTypeAUrlOrLocalhostPort')}
-              className="flex-1 bg-transparent outline-none text-foreground placeholder:text-muted-foreground truncate"
+              placeholder="Type a port or app URL"
+              className={cn(
+                'flex-1 bg-transparent outline-none text-foreground placeholder:text-muted-foreground truncate',
+                isAddressEditing && 'font-mono',
+              )}
             />
             {port > 0 && !isAddressEditing && !isExternalBrowsing && (
               <span className="ml-2 shrink-0 text-xs text-muted-foreground/70">
-                :{port}
+                Port {port}
               </span>
             )}
           </div>
@@ -492,10 +531,17 @@ export function PreviewTabContent({ tabId }: PreviewTabContentProps) {
           size="icon"
           className="h-7 w-7"
           onClick={handleOpenExternal}
-          title={tHardcodedUi.raw('componentsTabsPreviewTabContent.line468JsxAttrTitleOpenInBrowser')}
+          title="Open private preview"
         >
           <ExternalLink className="h-3.5 w-3.5" />
         </Button>
+        <PublicShareLinkButton
+          projectId={projectId}
+          sessionId={projectSessionId}
+          input={shareInput}
+          tooltip="Copy a public link for this app preview"
+          className="h-7 w-7 [&_svg]:h-3.5 [&_svg]:w-3.5"
+        />
       </div>
 
       {/* Iframe container */}

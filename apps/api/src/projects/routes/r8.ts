@@ -2,20 +2,37 @@ import { checkBillingActive } from '../../billing/services/billing-gate';
 import { config, type SandboxProviderName } from '../../config';
 import { auth, errors, json } from '../../openapi';
 import { getProvider } from '../../platform/providers';
-import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { db } from '../../shared/db';
-import { getCrById, getNextCrNumber, serializeChangeRequest } from '../change-requests';
-import { getBranchDiff, getDiffBetweenShas, invalidateProjectMirror, previewMerge, resolveBranchTip } from '../git';
+import {
+  getCrById,
+  getNextCrNumber,
+  serializeChangeRequest,
+} from '../change-requests';
+import {
+  getBranchDiff,
+  getDiffBetweenShas,
+  invalidateProjectMirror,
+  previewMerge,
+  resolveBranchTip,
+} from '../git';
 import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
 import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
-import { resolveProjectGitAuth, withProjectGitAuth } from '../lib/git';
+import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
-import { buildSessionSandboxEnvVars, sandboxCallbackUnreachableReason } from '../lib/sessions';
-import { kickProvisionOnOpen, openSession, refreshCrTips, resumeStoppedSandbox } from './shared';
-
+import { allocateSessionRuntime } from '../lib/session-runtime-allocator';
+import {
+  buildSessionSandboxEnvVars,
+  sandboxCallbackUnreachableReason,
+} from '../lib/sessions';
+import {
+  isMissingRuntimeError,
+  openSession,
+  refreshCrTips,
+  retireSessionSandboxRow,
+} from './shared';
 
 // POST /v1/projects/:projectId/sessions/:sessionId/start
 // THE unified session-open endpoint. One idempotent call that provisions a
@@ -31,13 +48,16 @@ projectsApp.openapi(
     tags: ['sessions'],
     summary: 'POST /:projectId/sessions/:sessionId/start',
     ...auth,
-    request: { params: z.object({ projectId: z.string(), sessionId: z.string() }) },
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+    },
     responses: { 200: json(z.any(), 'OK'), ...errors(400, 402, 404) },
   }),
   async (c: any) => {
     const projectId = c.req.param('projectId');
     const sessionId = c.req.param('sessionId');
-    if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    if (!UUID_V4_REGEX.test(sessionId))
+      return c.json({ error: 'Invalid session id' }, 400);
 
     const loaded = await loadProjectForUser(c, projectId, 'read');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
@@ -48,7 +68,12 @@ projectsApp.openapi(
     const billing = await checkBillingActive(loaded.row.accountId);
     if (!billing.ok) {
       return c.json(
-        { error: billing.message, message: billing.message, code: billing.reason, balance: billing.balance },
+        {
+          error: billing.message,
+          message: billing.message,
+          code: billing.reason,
+          balance: billing.balance,
+        },
         402,
       );
     }
@@ -71,162 +96,240 @@ projectsApp.openapi(
     tags: ['sessions'],
     summary: 'POST /:projectId/sessions/:sessionId/restart',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+    },
     responses: {
-        202: json(z.any(), 'OK'),
-        ...errors(400, 403, 404, 503),
+      202: json(z.any(), 'OK'),
+      ...errors(400, 403, 404, 503),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const sessionId = c.req.param('sessionId');
-  if (!UUID_V4_REGEX.test(sessionId)) return c.json({ error: 'Invalid session id' }, 400);
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    if (!UUID_V4_REGEX.test(sessionId))
+      return c.json({ error: 'Invalid session id' }, 400);
 
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  // Restart is reserved for the session owner or a project manager.
-  const visible = await loadVisibleSession(loaded, sessionId);
-  if (!visible) return c.json({ error: 'Not found' }, 404);
-  if (!visible.canManageSharing) {
-    return c.json({ error: 'Only the session owner or a project manager can restart this session' }, 403);
-  }
-  const session = visible.row;
-
-  const providerName = session.sandboxProvider as SandboxProviderName;
-  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
-    return c.json({ error: `Restart is not supported for provider ${providerName}` }, 400);
-  }
-
-  // Same loopback-callback guard as create: restarting into an unreachable
-  // KORTIX_URL just rebuilds the same dead sandbox.
-  const restartUnreachable = sandboxCallbackUnreachableReason();
-  if (restartUnreachable) {
-    return c.json({ error: restartUnreachable, code: 'KORTIX_URL_UNREACHABLE' }, 503);
-  }
-
-  const [existingSandbox] = await db
-    .select()
-    .from(sessionSandboxes)
-    .where(eq(sessionSandboxes.sandboxId, sessionId))
-    .limit(1);
-
-  // In-place restart: reboot the EXISTING box via the provider SDK (stop+start)
-  // instead of destroying + cold-reprovisioning it. The disk — repo clone,
-  // installed deps, opencode — persists across a stop/start, so this is a fast
-  // reboot, not a cold boot, and we NEVER remove the box (removal is reserved
-  // for explicit session deletion). The same compute row and sandbox keys carry
-  // over, so there's nothing to finalize or rotate.
-  if (existingSandbox?.externalId
-      && (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(existingSandbox.provider)) {
-    const externalId = existingSandbox.externalId;
-    const provider = getProvider(existingSandbox.provider as SandboxProviderName);
-    // Flip to provisioning so the dashboard's connecting screen re-engages while
-    // the VM reboots; GET …/sandbox keeps returning the row ('provisioning' is a
-    // usable state) so no reprovision is triggered underneath us.
-    await db.update(sessionSandboxes)
-      .set({ status: 'provisioning', updatedAt: new Date() })
-      .where(eq(sessionSandboxes.sandboxId, sessionId));
-    await db.update(projectSessions)
-      .set({ status: 'provisioning', error: null, sandboxUrl: null, updatedAt: new Date() })
-      .where(eq(projectSessions.sessionId, sessionId));
-    void (async () => {
-      try {
-        await provider.stop(externalId).catch(() => {}); // best-effort clean down→up cycle
-        await provider.start(externalId);
-        await db.update(sessionSandboxes)
-          .set({ status: 'active', updatedAt: new Date() })
-          .where(eq(sessionSandboxes.sandboxId, sessionId));
-        await db.update(projectSessions)
-          .set({ status: 'running', updatedAt: new Date() })
-          .where(eq(projectSessions.sessionId, sessionId));
-      } catch (err) {
-        console.warn(`[projects] restart-in-place failed for ${sessionId}:`, err);
-        // Leave it resumable — a 'stopped' row reopens via the GET resume path.
-        await db.update(sessionSandboxes)
-          .set({ status: 'stopped', updatedAt: new Date() })
-          .where(eq(sessionSandboxes.sandboxId, sessionId)).catch(() => {});
-        await db.update(projectSessions)
-          .set({ status: 'stopped', updatedAt: new Date() })
-          .where(eq(projectSessions.sessionId, sessionId)).catch(() => {});
-      }
-    })();
-    return c.json({ ok: true, session_id: sessionId, status: 'provisioning' }, 202);
-  }
-
-  // No existing box (deleted / never provisioned) → provision a fresh one so
-  // restart still recovers a dead session from the preserved git branch.
-  const gitAuth = await resolveProjectGitAuth(loaded.row);
-  // Re-inject the initial prompt ONLY if this session never bootstrapped its
-  // OpenCode conversation (no pin yet — the box died before the first message
-  // ever ran). Once `opencodeSessionId` is set, the first message already ran, so
-  // a rebuild from the durable git branch must NOT replay it — that replay is the
-  // "opening the session resets & reruns the same thing" bug. The first cold
-  // create is the only path that delivers the initial prompt to a live box.
-  const initialPrompt = session.opencodeSessionId
-    ? null
-    : typeof session.metadata?.initial_prompt === 'string'
-      ? (session.metadata.initial_prompt as string)
-      : null;
-  const opencodeModel = typeof session.metadata?.opencode_model === 'string'
-    ? session.metadata.opencode_model as string
-    : null;
-
-  await db
-    .update(projectSessions)
-    .set({ status: 'provisioning', error: null, sandboxUrl: null, updatedAt: new Date() })
-    .where(eq(projectSessions.sessionId, sessionId));
-
-  // Fire-and-forget the actual re-provision. Same shape as session-create.
-  void (async () => {
-    try {
-      const extraEnvVars = await buildSessionSandboxEnvVars({
-        accountId: loaded.row.accountId,
-        projectId,
-        sessionId,
-        userId: loaded.userId,
-        repoUrl: loaded.row.repoUrl,
-        baseRef: session.baseRef ?? loaded.row.defaultBranch,
-        agentName: session.agentName ?? 'default',
-        initialPrompt,
-        opencodeModel,
-      });
-      await provisionSessionSandbox({
-        sandboxId: sessionId,
-        accountId: loaded.row.accountId,
-        projectId,
-        userId: loaded.userId,
-        provider: providerName,
-        metadata: {
-          session_id: sessionId,
-          project_id: projectId,
-          restarted_at: new Date().toISOString(),
+    // Restart is reserved for the session owner or a project manager.
+    const visible = await loadVisibleSession(loaded, sessionId);
+    if (!visible) return c.json({ error: 'Not found' }, 404);
+    if (!visible.canManageSharing) {
+      return c.json(
+        {
+          error:
+            'Only the session owner or a project manager can restart this session',
         },
-        extraEnvVars,
-        gitProject: {
-          projectId,
-          repoUrl: loaded.row.repoUrl,
-          defaultBranch: loaded.row.defaultBranch,
-          manifestPath: loaded.row.manifestPath,
-          gitAuthToken: gitAuth.auth?.token ?? null,
-        },
-        baseRef: session.baseRef ?? loaded.row.defaultBranch,
-      });
-    } catch (err) {
-      const message = (err as Error)?.message || 'Sandbox restart failed';
-      console.error(`[projects] restart: provisioning failed for ${sessionId}:`, err);
+        403,
+      );
+    }
+    const session = visible.row;
+
+    const providerName = session.sandboxProvider as SandboxProviderName;
+    if (
+      !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
+        providerName,
+      )
+    ) {
+      return c.json(
+        { error: `Restart is not supported for provider ${providerName}` },
+        400,
+      );
+    }
+
+    // Same loopback-callback guard as create: restarting into an unreachable
+    // KORTIX_URL just rebuilds the same dead sandbox.
+    const restartUnreachable = sandboxCallbackUnreachableReason();
+    if (restartUnreachable) {
+      return c.json(
+        { error: restartUnreachable, code: 'KORTIX_URL_UNREACHABLE' },
+        503,
+      );
+    }
+
+    const [existingSandbox] = await db
+      .select()
+      .from(sessionSandboxes)
+      .where(eq(sessionSandboxes.sandboxId, sessionId))
+      .limit(1);
+
+    const provisionReplacementRuntime = async () => {
+      // Re-inject the initial prompt ONLY if this session never bootstrapped its
+      // OpenCode conversation (no pin yet — the box died before the first message
+      // ever ran). Once `opencodeSessionId` is set, the first message already ran, so
+      // a rebuild from the durable git branch must NOT replay it — that replay is the
+      // "opening the session resets & reruns the same thing" bug. The first cold
+      // create is the only path that delivers the initial prompt to a live box.
+      const initialPrompt = session.opencodeSessionId
+        ? null
+        : typeof session.metadata?.initial_prompt === 'string'
+          ? (session.metadata.initial_prompt as string)
+          : null;
+      const opencodeModel =
+        typeof session.metadata?.opencode_model === 'string'
+          ? (session.metadata.opencode_model as string)
+          : null;
+
       await db
         .update(projectSessions)
-        .set({ status: 'failed', error: message, updatedAt: new Date() })
-        .where(eq(projectSessions.sessionId, sessionId))
-        .catch(() => {});
-    }
-  })();
+        .set({
+          status: 'provisioning',
+          error: null,
+          sandboxUrl: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(projectSessions.sessionId, sessionId));
 
-  return c.json({ ok: true, session_id: sessionId, status: 'provisioning' }, 202);
-},
+      const runtimeMetadata = { restarted_at: new Date().toISOString() };
+      allocateSessionRuntime({
+        sessionId,
+        accountId: loaded.row.accountId,
+        projectId,
+        userId: loaded.userId,
+        project: loaded.row,
+        providerName,
+        baseRef: session.baseRef ?? loaded.row.defaultBranch,
+        agentName: session.agentName ?? 'default',
+        runtimeMetadata,
+        sessionMetadata: { ...(session.metadata ?? {}), ...runtimeMetadata },
+        buildEnvVars: () =>
+          buildSessionSandboxEnvVars({
+            accountId: loaded.row.accountId,
+            projectId,
+            sessionId,
+            userId: loaded.userId,
+            repoUrl: loaded.row.repoUrl,
+            baseRef: session.baseRef ?? loaded.row.defaultBranch,
+            agentName: session.agentName ?? 'default',
+            initialPrompt,
+            opencodeModel,
+          }),
+        resolveGitAuthToken: async () =>
+          (await withProjectGitAuth(loaded.row)).gitAuthToken ?? null,
+      });
+    };
+
+    // In-place restart: reboot the EXISTING box via the provider SDK (stop+start)
+    // instead of destroying + cold-reprovisioning it. The disk — repo clone,
+    // installed deps, opencode — persists across a stop/start, so this is a fast
+    // reboot, not a cold boot, and we NEVER remove the box (removal is reserved
+    // for explicit session deletion). The same compute row and sandbox keys carry
+    // over, so there's nothing to finalize or rotate.
+    if (
+      existingSandbox?.externalId &&
+      (config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
+        existingSandbox.provider,
+      )
+    ) {
+      const externalId = existingSandbox.externalId;
+      const provider = getProvider(
+        existingSandbox.provider as SandboxProviderName,
+      );
+      const providerStatus = await provider
+        .getStatus(externalId)
+        .catch(() => 'unknown' as const);
+      if (providerStatus === 'removed') {
+        await retireSessionSandboxRow(
+          existingSandbox,
+          'restart_removed_runtime',
+        ).catch((err) =>
+          console.warn(
+            `[projects] failed to retire removed runtime ${externalId} for session ${sessionId}:`,
+            err,
+          ),
+        );
+        await provisionReplacementRuntime();
+        return c.json(
+          {
+            ok: true,
+            session_id: sessionId,
+            status: 'provisioning',
+            reason: 'runtime_removed',
+          },
+          202,
+        );
+      }
+      // Flip to provisioning so the dashboard's connecting screen re-engages while
+      // the VM reboots; GET …/sandbox keeps returning the row ('provisioning' is a
+      // usable state) so no reprovision is triggered underneath us.
+      await db
+        .update(sessionSandboxes)
+        .set({ status: 'provisioning', updatedAt: new Date() })
+        .where(eq(sessionSandboxes.sandboxId, sessionId));
+      await db
+        .update(projectSessions)
+        .set({
+          status: 'provisioning',
+          error: null,
+          sandboxUrl: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(projectSessions.sessionId, sessionId));
+      void (async () => {
+        try {
+          await provider.stop(externalId).catch(() => {}); // best-effort clean down→up cycle
+          await provider.start(externalId);
+          await db
+            .update(sessionSandboxes)
+            .set({ status: 'active', updatedAt: new Date() })
+            .where(eq(sessionSandboxes.sandboxId, sessionId));
+          await db
+            .update(projectSessions)
+            .set({ status: 'running', updatedAt: new Date() })
+            .where(eq(projectSessions.sessionId, sessionId));
+        } catch (err) {
+          console.warn(
+            `[projects] restart-in-place failed for ${sessionId}:`,
+            err,
+          );
+          if (isMissingRuntimeError(err)) {
+            await retireSessionSandboxRow(
+              existingSandbox,
+              'restart_missing_runtime',
+            ).catch(() => {});
+            await provisionReplacementRuntime().catch((allocErr) =>
+              console.warn(
+                `[projects] failed to reallocate missing runtime for session ${sessionId}:`,
+                allocErr,
+              ),
+            );
+            return;
+          }
+          // Leave it resumable — a 'stopped' row reopens via the GET resume path.
+          await db
+            .update(sessionSandboxes)
+            .set({ status: 'stopped', updatedAt: new Date() })
+            .where(
+              and(
+                eq(sessionSandboxes.sandboxId, sessionId),
+                eq(sessionSandboxes.externalId, externalId),
+              ),
+            )
+            .catch(() => {});
+          await db
+            .update(projectSessions)
+            .set({ status: 'stopped', updatedAt: new Date() })
+            .where(eq(projectSessions.sessionId, sessionId))
+            .catch(() => {});
+        }
+      })();
+      return c.json(
+        { ok: true, session_id: sessionId, status: 'provisioning' },
+        202,
+      );
+    }
+
+    // No existing box (deleted / never provisioned) → provision a fresh one so
+    // restart still recovers a dead session from the preserved git branch.
+    await provisionReplacementRuntime();
+
+    return c.json(
+      { ok: true, session_id: sessionId, status: 'provisioning' },
+      202,
+    );
+  },
 );
 
 // ─── Change Requests ────────────────────────────────────────────────────────
@@ -252,39 +355,41 @@ projectsApp.openapi(
     tags: ['change-requests'],
     summary: 'GET /:projectId/change-requests',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        query: z.object({}).passthrough(),
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+      query: z.object({}).passthrough(),
+    },
     responses: {
-        200: json(z.array(ChangeRequestSchema), 'Change requests'),
-        ...errors(400, 404),
+      200: json(z.array(ChangeRequestSchema), 'Change requests'),
+      ...errors(400, 404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const statusFilter = normalizeString(c.req.query('status'))?.toLowerCase();
-  const whereClauses = [eq(changeRequests.projectId, projectId)];
-  if (statusFilter && statusFilter !== 'all') {
-    if (!['open', 'merged', 'closed'].includes(statusFilter)) {
-      return c.json({ error: 'Invalid status filter' }, 400);
+    const statusFilter = normalizeString(c.req.query('status'))?.toLowerCase();
+    const whereClauses = [eq(changeRequests.projectId, projectId)];
+    if (statusFilter && statusFilter !== 'all') {
+      if (!['open', 'merged', 'closed'].includes(statusFilter)) {
+        return c.json({ error: 'Invalid status filter' }, 400);
+      }
+      whereClauses.push(
+        eq(changeRequests.status, statusFilter as 'open' | 'merged' | 'closed'),
+      );
     }
-    whereClauses.push(eq(changeRequests.status, statusFilter as 'open' | 'merged' | 'closed'));
-  }
 
-  const rows = await db
-    .select()
-    .from(changeRequests)
-    .where(and(...whereClauses))
-    .orderBy(desc(changeRequests.number));
+    const rows = await db
+      .select()
+      .from(changeRequests)
+      .where(and(...whereClauses))
+      .orderBy(desc(changeRequests.number));
 
-  return c.json({
-    change_requests: rows.map(serializeChangeRequest),
-  });
-},
+    return c.json({
+      change_requests: rows.map(serializeChangeRequest),
+    });
+  },
 );
 
 // POST /v1/projects/:projectId/change-requests
@@ -297,89 +402,105 @@ projectsApp.openapi(
     tags: ['change-requests'],
     summary: 'POST /:projectId/change-requests',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
     responses: {
-        201: json(ChangeRequestSchema, 'The created change request'),
-        ...errors(400, 404, 500),
+      201: json(ChangeRequestSchema, 'The created change request'),
+      ...errors(400, 404, 500),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param('projectId');
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const title = normalizeString(body.title);
-  if (!title) return c.json({ error: 'title is required' }, 400);
-  const description = normalizeString(body.description) ?? '';
-  const headRef = normalizeString(body.head_ref ?? body.headRef);
-  if (!headRef) return c.json({ error: 'head_ref is required' }, 400);
-  const baseRef = normalizeString(body.base_ref ?? body.baseRef) ?? loaded.row.defaultBranch;
-  if (baseRef === headRef) {
-    return c.json({ error: 'head_ref and base_ref must differ' }, 400);
-  }
-
-  let originSessionId: string | null = normalizeString(body.session_id ?? body.sessionId);
-  if (originSessionId) {
-    const [sessionRow] = await db
-      .select({ sessionId: projectSessions.sessionId })
-      .from(projectSessions)
-      .where(and(eq(projectSessions.sessionId, originSessionId), eq(projectSessions.projectId, projectId)))
-      .limit(1);
-    if (!sessionRow) originSessionId = null;
-  }
-
-  // Resolve current tips so the CR has anchored SHAs from the start.
-  let baseSha: string | null = null;
-  let headSha: string | null = null;
-  try {
-    const projectForGit = await withProjectGitAuth(loaded.row);
-    [baseSha, headSha] = await Promise.all([
-      resolveBranchTip(projectForGit, baseRef),
-      resolveBranchTip(projectForGit, headRef),
-    ]);
-  } catch (error) {
-    return c.json({
-      error: error instanceof Error ? error.message : 'Failed to resolve branches',
-    }, 400);
-  }
-
-  // Atomically allocate the next per-project number and insert. Retry once on
-  // unique-constraint collision (only happens under racing opens).
-  let inserted: typeof changeRequests.$inferSelect | null = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const number = await getNextCrNumber(projectId);
-    try {
-      const [row] = await db
-        .insert(changeRequests)
-        .values({
-          accountId: loaded.row.accountId,
-          projectId,
-          number,
-          title,
-          description,
-          baseRef,
-          headRef,
-          headCommitSha: headSha,
-          baseCommitSha: baseSha,
-          originSessionId,
-          createdBy: loaded.userId,
-        })
-        .returning();
-      inserted = row;
-      break;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (!/duplicate key/.test(message)) throw error;
+    const title = normalizeString(body.title);
+    if (!title) return c.json({ error: 'title is required' }, 400);
+    const description = normalizeString(body.description) ?? '';
+    const headRef = normalizeString(body.head_ref ?? body.headRef);
+    if (!headRef) return c.json({ error: 'head_ref is required' }, 400);
+    const baseRef =
+      normalizeString(body.base_ref ?? body.baseRef) ??
+      loaded.row.defaultBranch;
+    if (baseRef === headRef) {
+      return c.json({ error: 'head_ref and base_ref must differ' }, 400);
     }
-  }
-  if (!inserted) return c.json({ error: 'Failed to allocate CR number' }, 500);
 
-  return c.json(serializeChangeRequest(inserted), 201);
-},
+    let originSessionId: string | null = normalizeString(
+      body.session_id ?? body.sessionId,
+    );
+    if (originSessionId) {
+      const [sessionRow] = await db
+        .select({ sessionId: projectSessions.sessionId })
+        .from(projectSessions)
+        .where(
+          and(
+            eq(projectSessions.sessionId, originSessionId),
+            eq(projectSessions.projectId, projectId),
+          ),
+        )
+        .limit(1);
+      if (!sessionRow) originSessionId = null;
+    }
+
+    // Resolve current tips so the CR has anchored SHAs from the start.
+    let baseSha: string | null = null;
+    let headSha: string | null = null;
+    try {
+      const projectForGit = await withProjectGitAuth(loaded.row);
+      [baseSha, headSha] = await Promise.all([
+        resolveBranchTip(projectForGit, baseRef),
+        resolveBranchTip(projectForGit, headRef),
+      ]);
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error
+              ? error.message
+              : 'Failed to resolve branches',
+        },
+        400,
+      );
+    }
+
+    // Atomically allocate the next per-project number and insert. Retry once on
+    // unique-constraint collision (only happens under racing opens).
+    let inserted: typeof changeRequests.$inferSelect | null = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const number = await getNextCrNumber(projectId);
+      try {
+        const [row] = await db
+          .insert(changeRequests)
+          .values({
+            accountId: loaded.row.accountId,
+            projectId,
+            number,
+            title,
+            description,
+            baseRef,
+            headRef,
+            headCommitSha: headSha,
+            baseCommitSha: baseSha,
+            originSessionId,
+            createdBy: loaded.userId,
+          })
+          .returning();
+        inserted = row;
+        break;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!/duplicate key/.test(message)) throw error;
+      }
+    }
+    if (!inserted)
+      return c.json({ error: 'Failed to allocate CR number' }, 500);
+
+    return c.json(serializeChangeRequest(inserted), 201);
+  },
 );
 
 // POST /v1/projects/:projectId/sessions/:sessionId/commit-push
@@ -401,105 +522,122 @@ projectsApp.openapi(
     tags: ['sessions'],
     summary: 'POST /:projectId/sessions/:sessionId/commit-push',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), sessionId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string(), sessionId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404, 409, 502),
+      200: json(z.any(), 'OK'),
+      ...errors(404, 409, 502),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const sessionId = c.req.param('sessionId');
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param('projectId');
+    const sessionId = c.req.param('sessionId');
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const body = await readBody(c);
-  const message = normalizeString(body.message) ?? undefined;
+    const body = await readBody(c);
+    const message = normalizeString(body.message) ?? undefined;
 
-  const [row] = await db
-    .select()
-    .from(sessionSandboxes)
-    .where(and(
-      eq(sessionSandboxes.sessionId, sessionId),
-      eq(sessionSandboxes.projectId, projectId),
-      eq(sessionSandboxes.accountId, loaded.row.accountId),
-    ))
-    .limit(1);
-  if (!row || !row.externalId) {
-    return c.json({ error: 'Session sandbox not found' }, 404);
-  }
-  if (row.status !== 'active') {
-    return c.json({ error: 'Session sandbox is not running', status: row.status }, 409);
-  }
+    const [row] = await db
+      .select()
+      .from(sessionSandboxes)
+      .where(
+        and(
+          eq(sessionSandboxes.sessionId, sessionId),
+          eq(sessionSandboxes.projectId, projectId),
+          eq(sessionSandboxes.accountId, loaded.row.accountId),
+        ),
+      )
+      .limit(1);
+    if (!row || !row.externalId) {
+      return c.json({ error: 'Session sandbox not found' }, 404);
+    }
+    if (row.status !== 'active') {
+      return c.json(
+        { error: 'Session sandbox is not running', status: row.status },
+        409,
+      );
+    }
 
-  const providerName = row.provider as SandboxProviderName;
-  if (!(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(providerName)) {
-    return c.json({ error: 'Unsupported sandbox provider' }, 409);
-  }
+    const providerName = row.provider as SandboxProviderName;
+    if (
+      !(config.ALLOWED_SANDBOX_PROVIDERS as readonly string[]).includes(
+        providerName,
+      )
+    ) {
+      return c.json({ error: 'Unsupported sandbox provider' }, 409);
+    }
 
-  // resolveEndpoint already injects the sandbox service key as a Bearer token
-  // (and the Daytona preview headers), which the daemon's /kortix/git route
-  // validates against KORTIX_TOKEN — same contract as /kortix/env.
-  let endpoint: { url: string; headers: Record<string, string> };
-  try {
-    endpoint = await getProvider(providerName).resolveEndpoint(row.externalId);
-  } catch (error) {
-    return c.json(
-      { error: error instanceof Error ? error.message : 'Failed to reach sandbox' },
-      502,
-    );
-  }
+    // resolveEndpoint already injects the sandbox service key as a Bearer token
+    // (and the Daytona preview headers), which the daemon's /kortix/git route
+    // validates against KORTIX_TOKEN — same contract as /kortix/env.
+    let endpoint: { url: string; headers: Record<string, string> };
+    try {
+      endpoint = await getProvider(providerName).resolveEndpoint(
+        row.externalId,
+      );
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error ? error.message : 'Failed to reach sandbox',
+        },
+        502,
+      );
+    }
 
-  let daemonRes: Response;
-  try {
-    daemonRes = await fetch(`${endpoint.url.replace(/\/$/, '')}/kortix/git/commit-push`, {
-      method: 'POST',
-      headers: endpoint.headers,
-      body: JSON.stringify({ message }),
-      signal: AbortSignal.timeout(30_000),
+    let daemonRes: Response;
+    try {
+      daemonRes = await fetch(
+        `${endpoint.url.replace(/\/$/, '')}/kortix/git/commit-push`,
+        {
+          method: 'POST',
+          headers: endpoint.headers,
+          body: JSON.stringify({ message }),
+          signal: AbortSignal.timeout(30_000),
+        },
+      );
+    } catch (error) {
+      return c.json(
+        {
+          error: error instanceof Error ? error.message : 'Sandbox unreachable',
+        },
+        502,
+      );
+    }
+
+    const result = (await daemonRes.json().catch(() => null)) as {
+      ok?: boolean;
+      committed?: boolean;
+      pushed?: boolean;
+      nothingToDo?: boolean;
+      branch?: string | null;
+      headSha?: string | null;
+      message?: string;
+    } | null;
+
+    if (!daemonRes.ok || !result?.ok) {
+      return c.json(
+        { error: result?.message || 'Failed to save changes' },
+        daemonRes.status === 409 ? 409 : 502,
+      );
+    }
+
+    // A fresh commit just landed on the session branch and was pushed to origin.
+    // Force the next mirror read to re-fetch so the CR we open immediately after
+    // sees the new tip (the mirror is otherwise refresh-throttled).
+    invalidateProjectMirror(projectId);
+
+    return c.json({
+      committed: Boolean(result.committed),
+      pushed: Boolean(result.pushed),
+      nothing_to_do: Boolean(result.nothingToDo),
+      branch: result.branch ?? null,
+      head_sha: result.headSha ?? null,
     });
-  } catch (error) {
-    return c.json(
-      { error: error instanceof Error ? error.message : 'Sandbox unreachable' },
-      502,
-    );
-  }
-
-  const result = (await daemonRes.json().catch(() => null)) as
-    | {
-        ok?: boolean;
-        committed?: boolean;
-        pushed?: boolean;
-        nothingToDo?: boolean;
-        branch?: string | null;
-        headSha?: string | null;
-        message?: string;
-      }
-    | null;
-
-  if (!daemonRes.ok || !result?.ok) {
-    return c.json(
-      { error: result?.message || 'Failed to save changes' },
-      daemonRes.status === 409 ? 409 : 502,
-    );
-  }
-
-  // A fresh commit just landed on the session branch and was pushed to origin.
-  // Force the next mirror read to re-fetch so the CR we open immediately after
-  // sees the new tip (the mirror is otherwise refresh-throttled).
-  invalidateProjectMirror(projectId);
-
-  return c.json({
-    committed: Boolean(result.committed),
-    pushed: Boolean(result.pushed),
-    nothing_to_do: Boolean(result.nothingToDo),
-    branch: result.branch ?? null,
-    head_sha: result.headSha ?? null,
-  });
-},
+  },
 );
 
 // GET /v1/projects/:projectId/change-requests/:crId
@@ -513,31 +651,31 @@ projectsApp.openapi(
     tags: ['change-requests'],
     summary: 'GET /:projectId/change-requests/:crId',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), crId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string(), crId: z.string() }),
+    },
     responses: {
-        200: json(ChangeRequestSchema, 'The change request'),
-        ...errors(404),
+      200: json(ChangeRequestSchema, 'The change request'),
+      ...errors(404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const crId = c.req.param('crId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param('projectId');
+    const crId = c.req.param('crId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  let cr = await getCrById(crId, projectId);
-  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+    let cr = await getCrById(crId, projectId);
+    if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
-  await refreshCrTips({
-    cr,
-    project: await withProjectGitAuth(loaded.row),
-  });
-  cr = (await getCrById(crId, projectId))!;
+    await refreshCrTips({
+      cr,
+      project: await withProjectGitAuth(loaded.row),
+    });
+    cr = (await getCrById(crId, projectId))!;
 
-  return c.json({ change_request: serializeChangeRequest(cr) });
-},
+    return c.json({ change_request: serializeChangeRequest(cr) });
+  },
 );
 
 // PATCH /v1/projects/:projectId/change-requests/:crId
@@ -550,40 +688,46 @@ projectsApp.openapi(
     tags: ['change-requests'],
     summary: 'PATCH /:projectId/change-requests/:crId',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), crId: z.string() }),
-        body: { content: { 'application/json': { schema: AnyObject } } },
-      },
+    request: {
+      params: z.object({ projectId: z.string(), crId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(404, 409),
+      200: json(z.any(), 'OK'),
+      ...errors(404, 409),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const crId = c.req.param('crId');
-  const body = await readBody(c);
-  const loaded = await loadProjectForUser(c, projectId, 'write');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param('projectId');
+    const crId = c.req.param('crId');
+    const body = await readBody(c);
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const cr = await getCrById(crId, projectId);
-  if (!cr) return c.json({ error: 'Change request not found' }, 404);
-  if (cr.status !== 'open') {
-    return c.json({ error: `Cannot edit a ${cr.status} change request` }, 409);
-  }
+    const cr = await getCrById(crId, projectId);
+    if (!cr) return c.json({ error: 'Change request not found' }, 404);
+    if (cr.status !== 'open') {
+      return c.json(
+        { error: `Cannot edit a ${cr.status} change request` },
+        409,
+      );
+    }
 
-  const updates: Partial<typeof changeRequests.$inferInsert> = { updatedAt: new Date() };
-  const title = normalizeString(body.title);
-  if (title) updates.title = title;
-  if (typeof body.description === 'string') updates.description = body.description;
+    const updates: Partial<typeof changeRequests.$inferInsert> = {
+      updatedAt: new Date(),
+    };
+    const title = normalizeString(body.title);
+    if (title) updates.title = title;
+    if (typeof body.description === 'string')
+      updates.description = body.description;
 
-  const [row] = await db
-    .update(changeRequests)
-    .set(updates)
-    .where(eq(changeRequests.crId, crId))
-    .returning();
-  return c.json(serializeChangeRequest(row));
-},
+    const [row] = await db
+      .update(changeRequests)
+      .set(updates)
+      .where(eq(changeRequests.crId, crId))
+      .returning();
+    return c.json(serializeChangeRequest(row));
+  },
 );
 
 // GET /v1/projects/:projectId/change-requests/:crId/diff
@@ -598,49 +742,58 @@ projectsApp.openapi(
     tags: ['change-requests'],
     summary: 'GET /:projectId/change-requests/:crId/diff',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), crId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string(), crId: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404),
+      200: json(z.any(), 'OK'),
+      ...errors(400, 404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const crId = c.req.param('crId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param('projectId');
+    const crId = c.req.param('crId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const cr = await getCrById(crId, projectId);
-  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+    const cr = await getCrById(crId, projectId);
+    if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
-  const projectForGit = await withProjectGitAuth(loaded.row);
+    const projectForGit = await withProjectGitAuth(loaded.row);
 
-  try {
-    const useSnapshot = cr.status === 'merged' && cr.baseCommitSha && cr.headCommitSha;
-    const diff = useSnapshot
-      ? await getDiffBetweenShas(projectForGit, cr.baseCommitSha!, cr.headCommitSha!)
-      : await getBranchDiff(projectForGit, cr.baseRef, cr.headRef);
-    return c.json({
-      cr_id: cr.crId,
-      base_ref: cr.baseRef,
-      head_ref: cr.headRef,
-      base_sha: diff.base_sha,
-      head_sha: diff.head_sha,
-      merge_base: diff.merge_base,
-      files: diff.files,
-      files_changed: diff.files_changed,
-      additions: diff.additions,
-      deletions: diff.deletions,
-      patch: diff.patch,
-    });
-  } catch (error) {
-    return c.json({
-      error: error instanceof Error ? error.message : 'Failed to compute diff',
-    }, 400);
-  }
-},
+    try {
+      const useSnapshot =
+        cr.status === 'merged' && cr.baseCommitSha && cr.headCommitSha;
+      const diff = useSnapshot
+        ? await getDiffBetweenShas(
+            projectForGit,
+            cr.baseCommitSha!,
+            cr.headCommitSha!,
+          )
+        : await getBranchDiff(projectForGit, cr.baseRef, cr.headRef);
+      return c.json({
+        cr_id: cr.crId,
+        base_ref: cr.baseRef,
+        head_ref: cr.headRef,
+        base_sha: diff.base_sha,
+        head_sha: diff.head_sha,
+        merge_base: diff.merge_base,
+        files: diff.files,
+        files_changed: diff.files_changed,
+        additions: diff.additions,
+        deletions: diff.deletions,
+        patch: diff.patch,
+      });
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error ? error.message : 'Failed to compute diff',
+        },
+        400,
+      );
+    }
+  },
 );
 
 // GET /v1/projects/:projectId/change-requests/:crId/merge-preview
@@ -652,32 +805,40 @@ projectsApp.openapi(
     tags: ['change-requests'],
     summary: 'GET /:projectId/change-requests/:crId/merge-preview',
     ...auth,
-      request: {
-        params: z.object({ projectId: z.string(), crId: z.string() }),
-      },
+    request: {
+      params: z.object({ projectId: z.string(), crId: z.string() }),
+    },
     responses: {
-        200: json(z.any(), 'OK'),
-        ...errors(400, 404),
+      200: json(z.any(), 'OK'),
+      ...errors(400, 404),
     },
   }),
   async (c: any) => {
-  const projectId = c.req.param('projectId');
-  const crId = c.req.param('crId');
-  const loaded = await loadProjectForUser(c, projectId, 'read');
-  if (!loaded) return c.json({ error: 'Not found' }, 404);
+    const projectId = c.req.param('projectId');
+    const crId = c.req.param('crId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
 
-  const cr = await getCrById(crId, projectId);
-  if (!cr) return c.json({ error: 'Change request not found' }, 404);
+    const cr = await getCrById(crId, projectId);
+    if (!cr) return c.json({ error: 'Change request not found' }, 404);
 
-  try {
-    const preview = await previewMerge(await withProjectGitAuth(loaded.row), cr.baseRef, cr.headRef);
-    return c.json(preview);
-  } catch (error) {
-    return c.json({
-      error: error instanceof Error ? error.message : 'Failed to preview merge',
-    }, 400);
-  }
-},
+    try {
+      const preview = await previewMerge(
+        await withProjectGitAuth(loaded.row),
+        cr.baseRef,
+        cr.headRef,
+      );
+      return c.json(preview);
+    } catch (error) {
+      return c.json(
+        {
+          error:
+            error instanceof Error ? error.message : 'Failed to preview merge',
+        },
+        400,
+      );
+    }
+  },
 );
 
 // POST /v1/projects/:projectId/change-requests/:crId/merge
