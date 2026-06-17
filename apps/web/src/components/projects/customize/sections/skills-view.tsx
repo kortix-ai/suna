@@ -18,22 +18,10 @@ import { useTranslations } from 'next-intl';
  * (the "Edit with agent" action) or by committing the file.
  */
 
-import {
-  useMemo,
-  useState,
-  type ReactNode,
-} from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  createFileTreeIconResolver,
-  getBuiltInFileIconColor,
-  getBuiltInSpriteSheet,
-} from '@pierre/trees';
-import {
-  ChevronRight,
   ExternalLink,
-  Folder,
-  FolderOpen,
   Loader2,
   Pencil,
   Plus,
@@ -42,7 +30,9 @@ import {
   Sparkles,
 } from 'lucide-react';
 
+import { buildFileTree, FileTree, FileTreeSprite } from '@/components/file-tree';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { MarketplaceSectionButton } from '@/components/projects/customize/marketplace-section-button';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -66,8 +56,6 @@ import {
 } from '@/components/projects/customize/use-configure-thread';
 
 type Skill = ProjectConfigSummary['skills'][number];
-const pierreIconResolver = createFileTreeIconResolver('complete');
-const pierreSpriteSheet = getBuiltInSpriteSheet('complete');
 
 /* ─── Page entry ────────────────────────────────────────────────────────── */
 
@@ -161,20 +149,23 @@ export function SkillsView({ projectId }: { projectId: string }) {
           title="Skills"
           count={skills.length}
           actions={
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1 px-2 text-xs"
-              onClick={() => configure.start(newConfigPrompt('skill'))}
-              disabled={configure.pending}
-            >
-              {configure.pending ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Plus className="h-3 w-3" />
-              )}
-              New
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <MarketplaceSectionButton projectId={projectId} />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 px-2 text-xs"
+                onClick={() => configure.start(newConfigPrompt('skill'))}
+                disabled={configure.pending}
+              >
+                {configure.pending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Plus className="h-3 w-3" />
+                )}
+                New
+              </Button>
+            </div>
           }
         />
 
@@ -211,24 +202,15 @@ export function SkillsView({ projectId }: { projectId: string }) {
             searching ? <NoMatches query={query} /> : <ListSkeleton />
           ) : (
             <>
-              {/* Pierre sprite sheet — the source for the file-type icons. */}
-              <span
-                className="pointer-events-none absolute h-0 w-0 overflow-hidden"
-                aria-hidden="true"
-                dangerouslySetInnerHTML={{ __html: pierreSpriteSheet }}
+              <FileTreeSprite />
+              <FileTree
+                nodes={tree}
+                rootPath={skillsRoot ?? ''}
+                isExpanded={isExpanded}
+                onToggle={togglePath}
+                selectedPath={selectedFilePath}
+                onSelectFile={setSelectedFilePath}
               />
-              {tree.map((node) => (
-                <FileTreeNode
-                  key={node.path}
-                  node={node}
-                  depth={0}
-                  skillsRoot={skillsRoot ?? ''}
-                  isExpanded={isExpanded}
-                  onToggle={togglePath}
-                  selectedFilePath={selectedFilePath}
-                  onSelectFile={setSelectedFilePath}
-                />
-              ))}
             </>
           )}
         </div>
@@ -256,19 +238,9 @@ export function SkillsView({ projectId }: { projectId: string }) {
   );
 }
 
-/* ─── File tree ──────────────────────────────────────────────────────────────
-   A genuine recursive file tree of the skills directory. Every node is either a
-   directory (synthesized from path segments) or a file. One row shape — indent
-   rails, then [chevron | spacer] · icon · label — so folders, skills, and the
-   files within them all line up in a single column, VS Code style. */
-
-interface FileNode {
-  name: string;
-  /** Path relative to the skills root (also the unique key). */
-  path: string;
-  isDir: boolean;
-  children: FileNode[];
-}
+/* ─── Skills tree helpers ──────────────────────────────────────────────────
+   The recursive tree itself lives in the shared `@/components/file-tree`
+   module; these helpers stay here because they're skills-specific. */
 
 /** The skills directory itself (`…/skills`), derived from a known skill path. */
 function deriveSkillsRoot(skills: readonly Skill[]): string | null {
@@ -278,40 +250,6 @@ function deriveSkillsRoot(skills: readonly Skill[]): string | null {
     if (idx !== -1) return s.path.slice(0, idx + '/skills'.length);
   }
   return null;
-}
-
-function buildFileTree(relPaths: readonly string[]): FileNode[] {
-  const roots: FileNode[] = [];
-  const byPath = new Map<string, FileNode>();
-  for (const rel of relPaths) {
-    const parts = rel.split('/').filter(Boolean);
-    let siblings = roots;
-    let prefix = '';
-    for (let i = 0; i < parts.length; i++) {
-      const isFile = i === parts.length - 1;
-      prefix = prefix ? `${prefix}/${parts[i]}` : parts[i]!;
-      let node = byPath.get(prefix);
-      if (!node) {
-        node = { name: parts[i]!, path: prefix, isDir: !isFile, children: [] };
-        byPath.set(prefix, node);
-        siblings.push(node);
-      }
-      siblings = node.children;
-    }
-  }
-  sortNodes(roots);
-  return roots;
-}
-
-function sortNodes(nodes: FileNode[]): void {
-  nodes.sort((a, b) => {
-    if (a.isDir !== b.isDir) return a.isDir ? -1 : 1;
-    // SKILL.md floats to the top of its folder as the canonical doc.
-    if (!a.isDir && a.name === 'SKILL.md') return -1;
-    if (!b.isDir && b.name === 'SKILL.md') return 1;
-    return a.name.localeCompare(b.name);
-  });
-  for (const node of nodes) if (node.isDir) sortNodes(node.children);
 }
 
 /** The skill that owns a file (nearest ancestor dir holding a SKILL.md), used to
@@ -331,172 +269,6 @@ function findOwningSkill(
     }
   }
   return best;
-}
-
-function FileTreeNode({
-  node,
-  depth,
-  skillsRoot,
-  isExpanded,
-  onToggle,
-  selectedFilePath,
-  onSelectFile,
-}: {
-  node: FileNode;
-  depth: number;
-  skillsRoot: string;
-  isExpanded: (path: string) => boolean;
-  onToggle: (path: string) => void;
-  selectedFilePath: string | null;
-  onSelectFile: (fullPath: string) => void;
-}) {
-  if (!node.isDir) {
-    const fullPath = `${skillsRoot}/${node.path}`;
-    return (
-      <TreeRow
-        depth={depth}
-        selected={fullPath === selectedFilePath}
-        onClick={() => onSelectFile(fullPath)}
-      >
-        <TreeRowSpacer />
-        <PierreFileIcon path={node.name} className="h-4 w-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate">{node.name}</span>
-      </TreeRow>
-    );
-  }
-
-  const open = isExpanded(node.path);
-  return (
-    <>
-      <TreeRow depth={depth} ariaExpanded={open} onClick={() => onToggle(node.path)}>
-        <TreeChevron open={open} />
-        {open ? (
-          <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground/70" />
-        ) : (
-          <Folder className="h-4 w-4 shrink-0 text-muted-foreground/70" />
-        )}
-        <span className="min-w-0 flex-1 truncate">{node.name}</span>
-      </TreeRow>
-      {open &&
-        node.children.map((child) => (
-          <FileTreeNode
-            key={child.path}
-            node={child}
-            depth={depth + 1}
-            skillsRoot={skillsRoot}
-            isExpanded={isExpanded}
-            onToggle={onToggle}
-            selectedFilePath={selectedFilePath}
-            onSelectFile={onSelectFile}
-          />
-        ))}
-    </>
-  );
-}
-
-/* ─── Shared tree-row primitives ─────────────────────────────────────────────
-   Full-bleed, flush rows so the indent rails read as continuous verticals;
-   indent grows 16px per level; selection is a tinted-primary bar, never a flat
-   grey fill (design-system rule). */
-
-const INDENT_STEP = 16; // px per nesting level — matches the project file tree
-const GUTTER = 8; // px before the first chevron at the root
-
-/** Faint vertical indent guides, one hairline per ancestor level — the way VS
- *  Code draws them. Root rows (depth 0) get none, just the gutter. */
-function TreeGuides({ depth }: { depth: number }) {
-  return (
-    <span
-      className="flex shrink-0 self-stretch"
-      style={{ paddingLeft: GUTTER }}
-      aria-hidden="true"
-    >
-      {Array.from({ length: depth }).map((_, i) => (
-        <span
-          key={i}
-          className="shrink-0 self-stretch border-l border-border/50"
-          style={{ width: INDENT_STEP }}
-        />
-      ))}
-    </span>
-  );
-}
-
-/** Disclosure chevron for expandable rows. */
-function TreeChevron({ open }: { open: boolean }) {
-  return (
-    <ChevronRight
-      className={cn(
-        'h-3.5 w-3.5 shrink-0 text-muted-foreground/60 transition-transform duration-fast',
-        open && 'rotate-90',
-      )}
-    />
-  );
-}
-
-/** A chevron-width spacer so files keep their icon aligned under folder icons. */
-function TreeRowSpacer() {
-  return <span className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />;
-}
-
-/** The shared row: full-bleed, fixed-height, indent rails on the left, then a
- *  gapped [chevron | spacer] · icon · label cluster. */
-function TreeRow({
-  depth,
-  selected,
-  ariaExpanded,
-  onClick,
-  children,
-}: {
-  depth: number;
-  selected?: boolean;
-  ariaExpanded?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-expanded={ariaExpanded}
-      className={cn(
-        'group flex h-7 w-full cursor-pointer items-center text-left text-sm transition-colors duration-fast',
-        selected
-          ? 'bg-primary/[0.08] text-primary'
-          : 'text-foreground/80 hover:bg-muted/50 hover:text-foreground',
-      )}
-    >
-      {/* TreeGuides always emits the left gutter (plus a rail per level), so the
-          content cluster never adds its own left padding. */}
-      <TreeGuides depth={depth} />
-      <span className="flex min-w-0 flex-1 items-center gap-1.5 pr-2">
-        {children}
-      </span>
-    </button>
-  );
-}
-
-/** A file-type icon from Pierre's sprite sheet (colored per extension). */
-function PierreFileIcon({ path, className }: { path: string; className?: string }) {
-  const icon = pierreIconResolver.resolveIcon('file-tree-icon-file', path);
-  const color = icon.token ? getBuiltInFileIconColor(icon.token) : undefined;
-  const name = icon.name.replace(/^#/, '');
-  const width = icon.width ?? 16;
-  const height = icon.height ?? 16;
-  return (
-    <svg
-      aria-hidden="true"
-      className={className}
-      data-icon-name={icon.remappedFrom ?? icon.name}
-      data-icon-token={icon.token}
-      viewBox={icon.viewBox ?? `0 0 ${width} ${height}`}
-      width={width}
-      height={height}
-      style={{ color }}
-    >
-      <use href={`#${name}`} />
-    </svg>
-  );
 }
 
 /* ─── File viewer (right pane) ─────────────────────────────────────────── */

@@ -1,0 +1,224 @@
+/**
+ * /v1/marketplace — browse the registry catalog. Read-only + auth'd; installing
+ * is project-scoped and lives under /v1/projects/:id/registry/* (see r10.ts).
+ */
+
+import { createRoute, z } from '@hono/zod-openapi';
+import { supabaseAuth } from '../middleware/auth';
+import { auth, errors, json, makeOpenApiApp } from '../openapi';
+import type { AppEnv } from '../types';
+import {
+  _resetExternalCache,
+  assertAllowedSourceAddress,
+  catalogStatus,
+  getCatalogItemDetail,
+  getCatalogItemFile,
+  listCatalogItemsLive,
+  listFeaturedMarketplaces,
+  listMarketplaces,
+  registerMarketplaceSourceProvider,
+  warmMarketplaceCatalog,
+} from './catalog';
+import { addSource, listSources, removeSource } from './sources-store';
+
+// Wire DB-persisted sources into the catalog. Done here (not in catalog.ts) so
+// catalog.ts stays free of the config/db import graph for pure unit tests.
+registerMarketplaceSourceProvider(listSources);
+
+// Warm the catalog in the background at boot so the first marketplace open is
+// instant instead of paying for the cold GitHub scan. The cache lives on
+// globalThis, so this also stays warm across `bun --hot` reloads in dev.
+warmMarketplaceCatalog();
+
+export const marketplaceApp = makeOpenApiApp<AppEnv>();
+
+marketplaceApp.use('/*', supabaseAuth);
+
+marketplaceApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/items',
+    tags: ['marketplace'],
+    summary: 'GET /marketplace/items',
+    ...auth,
+    request: {
+      query: z.object({ query: z.string().optional(), type: z.string().optional(), source: z.string().optional() }),
+    },
+    responses: {
+      200: json(z.any(), 'Catalog items'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
+    const q = c.req.query();
+    const items = await listCatalogItemsLive({ query: q.query, type: q.type, source: q.source });
+    // `loading`/`pending`/`sources` let the UI stream sources in (Kortix first),
+    // poll, and show a spinner per still-resolving source.
+    return c.json({ items, ...catalogStatus() });
+  },
+);
+
+marketplaceApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/marketplaces',
+    tags: ['marketplace'],
+    summary: 'GET /marketplace/marketplaces',
+    ...auth,
+    responses: {
+      200: json(z.any(), 'Distinct marketplaces with item counts'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
+    return c.json({ marketplaces: await listMarketplaces(), ...catalogStatus() });
+  },
+);
+
+marketplaceApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/marketplaces/featured',
+    tags: ['marketplace'],
+    summary: 'GET /marketplace/marketplaces/featured',
+    ...auth,
+    responses: {
+      200: json(z.any(), 'Curated featured marketplaces'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
+    return c.json({ featured: await listFeaturedMarketplaces() });
+  },
+);
+
+marketplaceApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/items/{id}',
+    tags: ['marketplace'],
+    summary: 'GET /marketplace/items/:id',
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'Item detail'),
+      ...errors(401, 404),
+    },
+  }),
+  async (c: any) => {
+    const detail = await getCatalogItemDetail(c.req.param('id'));
+    if (!detail) return c.json({ error: 'Not found' }, 404);
+    return c.json(detail);
+  },
+);
+
+marketplaceApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/items/{id}/file',
+    tags: ['marketplace'],
+    summary: 'GET /marketplace/items/:id/file',
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      query: z.object({ path: z.string().min(1) }),
+    },
+    responses: {
+      200: json(z.any(), 'File content'),
+      ...errors(401, 404),
+    },
+  }),
+  async (c: any) => {
+    const file = await getCatalogItemFile(c.req.param('id'), c.req.query('path'));
+    if (!file) return c.json({ error: 'Not found' }, 404);
+    return c.json(file);
+  },
+);
+
+// ── Sources ("Add a marketplace") ──────────────────────────────────────────
+// Operator-managed registries (a GitHub repo, Git URL, or local folder) whose
+// items merge into the catalog. Platform-global; persisted as a platform setting.
+
+marketplaceApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/sources',
+    tags: ['marketplace'],
+    summary: 'GET /marketplace/sources',
+    ...auth,
+    responses: {
+      200: json(z.any(), 'Configured marketplace sources'),
+      ...errors(401),
+    },
+  }),
+  async (c: any) => {
+    return c.json({ sources: await listSources() });
+  },
+);
+
+marketplaceApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/sources',
+    tags: ['marketplace'],
+    summary: 'POST /marketplace/sources',
+    ...auth,
+    request: {
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              address: z.string().min(1),
+              gitRef: z.string().optional(),
+              sparsePaths: z.array(z.string()).optional(),
+              label: z.string().optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.any(), 'Added source'),
+      ...errors(400, 401),
+    },
+  }),
+  async (c: any) => {
+    const body = await c.req.json().catch(() => ({}));
+    try {
+      // LFI/SSRF guard — reject local-folder + private/non-https URL sources.
+      assertAllowedSourceAddress(String(body?.address ?? ''));
+      const source = await addSource(body);
+      _resetExternalCache();
+      warmMarketplaceCatalog();
+      return c.json({ source });
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 400);
+    }
+  },
+);
+
+marketplaceApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/sources/{id}',
+    tags: ['marketplace'],
+    summary: 'DELETE /marketplace/sources/:id',
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'Removed source'),
+      ...errors(401, 404),
+    },
+  }),
+  async (c: any) => {
+    const removed = await removeSource(c.req.param('id'));
+    if (!removed) return c.json({ error: 'Not found' }, 404);
+    _resetExternalCache();
+    warmMarketplaceCatalog();
+    return c.json({ ok: true });
+  },
+);

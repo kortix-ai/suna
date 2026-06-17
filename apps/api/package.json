@@ -23,6 +23,7 @@
     "@kortix/db": "workspace:*",
     "@kortix/llm-gateway": "workspace:*",
     "@kortix/manifest-schema": "workspace:*",
+    "@kortix/registry": "workspace:*",
     "@kortix/shared": "workspace:*",
     "@kortix/starter": "workspace:*",
     "@logtail/node": "^0.5.8",

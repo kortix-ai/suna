@@ -84,6 +84,9 @@ importers:
       '@kortix/manifest-schema':
         specifier: workspace:*
         version: link:../../packages/manifest-schema
+      '@kortix/registry':
+        specifier: workspace:*
+        version: link:../../packages/registry
       '@kortix/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -157,6 +160,9 @@ importers:
       '@kortix/manifest-schema':
         specifier: workspace:*
         version: link:../../packages/manifest-schema
+      '@kortix/registry':
+        specifier: workspace:*
+        version: link:../../packages/registry
       '@kortix/starter':
         specifier: workspace:*
         version: link:../../packages/starter
@@ -1410,6 +1416,15 @@ importers:
       smol-toml:
         specifier: ^1.4.2
         version: 1.6.1
+    devDependencies:
+      '@types/bun':
+        specifier: ^1.1.0
+        version: 1.3.14
+      typescript:
+        specifier: ^5.0.0
+        version: 5.9.3
+
+  packages/registry:
     devDependencies:
       '@types/bun':
         specifier: ^1.1.0
