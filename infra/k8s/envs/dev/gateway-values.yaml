@@ -31,7 +31,6 @@ resources:
 ingress:
   enabled: true
   host: gateway-dev.kortix.com
-  # ACM cert ARN for gateway-dev.kortix.com — provision on the dev-eks cluster
-  # layer (module.acm, like the API's) and paste the ARN here.
-  certificateArn: ""
+  # ACM cert for gateway-dev.kortix.com (dev-eks/cluster module.acm_gateway).
+  certificateArn: "arn:aws:acm:us-west-2:935064898258:certificate/ee7b3729-26c7-4622-881d-028daa58d051"
   cloudflareProxied: true

@@ -28,7 +28,6 @@ resources:
 ingress:
   enabled: true
   host: gateway.kortix.com
-  # ACM cert ARN for gateway.kortix.com — provision a cert for this host
-  # (infra/terraform … module.acm, same as the API's) and paste the ARN here.
-  certificateArn: ""
+  # ACM cert for gateway.kortix.com (prod-eks/cluster module.acm_gateway).
+  certificateArn: "arn:aws:acm:us-west-2:935064898258:certificate/440f9346-5271-40bd-aff2-47993f14748d"
   cloudflareProxied: true
