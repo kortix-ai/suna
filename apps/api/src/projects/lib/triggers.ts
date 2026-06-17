@@ -342,13 +342,13 @@ export async function fireGitTrigger(input: {
   renderedPrompt: string;
   source: 'cron' | 'webhook' | 'manual';
   request?: RequestAuditContext;
-}): Promise<{ status: 'fired' | 'queued' | 'failed'; sessionId?: string; error?: string; reason?: string }> {
+}): Promise<{ status: 'fired' | 'backpressure' | 'failed'; sessionId?: string; error?: string; reason?: string }> {
   const { spec, project, payload, renderedPrompt, source } = input;
   const backpressure = await triggerBackpressureState(project.accountId, project.projectId);
 
   if (backpressure.shouldQueue) {
     return {
-      status: 'queued',
+      status: 'backpressure',
       reason: backpressure.provisioning >= backpressure.projectProvisioningLimit
         ? 'project provisioning backpressure'
         : 'account session cap',
@@ -444,10 +444,6 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
         continue;
       }
 
-      // Mark fired BEFORE the actual fire — a slow tick must never spawn
-      // two sessions for the same scheduled run.
-      await markGitTriggerFired(project.projectId, spec.slug, now);
-
       const payload = {
         cron: {
           schedule: spec.cron ?? spec.runAt,
@@ -466,8 +462,10 @@ export async function runGitTriggerSweep(now: Date, accumulator: {
         renderedPrompt,
         source: 'cron',
       });
-      if (result.status === 'fired') accumulator.fired += 1;
-      else if (result.status === 'queued') accumulator.queued += 1;
+      if (result.status === 'fired') {
+        await markGitTriggerFired(project.projectId, spec.slug, now);
+        accumulator.fired += 1;
+      } else if (result.status === 'backpressure') accumulator.queued += 1;
       else accumulator.failed += 1;
     }
   }
