@@ -472,6 +472,63 @@ export function warmBaseUsable(snap: unknown): boolean {
   return !Array.isArray(regions) || regions.includes(config.DAYTONA_WARM_TARGET);
 }
 
+// Warm-snapshot usability is content-addressed + region-bound and changes only
+// on rebake / a DAYTONA_WARM_TARGET switch, yet both the generic-base and the
+// per-project warm routes used to re-verify it with an UNCACHED snapshot.get on
+// EVERY cold-miss provider create — a public-internet round-trip in series before
+// the box can even start, and unbounded (the generic-base probe had no timeout),
+// so a degraded region cost up to 4s + an unbounded hang per session. Cache the
+// POSITIVE verdict briefly (keyed by name + warm target so a region switch can
+// never serve a stale-region positive), bound the read, and on a timeout pause
+// the whole warm path so the SECOND probe is skipped — the strongest signal the
+// region is degraded. 404/transport errors are NOT a degradation signal: they
+// just mean a stale pointer, so they return false WITHOUT pausing (the caller
+// falls through to the generic base / cold path).
+const WARM_USABLE_TTL_MS = 45_000;
+const WARM_SNAPSHOT_GET_TIMEOUT_MS = 4_000;
+const WARM_SNAPSHOT_GET_TIMEOUT = Symbol('warm-snapshot-get-timeout');
+const warmUsableCache = new Map<string, number>(); // `${name}@${target}` → expiresAt(ms)
+
+function warmUsableKey(name: string): string {
+  return `${name}@${config.DAYTONA_WARM_TARGET}`;
+}
+
+/** Drop a cached usable-verdict (e.g. the snapshot was just deleted/rebaked). */
+export function invalidateWarmUsable(name: string): void {
+  warmUsableCache.delete(warmUsableKey(name));
+}
+
+/**
+ * True iff `name` is an active, warm-target-bootable snapshot — cached (positive
+ * only, short TTL) and bounded by a 4s timeout. A timeout pauses the warm path
+ * fleet-wide (region degraded); other throws just return false. Never throws.
+ */
+export async function warmSnapshotUsableCached(name: string): Promise<boolean> {
+  const key = warmUsableKey(name);
+  const exp = warmUsableCache.get(key);
+  if (exp !== undefined && Date.now() < exp) return true;
+  let snap: unknown;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    snap = await Promise.race([
+      getDaytonaWarm().snapshot.get(name),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(WARM_SNAPSHOT_GET_TIMEOUT), WARM_SNAPSHOT_GET_TIMEOUT_MS);
+      }),
+    ]);
+  } catch (err) {
+    warmUsableCache.delete(key);
+    if (err === WARM_SNAPSHOT_GET_TIMEOUT) noteWarmPathFailure();
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
+  const ok = warmBaseUsable(snap);
+  if (ok) warmUsableCache.set(key, Date.now() + WARM_USABLE_TTL_MS);
+  else warmUsableCache.delete(key);
+  return ok;
+}
+
 /**
  * Is the warm base ready to boot sessions from? Returns its name if the snapshot
  * is active on the warm target; otherwise kicks a background bake (deduped) and
@@ -483,10 +540,11 @@ export async function ensureWarmBaseReady(onLog?: (l: string) => void): Promise<
   if (Date.now() < warmPathPausedUntil) return null;
   try {
     const name = await warmBaseSnapshotName();
-    const snap = await getDaytonaWarm().snapshot.get(name);
-    if (warmBaseUsable(snap)) return name;
+    // Cached + bounded: a degraded region times out in 4s (and pauses warm) rather
+    // than hanging this request, and a warm hit is a pure in-process check.
+    if (await warmSnapshotUsableCached(name)) return name;
   } catch {
-    // fingerprint failed / not found / transient → fall through to bake
+    // fingerprint failed → fall through to bake
   }
   kickWarmBaseBuild(onLog);
   return null;
@@ -515,6 +573,7 @@ export function kickWarmBaseBuild(onLog?: (l: string) => void): void {
         // switch, or error/build_failed from a crashed bake). The re-bake would
         // collide on the name, so clear it first.
         log(`[warm-bake] warm base ${name} exists but is unusable (state=${state || 'unknown'}) — deleting before rebake`);
+        invalidateWarmUsable(name);
         await getDaytonaWarm().snapshot.delete(existing as never).catch((err: unknown) =>
           log(`[warm-bake] pre-bake delete failed: ${err instanceof Error ? err.message : String(err)}`),
         );
@@ -608,31 +667,57 @@ async function reapStaleWarmBases(currentName: string, log: (l: string) => void)
   }
 }
 
+// Distinct markers the warm-restore script emits on stdout. The Daytona SDK can
+// return an undefined exitCode, so the provider drives every recreate-vs-commit
+// decision off these PARSED STRINGS — never off the exit code.
+export const WARM_RESTORE_MARKERS = {
+  noRuntime: 'KORTIX_NO_RUNTIME', // baked runtime dropped by the restore → recreate
+  envFail: 'KORTIX_ENV_FAIL',     // session-env write failed → hard error
+  wrote: 'KORTIX_WROTE',          // session-env written
+  started: 'KORTIX_STARTED',      // daemon launch issued
+} as const;
+
 /**
- * Build the per-session env-file + daemon-start commands for a warm sandbox.
- * Daytona's executeCommand env param does NOT propagate, and memory-restore
- * freezes baked env, so we write the session identity to a file and start the
- * daemon sourcing it. Exported for the Daytona provider's warm create path.
+ * Build the ONE post-restore in-box command for a warm sandbox: probe the baked
+ * runtime, reset the frozen clock, write the per-session env file, and launch the
+ * daemon — collapsed into a single round-trip (was four serial executeCommands).
+ *
+ * Daytona's executeCommand env param does NOT propagate, and a memory-restore
+ * freezes baked env + the VM clock, so we write the session identity to a file
+ * and start the daemon sourcing it, after resetting the clock. Exported for the
+ * Daytona provider's warm create path; `nowEpochSeconds` is the real wall-clock
+ * time to set (captured by the caller per attempt).
+ *
+ * The script emits WARM_RESTORE_MARKERS the caller parses. The runtime gate runs
+ * and bails with `noRuntime` BEFORE the backgrounded daemon exec — because
+ * `exec … &` returns success whether or not the entrypoint binary exists, so the
+ * launch itself can never reveal a dropped runtime.
  */
-export function warmDaemonStartCommands(env: Record<string, string>): { writeEnv: string; startDaemon: string } {
+export function warmRestoreScript(env: Record<string, string>, nowEpochSeconds: number): string {
   const sh = (v: string) => `'${String(v).replace(/'/g, `'\\''`)}'`;
   const envFile = Object.entries(env).map(([k, v]) => `export ${k}=${sh(v)}`).join('\n');
   const b64 = Buffer.from(envFile, 'utf8').toString('base64');
-  return {
-    writeEnv: `echo ${b64} | base64 -d | sudo tee /opt/kortix/session.env >/dev/null && sudo chmod 600 /opt/kortix/session.env && echo wrote`,
-    // Run the daemon as ROOT, matching the normal Kortix sandbox (Dockerfile
-    // `USER root`). The entrypoint anchors cwd at `/` and the daemon creates its
-    // clone work-tree relative to cwd (`/.kortix-clone-…`); the base image's
-    // default `daytona` user can't write to root-owned `/`, so the clone fails
-    // with EACCES. sudo (passwordless on these images) restores parity.
-    //
-    // RUNTIME_ENV mirrors the static `ENV` lines the Dockerfile bakes (which the
-    // imperative bake can't bake into the image) — exported first so the
-    // per-session `session.env` still wins on any overlap. Notably
-    // AGENT_BROWSER_ARGS, without which the agent's browser tool crashes in a
-    // sandboxed container.
-    startDaemon:
-      `setsid sudo bash -c '${RUNTIME_ENV} set -a; source /opt/kortix/session.env; set +a; cd /; exec /usr/local/bin/kortix-entrypoint' ` +
-      `</dev/null >/tmp/kortix-agent.log 2>&1 & echo started`,
-  };
+  const M = WARM_RESTORE_MARKERS;
+  return [
+    // 1. Runtime present? If the restore dropped the filesystem layer, bail with
+    //    the recreate marker BEFORE touching env or launching anything.
+    `if ! ( test -x /usr/local/bin/kortix-agent && test -x /usr/local/bin/kortix-entrypoint && command -v opencode >/dev/null ); then echo ${M.noRuntime}; exit 0; fi`,
+    // 2. Reset the frozen clock before anything time-sensitive (the entrypoint
+    //    validates TLS/JWT; the session env may carry short-lived tokens).
+    `sudo date -s @${nowEpochSeconds} >/dev/null 2>&1 || true`,
+    // 3. Write the per-session identity env file; bail hard if it fails.
+    `if ! ( echo ${b64} | base64 -d | sudo tee /opt/kortix/session.env >/dev/null && sudo chmod 600 /opt/kortix/session.env ); then echo ${M.envFail}; exit 0; fi`,
+    `echo ${M.wrote}`,
+    // 4. Launch the daemon as ROOT (matches the normal Kortix sandbox, Dockerfile
+    //    `USER root`: the entrypoint anchors cwd at `/` and writes its clone
+    //    work-tree there, which the base image's `daytona` user can't). RUNTIME_ENV
+    //    mirrors the Dockerfile's static `ENV` lines (the imperative bake can't),
+    //    exported first so the per-session env still wins on overlap — notably
+    //    AGENT_BROWSER_ARGS, without which the agent's browser tool crashes.
+    //    Backgrounded with stdio redirected so executeCommand returns immediately;
+    //    the `started` marker only proves the launch was issued (hence the gate
+    //    in step 1 is load-bearing).
+    `setsid sudo bash -c '${RUNTIME_ENV} set -a; source /opt/kortix/session.env; set +a; cd /; exec /usr/local/bin/kortix-entrypoint' </dev/null >/tmp/kortix-agent.log 2>&1 &`,
+    `echo ${M.started}`,
+  ].join('\n');
 }

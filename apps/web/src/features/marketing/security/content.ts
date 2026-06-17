@@ -46,6 +46,14 @@ export const ACCORDION = [
     visual: 'isolation',
   },
   {
+    id: 'token',
+    icon: 'key',
+    title: 'enterpriseAccordionTokenTitle',
+    teaser: 'enterpriseAccordionTokenTeaser',
+    body: 'enterpriseAccordionTokenBody',
+    visual: 'token',
+  },
+  {
     id: 'soc2',
     icon: 'shield',
     title: 'enterpriseAccordionSoc2Title',

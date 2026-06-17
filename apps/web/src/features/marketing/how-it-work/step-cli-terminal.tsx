@@ -1,5 +1,6 @@
 'use client';
 
+import type { CliPanelAnchor } from '@/components/home/interactive-demo/cli/draggable-cli-panel';
 import {
   KORTIX_CMD_CLASS,
   KORTIX_CMD_STYLE,
@@ -9,6 +10,9 @@ import {
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
 import { useEffect, useRef, type HTMLAttributes } from 'react';
+
+/** Default floating CLI panel anchor for how-it-works steps (bottom-right, not top-left). */
+export const STEP_CLI_PANEL_ANCHOR: CliPanelAnchor = 'bottom-right';
 
 export type StepCliBlock = { cmd: Line; out: Line[] };
 

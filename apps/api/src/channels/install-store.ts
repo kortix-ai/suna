@@ -1,4 +1,4 @@
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { chatInstalls, projectSecrets } from '@kortix/db';
 import { db } from '../shared/db';
 import {
@@ -156,17 +156,37 @@ export async function loadSlackTeamNameForProject(projectId: string): Promise<st
 
 async function upsertSecret(projectId: string, name: string, value: string): Promise<void> {
   const valueEnc = encryptProjectSecret(projectId, value);
-  await db
-    .insert(projectSecrets)
-    .values({ projectId, name, valueEnc })
-    .onConflictDoUpdate({
-      // owner_user_id is left NULL here (a SHARED secret), so the conflict must
-      // target the PARTIAL unique index `(project_id, name) WHERE owner_user_id
-      // IS NULL` — a bare ON CONFLICT (project_id, name) matches no index and 500s.
-      target: [projectSecrets.projectId, projectSecrets.name],
-      targetWhere: sql`${projectSecrets.ownerUserId} is null`,
-      set: { valueEnc, updatedAt: new Date() },
-    });
+  const updated = await updateSharedSecret(projectId, name, valueEnc);
+  if (updated) return;
+
+  try {
+    await db.insert(projectSecrets).values({ projectId, name, valueEnc });
+  } catch (err) {
+    if (!isUniqueConflict(err)) throw err;
+    const retryUpdated = await updateSharedSecret(projectId, name, valueEnc);
+    if (!retryUpdated) throw err;
+  }
+}
+
+async function updateSharedSecret(projectId: string, name: string, valueEnc: string): Promise<boolean> {
+  const rows = await db
+    .update(projectSecrets)
+    .set({ valueEnc, updatedAt: new Date() })
+    .where(and(
+      eq(projectSecrets.projectId, projectId),
+      eq(projectSecrets.name, name),
+      isNull(projectSecrets.ownerUserId),
+    ))
+    .returning({ secretId: projectSecrets.secretId });
+  return rows.length > 0;
+}
+
+function isUniqueConflict(err: unknown): boolean {
+  return (
+    (err as any)?.code === '23505' ||
+    (err as any)?.cause?.code === '23505' ||
+    (err as any)?.cause?.cause?.code === '23505'
+  );
 }
 
 async function readSecret(projectId: string, name: string): Promise<string | null> {

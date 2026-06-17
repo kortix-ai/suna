@@ -1,5 +1,6 @@
 'use client';
 
+import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { cn } from '@/lib/utils';
@@ -7,26 +8,26 @@ import { useInView } from 'motion/react';
 import { useTranslations } from 'next-intl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { STEPS, type Step } from './how-it-works-content';
-import { Step1ProjectCli } from './step/step-1-project-cli';
 import { Step2ConnectCli } from './step/step-2-connect-cli';
 import { Step3BuildCli } from './step/step-3-build-cli';
 import { Step4ShipCli } from './step/step-4-ship-cli';
 import { Step5RunCli } from './step/step-5-run-cli';
 import { Step6OwnCli } from './step/step-6-own-cli';
+import { StepAskCli } from './step/step-ask-cli';
 
 function StepShowcaseFor({ step }: { step: Step }) {
   switch (step.id) {
-    case 'create':
-      return <Step1ProjectCli />;
-    case 'build':
-      return <Step3BuildCli />;
     case 'connect':
       return <Step2ConnectCli />;
-    case 'ship':
-      return <Step4ShipCli />;
-    case 'run':
+    case 'ask':
+      return <StepAskCli />;
+    case 'work':
       return <Step5RunCli />;
-    case 'own':
+    case 'review':
+      return <Step4ShipCli />;
+    case 'skills':
+      return <Step3BuildCli />;
+    case 'memory':
       return <Step6OwnCli />;
     default:
       return <StepShowcase step={step} />;
@@ -64,9 +65,9 @@ function StepRow({
       ref={ref}
       className="flex min-h-[70vh] flex-col justify-start space-y-4 pt-10 pb-16 first:border-t-0"
     >
-      <p className="bg-primary text-background w-fit rounded px-2 py-1 font-mono text-xs tracking-wider">
+      <Badge variant="kortix" className="w-fit rounded">
         {step.label}
-      </p>
+      </Badge>
       <h3 className="text-foreground text-2xl font-medium tracking-tight">{step.title}</h3>
       <p className="text-muted-foreground max-w-md text-base leading-relaxed">{step.description}</p>
       <ul className="text-muted-foreground max-w-md space-y-2 text-[15px] leading-relaxed">

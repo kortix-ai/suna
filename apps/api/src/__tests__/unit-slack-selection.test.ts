@@ -4,13 +4,20 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 // binding read/write helpers (against a FIFO db mock).
 
 // ─── FIFO db mock (same shape as unit-slack-dispatch-session) ─────────────────
-let dbResults: unknown[][] = [];
+let dbResults: Array<unknown[] | Error> = [];
 function makeChain(): any {
   const chain: any = {};
   for (const m of ['select', 'from', 'where', 'limit', 'set', 'values', 'returning', 'update']) {
     chain[m] = () => chain;
   }
-  chain.then = (resolve: (rows: unknown[]) => unknown) => Promise.resolve(resolve(dbResults.shift() ?? []));
+  chain.then = (resolve: (rows: unknown[]) => unknown, reject?: (err: unknown) => unknown) => {
+    const next = dbResults.shift() ?? [];
+    if (next instanceof Error) {
+      if (reject) return Promise.resolve(reject(next));
+      return Promise.reject(next);
+    }
+    return Promise.resolve(resolve(next));
+  };
   return chain;
 }
 mock.module('../shared/db', () => ({
@@ -87,6 +94,14 @@ describe('currentChannelSelection', () => {
     dbResults = [[]];
     expect(await currentChannelSelection({ teamId: 'T1', channelId: 'C1' })).toBeNull();
   });
+  test('missing optional override columns falls back to project-only routing', async () => {
+    dbResults = [
+      new Error('PostgresError: column "agent_name" does not exist'),
+      [{ projectId: 'p1' }],
+    ];
+    const sel = await currentChannelSelection({ teamId: 'T1', channelId: 'C1' });
+    expect(sel).toEqual({ projectId: 'p1', agentName: null, opencodeModel: null });
+  });
   test('no channel id → null (no query)', async () => {
     expect(await currentChannelSelection({ teamId: 'T1', channelId: '' })).toBeNull();
   });
@@ -103,5 +118,9 @@ describe('setChannelAgent / setChannelModel', () => {
   });
   test('no channel id → false (no write)', async () => {
     expect(await setChannelAgent({ teamId: 'T1', channelId: '' }, null)).toBe(false);
+  });
+  test('missing optional override columns returns false instead of crashing', async () => {
+    dbResults = [new Error('PostgresError: column "opencode_model" does not exist')];
+    expect(await setChannelModel({ teamId: 'T1', channelId: 'C1' }, 'anthropic/claude-opus-4-8')).toBe(false);
   });
 });

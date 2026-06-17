@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils';
 import { FolderGit2, GitBranch } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef } from 'react';
-import { StepCliTerminal } from '../step-cli-terminal';
+import { STEP_CLI_PANEL_ANCHOR, StepCliTerminal } from '../step-cli-terminal';
 import { useStep1Director, type Step1Project } from '../step-director';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 
@@ -141,7 +141,7 @@ export function Step1ProjectCli() {
     <div ref={rootRef} className="relative aspect-19/22 w-full overflow-visible">
       <WebPanel projects={director.projects} />
 
-      <DraggableCliPanel containerRef={rootRef}>
+      <DraggableCliPanel containerRef={rootRef} initialAnchor={STEP_CLI_PANEL_ANCHOR}>
         {({ dragHandleProps }) => (
           <StepCliTerminal director={director} dragHandleProps={dragHandleProps} />
         )}

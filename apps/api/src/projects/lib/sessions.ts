@@ -356,13 +356,20 @@ export async function createProjectSession(input: {
 
   let responseHeaders: Record<string, string> | undefined;
 
-  if (input.enforceAccountCap !== false) {
-    const capResult = await checkConcurrentSessionCap(accountId, userId, input.request);
+  // The concurrency cap and the billing gate are independent read-only checks —
+  // run them concurrently so a warmed create pays a single DB round-trip instead
+  // of two serial ones. Error precedence is preserved exactly: the cap (429) is
+  // still evaluated/returned before billing (402).
+  const [capResult, billingCheck] = await Promise.all([
+    input.enforceAccountCap !== false
+      ? checkConcurrentSessionCap(accountId, userId, input.request)
+      : Promise.resolve(null),
+    checkBillingActive(accountId),
+  ]);
+  if (capResult) {
     responseHeaders = capResult.headers;
     if (capResult.error) return { error: capResult.error };
   }
-
-  const billingCheck = await checkBillingActive(accountId);
   if (!billingCheck.ok) {
     return {
       error: {
