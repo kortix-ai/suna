@@ -343,11 +343,24 @@ async function reapWarmSandbox(row: { sandboxId: string; externalId: string | nu
 }
 
 /**
+ * Per-project refill coalescing guard (per process). refillProjectPool is fanned
+ * out from many concurrent triggers — claim-empty + post-claim (sessions.ts),
+ * presence (access.ts / r1.ts), config change (r5.ts), and the periodic
+ * reconcile. Sizing the deficit off the PARKED count (below) means concurrent
+ * refills would each see the same parked deficit and each spawn it, overshooting
+ * `size` and burning the global cap. Coalescing collapses a burst into one refill;
+ * cross-instance overshoot is still bounded by the global cap + the reconcile reap.
+ */
+const refillInFlight = new Set<string>();
+
+/**
  * Kick a single project's pool toward its desired size (best-effort, fire and
  * forget). Called reactively right after a claim so the pool refills fast.
  */
 export async function refillProjectPool(projectId: string, forUserId?: string | null): Promise<void> {
   if (!warmPoolEnabled()) return;
+  if (refillInFlight.has(projectId)) return; // a refill for this project is already running
+  refillInFlight.add(projectId);
   try {
     const [project] = await db
       .select({ projectId: projects.projectId, accountId: projects.accountId, repoUrl: projects.repoUrl, defaultBranch: projects.defaultBranch, manifestPath: projects.manifestPath, metadata: projects.metadata })
@@ -365,19 +378,33 @@ export async function refillProjectPool(projectId: string, forUserId?: string | 
       const { readProjectWarmPointer, kickProjectWarmBake } = await import('../../snapshots/warm-project');
       if (!readProjectWarmPointer(project.metadata)) kickProjectWarmBake(project);
     }
-    const desired = cfg.size;
-    const live = await db
-      .select({ n: sql<number>`count(*)::int` })
-      .from(sessionSandboxes)
-      .where(and(eq(sessionSandboxes.projectId, projectId), inArray(sessionSandboxes.poolState, ['booting', 'parked'])))
-      .then((rows) => Number(rows[0]?.n ?? 0));
+    // Size the deficit off the PARKED (instantly claimable) count, NOT live
+    // (parked + booting). A just-spawned booting replacement isn't claimable for
+    // ~20-30s, so counting it as "live" lets the pool sit at parked=0 while rapid
+    // creates cold-miss. Spawning toward the parked target keeps a ready box in
+    // front of the user. Bound total in-flight (parked + booting) by a small
+    // headroom over `size` so booting boxes can't pile up unbounded.
+    const { ready: parked, warming: booting } = await getWarmPoolCounts(projectId);
+    const maxLive = cfg.size + Math.ceil(cfg.size / 2);
+    const parkedDeficit = cfg.size - parked;
+    const liveHeadroom = maxLive - (parked + booting);
     const globalRemaining = config.KORTIX_WARM_POOL_MAX_TOTAL - (await countGlobalWarm());
-    const want = Math.min(desired - live, Math.max(0, globalRemaining));
-    for (let i = 0; i < want; i++) {
-      await spawnWarmSandbox(project, forUserId).catch((err) => console.warn('[warm-pool] spawn failed:', err instanceof Error ? err.message : err));
+    const want = Math.max(0, Math.min(parkedDeficit, liveHeadroom, globalRemaining));
+    if (want > 0) {
+      // Spawn concurrently — each box is independent (own id + detached boot) and
+      // only the cheap setup round-trips are awaited, so a serial loop would just
+      // lengthen time-to-pool-full. Per-spawn .catch keeps one failure from
+      // aborting the batch; the in-flight guard is held until all rows land.
+      await Promise.allSettled(
+        Array.from({ length: want }, () =>
+          spawnWarmSandbox(project, forUserId).catch((err) => console.warn('[warm-pool] spawn failed:', err instanceof Error ? err.message : err)),
+        ),
+      );
     }
   } catch (err) {
     console.warn('[warm-pool] refill failed:', err instanceof Error ? err.message : err);
+  } finally {
+    refillInFlight.delete(projectId);
   }
 }
 

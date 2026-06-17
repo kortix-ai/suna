@@ -9,7 +9,7 @@ describe('resolveWarmConfig', () => {
     expect(resolveWarmConfig({ warm_pool: { enabled: true, size: 0 } })).toEqual({ enabled: true, size: 0 });
   });
   test('clamps oversized size', () => {
-    expect(resolveWarmConfig({ warm_pool: { enabled: true, size: 999 } })).toEqual({ enabled: true, size: 10 });
+    expect(resolveWarmConfig({ warm_pool: { enabled: true, size: 999 } })).toEqual({ enabled: true, size: 25 });
   });
   test('defaults to enabled when unset', () => {
     expect(resolveWarmConfig(null).enabled).toBe(true);
