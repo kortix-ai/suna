@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { ProjectSessionRow } from '../projects/lib/serializers';
+import type { SessionDeliveryOutcome } from '../projects/session-lifecycle';
 
 // Persist the headline invariant of the Slack channel refactor: a known thread
 // maps PERMANENTLY to exactly one session. A follow-up routes into that session
@@ -9,6 +11,29 @@ import { beforeEach, describe, expect, mock, test } from 'bun:test';
 
 // ─── DB mock: FIFO of query results (same pattern as unit-slack-streams) ──────
 let dbResults: unknown[][] = [];
+function fakeSessionRow(sessionId: string): ProjectSessionRow {
+  const now = new Date('2026-01-01T00:00:00Z');
+  return {
+    sessionId,
+    accountId: 'acc-1',
+    projectId: 'proj-1',
+    branchName: 'session/test',
+    baseRef: 'main',
+    sandboxProvider: 'daytona',
+    sandboxId: null,
+    sandboxUrl: null,
+    opencodeSessionId: null,
+    agentName: 'default',
+    status: 'queued',
+    error: null,
+    createdBy: 'user-1',
+    visibility: 'project',
+    metadata: {},
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 function makeChain(): any {
   const chain: any = {};
   for (const m of ['from', 'where', 'limit', 'set', 'values', 'onConflictDoUpdate', 'onConflictDoNothing', 'returning']) {
@@ -22,29 +47,19 @@ mock.module('../shared/db', () => ({
   hasDatabase: () => true,
 }));
 
-// ─── Session-delivery: the outcome under test ─────────────────────────────────
-let deliverOutcome = 'delivered';
+// ─── Lifecycle delivery: the outcome under test ───────────────────────────────
+let deliverOutcome: SessionDeliveryOutcome = 'delivered';
 let deliverCalls = 0;
-mock.module('../projects/session-delivery', () => ({
-  deliverPromptToSession: async () => {
-    deliverCalls++;
-    return deliverOutcome;
-  },
-}));
 
-// ─── projects barrel: spy on createProjectSession (the "second session") ──────
+// ─── lifecycle seam: spy on createSession (the "second session") ─────────────
 let createSessionCalls = 0;
-mock.module('../projects', () => ({
-  createProjectSession: async () => {
-    createSessionCalls++;
-    return { row: { sessionId: 'replacement-sess' } };
-  },
-  resolveGitTriggerActor: async () => 'user-1',
-}));
 
 // ─── streams: fakes so spawnAgentTurn touches no real Slack/DB here ───────────
 let finalizeCalls: Array<{ error?: string; answer?: string }> = [];
 mock.module('../channels/slack/turn', () => ({
+  claimFinalize: async () => true,
+  openPlanMessage: async () => true,
+  repaintLivePlan: async () => {},
   loadTurn: async () => null, // no in-flight turn → we open our own stream
   startTurn: async () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
   saveTurn: async () => {},
@@ -53,30 +68,74 @@ mock.module('../channels/slack/turn', () => ({
     finalizeCalls.push(opts);
   },
   buildSlackTurnEnv: () => ({}),
+  relayTurnAnswer: async () => {},
+  relayTurnEnd: async () => {},
+  relayTurnStep: async () => {},
+  rowToHandle: () => ({ sessionId: '', channel: 'C1', token: 'xoxb', ts: '', steps: [] }),
 }));
 
 mock.module('../channels/install-store', () => ({
+  SLACK_BOT_TOKEN: 'SLACK_BOT_TOKEN',
+  SLACK_SIGNING_SECRET: 'SLACK_SIGNING_SECRET',
+  SLACK_TEAM_ID: 'SLACK_TEAM_ID',
+  SLACK_BOT_USER_ID: 'SLACK_BOT_USER_ID',
+  SLACK_TEAM_NAME: 'SLACK_TEAM_NAME',
+  TELEGRAM_BOT_TOKEN: 'TELEGRAM_BOT_TOKEN',
+  TELEGRAM_WEBHOOK_SECRET: 'TELEGRAM_WEBHOOK_SECRET',
+  deleteSlackInstall: async () => {},
+  listProjectsForWorkspace: async () => ['proj-1'],
+  loadSlackInstall: async () => null,
   loadSlackBotUserIdForProject: async () => 'B1',
+  loadSlackSigningSecretForProject: async () => null,
+  loadSlackTeamNameForProject: async () => null,
   loadSlackTokenForProject: async () => 'xoxb-test',
-  saveSlackOauthInstall: async () => {},
+  loadTelegramWebhookSecretForProject: async () => null,
+  saveSlackInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
+  saveSlackOauthInstall: async () => ({ workspaceId: 'T1', workspaceName: 'Test', botUserId: 'B1', installedAt: new Date().toISOString() }),
 }));
 mock.module('../channels/slack-api', () => ({
+  addReaction: async () => {},
+  appendStream: async () => {},
   deleteMessage: async () => {},
   getChannelName: async () => 'general',
+  joinChannel: async () => true,
   postBlocks: async () => 'ts',
   postMessage: async () => 'ts',
+  publishHomeView: async () => {},
+  removeReaction: async () => {},
+  startStream: async () => 'ts',
+  stopStream: async () => {},
+  updateBlocks: async () => {},
+  updateMessage: async () => {},
 }));
 
 const { spawnAgentTurn } = await import('../channels/slack/dispatch');
+const { resetSlackSessionLifecycleForTest, setSlackSessionLifecycleForTest } = await import('../channels/slack/session');
 
 const envelope = { team_id: 'T1', event: undefined } as any;
 const event = { type: 'app_mention', channel: 'C1', ts: '100.1', user: 'U1', thread_ts: '90.0', text: 'hi' } as any;
+
+afterAll(() => {
+  resetSlackSessionLifecycleForTest();
+  mock.restore();
+});
 
 beforeEach(() => {
   dbResults = [];
   finalizeCalls = [];
   createSessionCalls = 0;
   deliverCalls = 0;
+  setSlackSessionLifecycleForTest({
+    continueSession: async () => {
+      deliverCalls++;
+      return deliverOutcome;
+    },
+    createSession: async () => {
+      createSessionCalls++;
+      return { status: 'created', sessionId: 'replacement-sess', row: fakeSessionRow('replacement-sess') };
+    },
+    resolveProjectAutomationActor: async () => 'user-1',
+  });
 });
 
 describe('spawnAgentTurn — permanent 1:1 thread↔session, never a second session', () => {
