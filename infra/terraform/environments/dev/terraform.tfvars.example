@@ -9,7 +9,7 @@
 #     -H "Authorization: Bearer $TF_VAR_cloudflare_api_token" \
 #     'https://api.cloudflare.com/client/v4/zones?name=kortix.com' | jq -r '.result[0].id')
 
-aws_region = "us-west-2"
+aws_region = "eu-west-2"
 
 # The image CI publishes (pin to a tag/sha for reproducible deploys).
 api_image      = "ghcr.io/kortix-ai/kortix-api:latest"
@@ -26,7 +26,7 @@ api_environment = {
 # Secret env vars -> Secrets Manager / SSM ARNs. Recommended: store the dev
 # secret bundle once in Secrets Manager and reference each key's ARN here.
 # Example single-key form:
-#   API_KEY_SECRET = "arn:aws:secretsmanager:us-west-2:ACCT:secret:kortix-dev/api-WXyz:API_KEY_SECRET::"
+#   API_KEY_SECRET = "arn:aws:secretsmanager:eu-west-2:ACCT:secret:kortix-dev/api-WXyz:API_KEY_SECRET::"
 api_secrets = {
   # API_KEY_SECRET   = "arn:aws:secretsmanager:...:API_KEY_SECRET::"
   # SUPABASE_SERVICE_ROLE_KEY = "arn:aws:secretsmanager:...:SUPABASE_SERVICE_ROLE_KEY::"

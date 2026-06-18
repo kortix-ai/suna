@@ -4,7 +4,7 @@
 #   export TF_VAR_cloudflare_api_token=...
 #   export TF_VAR_cloudflare_zone_id=...
 
-aws_region = "us-west-2"
+aws_region = "eu-west-2"
 vpc_cidr   = "10.30.0.0/16" # must not overlap ECS (10.10/16 dev, 10.20/16 prod)
 
 cluster_version = "1.32"

@@ -6,7 +6,7 @@ variable "name" {
 variable "aws_region" {
   description = "AWS region (used for the awslogs log driver)."
   type        = string
-  default     = "us-west-2"
+  default     = "eu-west-2"
 }
 
 # ── Networking (from modules/network) ─────────────────────────────────────────

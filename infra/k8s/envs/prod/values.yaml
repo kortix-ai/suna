@@ -31,14 +31,18 @@ serviceAccount:
 
 externalSecrets:
   enabled: true
-  region: us-west-2
+  region: eu-west-2
   secretName: kortix-prod-env
   targetSecretName: kortix-api-env
 
 ingress:
   enabled: true
   host: api-eks.kortix.com
-  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/2b74aa18-1fe1-4cc8-a6c1-7012a0823d27
+  # REGION MIGRATION (us-west-2 → eu-west-2): an ACM cert is region-bound, so the
+  # old us-west-2 cert can't front an eu-west-2 ALB. Replace this with the NEW
+  # eu-west-2 cert ARN that `terraform apply` (prod-eks) emits before Argo CD
+  # reconciles this ingress. See infra/REGION-MIGRATION.md step 4.
+  certificateArn: arn:aws:acm:eu-west-2:935064898258:certificate/REPLACE_WITH_EU_WEST_2_CERT
   cloudflareProxied: true
 
 # Plain rolling Deployment (no canary). The EKS wins we actually want —

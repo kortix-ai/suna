@@ -132,7 +132,7 @@ resource "aws_backup_selection" "daily" {
   name         = "kortix-daily-sel"
   plan_id      = aws_backup_plan.daily.id
   iam_role_arn = aws_iam_role.backup.arn
-  resources    = ["arn:aws:dynamodb:us-west-2:${local.account_id}:table/kortix-terraform-locks"]
+  resources    = ["arn:aws:dynamodb:eu-west-2:${local.account_id}:table/kortix-terraform-locks"]
   selection_tag {
     type  = "STRINGEQUALS"
     key   = "backup"

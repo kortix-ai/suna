@@ -94,7 +94,7 @@ terraform apply                                 # ~5 min (Helm releases)
 cd ../cluster
 ROLE_ARN=$(terraform output -raw app_irsa_role_arn)
 CERT_ARN=$(terraform output -raw acm_certificate_arn)
-aws eks update-kubeconfig --name kortix-prod-eks --region us-west-2
+aws eks update-kubeconfig --name kortix-prod-eks --region eu-west-2
 helm upgrade --install kortix-api ../../../k8s/charts/kortix-api \
   --namespace kortix-prod \
   --set image.tag="$(tr -d '[:space:]' < ../../../../VERSION)" \
@@ -133,7 +133,7 @@ Discontinue ECS only after EKS is proven; until then both serve in parallel.
 ## Operations
 
 ```bash
-aws eks update-kubeconfig --name kortix-prod-eks --region us-west-2
+aws eks update-kubeconfig --name kortix-prod-eks --region eu-west-2
 
 kubectl -n kortix-prod get pods -o wide          # placement across AZs/nodes
 kubectl -n kortix-prod rollout status deploy/kortix-api

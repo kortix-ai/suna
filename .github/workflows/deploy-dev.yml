@@ -192,7 +192,7 @@ jobs:
       id-token: write # OIDC → read the dev cluster
       contents: write # push the values bump to main
     env:
-      AWS_REGION: us-west-2
+      AWS_REGION: eu-west-2
       CLUSTER: kortix-dev-eks
       NAMESPACE: kortix-dev
       APP: kortix-api

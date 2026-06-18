@@ -137,9 +137,10 @@ release; `KORTIX_CHANNEL=dev` → `dev-latest` prerelease.
 | DEV  | `main` | dev.kortix.com (Vercel) | dev-api.kortix.com → `kortix-dev`  |
 | PROD | `prod` | kortix.com (Vercel)     | api-prod.kortix.com → `kortix-prod`|
 
-AWS: account `935064898258`, region `us-west-2`. State in S3
-(`kortix-terraform-state` + DynamoDB locks). Terraform under `infra/terraform`
-(modules `network`, `acm-cloudflare`, `cloudflare-dns`, `ecs-api`).
+AWS: account `935064898258`, region `eu-west-2` (colocated with the prod
+Supabase DB — see `infra/REGION-MIGRATION.md` for the us-west-2 → eu-west-2 move).
+State in S3 (`kortix-terraform-state` + DynamoDB locks). Terraform under
+`infra/terraform` (modules `network`, `acm-cloudflare`, `cloudflare-dns`, `ecs-api`).
 
 ### api.kortix.com — the Cloudflare Worker cutover switch
 

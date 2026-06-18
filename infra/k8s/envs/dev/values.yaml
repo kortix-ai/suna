@@ -52,7 +52,7 @@ serviceAccount:
   roleArn: arn:aws:iam::935064898258:role/kortix-dev-eks-app
 externalSecrets:
   enabled: true
-  region: us-west-2
+  region: eu-west-2
   secretName: kortix-dev-env
   targetSecretName: kortix-api-env
 ingress:
@@ -64,7 +64,9 @@ ingress:
   # own cert (57eed8f4) — it no longer serves dev-api or borrows the ECS dev ALB
   # cert (a9af6fd8), which is now free for the ECS dev stack alone.
   host: dev-api-eks.kortix.com
-  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/57eed8f4-cba4-4d6a-94ea-1b948708989b
+  # REGION MIGRATION: replace with the NEW eu-west-2 ACM cert ARN (apply emits it).
+  # The old us-west-2 cert (57eed8f4) cannot front an eu-west-2 ALB. See infra/REGION-MIGRATION.md.
+  certificateArn: arn:aws:acm:eu-west-2:935064898258:certificate/REPLACE_WITH_EU_WEST_2_CERT
   cloudflareProxied: true
 # Plain rolling Deployment (no canary) — same delivery model as prod-eks:
 # probe-based auto-healing, HPA autoscaling, zero-downtime rolling deploys.

@@ -32,7 +32,7 @@ data "terraform_remote_state" "cluster" {
   config = {
     bucket         = "kortix-terraform-state"
     key            = "prod-eks/cluster.tfstate"
-    region         = "us-west-2"
+    region         = "eu-west-2"
     dynamodb_table = "kortix-terraform-locks"
   }
 }

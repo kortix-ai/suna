@@ -25,7 +25,7 @@ terraform {
 }
 
 provider "aws" {
-  region = "us-west-2"
+  region = "eu-west-2"
 }
 
 # CloudTrail is multi-region but homed in us-east-1; its KMS key must live there.

@@ -6,7 +6,7 @@ Account-global SOC 2 / Drata compliance controls as Terraform. Sibling to the
 ## What it manages
 - IAM account password policy (DCF-68 / DCF-350)
 - CloudTrail KMS CMK + multi-region trail + log-file validation + S3 data events (DCF-54 / DCF-478 / DCF-406)
-- GuardDuty detectors, us-west-2 + us-east-1 (DCF-87)
+- GuardDuty detectors, eu-west-2 + us-east-1 (DCF-87)
 - S3 account-level public access block (DCF-55/78/406 backstop)
 - AWS Backup vault + daily plan + selection + service role (DCF-99)
 - VPC Flow Logs delivery role + log group (DCF-406)
@@ -17,10 +17,10 @@ These were one-time or region-spanning and live outside the stack; documented
 in `../../compliance/SOC2-DRATA-REMEDIATION.md`:
 - GuardDuty in the other 15 regions
 - Deletion of 15 empty regional default VPCs
-- Per-VPC flow logs, default-SG stripping, and NACL deny (22/3389) for the 5 us-west-2 VPCs
+- Per-VPC flow logs, default-SG stripping, and NACL deny (22/3389) for the 5 eu-west-2 VPCs
 - S3 per-bucket versioning / TLS-deny policy / access-logging
 - ALB CloudWatch alarms + WAFv2 WebACL (app-tier; candidates to fold into the `ecs-api` module)
-  - WebACL `kortix-alb-waf` (REGIONAL, us-west-2) is associated with BOTH `kortix-prod-alb`
+  - WebACL `kortix-alb-waf` (REGIONAL, eu-west-2) is associated with BOTH `kortix-prod-alb`
     and `kortix-dev-alb`, and fronts `api(-prod)/dev-api.kortix.com` behind Cloudflare.
   - DO NOT block on the `*_BODY` managed sub-rules: this is an API that legitimately carries
     arbitrary user/agent payloads (prompts full of code, file paths like `/etc/passwd`, IPs

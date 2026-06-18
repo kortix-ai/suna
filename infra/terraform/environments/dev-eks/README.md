@@ -55,7 +55,7 @@ cd ../platform && terraform init && terraform apply
 
 3. **Bootstrap the dev Argo CD app** (one-time; thereafter GitOps owns it):
    ```bash
-   aws eks update-kubeconfig --region us-west-2 --name kortix-dev-eks
+   aws eks update-kubeconfig --region eu-west-2 --name kortix-dev-eks
    kubectl apply -f ../../../k8s/argocd/applications/dev.yaml
    # watch it: kubectl -n argocd port-forward svc/argocd-server 8080:443
    ```

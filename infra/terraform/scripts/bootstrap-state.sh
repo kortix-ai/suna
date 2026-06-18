@@ -3,7 +3,7 @@
 # Idempotent — skips anything that already exists. Run once per AWS account.
 set -euo pipefail
 
-REGION="${AWS_REGION:-us-west-2}"
+REGION="${AWS_REGION:-eu-west-2}"
 BUCKET="${TF_STATE_BUCKET:-kortix-terraform-state}"
 TABLE="${TF_LOCK_TABLE:-kortix-terraform-locks}"
 

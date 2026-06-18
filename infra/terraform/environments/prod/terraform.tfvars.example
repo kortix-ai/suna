@@ -4,7 +4,7 @@
 #   export TF_VAR_cloudflare_api_token=...
 #   export TF_VAR_cloudflare_zone_id=...
 
-aws_region = "us-west-2"
+aws_region = "eu-west-2"
 
 # PIN prod to an immutable release tag/sha (not :latest).
 api_image      = "ghcr.io/kortix-ai/kortix-api:vX.Y.Z"

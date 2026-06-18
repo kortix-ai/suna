@@ -13,7 +13,7 @@ infra/terraform/
     cloudflare-dns/    # Cloudflare DNS records
     eks/               # EKS prod (cluster / platform / irsa) — see infra/EKS.md
   environments/
-    dev/               # dev-api.kortix.com  (ECS, us-west-2)
+    dev/               # dev-api.kortix.com  (ECS, eu-west-2)
     prod/              # api-prod.kortix.com (ECS)
     prod-eks/          # api-eks.kortix.com  (EKS, parallel to prod) — infra/EKS.md
 ```
@@ -34,7 +34,7 @@ them. The longer-term SOC2 target (autoscaling, no OS to patch) is ECS Fargate
 ## State
 
 State lives in S3 (`kortix-terraform-state`) with a DynamoDB lock table
-(`kortix-terraform-locks`), both in us-west-2 — see `environments/*/backend.tf`.
+(`kortix-terraform-locks`), both in eu-west-2 — see `environments/*/backend.tf`.
 Bootstrap once with `bash scripts/bootstrap-state.sh` (creates the bucket +
 table if absent), then `terraform init`.
 

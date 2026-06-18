@@ -50,7 +50,7 @@ serviceAccount:
 
 externalSecrets:
   enabled: true
-  region: us-west-2
+  region: eu-west-2
   secretName: kortix-preview-env
   targetSecretName: kortix-api-env
 
@@ -58,7 +58,9 @@ ingress:
   enabled: true
   host: preview.preview-api.kortix.com # overridden per-PR by the ApplicationSet
   # Wildcard cert *.preview-api.kortix.com (TF module.acm_preview).
-  certificateArn: arn:aws:acm:us-west-2:935064898258:certificate/8e5ec220-77d9-450f-abe9-21d5322afa78
+  # REGION MIGRATION: replace with the NEW eu-west-2 wildcard ACM cert ARN that
+  # apply emits; the old us-west-2 cert (8e5ec220) can't front an eu-west-2 ALB.
+  certificateArn: arn:aws:acm:eu-west-2:935064898258:certificate/REPLACE_WITH_EU_WEST_2_CERT
   # All previews share ONE host-routed ALB (no ALB-per-PR cost/latency).
   albGroup: kortix-previews
   # DNS-only (grey cloud): external-dns creates pr-<n>.preview-api.kortix.com →

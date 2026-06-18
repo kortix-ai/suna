@@ -32,7 +32,7 @@ autoscaling), `cloudflare-dns` (the `dev-api` CNAME → ALB).
 ```bash
 cd infra/terraform/environments/dev
 
-export AWS_PROFILE=...                          # us-west-2 creds
+export AWS_PROFILE=...                          # eu-west-2 creds
 export TF_VAR_cloudflare_api_token=...           # = CLOUDFLARE_API_TOKEN secret
 export TF_VAR_cloudflare_zone_id=$(curl -s \
   -H "Authorization: Bearer $TF_VAR_cloudflare_api_token" \

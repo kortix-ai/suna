@@ -4,7 +4,7 @@ variable "instance_name" {
 }
 
 variable "availability_zone" {
-  description = "Lightsail AZ, e.g. us-west-2a."
+  description = "Lightsail AZ, e.g. eu-west-2a."
   type        = string
 }
 
