@@ -8,7 +8,7 @@ import {
   DialogContent,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { SessionDiffViewer } from '@/components/session/session-diff-viewer';
+import { SessionDiffViewer } from '@/features/session/session-diff-viewer';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { cn } from '@/lib/utils';
 

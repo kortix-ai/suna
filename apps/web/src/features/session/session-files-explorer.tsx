@@ -6,8 +6,8 @@ import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import {
   SessionVersionHeader,
   type SessionPanelMode,
-} from '@/components/session/session-version-header';
-import { SessionDiffViewer } from '@/components/session/session-diff-viewer';
+} from '@/features/session/session-version-header';
+import { SessionDiffViewer } from '@/features/session/session-diff-viewer';
 
 /**
  * Session side-panel "Files" surface.

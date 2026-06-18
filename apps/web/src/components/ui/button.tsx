@@ -23,8 +23,8 @@ const buttonVariants = cva(
         'outline-ghost': 'border border-primary/10 hover:bg-background/50 hover:text-foreground',
         secondary: 'bg-secondary  hover:bg-secondary    text-foreground ',
         'secondary-outline': 'bg-secondary hover:bg-secondary border border-border text-foreground',
-        sidebar:
-          'text-sidebar-foreground hover:bg-sidebar-accent/80 flex items-center justify-start gap-2.5 w-full transition-colors duration-150 font-normal !h-8 !text-sm !px-2.5 !py-1.5 [&_svg]:!size-3.5',
+        sidebar: 'text-sidebar-foreground hover:bg-sidebar-accent/80 ',
+        background: 'bg-background hover:bg-background/90  text-foreground ',
         input: 'bg-input text-primary hover:bg-input',
         accent: 'bg-foreground/5 text-accent-foreground hover:bg-foreground/10 rounded-md',
         ghost: 'bg-transparent text-foreground hover:bg-foreground/10 hover:text-foreground',

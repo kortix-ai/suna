@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import {
   useOpenChangeRequest,
   useSessionBaseRef,
-} from '@/components/session/session-changes-shared';
+} from '@/features/session/session-changes-shared';
 
 export type SessionPanelMode = 'changes' | 'files';
 

@@ -2,8 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 import { DiffView } from '@/components/diff/diff-view';
-import { QuestionPrompt } from '@/components/session/question-prompt';
-import { SubSessionModal } from '@/components/session/sub-session-modal';
+import { QuestionPrompt } from '@/features/session/question-prompt';
+import { SubSessionModal } from '@/features/session/sub-session-modal';
 import {
   AlertTriangle,
   Ban,
@@ -70,7 +70,7 @@ import {
   HighlightedCode,
   UnifiedMarkdown,
 } from '@/components/markdown/unified-markdown';
-import { useOcFileOpen } from '@/components/session/use-oc-file-open';
+import { useOcFileOpen } from '@/features/session/use-oc-file-open';
 import {
   Collapsible,
   CollapsibleContent,
@@ -135,7 +135,7 @@ import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
 import {
   extractReadableHtml,
   stripMarkupForToolOutput,
-} from '@/components/session/tool-renderers-sanitization';
+} from '@/features/session/tool-renderers-sanitization';
 
 import {
   type ApplyPatchFile,

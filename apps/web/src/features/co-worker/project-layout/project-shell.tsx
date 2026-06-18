@@ -149,7 +149,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 
           <div
             className={cn(
-              'bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden border',
+              'bg-background border-border relative flex min-h-0 flex-1 flex-col overflow-hidden border-t-[1.5px] border-l-[1.5px]',
+              // 'rounded-t-xl lg:rounded-t-none',
               !disableTabSelector ? 'rounded-t-xl lg:rounded-tl-lg lg:rounded-tr-none' : '',
             )}
           >

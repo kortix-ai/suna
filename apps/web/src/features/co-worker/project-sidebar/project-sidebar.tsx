@@ -6,6 +6,7 @@ import {
   type SessionFilterValue,
 } from '@/components/projects/session-label';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
   DropdownMenu,
@@ -47,7 +48,7 @@ import {
 } from '@/lib/projects-client';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
-import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
+import { HomeSolid, Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarClock,
@@ -58,6 +59,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -198,6 +200,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
                 className="flex w-full items-center justify-between gap-0.5"
               >
+                <Button type="button" variant="ghost" size="icon" asChild>
+                  <Link href={`/projects/${projectId}`}>
+                    <HomeSolid className="size-4.5" />
+                  </Link>
+                </Button>
                 <div className="w-full min-w-0">
                   <ProjectSwitcher variant="sidebar" />
                 </div>
@@ -339,6 +346,8 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       <SidebarFooter className="pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom,0px))] group-data-[collapsible=icon]:px-0">
         <UserMenu user={user} variant="sidebar" />
       </SidebarFooter>
+
+      {/* <SidebarRail /> */}
     </Sidebar>
   );
 }

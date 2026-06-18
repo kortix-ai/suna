@@ -1,25 +1,17 @@
 'use client';
 
-import * as React from 'react';
-import { useCallback, useState } from 'react';
 import { ArrowRight, GitBranch, GitMerge, GitPullRequest } from 'lucide-react';
+import { useCallback, useMemo, useState } from 'react';
 
+import { Badge } from '@/components/ui/badge';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-} from '@/components/ui/popover';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import type { ChangeRequest } from '@/features/project-files/api/change-requests';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
-import type { ChangeRequest } from '@/features/project-files/api/change-requests';
-import { cn } from '@/lib/utils';
 
 interface CrController {
   crs: ChangeRequest[];
@@ -34,7 +26,7 @@ interface CrController {
 
 function useOpenCrController(): CrController {
   const { data } = useChangeRequests('open', { refetchInterval: 20_000 });
-  const crs = data?.change_requests ?? [];
+  const crs = useMemo(() => data?.change_requests ?? [], [data?.change_requests]);
   const count = crs.length;
 
   const [selectedCrId, setSelectedCrId] = useState<string | null>(null);
@@ -81,47 +73,51 @@ function OpenCrChooser({
   onPick: (id: string) => void;
 }) {
   return (
-    <div className="w-full overflow-hidden">
-      <div className="flex items-center gap-2.5 border-b border-border/60 px-4 pt-4 pb-3">
-        <span className="grid size-7 shrink-0 place-items-center rounded-full bg-emerald-500/10 text-emerald-600">
-          <GitPullRequest className="size-3.5" />
-        </span>
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold tracking-tight text-foreground">
-            Changes ready for {baseRef || 'main'}
-          </h3>
-          <p className="truncate text-xs text-muted-foreground">
-            {crs.length} open · pick one to review &amp; merge
-          </p>
+    <div className="w-full overflow-hidden py-1">
+      <div className="border-border flex items-center justify-between gap-3 border-b px-3.5 py-1.5">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="grid size-8 shrink-0 place-items-center rounded-md bg-emerald-500/10 text-emerald-600">
+            <GitPullRequest className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-foreground truncate text-sm font-medium">Open changes</h3>
+            <p className="text-muted-foreground truncate text-xs">
+              {crs.length} ready for {baseRef || 'main'}
+            </p>
+          </div>
         </div>
       </div>
-      <div className="max-h-[50vh] overflow-y-auto py-1">
+      <div className="max-h-[50vh] overflow-y-auto">
         {crs.map((cr) => (
           <button
             key={cr.cr_id}
             type="button"
             onClick={() => onPick(cr.cr_id)}
-            className="group flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none"
+            className="group hover:bg-muted/50 focus-visible:bg-muted/50 flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-[background-color,transform] duration-150 ease-out focus-visible:outline-none active:scale-[0.99]"
           >
-            <span className="grid size-6 shrink-0 place-items-center rounded-full bg-muted/50">
-              <GitPullRequest className="size-3 text-emerald-600" />
-            </span>
             <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <span className="font-mono text-xs text-muted-foreground">#{cr.number}</span>
-                <span className="truncate text-sm font-medium text-foreground">{cr.title}</span>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className="text-muted-foreground shrink-0 font-mono text-[11px] tabular-nums">
+                  #{cr.number}
+                </span>
+                <span className="text-foreground truncate text-sm leading-5 font-medium">
+                  {cr.title}
+                </span>
               </div>
-              <div className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground">
-                <GitBranch className="size-3" />
-                <span className="truncate font-mono">{cr.head_ref}</span>
+              <div className="text-muted-foreground mt-0.5 flex min-w-0 items-center gap-1.5 text-xs">
+                <GitBranch className="size-3 shrink-0" />
+                <span className="truncate font-mono">{cr.head_ref.slice(0, 7)}</span>
                 <span className="text-muted-foreground/60">→</span>
-                <span className="font-mono">{cr.base_ref}</span>
+                {cr.base_ref === 'main' ? (
+                  <Badge variant="kortix" size="xs">
+                    {cr.base_ref.slice(0, 7)}
+                  </Badge>
+                ) : (
+                  <span className="shrink-0 truncate font-mono">{cr.base_ref}</span>
+                )}
               </div>
             </div>
-            <span className="ml-auto flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground/70 transition-colors group-hover:text-foreground">
-              Review
-              <ArrowRight className="size-3" />
-            </span>
+            <ArrowRight className="text-muted-foreground/50 group-hover:text-foreground size-3.5 shrink-0 transition-colors" />
           </button>
         ))}
       </div>
@@ -137,51 +133,37 @@ function NavItemInner() {
   const label = c.count === 1 ? 'Review change' : 'Review changes';
   const baseRef = c.crs[0]?.base_ref ?? '';
 
+  const menuButton = (
+    <SidebarMenuButton
+      variant="success"
+      className="text-sm! font-medium [&_svg]:size-4!"
+      onClick={c.count === 1 ? () => c.openCr(c.crs[0].cr_id) : undefined}
+    >
+      <GitPullRequest />
+      <span>{label}</span>
+      <span className="ml-auto pr-1 text-xs tabular-nums">{c.count}</span>
+    </SidebarMenuButton>
+  );
+
   return (
     <SidebarMenuItem>
-      <Popover open={c.listOpen} onOpenChange={c.setListOpen}>
-        <Tooltip>
-          <PopoverAnchor asChild>
-            <TooltipTrigger asChild>
-              <SidebarMenuButton
-                onClick={c.onActivate}
-                className={cn(
-                  '!text-sm [&_svg]:!size-4',
-                  'bg-emerald-500/[0.07] text-foreground hover:bg-emerald-500/15',
-                )}
-              >
-                <span className="relative flex">
-                  <GitPullRequest className="text-emerald-600" />
-                  <span className="absolute -right-0.5 -top-0.5 flex size-1.5">
-                    <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500/70" />
-                    <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
-                  </span>
-                </span>
-                <span>{label}</span>
-                <span className="ml-auto flex min-w-5 items-center justify-center rounded-full bg-emerald-500/15 px-1.5 text-xs font-medium tabular-nums text-emerald-700 dark:text-emerald-400">
-                  {c.count}
-                </span>
-              </SidebarMenuButton>
-            </TooltipTrigger>
-          </PopoverAnchor>
-          <TooltipContent side="right" sideOffset={12} className="max-w-[220px] text-xs">
-            {tooltipCopy(c.count)}
-          </TooltipContent>
-        </Tooltip>
-        <PopoverContent
-          side="right"
-          align="end"
-          sideOffset={12}
-          className="w-[340px] overflow-hidden rounded-2xl p-0"
-        >
-          <OpenCrChooser crs={c.crs} baseRef={baseRef} onPick={c.openCr} />
-        </PopoverContent>
-      </Popover>
+      {c.count === 1 ? (
+        menuButton
+      ) : (
+        <HoverCard openDelay={150} closeDelay={100}>
+          <HoverCardTrigger asChild>{menuButton}</HoverCardTrigger>
+          <HoverCardContent
+            side="right"
+            align="end"
+            sideOffset={12}
+            className="w-[340px] overflow-hidden p-0"
+          >
+            <OpenCrChooser crs={c.crs} baseRef={baseRef} onPick={c.openCr} />
+          </HoverCardContent>
+        </HoverCard>
+      )}
 
-      <ChangeRequestDetailDialog
-        crId={c.selectedCrId}
-        onClose={() => c.setSelectedCrId(null)}
-      />
+      <ChangeRequestDetailDialog crId={c.selectedCrId} onClose={() => c.setSelectedCrId(null)} />
     </SidebarMenuItem>
   );
 }
@@ -203,10 +185,10 @@ function RailItemInner() {
                 type="button"
                 aria-label={tooltipCopy(c.count)}
                 onClick={c.onActivate}
-                className="relative flex w-full items-center justify-center rounded-lg py-2 text-sidebar-foreground transition-colors duration-150 ease-out hover:bg-emerald-500/15"
+                className="text-sidebar-foreground relative flex w-full items-center justify-center rounded-lg py-2 transition-colors duration-150 ease-out hover:bg-emerald-500/15"
               >
                 <GitMerge className="size-4 text-emerald-600" />
-                <span className="absolute right-1 top-1 flex size-1.5">
+                <span className="absolute top-1 right-1 flex size-1.5">
                   <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500/70" />
                   <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
                 </span>
@@ -221,16 +203,13 @@ function RailItemInner() {
           side="right"
           align="start"
           sideOffset={12}
-          className="w-[340px] overflow-hidden rounded-2xl p-0"
+          className="w-[340px] overflow-hidden p-0"
         >
           <OpenCrChooser crs={c.crs} baseRef={baseRef} onPick={c.openCr} />
         </PopoverContent>
       </Popover>
 
-      <ChangeRequestDetailDialog
-        crId={c.selectedCrId}
-        onClose={() => c.setSelectedCrId(null)}
-      />
+      <ChangeRequestDetailDialog crId={c.selectedCrId} onClose={() => c.setSelectedCrId(null)} />
     </>
   );
 }

@@ -3,7 +3,7 @@
 import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
 import * as React from 'react';
 
-import { buttonVariants } from '@/components/ui/button';
+import { ButtonProps, buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 
@@ -122,10 +122,12 @@ function AlertDialogDescription({
 function AlertDialogAction({
   className,
   ...props
-}: React.ComponentProps<typeof AlertDialogPrimitive.Action>) {
+}: React.ComponentProps<typeof AlertDialogPrimitive.Action> & {
+  variant?: ButtonProps['variant'];
+}) {
   return (
     <AlertDialogPrimitive.Action
-      className={cn(buttonVariants({ size: 'sm' }), className)}
+      className={cn(buttonVariants({ size: 'sm', variant: props.variant }), className)}
       {...props}
     />
   );

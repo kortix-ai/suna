@@ -16,12 +16,12 @@ import { useSessionBrowserStore } from '@/stores/session-browser-store';
 
 // Lazy-load terminal components to avoid SSR issues with xterm.js
 const SSHTerminal = dynamic(
-  () => import('@/components/session/ssh-terminal').then((mod) => ({ default: mod.SSHTerminal })),
+  () => import('@/features/session/ssh-terminal').then((mod) => ({ default: mod.SSHTerminal })),
   { ssr: false },
 );
 
 const PtyTerminal = dynamic(
-  () => import('@/components/session/pty-terminal').then((mod) => ({ default: mod.PtyTerminal })),
+  () => import('@/features/session/pty-terminal').then((mod) => ({ default: mod.PtyTerminal })),
   { ssr: false },
 );
 

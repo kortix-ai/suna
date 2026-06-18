@@ -26,10 +26,10 @@ import {
   useSessionBrowserStore,
   type SessionPanelView,
 } from '@/stores/session-browser-store';
-import { SessionFilesExplorer } from '@/components/session/session-files-explorer';
-import { SessionTerminalPanel } from '@/components/session/session-terminal-panel';
-import { SessionActionsPanel } from '@/components/session/session-actions-panel';
-import { SessionWallpaperLayerContext } from '@/components/session/session-wallpaper-layer';
+import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
+import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
+import { SessionActionsPanel } from '@/features/session/session-actions-panel';
+import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { X } from 'lucide-react';
 
@@ -349,11 +349,11 @@ export const SessionLayout = memo(function SessionLayout({
           the wallpaper always renders full-width and never shrinks/recrops when
           the side panel opens. The transparent main panel reveals it; the opaque
           side panel covers its own half. */}
-      <div
+      {/* <div
         ref={setWallpaperLayer}
         className="absolute inset-0 z-0 pointer-events-none overflow-hidden"
         aria-hidden="true"
-      />
+      /> */}
       <div ref={panelGroupRef} className="relative z-10 flex-1 min-h-0 flex overflow-hidden">
         <ResizablePanelGroup
           direction="horizontal"

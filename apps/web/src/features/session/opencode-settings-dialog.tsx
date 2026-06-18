@@ -2,8 +2,8 @@
 
 import { useTranslations } from 'next-intl';
 
-import { ModelSelector } from '@/components/session/model-selector';
-import { flattenModels } from '@/components/session/session-chat-input';
+import { ModelSelector } from '@/features/session/model-selector';
+import { flattenModels } from '@/features/session/session-chat-input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {

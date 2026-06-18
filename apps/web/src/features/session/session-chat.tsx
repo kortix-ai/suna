@@ -34,36 +34,36 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useSessionWallpaperLayer } from '@/components/session/session-wallpaper-layer';
+import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import { usePathname, useRouter } from 'next/navigation';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { SandboxImage } from '@/components/session/sandbox-image';
+import { SandboxImage } from '@/features/session/sandbox-image';
 
-import { ConnectProviderDialog } from '@/components/session/model-selector';
+import { ConnectProviderDialog } from '@/features/session/model-selector';
 import {
   type AttachedFile,
   SessionChatInput,
   type TrackedMention,
-} from '@/components/session/session-chat-input';
-import { SessionContextModal } from '@/components/session/session-context-modal';
+} from '@/features/session/session-chat-input';
+import { SessionContextModal } from '@/features/session/session-context-modal';
 import {
   SessionRetryDisplay,
   TurnErrorDisplay,
-} from '@/components/session/session-error-banner';
-import { SessionSiteHeader } from '@/components/session/session-site-header';
+} from '@/features/session/session-error-banner';
+import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import {
   QuestionPrompt,
   type QuestionPromptHandle,
   type QuestionAction,
-} from '@/components/session/question-prompt';
-import { SessionWelcome } from '@/components/session/session-welcome';
+} from '@/features/session/question-prompt';
+import { SessionWelcome } from '@/features/session/session-welcome';
 import { GridFileCard } from '@/components/thread/file-attachment/GridFileCard';
 
-import { ToolPartRenderer, ToolActivateContext } from '@/components/session/tool-renderers';
+import { ToolPartRenderer, ToolActivateContext } from '@/features/session/tool-renderers';
 import {
   contextToolSummary,
   contextToolTrigger,
-} from '@/components/session/tool-meta';
+} from '@/features/session/tool-meta';
 import { SandboxUrlDetector } from '@/components/thread/content/sandbox-url-detector';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -81,7 +81,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { SessionStartingLoader } from '@/components/session/session-starting-loader';
+import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Textarea } from '@/components/ui/textarea';
 import {
@@ -128,8 +128,8 @@ import {
   type SessionReport,
   type KortixSystemMessage,
 } from '@/lib/utils/kortix-system-tags';
-import { SubSessionModal } from '@/components/session/sub-session-modal';
-import { ChatMinimap } from '@/components/session/chat-minimap';
+import { SubSessionModal } from '@/features/session/sub-session-modal';
+import { ChatMinimap } from '@/features/session/chat-minimap';
 import { useMessageJumpStore } from '@/stores/message-jump-store';
 import { toast as sonnerToast } from 'sonner';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';

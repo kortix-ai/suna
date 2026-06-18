@@ -168,7 +168,7 @@ export function ProjectSwitcher({
         align="start"
         side="bottom"
         className={cn(
-          'overflow-hidden p-0 light:bg-background ',
+          'bg-background dark:bg-sidebar overflow-hidden p-0',
           variant === 'sidebar'
             ? 'w-(--radix-dropdown-menu-trigger-width) min-w-64 shadow-none'
             : 'w-64',
@@ -214,7 +214,7 @@ export function ProjectSwitcher({
                     key={project.project_id}
                     disabled={loading}
                     onSelect={() => switchProject(project)}
-                    className={cn('cursor-pointer', active && 'bg-muted/60')}
+                    className={cn('cursor-pointer', active && 'bg-muted/80')}
                   >
                     <EntityAvatar label={project.name} size="sm" />
                     <div className="grid min-w-0 flex-1 leading-tight">
@@ -235,7 +235,6 @@ export function ProjectSwitcher({
         <DropdownMenuSeparator className="my-0" />
 
         <DropdownMenuGroup>
-          <DropdownMenuLabel>Projects</DropdownMenuLabel>
           <DropdownMenuItem
             className="cursor-pointer font-medium"
             onSelect={() => {

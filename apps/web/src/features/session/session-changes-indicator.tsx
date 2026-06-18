@@ -12,23 +12,23 @@
  * carries no extra chrome.
  */
 
-import { useState } from 'react';
-import { useParams } from 'next/navigation';
 import { GitPullRequestArrow, Loader2 } from 'lucide-react';
+import { useParams } from 'next/navigation';
+import { useState } from 'react';
 
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
-import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { cn } from '@/lib/utils';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useSessionBrowserStore } from '@/stores/session-browser-store';
 
-import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { STATUS_BG, STATUS_DOT, STATUS_TEXT } from '@/components/ui/status';
 import {
   CHANGE_STATUS_BADGE,
   useOpenChangeRequest,
   useSessionBaseRef,
-} from '@/components/session/session-changes-shared';
+} from '@/features/session/session-changes-shared';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { STATUS_BG, STATUS_DOT, STATUS_TEXT } from '@/components/ui/status';
 
 export function SessionChangesIndicator({
   /** OpenCode chat session id — the agent we message to open the change request,
@@ -69,12 +69,12 @@ export function SessionChangesIndicator({
           variant="ghost"
           size="icon"
           aria-label={`${changedCount} change${changedCount === 1 ? '' : 's'} in this version, not in ${baseRef} yet`}
-          className="relative h-8 w-8 cursor-pointer text-muted-foreground transition-colors hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground relative h-8 w-8 cursor-pointer transition-colors"
         >
           <GitPullRequestArrow className="h-4 w-4" />
           {/* A single delicate amber dot — enough to say "there's a diff here"
               without shouting. The count lives in the popover. */}
-          <span className="absolute right-1.5 top-1.5 flex size-1.5">
+          <span className="absolute top-1.5 right-1.5 flex size-1.5">
             <span
               className={cn(
                 'absolute inline-flex size-full animate-ping rounded-full opacity-60',
@@ -83,7 +83,7 @@ export function SessionChangesIndicator({
             />
             <span
               className={cn(
-                'relative inline-flex size-1.5 rounded-full ring-2 ring-background',
+                'ring-background relative inline-flex size-1.5 rounded-full ring-2',
                 STATUS_DOT.warning,
               )}
             />
@@ -91,27 +91,33 @@ export function SessionChangesIndicator({
         </Button>
       </PopoverTrigger>
 
-      <PopoverContent align="end" sideOffset={8} className="w-[320px] overflow-hidden rounded-2xl p-0">
-        <div className="border-b border-border/60 px-4 pt-4 pb-3">
+      <PopoverContent align="end" sideOffset={8} className="w-[320px] overflow-hidden p-0">
+        <div className="border-border/60 border-b px-4 pt-4 pb-3">
           <div className="flex items-center gap-2.5">
-            <span className={cn('grid size-7 shrink-0 place-items-center rounded-full', STATUS_BG.warning, STATUS_TEXT.warning)}>
+            <span
+              className={cn(
+                'grid size-7 shrink-0 place-items-center rounded-full',
+                STATUS_BG.warning,
+                STATUS_TEXT.warning,
+              )}
+            >
               <GitPullRequestArrow className="size-3.5" />
             </span>
             <div className="min-w-0">
-              <h3 className="truncate text-sm font-semibold tracking-tight text-foreground">
+              <h3 className="text-foreground truncate text-sm font-semibold tracking-tight">
                 {changedCount} change{changedCount === 1 ? '' : 's'} in this version
               </h3>
-              <p className="truncate text-xs text-muted-foreground">
+              <p className="text-muted-foreground truncate text-xs">
                 Not in your <span className="font-mono">{baseRef}</span> version yet
               </p>
             </div>
           </div>
-          <p className="mt-2.5 text-xs leading-relaxed text-muted-foreground">
+          <p className="text-muted-foreground mt-2.5 text-xs leading-relaxed">
             This session is a separate version of{' '}
-            <span className="font-mono text-foreground/80">{baseRef}</span>. These
-            changes only exist here — they&apos;re not in your{' '}
-            <span className="font-mono text-foreground/80">{baseRef}</span> version
-            yet. Open a change request to merge them in.
+            <span className="text-foreground/80 font-mono">{baseRef}</span>. These changes only
+            exist here — they&apos;re not in your{' '}
+            <span className="text-foreground/80 font-mono">{baseRef}</span> version yet. Open a
+            change request to merge them in.
           </p>
         </div>
 
@@ -122,19 +128,16 @@ export function SessionChangesIndicator({
             const name = file.path.split('/').pop() || file.path;
             const dir = file.path.slice(0, file.path.length - name.length);
             return (
-              <div
-                key={file.path}
-                className="flex items-center gap-2 rounded-md px-2 py-1 text-xs"
-              >
+              <div key={file.path} className="flex items-center gap-2 rounded-md px-2 py-1 text-xs">
                 <span
                   className={cn('w-3 shrink-0 text-center font-mono font-semibold', badge.cls)}
                   title={badge.label}
                 >
                   {badge.letter}
                 </span>
-                <span className="truncate font-medium text-foreground/90">{name}</span>
+                <span className="text-foreground/90 truncate font-medium">{name}</span>
                 {dir && (
-                  <span className="truncate font-mono text-[10px] text-muted-foreground/50">
+                  <span className="text-muted-foreground/50 truncate font-mono text-[10px]">
                     {dir.replace(/\/$/, '')}
                   </span>
                 )}
@@ -143,7 +146,7 @@ export function SessionChangesIndicator({
           })}
         </div>
 
-        <div className="flex items-center gap-2 border-t border-border/60 px-3 py-2.5">
+        <div className="border-border/60 flex items-center gap-2 border-t px-3 py-2.5">
           <Button
             size="sm"
             className="h-8 flex-1 gap-1.5 text-xs"
@@ -160,7 +163,7 @@ export function SessionChangesIndicator({
           <Button
             variant="ghost"
             size="sm"
-            className="h-8 text-xs text-muted-foreground hover:text-foreground"
+            className="text-muted-foreground hover:text-foreground h-8 text-xs"
             onClick={viewChanges}
           >
             View changes

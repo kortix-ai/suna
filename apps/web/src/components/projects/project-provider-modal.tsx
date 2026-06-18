@@ -29,7 +29,6 @@ import {
 } from 'lucide-react';
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type { FlatModel } from '@/components/session/session-chat-input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,6 +58,7 @@ import {
   type SharingSelection,
 } from '@/features/co-worker/shared/sharing-picker';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import type { FlatModel } from '@/features/session/session-chat-input';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import {

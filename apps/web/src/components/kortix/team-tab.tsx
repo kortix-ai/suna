@@ -62,7 +62,7 @@ import {
   type ToolGroup,
 } from '@/hooks/kortix/use-kortix-tickets';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
-import { flattenModels, type FlatModel } from '@/components/session/session-chat-input';
+import { flattenModels, type FlatModel } from '@/features/session/session-chat-input';
 import {
   AgentAvatar,
   UserAvatar,

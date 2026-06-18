@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { ExternalLink, SquareKanban, X } from "lucide-react";
 import { useCallback } from "react";
-import { SessionChat } from "@/components/session/session-chat";
+import { SessionChat } from "@/features/session/session-chat";
 import {
 	Dialog,
 	DialogContent,

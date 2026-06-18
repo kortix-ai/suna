@@ -1,17 +1,17 @@
 'use client';
 
-import { useState } from 'react';
-import { useTranslations } from 'next-intl';
-import { useParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { GitPullRequestArrow, Loader2, Sparkles } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { useParams } from 'next/navigation';
+import { useState } from 'react';
 
-import { getProjectSession } from '@/lib/projects-client';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { useGitStatus } from '@/features/files/hooks/use-git-status';
-import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { useChatSendStore } from '@/stores/chat-send-store';
+import { getProjectSession } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
+import { useChatSendStore } from '@/stores/chat-send-store';
+import { useFilePreviewStore } from '@/stores/file-preview-store';
 
 import { Button } from '@/components/ui/button';
 import { STATUS_TEXT } from '@/components/ui/status';
@@ -59,8 +59,7 @@ export function SessionFilesPanel({
   const changedCount = changedFiles.length;
   // Show a loader until the first git-status result lands (or while refetching
   // with nothing yet) instead of flashing the empty state prematurely.
-  const isLoadingChanges =
-    !statusQuery.data && (statusQuery.isLoading || statusQuery.isFetching);
+  const isLoadingChanges = !statusQuery.data && (statusQuery.isLoading || statusQuery.isFetching);
 
   const sessionQuery = useQuery({
     queryKey: ['project', 'session', projectId, gitSessionId],
@@ -86,9 +85,9 @@ export function SessionFilesPanel({
     if (!chatSessionId) {
       try {
         await navigator.clipboard.writeText(prompt);
-        toast.success('Prompt copied — paste it into the chat to ask your agent.');
+        successToast('Prompt copied — paste it into the chat to ask your agent.');
       } catch {
-        toast.error('Could not copy to clipboard.');
+        errorToast('Could not copy to clipboard.');
       }
       return;
     }
@@ -96,9 +95,9 @@ export function SessionFilesPanel({
     setAsking(true);
     try {
       await sendToSession(chatSessionId, prompt);
-      toast.success('Asked your agent to open a change request.');
+      successToast('Asked your agent to open a change request.');
     } catch (err) {
-      toast.error(
+      errorToast(
         err instanceof Error ? err.message : 'Could not reach the agent. Please try again.',
       );
     } finally {
@@ -109,17 +108,30 @@ export function SessionFilesPanel({
   return (
     <div className="flex h-full flex-col">
       {/* What this is + the one action. */}
-      <div className="flex-shrink-0 space-y-3 border-b border-border/40 p-4">
+      <div className="border-border/40 flex-shrink-0 space-y-3 border-b p-4">
         <div className="space-y-1.5">
-          <h3 className="text-sm font-medium text-foreground">
-            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line80JsxTextThisSessionIsItsOwnVersion')}</h3>
-          <p className="text-xs leading-relaxed text-muted-foreground">
-            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line83JsxTextChangesHereLiveOnAStandaloneVersionOf')}{' '}
-            <span className="font-mono text-foreground/80">{baseRef}</span>{tHardcodedUi.raw('componentsSessionSessionFilesPanel.line85JsxTextSoYouCanWorkInParallelWithoutAffecting')}{' '}
-            <span className="font-medium text-foreground/80">{tHardcodedUi.raw('componentsSessionSessionFilesPanel.line88JsxTextChangeRequest')}</span>
-            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line89JsxTextYouCanReviewAndMergeItInto')}{' '}
-            <span className="font-mono text-foreground/80">{baseRef}</span>{' '}
-            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line91JsxTextWheneverYouReReady')}</p>
+          <h3 className="text-foreground text-sm font-medium">
+            {tHardcodedUi.raw(
+              'componentsSessionSessionFilesPanel.line80JsxTextThisSessionIsItsOwnVersion',
+            )}
+          </h3>
+          <p className="text-muted-foreground text-xs leading-relaxed">
+            {tHardcodedUi.raw(
+              'componentsSessionSessionFilesPanel.line83JsxTextChangesHereLiveOnAStandaloneVersionOf',
+            )}{' '}
+            <span className="text-foreground/80 font-mono">{baseRef}</span>
+            {tHardcodedUi.raw(
+              'componentsSessionSessionFilesPanel.line85JsxTextSoYouCanWorkInParallelWithoutAffecting',
+            )}{' '}
+            <span className="text-foreground/80 font-medium">
+              {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line88JsxTextChangeRequest')}
+            </span>
+            {tHardcodedUi.raw(
+              'componentsSessionSessionFilesPanel.line89JsxTextYouCanReviewAndMergeItInto',
+            )}{' '}
+            <span className="text-foreground/80 font-mono">{baseRef}</span>{' '}
+            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line91JsxTextWheneverYouReReady')}
+          </p>
         </div>
         <Button
           size="sm"
@@ -132,23 +144,25 @@ export function SessionFilesPanel({
           ) : (
             <Sparkles className="size-3.5" />
           )}
-          {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line96JsxTextAskAgentToOpenAChangeRequest')}</Button>
+          {tHardcodedUi.raw(
+            'componentsSessionSessionFilesPanel.line96JsxTextAskAgentToOpenAChangeRequest',
+          )}
+        </Button>
       </div>
 
       {/* The currently-changed files (git status). */}
       <div className="min-h-0 flex-1 overflow-auto p-3">
-        <div className="mb-2 flex items-center gap-1.5 px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground/60">
+        <div className="text-muted-foreground/60 mb-2 flex items-center gap-1.5 px-1 text-xs font-medium tracking-wide uppercase">
           <GitPullRequestArrow className="size-3.5" />
           Changes
-          {changedCount > 0 && (
-            <span className="text-muted-foreground/40">· {changedCount}</span>
-          )}
+          {changedCount > 0 && <span className="text-muted-foreground/40">· {changedCount}</span>}
         </div>
 
         {isLoadingChanges ? (
-          <div className="flex items-center justify-center gap-2 py-10 text-xs text-muted-foreground/50">
+          <div className="text-muted-foreground/50 flex items-center justify-center gap-2 py-10 text-xs">
             <Loader2 className="size-4 animate-spin" />
-            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line113JsxTextLoadingChanges')}</div>
+            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line113JsxTextLoadingChanges')}
+          </div>
         ) : changedCount > 0 ? (
           <div className="space-y-0.5">
             {changedFiles.map((file) => {
@@ -160,7 +174,7 @@ export function SessionFilesPanel({
                   key={file.path}
                   type="button"
                   onClick={() => openPreview(file.path)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors hover:bg-muted/60"
+                  className="hover:bg-muted/60 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors"
                 >
                   <span
                     className={cn(
@@ -171,11 +185,9 @@ export function SessionFilesPanel({
                   >
                     {badge.letter}
                   </span>
-                  <span className="truncate font-medium text-foreground/90">
-                    {name}
-                  </span>
+                  <span className="text-foreground/90 truncate font-medium">{name}</span>
                   {dir && (
-                    <span className="truncate font-mono text-[10px] text-muted-foreground/50">
+                    <span className="text-muted-foreground/50 truncate font-mono text-[10px]">
                       {dir.replace(/\/$/, '')}
                     </span>
                   )}
@@ -184,8 +196,11 @@ export function SessionFilesPanel({
             })}
           </div>
         ) : (
-          <div className="px-1 py-8 text-center text-xs text-muted-foreground/60">
-            {tHardcodedUi.raw('componentsSessionSessionFilesPanel.line151JsxTextNoChangesYetFilesTheAgentCreatesOr')}</div>
+          <div className="text-muted-foreground/60 px-1 py-8 text-center text-xs">
+            {tHardcodedUi.raw(
+              'componentsSessionSessionFilesPanel.line151JsxTextNoChangesYetFilesTheAgentCreatesOr',
+            )}
+          </div>
         )}
       </div>
     </div>

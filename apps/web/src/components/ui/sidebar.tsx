@@ -279,7 +279,11 @@ function SidebarRail({ className, ...props }: React.ComponentProps<'button'>) {
       onClick={toggleSidebar}
       title="Toggle Sidebar"
       className={cn(
-        'hover:after:bg-sidebar-border absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] sm:flex',
+        'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex',
+        'after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-[3px] after:-translate-x-1/2 after:opacity-0 after:transition-opacity',
+        'hover:after:bg-sidebar-border dark:hover:after:bg-kortix-base/40 hover:after:opacity-100',
+        'after:[clip-path:polygon(calc(50%-0.0625rem)_0%,calc(50%+0.0625rem)_0%,calc(50%+0.125rem)_50%,calc(50%+0.0625rem)_100%,calc(50%-0.0625rem)_100%,calc(50%-0.125rem)_50%)]',
+        'after:[mask-image:linear-gradient(to_bottom,transparent,black_15%,black_85%,transparent)]',
         'in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize',
         '[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize',
         'hover:group-data-[collapsible=offcanvas]:bg-sidebar group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full',
@@ -461,6 +465,8 @@ const sidebarMenuButtonVariants = cva(
           'text-muted-foreground dark:hover:bg-sidebar-accent/50 hover:bg-sidebar-foreground/7 hover:text-sidebar-foreground',
         outline:
           'bg-background shadow-[0_0_0_1px_var(--sidebar-border)] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground hover:shadow-[0_0_0_1px_var(--sidebar-accent)]',
+        success:
+          'bg-kortix-green/10 text-kortix-green hover:bg-kortix-green/20 hover:text-kortix-green active:bg-kortix-green/25 active:text-kortix-green data-[active=true]:bg-kortix-green/15 data-[active=true]:text-kortix-green data-[state=open]:hover:bg-kortix-green/20 data-[state=open]:hover:text-kortix-green dark:bg-kortix-green/15 dark:text-kortix-green dark:hover:bg-kortix-green/25 dark:hover:text-kortix-green dark:active:bg-kortix-green/30 dark:active:text-kortix-green dark:data-[active=true]:bg-kortix-green/20 dark:data-[active=true]:text-kortix-green dark:data-[state=open]:hover:bg-kortix-green/25 dark:data-[state=open]:hover:text-kortix-green',
       },
       size: {
         default: 'h-8 text-sm',

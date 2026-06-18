@@ -16,7 +16,6 @@
  * Counts come from the same cached queries the rest of the project uses.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
@@ -35,10 +34,10 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,9 +46,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SessionWelcome } from '@/components/session/session-welcome';
+import { EntityAvatar } from '@/components/ui/entity-avatar';
+import { SessionWelcome } from '@/features/session/session-welcome';
 import type { CustomizeSection } from '@/lib/customize-sections';
-import { cn } from '@/lib/utils';
 import {
   getProjectDetail,
   listConnectors,
@@ -58,9 +57,10 @@ import {
   listProjectTriggers,
   type SandboxTemplate,
 } from '@/lib/projects-client';
+import { STARTER_PROMPTS } from '@/lib/starter-prompts';
+import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
-import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
@@ -107,9 +107,7 @@ export function ProjectHome({
   // Reactive subscription scoped to THIS project — fires whether the prefill
   // was set before mount or arrives later (e.g. wizard hands one off while
   // we're already on the page).
-  const pendingPrefill = useComposerPrefillStore(
-    (s) => s.prefillByProject[projectId],
-  );
+  const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
 
   const resize = useCallback(() => {
@@ -149,7 +147,7 @@ export function ProjectHome({
   };
 
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+    <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Full-bleed empty-state wallpaper — the exact backdrop a session shows
           before its first message. The content and composer read over it. */}
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
@@ -168,7 +166,7 @@ export function ProjectHome({
             {/* Hero */}
             <div className="mx-auto flex w-full max-w-2xl flex-col items-center text-center">
               <EntityAvatar label={name || 'Project'} size="xl" className="shadow-sm" />
-              <h1 className="mt-5 text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              <h1 className="text-foreground mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">
                 {name || 'Your project'}
               </h1>
             </div>
@@ -190,7 +188,7 @@ export function ProjectHome({
 
           <div
             className={cn(
-              'mt-2.5 w-full overflow-visible rounded-[24px] border border-border bg-card transition-colors',
+              'border-border bg-card mt-2.5 w-full overflow-visible rounded-[24px] border transition-colors',
               'focus-within:border-foreground/20',
             )}
           >
@@ -209,13 +207,13 @@ export function ProjectHome({
                   placeholder="Describe a task to start a session…"
                   autoFocus
                   rows={1}
-                  className="relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto border-none bg-transparent px-0.5 pb-6 pt-4 text-base leading-relaxed outline-none placeholder:text-muted-foreground sm:text-sm"
+                  className="placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto border-none bg-transparent px-0.5 pt-4 pb-6 text-base leading-relaxed outline-none sm:text-sm"
                 />
               </div>
 
               {/* Bottom toolbar — mirrors the session input's layout: controls
                   left, send right. */}
-              <div className="mb-1.5 flex items-center justify-between gap-1 pl-2 pr-1.5">
+              <div className="mb-1.5 flex items-center justify-between gap-1 pr-1.5 pl-2">
                 <div className="flex min-w-0 items-center gap-2">
                   {showSandboxPicker ? (
                     <SandboxPicker
@@ -297,7 +295,7 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
         aria-label="Previous suggestions"
         disabled={atStart}
         onClick={() => scrollByPage(-1)}
-        className="shrink-0 text-muted-foreground/60 hover:text-foreground"
+        className="text-muted-foreground/60 hover:text-foreground shrink-0"
       >
         <ChevronLeft className="size-3.5" />
       </Button>
@@ -310,8 +308,7 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
         style={{
           WebkitMaskImage:
             'linear-gradient(to right, transparent, black 6%, black 94%, transparent)',
-          maskImage:
-            'linear-gradient(to right, transparent, black 6%, black 94%, transparent)',
+          maskImage: 'linear-gradient(to right, transparent, black 6%, black 94%, transparent)',
         }}
       >
         {STARTER_PROMPTS.map((p) => {
@@ -321,7 +318,7 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
               key={p.id}
               type="button"
               onClick={() => onPick(p.prompt)}
-              className="flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border border-border/60 bg-card/60 px-3 py-1.5 text-xs text-muted-foreground backdrop-blur-sm transition-colors hover:border-foreground/20 hover:bg-card hover:text-foreground"
+              className="border-border/60 bg-card/60 text-muted-foreground hover:border-foreground/20 hover:bg-card hover:text-foreground flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs backdrop-blur-sm transition-colors"
             >
               <Icon className="size-3.5" />
               {p.label}
@@ -335,7 +332,7 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
         aria-label="More suggestions"
         disabled={atEnd}
         onClick={() => scrollByPage(1)}
-        className="shrink-0 text-muted-foreground/60 hover:text-foreground"
+        className="text-muted-foreground/60 hover:text-foreground shrink-0"
       >
         <ChevronRight className="size-3.5" />
       </Button>
@@ -382,7 +379,7 @@ function SandboxPicker({
         <button
           type="button"
           aria-label="Sandbox template"
-          className="inline-flex items-center gap-1.5 rounded-full border border-border/60 bg-muted/30 px-2 py-1 text-xs text-muted-foreground hover:bg-muted/50"
+          className="border-border/60 bg-muted/30 text-muted-foreground hover:bg-muted/50 inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs"
         >
           <ActiveIcon className="size-3.5" />
           <span className="max-w-[10rem] truncate">{active.name}</span>
@@ -421,18 +418,18 @@ function SandboxPicker({
               className="flex items-start gap-2 py-2"
               onSelect={() => onSelect(tpl.slug)}
             >
-              <Icon className="mt-0.5 size-4 text-muted-foreground" />
+              <Icon className="text-muted-foreground mt-0.5 size-4" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium">{tpl.name}</span>
                   {tpl.slug === activeSlug && (
-                    <Badge variant="outline" className="h-4 px-1 text-[10px]">selected</Badge>
+                    <Badge variant="outline" className="h-4 px-1 text-[10px]">
+                      selected
+                    </Badge>
                   )}
                 </div>
-                <div className="truncate text-xs text-muted-foreground">{subtitle}</div>
-                <div className={cn('mt-0.5 text-[11px] capitalize', stateTone)}>
-                  {stateLabel}
-                </div>
+                <div className="text-muted-foreground truncate text-xs">{subtitle}</div>
+                <div className={cn('mt-0.5 text-[11px] capitalize', stateTone)}>{stateLabel}</div>
               </div>
             </DropdownMenuItem>
           );
@@ -526,7 +523,7 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
 
   return (
     <div className="mx-auto mt-9 w-full max-w-3xl">
-      <h2 className="mb-2.5 px-0.5 text-xs font-medium uppercase tracking-wider text-muted-foreground/70">
+      <h2 className="text-muted-foreground/70 mb-2.5 px-0.5 text-xs font-medium tracking-wider uppercase">
         Build out your project
       </h2>
       <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -559,24 +556,24 @@ function SectionTile({
         }
       }}
       className={cn(
-        'group relative flex cursor-pointer items-center gap-3 rounded-2xl border border-border/60 bg-card/70 p-3 text-left backdrop-blur-sm',
-        'transition-all duration-150 hover:border-foreground/25 hover:bg-card',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+        'group border-border/60 bg-card/70 relative flex cursor-pointer items-center gap-3 rounded-2xl border p-3 text-left backdrop-blur-sm',
+        'hover:border-foreground/25 hover:bg-card transition-all duration-150',
+        'focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
       )}
     >
-      <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-muted text-foreground/70 transition-colors group-hover:text-foreground">
+      <span className="bg-muted text-foreground/70 group-hover:text-foreground flex size-9 shrink-0 items-center justify-center rounded-xl transition-colors">
         <Icon className="size-4" />
       </span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium text-foreground">{title}</div>
-        <div className="truncate text-xs text-muted-foreground">{desc}</div>
+        <div className="text-foreground truncate text-sm font-medium">{title}</div>
+        <div className="text-muted-foreground truncate text-xs">{desc}</div>
       </div>
       {isSet ? (
         <Badge size="sm" variant="secondary" className="shrink-0 tabular-nums">
           {count}
         </Badge>
       ) : (
-        <ArrowRight className="size-4 shrink-0 text-muted-foreground/30 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground/60" />
+        <ArrowRight className="text-muted-foreground/30 group-hover:text-foreground/60 size-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5" />
       )}
     </div>
   );

@@ -68,7 +68,7 @@ const ModalOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     className={cn(
-      'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-[999] bg-black/60',
+      'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-[999] bg-black/65 backdrop-blur-xs duration-200',
       className,
     )}
     {...props}
@@ -79,8 +79,9 @@ ModalOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const ModalVariants = cva(
   cn(
-    'fixed z-[999] gap-0 border p-0 shadow-lg transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:duration-500 overflow-y-auto',
-    'lg:top-[50%] lg:left-[50%] lg:grid lg:w-full lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:duration-200 lg:data-[state=open]:animate-in lg:data-[state=closed]:animate-out lg:data-[state=closed]:fade-out-0 lg:data-[state=open]:fade-in-0 lg:data-[state=closed]:zoom-out-95 lg:data-[state=open]:zoom-in-95 lg:rounded-xl',
+    'fixed z-[999] gap-0 border p-0 shadow-lg overflow-y-auto',
+    'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-200',
+    'lg:top-[50%] lg:left-[50%] lg:grid lg:w-full lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:data-[state=closed]:zoom-out-95 lg:data-[state=open]:zoom-in-95 lg:rounded-xl',
     'lg:flex lg:h-full lg:flex-col space-y-4',
   ),
   {

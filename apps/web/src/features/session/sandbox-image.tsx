@@ -4,7 +4,7 @@ import { useTranslations } from 'next-intl';
 
 import { useEffect, useMemo, useRef } from 'react';
 import { useFileContent } from '@/features/files/hooks/use-file-content';
-import { ImagePreview } from '@/components/session/image-preview';
+import { ImagePreview } from '@/features/session/image-preview';
 import { cn } from '@/lib/utils';
 
 /**

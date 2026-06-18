@@ -72,7 +72,11 @@ export function SessionDeleteModal({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={confirmDelete} disabled={deleteMutation.isPending}>
+          <AlertDialogAction
+            variant="destructive"
+            onClick={confirmDelete}
+            disabled={deleteMutation.isPending}
+          >
             Delete
           </AlertDialogAction>
         </AlertDialogFooter>
