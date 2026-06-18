@@ -1,40 +1,19 @@
 'use client';
 
-/**
- * ProjectHome — the project's dashboard / landing surface.
- *
- * Laid out as the empty state of a session: the same full-bleed wallpaper the
- * session shows before its first message, the page content centered in the
- * middle, and a composer pinned at the bottom matching the session chat input.
- *
- *   • full-bleed `SessionWelcome` wallpaper for the shared empty-state look,
- *   • a hero with the project's identity,
- *   • a compact grid of section tiles (integrations, schedules, skills, Slack,
- *     team, agent) that double as a teaser and a setup prompt, and
- *   • a bottom-pinned composer with quick-start prompts sitting over it.
- *
- * Counts come from the same cached queries the rest of the project uses.
- */
-
+import { Icon as IconMynauiType, SparklesSolid, UsersGroupSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  ArrowRight,
   ArrowUp,
-  Bot,
   CalendarClock,
   ChevronLeft,
   ChevronRight,
   Container,
   FileCode,
-  Loader2,
-  MessageSquare,
   Package,
-  Plug,
-  Sparkles,
-  Users,
   type LucideIcon,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { IconType } from 'react-icons/lib';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -46,7 +25,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
+import Loading from '@/components/ui/loading';
+import { Icon } from '@/features/icon/icon';
 import { SessionWelcome } from '@/features/session/session-welcome';
 import type { CustomizeSection } from '@/lib/customize-sections';
 import {
@@ -61,11 +41,11 @@ import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
+import { HiOutlineViewGrid } from 'react-icons/hi';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
 
 export interface ProjectHomeSendOptions {
-  /** Slug of the sandbox template the new session should boot from. */
   sandbox_slug?: string;
 }
 
@@ -84,14 +64,12 @@ export function ProjectHome({
     ...Q,
   });
   const name = detail.data?.project?.name ?? '';
+  const displayName = name.trim() || 'this project';
 
   const [text, setText] = useState('');
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Sandbox templates available for this project. The platform default is
-  // always returned; `[[sandbox.templates]]` entries from kortix.toml append to it.
-  // We only show a picker when there's a choice (more than one template).
   const sandboxesQuery = useQuery({
     queryKey: ['project-sandboxes', projectId],
     queryFn: () => listProjectSandboxes(projectId),
@@ -100,13 +78,9 @@ export function ProjectHome({
   const sandboxItems: SandboxTemplate[] = sandboxesQuery.data?.items ?? [];
   const defaultSlug = sandboxesQuery.data?.default_slug ?? 'default';
   const activeSlug = selectedSlug ?? defaultSlug;
-  // Always show the picker (even with only the platform default) so the user
-  // can confirm which template they're booting from and see its state. Hide
-  // only while the list is still loading.
+
   const showSandboxPicker = sandboxItems.length >= 1;
-  // Reactive subscription scoped to THIS project — fires whether the prefill
-  // was set before mount or arrives later (e.g. wizard hands one off while
-  // we're already on the page).
+
   const pendingPrefill = useComposerPrefillStore((s) => s.prefillByProject[projectId]);
   const consumePrefill = useComposerPrefillStore((s) => s.consume);
 
@@ -147,96 +121,69 @@ export function ProjectHome({
   };
 
   return (
-    <div className="bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      {/* Full-bleed empty-state wallpaper — the exact backdrop a session shows
-          before its first message. The content and composer read over it. */}
+    <div
+      className={cn('bg-background relative flex min-h-0 flex-1 flex-col overflow-hidden px-4.5')}
+    >
       <div className="pointer-events-none absolute inset-0 z-0" aria-hidden>
         <SessionWelcome />
       </div>
 
-      {/* Middle — hero + the "Build out your project" grid, centered in the
-          space above the pinned composer. On a normal desktop it fits without
-          scrolling; the overflow-safe `min-h-full` + `m-auto` pattern only
-          scrolls when the window is genuinely too short (e.g. mobile), never
-          clipping the top. */}
-      <div className="relative z-10 min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col px-6 py-8">
-          {/* m-auto vertically centers the hero + grid as one block. */}
-          <div className="m-auto w-full">
-            {/* Hero */}
-            <div className="mx-auto flex w-full max-w-2xl flex-col items-center text-center">
-              <EntityAvatar label={name || 'Project'} size="xl" className="shadow-sm" />
-              <h1 className="text-foreground mt-5 text-2xl font-semibold tracking-tight sm:text-3xl">
-                {name || 'Your project'}
-              </h1>
-            </div>
-
-            {/* Build out your project */}
-            <ProjectHomeSections projectId={projectId} />
-          </div>
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto">
+        <div className="flex w-full max-w-3xl items-center justify-start py-8 xl:py-8">
+          <h1 className="text-muted-foreground text-left text-[2.5rem] leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
+            Give <span className="text-foreground">{displayName}</span> something real to work on.
+          </h1>
         </div>
+
+        <ProjectHomeSections projectId={projectId} />
       </div>
 
-      {/* Bottom dock — quick-start prompts sitting directly over the composer,
-          which is pinned to the page bottom and matches the session chat input
-          (same width, surface, radius, textarea metrics, and toolbar). */}
       <div className="relative z-10 shrink-0">
-        <div className="mx-auto w-full max-w-[52rem] px-2 pb-6 sm:px-4">
-          {/* Quick-start suggestions — paged carousel of the shared starter
-              prompts; picking one fills the composer below. */}
+        <div className="mx-auto mb-4 w-full max-w-3xl space-y-4">
           <StarterPromptsCarousel onPick={applySuggestion} />
 
-          <div
-            className={cn(
-              'border-border bg-card mt-2.5 w-full overflow-visible rounded-[24px] border transition-colors',
-              'focus-within:border-foreground/20',
-            )}
-          >
-            <div className="flex flex-col gap-2">
-              <div className="px-3.5">
-                <textarea
-                  ref={textareaRef}
-                  value={text}
-                  onChange={(e) => setText(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      submit();
-                    }
-                  }}
-                  placeholder="Describe a task to start a session…"
-                  autoFocus
-                  rows={1}
-                  className="placeholder:text-muted-foreground relative max-h-[200px] min-h-[72px] w-full resize-none overflow-y-auto border-none bg-transparent px-0.5 pt-4 pb-6 text-base leading-relaxed outline-none sm:text-sm"
-                />
-              </div>
+          <div className={cn('bg-card border-border w-full overflow-visible rounded-xl border')}>
+            <div className="px-3.5">
+              <textarea
+                ref={textareaRef}
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+                placeholder="Describe a task to start a session…"
+                autoFocus
+                rows={1}
+                className="placeholder:text-muted-foreground relative max-h-[200px] min-h-[62px] w-full resize-none overflow-y-auto border-none bg-transparent py-3 text-base leading-relaxed outline-none sm:text-sm"
+              />
+            </div>
 
-              {/* Bottom toolbar — mirrors the session input's layout: controls
-                  left, send right. */}
-              <div className="mb-1.5 flex items-center justify-between gap-1 pr-1.5 pl-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  {showSandboxPicker ? (
-                    <SandboxPicker
-                      items={sandboxItems}
-                      activeSlug={activeSlug}
-                      onSelect={setSelectedSlug}
-                    />
-                  ) : null}
-                </div>
-                <Button
-                  size="sm"
-                  onClick={submit}
-                  disabled={busy || !text.trim()}
-                  aria-label="Start session"
-                  className="h-8 w-8 shrink-0 rounded-full p-0"
-                >
-                  {busy ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <ArrowUp className="size-4" />
-                  )}
-                </Button>
+            <div className="flex items-center justify-between gap-2 p-3 pt-1">
+              <div className="flex min-w-0 items-center gap-2">
+                {showSandboxPicker ? (
+                  <SandboxPicker
+                    items={sandboxItems}
+                    activeSlug={activeSlug}
+                    onSelect={setSelectedSlug}
+                  />
+                ) : null}
               </div>
+              <Button
+                size="icon"
+                onClick={submit}
+                disabled={busy || !text.trim()}
+                aria-label="Start session"
+                className="rounded-full"
+              >
+                {busy ? (
+                  <Loading />
+                ) : (
+                  <ArrowUp className="text-background size-4.5" strokeWidth={2.5} />
+                )}
+              </Button>
             </div>
           </div>
         </div>
@@ -246,111 +193,119 @@ export function ProjectHome({
 }
 
 function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) {
-  // Native horizontal scroll on the chip strip — works with trackpad
-  // swipes, touch flicks, and the chevron buttons. The chevrons call
-  // scrollBy({ behavior: 'smooth' }) so the user sees a glide whether
-  // they click an arrow or trackpad-swipe directly on the row. Edge
-  // mask gradients fade chips in/out at the borders so partially-
-  // visible chips look intentional rather than clipped.
   const scrollRef = useRef<HTMLDivElement>(null);
-  // Arrow enabled-state is driven by actual scrollLeft, not a page
-  // counter — anything else (counting chip widths, paginating) goes
-  // out of sync as soon as the viewport resizes mid-session.
-  const [atStart, setAtStart] = useState(true);
-  const [atEnd, setAtEnd] = useState(false);
+  const [showLeftFade, setShowLeftFade] = useState(false);
+  const [showRightFade, setShowRightFade] = useState(false);
+
+  const updateScrollFades = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const { scrollLeft, scrollWidth, clientWidth } = el;
+    const maxScroll = scrollWidth - clientWidth;
+    const canScroll = maxScroll > 1;
+    if (!canScroll) {
+      setShowLeftFade(false);
+      setShowRightFade(false);
+      return;
+    }
+    setShowLeftFade(scrollLeft > 1);
+    setShowRightFade(scrollLeft < maxScroll - 1);
+  }, []);
+
+  useLayoutEffect(() => {
+    updateScrollFades();
+  }, [updateScrollFades]);
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    const update = () => {
-      // 4px slack so a sub-pixel scrollLeft (Chrome rounds inconsistently
-      // after a smooth scroll) doesn't keep an arrow falsely enabled.
-      setAtStart(el.scrollLeft <= 4);
-      setAtEnd(el.scrollLeft >= el.scrollWidth - el.clientWidth - 4);
-    };
-    update();
-    el.addEventListener('scroll', update, { passive: true });
-    const ro = new ResizeObserver(update);
+    const ro = new ResizeObserver(updateScrollFades);
     ro.observe(el);
+    el.addEventListener('scroll', updateScrollFades, { passive: true });
+    window.addEventListener('resize', updateScrollFades);
     return () => {
-      el.removeEventListener('scroll', update);
       ro.disconnect();
+      el.removeEventListener('scroll', updateScrollFades);
+      window.removeEventListener('resize', updateScrollFades);
     };
-  }, []);
+  }, [updateScrollFades]);
 
-  const scrollByPage = (direction: 1 | -1) => {
+  const scrollTabs = useCallback((direction: 'left' | 'right') => {
     const el = scrollRef.current;
     if (!el) return;
-    // 70% of viewport: nudges enough that new chips clearly appear, but
-    // leaves one chip in common with the previous frame as a visual
-    // anchor — feels less jarring than a full-viewport jump.
-    el.scrollBy({ left: direction * el.clientWidth * 0.7, behavior: 'smooth' });
-  };
+    const amount = Math.max(el.clientWidth * 0.75, 120);
+    el.scrollBy({
+      left: direction === 'left' ? -amount : amount,
+      behavior: 'smooth',
+    });
+  }, []);
 
   return (
-    <div className="mt-3 flex items-center gap-1.5">
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Previous suggestions"
-        disabled={atStart}
-        onClick={() => scrollByPage(-1)}
-        className="text-muted-foreground/60 hover:text-foreground shrink-0"
-      >
-        <ChevronLeft className="size-3.5" />
-      </Button>
-      <div
-        ref={scrollRef}
-        className="scrollbar-hide flex flex-1 items-center gap-2 overflow-x-auto"
-        // Edge fade so the row visually "continues" past the chevrons
-        // instead of clipping at a hard border. 6% is enough to soften
-        // without eating real chip pixels.
-        style={{
-          WebkitMaskImage:
-            'linear-gradient(to right, transparent, black 6%, black 94%, transparent)',
-          maskImage: 'linear-gradient(to right, transparent, black 6%, black 94%, transparent)',
-        }}
-      >
-        {STARTER_PROMPTS.map((p) => {
-          const Icon = p.icon;
-          return (
-            <button
-              key={p.id}
-              type="button"
-              onClick={() => onPick(p.prompt)}
-              className="border-border/60 bg-card/60 text-muted-foreground hover:border-foreground/20 hover:bg-card hover:text-foreground flex shrink-0 cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs backdrop-blur-sm transition-colors"
-            >
-              <Icon className="size-3.5" />
-              {p.label}
-            </button>
-          );
-        })}
+    <div className="flex items-center gap-2">
+      <div className="relative min-w-0 flex-1">
+        <div
+          className={cn(
+            'from-background pointer-events-none absolute inset-y-0 left-0 z-10 w-10 bg-gradient-to-r to-transparent transition-opacity',
+            showLeftFade ? 'opacity-100' : 'opacity-0',
+          )}
+          aria-hidden
+        />
+        <div
+          className={cn(
+            'from-background pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-gradient-to-l to-transparent transition-opacity',
+            showRightFade ? 'opacity-100' : 'opacity-0',
+          )}
+          aria-hidden
+        />
+        <div
+          ref={scrollRef}
+          className="[scrollbar-width:none] overflow-x-auto overflow-y-hidden overscroll-x-contain [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+        >
+          <div className="inline-flex w-max justify-start gap-2">
+            {STARTER_PROMPTS.map((p) => {
+              const TabIcon = p.icon;
+              return (
+                <Button
+                  key={p.id}
+                  value={p.id}
+                  onClick={() => onPick(p.prompt)}
+                  variant="secondary"
+                  className="shrink-0 gap-1.5 text-sm"
+                >
+                  <TabIcon className="size-4 shrink-0" aria-hidden />
+                  {p.label}
+                </Button>
+              );
+            })}
+          </div>
+        </div>
       </div>
+      {showLeftFade && (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className="shrink-0"
+          disabled={!showLeftFade}
+          aria-label="Scroll tabs left"
+          onClick={() => scrollTabs('left')}
+        >
+          <ChevronLeft className="text-muted-foreground size-4" />
+        </Button>
+      )}
       <Button
+        type="button"
         variant="ghost"
-        size="icon-sm"
-        aria-label="More suggestions"
-        disabled={atEnd}
-        onClick={() => scrollByPage(1)}
-        className="text-muted-foreground/60 hover:text-foreground shrink-0"
+        size="icon"
+        className="shrink-0"
+        disabled={!showRightFade}
+        aria-label="Scroll tabs right"
+        onClick={() => scrollTabs('right')}
       >
-        <ChevronRight className="size-3.5" />
+        <ChevronRight className="text-muted-foreground size-4" />
       </Button>
     </div>
   );
-}
-
-interface Tile {
-  icon: LucideIcon;
-  title: string;
-  desc: string;
-  /** Count when set up; null = no count (pure teaser). */
-  count: number | null;
-  /** Label when nothing is set up yet. */
-  setupCta: string;
-  /** Customize section this tile opens. */
-  section: CustomizeSection;
-  docs: string;
 }
 
 function SandboxPicker({
@@ -376,15 +331,11 @@ function SandboxPicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label="Sandbox template"
-          className="border-border/60 bg-muted/30 text-muted-foreground hover:bg-muted/50 inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-xs"
-        >
+        <Button type="button" aria-label="Sandbox template" variant="secondary" size="sm">
           <ActiveIcon className="size-3.5" />
           <span className="max-w-[10rem] truncate">{active.name}</span>
           <span className={cn('size-1.5 rounded-full', activeStateTone)} />
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-80">
         <DropdownMenuLabel>Sandbox template</DropdownMenuLabel>
@@ -415,7 +366,7 @@ function SandboxPicker({
           return (
             <DropdownMenuItem
               key={tpl.template_id ?? `tpl-${tpl.slug}`}
-              className="flex items-start gap-2 py-2"
+              className="flex items-start gap-2"
               onSelect={() => onSelect(tpl.slug)}
             >
               <Icon className="text-muted-foreground mt-0.5 size-4" />
@@ -464,9 +415,17 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
 
   const memberCount = access.data?.members.length ?? 0;
 
-  const tiles: Tile[] = [
+  const tiles: {
+    icon: LucideIcon | IconMynauiType | IconType;
+    title: string;
+    desc: string;
+    count: number | null;
+    setupCta: string;
+    section: CustomizeSection;
+    docs: string;
+  }[] = [
     {
-      icon: Plug,
+      icon: HiOutlineViewGrid,
       title: 'Integrations',
       desc: 'Connect tools your agent can act in.',
       count: connectors.data?.connectors.length ?? 0,
@@ -484,7 +443,7 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
       docs: '/docs/concepts/triggers',
     },
     {
-      icon: Sparkles,
+      icon: SparklesSolid,
       title: 'Skills',
       desc: 'Repeatable workflows your agent reuses.',
       count: detail.data?.config?.skills.length ?? 0,
@@ -493,7 +452,7 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
       docs: '/docs/concepts/agents',
     },
     {
-      icon: MessageSquare,
+      icon: Icon.Slack,
       title: 'Slack',
       desc: 'Run this project right from chat.',
       count: null,
@@ -502,7 +461,7 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
       docs: '/docs/concepts/channels',
     },
     {
-      icon: Users,
+      icon: UsersGroupSolid,
       title: 'Your team',
       desc: 'Invite people to run and review work.',
       count: memberCount > 1 ? memberCount : 0,
@@ -511,7 +470,7 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
       docs: '/docs/concepts/accounts',
     },
     {
-      icon: Bot,
+      icon: Icon.Kortix,
       title: 'Agent',
       desc: 'Shape how your agent thinks and acts.',
       count: null,
@@ -522,59 +481,45 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
   ];
 
   return (
-    <div className="mx-auto mt-9 w-full max-w-3xl">
-      <h2 className="text-muted-foreground/70 mb-2.5 px-0.5 text-xs font-medium tracking-wider uppercase">
-        Build out your project
-      </h2>
+    <div className="mx-auto flex w-full max-w-3xl flex-col space-y-2">
+      <label className="text-muted-foreground text-sm font-medium">Build out your project</label>
       <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-        {tiles.map((t) => (
-          <SectionTile key={t.title} tile={t} onOpen={openCustomize} />
-        ))}
+        {tiles.map((tile) => {
+          const { icon: Icon, title, desc, count, section } = tile;
+          const isSet = (count ?? 0) > 0;
+          return (
+            <Button
+              key={section}
+              role="button"
+              variant="secondary"
+              tabIndex={0}
+              onClick={() => openCustomize(section)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  openCustomize(section);
+                }
+              }}
+              className={cn(
+                'bg-secondary/80 flex h-fit items-start justify-start overflow-hidden rounded-lg px-2.5 backdrop-blur-sm',
+              )}
+            >
+              <span className="bg-muted flex size-10 shrink-0 items-center justify-center rounded-lg">
+                <Icon className="size-4.5" />
+              </span>
+              <div className="flex min-w-0 flex-1 flex-col items-start justify-start overflow-hidden">
+                <div className="text-foreground truncate text-sm font-medium">{title}</div>
+                <div className="text-muted-foreground truncate text-xs">{desc}</div>
+              </div>
+              {isSet ? (
+                <Badge size="sm" variant="secondary" className="shrink-0 tabular-nums">
+                  {count}
+                </Badge>
+              ) : null}
+            </Button>
+          );
+        })}
       </div>
-    </div>
-  );
-}
-
-function SectionTile({
-  tile,
-  onOpen,
-}: {
-  tile: Tile;
-  onOpen: (section: CustomizeSection) => void;
-}) {
-  const { icon: Icon, title, desc, count, section } = tile;
-  const isSet = (count ?? 0) > 0;
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={() => onOpen(section)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onOpen(section);
-        }
-      }}
-      className={cn(
-        'group border-border/60 bg-card/70 relative flex cursor-pointer items-center gap-3 rounded-2xl border p-3 text-left backdrop-blur-sm',
-        'hover:border-foreground/25 hover:bg-card transition-all duration-150',
-        'focus-visible:ring-ring focus-visible:ring-offset-background focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none',
-      )}
-    >
-      <span className="bg-muted text-foreground/70 group-hover:text-foreground flex size-9 shrink-0 items-center justify-center rounded-xl transition-colors">
-        <Icon className="size-4" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="text-foreground truncate text-sm font-medium">{title}</div>
-        <div className="text-muted-foreground truncate text-xs">{desc}</div>
-      </div>
-      {isSet ? (
-        <Badge size="sm" variant="secondary" className="shrink-0 tabular-nums">
-          {count}
-        </Badge>
-      ) : (
-        <ArrowRight className="text-muted-foreground/30 group-hover:text-foreground/60 size-4 shrink-0 transition-transform duration-150 group-hover:translate-x-0.5" />
-      )}
     </div>
   );
 }

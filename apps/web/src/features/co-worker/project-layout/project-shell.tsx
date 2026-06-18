@@ -2,18 +2,16 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
-import { useRouter } from 'next/navigation';
-import { Suspense, lazy, useCallback, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 
 import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { CustomizeOverlay } from '@/components/projects/customize/customize-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
+import { SidebarTrigger } from '@/components/ui/sidebar';
 import { errorToast } from '@/components/ui/toast';
-import {
-  ProjectMobileMenuBar,
-  ProjectTabBar,
-} from '@/features/co-worker/project-header/project-tab-bar';
+import { ProjectTabBar } from '@/features/co-worker/project-header/project-tab-bar';
 import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
@@ -25,6 +23,7 @@ import {
 } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
+import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useIsSwitchingProject } from '@/stores/project-switch-store';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
 
@@ -97,10 +96,22 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
 
   useProjectShellShortcuts({ projectId, onNewSession: handleNewSession });
 
-  const isSwitchingProject = useIsSwitchingProject();
+  const params = useParams<{ sessionId?: string }>();
+  const activeSessionId = params?.sessionId ?? null;
+
+  const tabsByProject = useProjectSessionTabsStore((s) => s.tabsByProject);
+  const openTab = useProjectSessionTabsStore((s) => s.openTab);
+  const openTabIds = useMemo(() => tabsByProject[projectId] ?? [], [tabsByProject, projectId]);
   const disableTabSelector = useUserPreferencesStore(
     (s) => s.preferences.disableTabSelector ?? false,
   );
+
+  useLayoutEffect(() => {
+    if (activeSessionId) openTab(projectId, activeSessionId);
+  }, [projectId, activeSessionId, openTab]);
+
+  const showTabBar = !disableTabSelector && openTabIds.length > 0;
+  const isSwitchingProject = useIsSwitchingProject();
 
   if (authLoading || !user) {
     return <div className="bg-background min-h-screen" />;
@@ -122,7 +133,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
           </Suspense>
 
           <AnimatePresence initial={false}>
-            {!disableTabSelector ? (
+            {showTabBar ? (
               <motion.div
                 key="project-tab-bar"
                 initial={{ height: 0, opacity: 0 }}
@@ -133,7 +144,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
               >
                 <ProjectTabBar projectId={projectId} />
               </motion.div>
-            ) : (
+            ) : openTabIds.length === 0 && activeSessionId === null ? (
               <motion.div
                 key="project-mobile-menu-bar"
                 initial={{ height: 0, opacity: 0 }}
@@ -142,16 +153,17 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
                 transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
                 className="overflow-hidden"
               >
-                <ProjectMobileMenuBar />
+                <div className="bg-sidebar flex h-[calc(38px+env(safe-area-inset-top,0px))] items-center pt-[env(safe-area-inset-top,0px)] pl-1.5 md:hidden">
+                  <SidebarTrigger />
+                </div>
               </motion.div>
-            )}
+            ) : null}
           </AnimatePresence>
 
           <div
             className={cn(
-              'bg-background border-border relative flex min-h-0 flex-1 flex-col overflow-hidden border-t-[1.5px] border-l-[1.5px]',
-              // 'rounded-t-xl lg:rounded-t-none',
-              !disableTabSelector ? 'rounded-t-xl lg:rounded-tl-lg lg:rounded-tr-none' : '',
+              'bg-background border-border relative flex min-h-0 flex-1 flex-col overflow-hidden border-l-[1.5px]',
+              showTabBar ? 'rounded-t-xl border-t-[1.5px] lg:rounded-tl-lg lg:rounded-tr-none' : '',
             )}
           >
             {children}

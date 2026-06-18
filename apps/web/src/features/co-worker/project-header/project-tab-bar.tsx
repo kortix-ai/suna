@@ -1,15 +1,13 @@
 'use client';
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Menu } from 'lucide-react';
-import { useTranslations } from 'next-intl';
 import { useParams, usePathname, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 
 import { sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { useSidebar } from '@/components/ui/sidebar';
+import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
 import {
   SessionVisibilityBadge,
   ShareSessionModal,
@@ -73,39 +71,15 @@ function ProjectSessionTab({
             'pointer-events-none scale-75 opacity-0',
             'transition-all duration-150 ease-[cubic-bezier(0.23,1,0.32,1)]',
             'group-hover:pointer-events-auto group-hover:scale-100 group-hover:opacity-100',
-            'rounded-full',
+            'overflow-hidden rounded-full',
           )}
           aria-label={`Close ${label}`}
         >
+          <div className="absolute inset-0 bg-black/20" />
           <Icon.Close className="size-3.5" />
         </Button>
       </Link>
     </Button>
-  );
-}
-
-function MobileSidebarTrigger() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
-  const sidebar = useSidebar();
-  return (
-    <button
-      type="button"
-      onClick={() => sidebar.setOpenMobile(true)}
-      className="text-muted-foreground/70 hover:bg-foreground/[0.05] hover:text-foreground flex h-9 w-9 items-center justify-center rounded-md transition-colors"
-      aria-label={tHardcodedUi.raw(
-        'componentsProjectsProjectTabBar.line38JsxAttrAriaLabelOpenMenu',
-      )}
-    >
-      <Menu className="h-5 w-5" />
-    </button>
-  );
-}
-
-export function ProjectMobileMenuBar() {
-  return (
-    <div className="bg-sidebar flex h-[calc(38px+env(safe-area-inset-top,0px))] items-center pt-[env(safe-area-inset-top,0px)] pl-1.5 md:hidden">
-      <MobileSidebarTrigger />
-    </div>
   );
 }
 
@@ -175,11 +149,13 @@ export function ProjectTabBar({ projectId }: { projectId: string }) {
 
   return (
     <div
-      className="bg-sidebar relative flex shrink-0 items-stretch overflow-hidden py-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pr-2 pb-0 md:pb-2"
+      className="bg-sidebar relative flex shrink-0 items-stretch overflow-hidden py-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pr-2"
       role="tablist"
     >
-      <div className="flex flex-shrink-0 items-center pr-1 pl-1.5 md:hidden">
-        <MobileSidebarTrigger />
+      <div className="flex shrink-0 items-center pr-1 pl-1.5 md:hidden">
+        <div className="bg-sidebar flex items-center pt-[env(safe-area-inset-top,0px)] pl-1.5 md:hidden">
+          <SidebarTrigger />
+        </div>
       </div>
 
       <FadedScrollArea

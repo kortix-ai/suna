@@ -19,7 +19,7 @@ import { SessionDeleteModal } from '@/features/co-worker/project-sidebar/modal/s
 import { ShareSessionModal } from '@/features/co-worker/project-sidebar/modal/share-session-modal';
 import { CompactModal } from '@/features/session/header/compact-modal';
 import { ExportTranscriptModal } from '@/features/session/header/export-transcript-modal';
-import { SessionChangesIndicator } from '@/features/session/session-changes-indicator';
+import { SessionChangesIndicator } from '@/features/session/header/session-changes-indicator';
 import { listProjectSessions, restartProjectSession } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { Pencil, Share, TrashSolid } from '@mynaui/icons-react';
@@ -85,7 +85,7 @@ export function SessionSiteHeader({
   return (
     <>
       <div className="pointer-events-none absolute top-0 right-0 left-0 z-20">
-        <div className="flex items-center justify-between px-3 pt-2 sm:px-4">
+        <div className="flex items-center justify-between p-2 pb-0">
           <div className="pointer-events-auto flex items-center gap-0.5">
             {leadingAction}
 
@@ -177,7 +177,7 @@ export function SessionSiteHeader({
                 <span className="flex items-center gap-1.5">
                   {isSidePanelOpen ? 'Close' : 'Open'} panel
                   <KbdGroup>
-                    <Kbd>
+                    <Kbd className="font-mono">
                       {tHardcodedUi.raw('componentsSessionSessionSiteHeader.line185JsxTextI')}
                     </Kbd>
                   </KbdGroup>
@@ -202,11 +202,7 @@ export function SessionSiteHeader({
         </div>
       </div>
 
-      <ExportTranscriptModal
-        sessionId={sessionId}
-        open={exportOpen}
-        onOpenChange={setExportOpen}
-      />
+      <ExportTranscriptModal sessionId={sessionId} open={exportOpen} onOpenChange={setExportOpen} />
       <CompactModal sessionId={sessionId} open={compactOpen} onOpenChange={setCompactOpen} />
 
       {isProjectSession && (

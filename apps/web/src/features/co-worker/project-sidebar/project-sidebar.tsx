@@ -14,6 +14,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import Hint from '@/components/ui/hint';
 import { Kbd, KbdGroup } from '@/components/ui/kbd';
 import {
   Sidebar,
@@ -29,11 +30,23 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { errorToast } from '@/components/ui/toast';
-import { ProjectAppsNavItem } from '@/features/co-worker/project-sidebar/footer/project-apps-nav';
+import {
+  ProjectAppsNavItem,
+  ProjectAppsRailItem,
+} from '@/features/co-worker/project-sidebar/footer/project-apps-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/co-worker/project-sidebar/footer/project-change-requests-nav';
-import { ProjectCustomizeNavItem } from '@/features/co-worker/project-sidebar/footer/project-customize-nav';
-import { OnboardingSetupNavItem } from '@/features/co-worker/project-sidebar/footer/project-onboarding-setup';
-import { ProjectSandboxAlert } from '@/features/co-worker/project-sidebar/footer/project-sandbox-alert';
+import {
+  ProjectCustomizeNavItem,
+  ProjectCustomizeRailItem,
+} from '@/features/co-worker/project-sidebar/footer/project-customize-nav';
+import {
+  OnboardingSetupNavItem,
+  ProjectSetupRailItem,
+} from '@/features/co-worker/project-sidebar/footer/project-onboarding-setup';
+import {
+  ProjectSandboxAlert,
+  ProjectSandboxAlertRailItem,
+} from '@/features/co-worker/project-sidebar/footer/project-sandbox-alert';
 import { ProjectSessionList } from '@/features/co-worker/project-sidebar/project-session-list';
 import { ProjectSwitcher } from '@/features/co-worker/project-sidebar/project-switcher';
 import { Icon } from '@/features/icon/icon';
@@ -55,13 +68,13 @@ import {
   ChevronRight,
   List,
   MessagesSquare,
+  Plus,
   Webhook,
   type LucideIcon,
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import * as React from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { HiDotsHorizontal } from 'react-icons/hi';
 import { IconType } from 'react-icons/lib';
@@ -78,29 +91,9 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiTy
   webhook: Webhook,
 };
 
-// function KbdHint({ mod, letter }: { mod: string; letter: string }) {
-//   const chip =
-//     'inline-flex h-5 min-w-5 items-center justify-center rounded border border-border/40 bg-foreground/[0.05] px-1 text-xs font-medium leading-none text-muted-foreground/70 select-none';
-//   return (
-//     <span className="ml-auto flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/menu-button:opacity-100 group-data-[collapsible=icon]:hidden">
-//       <kbd className={chip}>{mod}</kbd>
-//       <kbd className={chip}>{letter}</kbd>
-//     </span>
-//   );
-// }
-
-interface CollapsedIconButtonProps {
-  icon: React.ReactNode;
-  label: string;
-  onClick?: () => void;
-  flyoutContent?: React.ReactNode;
-  disabled?: boolean;
-  isActive?: boolean;
-}
-
 export function ProjectSidebar({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const { state, setOpen, setOpenMobile } = useSidebar();
+  const { state, setOpenMobile } = useSidebar();
   const isExpanded = state === 'expanded';
   const [isHeaderHovered, setIsHeaderHovered] = useState(false);
   const queryClient = useQueryClient();
@@ -237,6 +230,38 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
         </div>
       </SidebarHeader>
       <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
+        <div
+          className={cn(
+            'absolute inset-0 flex min-h-0 flex-col items-center px-2 pt-2 pb-2',
+            !isExpanded ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
+          )}
+        >
+          <div className="flex w-full flex-col items-center space-y-0.5">
+            <Hint label="New session">
+              <Button
+                type="button"
+                size="icon"
+                aria-label="New session"
+                onClick={handleNewSession}
+                disabled={createSession.isPending}
+                className={cn(
+                  createSession.isPending && 'cursor-not-allowed opacity-50',
+                  'group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 flex items-center justify-center border-[1.2px] text-center text-sm! [&_svg]:size-5!',
+                )}
+              >
+                <Plus className="size-4" />
+              </Button>
+            </Hint>
+          </div>
+
+          <div className="mt-auto flex w-full flex-col items-center space-y-0.5">
+            <ProjectSandboxAlertRailItem projectId={projectId} />
+            <ProjectAppsRailItem projectId={projectId} />
+            <ProjectSetupRailItem projectId={projectId} />
+            <ProjectCustomizeRailItem />
+          </div>
+        </div>
+
         <div
           className={cn(
             'flex h-full min-h-0 flex-col space-y-4',

@@ -7,11 +7,11 @@ import { useCallback } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
+import Hint from '@/components/ui/hint';
 import Loading from '@/components/ui/loading';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { SidebarMenuItem } from '@/components/ui/sidebar';
+import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
 import { errorToast, successToast } from '@/components/ui/toast';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   fixSandboxWithAgent,
   getProjectSandboxHealth,
@@ -245,34 +245,30 @@ export function ProjectSandboxAlertRailItem({ projectId }: { projectId: string }
   if (!severity || !data) return null;
   const tone = SEVERITY_TONE[severity];
 
+  const customizeOpen = useCustomizeStore((s) => s.open);
+
   return (
     <Popover>
-      <Tooltip>
+      <Hint label={SEVERITY_LABEL[severity]}>
         <PopoverTrigger asChild>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              aria-label={SEVERITY_LABEL[severity]}
-              className="hover:bg-sidebar-accent relative flex w-full items-center justify-center rounded-lg py-2 transition-colors duration-150 ease-out"
-            >
-              {severity === 'building' ? (
-                <Loading className={cn('size-4 animate-spin', tone.icon)} />
-              ) : (
-                <DangerTriangleSolid className={cn('size-4', tone.icon)} />
-              )}
-              {severity !== 'building' && (
-                <span
-                  className={cn('absolute top-1.5 right-1.5 size-1.5 rounded-full', tone.dot)}
-                />
-              )}
-            </button>
-          </TooltipTrigger>
+          <SidebarMenuButton type="button" aria-label={SEVERITY_LABEL[severity]}>
+            {severity === 'building' ? (
+              <Loading className={cn('size-4 animate-spin', tone.icon)} />
+            ) : (
+              <DangerTriangleSolid className={cn('size-4', tone.icon)} />
+            )}
+            {severity !== 'building' && (
+              <span className={cn('absolute top-1.5 right-1.5 size-1.5 rounded-full', tone.dot)} />
+            )}
+          </SidebarMenuButton>
         </PopoverTrigger>
-        <TooltipContent side="right" sideOffset={12} className="text-xs">
-          {SEVERITY_LABEL[severity]}
-        </TooltipContent>
-      </Tooltip>
-      <PopoverContent side="right" align="start" sideOffset={12} className="w-96 p-0">
+      </Hint>
+      <PopoverContent
+        side="right"
+        align={customizeOpen ? 'end' : 'start'}
+        sideOffset={12}
+        className="w-96 p-0"
+      >
         <SandboxAlertContent projectId={projectId} health={data} severity={severity} />
       </PopoverContent>
     </Popover>

@@ -1,17 +1,16 @@
 'use client';
 
-import { ArrowRight, GitBranch, GitMerge, GitPullRequest } from 'lucide-react';
+import { ArrowRight, GitBranch, GitPullRequest } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
 import { Badge } from '@/components/ui/badge';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ChangeRequest } from '@/features/project-files/api/change-requests';
 import { ChangeRequestDetailDialog } from '@/features/project-files/components/change-request-detail-dialog';
 import { ProjectFilesProvider } from '@/features/project-files/context';
 import { useChangeRequests } from '@/features/project-files/hooks/use-change-requests';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 interface CrController {
   crs: ChangeRequest[];
@@ -20,7 +19,6 @@ interface CrController {
   setSelectedCrId: (id: string | null) => void;
   listOpen: boolean;
   setListOpen: (open: boolean) => void;
-  onActivate: () => void;
   openCr: (id: string) => void;
 }
 
@@ -37,14 +35,6 @@ function useOpenCrController(): CrController {
     setSelectedCrId(id);
   }, []);
 
-  const onActivate = useCallback(() => {
-    if (count === 1) {
-      setSelectedCrId(crs[0].cr_id);
-    } else if (count > 1) {
-      setListOpen((v) => !v);
-    }
-  }, [count, crs]);
-
   return {
     crs,
     count,
@@ -52,15 +42,8 @@ function useOpenCrController(): CrController {
     setSelectedCrId,
     listOpen,
     setListOpen,
-    onActivate,
     openCr,
   };
-}
-
-function tooltipCopy(count: number): string {
-  return count === 1
-    ? 'A change is ready to merge into main. Click to review and merge it.'
-    : `${count} changes are ready to merge into main. Click to review and merge them.`;
 }
 
 function OpenCrChooser({
@@ -127,6 +110,7 @@ function OpenCrChooser({
 
 function NavItemInner() {
   const c = useOpenCrController();
+  const isMobile = useIsMobile();
 
   if (c.count === 0) return null;
 
@@ -150,17 +134,17 @@ function NavItemInner() {
       {c.count === 1 ? (
         menuButton
       ) : (
-        <HoverCard openDelay={150} closeDelay={100}>
-          <HoverCardTrigger asChild>{menuButton}</HoverCardTrigger>
-          <HoverCardContent
-            side="right"
-            align="end"
+        <Popover open={c.listOpen} onOpenChange={c.setListOpen}>
+          <PopoverTrigger asChild>{menuButton}</PopoverTrigger>
+          <PopoverContent
+            side={isMobile ? 'top' : 'right'}
+            align={isMobile ? 'start' : 'end'}
             sideOffset={12}
             className="w-[340px] overflow-hidden p-0"
           >
             <OpenCrChooser crs={c.crs} baseRef={baseRef} onPick={c.openCr} />
-          </HoverCardContent>
-        </HoverCard>
+          </PopoverContent>
+        </Popover>
       )}
 
       <ChangeRequestDetailDialog crId={c.selectedCrId} onClose={() => c.setSelectedCrId(null)} />
@@ -168,64 +152,10 @@ function NavItemInner() {
   );
 }
 
-function RailItemInner() {
-  const c = useOpenCrController();
-
-  if (c.count === 0) return null;
-
-  const baseRef = c.crs[0]?.base_ref ?? '';
-
-  return (
-    <>
-      <Popover open={c.listOpen} onOpenChange={c.setListOpen}>
-        <Tooltip>
-          <PopoverAnchor asChild>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                aria-label={tooltipCopy(c.count)}
-                onClick={c.onActivate}
-                className="text-sidebar-foreground relative flex w-full items-center justify-center rounded-lg py-2 transition-colors duration-150 ease-out hover:bg-emerald-500/15"
-              >
-                <GitMerge className="size-4 text-emerald-600" />
-                <span className="absolute top-1 right-1 flex size-1.5">
-                  <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500/70" />
-                  <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
-                </span>
-              </button>
-            </TooltipTrigger>
-          </PopoverAnchor>
-          <TooltipContent side="right" sideOffset={12} className="max-w-[220px] text-xs">
-            {tooltipCopy(c.count)}
-          </TooltipContent>
-        </Tooltip>
-        <PopoverContent
-          side="right"
-          align="start"
-          sideOffset={12}
-          className="w-[340px] overflow-hidden p-0"
-        >
-          <OpenCrChooser crs={c.crs} baseRef={baseRef} onPick={c.openCr} />
-        </PopoverContent>
-      </Popover>
-
-      <ChangeRequestDetailDialog crId={c.selectedCrId} onClose={() => c.setSelectedCrId(null)} />
-    </>
-  );
-}
-
 export function ProjectChangeRequestsNavItem({ projectId }: { projectId: string }) {
   return (
     <ProjectFilesProvider value={{ projectId, ref: '' }}>
       <NavItemInner />
-    </ProjectFilesProvider>
-  );
-}
-
-export function ProjectChangeRequestsRailItem({ projectId }: { projectId: string }) {
-  return (
-    <ProjectFilesProvider value={{ projectId, ref: '' }}>
-      <RailItemInner />
     </ProjectFilesProvider>
   );
 }
