@@ -50,6 +50,13 @@ const runningStatusCache = new Map<string, number>(); // externalId → cachedAt
  *    nearly free once stopped + cold-archived, so we never destroy its disk;
  *    a session is only removed when the user explicitly deletes it.
  */
+// A persistent (autoStop=0) warm-pool spare that nothing reaps is exactly what
+// caused the "500+ never-stopping boxes" leak noted above. reconcileWarmPool is
+// the primary reaper, but if the API/tunnel that owns the pool dies, nothing
+// runs it — so we FORCE a provider-side auto-delete backstop on every persistent
+// spare (≥ the pool's 6h max-age) regardless of the global -1/never default.
+const PERSISTENT_SPARE_AUTODELETE_FALLBACK_MIN = 24 * 60; // 24h
+
 export function daytonaLifecycle(autoStopOverride?: number): {
   autoStopInterval: number;
   autoArchiveInterval: number;
@@ -59,15 +66,16 @@ export function daytonaLifecycle(autoStopOverride?: number): {
   // A spare must stay RUNNING + warm until claimed — a hibernate would kill the
   // pre-warmed opencode (and, for clone-at-park spares, the warmed plugin),
   // defeating the whole pre-warm. Spares manage their own lifecycle via
-  // reconcileWarmPool (boot-timeout / max-age / claim-stale reap), and a finite
-  // KORTIX_SANDBOX_AUTODELETE_MINUTES is the tunnel-death backstop, so this
-  // persistence is intentional + bounded. EVERY other caller is clamped to >= 1
+  // reconcileWarmPool, but because such a box never auto-stops we ALSO pin a
+  // finite provider auto-delete backstop (never -1) so a leaked spare self-
+  // destructs if the reaper stops running. EVERY other caller is clamped to >= 1
   // so a normal session box can never be created persistent.
   if (autoStopOverride === 0) {
+    const configuredDelete = config.KORTIX_SANDBOX_AUTODELETE_MINUTES;
     return {
       autoStopInterval: 0,
       autoArchiveInterval: config.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
-      autoDeleteInterval: config.KORTIX_SANDBOX_AUTODELETE_MINUTES,
+      autoDeleteInterval: configuredDelete > 0 ? configuredDelete : PERSISTENT_SPARE_AUTODELETE_FALLBACK_MIN,
     };
   }
   const stop = autoStopOverride ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES;
