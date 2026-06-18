@@ -62,6 +62,8 @@ interface SlimProvider {
   name: string;
   env: string[];
   doc: string | null;
+  api: string | null;
+  npm: string | null;
   models: SlimModel[];
 }
 
@@ -107,6 +109,8 @@ async function main() {
       name: raw.name ?? id,
       env,
       doc: raw.doc ?? null,
+      api: raw.api ?? null,
+      npm: raw.npm ?? null,
       models,
     });
     totalModels += models.length;

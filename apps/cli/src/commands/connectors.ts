@@ -64,7 +64,11 @@ Subcommands:
   ls [--json]                       List connectors + status, auth, sharing.
   show <slug> [--json]              Show one connector's tools (actions).
   add <slug> --provider <p> [...]   Add a [[connectors]] block to kortix.toml.
-  rm <slug>                         Remove a [[connectors]] block from kortix.toml.
+                                    Add --apply to skip ship/CR and apply it
+                                    instantly on the cloud project (commit to
+                                    main + sync, like the dashboard).
+  rm <slug> [--apply]               Remove a [[connectors]] block from kortix.toml
+                                    (or --apply to remove on the cloud now).
   rename <slug> <name…>             Set a connector's display name (applies now).
   mode <slug> <shared|per_user>     Set the profile model (applies now + re-syncs).
   sync                              Reconcile the catalog from the shipped kortix.toml.
@@ -72,6 +76,9 @@ Subcommands:
                                     no value; reads stdin with \`-\`).
   share <slug> --mode <m> [...]     Set who can use it (project|private|members).
   connect <slug>                    Start a Pipedream 1-click connect.
+  link <slug> [--expires <min>]     Mint a DURABLE shareable Quick Connect link
+                                    to hand a human (web: popup, Slack: link).
+                                    Auto-finalizes — no \`finalize\` needed.
   finalize <slug>                   Confirm a Pipedream connection completed.
   apps [<query>] [--json]           Browse the Pipedream app catalog.
   policy ls [--json]                Show project-wide execution policies.
@@ -116,8 +123,10 @@ export async function runConnectors(argv: string[]): Promise<number> {
   let f: Record<string, string | undefined> = {};
   let asStdin = false;
   let json = false;
+  let applyRemote = false;
   try {
     json = takeFlagBool(rest, ['--json']);
+    applyRemote = takeFlagBool(rest, ['--apply']);
     f.project = takeFlagValue(rest, ['--project']);
     f.host = takeFlagValue(rest, ['--host']);
     f.name = takeFlagValue(rest, ['--name']);
@@ -145,8 +154,11 @@ export async function runConnectors(argv: string[]): Promise<number> {
   // ── Config mutations edit the LOCAL kortix.toml (the source of truth). No
   //    cloud call, no auth — you `kortix ship` to apply. Only credentials,
   //    OAuth, sharing, reconcile + reads talk to the cloud. ───────────────────
-  if (sub === 'add' || sub === 'create') return connectorAddLocal(positional[0], f);
-  if (sub === 'rm' || sub === 'remove' || sub === 'delete') return connectorRmLocal(positional[0]);
+  //    `--apply` skips the local-edit + ship/CR flow and applies the change
+  //    instantly on the cloud project (commit to kortix.toml on main + sync,
+  //    exactly like the dashboard) — handled in the switch below.
+  if ((sub === 'add' || sub === 'create') && !applyRemote) return connectorAddLocal(positional[0], f);
+  if ((sub === 'rm' || sub === 'remove' || sub === 'delete') && !applyRemote) return connectorRmLocal(positional[0]);
   if ((sub === 'policy' || sub === 'policies') && positional[0] === 'set') return policySetLocal(f.default);
 
   const ctx = resolveProjectContext({ projectArg: f.project, hostArg: f.host });
@@ -155,6 +167,43 @@ export async function runConnectors(argv: string[]): Promise<number> {
 
   try {
     switch (sub) {
+      // `--apply` paths: mutate the cloud project directly (commit to
+      // kortix.toml on main + sync, like the dashboard) — no local edit, no CR.
+      case 'add':
+      case 'create': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        if (!f.provider) return missing('--provider');
+        if (!(PROVIDERS as readonly string[]).includes(f.provider)) {
+          return missing(`--provider ${PROVIDERS.join('|')}`);
+        }
+        const draft: Record<string, unknown> = { slug, provider: f.provider };
+        if (f.name) draft.name = f.name;
+        if (f.app) draft.app = f.app;
+        if (f.url) draft.url = f.url;
+        if (f.transport) draft.transport = f.transport;
+        if (f.endpoint) draft.endpoint = f.endpoint;
+        if (f.baseUrl) draft.baseUrl = f.baseUrl;
+        if (f.spec) draft.spec = f.spec;
+        if (f.credential) draft.credential = f.credential;
+        if (f.authType) draft.auth = { type: f.authType };
+        const resp = await ctx.client.post<{ ok: boolean; sync?: unknown }>(`${ex}/connectors`, draft);
+        if (json) { emitJson(resp); return 0; }
+        process.stdout.write(
+          `${status.ok(`${C.bold}${slug}${C.reset} live on the project`)} ${C.dim}(committed to kortix.toml on main + synced)${C.reset}\n` +
+            `  ${C.dim}Next: ${C.reset}${C.cyan}kortix connectors link ${slug}${C.reset}${C.dim} or ${C.reset}${C.cyan}connect ${slug}${C.reset}\n`,
+        );
+        return 0;
+      }
+      case 'rm':
+      case 'remove':
+      case 'delete': {
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        await ctx.client.delete(`${ex}/connectors/${encodeURIComponent(slug)}`);
+        process.stdout.write(`${status.ok(`Removed ${C.bold}${slug}${C.reset}`)} ${C.dim}(kortix.toml on main + catalog)${C.reset}\n`);
+        return 0;
+      }
       case 'ls':
       case 'list': {
         const { connectors } = await ctx.client.get<{ connectors: AdminConnector[] }>(`${ex}/connectors`);
@@ -274,6 +323,31 @@ export async function runConnectors(argv: string[]): Promise<number> {
         }
         process.stdout.write(
           `\n  ${C.dim}When done, run ${C.reset}${C.cyan}kortix connectors finalize ${slug}${C.reset}${C.dim} to confirm.${C.reset}\n\n`,
+        );
+        return 0;
+      }
+      case 'link': {
+        // Mint a DURABLE, shareable Quick Connect link (vs `connect`, which
+        // returns a raw short-lived Pipedream URL for the dashboard/SDK flow).
+        // Hand this to whoever should authorize — web opens a connect popup,
+        // Slack renders it as a tappable link, and it mints a fresh Pipedream
+        // token each open so it never goes stale. Auto-finalizes via webhook.
+        const slug = positional[0];
+        if (!slug) return missing('a connector slug');
+        const resp = await ctx.client.post<{ url: string; slug: string; app: string | null; expires_at: string }>(
+          `/projects/${ctx.projectId}/connect-requests`,
+          { slug, ...(f.expires ? { expires_in_minutes: Number(f.expires) } : {}) },
+        );
+        if (json) {
+          emitJson(resp);
+          return 0;
+        }
+        process.stdout.write(
+          `\n  ${C.bold}Hand this link to whoever should connect ${slug}${C.reset}` +
+            `${resp.app ? ` ${C.faded}(${resp.app})${C.reset}` : ''}\n` +
+            `  ${C.cyan}${resp.url}${C.reset}\n\n` +
+            `  ${C.dim}Web: opens a 1-click connect popup. Slack: a tappable link. No keys touch the repo.${C.reset}\n` +
+            `  ${C.dim}Expires ${resp.expires_at}.${C.reset}\n\n`,
         );
         return 0;
       }

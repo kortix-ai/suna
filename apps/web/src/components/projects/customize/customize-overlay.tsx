@@ -36,6 +36,7 @@ import {
   Settings,
   SlidersHorizontal,
   Sparkles,
+  Store,
   Terminal,
   Timer,
   Users,
@@ -54,6 +55,7 @@ import { SandboxView } from '@/components/projects/customize/sections/sandbox-vi
 import { SecretsView } from '@/components/projects/customize/sections/secrets-view';
 import { SettingsView } from '@/components/projects/customize/sections/settings-view';
 import { SkillsView } from '@/components/projects/customize/sections/skills-view';
+import { MarketplaceView } from '@/components/marketplace/marketplace-view';
 import { TriggersView } from '@/components/projects/triggers-view';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { useIsMobile } from '@/hooks/utils';
@@ -79,8 +81,9 @@ interface RailGroup {
   items: readonly RailItem[];
 }
 
-// Three scannable build/connect/automate blocks, with the workspace + admin
-// surfaces (Changes, Files, Sandbox, Members, Settings) grouped in the footer.
+// One scannable, top-to-bottom rail: the build/connect/automate blocks first,
+// then the workspace + manage surfaces as their own labeled groups — all in the
+// same scrolling list, nothing pinned to the bottom.
 const GROUPS: readonly RailGroup[] = [
   {
     label: 'Build',
@@ -105,27 +108,43 @@ const GROUPS: readonly RailGroup[] = [
       { section: 'webhooks', label: 'Webhooks', icon: Webhook },
     ],
   },
-];
-
-const FOOTER_ITEMS: readonly RailItem[] = [
-  { section: 'changes', label: 'Changes', icon: GitPullRequest },
-  { section: 'files', label: 'Files', icon: FolderOpen },
-  { section: 'sandbox', label: 'Sandbox', icon: Container },
-  { section: 'dev', label: 'Dev', icon: Terminal },
-  { section: 'members', label: 'Members', icon: Users },
-  { section: 'settings', label: 'Settings', icon: Settings },
+  {
+    label: 'Workspace',
+    items: [
+      { section: 'changes', label: 'Changes', icon: GitPullRequest },
+      { section: 'files', label: 'Files', icon: FolderOpen },
+      { section: 'sandbox', label: 'Sandbox', icon: Container },
+      { section: 'dev', label: 'Dev', icon: Terminal },
+    ],
+  },
+  {
+    label: 'Manage',
+    items: [
+      { section: 'members', label: 'Members', icon: Users },
+      { section: 'settings', label: 'Settings', icon: Settings },
+    ],
+  },
 ];
 
 // Experimental Agent Computer Tunnel — only shown in the rail when the project
 // has opted in (Customize → Settings → Experimental). Slots into "Connect".
 const COMPUTERS_ITEM: RailItem = { section: 'computers', label: 'Computers', icon: Monitor };
 
+// Experimental Marketplace — browse + install skills. Opt-in (Customize →
+// Settings → Experimental); slots into "Build" right after Commands.
+const MARKETPLACE_ITEM: RailItem = { section: 'marketplace', label: 'Marketplace', icon: Store };
+
 /** Build the rail groups for this project, injecting flag-gated entries. */
-function railGroups(tunnelEnabled: boolean): readonly RailGroup[] {
-  if (!tunnelEnabled) return GROUPS;
-  return GROUPS.map((g) =>
-    g.label === 'Connect' ? { ...g, items: [...g.items, COMPUTERS_ITEM] } : g,
-  );
+function railGroups(tunnelEnabled: boolean, marketplaceEnabled: boolean): readonly RailGroup[] {
+  return GROUPS.map((g) => {
+    if (g.label === 'Build' && marketplaceEnabled) {
+      return { ...g, items: [...g.items, MARKETPLACE_ITEM] };
+    }
+    if (g.label === 'Connect' && tunnelEnabled) {
+      return { ...g, items: [...g.items, COMPUTERS_ITEM] };
+    }
+    return g;
+  });
 }
 
 export function CustomizeOverlay({ projectId }: { projectId: string }) {
@@ -147,11 +166,12 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
   // Flag-gated rail. Computers (Agent Computer Tunnel) appears only when this
   // project has opted into the experimental feature.
   const tunnelEnabled = detail.data?.project?.experimental?.agent_tunnel ?? false;
-  const groups = useMemo(() => railGroups(tunnelEnabled), [tunnelEnabled]);
-  const allItems = useMemo(
-    () => [...groups.flatMap((g) => g.items), ...FOOTER_ITEMS],
-    [groups],
+  const marketplaceEnabled = detail.data?.project?.experimental?.marketplace ?? false;
+  const groups = useMemo(
+    () => railGroups(tunnelEnabled, marketplaceEnabled),
+    [tunnelEnabled, marketplaceEnabled],
   );
+  const allItems = useMemo(() => groups.flatMap((g) => g.items), [groups]);
 
   return (
     <Dialog open={open} onOpenChange={(next) => (next ? undefined : close())}>
@@ -175,10 +195,11 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
         }}
         className={cn(
           'flex flex-col gap-0 overflow-hidden p-0',
-          // Edge-to-edge full-screen page: fills the viewport with no margin,
-          // square corners, and no border — opens like a dialog but reads as a
-          // real full-screen surface over everything (X / Esc closes).
-          'h-[100dvh] w-screen max-w-none rounded-none border-0 shadow-none sm:max-w-none',
+          // Full page, not a boxed modal: edge-to-edge over the whole viewport
+          // with no border, no rounded corners and no shadow — it reads as a
+          // real page you navigated to (X / Esc closes). `sm:rounded-none` is
+          // required to beat the base DialogContent's `sm:rounded-xl` on desktop.
+          'h-[100dvh] w-screen max-w-none rounded-none border-0 shadow-none sm:max-w-none sm:rounded-none',
         )}
       >
         <DialogTitle className="sr-only">
@@ -255,19 +276,6 @@ export function CustomizeOverlay({ projectId }: { projectId: string }) {
                     </ul>
                   </div>
                 ))}
-              </div>
-              <div className="border-t border-border/50 px-2.5 py-2.5">
-                <ul className="space-y-0.5">
-                  {FOOTER_ITEMS.map((item) => (
-                    <li key={item.section}>
-                      <RailButton
-                        item={item}
-                        active={section === item.section}
-                        onClick={() => setSection(item.section)}
-                      />
-                    </li>
-                  ))}
-                </ul>
               </div>
             </nav>
           )}
@@ -353,6 +361,8 @@ function SectionContent({
       return <AgentsView projectId={projectId} />;
     case 'commands':
       return <CommandsView projectId={projectId} />;
+    case 'marketplace':
+      return <MarketplaceView projectId={projectId} />;
     case 'secrets':
       return <SecretsView projectId={projectId} />;
     case 'connectors':

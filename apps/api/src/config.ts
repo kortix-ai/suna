@@ -146,16 +146,11 @@ const envSchema = z.object({
   KORTIX_WARM_POOL_PRESENCE_MINUTES: optInt(15),
 
   // ── Pause / resume tuning ─────────────────────────────────────────────────
-  // Daytona idle→stop (hibernate) interval, minutes. Lower = hibernate sooner
-  // (saves compute); higher = a frequently-returning user's box stays running
-  // so resume is instant. Default keeps the prior 15.
-  KORTIX_SANDBOX_AUTOSTOP_MINUTES:  optInt(15),
-  // Daytona stop→archive interval, minutes. A STOPPED box resumes fast (VM
-  // restart from preserved disk, ~1s + opencode re-warm); once ARCHIVED it must
-  // be restored from cold storage first (much slower). Bumped 30→120 so the
-  // common same-session return window stays in the fast "stopped" tier. Cost
-  // dial: a stopped box bills idle disk; dial down to archive sooner.
-  KORTIX_SANDBOX_ARCHIVE_MINUTES:   optInt(120),
+  // The sandbox idle→stop / stop→archive / →delete intervals live below as
+  // KORTIX_SANDBOX_AUTOSTOP_MINUTES / AUTOARCHIVE_MINUTES / AUTODELETE_MINUTES
+  // (consumed by daytonaLifecycle()). Main's 3-day auto-archive default already
+  // keeps a hibernated box in the fast-resume "stopped" tier far longer than the
+  // earlier 120m, so the pause/resume win is subsumed there.
   // Pre-resume: on a user returning to a project, proactively provider.start
   // their most-recently-stopped session(s) so the ~8s resume overlaps the
   // user's navigation and the session is ready by the time they open it. Reuses
@@ -202,6 +197,17 @@ const envSchema = z.object({
   // Managed LLM gateway (/v1/llm) — the `kortix` OpenCode provider routes every
   // sandbox model call here. Off by default; needs OPENROUTER_API_KEY when on.
   LLM_GATEWAY_ENABLED:         optBoolFalse,
+  // Empty = the in-API gateway at `${KORTIX_URL}/v1/llm`. Set to a standalone
+  // gateway's public base (…/v1/llm) to route every sandbox model call there.
+  LLM_GATEWAY_BASE_URL:        optStr,
+  // Dev: reverse-proxy /v1/llm-gateway/* to a standalone gateway on this port,
+  // so sandboxes reach it through the API's own tunnel (no separate tunnel).
+  LLM_GATEWAY_PROXY_PORT:      optInt(0),
+  // Where the /v1/llm-gateway/* reverse-proxy forwards. Defaults to
+  // 127.0.0.1:LLM_GATEWAY_PROXY_PORT (local, gateway same host). In K8s set to
+  // the in-cluster gateway service, e.g. http://kortix-gateway:8090, so the
+  // gateway stays internal and sandboxes reach it via the API's public origin.
+  LLM_GATEWAY_PROXY_TARGET:    optStr,
   ANTHROPIC_API_URL:           optUrl('https://api.anthropic.com/v1'),
   ANTHROPIC_API_KEY:           optStr,
   OPENAI_API_URL:              optUrl('https://api.openai.com/v1'),
@@ -266,6 +272,23 @@ const envSchema = z.object({
   // and deployments router which still reference it.
   SANDBOX_PORT_BASE:           optInt(14000),
   SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
+
+  // ── Sandbox lifecycle (Daytona auto-stop / auto-archive / auto-delete) ────
+  // Set as SDK create() params so a box self-manages even if the API/tunnel
+  // that created it dies (orphaned local-dev & ephemeral-env sessions are the
+  // main leak source). All in MINUTES.
+  //   autostop   → idle box stops, compute billing ends. CLAMPED to >=1 at the
+  //                use site so a box is NEVER created persistent (a 0 here once
+  //                leaked 500+ never-stopping boxes via the warm-pool path).
+  //                This is what actually stops the money burn.
+  //   autoarchive→ stopped box moves to cold storage after a few days (cheap,
+  //                still resumable; kept warm-resumable in the meantime).
+  //   autodelete → NEVER (-1). A sandbox is only ever removed when a user
+  //                explicitly deletes the session — auto-stop + cold archive
+  //                make an idle box nearly free, so we never destroy disk.
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(15),
+  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(4320),   // 3 days
+  KORTIX_SANDBOX_AUTODELETE_MINUTES:  optInt(-1),     // never auto-delete
 
   // ── Internal Service Key (auto-generated if missing — never fails) ───────
   INTERNAL_SERVICE_KEY:        optStr,
@@ -523,8 +546,6 @@ export const config = {
   KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
   KORTIX_WARM_POOL_CLONE_AT_PARK: env.KORTIX_WARM_POOL_CLONE_AT_PARK,
   KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
-  KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
-  KORTIX_SANDBOX_ARCHIVE_MINUTES: env.KORTIX_SANDBOX_ARCHIVE_MINUTES,
   KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,
   KORTIX_PRERESUME_MAX_PER_PROJECT: env.KORTIX_PRERESUME_MAX_PER_PROJECT,
 
@@ -548,6 +569,9 @@ export const config = {
   OPENROUTER_API_URL: env.OPENROUTER_API_URL,
   OPENROUTER_API_KEY: env.OPENROUTER_API_KEY,
   LLM_GATEWAY_ENABLED: env.LLM_GATEWAY_ENABLED,
+  LLM_GATEWAY_BASE_URL: env.LLM_GATEWAY_BASE_URL,
+  LLM_GATEWAY_PROXY_PORT: env.LLM_GATEWAY_PROXY_PORT,
+  LLM_GATEWAY_PROXY_TARGET: env.LLM_GATEWAY_PROXY_TARGET,
   ANTHROPIC_API_URL: env.ANTHROPIC_API_URL,
   ANTHROPIC_API_KEY: env.ANTHROPIC_API_KEY,
   OPENAI_API_URL: env.OPENAI_API_URL,
@@ -573,6 +597,11 @@ export const config = {
   DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
   DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
   KORTIX_WARM_POOL_FULL_SIZE: env.KORTIX_WARM_POOL_FULL_SIZE,
+
+  // Sandbox lifecycle intervals (minutes) — see schema comment above.
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
+  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
+  KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
 
   PLATINUM_API_KEY: env.PLATINUM_API_KEY,
   PLATINUM_API_URL: env.PLATINUM_API_URL,

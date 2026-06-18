@@ -1,8 +1,9 @@
 'use client';
 
-import Image from 'next/image';
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import {
+  CATALOG,
   MODEL_SELECTOR_PROVIDER_IDS as SHARED_MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS as SHARED_PROVIDER_LABELS,
 } from '@kortix/shared/llm-catalog';
@@ -35,40 +36,31 @@ export const PROVIDER_NOTES: Record<string, string> = {
   vercel: 'Use Vercel AI Gateway credentials',
 };
 
-const PROVIDER_ICON_MAP: Record<string, { src?: string; fallback: string }> = {
-  anthropic: { src: '/provider-icons/anthropic.svg', fallback: 'AN' },
-  openai: { src: '/provider-icons/openai.svg', fallback: 'OA' },
-  opencode: { src: '/provider-icons/opencode.svg', fallback: 'OC' },
-  kortix: { src: '/kortix-symbol.svg', fallback: 'KX' },
-  'github-copilot': { src: '/provider-icons/github-copilot.svg', fallback: 'GH' },
-  google: { src: '/provider-icons/google.svg', fallback: 'GO' },
-  openrouter: { src: '/provider-icons/openrouter.svg', fallback: 'OR' },
-  vercel: { src: '/provider-icons/vercel.svg', fallback: 'VE' },
-  groq: { src: '/provider-icons/groq.svg', fallback: 'GQ' },
-  xai: { src: '/provider-icons/xai.svg', fallback: 'XA' },
-  bedrock: { src: '/provider-icons/amazon-bedrock.svg', fallback: 'AW' },
-  moonshotai: { src: '/provider-icons/moonshotai.svg', fallback: 'MS' },
-  'moonshotai-cn': { src: '/provider-icons/moonshotai-cn.svg', fallback: 'MS' },
-  deepseek: { src: '/provider-icons/deepseek.svg', fallback: 'DS' },
-  mistral: { src: '/provider-icons/mistral.svg', fallback: 'MI' },
-  cohere: { src: '/provider-icons/cohere.svg', fallback: 'CO' },
-  llama: { src: '/provider-icons/llama.svg', fallback: 'LL' },
-  huggingface: { src: '/provider-icons/huggingface.svg', fallback: 'HF' },
-  cerebras: { src: '/provider-icons/cerebras.svg', fallback: 'CE' },
-  togetherai: { src: '/provider-icons/togetherai.svg', fallback: 'TA' },
-  fireworks: { src: '/provider-icons/fireworks-ai.svg', fallback: 'FW' },
-  deepinfra: { src: '/provider-icons/deepinfra.svg', fallback: 'DI' },
-  nvidia: { src: '/provider-icons/nvidia.svg', fallback: 'NV' },
-  cloudflare: { src: '/provider-icons/cloudflare-workers-ai.svg', fallback: 'CF' },
-  azure: { src: '/provider-icons/azure.svg', fallback: 'AZ' },
-  ollama: { src: '/provider-icons/ollama-cloud.svg', fallback: 'OL' },
-  perplexity: { src: '/provider-icons/perplexity.svg', fallback: 'PE' },
-  lmstudio: { src: '/provider-icons/lmstudio.svg', fallback: 'LM' },
-  v0: { src: '/provider-icons/v0.svg', fallback: 'V0' },
-  wandb: { src: '/provider-icons/wandb.svg', fallback: 'WB' },
-  baseten: { src: '/provider-icons/baseten.svg', fallback: 'BT' },
-  // Add all other icons - they fallback to initials if not mapped
+const LOCAL_LOGOS: Record<string, string> = {
+  kortix: '/kortix-symbol.svg',
 };
+
+function apexDomain(host: string): string {
+  const parts = host.split('.');
+  return parts.length <= 2 ? host : parts.slice(-2).join('.');
+}
+
+const PROVIDER_DOMAIN: Record<string, string> = {};
+for (const provider of CATALOG.providers) {
+  const url = provider.doc ?? provider.api ?? undefined;
+  if (!url) continue;
+  try {
+    PROVIDER_DOMAIN[provider.id] = apexDomain(new URL(url).hostname);
+  } catch {
+    continue;
+  }
+}
+
+function providerLogoSrc(providerID: string): string | undefined {
+  if (LOCAL_LOGOS[providerID]) return LOCAL_LOGOS[providerID];
+  const domain = PROVIDER_DOMAIN[providerID];
+  return domain ? `https://icons.duckduckgo.com/ip3/${domain}.ico` : undefined;
+}
 
 function initialsFor(providerID: string, name?: string) {
   const label = PROVIDER_LABELS[providerID];
@@ -95,44 +87,42 @@ export function ProviderLogo({
   className?: string;
   size?: 'small' | 'default' | 'large';
 }) {
-  const iconDef = PROVIDER_ICON_MAP[providerID];
+  const [errored, setErrored] = useState(false);
 
-  const sizeClasses = {
+  const tileSize = {
     small: 'size-7',
     default: 'size-9',
     large: 'size-11',
   };
-
-  const iconSizes = {
-    small: 14,
-    default: 18,
-    large: 22,
+  const imgSize = {
+    small: 'size-4',
+    default: 'size-5',
+    large: 'size-6',
   };
+
+  const src = providerLogoSrc(providerID);
 
   return (
     <span
       className={cn(
-        'flex items-center justify-center rounded-lg bg-zinc-100 dark:bg-zinc-800 shrink-0',
-        sizeClasses[size],
+        'flex items-center justify-center overflow-hidden rounded-lg bg-white ring-1 ring-black/[0.06] shrink-0',
+        tileSize[size],
         className,
       )}
       aria-hidden="true"
     >
-      {iconDef?.src ? (
-        <Image
-          src={iconDef.src}
-          alt=""
-          width={iconSizes[size]}
-          height={iconSizes[size]}
-          className="object-contain dark:invert"
-        />
-      ) : (
-        <span className={cn(
-          'font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300',
-          size === 'small' ? 'text-xs' : size === 'large' ? 'text-xs' : 'text-xs'
-        )}>
+      {!src || errored ? (
+        <span className="text-muted-foreground text-xs font-semibold uppercase tracking-wide">
           {initialsFor(providerID, name)}
         </span>
+      ) : (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          onError={() => setErrored(true)}
+          className={cn('object-contain', imgSize[size])}
+        />
       )}
     </span>
   );

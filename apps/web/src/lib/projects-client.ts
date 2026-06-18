@@ -5,7 +5,7 @@ import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
-export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel';
+export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace';
 
 /** One experimental feature as described by the API catalog. */
 export interface ExperimentalFeatureView {
@@ -2220,8 +2220,7 @@ export interface SessionStartResult {
 /**
  * THE session-open call. Idempotently provisions/resumes the sandbox and resolves
  * the OpenCode pin server-side, returning ONE readiness payload to poll until
- * stage='ready'. Replaces getProjectSessionSandbox + wakeProjectSession +
- * ensureOpencodeSession (the old three-call open dance).
+ * stage='ready'.
  */
 export async function startProjectSession(
   projectId: string,

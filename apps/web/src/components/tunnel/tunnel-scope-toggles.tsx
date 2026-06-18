@@ -66,7 +66,10 @@ export function TunnelScopeToggles({ tunnelId }: TunnelScopeTogglesProps) {
       await grantMutation.mutateAsync({
         tunnelId,
         capability: scope.capability,
-        scope: { scope: scope.key },
+        // `scope` marks which toggle this is (for read-back); the spread fields
+        // are what the backend checker actually enforces. Without them a grant
+        // is allow-all for the capability.
+        scope: { scope: scope.key, ...(scope.grantScope ?? {}) },
         expiresAt: getExpiresAt(expiryOption),
       });
     }

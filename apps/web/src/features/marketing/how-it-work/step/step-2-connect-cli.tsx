@@ -16,7 +16,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef } from 'react';
 import { HiMiniSparkles } from 'react-icons/hi2';
 import { RiCpuLine } from 'react-icons/ri';
-import { StepCliTerminal } from '../step-cli-terminal';
+import { STEP_CLI_PANEL_ANCHOR, StepCliTerminal } from '../step-cli-terminal';
 import { useStep2Director, type Step2View } from '../step-director';
 import { WebPanelWrapper } from '../web-panel-wrapper';
 
@@ -222,7 +222,7 @@ export function Step2ConnectCli() {
 
   return (
     <div ref={rootRef} className="relative aspect-19/22 w-full overflow-visible">
-      <DraggableCliPanel containerRef={rootRef}>
+      <DraggableCliPanel containerRef={rootRef} initialAnchor={STEP_CLI_PANEL_ANCHOR}>
         {({ dragHandleProps }) => (
           <StepCliTerminal director={director} dragHandleProps={dragHandleProps} />
         )}

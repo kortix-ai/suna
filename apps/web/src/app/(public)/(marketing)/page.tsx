@@ -8,7 +8,8 @@ import { Separator } from '@/components/ui/separator';
 import Hero from '@/features/marketing/hero';
 import { HowItWorks } from '@/features/marketing/how-it-work/how-it-works';
 import Security from '@/features/marketing/security/security';
-import { USP } from '@/features/marketing/usp/usp';
+import { OutcomeCardsSection, SurfacesSection } from '@/features/marketing/story-sections';
+import WhyKortix from '@/features/marketing/why-kortix';
 import { useAuth } from '@/features/providers/auth-provider';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { useTranslations } from 'next-intl';
@@ -44,7 +45,19 @@ export default function Home() {
           <Separator />
         </div>
 
-        <USP />
+        <SurfacesSection />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <OutcomeCardsSection />
+
+        <div className="mx-auto max-w-6xl">
+          <Separator />
+        </div>
+
+        <WhyKortix />
 
         <div className="mx-auto max-w-6xl">
           <Separator />
@@ -62,7 +75,7 @@ export default function Home() {
               <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
                 <div className="col-span-4 flex flex-col items-start justify-start space-y-4 p-6 *:text-left">
                   <div className="space-y-2">
-                    <Badge variant="update" className="rounded">
+                    <Badge variant="kortix" className="rounded">
                       {tHome('ctaBadge')}
                     </Badge>
                     <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
@@ -73,11 +86,11 @@ export default function Home() {
                     </p>
                   </div>
 
-                  <p className="text-muted-foreground font-mono text-xs tracking-wider">
+                  <p className="text-muted-foreground text-xs tracking-wider">
                     {tHome('line342JsxTextOpenSourceSSORBACOnPremNoLock')}
                   </p>
 
-                  <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
+                  <div className="mt-auto grid w-full grid-cols-1 gap-2">
                     <Button size="lg" className="w-full" onClick={handleLaunch}>
                       {tHome('line337JsxTextGetStarted')}
                       <HiArrowRight className="size-4" />

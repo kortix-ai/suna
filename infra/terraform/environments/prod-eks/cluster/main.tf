@@ -108,6 +108,22 @@ module "acm" {
   }
 }
 
+# ── TLS cert for gateway.kortix.com (the standalone LLM gateway's public ALB) ──
+# Prod sandboxes hit the gateway directly here (LLM_GATEWAY_BASE_URL) so LLM
+# streams live on gateway pods and survive API deploys. After `terraform apply`,
+# paste output `acm_gateway_certificate_arn` into
+# infra/k8s/envs/prod/gateway-values.yaml → ingress.certificateArn.
+module "acm_gateway" {
+  source      = "../../../modules/acm-cloudflare"
+  domain_name = "gateway.kortix.com"
+  zone_id     = var.cloudflare_zone_id
+  tags        = local.tags
+  providers = {
+    aws        = aws
+    cloudflare = cloudflare
+  }
+}
+
 # ── TLS cert for the Argo CD UI (ops.kortix.com) ──────────────────────────────
 # The Argo CD admin UI is exposed via its own ALB (configured in the platform
 # layer). It is an admin control plane, so the public path MUST be gated by

@@ -1565,7 +1565,7 @@ export default function BrandPage() {
                       <div className="flex flex-wrap gap-2">
                         <Badge variant="success">Success</Badge>
                         <Badge variant="badgeSuccess">Badge success</Badge>
-                        <Badge variant="update">Update</Badge>
+                        <Badge variant="kortix">Update</Badge>
                         <Badge variant="warning">Warning</Badge>
                         <Badge variant="info">Info</Badge>
                         <Badge variant="muted">Muted</Badge>

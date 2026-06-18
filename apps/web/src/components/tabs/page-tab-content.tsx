@@ -48,11 +48,6 @@ const TriggersPage = lazy(() =>
 	})),
 );
 
-const TunnelOverviewPage = lazy(() =>
-	import('@/components/tunnel/tunnel-overview').then((m) => ({
-		default: m.TunnelOverview,
-	})),
-);
 
 const FilesPage = lazy(() =>
 	import('@/features/files/components/file-explorer-page').then((m) => ({
@@ -112,7 +107,6 @@ const PAGE_COMPONENTS: Record<string, ComponentType> = {
 	'/scheduled-tasks': TriggersPage,
 	'/files': FilesPage,
 	'/board': BoardPage,
-	'/tunnel': TunnelOverviewPage,
 	...(DEPLOYMENTS_ENABLED ? { '/deployments': DeploymentsPage } : {}),
 	// Admin
 	'/admin/analytics': AdminAnalyticsPage,

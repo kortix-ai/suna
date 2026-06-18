@@ -561,6 +561,11 @@ Scale: ~500 exported symbols / ~520 route handlers in `apps/api/src` — a tract
 `PROJ-16` `POST /projects/:id/turn-question {session_id,questions[]}` → missing → 400.
 `PROJ-17` `POST /projects/:id/turn-stream {session_id,text}` → missing → 400; `kind:end|turn_end` needs only `session_id` (`status: idle|error`) → 200 `ok:false` when no live stream.
 `PROJ-18` Project cap by plan: a FREE account may own exactly 1 project — `POST /projects/provision` for the 2nd → 403 `{code:project_limit_reached,limit}` (checked before any repo is provisioned); paid/team plans get `MAX_PROJECTS_PER_ACCOUNT`. Requires `freestyle`+`stripe` (billing enforced).
+`MKTP-1` `GET /marketplace/items {query?,type?}` → auth → 200 `{items:[{id,registry,name,type,title,description,categories,capabilities,dependencies,file_count}]}` (catalog built from the starter pack + curated bundles; `?query=`/`?type=` filter).
+`MKTP-2` `GET /marketplace/items/:id` → auth → 200 item detail (`files`, `readme`, `capabilities`); unknown id → 404.
+`MKTP-3` `POST /projects/:projectId/registry/install {id}` → `write` → 201 `{commit_sha,branch,file_count,installed[],capabilities}` (resolves the catalog item + transitive bundle deps, commits its files + `registry-lock.json` to the default branch). Missing/unknown id → 400; missing project / `NONMEMBER` → 404/403.
+`MKTP-4` `GET /projects/:projectId/registry` → `read` → 200 `{installed:[{name,type,source,installed_at,file_count}]}` (from `registry-lock.json`; migrates legacy `skills-lock.json`); missing project → 404.
+`MKTP-5` `DELETE /projects/:projectId/registry/:name` → `write` → 200 `{ok,removed,commit_sha,branch,file_count}` (removes the item's files + lock entry in one commit to the default branch); item not installed → 404; missing project / `NONMEMBER` → 404/403.
 `APP-2` `POST /projects/:id/apps` · `PATCH/DELETE /:slug` → gate off → 404; bad body → 400; dup → 409; unknown → 404.
 `APP-3` `POST /:slug/deploy|stop` · `GET /:slug/logs` → unknown/no-deploy → 404.
 `APP-4` `PATCH /projects/:id/apps-config {enabled}` → 200; non-bool → 400 (not behind apps gate; legacy alias for the `apps` experimental feature).

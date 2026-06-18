@@ -175,7 +175,18 @@ export function buildGitAuthArgs(
   }
 
   const headerValue = Buffer.from(`x-access-token:${token}`).toString('base64')
-  return ['-c', `http.${authOrigin}/.extraheader=AUTHORIZATION: basic ${headerValue}`]
+  const header = `AUTHORIZATION: basic ${headerValue}`
+  const args = ['-c', `http.${authOrigin}/.extraheader=${header}`]
+
+  // The Kortix git proxy is the sandbox's own control-plane URL. During the
+  // initial clone we do not rely on HOME-scoped credential helper config, so
+  // add a one-command fallback header that git applies to the proxy request.
+  // This is intentionally limited to /v1/git URLs: direct upstream clones keep
+  // the host-scoped header only.
+  if (repoUrl && /\/v1\/git\//.test(repoUrl)) {
+    args.push('-c', `http.extraheader=${header}`)
+  }
+  return args
 }
 
 async function gitWithAuth(

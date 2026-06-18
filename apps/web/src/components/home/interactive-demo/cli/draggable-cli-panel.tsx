@@ -22,11 +22,33 @@ const OVERFLOW = {
   left: 384, // matches original -left-96
 } as const;
 
+export type CliPanelAnchor = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
 function maxPosition(containerW: number, containerH: number) {
   return {
     x: Math.max(-OVERFLOW.left, containerW - PANEL_W + OVERFLOW.right),
     y: Math.max(-OVERFLOW.top, containerH - PANEL_H + OVERFLOW.bottom),
   };
+}
+
+function anchorPosition(anchor: CliPanelAnchor, containerW: number, containerH: number) {
+  const max = maxPosition(containerW, containerH);
+  const minX = -OVERFLOW.left;
+  const minY = -OVERFLOW.top;
+  switch (anchor) {
+    case 'top-left':
+      return { x: minX, y: minY };
+    case 'top-right':
+      return { x: max.x, y: minY };
+    case 'bottom-left':
+      return { x: minX, y: max.y };
+    case 'bottom-right':
+      return max;
+    default: {
+      const _exhaustive: never = anchor;
+      return _exhaustive;
+    }
+  }
 }
 
 function clampPosition(x: number, y: number, containerW: number, containerH: number) {
@@ -37,15 +59,19 @@ function clampPosition(x: number, y: number, containerW: number, containerH: num
   };
 }
 
+export type DraggableCliPanelProps = {
+  containerRef: React.RefObject<HTMLElement | null>;
+  children: (props: { dragHandleProps: CliDragHandleProps; dragging: boolean }) => React.ReactNode;
+  show?: boolean;
+  initialAnchor?: CliPanelAnchor;
+};
+
 export function DraggableCliPanel({
   containerRef,
   children,
   show = false,
-}: {
-  containerRef: React.RefObject<HTMLElement | null>;
-  children: (props: { dragHandleProps: CliDragHandleProps; dragging: boolean }) => React.ReactNode;
-  show?: boolean;
-}) {
+  initialAnchor = 'bottom-right',
+}: DraggableCliPanelProps) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [entranceReady, setEntranceReady] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -72,14 +98,14 @@ export function DraggableCliPanel({
     const applyInitialPos = () => {
       const { width, height } = container.getBoundingClientRect();
       if (height === 0) return;
-      setPos(maxPosition(width, height));
+      setPos(anchorPosition(initialAnchor, width, height));
     };
 
     applyInitialPos();
     const ro = new ResizeObserver(applyInitialPos);
     ro.observe(container);
     return () => ro.disconnect();
-  }, [containerRef, pos]);
+  }, [containerRef, initialAnchor, pos]);
 
   useEffect(() => {
     const container = containerRef.current;

@@ -6,7 +6,7 @@
 # Immutable dev tag (CI bumps to dev-<sha8> on each main push). Bootstrap value
 # is :dev-latest until the first deploy-dev-eks run pins an immutable sha.
 image:
-  tag: "dev-0b26fc2d"
+  tag: "dev-7640358f"
 kortixVersion: ""
 env:
   internalKortixEnv: dev
@@ -18,6 +18,8 @@ env:
 # experimental region.
 extraEnv:
   KORTIX_WARM_SNAPSHOT_ENABLED: "false"
+  # Direct: dev sandboxes hit the public gateway, not the API proxy.
+  LLM_GATEWAY_BASE_URL: "https://gateway-dev.kortix.com/v1/llm"
 # PRE-CUTOVER: dev-api-eks is the candidate while dev-api.kortix.com is still
 # served by ECS, so EKS runs API-only and ECS keeps ownership of the dev-tier
 # singleton workers (one Postgres leader lease is shared across both on the dev

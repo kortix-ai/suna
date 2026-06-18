@@ -163,9 +163,13 @@ const DEFAULT_VISIBLE_MODEL_IDS = new Set<string>(['anthropic/claude-opus-4.8'])
  * behaviour is kept for BYO providers, which is what it's for.
  */
 const MANAGED_GATEWAY_PROVIDER_ID = 'kortix';
+const SUBSCRIPTION_PROVIDER_ID = 'codex';
 
 function isManagedGatewayModel(model: ModelKey): boolean {
-  return model.providerID === MANAGED_GATEWAY_PROVIDER_ID;
+  return (
+    model.providerID === MANAGED_GATEWAY_PROVIDER_ID ||
+    model.providerID === SUBSCRIPTION_PROVIDER_ID
+  );
 }
 
 function isDefaultVisible(model: ModelKey): boolean {

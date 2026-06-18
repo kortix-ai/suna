@@ -41,6 +41,7 @@ import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
 import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader } from './shared/leader-election';
+import { marketplaceApp } from './marketplace';
 import { oauthApp } from './oauth';
 import {
   projectWebhooksApp,
@@ -582,6 +583,29 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
       },
     ),
   );
+
+  const { createInternalGatewayRoutes } = await import('./llm-gateway/internal-routes');
+  app.route('/internal/gateway', createInternalGatewayRoutes());
+
+  if (config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET) {
+    const proxyBase = (
+      config.LLM_GATEWAY_PROXY_TARGET || `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`
+    ).replace(/\/+$/, '');
+    app.all('/v1/llm-gateway/*', async (c) => {
+      const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
+      const target = `${proxyBase}${tail}`;
+      const init: RequestInit & { duplex?: 'half' } = {
+        method: c.req.method,
+        headers: c.req.raw.headers,
+      };
+      if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+        init.body = c.req.raw.body;
+        init.duplex = 'half';
+      }
+      const upstream = await fetch(target, init);
+      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+    });
+  }
 }
 
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
@@ -590,6 +614,7 @@ app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/ve
 registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
@@ -622,6 +647,13 @@ if (config.KORTIX_DEPLOYMENTS_ENABLED) {
 
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
+
+// Setup links — PUBLIC, token-gated. An agent-minted (encrypted, short-lived,
+// value-only) token is the bearer capability, so a human can fill in a secret
+// or 1-click a Pipedream connect from a Slack link with no login. The mint half
+// is authenticated, on projectsApp (/v1/projects/:id/{secret,connect}-requests).
+import { setupLinksPublicApp } from './setup-links/public-app';
+app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.

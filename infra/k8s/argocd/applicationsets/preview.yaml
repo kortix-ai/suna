@@ -59,19 +59,33 @@ spec:
         pr-number: '{{.number}}'
     spec:
       project: preview
-      source:
-        repoURL: https://github.com/kortix-ai/suna.git
-        targetRevision: '{{.head_sha}}'
-        path: infra/k8s/charts/kortix-api
-        helm:
-          releaseName: kortix-api
-          valueFiles:
-            - ../../envs/preview/values.yaml
-          parameters:
-            - name: image.tag
-              value: 'pr-{{.head_sha}}'
-            - name: ingress.host
-              value: 'pr-{{.number}}.preview-api.kortix.com'
+      # Two charts per PR: the API (public, per-PR host) + the gateway (internal,
+      # ClusterIP only — sandboxes reach it via the API's per-PR origin, so no
+      # per-PR gateway host/cert). Both share the kortix-pr-<n> namespace, image
+      # tag, ServiceAccount, and synced secret.
+      sources:
+        - repoURL: https://github.com/kortix-ai/suna.git
+          targetRevision: '{{.head_sha}}'
+          path: infra/k8s/charts/kortix-api
+          helm:
+            releaseName: kortix-api
+            valueFiles:
+              - ../../envs/preview/values.yaml
+            parameters:
+              - name: image.tag
+                value: 'pr-{{.head_sha}}'
+              - name: ingress.host
+                value: 'pr-{{.number}}.preview-api.kortix.com'
+        - repoURL: https://github.com/kortix-ai/suna.git
+          targetRevision: '{{.head_sha}}'
+          path: infra/k8s/charts/kortix-gateway
+          helm:
+            releaseName: kortix-gateway
+            valueFiles:
+              - ../../envs/preview/gateway-values.yaml
+            parameters:
+              - name: image.tag
+                value: 'pr-{{.head_sha}}'
       destination:
         name: kortix-dev-eks
         namespace: 'kortix-pr-{{.number}}'

@@ -21,6 +21,7 @@
 import './routes/r1';
 import './routes/r2';
 import './routes/r3';
+import './routes/setup-links';
 import './routes/r4';
 import './routes/r5';
 import './routes/r6';
@@ -28,6 +29,7 @@ import './routes/r7';
 import './routes/public-shares';
 import './routes/r8';
 import './routes/r9';
+import './routes/r10';
 
 // The wired Hono app instances (all routes registered above via side-effect).
 export { projectsApp, projectWebhooksApp } from './lib/app';
@@ -45,6 +47,14 @@ export {
   buildSessionSandboxEnvVars,
   createProjectSession,
 } from './lib/sessions';
+
+export {
+  createSession,
+  startSession,
+  continueSession,
+  drainSessionLifecycleQueue,
+  resolveProjectAutomationActor,
+} from './session-lifecycle';
 
 // Trigger + manifest helpers (consumed by channels / executor / the boot
 // sequence in src/index.ts).
