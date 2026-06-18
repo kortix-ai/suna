@@ -228,6 +228,13 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
           open={projectModalOpen}
           onOpenChange={setProjectModalOpen}
           defaultTab={projectModalTab}
+          onProviderConnected={(model) => {
+            // The provider was just added (and applied live to the running
+            // session by the server) — select its default model so the user can
+            // use it right away, and close the modal back to the chat.
+            onSelect(model);
+            setProjectModalOpen(false);
+          }}
         />
       )}
       <CommandPopover open={open} onOpenChange={setOpen}>

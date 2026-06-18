@@ -101,6 +101,12 @@ export interface ProjectProviderModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultTab?: ActiveTab;
+  /**
+   * Fired after a provider is connected, with that provider's default model.
+   * The model selector uses it to auto-select the just-added model so it's
+   * immediately usable — no hunting through the dropdown.
+   */
+  onProviderConnected?: (model: { providerID: string; modelID: string }) => void;
 }
 
 export function ProjectProviderModal({
@@ -108,6 +114,7 @@ export function ProjectProviderModal({
   open,
   onOpenChange,
   defaultTab,
+  onProviderConnected,
 }: ProjectProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // Gate the secrets fetch on `open`. The modal is always mounted by callers
@@ -552,7 +559,13 @@ function CatalogTab({
         projectId={projectId}
         provider={provider}
         onBack={() => setSubview({ kind: 'detail', providerId: provider.id })}
-        onConnected={() => setSubview({ kind: 'list' })}
+        onConnected={() => {
+          setSubview({ kind: 'list' });
+          // Auto-select the just-connected provider's default (newest) model so
+          // it's immediately usable — the catalog is pre-sorted newest-first.
+          const defaultModel = provider.models?.[0];
+          if (defaultModel) onProviderConnected?.({ providerID: provider.id, modelID: defaultModel.id });
+        }}
       />
     );
   }
