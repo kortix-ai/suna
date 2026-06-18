@@ -60,7 +60,7 @@ import { Switch } from '@/components/ui/switch';
 import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { opencodeKeys, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import {
   LLM_PROVIDERS,
   LLM_PROVIDER_BY_ID,
@@ -76,7 +76,9 @@ import {
   startProjectProviderOAuth,
   upsertProjectSecret,
 } from '@/lib/projects-client';
+import { getClient } from '@/lib/opencode-sdk';
 import { toast } from '@/lib/toast';
+import { getActiveOpenCodeUrl } from '@/stores/server-store';
 import { cn } from '@/lib/utils';
 
 const CODEX_AUTH_JSON_SECRET_NAME = 'CODEX_AUTH_JSON';
@@ -809,11 +811,18 @@ function ApiKeyConnectForm({
   });
   const [error, setError] = useState<string | null>(null);
 
+  // A single-key BYO provider can be registered on the RUNNING session's
+  // opencode instantly (no sandbox restart) via the same auth.set path the
+  // in-session connect flow uses. Multi-key (Azure/Bedrock) + managed providers
+  // fall back to durable-only (applies on next session boot).
+  const canApplyLive = provider.envVars.length === 1 && !provider.managed && !!getActiveOpenCodeUrl();
+
   const upsert = useMutation({
     mutationFn: async () => {
       // Save every env var. We fire them in sequence so any one server-side
       // rejection (reserved name, value length, etc.) surfaces cleanly without
-      // having to roll back partial state.
+      // having to roll back partial state. This is the DURABLE source of truth —
+      // it's re-materialized into the sandbox's opencode auth on every boot.
       for (const envVar of provider.envVars) {
         if (sharing.mode === 'private') {
           await setPersonalProjectSecret(projectId, envVar, {
@@ -828,10 +837,34 @@ function ApiKeyConnectForm({
           });
         }
       }
+      // Apply LIVE to the running session's opencode so the provider + its models
+      // are usable immediately, no restart. Best-effort: the durable save above
+      // always wins, so a failure here (no reachable session, transient error)
+      // just defers availability to the next boot.
+      let appliedLive = false;
+      if (canApplyLive) {
+        const key = (values[provider.envVars[0]] ?? '').trim();
+        if (key) {
+          try {
+            const client = getClient();
+            await client.auth.set({ providerID: provider.id, auth: { type: 'api', key } });
+            // Force opencode to re-discover providers so the new one shows up in
+            // /provider/list without restarting the process.
+            await client.global.dispose().catch(() => {});
+            appliedLive = true;
+          } catch {
+            /* no reachable session opencode → durable-only; applies next boot */
+          }
+        }
+      }
+      return { appliedLive };
     },
-    onSuccess: () => {
-      toast.success(`${provider.label} connected`);
+    onSuccess: ({ appliedLive }) => {
+      toast.success(
+        appliedLive ? `${provider.label} connected — live in this session` : `${provider.label} connected`,
+      );
       queryClient.invalidateQueries({ queryKey: ['project-secrets', projectId] });
+      if (appliedLive) queryClient.invalidateQueries({ queryKey: opencodeKeys.providers() });
       onConnected();
     },
     onError: (err) => setError(err instanceof Error ? err.message : 'Failed to save credentials'),
@@ -951,11 +984,12 @@ function ApiKeyConnectForm({
           </div>
         )}
 
-        <div className="flex items-start gap-2.5 rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2.5">
-          <Info className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
+        <div className="border-border/60 bg-muted/40 flex items-start gap-2.5 rounded-2xl border px-3 py-2.5">
+          <Info className="text-muted-foreground mt-0.5 size-4 shrink-0" />
           <p className="text-foreground/80 text-xs leading-relaxed">
-            A sandbox picks up new providers when it starts. To use this in a running session,
-            restart its sandbox from the session list.
+            {canApplyLive
+              ? 'Applies to your running session instantly — and is saved to this project for every future session.'
+              : 'Saved to this project — it applies automatically the next time a session starts.'}
           </p>
         </div>
 
