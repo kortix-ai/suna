@@ -13,6 +13,7 @@ import {
 import { selectFromList } from '../tui-select.ts';
 import { emitJson, takeFlagBool } from '../command-helpers.ts';
 import { C, pad, status } from '../style.ts';
+import { projectWebUrl } from '../web-url.ts';
 import type { ProjectSummary } from '../api/types.ts';
 
 const HELP = `Usage: kortix projects <subcommand>
@@ -240,7 +241,7 @@ async function projectsOpen(arg?: string): Promise<number> {
     process.stderr.write(`${status.err('No project linked. Pass an id or link first.')}\n`);
     return 1;
   }
-  const url = `${webDashboardUrl(auth.api_base)}/projects/${id}`;
+  const url = projectWebUrl(auth.api_base, id);
   process.stdout.write(`${C.dim}Opening ${url}${C.reset}\n`);
   openInBrowser(url);
   return 0;
@@ -343,15 +344,6 @@ function formatRelative(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-function webDashboardUrl(apiBase: string): string {
-  try {
-    const url = new URL(apiBase);
-    if (url.hostname.startsWith('api.')) url.hostname = url.hostname.slice(4);
-    return url.origin;
-  } catch {
-    return 'https://kortix.com';
-  }
-}
 
 function openInBrowser(url: string): void {
   const cmd =

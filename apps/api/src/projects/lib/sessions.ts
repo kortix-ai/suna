@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { resolveProjectGitAuth } from './git';
 import { isReservedSandboxEnvName, RESERVED_SANDBOX_ENV_NAMES } from './sandbox-env-names';
 import { selectProvider } from '../../platform/services/provider-balancer';
+import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES, ProjectRow, ProjectSessionRow, RequestAuditContext, UUID_V4_REGEX, deriveKortixApiRoot, normalizeJsonObject, normalizeString } from './serializers';
 import { allocateSessionRuntime } from './session-runtime-allocator';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
@@ -220,6 +221,7 @@ export async function buildSessionSandboxEnvVars(input: {
       baseRef: input.baseRef,
       agentName: input.agentName,
       apiUrl: deriveKortixApiBase(),
+      frontendUrl: sandboxFrontendBaseUrl(),
       initialPrompt: input.initialPrompt,
       // Per-session model override (e.g. Slack turns pin a specific model).
       // The sandbox agent reads this and sets it on every opencode prompt call.
@@ -257,6 +259,7 @@ export function buildSpareSandboxEnvVars(input: {
     KORTIX_SERVICE_PORT: '8000',
     KORTIX_AGENT_NAME: input.agentName,
     KORTIX_API_URL: deriveKortixApiBase(),
+    KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
   };
 }
 
