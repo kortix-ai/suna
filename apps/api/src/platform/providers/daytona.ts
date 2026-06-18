@@ -50,11 +50,34 @@ const runningStatusCache = new Map<string, number>(); // externalId → cachedAt
  *    nearly free once stopped + cold-archived, so we never destroy its disk;
  *    a session is only removed when the user explicitly deletes it.
  */
+// A persistent (autoStop=0) warm-pool spare that nothing reaps is exactly what
+// caused the "500+ never-stopping boxes" leak noted above. reconcileWarmPool is
+// the primary reaper, but if the API/tunnel that owns the pool dies, nothing
+// runs it — so we FORCE a provider-side auto-delete backstop on every persistent
+// spare (≥ the pool's 6h max-age) regardless of the global -1/never default.
+const PERSISTENT_SPARE_AUTODELETE_FALLBACK_MIN = 24 * 60; // 24h
+
 export function daytonaLifecycle(autoStopOverride?: number): {
   autoStopInterval: number;
   autoArchiveInterval: number;
   autoDeleteInterval: number;
 } {
+  // autoStopOverride === 0 is the WARM-POOL spare contract: "never auto-stop".
+  // A spare must stay RUNNING + warm until claimed — a hibernate would kill the
+  // pre-warmed opencode (and, for clone-at-park spares, the warmed plugin),
+  // defeating the whole pre-warm. Spares manage their own lifecycle via
+  // reconcileWarmPool, but because such a box never auto-stops we ALSO pin a
+  // finite provider auto-delete backstop (never -1) so a leaked spare self-
+  // destructs if the reaper stops running. EVERY other caller is clamped to >= 1
+  // so a normal session box can never be created persistent.
+  if (autoStopOverride === 0) {
+    const configuredDelete = config.KORTIX_SANDBOX_AUTODELETE_MINUTES;
+    return {
+      autoStopInterval: 0,
+      autoArchiveInterval: config.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
+      autoDeleteInterval: configuredDelete > 0 ? configuredDelete : PERSISTENT_SPARE_AUTODELETE_FALLBACK_MIN,
+    };
+  }
   const stop = autoStopOverride ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES;
   return {
     autoStopInterval: Math.max(1, stop || config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15),
@@ -145,9 +168,12 @@ export class DaytonaProvider implements SandboxProvider {
         snapshot,
         envVars,
         // Idle → stop → archive → delete. See daytonaLifecycle(): auto-stop is
-        // clamped to >= 1 so this box can never be created persistent, and a
-        // finite auto-delete lets the SDK reclaim it if the API/tunnel that
-        // created it dies. Intervals are env-tunable (KORTIX_SANDBOX_AUTO*).
+        // clamped to >= 1 so a normal session box can never be created persistent,
+        // a large auto-archive (default 3 days) keeps a hibernated box in the
+        // fast-resume "stopped" tier, and a finite auto-delete reclaims it if the
+        // API/tunnel that created it dies. Intervals are env-tunable
+        // (KORTIX_SANDBOX_AUTO*). A warm-pool spare passes autoStopInterval=0 →
+        // persistent (it manages its own lifecycle via reconcileWarmPool).
         ...daytonaLifecycle(opts.autoStopInterval),
         public: false,
       },

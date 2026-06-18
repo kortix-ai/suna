@@ -35,6 +35,7 @@ import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { ensureSandboxImage, DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
+import { buildSpareSandboxEnvVars } from '../../projects/lib/sessions';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
 import { resolvePreviewUserContext } from '../../shared/preview-ownership';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
@@ -42,7 +43,7 @@ import { randomUUID } from 'node:crypto';
 
 const POOL_BOOT_TIMEOUT_MS = 8 * 60 * 1000; // booting/parked longer than this → reap
 const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle (snapshot drift)
-const CLAIM_STALE_MS = 2 * 60 * 1000; // a 'claiming' row older than this → the claimant died → reap
+const CLAIM_STALE_MS = 5 * 60 * 1000; // a 'claiming' row older than this → the claimant died → reap (>> a normal claim's <15s, so reconcile never races a live claim)
 const READY_PROBE_INTERVAL_MS = 2000;
 const MAX_WARM_SIZE = 25;
 const DNAH_ENV_PATH = '/tmp/dnah-env'; // MUST match the daemon (main.ts reloadSessionEnv + poll)
@@ -169,11 +170,28 @@ async function spawnSpare(project: {
       { slug, accountId: project.accountId, source: 'background', provider },
     );
 
+    // Stage-2: hand the spare its project identity (repo, no session) + the
+    // clone-at-park flag so the daemon clones the base branch + warms the
+    // opencode project plugin while parked. KORTIX_TOKEN stays the spare's park
+    // key (last, never clobbered by the project env). Without the flag the spare
+    // is a generic Stage-1 box that clones + warms on claim.
+    const parkEnv = config.KORTIX_WARM_POOL_CLONE_AT_PARK
+      ? {
+          ...buildSpareSandboxEnvVars({
+            projectId: project.projectId,
+            repoUrl: project.repoUrl,
+            baseRef: project.defaultBranch,
+            agentName: 'default',
+          }),
+          KORTIX_WARM_POOL_CLONE_AT_PARK: '1',
+        }
+      : {};
+
     const result = await getProvider(provider).create({
       accountId: project.accountId,
       userId: '',
       name: `warm-${spareId.slice(0, 8)}`,
-      envVars: { KORTIX_WARM_POOL: '1', KORTIX_TOKEN: sandboxKey.secretKey },
+      envVars: { ...parkEnv, KORTIX_WARM_POOL: '1', KORTIX_TOKEN: sandboxKey.secretKey },
       snapshot: image.snapshotName,
       autoStopInterval: 0, // stay up until claimed/reaped
     });
@@ -183,7 +201,11 @@ async function spawnSpare(project: {
       .set({ externalId: result.externalId, baseUrl: result.baseUrl || null, updatedAt: new Date() })
       .where(eq(sessionSandboxes.sandboxId, spareId));
 
-    void promoteSpareWhenReady(spareId, result.externalId).catch(() => {});
+    // Stage-2 spares must be RUNTIME-ready (repo cloned + opencode warm) before
+    // they're claimable — a park-clone failure leaves opencode on the default
+    // config, so gate on runtimeReady so such a spare is reaped (boot-timeout) +
+    // replaced rather than serving a claim with the wrong opencode config.
+    void promoteSpareWhenReady(spareId, result.externalId, config.KORTIX_WARM_POOL_CLONE_AT_PARK).catch(() => {});
     console.log(`[warm-pool] spawned spare ${spareId.slice(0, 8)} for project ${project.projectId.slice(0, 8)}`);
   } catch (err) {
     console.warn(`[warm-pool] spawn spare ${spareId.slice(0, 8)} failed:`, err instanceof Error ? err.message : err);
@@ -191,8 +213,12 @@ async function spawnSpare(project: {
   }
 }
 
-/** Background: poll the spare's daemon until its pool runtime is up, then park it. */
-async function promoteSpareWhenReady(spareId: string, externalId: string): Promise<void> {
+/** Background: poll the spare's daemon until its pool runtime is up, then park it.
+ *  requireRuntimeReady (Stage-2 clone-at-park): only park once the daemon reports
+ *  runtimeReady — i.e. repo cloned + opencode warmed against the PROJECT config.
+ *  A park-clone failure never flips runtimeReady, so the spare boot-times-out and
+ *  is reaped instead of parking with opencode stuck on the default config. */
+async function promoteSpareWhenReady(spareId: string, externalId: string, requireRuntimeReady = false): Promise<void> {
   const deadline = Date.now() + POOL_BOOT_TIMEOUT_MS;
   while (Date.now() < deadline) {
     await new Promise((res) => setTimeout(res, READY_PROBE_INTERVAL_MS));
@@ -208,7 +234,12 @@ async function promoteSpareWhenReady(spareId: string, externalId: string): Promi
     try {
       const { url } = await resolvePreviewLink(externalId, DAEMON_PORT);
       const r = await fetch(`${url.replace(/\/$/, '')}/kortix/health`, { signal: AbortSignal.timeout(8_000) });
-      healthy = r.ok;
+      if (requireRuntimeReady) {
+        const body = r.ok ? ((await r.json().catch(() => null)) as { runtimeReady?: boolean } | null) : null;
+        healthy = body?.runtimeReady === true;
+      } else {
+        healthy = r.ok;
+      }
     } catch {
       healthy = false;
     }
@@ -339,6 +370,10 @@ async function bindClaimedSpare(input: {
     // share the same external_id; if the spare row lingered (insert ok, delete
     // failed) a later claim-timeout reap would provider.remove() the box out
     // from under the now-bound session. The tx makes "bound" ⇒ "spare row gone".
+    // The delete is GUARDED on poolState='claiming': if reconcileWarmPool reaped
+    // the spare row mid-claim (claim outran CLAIM_STALE_MS), the guard deletes 0
+    // rows → we throw → the whole bind rolls back → cold fallback, so we never
+    // leave a session row pointing at a box the reaper may have removed.
     await db.transaction(async (tx) => {
       await tx.insert(sessionSandboxes).values({
         sandboxId: input.sessionId, // sandbox_id == session_id (the invariant the proxy/pin/hibernation rely on)
@@ -358,7 +393,13 @@ async function bindClaimedSpare(input: {
         metadata: { ...input.sessionMetadata, claimed_from_spare: input.spare.spareSandboxId },
         lastUsedAt: new Date(),
       });
-      await tx.delete(sessionSandboxes).where(eq(sessionSandboxes.sandboxId, input.spare.spareSandboxId));
+      const removed = await tx
+        .delete(sessionSandboxes)
+        .where(and(eq(sessionSandboxes.sandboxId, input.spare.spareSandboxId), eq(sessionSandboxes.poolState, 'claiming')))
+        .returning({ id: sessionSandboxes.sandboxId });
+      if (removed.length === 0) {
+        throw new Error('spare row no longer claiming (reaped mid-claim) — rolling back bind');
+      }
     });
     await db.update(projectSessions).set({ status: 'running', sandboxUrl: input.spare.baseUrl ?? null, updatedAt: new Date() }).where(eq(projectSessions.sessionId, input.sessionId)).catch(() => {});
     return true;
