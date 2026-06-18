@@ -84,6 +84,7 @@ export default function ProjectSessionPage() {
   const { data: accountState } = useAccountState({ accountId: projectAccountId });
   const openUpgradeDialog = useUpgradeDialogStore((s) => s.openUpgradeDialog);
   const accountLoaded = !!accountState;
+  // Managed cloud is paid-only: gate session boot on an active subscription.
   const noPlan = isBillingEnabled() && accountLoaded && !accountState.subscription?.subscription_id;
 
   // ONE session-open call. POST /start idempotently provisions/resumes the

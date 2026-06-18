@@ -21,7 +21,7 @@ import {
   SsoProviderSchema,
   SsoMappingSchema,
 } from './app';
-import { auditIam, isUniqueViolation, readBody } from './helpers';
+import { auditIam, isUniqueViolation, readBody, requireEntitlement } from './helpers';
 
 function ssoProviderResponse(p: NonNullable<Awaited<ReturnType<typeof getSsoProvider>>>) {
   return {
@@ -69,13 +69,15 @@ iamRouter.openapi(
     request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ supabase_sso_provider_id: z.string().optional(), supabaseSsoProviderId: z.string().optional(), name: z.string().optional(), primary_domain: z.string().optional(), primaryDomain: z.string().optional(), group_claim_name: z.string().optional(), groupClaimName: z.string().optional(), auto_create_members: z.boolean().optional(), autoCreateMembers: z.boolean().optional() }) } } } },
     responses: {
       200: json(z.object({ provider: SsoProviderSchema }), 'The upserted SSO provider'),
-      ...errors(400, 401, 403),
+      ...errors(400, 401, 402, 403),
     },
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const denied = await requireEntitlement(c, accountId, 'sso');
+  if (denied) return denied;
 
   const body = await readBody(c);
   const supabaseSsoProviderId = (body.supabase_sso_provider_id ?? body.supabaseSsoProviderId) as unknown;
@@ -149,13 +151,15 @@ iamRouter.openapi(
     request: { params: AccountIdParam },
     responses: {
       200: json(z.object({ deleted: z.boolean() }), 'Deletion result'),
-      ...errors(401, 403, 404),
+      ...errors(401, 402, 403, 404),
     },
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const denied = await requireEntitlement(c, accountId, 'sso');
+  if (denied) return denied;
 
   const before = await getSsoProvider(accountId);
   const ok = await deleteSsoProvider(accountId);
@@ -221,13 +225,15 @@ iamRouter.openapi(
     request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ claim_value: z.string().optional(), claimValue: z.string().optional(), group_id: z.string().optional(), groupId: z.string().optional() }) } } } },
     responses: {
       201: json(SsoMappingSchema, 'The created mapping'),
-      ...errors(400, 401, 403, 404, 409),
+      ...errors(400, 401, 402, 403, 404, 409),
     },
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const denied = await requireEntitlement(c, accountId, 'sso');
+  if (denied) return denied;
 
   const body = await readBody(c);
   const claimValue = (body.claim_value ?? body.claimValue) as unknown;
@@ -294,7 +300,7 @@ iamRouter.openapi(
     request: { params: z.object({ accountId: z.string(), mappingId: z.string() }) },
     responses: {
       200: json(z.object({ deleted: z.boolean() }), 'Deletion result'),
-      ...errors(401, 403, 404),
+      ...errors(401, 402, 403, 404),
     },
   }),
   async (c: any) => {
@@ -302,6 +308,8 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   const mappingId = c.req.param('mappingId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const denied = await requireEntitlement(c, accountId, 'sso');
+  if (denied) return denied;
 
   const ok = await deleteSsoGroupMapping(accountId, mappingId);
   if (!ok) return c.json({ error: 'mapping not found' }, 404);

@@ -38,6 +38,8 @@ export default function ProjectIndexPage() {
     async (text: string, options?: ProjectHomeSendOptions) => {
       if (!text.trim() || busy) return;
 
+      // Fast client-side pre-check (best-effort; backend is authoritative).
+      // Managed cloud is paid-only: no active subscription → prompt to subscribe.
       const noPlan =
         isBillingEnabled() && !!accountState && !accountState.subscription?.subscription_id;
       if (noPlan) {

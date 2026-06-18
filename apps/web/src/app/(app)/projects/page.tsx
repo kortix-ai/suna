@@ -21,7 +21,7 @@ import { RenameProjectDialog } from '@/features/projects/modal/rename-project-mo
 import NewProjectControl from '@/features/projects/new-project-control';
 import ProjectCard from '@/features/projects/project-card';
 import { useAuth } from '@/features/providers/auth-provider';
-import { invalidateAccountState } from '@/hooks/billing';
+import { invalidateAccountState, useAccountState } from '@/hooks/billing';
 import {
   useLegacyMachines,
   useStartLegacyMigration,
@@ -31,6 +31,7 @@ import {
   archiveProject,
   listAccounts,
   listProjectsForAccount,
+  provisionProject,
   type KortixProject,
 } from '@/lib/projects-client';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
@@ -39,7 +40,7 @@ import { Search } from '@mynaui/icons-react';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FolderPlus } from 'lucide-react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export default function ProjectsPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -178,6 +179,54 @@ export default function ProjectsPage() {
   });
   const startMigration = useStartLegacyMigration(activeAccountId);
 
+  // ── Onboarding: a subscribed account with zero projects auto-gets a starter
+  // project and drops straight into it — no "create your first project" substep.
+  // Also makes the post-subscribe return (/projects?team_signup=success) land
+  // directly inside a project. Fires once per account (ref guard); falls back to
+  // the manual empty state on failure so the user is never trapped.
+  const { data: accountState } = useAccountState({
+    accountId: activeAccountId ?? undefined,
+    enabled: !!user && !!activeAccountId,
+  });
+  const autoCreateAttempted = useRef<Set<string>>(new Set());
+  const [autoCreating, setAutoCreating] = useState(false);
+
+  useEffect(() => {
+    if (!activeAccountId || !canCreateProjects) return;
+    if (autoCreateAttempted.current.has(activeAccountId)) return;
+    if (accountsQuery.isLoading || projectsQuery.isLoading || projectsQuery.isError) return;
+    if (!projectsQuery.data || !legacyMachinesQuery.data) return;
+    if ((projectsQuery.data.length ?? 0) > 0) return;
+    if ((legacyMachinesQuery.data.sandboxes?.length ?? 0) > 0) return;
+    // Only bootstrap accounts that can actually run — subscribed, or billing
+    // disabled / self-host (where can_run is forced true). Unpaid accounts fall
+    // through to the empty state / subscribe wall.
+    if (!accountState?.credits?.can_run) return;
+
+    autoCreateAttempted.current.add(activeAccountId);
+    setAutoCreating(true);
+    provisionProject({ account_id: activeAccountId, name: 'My First Project' })
+      .then((project) => {
+        queryClient.invalidateQueries({ queryKey: ['projects', activeAccountId] });
+        router.replace(`/projects/${project.project_id}`);
+      })
+      .catch((err) => {
+        setAutoCreating(false);
+        console.error('[onboarding] auto-create first project failed', err);
+      });
+  }, [
+    activeAccountId,
+    canCreateProjects,
+    accountsQuery.isLoading,
+    projectsQuery.isLoading,
+    projectsQuery.isError,
+    projectsQuery.data,
+    legacyMachinesQuery.data,
+    accountState?.credits?.can_run,
+    queryClient,
+    router,
+  ]);
+
   const handleMigrate = (sandboxId: string) =>
     startMigration.mutate(sandboxId, {
       onSuccess: () => successToast('Migration started — this runs in the background'),
@@ -222,6 +271,12 @@ export default function ProjectsPage() {
 
   if (authLoading || !user) {
     return <ConnectingScreen forceConnecting overrideStage="auth" hideWorkspacePicker />;
+  }
+
+  // Bootstrapping the first project — hold the connecting screen instead of
+  // flashing the empty "create your first project" state before the redirect.
+  if (autoCreating) {
+    return <ConnectingScreen forceConnecting hideWorkspacePicker />;
   }
 
   const total = projectsQuery.data?.length ?? 0;

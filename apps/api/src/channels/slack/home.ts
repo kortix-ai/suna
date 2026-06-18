@@ -66,7 +66,7 @@ const DEFAULT_HOME_HERO_URL =
   'https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&h=480&fit=crop&q=80&auto=format';
 
 function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRow[] }): Record<string, unknown> {
-  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
+  const dashboardBase = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/$/, '');
   const heroUrl = config.SLACK_HOME_HERO_URL || DEFAULT_HOME_HERO_URL;
   const blocks: Array<Record<string, unknown>> = [];
 

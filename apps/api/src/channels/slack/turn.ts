@@ -315,7 +315,7 @@ function buildFinalPlanBlocks(
   // Footer: a link to open this session on the web. Lets anyone in the thread
   // jump straight to the full session (logs, files, diff) in Kortix.
   if (handle.projectId && handle.sessionId) {
-    const url = sessionWebUrl(config.KORTIX_URL, handle.projectId, handle.sessionId);
+    const url = sessionWebUrl(config.FRONTEND_URL, handle.projectId, handle.sessionId);
     blocks.push({
       type: 'context',
       elements: [{ type: 'mrkdwn', text: `<${url}|Open session in Kortix ↗>` }],

@@ -71,6 +71,7 @@ import {
   useAdminAccounts,
   useAdminDebitCredits,
   useAdminGrantCredits,
+  useAdminSetTier,
   type AdminAccount,
   type AdminAccountUser,
   type AdminAccountsFilters,
@@ -1083,6 +1084,7 @@ function CreditsTab({ account }: { account: AdminAccount }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const grant = useAdminGrantCredits();
   const debit = useAdminDebitCredits();
+  const setTier = useAdminSetTier();
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('Reimbursement');
   const [isExpiring, setIsExpiring] = useState(false);
@@ -1135,8 +1137,63 @@ function CreditsTab({ account }: { account: AdminAccount }) {
     }
   }
 
+  async function handleSetTier(tier: string, label: string) {
+    try {
+      await setTier.mutateAsync({ accountId: account.accountId, tier });
+      toast.success(`Plan set to ${label}`, {
+        description: `${account.name || account.accountId} is now on ${label}.`,
+      });
+    } catch (error) {
+      toast.error('Failed to set plan', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  const isEnterprise = account.tier === 'enterprise';
+
   return (
     <>
+      {/* Plan / Enterprise activation — sales-assigned tiers have no self-serve
+          path; this flips the account onto Enterprise (unlocks SSO + SCIM). */}
+      <div className="mb-4 space-y-3 rounded-2xl border border-border/60 bg-card p-4">
+        <div className="flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-sm font-medium text-foreground">Plan</div>
+            <div className="text-xs text-muted-foreground">
+              Current: <span className="text-foreground font-medium">{tierLabel(account.tier)}</span>
+              {isEnterprise && ' · SSO + SCIM unlocked'}
+            </div>
+          </div>
+          <Badge variant={tierBadgeVariant(account.tier)} className="capitalize">
+            {tierLabel(account.tier)}
+          </Badge>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => handleSetTier('enterprise', 'Enterprise')}
+            disabled={setTier.isPending || isEnterprise}
+            className="gap-1.5"
+          >
+            {setTier.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            {isEnterprise ? 'Enterprise active' : 'Activate Enterprise'}
+          </Button>
+          {isEnterprise && (
+            <Button
+              variant="outline"
+              onClick={() => handleSetTier('per_seat', 'Team')}
+              disabled={setTier.isPending}
+            >
+              Revert to Team
+            </Button>
+          )}
+        </div>
+        <p className="text-muted-foreground text-xs">
+          Enterprise unlocks SAML SSO + SCIM directory sync for this account. Seat billing is
+          unchanged.
+        </p>
+      </div>
+
       <div className="space-y-4 rounded-2xl border border-border/60 bg-card p-4">
         <div className="flex flex-wrap gap-1.5">
           {REIMBURSEMENT_PRESETS.map((n) => (

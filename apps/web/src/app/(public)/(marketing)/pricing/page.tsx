@@ -3,325 +3,200 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
-import { ArrowRight, Check, Minus } from 'lucide-react';
-import { useTranslations } from 'next-intl';
+import { cn } from '@/lib/utils';
+import { ArrowRight, Check } from 'lucide-react';
 import Link from 'next/link';
-import { Fragment } from 'react';
-import { PiCheckCircleFill } from 'react-icons/pi';
 
-const DEMO_URL = '/enterprise';
 const START_URL = '/auth';
-const GITHUB_URL = 'https://github.com/kortix-ai/suna';
+const DEMO_URL = '/enterprise';
 
-const PLANS = [
+type Plan = {
+  name: string;
+  price: string;
+  unit?: string;
+  note: string;
+  cta: string;
+  href: string;
+  highlight?: boolean;
+  badge?: string;
+  features: string[];
+};
+
+const PLANS: Plan[] = [
   {
-    name: 'Open Source',
-    price: 'Free',
-    note: 'Self-host the full platform, forever.',
-    cta: 'View on GitHub',
-    href: GITHUB_URL,
-    external: true,
-    highlight: false,
-    features: [
-      'Self-host anywhere — your infra',
-      'Bring your own models',
-      'All agents, skills & automations',
-      '3,000+ integrations',
-      'Community support',
-    ],
-  },
-  {
-    name: 'Cloud',
+    name: 'Team',
     price: '$40',
-    unit: '/ seat / mo + usage',
-    note: 'Your command center, managed for you.',
+    unit: '/ seat / mo',
+    note: 'For teams running real work on agents.',
     cta: 'Get started',
     href: START_URL,
-    external: false,
     highlight: true,
+    badge: 'Most popular',
     features: [
-      'Everything in Open Source',
-      'Managed cloud — nothing to run',
-      'Hosted sandboxes & compute',
-      'SSO and team workspaces',
-      'Usage-based compute — pay for what runs',
+      '$20 of usage credits per seat, pooled',
+      'Every frontier model included',
+      'Up to 200 projects, up to 100 seats',
+      'Top up credits anytime',
+      'Standard support',
     ],
   },
   {
     name: 'Enterprise',
     price: 'Custom',
-    note: 'For companies running on AI at scale.',
-    cta: 'Request demo',
+    note: 'Scale, security, and your deployment.',
+    cta: 'Contact sales',
     href: DEMO_URL,
-    external: false,
-    highlight: false,
     features: [
-      'Everything in Cloud',
-      'On-prem, VPC, or air-gapped',
-      'Advanced RBAC, policies & SCIM',
-      'Audit logs, SAML SSO, DPA',
-      'Dedicated support & SLAs',
+      'Everything in Team',
+      'SAML SSO + SCIM directory sync',
+      'Advanced RBAC + audit logs',
+      'Cloud, VPC, or on-prem',
+      'SLA, DPA & dedicated support',
     ],
   },
 ];
 
-type Cell = string | boolean;
-
-const COMPARE: { section: string; rows: [string, Cell, Cell, Cell][] }[] = [
+// Plain-language, Viktor-style. Keeps the only two facts that matter (models at
+// +20%, compute ~$0.10/hr) without a rate card.
+const CREDIT_POINTS: { title: string; body: string }[] = [
   {
-    section: 'Platform',
-    rows: [
-      ['Agents, skills & automations', true, true, true],
-      ['3,000+ integrations', true, true, true],
-      ['Channels (Slack, Teams, Telegram…)', true, true, true],
-      ['Bring your own models', true, true, true],
-      ['Persistent memory', true, true, true],
-    ],
+    title: 'One wallet, in plain dollars',
+    body: 'Credits cover models and Agent Computers from a single balance. No tokens to decode — spend shows up in dollars.',
   },
   {
-    section: 'Hosting & compute',
-    rows: [
-      ['Hosting', 'Self-host', 'Managed cloud', 'Cloud · VPC · on-prem'],
-      ['Managed sandboxes & compute', false, true, true],
-      ['Team members', 'Unlimited', 'Per seat', 'Unlimited'],
-    ],
+    title: 'Models at cost + 20%',
+    body: 'Every model is billed at its provider’s price plus a flat 20%. Bring your own key and you pay the provider directly — $0 to us.',
   },
   {
-    section: 'Security & control',
-    rows: [
-      ['SSO', false, 'Google · GitHub', 'SAML · SCIM'],
-      ['Roles & permissions', 'Basic', 'Teams', 'Advanced RBAC & policies'],
-      ['Secrets manager', true, true, 'Network-level policies'],
-      ['Audit logs', false, true, 'Advanced + export'],
-      ['Security review & DPA', false, false, true],
-    ],
-  },
-  {
-    section: 'Support',
-    rows: [['Support', 'Community', 'Standard', 'Dedicated + SLA']],
+    title: 'Compute by the second',
+    body: 'Agent Computers run about $0.10/hour and auto-stop when idle, so you never pay for a machine sitting still.',
   },
 ];
 
-function CompareCell({ v }: { v: Cell }) {
-  if (v === true) return <PiCheckCircleFill className="text-foreground mx-auto size-4" />;
-  if (v === false) return <Minus className="text-muted-foreground/40 mx-auto size-4" />;
-  return <span className="text-muted-foreground text-sm">{v}</span>;
-}
+const CREDIT_EXAMPLES: { label: string; body: string }[] = [
+  { label: 'A quick task', body: 'Summarize a thread or fix a small bug — a few cents.' },
+  { label: 'A working session', body: 'An agent coding for an hour — around $0.10 of compute plus model calls.' },
+  { label: 'A full project', body: 'Research and ship across many steps — scales with the work, not a flat fee.' },
+];
 
 const FAQ: [string, string][] = [
   [
-    'Can I really run it for free?',
-    'Yes. The platform is open and self-hostable — run it on your own infrastructure at no per-seat cost, bring your own model keys, and keep everything in your perimeter.',
+    'What does a Team seat include?',
+    '$40/seat/month includes $20 of usage credits (pooled across your workspace) and every frontier model with no key to set up. Add seats anytime; credits scale with them.',
   ],
   [
-    'How does Cloud pricing work?',
-    'Cloud is a flat price per seat plus usage-based compute. You pay for the agent runs your team actually triggers — no charge for idle time.',
+    'How are models and compute priced?',
+    'Every model is its provider’s list price plus a flat 20% — our only margin on inference. Bring your own key and you pay the provider directly. Agent-Computer compute is about $0.10/hour, billed by the second and $0 while stopped.',
   ],
   [
-    'What counts as usage?',
-    'Compute for running agent sessions, and any models you run through our cloud. Bring your own model keys and you only pay for the compute.',
+    'Do I pay per seat or per usage?',
+    'Both. The seat is a flat monthly fee that already includes credits; if your team runs heavy, top up credits on top. A light month costs just the seats.',
   ],
   [
-    'Do you offer on-prem or air-gapped?',
-    'Yes — Enterprise can run in your own cloud (VPC) or fully air-gapped, with single-tenant deployment and a security review.',
-  ],
-  [
-    'Which models can we use?',
-    'Any. Bring your own keys or subscription for Anthropic, OpenAI, and others, or use Kortix cloud compute.',
+    'What about Enterprise?',
+    'Everything in Team plus SAML SSO, SCIM directory sync (Okta, Microsoft Entra, JumpCloud), advanced RBAC, audit logs, an SLA and DPA, and Cloud / VPC / on-prem deployment. Talk to us for volume pricing.',
   ],
 ];
 
+function PlanCard({ plan }: { plan: Plan }) {
+  return (
+    <div
+      className={cn(
+        'flex flex-col gap-6 rounded-xl border p-8',
+        plan.highlight &&
+          'ring-border bg-border/60 dark:bg-card relative shadow-xl ring-1 shadow-black/6.5 backdrop-blur',
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-lg font-medium tracking-tight">{plan.name}</div>
+          <div className="text-muted-foreground mt-1 text-sm text-balance">{plan.note}</div>
+        </div>
+        {plan.badge && (
+          <Badge variant="update" className="rounded-full">
+            {plan.badge}
+          </Badge>
+        )}
+      </div>
+
+      <div className="flex min-w-0 items-baseline gap-2">
+        <span className="text-4xl" style={{ fontKerning: 'none' }}>
+          {plan.price}
+        </span>
+        {plan.unit && <span className="text-muted-foreground text-sm">{plan.unit}</span>}
+      </div>
+
+      <Button variant={plan.highlight ? 'default' : 'outline'} asChild>
+        <Link href={plan.href}>{plan.cta}</Link>
+      </Button>
+
+      <ul role="list" className="flex flex-col space-y-3 text-left text-sm">
+        {plan.features.map((feature) => (
+          <li key={feature} className="flex items-start justify-start gap-2 first:font-medium">
+            <Check className="text-foreground mt-0.5 size-4 shrink-0" />
+            <span>{feature}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function PricingPage() {
-  const tHardcodedUi = useTranslations('hardcodedUi');
   return (
     <div className="bg-background relative pt-28 sm:pt-40">
-      <div className="mx-auto max-w-5xl px-2 md:px-0">
+      <div className="mx-auto max-w-5xl px-4 md:px-0">
+        {/* ── Hero ─────────────────────────────────────────────── */}
         <div className="mx-auto text-center">
-          <h2 className="text-3xl font-medium text-balance md:text-4xl lg:text-5xl lg:tracking-tight">
-            {tHardcodedUi.raw('appHomePricingPage.line107JsxTextStartFreeScaleWhenYouAposReReady')}
-          </h2>
-          <p className="text-muted-foreground mx-auto mt-4 max-w-4xl text-lg text-balance">
-            {tHardcodedUi.raw(
-              'appHomePricingPage.line108JsxTextSelfHostTheWholePlatformForFreeMove',
-            )}
+          <h1 className="text-3xl font-medium text-balance md:text-4xl lg:text-5xl lg:tracking-tight">
+            Simple per-seat pricing. Pay for what you use.
+          </h1>
+          <p className="text-muted-foreground mx-auto mt-4 max-w-2xl text-lg text-balance">
+            Every seat gets the full platform plus a monthly credit allowance. Pay only for the
+            models and compute your agents actually run — no token math, no surprise bills.
           </p>
         </div>
 
-        <div className="@container space-y-8 pt-16">
-          <div className="mx-auto max-w-sm rounded-xl border @4xl:max-w-full">
-            <div className="grid *:p-8 @4xl:grid-cols-3">
-              <div className="row-span-4 grid grid-rows-subgrid gap-8 @max-4xl:p-9">
-                <div className="self-end">
-                  <div data-slot="card-title" className="text-lg font-medium tracking-tight">
-                    {PLANS[0].name}
-                  </div>
-                  <div className="text-muted-foreground mt-1 text-sm text-balance">
-                    {PLANS[0].note}
-                  </div>
-                </div>
-                <div>
-                  <span
-                    className="text-4xl"
-                    style={{
-                      fontKerning: 'none',
-                    }}
-                  >
-                    {PLANS[0].price}
-                  </span>
-                </div>
+        {/* ── Plan cards ───────────────────────────────────────── */}
+        <div className="mx-auto grid max-w-3xl gap-4 pt-16 md:grid-cols-2">
+          {PLANS.map((plan) => (
+            <PlanCard key={plan.name} plan={plan} />
+          ))}
+        </div>
 
-                <Button variant="outline" asChild>
-                  <Link href={PLANS[0].href}>{PLANS[0].cta}</Link>
-                </Button>
-                <ul role="list" className="flex flex-col space-y-3 text-left text-sm">
-                  {PLANS[0].features.map((feature) => (
-                    <li
-                      key={feature}
-                      className="flex items-center justify-start gap-2 first:font-medium"
-                    >
-                      <Check className="text-foreground size-4" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="ring-border bg-border/60 dark:bg-card row-span-4 grid grid-rows-subgrid gap-8 rounded-(--radius) shadow-xl ring-1 shadow-black/6.5 backdrop-blur @max-4xl:mx-1 @4xl:my-2">
-                <div className="self-end">
-                  <div data-slot="card-title" className="text-lg font-medium tracking-tight">
-                    {PLANS[1].name}
-                  </div>
-                  <div
-                    data-slot="card-description"
-                    className="text-muted-foreground mt-1 text-sm text-balance"
-                  >
-                    {PLANS[1].note}
-                  </div>
-                </div>
-                <div className="flex min-w-0 items-baseline gap-2">
-                  <span
-                    className="text-4xl"
-                    style={{
-                      fontKerning: 'none',
-                    }}
-                  >
-                    {PLANS[1].price}
-                  </span>
-                  <div className="text-muted-foreground text-sm">{PLANS[1].unit}</div>
-                </div>
-                <Button asChild>
-                  <Link href={PLANS[1].href}>{PLANS[1].cta}</Link>
-                </Button>
-                <ul role="list" className="space-y-3 text-sm">
-                  {PLANS[1].features.map((feature) => (
-                    <li
-                      key={feature}
-                      className="flex items-center justify-start gap-2 first:font-medium"
-                    >
-                      <Check className="text-foreground size-4" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <div className="row-span-4 grid grid-rows-subgrid gap-8 @max-4xl:p-9">
-                <div className="self-end">
-                  <div data-slot="card-title" className="text-lg font-medium tracking-tight">
-                    {PLANS[2].name}
-                  </div>
-                  <div
-                    data-slot="card-description"
-                    className="text-muted-foreground mt-1 text-sm text-balance"
-                  >
-                    {PLANS[2].note}
-                  </div>
-                </div>
-                <div>
-                  <span className="text-4xl">{PLANS[2].price}</span>
-                </div>
-                <Button variant="outline" asChild>
-                  <Link href={PLANS[2].href}>{PLANS[2].cta}</Link>
-                </Button>
-                <ul role="list" className="space-y-3 text-sm">
-                  {PLANS[2].features.map((feature) => (
-                    <li
-                      key={feature}
-                      className="flex items-center justify-start gap-2 first:font-medium"
-                    >
-                      <Check className="text-foreground size-4" />
-                      {feature}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
+        {/* ── How credits work ─────────────────────────────────── */}
+        <section className="border-border/50 mt-24 border-t pt-16">
+          <div className="mx-auto max-w-2xl text-center">
+            <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
+              Credits power everything
+            </h2>
+            <p className="text-muted-foreground mt-3 text-balance">
+              One simple balance for models and Agent Computers — no token math, no surprise bills.
+            </p>
           </div>
-
-          <p className="text-muted-foreground text-center text-sm">
-            {tHardcodedUi.raw(
-              'appHomePricingPage.line138JsxTextCloudIsPerSeatUsageBasedComputeYou',
-            )}
-          </p>
-        </div>
-
-        <section className="py-16 md:py-32">
-          <div className="w-full overflow-auto lg:overflow-visible">
-            <table className="w-[200vw] border-separate border-spacing-x-3 md:w-full dark:[--color-muted:var(--color-zinc-900)]">
-              <thead className="bg-background sticky top-0">
-                <tr className="*:py-4 *:text-left *:font-medium">
-                  <th className="lg:w-2/5">
-                    {tHardcodedUi.raw('appHomePricingPage.line145JsxTextComparePlans')}
-                  </th>
-                  <th>
-                    <span className="block text-center">
-                      {tHardcodedUi.raw('appHomePricingPage.line153JsxTextOpenSource')}
-                    </span>
-                  </th>
-                  <th>
-                    <span className="block text-center">Cloud</span>
-                  </th>
-                  <th>
-                    <span className="block text-center">Enterprise</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="text-caption text-sm">
-                {COMPARE.map((group) => (
-                  <Fragment key={group.section}>
-                    <tr className="*:py-3">
-                      <td className="text-muted-foreground flex items-center gap-2 font-medium">
-                        <span>{group.section}</span>
-                      </td>
-                      <td></td>
-                      <td></td>
-                      <td></td>
-                    </tr>
-                    {group.rows.map(([label, a, b, c]) => (
-                      <tr key={label} className="*:border-b *:py-6">
-                        <td className="text-foreground py-3 pr-4 text-sm">{label}</td>
-                        <td className="px-4 py-3 text-center">
-                          <CompareCell v={a} />
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <CompareCell v={b} />
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <CompareCell v={c} />
-                        </td>
-                      </tr>
-                    ))}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
+          <div className="mt-12 grid gap-8 md:grid-cols-3">
+            {CREDIT_POINTS.map((p) => (
+              <div key={p.title} className="space-y-2">
+                <div className="text-foreground text-sm font-medium">{p.title}</div>
+                <p className="text-muted-foreground text-sm leading-relaxed">{p.body}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-10 grid gap-3 md:grid-cols-3">
+            {CREDIT_EXAMPLES.map((e) => (
+              <div key={e.label} className="border-border bg-card rounded-lg border p-5">
+                <div className="text-foreground text-sm font-medium">{e.label}</div>
+                <p className="text-muted-foreground mt-1.5 text-sm leading-relaxed">{e.body}</p>
+              </div>
+            ))}
           </div>
         </section>
 
-        <section className="border-border/50 border-t px-4 py-16 sm:py-24">
+        {/* ── FAQ ──────────────────────────────────────────────── */}
+        <section className="border-border/50 mt-20 border-t px-4 py-16 sm:py-24">
           <div className="space-y-8">
             <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-              {tHardcodedUi.raw('appHomePricingPage.line183JsxTextPricingQuestions')}
+              Pricing questions
             </h2>
             <div className="divide-border divide-y">
               {FAQ.map(([q, a]) => (
@@ -334,36 +209,34 @@ export default function PricingPage() {
           </div>
         </section>
       </div>
+
+      {/* ── CTA footer ─────────────────────────────────────────── */}
       <section id="cta" className="relative mx-auto max-w-6xl px-6 py-16 sm:py-24 xl:px-0">
         <div className="border-border bg-card relative overflow-hidden rounded-sm border text-center">
           <div className="flex grid-cols-12 flex-col-reverse gap-2 md:grid">
             <div className="col-span-4 flex flex-col items-start justify-start p-6 *:text-left">
               <div className="space-y-2">
-                <Badge variant="kortix" className="rounded">
+                <Badge variant="update" className="rounded">
                   Start building
                 </Badge>
                 <h2 className="text-foreground text-2xl leading-tight font-medium tracking-tight sm:text-3xl">
-                  {tHardcodedUi.raw('appHomePricingPage.line200JsxTextStartFreeToday')}
+                  Get your team started
                 </h2>
-
                 <p className="text-muted-foreground mt-6 pb-8 text-sm leading-relaxed">
-                  {tHardcodedUi.raw(
-                    'appHomePricingPage.line201JsxTextSelfHostInMinutesOrHaveUsWalk',
-                  )}
+                  $40 per seat, with $20 of usage credits each. Auto-prorated, cancel anytime — or
+                  talk to us about Enterprise.
                 </p>
               </div>
 
               <div className="mt-auto grid w-full grid-cols-1 gap-2 sm:grid-cols-2">
-                <Button size="lg" className="w-full" asChild>
+                <Button size="lg" className="w-full" variant="outline" asChild>
                   <Link href={DEMO_URL}>
-                    {tHardcodedUi.raw('appHomePricingPage.line205JsxTextRequestDemo')}
+                    Contact sales
                     <ArrowRight className="size-3.5" />
                   </Link>
                 </Button>
                 <Button asChild size="lg" className="w-full" variant="accent">
-                  <Link href={START_URL}>
-                    {tHardcodedUi.raw('appHomePricingPage.line206JsxTextGetStarted')}
-                  </Link>
+                  <Link href={START_URL}>Get started</Link>
                 </Button>
               </div>
             </div>

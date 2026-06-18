@@ -176,6 +176,22 @@ export function useAdminDebitCredits() {
   });
 }
 
+// Set an account's plan tier (e.g. activate Enterprise → unlocks SSO + SCIM).
+export function useAdminSetTier() {
+  const queryClient = useQueryClient();
+  return useMutation<unknown, Error, { accountId: string; tier: string }>({
+    mutationFn: async ({ accountId, tier }) => {
+      const response = await backendApi.post(`/admin/api/accounts/${accountId}/tier`, { tier });
+      if (response.error) throw new Error(response.error.message);
+      return response.data;
+    },
+    onSuccess: (_data, { accountId }) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'accounts', accountId] });
+    },
+  });
+}
+
 export interface AdminLedgerEntry {
   id: string;
   amount: string;

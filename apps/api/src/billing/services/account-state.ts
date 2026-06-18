@@ -7,6 +7,7 @@ import {
 import { AUTO_TOPUP_DEFAULT_AMOUNT, AUTO_TOPUP_DEFAULT_THRESHOLD } from '@kortix/shared';
 import {
   getTier,
+  getTierEntitlements,
   getDailyCreditConfig,
   isPaidTier,
   isLegacyPaidTier,
@@ -172,6 +173,7 @@ export async function buildMinimalAccountState(accountId: string): Promise<Accou
       display_name: isAdmin && tierName === 'none' ? 'Admin' : tier.displayName,
       monthly_credits: tier.monthlyCredits,
       can_purchase_credits: isAdmin ? true : tier.canPurchaseCredits,
+      entitlements: tier.entitlements,
     },
     models: [],
     auto_topup: autoTopup,
@@ -244,6 +246,7 @@ export function buildLocalAccountState(): AccountStateResponse {
       display_name: 'Free',
       monthly_credits: 0,
       can_purchase_credits: false,
+      entitlements: getTierEntitlements('free'),
     },
     models: [],
     auto_topup: {
