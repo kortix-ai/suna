@@ -8,7 +8,6 @@ import {
   projectSecretsRevision,
 } from '../secrets';
 import { sanitizeSandboxEnv } from './sandbox-env-names';
-import { stripGatewayManagedCredentials } from '../../llm-gateway/sandbox-credentials';
 
 const SANDBOX_SERVICE_PORT = 8000;
 const FANOUT_CONCURRENCY = 6;
@@ -41,9 +40,8 @@ export async function resolveSandboxEnvSnapshot(
 ): Promise<SandboxEnvSnapshot | null> {
   const raw = await resolveOwnerRawEnv(projectId, sessionId);
   if (!raw) return null;
-  const { env } = sanitizeSandboxEnv(raw);
-  const filtered = stripGatewayManagedCredentials(env);
-  return { env: filtered, names: Object.keys(filtered), revision: projectSecretsRevision(filtered) };
+  const { env, names } = sanitizeSandboxEnv(raw);
+  return { env, names, revision: projectSecretsRevision(env) };
 }
 
 function isSecureOrPrivateTarget(rawUrl: string): boolean {

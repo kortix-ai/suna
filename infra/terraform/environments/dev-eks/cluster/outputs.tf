@@ -36,11 +36,6 @@ output "acm_certificate_arn" {
   value       = module.acm.certificate_arn
 }
 
-output "acm_gateway_certificate_arn" {
-  description = "Cert ARN for gateway-dev.kortix.com → paste into dev gateway-values ingress.certificateArn."
-  value       = module.acm_gateway.certificate_arn
-}
-
 output "acm_argocd_certificate_arn" {
   description = "Cert ARN reserved for the dev Argo CD UI ALB (dev-ops.kortix.com)."
   value       = module.acm_argocd.certificate_arn
