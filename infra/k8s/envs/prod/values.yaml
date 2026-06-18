@@ -11,10 +11,6 @@ kortixVersion: "0.9.38"
 env:
   internalKortixEnv: prod
 
-extraEnv:
-  # Direct: prod sandboxes hit the public gateway, not the API proxy.
-  LLM_GATEWAY_BASE_URL: "https://gateway.kortix.com/v1/llm"
-
 # PRE-CUTOVER: api-eks is the candidate while api.kortix.com is still served by
 # ECS, so EKS runs API-only and ECS keeps ownership of the singleton workers
 # (one Postgres leader lease is shared across both). At cutover, flip this to

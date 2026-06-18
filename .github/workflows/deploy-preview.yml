@@ -85,47 +85,6 @@ jobs:
             echo "Argo CD deploys it to \`kortix-pr-${{ github.event.pull_request.number }}\` → \`pr-${{ github.event.pull_request.number }}.preview-api.kortix.com\`."
           } >> "$GITHUB_STEP_SUMMARY"
 
-  # ── Build the preview gateway image (Argo CD co-deploys it with the API) ────
-  # Internal-only in preview (ClusterIP, no host) — the API reverse-proxies to it,
-  # so there's no per-PR gateway URL. Same pr-<head-sha> tag the ApplicationSet
-  # pins for the kortix-gateway source.
-  build-gateway:
-    name: Build preview gateway image
-    if: >-
-      contains(github.event.pull_request.labels.*.name, 'preview') &&
-      contains(fromJSON('["labeled","opened","synchronize","reopened"]'), github.event.action)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          submodules: false
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-      - uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push :pr-<head-sha> (amd64)
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: apps/llm-gateway/Dockerfile
-          platforms: linux/amd64
-          push: true
-          build-args: |
-            KORTIX_VERSION=pr-${{ github.event.pull_request.number }}
-            KORTIX_COMMIT=${{ github.event.pull_request.head.sha }}
-          tags: |
-            kortix/kortix-gateway:pr-${{ github.event.pull_request.head.sha }}
-      - name: Summary
-        run: |
-          {
-            echo "### Preview gateway image built"
-            echo "Image: \`kortix/kortix-gateway:pr-${{ github.event.pull_request.head.sha }}\`"
-            echo "Argo CD co-deploys it (internal, ClusterIP) into \`kortix-pr-${{ github.event.pull_request.number }}\`."
-          } >> "$GITHUB_STEP_SUMMARY"
-
   # ── Post a sticky PR comment + poll until the backend is actually live ──────
   # The k8s deploy is done by Argo CD (async, outside CI), so a green build does
   # NOT mean the preview is serving. This job posts a status comment immediately,

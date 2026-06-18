@@ -181,13 +181,8 @@ jobs:
           if [ -f infra/k8s/envs/prod/values.yaml ]; then
             NEW="$NEW" yq -i '.image.tag = strenv(NEW) | .kortixVersion = strenv(NEW)' infra/k8s/envs/prod/values.yaml
           fi
-          if [ -f infra/k8s/envs/prod/gateway-values.yaml ]; then
-            NEW="$NEW" yq -i '.image.tag = strenv(NEW)' infra/k8s/envs/prod/gateway-values.yaml
-          fi
-
           git add VERSION RELEASE_NOTES.md RELEASE_SOURCE_SHA
           git add infra/k8s/envs/prod/values.yaml 2>/dev/null || true
-          git add infra/k8s/envs/prod/gateway-values.yaml 2>/dev/null || true
           git commit -m "release: $TAG"
           git push -f origin "HEAD:refs/heads/$RELBR"
 

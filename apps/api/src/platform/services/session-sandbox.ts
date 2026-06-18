@@ -275,11 +275,7 @@ export async function provisionSessionSandbox(opts: {
   const [sandbox] = sandboxRows;
   tl.mark('row+tokens');
 
-  const kortixOrigin = config.KORTIX_URL.replace(/\/+$/, '');
-  const llmProxyMode = config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET;
-  const llmBaseUrl =
-    config.LLM_GATEWAY_BASE_URL ||
-    (llmProxyMode ? `${kortixOrigin}/v1/llm-gateway/v1/llm` : `${kortixOrigin}/v1/llm`);
+  const llmBaseUrl = `${config.KORTIX_URL.replace(/\/+$/, '')}/v1/llm`;
 
   // The sandbox's OpenCode `kortix` provider only mounts when KORTIX_LLM_* is
   // injected (otherwise OpenCode falls back to showing only its built-in Zen

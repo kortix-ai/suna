@@ -99,7 +99,6 @@ export interface ProjectProviderModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultTab?: ActiveTab;
-  initialProviderId?: string;
 }
 
 export function ProjectProviderModal({
@@ -107,7 +106,6 @@ export function ProjectProviderModal({
   open,
   onOpenChange,
   defaultTab,
-  initialProviderId,
 }: ProjectProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // Gate the secrets fetch on `open`. The modal is always mounted by callers
@@ -180,17 +178,12 @@ export function ProjectProviderModal({
   // Reset whenever the dialog is reopened.
   useEffect(() => {
     if (open) {
-      if (initialProviderId) {
-        setActiveTab('catalog');
-        setSubview({ kind: 'connect', providerId: initialProviderId });
-      } else {
-        setActiveTab(pickInitialTab(defaultTab, hasConnections));
-        setSubview({ kind: 'list' });
-      }
+      setActiveTab(pickInitialTab(defaultTab, hasConnections));
+      setSubview({ kind: 'list' });
       setSearch('');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, defaultTab, initialProviderId]);
+  }, [open, defaultTab]);
 
   const switchTab = useCallback((next: ActiveTab) => {
     setActiveTab(next);
@@ -521,16 +514,12 @@ function CatalogTab({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const matches = !q
-      ? LLM_PROVIDERS
-      : LLM_PROVIDERS.filter(
-          (p) =>
-            p.label.toLowerCase().includes(q) ||
-            p.id.toLowerCase().includes(q) ||
-            p.envVars.some((v) => v.toLowerCase().includes(q)),
-        );
-    return [...matches].sort((a, b) =>
-      a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }),
+    if (!q) return LLM_PROVIDERS;
+    return LLM_PROVIDERS.filter(
+      (p) =>
+        p.label.toLowerCase().includes(q) ||
+        p.id.toLowerCase().includes(q) ||
+        p.envVars.some((v) => v.toLowerCase().includes(q)),
     );
   }, [search]);
 
