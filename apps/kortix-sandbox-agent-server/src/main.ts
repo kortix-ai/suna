@@ -260,11 +260,25 @@ function reloadSessionEnv(path = '/tmp/dnah-env'): void {
 }
 
 // Warm-pool spare runtime (opt-in via KORTIX_WARM_POOL=1, set only by the pool
-// builder). Boot opencode generic (no repo) + the proxy so the VM is
-// snapshottable + health-green, then idle until claimed. On claim the control
-// plane writes the claimant's env to the session-env file; we DETECT it by
-// polling (robust to a snapshot-restored process missing a signal), then reload
-// env, re-read config, clone the claimant's repo, and start the session runtime.
+// builder). Boot opencode + the proxy so the VM is snapshottable + health-green,
+// then idle until claimed. On claim the control plane writes the claimant's env
+// to the session-env file; we DETECT it by polling (robust to a snapshot-restored
+// process missing a signal), then reload env, re-read config, materialize the
+// repo, and start the session runtime.
+//
+// Two park strategies:
+//   • Stage-1 (generic spare): boot opencode against the DEFAULT config with NO
+//     repo, then clone + warm opencode on CLAIM (~9s claim — pre-pays only the
+//     provider create).
+//   • Stage-2 (KORTIX_WARM_POOL_CLONE_AT_PARK=1, set by the API pool driver on a
+//     project-scoped spare that carries KORTIX_REPO_URL/PROJECT_ID but NO session
+//     identity): clone the BASE branch AND warm the opencode project plugin AT
+//     PARK, so claim only creates the session branch locally (git checkout -B
+//     from the cloned base — instant, no network; materializeRepo's baked-checkout
+//     fast path) and adopts the already-warm opencode (~0.5s claim). opencode is
+//     warmed by a readiness PROBE (a /session read that resolves the /workspace
+//     Instance + loads pty-tools.ts) — never a bootstrap session, since there is
+//     no KORTIX_SESSION_ID to relay at park.
 async function runPoolMode(
   cfg: Config,
   bootTime: number,
@@ -274,14 +288,54 @@ async function runPoolMode(
 ): Promise<void> {
   const projectEnv = createProjectEnvStore()
   writeAgentEnvFile(projectEnv)
-  await ensureOpencodeConfigDeps(cfg.defaultOpencodeConfigDir).catch(() => {})
-  const opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv)
-  await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
-  bootMark('pool-opencode-spawned')
-  const server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
-  installShutdownHandlers(opencode, server, staticWeb)
-  bootMark('pool-ready')
-  logger.info('[pool] warm spare ready; awaiting claim', { timeline: bootState.timeline })
+
+  const cloneAtPark =
+    (process.env.KORTIX_WARM_POOL_CLONE_AT_PARK ?? '').trim() === '1' && cfg.autoClone && !!cfg.repoUrl
+
+  let opencode: Opencode
+  let server: ReturnType<typeof startProxy>
+
+  if (cloneAtPark) {
+    // STAGE-2: pre-pay the clone + opencode plugin-warm at park.
+    try { await configureGlobalGitIdentity(cfg, OPENCODE_HOME) } catch {}
+    try { await configureGitCredentialHelper(cfg, OPENCODE_HOME) } catch {}
+    // No KORTIX_BRANCH_NAME on a spare → materializeRepo clones the base branch
+    // and stays on it, leaving /workspace/.git present for the claim's fast path.
+    await materializeRepo(cfg).catch((err) => {
+      bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
+      logger.error('[pool] park-time repo materialization failed', err)
+    })
+    bootMark('pool-repo-materialized')
+    // Resolve the PROJECT opencode config (now that the repo exists) so the warm
+    // loads the project's pty plugin — the actual ~4.7s cost we want pre-paid.
+    const opencodeConfigDir = bootState.repoMaterializationError
+      ? cfg.defaultOpencodeConfigDir
+      : await resolveOpencodeConfigDir(cfg)
+    await ensureOpencodeConfigDeps(opencodeConfigDir).catch(() => {})
+    opencode = createOpencodeSupervisor(cfg, opencodeConfigDir, projectEnv)
+    if (!bootState.repoMaterializationError) {
+      await configureRepoCredentialHelper(cfg, cfg.projectTarget).catch(() => {})
+    }
+    await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
+    bootMark('pool-opencode-spawned')
+    server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+    installShutdownHandlers(opencode, server, staticWeb)
+    if (!bootState.repoMaterializationError) {
+      const warm = await waitForOpencodeReady(opencode, cfg.projectTarget, () => bootMark('pool-opencode-listening'))
+      if (warm) { opencode.markReady(); bootMark('pool-opencode-warm') }
+    }
+    bootMark('pool-ready')
+  } else {
+    // STAGE-1: generic, session-less spare (clone + warm deferred to claim).
+    await ensureOpencodeConfigDeps(cfg.defaultOpencodeConfigDir).catch(() => {})
+    opencode = createOpencodeSupervisor(cfg, cfg.defaultOpencodeConfigDir, projectEnv)
+    await opencode.start().catch((err) => logger.warn('[pool] opencode.start() rejected', { err: err instanceof Error ? err.message : String(err) }))
+    bootMark('pool-opencode-spawned')
+    server = startProxy(cfg, opencode, bootTime, bootState, projectEnv, staticWeb.port)
+    installShutdownHandlers(opencode, server, staticWeb)
+    bootMark('pool-ready')
+  }
+  logger.info('[pool] warm spare ready; awaiting claim', { cloneAtPark, timeline: bootState.timeline })
 
   let claimed = false
   const claim = (trigger: string) => {
@@ -298,10 +352,15 @@ async function runPoolMode(
       bootState.initialOpenCodeSessionRequired =
         (process.env.KORTIX_INITIAL_PROMPT ?? '').trim().length > 0 ||
         (process.env.KORTIX_BOOTSTRAP_OPENCODE_SESSION ?? '').trim() === '1'
-      logger.info('[pool] claim — initializing session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone })
+      logger.info('[pool] claim — initializing session', { trigger, projectId: cfg2.projectId, autoClone: cfg2.autoClone, cloneAtPark })
       try { await configureGlobalGitIdentity(cfg2, OPENCODE_HOME) } catch {}
       try { await configureGitCredentialHelper(cfg2, OPENCODE_HOME) } catch {}
       if (cfg2.autoClone) {
+        // Clear any park-clone failure so this retries cleanly. When park
+        // pre-cloned (Stage-2 happy path) materializeRepo hits the baked-checkout
+        // fast path: set remote + local `git checkout -B <session>` from the
+        // cloned base, no network re-clone. Otherwise it clones now (Stage-1).
+        bootState.repoMaterializationError = null
         await materializeRepo(cfg2).catch((err) => {
           bootState.repoMaterializationError = err instanceof Error ? err.message : String(err)
           logger.error('[pool] repo materialization failed', err)

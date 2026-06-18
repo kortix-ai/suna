@@ -132,6 +132,14 @@ const envSchema = z.object({
   // claim path is skipped and every create cold-provisions, byte-identically to
   // today). Set > 0 to enable — only after live-validating the claim path.
   KORTIX_WARM_POOL_MAX_TOTAL:      optInt(0),
+  // Stage-2 pre-warm: provision each spare WITH its project identity (repo, no
+  // session) and tell the daemon (KORTIX_WARM_POOL_CLONE_AT_PARK) to clone the
+  // base branch + warm the opencode project plugin AT PARK — so a claim only
+  // creates the session branch locally + adopts the warm opencode (~0.5s claim
+  // vs ~9s when the spare clones+warms on claim). Default off; turns a generic
+  // pool into per-project warm boxes (idle cost per hot project), so enable only
+  // for projects with predictable imminent sessions and after live-validation.
+  KORTIX_WARM_POOL_CLONE_AT_PARK:  optBoolFalse,
   // Presence window: only keep a warm pool while a user has touched the project
   // (authenticated portal activity) within this many minutes. Closing the tab
   // lets the pool reap, so we never hold idle boxes 24/7 for absent users.
@@ -513,6 +521,7 @@ export const config = {
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
   KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
+  KORTIX_WARM_POOL_CLONE_AT_PARK: env.KORTIX_WARM_POOL_CLONE_AT_PARK,
   KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
   KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
   KORTIX_SANDBOX_ARCHIVE_MINUTES: env.KORTIX_SANDBOX_ARCHIVE_MINUTES,

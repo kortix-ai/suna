@@ -35,6 +35,7 @@ import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
 import { ensureSandboxImage, DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
+import { buildSpareSandboxEnvVars } from '../../projects/lib/sessions';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
 import { resolvePreviewUserContext } from '../../shared/preview-ownership';
 import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
@@ -169,11 +170,28 @@ async function spawnSpare(project: {
       { slug, accountId: project.accountId, source: 'background', provider },
     );
 
+    // Stage-2: hand the spare its project identity (repo, no session) + the
+    // clone-at-park flag so the daemon clones the base branch + warms the
+    // opencode project plugin while parked. KORTIX_TOKEN stays the spare's park
+    // key (last, never clobbered by the project env). Without the flag the spare
+    // is a generic Stage-1 box that clones + warms on claim.
+    const parkEnv = config.KORTIX_WARM_POOL_CLONE_AT_PARK
+      ? {
+          ...buildSpareSandboxEnvVars({
+            projectId: project.projectId,
+            repoUrl: project.repoUrl,
+            baseRef: project.defaultBranch,
+            agentName: 'default',
+          }),
+          KORTIX_WARM_POOL_CLONE_AT_PARK: '1',
+        }
+      : {};
+
     const result = await getProvider(provider).create({
       accountId: project.accountId,
       userId: '',
       name: `warm-${spareId.slice(0, 8)}`,
-      envVars: { KORTIX_WARM_POOL: '1', KORTIX_TOKEN: sandboxKey.secretKey },
+      envVars: { ...parkEnv, KORTIX_WARM_POOL: '1', KORTIX_TOKEN: sandboxKey.secretKey },
       snapshot: image.snapshotName,
       autoStopInterval: 0, // stay up until claimed/reaped
     });
