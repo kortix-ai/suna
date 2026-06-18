@@ -245,8 +245,6 @@ export function ProjectSandboxAlertRailItem({ projectId }: { projectId: string }
   if (!severity || !data) return null;
   const tone = SEVERITY_TONE[severity];
 
-  const customizeOpen = useCustomizeStore((s) => s.open);
-
   return (
     <Popover>
       <Hint label={SEVERITY_LABEL[severity]}>
@@ -263,12 +261,7 @@ export function ProjectSandboxAlertRailItem({ projectId }: { projectId: string }
           </SidebarMenuButton>
         </PopoverTrigger>
       </Hint>
-      <PopoverContent
-        side="right"
-        align={customizeOpen ? 'end' : 'start'}
-        sideOffset={12}
-        className="w-96 p-0"
-      >
+      <PopoverContent side="right" align="end" sideOffset={12} className="w-96 p-0">
         <SandboxAlertContent projectId={projectId} health={data} severity={severity} />
       </PopoverContent>
     </Popover>
