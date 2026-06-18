@@ -202,11 +202,15 @@ export function resetForServerSwitch() {
 	clearProvisionVerified();
 
 	if (runtimeReady) {
-		// /start proved the runtime healthy server-side — start optimistically
-		// connected+healthy so the chat crossfades in immediately instead of
-		// waiting an extra client health RTT. The poller (which runs on mount)
-		// still re-confirms and will flip healthy=false if the browser path is
-		// momentarily not-ready, so a wrong optimism self-heals within ~350ms.
+		// /start proved the runtime healthy server-side, so we start `connected`
+		// (no blocking provisioning overlay) — BUT we do NOT pre-assert health.
+		// Seeding healthy=true here flipped the `runtimeReady` selector
+		// (connected && healthy===true) synchronously, hiding the loading screen
+		// and crossfading the chat in BEFORE the client confirmed the runtime was
+		// actually reachable — so users saw the bootstrap agent already mid-turn.
+		// healthy=null keeps the loading screen up until the fast (~350ms) health
+		// poller confirms /kortix/health, while still skipping the blocking
+		// provisioning overlay — preserving most of the warm-path speedup.
 		useSandboxConnectionStore.setState({
 			status: "connected",
 			failCount: 0,
@@ -216,7 +220,7 @@ export function resetForServerSwitch() {
 			disconnectedAt: null,
 			sandboxVersion: null,
 			openCodeVersion: null,
-			healthy: true,
+			healthy: null,
 			runtimeError: null,
 			recoveryPhase: "idle",
 			restartRequestedAt: null,

@@ -132,10 +132,33 @@ const envSchema = z.object({
   // claim path is skipped and every create cold-provisions, byte-identically to
   // today). Set > 0 to enable — only after live-validating the claim path.
   KORTIX_WARM_POOL_MAX_TOTAL:      optInt(0),
+  // Stage-2 pre-warm: provision each spare WITH its project identity (repo, no
+  // session) and tell the daemon (KORTIX_WARM_POOL_CLONE_AT_PARK) to clone the
+  // base branch + warm the opencode project plugin AT PARK — so a claim only
+  // creates the session branch locally + adopts the warm opencode (~0.5s claim
+  // vs ~9s when the spare clones+warms on claim). Default off; turns a generic
+  // pool into per-project warm boxes (idle cost per hot project), so enable only
+  // for projects with predictable imminent sessions and after live-validation.
+  KORTIX_WARM_POOL_CLONE_AT_PARK:  optBoolFalse,
   // Presence window: only keep a warm pool while a user has touched the project
   // (authenticated portal activity) within this many minutes. Closing the tab
   // lets the pool reap, so we never hold idle boxes 24/7 for absent users.
   KORTIX_WARM_POOL_PRESENCE_MINUTES: optInt(15),
+
+  // ── Pause / resume tuning ─────────────────────────────────────────────────
+  // The sandbox idle→stop / stop→archive / →delete intervals live below as
+  // KORTIX_SANDBOX_AUTOSTOP_MINUTES / AUTOARCHIVE_MINUTES / AUTODELETE_MINUTES
+  // (consumed by daytonaLifecycle()). Main's 3-day auto-archive default already
+  // keeps a hibernated box in the fast-resume "stopped" tier far longer than the
+  // earlier 120m, so the pause/resume win is subsumed there.
+  // Pre-resume: on a user returning to a project, proactively provider.start
+  // their most-recently-stopped session(s) so the ~8s resume overlaps the
+  // user's navigation and the session is ready by the time they open it. Reuses
+  // resumeStoppedSandbox (idempotent with the on-open resume). GATED OFF by
+  // default (speculative compute — starts a box the user might not open). Enable
+  // after validating; tune how many recent sessions to pre-resume per project.
+  KORTIX_PRERESUME_ENABLED:         optBoolFalse,
+  KORTIX_PRERESUME_MAX_PER_PROJECT: optInt(1),
 
   // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
   // The new backend has no JustAVPS provider, but it must reach legacy VMs to
@@ -510,7 +533,10 @@ export const config = {
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
   KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
+  KORTIX_WARM_POOL_CLONE_AT_PARK: env.KORTIX_WARM_POOL_CLONE_AT_PARK,
   KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
+  KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,
+  KORTIX_PRERESUME_MAX_PER_PROJECT: env.KORTIX_PRERESUME_MAX_PER_PROJECT,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
   JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,

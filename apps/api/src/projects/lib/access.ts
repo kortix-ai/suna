@@ -3,6 +3,7 @@ import { authorize } from '../../iam';
 import { deriveRequestContext } from '../../iam/cache';
 import { auth } from '../../openapi';
 import { notePoolPresence } from '../../platform/services/warm-pool';
+import { preResumeRecentStoppedSessions } from '../routes/shared';
 import { db } from '../../shared/db';
 import { resolveAccountId } from '../../shared/resolve-account';
 import { getSupabase } from '../../shared/supabase';
@@ -334,6 +335,10 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   // throttled internally. Only members who can launch sessions count.
   if (action !== 'read' || roleAllows(effectiveRole as ProjectRole, 'write')) {
     notePoolPresence(projectId, userId);
+    // Same presence signal drives pre-resume: proactively wake the user's most
+    // recently-stopped session(s) so the resume overlaps their navigation.
+    // No-op unless KORTIX_PRERESUME_ENABLED; throttled + idempotent internally.
+    preResumeRecentStoppedSessions(projectId, userId);
   }
 
   return {
