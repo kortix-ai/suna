@@ -104,6 +104,7 @@ export function createLangfuseSink(
       try {
         const { trace: traceBody, generation } = traceToLangfuse(trace);
         client.trace(traceBody).generation(generation);
+        await client.flushAsync();
       } catch (err) {
         logger.warn('[gateway] failed to record trace to langfuse', err);
       }
