@@ -1,18 +1,16 @@
 'use client';
 
-import { memo, useRef, useEffect, useCallback, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { useTheme } from 'next-themes';
-import { cn } from '@/lib/utils';
-import type { Terminal as XTerm, ITheme } from '@xterm/xterm';
-import type { FitAddon } from '@xterm/addon-fit';
-import { useAuth } from '@/components/AuthProvider';
-import { RefreshCw, Copy, Check, TerminalSquare } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { toast } from '@/lib/toast';
-import { getEnv } from '@/lib/env-config';
-import { backendApi } from '@/lib/api-client';
 import { fileListKeys } from '@/features/files';
+import { useAuth } from '@/features/providers/auth-provider';
+import { backendApi } from '@/lib/api-client';
+import { getEnv } from '@/lib/env-config';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { useQueryClient } from '@tanstack/react-query';
+import type { FitAddon } from '@xterm/addon-fit';
+import type { ITheme, Terminal as XTerm } from '@xterm/xterm';
+import { useTheme } from 'next-themes';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
 interface SSHTerminalProps {
   sandboxId: string;
@@ -93,7 +91,7 @@ export const SSHTerminal = memo(function SSHTerminal({ sandboxId, className }: S
   const wsRef = useRef<WebSocket | null>(null);
   const connectionIdRef = useRef<number>(0);
   const invalidateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  
+
   const [status, setStatus] = useState<ConnectionStatus>('disconnected');
   const [termReady, setTermReady] = useState(false);
   const [sshCommand, setSshCommand] = useState<string | null>(null);
@@ -115,7 +113,7 @@ export const SSHTerminal = memo(function SSHTerminal({ sandboxId, className }: S
     try {
       const response = await backendApi.post<{ ssh_command: string; token: string }>(
         `/sandboxes/${sandboxId}/ssh/token`,
-        { expires_in_minutes: 60 }
+        { expires_in_minutes: 60 },
       );
       if (response.data?.ssh_command) {
         setSshCommand(response.data.ssh_command);
@@ -141,105 +139,116 @@ export const SSHTerminal = memo(function SSHTerminal({ sandboxId, className }: S
       wsRef.current.onmessage = null;
       wsRef.current.onerror = null;
       wsRef.current.onclose = null;
-      if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
+      if (
+        wsRef.current.readyState === WebSocket.OPEN ||
+        wsRef.current.readyState === WebSocket.CONNECTING
+      ) {
         wsRef.current.close();
       }
       wsRef.current = null;
     }
   }, []);
 
-  const connectWebSocket = useCallback((accessToken: string, term: XTerm) => {
-    if (wsRef.current) {
-      console.log('[SSHTerminal] Already have a WebSocket, skipping');
-      return;
-    }
-
-    globalConnectionId++;
-    const myConnectionId = globalConnectionId;
-    connectionIdRef.current = myConnectionId;
-
-    setStatus('connecting');
-    
-    const wsUrl = getWebSocketUrl();
-    console.log('[Terminal] Creating WebSocket (id:', myConnectionId, '):', `${wsUrl}/sandboxes/${sandboxId}/terminal/ws`);
-    
-    const ws = new WebSocket(`${wsUrl}/sandboxes/${sandboxId}/terminal/ws`);
-    wsRef.current = ws;
-
-    ws.onopen = () => {
-      if (connectionIdRef.current !== myConnectionId) {
-        console.log('[SSHTerminal] Stale connection, closing');
-        ws.close();
+  const connectWebSocket = useCallback(
+    (accessToken: string, term: XTerm) => {
+      if (wsRef.current) {
+        console.log('[SSHTerminal] Already have a WebSocket, skipping');
         return;
       }
-      console.log('[SSHTerminal] WebSocket open, sending auth...');
-      try {
-        ws.send(JSON.stringify({ type: 'auth', access_token: accessToken }));
-        console.log('[SSHTerminal] Auth sent');
-      } catch (e) {
-        console.error('[SSHTerminal] Failed to send auth:', e);
-        setStatus('error');
-      }
-    };
 
-    ws.onmessage = (event) => {
-      if (connectionIdRef.current !== myConnectionId) return;
-      
-      try {
-        const message = JSON.parse(event.data);
-        console.log('[SSHTerminal] Message:', message.type, message.message || '');
-        
-        switch (message.type) {
-          case 'status':
-            term.writeln(`\x1b[33m${message.message}\x1b[0m`);
-            break;
-          case 'connected':
-            setStatus('connected');
-            term.writeln(`\x1b[32m${message.message}\x1b[0m`);
-            term.writeln('');
-            break;
-          case 'output':
-            if (message.data) {
-              term.write(sanitizeTerminalChunk(message.data));
-            }
-            break;
-          case 'error':
-            setStatus('error');
-            term.writeln(`\x1b[31mError: ${message.message}\x1b[0m`);
-            break;
-          case 'exit':
-            term.writeln(`\x1b[33mSession ended with code: ${message.code}\x1b[0m`);
-            setStatus('disconnected');
-            wsRef.current = null;
-            break;
+      globalConnectionId++;
+      const myConnectionId = globalConnectionId;
+      connectionIdRef.current = myConnectionId;
+
+      setStatus('connecting');
+
+      const wsUrl = getWebSocketUrl();
+      console.log(
+        '[Terminal] Creating WebSocket (id:',
+        myConnectionId,
+        '):',
+        `${wsUrl}/sandboxes/${sandboxId}/terminal/ws`,
+      );
+
+      const ws = new WebSocket(`${wsUrl}/sandboxes/${sandboxId}/terminal/ws`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (connectionIdRef.current !== myConnectionId) {
+          console.log('[SSHTerminal] Stale connection, closing');
+          ws.close();
+          return;
         }
-      } catch (e) {
-        console.error('[SSHTerminal] Parse error:', e);
-      }
-    };
+        console.log('[SSHTerminal] WebSocket open, sending auth...');
+        try {
+          ws.send(JSON.stringify({ type: 'auth', access_token: accessToken }));
+          console.log('[SSHTerminal] Auth sent');
+        } catch (e) {
+          console.error('[SSHTerminal] Failed to send auth:', e);
+          setStatus('error');
+        }
+      };
 
-    ws.onerror = (error) => {
-      if (connectionIdRef.current !== myConnectionId) return;
-      console.error('[SSHTerminal] WebSocket error:', error);
-      setStatus('error');
-    };
+      ws.onmessage = (event) => {
+        if (connectionIdRef.current !== myConnectionId) return;
 
-    ws.onclose = (event) => {
-      if (connectionIdRef.current !== myConnectionId) return;
-      console.log('[SSHTerminal] WebSocket closed:', event.code);
-      wsRef.current = null;
-      setStatus('disconnected');
-      term.writeln('\x1b[33mConnection closed\x1b[0m');
-    };
-  }, [sandboxId]);
+        try {
+          const message = JSON.parse(event.data);
+          console.log('[SSHTerminal] Message:', message.type, message.message || '');
+
+          switch (message.type) {
+            case 'status':
+              term.writeln(`\x1b[33m${message.message}\x1b[0m`);
+              break;
+            case 'connected':
+              setStatus('connected');
+              term.writeln(`\x1b[32m${message.message}\x1b[0m`);
+              term.writeln('');
+              break;
+            case 'output':
+              if (message.data) {
+                term.write(sanitizeTerminalChunk(message.data));
+              }
+              break;
+            case 'error':
+              setStatus('error');
+              term.writeln(`\x1b[31mError: ${message.message}\x1b[0m`);
+              break;
+            case 'exit':
+              term.writeln(`\x1b[33mSession ended with code: ${message.code}\x1b[0m`);
+              setStatus('disconnected');
+              wsRef.current = null;
+              break;
+          }
+        } catch (e) {
+          console.error('[SSHTerminal] Parse error:', e);
+        }
+      };
+
+      ws.onerror = (error) => {
+        if (connectionIdRef.current !== myConnectionId) return;
+        console.error('[SSHTerminal] WebSocket error:', error);
+        setStatus('error');
+      };
+
+      ws.onclose = (event) => {
+        if (connectionIdRef.current !== myConnectionId) return;
+        console.log('[SSHTerminal] WebSocket closed:', event.code);
+        wsRef.current = null;
+        setStatus('disconnected');
+        term.writeln('\x1b[33mConnection closed\x1b[0m');
+      };
+    },
+    [sandboxId],
+  );
 
   const reconnect = useCallback(() => {
     disconnect();
-    
+
     if (xtermRef.current && session?.access_token) {
       xtermRef.current.clear();
       xtermRef.current.writeln('\x1b[33mReconnecting...\x1b[0m');
-      
+
       setTimeout(() => {
         if (xtermRef.current) {
           connectWebSocket(session.access_token, xtermRef.current);
@@ -289,7 +298,9 @@ export const SSHTerminal = memo(function SSHTerminal({ sandboxId, className }: S
       fitAddonRef.current = fitAddon;
 
       term.writeln('\x1b[38;5;141m┌──────────────────────────────────────────┐\x1b[0m');
-      term.writeln('\x1b[38;5;141m│\x1b[0m   \x1b[1;38;5;183m◉\x1b[0m \x1b[1;37mKortix\x1b[0m \x1b[38;5;245m• Terminal\x1b[0m               \x1b[38;5;141m│\x1b[0m');
+      term.writeln(
+        '\x1b[38;5;141m│\x1b[0m   \x1b[1;38;5;183m◉\x1b[0m \x1b[1;37mKortix\x1b[0m \x1b[38;5;245m• Terminal\x1b[0m               \x1b[38;5;141m│\x1b[0m',
+      );
       term.writeln('\x1b[38;5;141m└──────────────────────────────────────────┘\x1b[0m');
       term.writeln('');
 
@@ -330,7 +341,7 @@ export const SSHTerminal = memo(function SSHTerminal({ sandboxId, className }: S
       xtermRef.current = null;
       fitAddonRef.current = null;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [disconnect, invalidateFileQueries]);
 
   useEffect(() => {
@@ -356,16 +367,18 @@ export const SSHTerminal = memo(function SSHTerminal({ sandboxId, className }: S
   }, [session?.access_token, sandboxId, termReady, getSSHCommand, connectWebSocket]);
 
   return (
-    <div className={cn(
-      "flex flex-col h-full overflow-hidden",
-      "bg-white/50 dark:bg-zinc-900/50",
-      className
-    )}>
-      <div 
+    <div
+      className={cn(
+        'flex h-full flex-col overflow-hidden',
+        'bg-white/50 dark:bg-zinc-900/50',
+        className,
+      )}
+    >
+      <div
         ref={terminalRef}
         className={cn(
-          "flex-1 overflow-hidden",
-          "bg-gradient-to-b from-zinc-50 to-white dark:from-[#0f0f14] dark:to-[#0a0a0d]"
+          'flex-1 overflow-hidden',
+          'bg-gradient-to-b from-zinc-50 to-white dark:from-[#0f0f14] dark:to-[#0a0a0d]',
         )}
         style={{ padding: '12px 16px' }}
       />

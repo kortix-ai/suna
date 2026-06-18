@@ -1,0 +1,39 @@
+# Cloudflare Worker that fronts the public API and routes to the active backend.
+# Deploy:
+#   wrangler deploy --env prod    # api.kortix.com      → api-kortix-router
+#   wrangler deploy --env dev     # dev-api.kortix.com  → dev-api-kortix-router
+#
+# Auth: a scoped CLOUDFLARE_API_TOKEN (Workers Scripts:Edit + Workers Routes:Edit
+# + DNS:Edit on kortix.com), or CLOUDFLARE_EMAIL + CLOUDFLARE_API_KEY (global).
+#
+# Flip a backend live WITHOUT redeploying code:
+#   wrangler secret put / or set the plain-text var ACTIVE_BACKEND in the dash,
+#   e.g. wrangler deploy --env prod --var ACTIVE_BACKEND:ecs-fargate
+# Values: "eks" (default, EKS) or "ecs-fargate" (the ECS Fargate fallback).
+
+main = "worker.mjs"
+compatibility_date = "2026-06-01"
+workers_dev = false
+account_id = "9785405a992435bb0c7bd19f9b6d26d5"
+
+# ── PROD: api.kortix.com ──────────────────────────────────────────────────────
+[env.prod]
+name = "api-kortix-router"
+routes = [{ pattern = "api.kortix.com", custom_domain = true }]
+
+[env.prod.vars]
+# ECS Fargate is the active backend; EKS is the warm standby. Flip with
+# `--var ACTIVE_BACKEND:eks` (instant, reversible). Both kept current by CI.
+ACTIVE_BACKEND = "ecs-fargate"
+BACKEND_EKS = "https://api-eks.kortix.com"
+BACKEND_ECS_FARGATE = "https://api-ecs-fargate.kortix.com"
+
+# ── DEV: dev-api.kortix.com ───────────────────────────────────────────────────
+[env.dev]
+name = "dev-api-kortix-router"
+routes = [{ pattern = "dev-api.kortix.com", custom_domain = true }]
+
+[env.dev.vars]
+ACTIVE_BACKEND = "ecs-fargate"
+BACKEND_EKS = "https://dev-api-eks.kortix.com"
+BACKEND_ECS_FARGATE = "https://dev-api-ecs-fargate.kortix.com"

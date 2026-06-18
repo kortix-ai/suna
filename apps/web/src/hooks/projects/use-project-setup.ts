@@ -192,7 +192,16 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
       );
 
     const connectorCount = connectors.data?.connectors.length ?? 0;
-    const memberCount = access.data?.members.length ?? 0;
+    // "Team invited" = at least one OTHER human has access. We dedupe by user_id
+    // and drop the current viewer: a solo owner can show up TWICE in `members`
+    // (once implicit as the account owner, once as a direct project-member row),
+    // which made `members.length > 1` falsely read as "already set up".
+    const viewerId = access.data?.viewer_user_id;
+    const otherMemberCount = new Set(
+      (access.data?.members ?? [])
+        .map((m) => m.user_id)
+        .filter((id) => !!id && id !== viewerId),
+    ).size;
     const sessionCount = sessions.data?.length ?? 0;
     // Done only once the count climbs above the starter baseline; until the
     // baseline is captured we read "not done yet" rather than falsely ticking.
@@ -219,7 +228,7 @@ export function useProjectSetup(projectId: string): ProjectSetupState {
         id: 'team',
         title: 'Invite your team',
         description: 'Bring teammates in so they can run sessions and review the work.',
-        done: memberCount > 1,
+        done: otherMemberCount > 0,
         optional: false,
         icon: Users,
         section: 'members' as const,

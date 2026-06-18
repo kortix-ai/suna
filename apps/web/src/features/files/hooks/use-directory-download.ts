@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useCallback, useRef } from 'react';
-import { toast } from '@/lib/toast';
+import { errorToast, progressToast, successToast } from '@/components/ui/toast';
+import { useCallback, useRef, useState } from 'react';
 import { downloadDirectory } from '../api/opencode-files';
 
 /**
@@ -23,40 +23,43 @@ export function useDirectoryDownload() {
 
   const rerender = useCallback(() => setTick((t) => t + 1), []);
 
-  const downloadDir = useCallback(async (dirPath: string, dirName: string) => {
-    if (activeRef.current.has(dirPath)) return; // already in progress for this exact path
+  const downloadDir = useCallback(
+    async (dirPath: string, dirName: string) => {
+      if (activeRef.current.has(dirPath)) return; // already in progress for this exact path
 
-    activeRef.current.add(dirPath);
-    rerender();
-
-    const toastId = toast.loading(`Zipping ${dirName}…`, { duration: Infinity });
-
-    try {
-      let lastPct = 0;
-
-      await downloadDirectory(dirPath, dirName, (progress) => {
-        const pct = Math.round(progress * 100);
-        if (pct !== lastPct) {
-          lastPct = pct;
-          toast.loading(`Zipping ${dirName}… ${pct}%`, { id: toastId, duration: Infinity });
-        }
-      });
-
-      toast.success(`Downloaded ${dirName}.zip`, { id: toastId, duration: 3000 });
-    } catch (err) {
-      toast.error(
-        `Failed to download ${dirName}: ${err instanceof Error ? err.message : 'Unknown error'}`,
-        { id: toastId, duration: 5000 },
-      );
-    } finally {
-      activeRef.current.delete(dirPath);
+      activeRef.current.add(dirPath);
       rerender();
-    }
-  }, [rerender]);
+
+      const toastId = progressToast(`Zipping ${dirName}…`);
+
+      try {
+        let lastPct = 0;
+
+        await downloadDirectory(dirPath, dirName, (progress) => {
+          const pct = Math.round(progress * 100);
+          if (pct !== lastPct) {
+            lastPct = pct;
+            progressToast(`Zipping ${dirName}… ${pct}%`, { id: toastId });
+          }
+        });
+
+        successToast(`Downloaded ${dirName}.zip`, { id: toastId, duration: 3000 });
+      } catch (err) {
+        errorToast(
+          `Failed to download ${dirName}: ${err instanceof Error ? err.message : 'Unknown error'}`,
+          { id: toastId, duration: 5000 },
+        );
+      } finally {
+        activeRef.current.delete(dirPath);
+        rerender();
+      }
+    },
+    [rerender],
+  );
 
   const isDownloading = useCallback(
     (path: string) => activeRef.current.has(path),
-    [],  // stable — reads the ref directly at call time
+    [], // stable — reads the ref directly at call time
   );
 
   return { downloadDir, isDownloading, downloadingPaths: activeRef.current };

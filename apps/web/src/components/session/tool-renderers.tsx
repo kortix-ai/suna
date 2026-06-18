@@ -132,6 +132,10 @@ import {
   DiffStat,
 } from '@/components/ui/status';
 import { openSafeExternalUrl, safeHttpUrl } from '@/lib/safe-url';
+import {
+  extractReadableHtml,
+  stripMarkupForToolOutput,
+} from '@/components/session/tool-renderers-sanitization';
 
 import {
   type ApplyPatchFile,
@@ -264,7 +268,7 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
     return () => clearTimeout(t);
   }, [isLoading, refreshKey]);
 
-  const displayLabel = label || (proxy ? `localhost:${proxy.port}` : url);
+  const displayLabel = label || (proxy ? 'App preview' : url);
 
   const navigateToPreviewTab = useCallback(() => {
     if (!navigationEnabled || !proxy) return;
@@ -277,7 +281,7 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
     if (sid && parsed) {
       useTabStore.getState().openTab({
         id: sessionPreviewTabId(sid),
-        title: label || `localhost:${proxy.port}`,
+        title: label || 'App preview',
         type: 'preview',
         href:
           typeof window !== 'undefined'
@@ -298,7 +302,7 @@ function useServicePreview(url: string, label?: string, sessionId?: string) {
     // Outside a session (no side panel host) → fall back to a standalone tab.
     openTab({
       id: `preview:${proxy.port}`,
-      title: label || `localhost:${proxy.port}`,
+      title: label || 'App preview',
       type: 'preview',
       href: `/p/${proxy.port}`,
       metadata: enrichPreviewMetadata({
@@ -340,6 +344,8 @@ type ServicePreviewState = ReturnType<typeof useServicePreview>;
 /** 16:9 iframe viewport — the chrome-less body of a service preview. */
 function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  // In the side panel, fill the available height; inline in chat keep 16:9.
+  const fill = useContext(ToolSurfaceContext) === 'panel';
   const {
     previewUrl,
     displayLabel,
@@ -358,7 +364,12 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
   // The standalone Browser tab works because it renders a plain full-size iframe;
   // we mirror that here.
   return (
-    <div className="relative aspect-video w-full overflow-hidden bg-white">
+    <div
+      className={cn(
+        'relative w-full overflow-hidden bg-white',
+        fill ? 'h-full' : 'aspect-video',
+      )}
+    >
       {(isLoading || !previewUrl) && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/60 z-10">
           <div className="flex items-center gap-2 text-muted-foreground">
@@ -398,6 +409,8 @@ function ServicePreviewViewport({ preview }: { preview: ServicePreviewState }) {
 
 function InlineServicePreview({ url, label }: { url: string; label?: string }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
+  // In the side panel, fill the available height; inline in chat keep 16:9.
+  const fill = useContext(ToolSurfaceContext) === 'panel';
   const preview = useServicePreview(url, label);
   const {
     navigationEnabled,
@@ -411,7 +424,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
   } = preview;
 
   return (
-    <div className="overflow-hidden">
+    <div className={cn('overflow-hidden', fill && 'flex h-full flex-col')}>
       {/* Mini browser toolbar */}
       <div className="flex items-center gap-1.5 h-8 px-2.5 bg-muted/40 border-b border-border/30 shrink-0">
         <div className="flex-1 flex items-center gap-1.5 min-w-0">
@@ -450,7 +463,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
               <ExternalLink className="h-3 w-3" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">{tHardcodedUi.raw('componentsSessionToolRenderers.line475JsxTextOpenInBrowser')}</TooltipContent>
+          <TooltipContent side="top">Open private preview</TooltipContent>
         </Tooltip>
         {proxy && (
           <Tooltip>
@@ -458,7 +471,7 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
               <Button
                 type="button"
                 onClick={navigateToPreviewTab}
-                variant="subtle"
+                variant="secondary"
                 size="xs"
                 disabled={!navigationEnabled}
               >
@@ -471,7 +484,13 @@ function InlineServicePreview({ url, label }: { url: string; label?: string }) {
         )}
       </div>
 
-      <ServicePreviewViewport preview={preview} />
+      {fill ? (
+        <div className="min-h-0 flex-1">
+          <ServicePreviewViewport preview={preview} />
+        </div>
+      ) : (
+        <ServicePreviewViewport preview={preview} />
+      )}
     </div>
   );
 }
@@ -2921,11 +2940,7 @@ function PtyKillTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
 
   const cleanOutput = useMemo(() => {
     if (!output) return '';
-    return (
-      output
-        .replace(/<\/?[\w_]+(?:\s[^>]*)?>[\s\S]*?(?:<\/[\w_]+>)?/g, '')
-        .trim() || output.replace(/<\/?[\w_]+[^>]*>/g, '').trim()
-    );
+    return stripMarkupForToolOutput(output);
   }, [output]);
 
   return (
@@ -3842,36 +3857,6 @@ function looksLikeHtml(s: string): boolean {
   const head = s.slice(0, 600).toLowerCase();
   if (head.includes('<!doctype html') || head.includes('<html')) return true;
   return /<\/(body|head|div|p|span|table)>/i.test(s.slice(0, 3000));
-}
-
-/** Strip an HTML document down to its <title> + readable text. */
-function extractReadableHtml(html: string): { title?: string; text: string } {
-  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-  const title = titleMatch ? decodeEntities(titleMatch[1].trim()) : undefined;
-  const text = decodeEntities(
-    html
-      .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-      .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-      .replace(/<head[\s\S]*?<\/head>/gi, ' ')
-      .replace(/<!--[\s\S]*?-->/g, ' ')
-      .replace(/<\/(p|div|section|article|li|h[1-6]|br|tr|ul|ol)\s*>/gi, '\n')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/[ \t]+/g, ' ')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim(),
-  );
-  return { title, text };
-}
-
-function decodeEntities(s: string): string {
-  return s
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/&apos;/g, "'");
 }
 
 function WebFetchTool({ part, defaultOpen, forceOpen, locked }: ToolProps) {
@@ -5257,6 +5242,9 @@ function ShowTool({ part, sessionId }: ToolProps) {
   const input = partInput(part);
   const running = useContext(ToolRunningContext);
   const { enabled: navigationEnabled } = useToolNavigation();
+  // `panel` surface = the side "Actions" panel → fill the full height.
+  // `inline` = the compact card in the chat column.
+  const fill = useContext(ToolSurfaceContext) === 'panel';
 
   const title = (input.title as string) || '';
   const description = (input.description as string) || '';
@@ -5338,7 +5326,14 @@ function ShowTool({ part, sessionId }: ToolProps) {
   // Loading state
   if (running && !type && !items) {
     return (
-      <div className="rounded-2xl border border-border/50 overflow-hidden bg-card">
+      <div
+        className={cn(
+          'overflow-hidden bg-card',
+          fill
+            ? 'flex h-full items-center justify-center'
+            : 'rounded-2xl border border-border/50',
+        )}
+      >
         <div className="flex items-center gap-3 px-5 py-4">
           <Loader2 className="size-4 animate-spin text-muted-foreground" />
           <TextShimmer duration={1} spread={2} className="text-sm">
@@ -5365,10 +5360,17 @@ function ShowTool({ part, sessionId }: ToolProps) {
 
   return (
     <div
-      className={cn('rounded-2xl border overflow-hidden bg-card', borderStyle)}
+      className={cn(
+        'overflow-hidden bg-card',
+        // Panel: fill the height as a seamless column (the side-panel frame
+        // already provides the rounded card chrome). Inline: themed card.
+        fill
+          ? 'flex h-full flex-col'
+          : cn('rounded-2xl border', borderStyle),
+      )}
     >
       {/* ── Header — always neutral colors, never themed ── */}
-      <div className="flex items-center gap-3 px-5 py-3 border-b border-border/15">
+      <div className="flex shrink-0 items-center gap-3 px-5 py-3 border-b border-border/15">
         <span className="text-muted-foreground">
           {showTypeIcon(headerIcon, 'size-4')}
         </span>
@@ -5422,14 +5424,14 @@ function ShowTool({ part, sessionId }: ToolProps) {
                   <ExternalLink className="size-3.5" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent side="top">{tHardcodedUi.raw('componentsSessionToolRenderers.line5016JsxTextOpenInBrowser')}</TooltipContent>
+              <TooltipContent side="top">Open private preview</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
                   type="button"
                   onClick={preview.navigateToPreviewTab}
-                  variant="subtle"
+                  variant="secondary"
                   size="xs"
                   disabled={!navigationEnabled || !preview.proxy}
                   className="ml-0.5"
@@ -5463,35 +5465,44 @@ function ShowTool({ part, sessionId }: ToolProps) {
         ) : null}
       </div>
 
-      {/* ── Content — carousel, website preview, or single ── */}
-      {isCarousel ? (
-        <ShowCarousel
-          items={items!}
-          LocalhostPreview={InlineServicePreview}
-          onIndexChange={setCarouselIndex}
-        />
-      ) : isWebsitePreview ? (
-        <ServicePreviewViewport preview={preview} />
-      ) : (
-        <>
-          <ShowContentRenderer
-            type={type}
-            title={title}
-            description={description}
-            path={path}
-            url={url}
-            content={content}
-            language={language}
-            aspectRatio={aspectRatio}
+      {/* ── Content — carousel, website preview, or single ──
+          In the panel the content area flexes to fill the column height. */}
+      <div className={cn(fill && 'flex min-h-0 flex-1 flex-col')}>
+        {isCarousel ? (
+          <ShowCarousel
+            items={items!}
             LocalhostPreview={InlineServicePreview}
+            onIndexChange={setCarouselIndex}
+            fill={fill}
           />
-          {description && !title && (
-            <div className="px-5 py-3 border-t border-border/15">
-              <p className="text-xs text-muted-foreground/70">{description}</p>
+        ) : isWebsitePreview ? (
+          <ServicePreviewViewport preview={preview} />
+        ) : (
+          <>
+            {/* The renderer grows to fill; a trailing description (when there's
+                no title) stays pinned below it. */}
+            <div className={cn(fill && 'min-h-0 flex-1 overflow-hidden')}>
+              <ShowContentRenderer
+                type={type}
+                title={title}
+                description={description}
+                path={path}
+                url={url}
+                content={content}
+                language={language}
+                aspectRatio={aspectRatio}
+                LocalhostPreview={InlineServicePreview}
+                fill={fill}
+              />
             </div>
-          )}
-        </>
-      )}
+            {description && !title && (
+              <div className="shrink-0 px-5 py-3 border-t border-border/15">
+                <p className="text-xs text-muted-foreground/70">{description}</p>
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -9133,6 +9144,13 @@ export function ToolPartRenderer({
     [onActivate, part.callID],
   );
 
+  // In the side panel, full-height tools (the `show` viewer) need the wrapper to
+  // pass the panel's height through so they can fill it. Other tools keep their
+  // natural height and let the panel body scroll.
+  const surface = useContext(ToolSurfaceContext);
+  const fillsPanel =
+    surface === 'panel' && (part.tool === 'show' || part.tool === 'show-user');
+
   // Skip todoread
   if (part.tool === 'todoread') return null;
 
@@ -9207,7 +9225,7 @@ export function ToolPartRenderer({
         <ToolDurationContext.Provider value={toolDurationMs}>
         <StalePendingContext.Provider value={isStalePending}>
         <BoundActivateContext.Provider value={boundActivate}>
-          <div className="relative">
+          <div className={cn('relative', fillsPanel && 'h-full')}>
             {toolElement}
 
             {/* Permission prompt */}

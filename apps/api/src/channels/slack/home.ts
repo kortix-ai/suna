@@ -66,7 +66,7 @@ const DEFAULT_HOME_HERO_URL =
   'https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&h=480&fit=crop&q=80&auto=format';
 
 function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRow[] }): Record<string, unknown> {
-  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
+  const dashboardBase = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/$/, '');
   const heroUrl = config.SLACK_HOME_HERO_URL || DEFAULT_HOME_HERO_URL;
   const blocks: Array<Record<string, unknown>> = [];
 
@@ -86,17 +86,17 @@ function buildHomeView(input: { projects: HomeProjectRow[]; recent: HomeRecentRo
       text: [
         '*Your AI command center, right here in Slack.*',
         '',
-        "`@`-mention me in any channel with a task and I'll read the repo, run the work in an isolated sandbox, and reply in the thread. Follow-ups stay in context.",
+        "`@`-mention me in any channel with a task and an agent gets on it — working across your connected tools and replying right in the thread. Follow-ups stay in context.",
       ].join('\n'),
     },
   });
   blocks.push({
     type: 'context',
     elements: [
-      { type: 'mrkdwn', text: '⚡  *Live plan streaming*' },
+      { type: 'mrkdwn', text: '⚡  *Live progress*' },
       { type: 'mrkdwn', text: '🧵  *Thread memory*' },
-      { type: 'mrkdwn', text: '📁  *File I/O*' },
-      { type: 'mrkdwn', text: '🔒  *Isolated sandbox*' },
+      { type: 'mrkdwn', text: '🔗  *Works across your tools*' },
+      { type: 'mrkdwn', text: '🔒  *Secure & isolated*' },
     ],
   });
 

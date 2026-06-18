@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { getTraceHeaders } from '../../lib/request-context';
 import { syncSandboxEnvForPrompt } from '../../projects/lib/sandbox-env-sync';
-import { canAccessPreviewSandbox } from '../../shared/preview-ownership';
+import { canAccessPreviewSandbox, canAccessSandboxSession } from '../../shared/preview-ownership';
 import {
   buildSandboxUpstreamHeaders,
   invalidatePreviewLink,
@@ -226,15 +226,23 @@ function shouldSyncProjectEnvBeforeProxy(port: number, method: string, path: str
 
 // === Core HTTP forwarder ======================================================
 //
-// Forwards one request to a sandbox port with ownership enforcement, the full
-// upstream auth header set, auto-wake retries, redirect rewriting, and CORS
-// injection. Exported so both proxy edges use it: the path-based Hono route
-// below and the subdomain handler (src/sandbox-proxy/subdomain.ts).
+// Forwards one request to a sandbox port with the full upstream auth header set,
+// auto-wake retries, redirect rewriting, and CORS injection. Exported so both
+// proxy edges use it: the path-based Hono route below and the subdomain handler
+// (src/sandbox-proxy/subdomain.ts).
+
+export type PreviewProxyAccess =
+  | { kind: 'principal'; userId: string }
+  | { kind: 'public_share' };
+
+function principalUserId(access: PreviewProxyAccess): string {
+  return access.kind === 'principal' ? access.userId : '';
+}
 
 export async function forwardToSandbox(
   sandboxId: string,
   port: number,
-  userId: string,
+  access: PreviewProxyAccess,
   method: string,
   remainingPath: string,
   queryString: string,
@@ -259,10 +267,30 @@ export async function forwardToSandbox(
   if (!record) {
     return jsonProxyError({ error: 'sandbox not found' }, 404);
   }
-  if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
+  const userId = principalUserId(access);
+  if (
+    access.kind === 'principal'
+    && !(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))
+  ) {
     throw new HTTPException(403, {
       message: `Not authorized to access this sandbox, userId: ${userId}, sandboxId: ${sandboxId}`,
     });
+  }
+  // The daemon port serves the session's OpenCode conversation + owner-synced
+  // secrets; gate it on SESSION visibility (mirrors loadVisibleSession on the
+  // REST side), not just account membership — closes the window where a member
+  // whose access was revoked/downgraded replays captured ids on the data path.
+  if (
+    access.kind === 'principal' &&
+    port === 8000 &&
+    !(await canAccessSandboxSession({
+      sessionId: record.sessionId,
+      projectId: record.projectId,
+      accountId: record.accountId,
+      userId,
+    }))
+  ) {
+    throw new HTTPException(403, { message: 'Not authorized to access this session' });
   }
   // /kortix/env is a platform-only control endpoint that writes the sandbox's
   // live secret env. The API reaches it server-to-server (postEnvToDaemon),
@@ -562,6 +590,19 @@ export async function resolvePreviewWsUpstream(opts: {
   if (!(await canAccessPreviewSandbox({ previewSandboxId: sandboxId, userId }))) {
     return { ok: false, status: 403, message: 'not authorized' };
   }
+  // Daemon port (8000) carries session conversation data — gate on session
+  // visibility, not just account membership (see forwardToSandbox).
+  if (
+    upstreamPort === 8000 &&
+    !(await canAccessSandboxSession({
+      sessionId: record.sessionId,
+      projectId: record.projectId,
+      accountId: record.accountId,
+      userId,
+    }))
+  ) {
+    return { ok: false, status: 403, message: 'not authorized for this session' };
+  }
   if (record.status !== 'active') {
     return { ok: false, status: 503, message: 'sandbox not ready' };
   }
@@ -623,7 +664,7 @@ preview.all('/:sandboxId/:port/*', async (c) => {
   const publicOrigin = `${proto}://${host}`;
 
   return forwardToSandbox(
-    sandboxId, port, userId, method, remainingPath, queryString,
+    sandboxId, port, { kind: 'principal', userId }, method, remainingPath, queryString,
     c.req.raw.headers, body, origin,
     undefined, // redirectPrefix → default `/v1/p/{sandbox}/{port}`
     publicOrigin,

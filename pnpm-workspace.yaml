@@ -49,8 +49,8 @@ catalog:
 
 # Moved from package.json -> pnpm.overrides (pnpm 11 dropped that location).
 overrides:
-  '@types/react': ^18.3.28
-  '@types/react-dom': ^18.3.7
+  '@types/react': ^19.1.17
+  '@types/react-dom': ^19.2.3
   'import-in-the-middle': 3.0.0
   'shiki': 3.23.0
   'next@>=15.0.0 <15.5.18': '15.5.18'

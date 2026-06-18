@@ -19,11 +19,11 @@ import { useTranslations } from 'next-intl';
  * XLS (legacy): Falls back to SheetJS for parsing (data only, minimal styles).
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/features/providers/auth-provider';
 import { cn } from '@/lib/utils';
 import { FileSpreadsheet, RefreshCw } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useAuth } from '@/components/AuthProvider';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import '@univerjs/preset-sheets-core/lib/index.css';
 
@@ -122,8 +122,10 @@ function argbToHex(color: unknown): string | undefined {
 
 function detectExcelFormat(buffer: ArrayBuffer): FileFormat {
   const v = new Uint8Array(buffer);
-  if (v.length >= 4 && v[0] === 0x50 && v[1] === 0x4B && v[2] === 0x03 && v[3] === 0x04) return 'xlsx';
-  if (v.length >= 8 && v[0] === 0xD0 && v[1] === 0xCF && v[2] === 0x11 && v[3] === 0xE0) return 'xls';
+  if (v.length >= 4 && v[0] === 0x50 && v[1] === 0x4b && v[2] === 0x03 && v[3] === 0x04)
+    return 'xlsx';
+  if (v.length >= 8 && v[0] === 0xd0 && v[1] === 0xcf && v[2] === 0x11 && v[3] === 0xe0)
+    return 'xls';
   return 'unknown';
 }
 
@@ -144,9 +146,19 @@ function parseCellRef(ref: string): { row: number; col: number } {
 }
 
 const BORDER_STYLE_MAP: Record<string, number> = {
-  thin: 1, medium: 2, thick: 3, dotted: 4, dashed: 5,
-  dashDot: 6, dashDotDot: 7, double: 8, hair: 9,
-  mediumDashed: 10, mediumDashDot: 11, mediumDashDotDot: 12, slantDashDot: 13,
+  thin: 1,
+  medium: 2,
+  thick: 3,
+  dotted: 4,
+  dashed: 5,
+  dashDot: 6,
+  dashDotDot: 7,
+  double: 8,
+  hair: 9,
+  mediumDashed: 10,
+  mediumDashDot: 11,
+  mediumDashDotDot: 12,
+  slantDashDot: 13,
 };
 
 function convertBorderSide(side: unknown): UniverBorderSide | undefined {
@@ -167,42 +179,97 @@ function convertStyle(exStyle: Record<string, unknown> | undefined): UniverStyle
   // Font
   const font = exStyle.font as Record<string, unknown> | undefined;
   if (font) {
-    if (font.bold) { us.bl = 1; hasStyle = true; }
-    if (font.italic) { us.it = 1; hasStyle = true; }
-    if (font.underline) { us.ul = { s: 1 }; hasStyle = true; }
-    if (font.strike) { us.st = { s: 1 }; hasStyle = true; }
+    if (font.bold) {
+      us.bl = 1;
+      hasStyle = true;
+    }
+    if (font.italic) {
+      us.it = 1;
+      hasStyle = true;
+    }
+    if (font.underline) {
+      us.ul = { s: 1 };
+      hasStyle = true;
+    }
+    if (font.strike) {
+      us.st = { s: 1 };
+      hasStyle = true;
+    }
     const colorHex = argbToHex(font.color);
-    if (colorHex) { us.cl = { rgb: colorHex }; hasStyle = true; }
-    if (typeof font.size === 'number' && font.size !== 11) { us.fs = font.size; hasStyle = true; }
-    if (typeof font.name === 'string') { us.ff = font.name; hasStyle = true; }
+    if (colorHex) {
+      us.cl = { rgb: colorHex };
+      hasStyle = true;
+    }
+    if (typeof font.size === 'number' && font.size !== 11) {
+      us.fs = font.size;
+      hasStyle = true;
+    }
+    if (typeof font.name === 'string') {
+      us.ff = font.name;
+      hasStyle = true;
+    }
   }
 
   // Fill
   const fill = exStyle.fill as Record<string, unknown> | undefined;
   if (fill && fill.type === 'pattern' && fill.pattern === 'solid') {
     const bgHex = argbToHex(fill.fgColor);
-    if (bgHex) { us.bg = { rgb: bgHex }; hasStyle = true; }
+    if (bgHex) {
+      us.bg = { rgb: bgHex };
+      hasStyle = true;
+    }
   }
 
   // Alignment
   const align = exStyle.alignment as Record<string, unknown> | undefined;
   if (align) {
-    if (align.horizontal === 'center') { us.ht = 1; hasStyle = true; }
-    else if (align.horizontal === 'right') { us.ht = 2; hasStyle = true; }
-    else if (align.horizontal === 'left') { us.ht = 0; hasStyle = true; }
-    if (align.vertical === 'middle') { us.vt = 1; hasStyle = true; }
-    else if (align.vertical === 'bottom') { us.vt = 2; hasStyle = true; }
-    if (align.wrapText) { us.tb = 1; hasStyle = true; }
+    if (align.horizontal === 'center') {
+      us.ht = 1;
+      hasStyle = true;
+    } else if (align.horizontal === 'right') {
+      us.ht = 2;
+      hasStyle = true;
+    } else if (align.horizontal === 'left') {
+      us.ht = 0;
+      hasStyle = true;
+    }
+    if (align.vertical === 'middle') {
+      us.vt = 1;
+      hasStyle = true;
+    } else if (align.vertical === 'bottom') {
+      us.vt = 2;
+      hasStyle = true;
+    }
+    if (align.wrapText) {
+      us.tb = 1;
+      hasStyle = true;
+    }
   }
 
   // Borders
   const border = exStyle.border as Record<string, unknown> | undefined;
   if (border) {
     const bd: UniverStyle['bd'] = {};
-    const t = convertBorderSide(border.top); if (t) { bd.t = t; hasStyle = true; }
-    const b = convertBorderSide(border.bottom); if (b) { bd.b = b; hasStyle = true; }
-    const l = convertBorderSide(border.left); if (l) { bd.l = l; hasStyle = true; }
-    const r = convertBorderSide(border.right); if (r) { bd.r = r; hasStyle = true; }
+    const t = convertBorderSide(border.top);
+    if (t) {
+      bd.t = t;
+      hasStyle = true;
+    }
+    const b = convertBorderSide(border.bottom);
+    if (b) {
+      bd.b = b;
+      hasStyle = true;
+    }
+    const l = convertBorderSide(border.left);
+    if (l) {
+      bd.l = l;
+      hasStyle = true;
+    }
+    const r = convertBorderSide(border.right);
+    if (r) {
+      bd.r = r;
+      hasStyle = true;
+    }
     if (hasStyle) us.bd = bd;
   }
 
@@ -227,7 +294,9 @@ function resolveCellValue(raw: unknown): { v: string | number | boolean; t: numb
 
   // Rich text
   if (typeof raw === 'object' && 'richText' in (raw as Record<string, unknown>)) {
-    const text = ((raw as { richText: { text: string }[] }).richText || []).map((t) => t.text).join('');
+    const text = ((raw as { richText: { text: string }[] }).richText || [])
+      .map((t) => t.text)
+      .join('');
     return text ? { v: text, t: 1 } : null;
   }
 
@@ -256,14 +325,21 @@ function resolveCellValue(raw: unknown): { v: string | number | boolean; t: numb
 
 // ── Parse XLSX → Univer workbook data ───────────────────────────────────
 
-async function parseToUniverData(arrayBuffer: ArrayBuffer, format: FileFormat, fileName: string): Promise<UniverWorkbookData> {
+async function parseToUniverData(
+  arrayBuffer: ArrayBuffer,
+  format: FileFormat,
+  fileName: string,
+): Promise<UniverWorkbookData> {
   if (format === 'xls') {
     return parseXlsToUniverData(arrayBuffer, fileName);
   }
   return parseXlsxToUniverData(arrayBuffer, fileName);
 }
 
-async function parseXlsxToUniverData(arrayBuffer: ArrayBuffer, fileName: string): Promise<UniverWorkbookData> {
+async function parseXlsxToUniverData(
+  arrayBuffer: ArrayBuffer,
+  fileName: string,
+): Promise<UniverWorkbookData> {
   const ExcelJS = await import('exceljs');
   const workbook = new ExcelJS.Workbook();
 
@@ -281,87 +357,88 @@ async function parseXlsxToUniverData(arrayBuffer: ArrayBuffer, fileName: string)
   const sheets: Record<string, UniverSheetData> = {};
 
   try {
-  workbook.eachSheet((ws) => {
-    const sheetId = `sheet-${sheetOrder.length}`;
-    const sheetName = ws.name || `Sheet ${sheetOrder.length + 1}`;
-    sheetOrder.push(sheetId);
+    workbook.eachSheet((ws) => {
+      const sheetId = `sheet-${sheetOrder.length}`;
+      const sheetName = ws.name || `Sheet ${sheetOrder.length + 1}`;
+      sheetOrder.push(sheetId);
 
-    const cellData: Record<number, Record<number, UniverCell>> = {};
-    const mergeData: UniverMerge[] = [];
-    let maxRow = 0;
-    let maxCol = 0;
+      const cellData: Record<number, Record<number, UniverCell>> = {};
+      const mergeData: UniverMerge[] = [];
+      let maxRow = 0;
+      let maxCol = 0;
 
-    // Extract cell data with styles
-    ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-      const rowIdx = rowNumber - 1;
-      if (rowIdx > maxRow) maxRow = rowIdx;
+      // Extract cell data with styles
+      ws.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+        const rowIdx = rowNumber - 1;
+        if (rowIdx > maxRow) maxRow = rowIdx;
 
-      row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-        const colIdx = colNumber - 1;
-        if (colIdx > maxCol) maxCol = colIdx;
+        row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+          const colIdx = colNumber - 1;
+          if (colIdx > maxCol) maxCol = colIdx;
 
-        const resolved = resolveCellValue(cell.value);
-        if (!resolved && !cell.style) return;
+          const resolved = resolveCellValue(cell.value);
+          if (!resolved && !cell.style) return;
 
-        const uCell: UniverCell = {};
-        if (resolved) {
-          uCell.v = resolved.v;
-          uCell.t = resolved.t;
+          const uCell: UniverCell = {};
+          if (resolved) {
+            uCell.v = resolved.v;
+            uCell.t = resolved.t;
+          }
+
+          const style = convertStyle(cell.style as Record<string, unknown> | undefined);
+          if (style) uCell.s = style;
+
+          if (uCell.v != null || uCell.s) {
+            if (!cellData[rowIdx]) cellData[rowIdx] = {};
+            cellData[rowIdx][colIdx] = uCell;
+          }
+        });
+      });
+
+      // Extract merged cells
+      const merges = (
+        ws as unknown as { _merges?: Record<string, unknown>; model?: { merges?: string[] } }
+      )?.model?.merges;
+      if (merges && Array.isArray(merges)) {
+        for (const range of merges) {
+          const parts = String(range).split(':');
+          if (parts.length === 2) {
+            const start = parseCellRef(parts[0]);
+            const end = parseCellRef(parts[1]);
+            mergeData.push({
+              startRow: start.row,
+              startColumn: start.col,
+              endRow: end.row,
+              endColumn: end.col,
+            });
+          }
         }
+      }
 
-        const style = convertStyle(cell.style as Record<string, unknown> | undefined);
-        if (style) uCell.s = style;
-
-        if (uCell.v != null || uCell.s) {
-          if (!cellData[rowIdx]) cellData[rowIdx] = {};
-          cellData[rowIdx][colIdx] = uCell;
+      // Extract column widths
+      const columnData: Record<number, { w?: number }> = {};
+      ws.columns?.forEach((col, idx) => {
+        if (col.width) {
+          // ExcelJS width is in characters, Univer uses pixels (~7px per character)
+          columnData[idx] = { w: Math.round(col.width * 7.5) };
         }
       });
+
+      sheets[sheetId] = {
+        id: sheetId,
+        name: sheetName,
+        rowCount: Math.max(maxRow + 50, 200),
+        columnCount: Math.max(maxCol + 10, 26),
+        defaultRowHeight: 24,
+        defaultColumnWidth: 80,
+        cellData,
+        mergeData,
+        columnData: Object.keys(columnData).length > 0 ? columnData : undefined,
+        tabColor: (ws.properties as unknown as Record<string, unknown>)?.tabColor
+          ? argbToHex((ws.properties as unknown as Record<string, { argb?: string }>).tabColor)
+          : undefined,
+      };
     });
-
-    // Extract merged cells
-    const merges = (ws as unknown as { _merges?: Record<string, unknown>; model?: { merges?: string[] } })
-      ?.model?.merges;
-    if (merges && Array.isArray(merges)) {
-      for (const range of merges) {
-        const parts = String(range).split(':');
-        if (parts.length === 2) {
-          const start = parseCellRef(parts[0]);
-          const end = parseCellRef(parts[1]);
-          mergeData.push({
-            startRow: start.row,
-            startColumn: start.col,
-            endRow: end.row,
-            endColumn: end.col,
-          });
-        }
-      }
-    }
-
-    // Extract column widths
-    const columnData: Record<number, { w?: number }> = {};
-    ws.columns?.forEach((col, idx) => {
-      if (col.width) {
-        // ExcelJS width is in characters, Univer uses pixels (~7px per character)
-        columnData[idx] = { w: Math.round(col.width * 7.5) };
-      }
-    });
-
-    sheets[sheetId] = {
-      id: sheetId,
-      name: sheetName,
-      rowCount: Math.max(maxRow + 50, 200),
-      columnCount: Math.max(maxCol + 10, 26),
-      defaultRowHeight: 24,
-      defaultColumnWidth: 80,
-      cellData,
-      mergeData,
-      columnData: Object.keys(columnData).length > 0 ? columnData : undefined,
-      tabColor: (ws.properties as unknown as Record<string, unknown>)?.tabColor
-        ? argbToHex((ws.properties as unknown as Record<string, { argb?: string }>).tabColor)
-        : undefined,
-    };
-  });
   } catch (e) {
     console.warn('[XlsxRenderer] ExcelJS extraction failed, falling back to SheetJS:', e);
     return parseXlsToUniverData(arrayBuffer, fileName);
@@ -382,7 +459,10 @@ async function parseXlsxToUniverData(arrayBuffer: ArrayBuffer, fileName: string)
   };
 }
 
-async function parseXlsToUniverData(arrayBuffer: ArrayBuffer, fileName: string): Promise<UniverWorkbookData> {
+async function parseXlsToUniverData(
+  arrayBuffer: ArrayBuffer,
+  fileName: string,
+): Promise<UniverWorkbookData> {
   const XLSX = await import('xlsx');
   const wb = XLSX.read(arrayBuffer, { type: 'array', cellDates: true });
 
@@ -496,7 +576,11 @@ export function XlsxRenderer({
     if (univerInstanceRef.current) {
       const { dispose, container } = univerInstanceRef.current;
       univerInstanceRef.current = null;
-      try { dispose(); } catch { /* Univer may already be disposed */ }
+      try {
+        dispose();
+      } catch {
+        /* Univer may already be disposed */
+      }
       // Remove the imperatively-created container from the wrapper
       if (container.parentNode) {
         container.parentNode.removeChild(container);
@@ -581,7 +665,13 @@ export function XlsxRenderer({
 
         // Store for cleanup
         univerInstanceRef.current = {
-          dispose: () => { try { univerAPI.dispose(); } catch { /* ignore */ } },
+          dispose: () => {
+            try {
+              univerAPI.dispose();
+            } catch {
+              /* ignore */
+            }
+          },
           container,
         };
 
@@ -600,14 +690,20 @@ export function XlsxRenderer({
                   permission.setWorkbookEditPermission(unitId, false);
                   permission.setPermissionDialogVisible(false);
                 }
-              } catch { /* permission API may differ */ }
+              } catch {
+                /* permission API may differ */
+              }
               if (!cancelled) setIsLoading(false);
             }
           });
-        } catch { /* event API may differ between versions */ }
+        } catch {
+          /* event API may differ between versions */
+        }
 
         // Fallback: if Rendered event never fires, still clear loading
-        setTimeout(() => { if (!cancelled) setIsLoading(false); }, 2000);
+        setTimeout(() => {
+          if (!cancelled) setIsLoading(false);
+        }, 2000);
       } catch (e: unknown) {
         console.error('[XlsxRenderer] Error:', e);
         if (!cancelled) {
@@ -624,7 +720,7 @@ export function XlsxRenderer({
       mountedRef.current = false;
       teardown();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [xlsxPath, resolvedSandboxId, session?.access_token]);
 
   // ── Retry handler ─────────────────────────────────────────────────
@@ -668,18 +764,33 @@ export function XlsxRenderer({
         const { UniverSheetsCorePreset } = await import('@univerjs/preset-sheets-core');
         const sheetsCoreEnUS = (await import('@univerjs/preset-sheets-core/locales/en-US')).default;
 
-        if (cancelled) { wrapper.removeChild(container); return; }
+        if (cancelled) {
+          wrapper.removeChild(container);
+          return;
+        }
 
         const { univerAPI } = createUniver({
           locale: LocaleType.EN_US,
           locales: { [LocaleType.EN_US]: mergeLocales(sheetsCoreEnUS) },
           presets: [
-            UniverSheetsCorePreset({ container, toolbar: false, contextMenu: true, formulaBar: false, footer: { sheetBar: true, statisticBar: true } }),
+            UniverSheetsCorePreset({
+              container,
+              toolbar: false,
+              contextMenu: true,
+              formulaBar: false,
+              footer: { sheetBar: true, statisticBar: true },
+            }),
           ],
         });
 
         univerInstanceRef.current = {
-          dispose: () => { try { univerAPI.dispose(); } catch { /* */ } },
+          dispose: () => {
+            try {
+              univerAPI.dispose();
+            } catch {
+              /* */
+            }
+          },
           container,
         };
 
@@ -695,13 +806,19 @@ export function XlsxRenderer({
                   perm.setWorkbookEditPermission(wb.getId(), false);
                   perm.setPermissionDialogVisible(false);
                 }
-              } catch { /* */ }
+              } catch {
+                /* */
+              }
               if (!cancelled) setIsLoading(false);
             }
           });
-        } catch { /* */ }
+        } catch {
+          /* */
+        }
 
-        setTimeout(() => { if (!cancelled) setIsLoading(false); }, 2000);
+        setTimeout(() => {
+          if (!cancelled) setIsLoading(false);
+        }, 2000);
       } catch (e: unknown) {
         if (!cancelled) {
           setError((e as Error)?.message || 'Failed to load spreadsheet');
@@ -710,23 +827,29 @@ export function XlsxRenderer({
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [xlsxPath, fileName, teardown]);
 
   // ── Error state ───────────────────────────────────────────────────
   if (error) {
     return (
-      <div className={cn('w-full h-full flex items-center justify-center', className)}>
-        <div className="text-center space-y-3">
-          <div className="w-16 h-16 mx-auto rounded-full bg-muted flex items-center justify-center">
-            <FileSpreadsheet className="h-8 w-8 text-muted-foreground" />
+      <div className={cn('flex h-full w-full items-center justify-center', className)}>
+        <div className="space-y-3 text-center">
+          <div className="bg-muted mx-auto flex h-16 w-16 items-center justify-center rounded-full">
+            <FileSpreadsheet className="text-muted-foreground h-8 w-8" />
           </div>
           <div>
-            <h3 className="text-lg font-medium text-foreground">{tHardcodedUi.raw('componentsFileRenderersXlsxRenderer.line722JsxTextFailedToLoadSpreadsheet')}</h3>
-            <p className="text-xs text-muted-foreground mt-1">{error}</p>
+            <h3 className="text-foreground text-lg font-medium">
+              {tHardcodedUi.raw(
+                'componentsFileRenderersXlsxRenderer.line722JsxTextFailedToLoadSpreadsheet',
+              )}
+            </h3>
+            <p className="text-muted-foreground mt-1 text-xs">{error}</p>
           </div>
           <Button onClick={handleRetry} variant="outline" size="sm">
-            <RefreshCw className="w-3 h-3 mr-2" />
+            <RefreshCw className="mr-2 h-3 w-3" />
             Retry
           </Button>
         </div>
@@ -736,22 +859,22 @@ export function XlsxRenderer({
 
   // ── Render ────────────────────────────────────────────────────────
   return (
-    <div className={cn('w-full h-full relative', className)}>
+    <div className={cn('relative h-full w-full', className)}>
       {/*
         Stable wrapper div — React owns this.
         Univer's container is created/destroyed imperatively as a child,
         so React never tries to reconcile Univer's DOM nodes.
       */}
-      <div
-        ref={wrapperRef}
-        className="w-full h-full"
-        style={{ minHeight: 300 }}
-      />
+      <div ref={wrapperRef} className="h-full w-full" style={{ minHeight: 300 }} />
 
       {/* Loading overlay */}
       {isLoading && (
-        <div className="absolute inset-0 z-50 bg-background/90 backdrop-blur-sm flex items-center justify-center">
-          <div className="text-sm text-muted-foreground animate-pulse">{tHardcodedUi.raw('componentsFileRenderersXlsxRenderer.line751JsxTextLoadingSpreadsheet')}</div>
+        <div className="bg-background/90 absolute inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
+          <div className="text-muted-foreground animate-pulse text-sm">
+            {tHardcodedUi.raw(
+              'componentsFileRenderersXlsxRenderer.line751JsxTextLoadingSpreadsheet',
+            )}
+          </div>
         </div>
       )}
     </div>

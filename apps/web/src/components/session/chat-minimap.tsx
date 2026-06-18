@@ -1,9 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { type Turn, type MessageWithParts, isTextPart, type TextPart } from '@/ui';
 import { cn } from '@/lib/utils';
 import { stripKortixSystemTags } from '@/lib/utils/kortix-system-tags';
+import { stripHtmlTags } from '@/lib/utils/strip-html-tags';
+import { isTextPart, type MessageWithParts, type TextPart, type Turn } from '@/ui';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 interface ChatMinimapProps {
   turns: Turn[];
@@ -25,9 +26,7 @@ const MAX_DASHES = 12;
 function extractUserText(turn: Turn): string {
   const textParts = turn.userMessage.parts.filter(isTextPart) as TextPart[];
   const raw = textParts.map((p) => p.text).join(' ');
-  return stripKortixSystemTags(raw)
-    .replace(/<[^>]+>/g, '')
-    .trim();
+  return stripHtmlTags(stripKortixSystemTags(raw)).trim();
 }
 
 function truncate(text: string, maxLen: number): string {
@@ -109,9 +108,7 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
       { root: scrollEl, threshold: [0, 0.25, 0.5, 0.75, 1] },
     );
 
-    contentEl
-      .querySelectorAll<HTMLElement>('[data-turn-id]')
-      .forEach((el) => observer.observe(el));
+    contentEl.querySelectorAll<HTMLElement>('[data-turn-id]').forEach((el) => observer.observe(el));
 
     return () => observer.disconnect();
   }, [scrollRef, contentRef, items]);
@@ -165,7 +162,7 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
 
   return (
     <div
-      className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 z-10 pointer-events-none"
+      className="pointer-events-none absolute top-1/2 right-3 z-10 -translate-y-1/2 sm:right-4"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
@@ -174,7 +171,7 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
         className={cn(
           'flex flex-col items-end py-1',
           'transition-opacity duration-200 ease-out',
-          hovered ? 'opacity-0 pointer-events-none' : 'opacity-100',
+          hovered ? 'pointer-events-none opacity-0' : 'opacity-100',
         )}
       >
         {dashes.map(({ item, index }) => {
@@ -185,7 +182,7 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
               type="button"
               onClick={() => handleJump(item.id)}
               title={truncate(item.text, 60)}
-              className="group pointer-events-auto flex items-center justify-end px-1.5 py-[3px] cursor-pointer"
+              className="group pointer-events-auto flex cursor-pointer items-center justify-end px-1.5 py-[3px]"
             >
               <span
                 className={cn(
@@ -203,14 +200,14 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
       {/* Expanded jump list — every message, on hover */}
       <div
         className={cn(
-          'absolute right-0 top-1/2 -translate-y-1/2 origin-right',
+          'absolute top-1/2 right-0 origin-right -translate-y-1/2',
           'transition-all duration-200 ease-out',
           hovered
-            ? 'opacity-100 scale-100 pointer-events-auto'
-            : 'opacity-0 scale-95 pointer-events-none',
+            ? 'pointer-events-auto scale-100 opacity-100'
+            : 'pointer-events-none scale-95 opacity-0',
         )}
       >
-        <div className="flex flex-col gap-0.5 w-[268px] max-h-[60vh] overflow-y-auto scrollbar-hide rounded-2xl border border-border/40 bg-popover/95 p-1.5 shadow-xl backdrop-blur-md">
+        <div className="scrollbar-hide border-border/40 bg-popover/95 flex max-h-[60vh] w-[268px] flex-col gap-0.5 overflow-y-auto rounded-2xl border p-1.5 shadow-xl backdrop-blur-md">
           {items.map((item) => {
             const isActive = item.id === activeId;
             return (
@@ -233,7 +230,7 @@ export function ChatMinimap({ turns, scrollRef, contentRef }: ChatMinimapProps) 
                 <span
                   className={cn(
                     'flex-1 truncate text-xs leading-snug',
-                    isActive ? 'font-medium text-foreground' : 'text-muted-foreground',
+                    isActive ? 'text-foreground font-medium' : 'text-muted-foreground',
                   )}
                 >
                   {truncate(item.text, 44)}

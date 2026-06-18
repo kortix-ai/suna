@@ -1,4 +1,5 @@
 import { loadAuth, loadAuthForHost, type Auth } from './api/auth.ts';
+import { hasEnvTokenHost } from './api/config.ts';
 import { ApiError, clientFromAuth, type ApiClient } from './api/client.ts';
 import { loadLink, resolveProjectId } from './project-link.ts';
 import { C, status } from './style.ts';
@@ -17,8 +18,11 @@ interface ProjectContextOpts {
  *
  * Host resolution order:
  *   1. --host flag (per-invocation override)
- *   2. .kortix/link.json's `host` field (per-repo binding)
- *   3. globally active host (~/.config/kortix/config.json)
+ *   2. KORTIX_CLI_TOKEN / KORTIX_EXECUTOR_TOKEN (platform-injected sandbox
+ *      auth — resolved through `loadAuth()`; a committed link host has no
+ *      credentials inside a sandbox, so the env token must win)
+ *   3. .kortix/link.json's `host` field (per-repo binding)
+ *   4. globally active host (~/.config/kortix/config.json)
  *
  * Backward-compatible call shape: callers that pass a string get the
  * `(projectArg)` behavior; callers that need --host pass an object.
@@ -31,9 +35,9 @@ export function resolveProjectContext(
       ? { projectArg: optsOrProjectArg }
       : optsOrProjectArg ?? {};
 
-  // Resolve the host: explicit flag → link.json's host → active.
+  // Resolve the host: explicit flag → sandbox env token → link.json's host → active.
   let hostFromLink: string | undefined;
-  if (!opts.hostArg) {
+  if (!opts.hostArg && !hasEnvTokenHost()) {
     hostFromLink = loadLink()?.host ?? undefined;
   }
   const hostName = opts.hostArg ?? hostFromLink;
@@ -60,6 +64,16 @@ export function resolveProjectContext(
     return null;
   }
   return { client: clientFromAuth(auth), projectId, auth };
+}
+
+/**
+ * Emit a value as pretty JSON to stdout — the machine-readable output mode
+ * for read commands (`--json`). Agents parse this instead of scraping the
+ * human-formatted tables. Keep it dumb: print what the command already has
+ * (ideally the raw API payload) so the JSON shape tracks the REST API.
+ */
+export function emitJson(data: unknown): void {
+  process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
 }
 
 /** Print an HTTP error in a consistent style + return exit code 1. */

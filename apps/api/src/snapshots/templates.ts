@@ -11,13 +11,13 @@
  * adapter (currently just Daytona) is resolved via `getSandboxProvider`.
  */
 
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { and, eq, isNull, ne, or } from 'drizzle-orm';
 import { sandboxTemplates, projects } from '@kortix/db';
 type DbSandboxTemplate = typeof sandboxTemplates.$inferSelect;
 import { db } from '../shared/db';
 import { readManifest } from '../projects/triggers';
 import { resolveCommitSha, readRepoFile, type GitBackedProject } from '../projects/git';
-import { SANDBOX_VERSION } from '../config';
+import { SANDBOX_VERSION, config } from '../config';
 import {
   buildDefaultSandboxTemplate,
   DEFAULT_SANDBOX_SLUG,
@@ -60,9 +60,14 @@ const AGENT_BROWSER_VERSION = '0.27.0';
 // itself is not hashed into the snapshot fingerprint, so a layer change needs a
 // manual version bump to invalidate cached images). v2: bake OpenCode config
 // deps into /opt/kortix/opencode-config-deps for offline boot-time install.
-const RUNTIME_LAYER_VERSION = 'baked-oc-migration-v9-noka-ab';
+// v10: warm a real opencode project instance at build time (instance-warm) so the
+// one-time first-instance plugin/model/ripgrep cost is cached into the image
+// instead of paid on the session hot path (6–60s → ~2–4s cold start).
+// v11: bake a real Chromium (Playwright, cross-arch) for agent-browser so the
+// browser-automation skill works out of the box with no runtime download.
+const RUNTIME_LAYER_VERSION = 'baked-chromium-v11';
 const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
-const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
+const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
 const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
 
 function readPositiveIntEnv(name: string, fallback: number): number {
@@ -433,6 +438,9 @@ export async function recordTemplateBuilt(
   args: { snapshotName: string; contentHash: string; builtFromCommit?: string | null; provider?: string },
 ): Promise<void> {
   if (!templateId) return;
+  // Read the row first so we know which snapshot we're about to repoint AWAY
+  // from (the predecessor) and on which provider it lives.
+  const prev = await getTemplateById(templateId).catch(() => null);
   await db
     .update(sandboxTemplates)
     .set({
@@ -450,6 +458,58 @@ export async function recordTemplateBuilt(
     })
     .where(eq(sandboxTemplates.templateId, templateId))
     .catch(() => {});
+
+  // Reap-on-repoint: the row now points at the freshly-built snapshot, so the
+  // one it referenced before is superseded. Drop it immediately instead of
+  // leaving it to accumulate against the org-wide 100-snapshot quota until the
+  // lazy, pressure-gated GC eventually notices.
+  const oldName = prev?.providerSnapshotName ?? null;
+  if (oldName && oldName !== args.snapshotName) {
+    await reapPredecessorSnapshot(templateId, oldName, args.provider ?? prev?.provider ?? 'daytona');
+  }
+}
+
+/** Managed snapshot namespaces we own and may reap. Anything else (Daytona's
+ *  own base/sample images, etc.) is left strictly alone. */
+const REAPABLE_SNAPSHOT_PREFIXES = ['kortix-default-', 'kortix-tpl-', 'kortix-wproj-'];
+
+/**
+ * Delete a snapshot a template row just stopped pointing at. Best-effort and
+ * heavily guarded: gated by KORTIX_SNAPSHOT_REAP_PREDECESSOR, restricted to our
+ * managed namespaces, and skipped if ANY other template row still references the
+ * name (snapshots are content-addressed, so two projects with byte-identical
+ * inputs share one image). Never throws — a failed reap just falls back to the
+ * quota GC, and a cross-env row that still pointed at this (identical) name
+ * self-heals via the boot-time rebuild-and-retry path.
+ */
+async function reapPredecessorSnapshot(
+  templateId: string,
+  snapshotName: string,
+  provider: string,
+): Promise<void> {
+  try {
+    if (!config.KORTIX_SNAPSHOT_REAP_PREDECESSOR) return;
+    if (!REAPABLE_SNAPSHOT_PREFIXES.some((p) => snapshotName.startsWith(p))) return;
+    // Still referenced by a DIFFERENT template row? Leave it shared.
+    const stillUsed = await db
+      .select({ id: sandboxTemplates.templateId })
+      .from(sandboxTemplates)
+      .where(
+        and(
+          eq(sandboxTemplates.providerSnapshotName, snapshotName),
+          ne(sandboxTemplates.templateId, templateId),
+        ),
+      )
+      .limit(1);
+    if (stillUsed.length > 0) return;
+    await getSandboxProvider(provider).deleteSnapshot(snapshotName);
+    console.log(`[snapshots] reaped superseded snapshot ${snapshotName} (provider=${provider})`);
+  } catch (err) {
+    console.warn(
+      `[snapshots] reap of superseded snapshot ${snapshotName} failed (left for quota GC):`,
+      err instanceof Error ? err.message : err,
+    );
+  }
 }
 
 export async function recordTemplateFailed(
@@ -624,8 +684,12 @@ let runtimeFingerprintInflight: Promise<string> | null = null;
  *
  * Concurrent first-callers share the same in-flight promise so a session-boot
  * burst doesn't spawn N parallel tree walks.
+ *
+ * Exported for the warm-snapshot baker (snapshots/warm-bake.ts), which derives
+ * the warm-base name from this fingerprint so a new release (SANDBOX_VERSION
+ * bump / runtime source change) automatically gets a fresh warm base.
  */
-async function currentRuntimeArtifactFingerprint(): Promise<string> {
+export async function currentRuntimeArtifactFingerprint(): Promise<string> {
   const key = `${SANDBOX_VERSION}:${RUNTIME_LAYER_VERSION}:${OPENCODE_VERSION}:${AGENT_BROWSER_VERSION}`;
   if (runtimeFingerprintCache?.key === key) return runtimeFingerprintCache.value;
   if (runtimeFingerprintInflight) return runtimeFingerprintInflight;

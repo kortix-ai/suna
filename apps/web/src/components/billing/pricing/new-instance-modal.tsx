@@ -2,24 +2,24 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { X, Check, Loader2, ArrowRight } from 'lucide-react';
+import { INSTANCE_CONFIG } from '@/components/instance/config';
 import { Button } from '@/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { cn } from '@/lib/utils';
-import { toast } from '@/lib/toast';
-import { isBillingEnabled } from '@/lib/config';
-import { createCheckoutSession, type ServerType } from '@/lib/api/billing';
-import { useServerTypes } from '@/hooks/instance/use-server-types';
-import { useAuth } from '@/components/AuthProvider';
-import { INSTANCE_CONFIG } from '@/components/instance/config';
 import { Skeleton } from '@/components/ui/skeleton';
+import { useAuth } from '@/features/providers/auth-provider';
+import { useServerTypes } from '@/hooks/instance/use-server-types';
+import { createCheckoutSession } from '@/lib/api/billing';
+import { isBillingEnabled } from '@/lib/config';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { ArrowRight, Check, Loader2, X } from 'lucide-react';
 import Image from 'next/image';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ─── Tier metadata (display-only) ────────────────────────────────────────────
 
 const TIER_META: Record<string, { subtitle: string }> = {
-  pro:   { subtitle: 'Great starting point for most workloads' },
+  pro: { subtitle: 'Great starting point for most workloads' },
   power: { subtitle: 'For heavier agents and parallel tasks' },
   ultra: { subtitle: 'Maximum compute for demanding pipelines' },
 };
@@ -39,7 +39,10 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
   const dialogRef = useRef<HTMLDivElement>(null);
   const defaultApplied = useRef(false);
 
-  const defaultReturnUrl = typeof window !== 'undefined' ? `${window.location.origin}/projects?subscription=success` : '/projects';
+  const defaultReturnUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/projects?subscription=success`
+      : '/projects';
   const resolvedReturnUrl = returnUrl || defaultReturnUrl;
 
   const location = INSTANCE_CONFIG.fallbackRegion; // EU-only
@@ -48,7 +51,10 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
   const [error, setError] = useState<string | null>(null);
 
   const { data: serverTypesData, isLoading: typesLoading } = useServerTypes(location);
-  const serverTypes = useMemo(() => serverTypesData?.serverTypes ?? [], [serverTypesData?.serverTypes]);
+  const serverTypes = useMemo(
+    () => serverTypesData?.serverTypes ?? [],
+    [serverTypesData?.serverTypes],
+  );
 
   // Set default selection once when types load — never overwrite user choice.
   useEffect(() => {
@@ -68,7 +74,12 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !isLoading) { e.preventDefault(); onOpenChange(false); } };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isLoading) {
+        e.preventDefault();
+        onOpenChange(false);
+      }
+    };
     document.addEventListener('keydown', onKey);
     dialogRef.current?.focus();
     return () => document.removeEventListener('keydown', onKey);
@@ -78,7 +89,9 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
     if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
-    return () => { document.body.style.overflow = prev; };
+    return () => {
+      document.body.style.overflow = prev;
+    };
   }, [open]);
 
   const selectedType = serverTypes.find((t) => t.name === selected) || null;
@@ -87,7 +100,9 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
     try {
       setIsLoading(true);
       setError(null);
-      const base = resolvedReturnUrl.startsWith('http') ? resolvedReturnUrl : `${window.location.origin}${resolvedReturnUrl}`;
+      const base = resolvedReturnUrl.startsWith('http')
+        ? resolvedReturnUrl
+        : `${window.location.origin}${resolvedReturnUrl}`;
       const sep = base.includes('?') ? '&' : '?';
       const response = await createCheckoutSession({
         tier_key: 'pro',
@@ -97,7 +112,10 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
         ...(selected ? { server_type: selected } : {}),
         location,
       });
-      if (response.url || response.checkout_url) { window.location.href = response.url || response.checkout_url!; return; }
+      if (response.url || response.checkout_url) {
+        window.location.href = response.url || response.checkout_url!;
+        return;
+      }
       if (response.status === 'subscription_created' || response.status === 'no_change') {
         toast.success(response.message || 'Your Kortix is on its way');
         onOpenChange(false);
@@ -122,32 +140,61 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
   const price = selectedType ? `$${selectedType.priceMonthlyMarkup.toFixed(0)}` : '–';
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4" role="dialog" aria-modal="true">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !isLoading && onOpenChange(false)} />
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+    >
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={() => !isLoading && onOpenChange(false)}
+      />
 
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="relative bg-background rounded-2xl border border-border overflow-hidden flex flex-col max-h-[90vh] w-full max-w-[460px] outline-none animate-in fade-in-0 zoom-in-[0.97] duration-150"
+        className="bg-background border-border animate-in fade-in-0 zoom-in-[0.97] relative flex max-h-[90vh] w-full max-w-[460px] flex-col overflow-hidden rounded-2xl border duration-150 outline-none"
       >
         {/* Close */}
-        <Button onClick={() => onOpenChange(false)} variant="ghost" size="icon-sm" className="absolute top-3.5 right-3.5 z-10" aria-label="Close">
+        <Button
+          onClick={() => onOpenChange(false)}
+          variant="ghost"
+          size="icon-sm"
+          className="absolute top-3.5 right-3.5 z-10"
+          aria-label="Close"
+        >
           <X className="size-4" />
         </Button>
 
         {/* Scrollable content */}
-        <div className="flex-1 min-h-0 overflow-y-auto">
-
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {/* Hero */}
-          <div className="flex flex-col items-center pt-7 pb-5 px-6 border-b border-border bg-neutral-50/50 dark:bg-neutral-950/50">
-            <Image src="/kortix-computer.png" alt="Kortix Computer" width={140} height={140} className="object-contain mb-4" priority />
-            <h2 className="text-xl font-semibold tracking-tight text-foreground text-center">{title || 'Your Kortix'}</h2>
-            <p className="text-sm text-muted-foreground mt-1 text-center max-w-[280px]">{tHardcodedUi.raw('componentsBillingPricingNewInstanceModal.line143JsxTextOneMachineAllYourToolsAgentsThatRun')}</p>
+          <div className="border-border flex flex-col items-center border-b bg-neutral-50/50 px-6 pt-7 pb-5 dark:bg-neutral-950/50">
+            <Image
+              src="/kortix-computer.png"
+              alt="Kortix Computer"
+              width={140}
+              height={140}
+              className="mb-4 object-contain"
+              priority
+            />
+            <h2 className="text-foreground text-center text-xl font-semibold tracking-tight">
+              {title || 'Your Kortix'}
+            </h2>
+            <p className="text-muted-foreground mt-1 max-w-[280px] text-center text-sm">
+              {tHardcodedUi.raw(
+                'componentsBillingPricingNewInstanceModal.line143JsxTextOneMachineAllYourToolsAgentsThatRun',
+              )}
+            </p>
           </div>
 
           {/* Tier selection */}
           <div className="px-5 pt-5 pb-4">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">{tHardcodedUi.raw('componentsBillingPricingNewInstanceModal.line149JsxTextChooseYourMachine')}</p>
+            <p className="text-muted-foreground mb-3 text-xs font-medium tracking-wider uppercase">
+              {tHardcodedUi.raw(
+                'componentsBillingPricingNewInstanceModal.line149JsxTextChooseYourMachine',
+              )}
+            </p>
 
             {typesLoading ? (
               <div className="space-y-2.5">
@@ -156,7 +203,11 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
                 <Skeleton className="h-[72px] w-full rounded-2xl" />
               </div>
             ) : (
-              <RadioGroup value={selected ?? undefined} onValueChange={setSelected} className="gap-2.5">
+              <RadioGroup
+                value={selected ?? undefined}
+                onValueChange={setSelected}
+                className="gap-2.5"
+              >
                 {serverTypes.map((t) => {
                   const isSelected = selected === t.name;
                   const isRecommended = t.name === 'pro';
@@ -165,7 +216,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
                     <label
                       key={t.name}
                       className={cn(
-                        'relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border-2 transition-colors cursor-pointer',
+                        'relative flex cursor-pointer items-center gap-3.5 rounded-2xl border-2 px-4 py-3.5 transition-colors',
                         isSelected
                           ? 'border-foreground bg-foreground/[0.03]'
                           : 'border-border hover:border-foreground/20',
@@ -173,7 +224,7 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
                     >
                       {/* Recommended badge */}
                       {isRecommended && (
-                        <span className="absolute -top-2.5 right-3 text-xs font-semibold bg-foreground text-background px-2 py-0.5 rounded-full">
+                        <span className="bg-foreground text-background absolute -top-2.5 right-3 rounded-full px-2 py-0.5 text-xs font-semibold">
                           Recommended
                         </span>
                       )}
@@ -181,19 +232,27 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
                       <RadioGroupItem value={t.name} />
 
                       {/* Specs */}
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-semibold text-foreground tabular-nums">
-                          {t.cores}{tHardcodedUi.raw('componentsBillingPricingNewInstanceModal.line185JsxTextVcpu')}{t.memory} GB
+                      <div className="min-w-0 flex-1">
+                        <span className="text-foreground text-sm font-semibold tabular-nums">
+                          {t.cores}
+                          {tHardcodedUi.raw(
+                            'componentsBillingPricingNewInstanceModal.line185JsxTextVcpu',
+                          )}
+                          {t.memory} GB
                         </span>
                         {meta && (
-                          <span className="text-xs text-muted-foreground/70 block mt-0.5">{meta.subtitle}</span>
+                          <span className="text-muted-foreground/70 mt-0.5 block text-xs">
+                            {meta.subtitle}
+                          </span>
                         )}
                       </div>
 
                       {/* Price */}
-                      <div className="text-right shrink-0">
-                        <span className="text-lg font-semibold tabular-nums text-foreground">${t.priceMonthlyMarkup.toFixed(0)}</span>
-                        <span className="text-xs text-muted-foreground">/mo</span>
+                      <div className="shrink-0 text-right">
+                        <span className="text-foreground text-lg font-semibold tabular-nums">
+                          ${t.priceMonthlyMarkup.toFixed(0)}
+                        </span>
+                        <span className="text-muted-foreground text-xs">/mo</span>
                       </div>
                     </label>
                   );
@@ -204,8 +263,12 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
 
           {/* Includes */}
           <div className="px-5 pb-5">
-            <div className="rounded-2xl bg-muted/40 px-4 py-3">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">{tHardcodedUi.raw('componentsBillingPricingNewInstanceModal.line207JsxTextEveryPlanIncludes')}</p>
+            <div className="bg-muted/40 rounded-2xl px-4 py-3">
+              <p className="text-muted-foreground mb-2 text-xs font-medium tracking-wider uppercase">
+                {tHardcodedUi.raw(
+                  'componentsBillingPricingNewInstanceModal.line207JsxTextEveryPlanIncludes',
+                )}
+              </p>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1">
                 {[
                   'Always-on cloud computer',
@@ -216,8 +279,8 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
                   '100+ LLM providers',
                 ].map((f) => (
                   <div key={f} className="flex items-start gap-1.5 py-0.5">
-                    <Check className="size-3 text-muted-foreground/50 shrink-0 mt-[1px]" />
-                    <span className="text-xs text-muted-foreground leading-tight">{f}</span>
+                    <Check className="text-muted-foreground/50 mt-[1px] size-3 shrink-0" />
+                    <span className="text-muted-foreground text-xs leading-tight">{f}</span>
                   </div>
                 ))}
               </div>
@@ -227,22 +290,39 @@ export function NewInstanceModal({ open, onOpenChange, returnUrl, title }: NewIn
 
         {/* Error */}
         {error && (
-          <div className="mx-5 mb-3 rounded-2xl border border-destructive bg-destructive/10 px-3 py-2.5">
-            <p className="text-xs text-destructive">{error}</p>
+          <div className="border-destructive bg-destructive/10 mx-5 mb-3 rounded-2xl border px-3 py-2.5">
+            <p className="text-destructive text-xs">{error}</p>
           </div>
         )}
 
         {/* Footer CTA */}
-        <div className="shrink-0 border-t border-border px-5 py-4 flex items-center justify-between gap-4">
+        <div className="border-border flex shrink-0 items-center justify-between gap-4 border-t px-5 py-4">
           <div>
             <div className="flex items-baseline gap-0.5">
-              <span className="text-xl font-semibold tabular-nums text-foreground">{price}</span>
-              <span className="text-xs text-muted-foreground">/mo</span>
+              <span className="text-foreground text-xl font-semibold tabular-nums">{price}</span>
+              <span className="text-muted-foreground text-xs">/mo</span>
             </div>
-            <p className="text-xs text-muted-foreground/60 mt-0.5">{tHardcodedUi.raw('componentsBillingPricingNewInstanceModal.line241JsxTextCancelAnytime')}</p>
+            <p className="text-muted-foreground/60 mt-0.5 text-xs">
+              {tHardcodedUi.raw(
+                'componentsBillingPricingNewInstanceModal.line241JsxTextCancelAnytime',
+              )}
+            </p>
           </div>
-          <Button className="h-11 px-7 text-sm font-semibold" disabled={isLoading || !selected} onClick={handleCta}>
-            {isLoading ? <Loader2 className="size-4 animate-spin" /> : <>{tHardcodedUi.raw('componentsBillingPricingNewInstanceModal.line244JsxTextGetYourKortix')}<ArrowRight className="size-3.5 ml-1.5" /></>}
+          <Button
+            className="h-11 px-7 text-sm font-semibold"
+            disabled={isLoading || !selected}
+            onClick={handleCta}
+          >
+            {isLoading ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <>
+                {tHardcodedUi.raw(
+                  'componentsBillingPricingNewInstanceModal.line244JsxTextGetYourKortix',
+                )}
+                <ArrowRight className="ml-1.5 size-3.5" />
+              </>
+            )}
           </Button>
         </div>
       </div>

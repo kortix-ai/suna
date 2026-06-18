@@ -25,6 +25,7 @@ import {
 
 import { UnifiedMarkdown } from '@/components/markdown';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { MarketplaceSectionButton } from '@/components/projects/customize/marketplace-section-button';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/empty-state';
 import { InfoBanner } from '@/components/ui/info-banner';
@@ -94,20 +95,23 @@ export function CommandsView({ projectId }: { projectId: string }) {
           title="Commands"
           count={commands.length}
           actions={
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1 px-2 text-xs"
-              onClick={() => configure.start(newConfigPrompt('command'))}
-              disabled={configure.pending}
-            >
-              {configure.pending ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Plus className="h-3 w-3" />
-              )}
-              New
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <MarketplaceSectionButton projectId={projectId} />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 px-2 text-xs"
+                onClick={() => configure.start(newConfigPrompt('command'))}
+                disabled={configure.pending}
+              >
+                {configure.pending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Plus className="h-3 w-3" />
+                )}
+                New
+              </Button>
+            </div>
           }
         />
 

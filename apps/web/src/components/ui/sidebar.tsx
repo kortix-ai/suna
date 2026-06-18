@@ -43,7 +43,9 @@ type SidebarContextProps = {
   toggleSidebar: () => void;
 };
 
-export const SidebarContext = React.createContext<SidebarContextProps | null>(null);
+export const SidebarContext = React.createContext<SidebarContextProps | null>(
+  null,
+);
 
 function useSidebar() {
   const context = React.useContext(SidebarContext);
@@ -289,7 +291,7 @@ function SidebarTrigger({
       }}
       {...props}
     >
-      <PanelLeftClose className='!h-5 !w-5' />
+      <PanelLeftClose className="!h-5 !w-5" />
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
   );
@@ -339,7 +341,8 @@ function SidebarInput({
   ...props
 }: React.ComponentProps<typeof Input>) {
   return (
-    <Input type="text"
+    <Input
+      type="text"
       data-slot="sidebar-input"
       data-sidebar="input"
       className={cn('bg-background h-8 w-full shadow-none', className)}
@@ -353,7 +356,10 @@ function SidebarHeader({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="sidebar-header"
       data-sidebar="header"
-      className={cn('flex flex-col gap-2 p-2 transition-[padding] duration-300 ease-out transform-gpu', className)}
+      className={cn(
+        'flex flex-col gap-2 p-2 transition-[padding] duration-300 ease-out transform-gpu',
+        className,
+      )}
       {...props}
     />
   );
@@ -364,7 +370,10 @@ function SidebarFooter({ className, ...props }: React.ComponentProps<'div'>) {
     <div
       data-slot="sidebar-footer"
       data-sidebar="footer"
-      className={cn('flex flex-col gap-2 p-2 transition-[padding] duration-300 ease-out transform-gpu', className)}
+      className={cn(
+        'flex flex-col gap-2 p-2 transition-[padding] duration-300 ease-out transform-gpu',
+        className,
+      )}
       {...props}
     />
   );
@@ -585,7 +594,7 @@ function SidebarMenuAction({
         'peer-data-[size=lg]/menu-button:top-2.5',
         'group-data-[collapsible=icon]:hidden',
         showOnHover &&
-        'peer-data-[active=true]/menu-button:text-sidebar-accent-foreground group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 md:opacity-0',
+          'peer-data-[active=true]/menu-button:text-sidebar-accent-foreground group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 md:opacity-0',
         className,
       )}
       {...props}

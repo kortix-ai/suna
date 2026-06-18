@@ -54,6 +54,7 @@ import {
   editConfigPrompt,
 } from '@/components/projects/customize/use-configure-thread';
 import { CustomizeSectionHeader } from '@/components/projects/customize/customize-section-header';
+import { MarketplaceSectionButton } from '@/components/projects/customize/marketplace-section-button';
 
 type Agent = ProjectConfigSummary['agents'][number];
 
@@ -108,20 +109,23 @@ export function AgentsView({ projectId }: { projectId: string }) {
           title="Agents"
           count={agents.length}
           actions={
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 gap-1 px-2 text-xs"
-              onClick={() => configure.start(newConfigPrompt('agent'))}
-              disabled={configure.pending}
-            >
-              {configure.pending ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <Plus className="h-3 w-3" />
-              )}
-              New
-            </Button>
+            <div className="flex items-center gap-1.5">
+              <MarketplaceSectionButton projectId={projectId} />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 gap-1 px-2 text-xs"
+                onClick={() => configure.start(newConfigPrompt('agent'))}
+                disabled={configure.pending}
+              >
+                {configure.pending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Plus className="h-3 w-3" />
+                )}
+                New
+              </Button>
+            </div>
           }
         />
 

@@ -35,6 +35,13 @@ terraform apply
 - Pin `api_image` to an immutable release tag/sha — never `:latest` in prod.
 - Store prod secrets in Secrets Manager (separate from dev); reference ARNs in
   `api_secrets`. The execution role reads only those ARNs.
+- **`api_secrets` MUST include `MANAGED_GIT_GITHUB_TOKEN`** — the managed-git org
+  PAT used by `POST /v1/projects/provision` to create repos under `managed-kortix`.
+  Without it the code falls back to the GitHub App installation, which lacks
+  Administration:write → `403 Resource not accessible by integration` → 502 on
+  EVERY "Create project". (EKS loads the whole bundle via `envFrom` so it tolerates
+  a missing key; ECS enumerates each `secrets` entry, so a dropped ref hard-fails.)
+  A `terraform apply` that omits it will silently re-break project creation.
 - Consider locking `alb_ingress_cidrs` (in the `ecs-api` module call) to
   Cloudflare's published IP ranges so the ALB only accepts proxied traffic.
 - Use a separate remote state backend / AWS account from dev. `.tfvars` and

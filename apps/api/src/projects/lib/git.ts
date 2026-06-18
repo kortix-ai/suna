@@ -4,21 +4,36 @@ import { validateSecretKey } from '../../repositories/api-keys';
 import { isAccountToken, isKortixToken } from '../../shared/crypto';
 import { db } from '../../shared/db';
 import { getBackend, managedGithubInstallId, managedGithubToken, type GitConnectionRef, type GitScope, type UpstreamGit } from '../git-backends';
+import { isLegacyFreestyleGitConfigured, mintLegacyFreestyleRepoToken } from '../git-backends/legacy-freestyle';
 import { buildGitHubAppInstallUrl, createInstallationToken, getRepo, isGithubAppConfigured, type GitHubAuthContext, type GitHubRepo } from '../github';
-import { decryptProjectSecret, encryptProjectSecret } from '../secrets';
+import { decryptProjectSecret, encryptProjectSecret, getProjectSecretValue } from '../secrets';
 import { accountGithubInstallationStates, accountGithubInstallations, accountMembers, projectGitConnections, projectGitCredentials, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, gt, inArray, isNull } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { grantProjectRole } from './access';
-import { ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, deriveProjectName, normalizeJsonObject, normalizeString } from './serializers';
+import { ttlMemo } from '../../shared/ttl-memo';
+import { PROJECT_GIT_AUTH_SECRET_NAME, ProjectGitConnectionRow, ProjectGitCredentialRow, ProjectRow, deriveProjectName, normalizeJsonObject, normalizeString } from './serializers';
+
+// Memoized briefly (positive hits only): this runs on every project-scoped
+// request, and prod pays a cross-region roundtrip per DB statement. A revoked
+// membership lingers for at most one TTL window; a fresh grant is visible
+// immediately because null results are never cached.
+const loadAccountMembership = ttlMemo({
+  ttlMs: 15_000,
+  keyFn: (userId: string, accountId: string) => `${userId}|${accountId}`,
+  loader: async (userId: string, accountId: string) => {
+    const [membership] = await db
+      .select({ accountId: accountMembers.accountId, accountRole: accountMembers.accountRole })
+      .from(accountMembers)
+      .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
+      .limit(1);
+    return membership ?? null;
+  },
+  shouldCache: (membership) => membership !== null,
+});
 
 export async function getAccountMembership(userId: string, accountId: string) {
-  const [membership] = await db
-    .select({ accountId: accountMembers.accountId, accountRole: accountMembers.accountRole })
-    .from(accountMembers)
-    .where(and(eq(accountMembers.userId, userId), eq(accountMembers.accountId, accountId)))
-    .limit(1);
-  return membership ?? null;
+  return loadAccountMembership(userId, accountId);
 }
 
 
@@ -430,6 +445,23 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
     }
   }
 
+  if (remote.provider === 'freestyle' && remote.authMethod === 'managed' && remote.externalRepoId) {
+    if (!(await isLegacyFreestyleGitConfigured())) return { authSource: 'none' };
+    try {
+      const push = await mintLegacyFreestyleRepoToken({
+        repoId: remote.externalRepoId,
+        identityId: remote.ref,
+      });
+      return {
+        auth: { token: push.token, source: 'managed' },
+        authSource: 'managed',
+      };
+    } catch (err) {
+      console.warn(`[projects] failed to mint legacy Freestyle token for ${project.projectId}:`, err);
+      return { authSource: 'none' };
+    }
+  }
+
   if (remote.provider === 'github' && remote.authMethod === 'github_app') {
     const repo = parseGitHubRepoUrl(remote.upstreamUrl ?? project.repoUrl);
     if (!repo) return { authSource: 'none' };
@@ -473,6 +505,17 @@ export async function resolveProjectGitAuth(project: ProjectRow): Promise<{
         authSource: 'project_credential',
       };
     }
+  }
+
+  const legacyToken = await getProjectSecretValue(project.projectId, PROJECT_GIT_AUTH_SECRET_NAME);
+  if (legacyToken) {
+    return {
+      auth: {
+        token: legacyToken,
+        source: 'project_credential',
+      },
+      authSource: 'project_credential',
+    };
   }
 
   return { authSource: 'none' };

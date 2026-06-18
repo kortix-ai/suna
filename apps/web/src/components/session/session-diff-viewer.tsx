@@ -59,15 +59,15 @@ function FileDiffCard({ diff, viewMode, isFullscreen }: { diff: FileDiff; viewMo
     if (diff.patch) return diff.patch;
     if (!diff.before && !diff.after) return '';
     return createTwoFilesPatch(
-      diff.file, diff.file,
+      diff.file || '', diff.file || '',
       diff.before || '', diff.after || '',
       '', '',
     );
   }, [diff.file, diff.patch, diff.before, diff.after]);
 
   const hasDiffContent = patch.length > 0;
-  const filename = diff.file.split('/').pop() || diff.file;
-  const directory = diff.file.includes('/') ? diff.file.substring(0, diff.file.lastIndexOf('/')) : '';
+  const filename = diff.file?.split('/').pop() || diff.file;
+  const directory = diff.file?.includes('/') ? diff.file?.substring(0, diff.file?.lastIndexOf('/')) : '';
 
   return (
     <div className="rounded-2xl border border-border/50 overflow-hidden bg-card">

@@ -8,14 +8,12 @@ export interface QuestionInfo {
   custom?: boolean;
 }
 
-export interface TurnStream {
+export interface LiveTurn {
   channel: string;
   ts: string;
   token: string;
   triggerTs: string;
   steps: StreamTaskChunk[];
-  streaming: boolean;
-  placeholderActive: boolean;
   expiry: number;
   finalized: boolean;
   projectId: string;
@@ -75,6 +73,8 @@ export interface SlackEvent {
 
 export interface SlackInteractionPayload {
   type: string;
+  // Present on shortcuts / message actions (type === 'message_action').
+  callback_id?: string;
   team?: { id: string };
   user?: { id: string };
   channel?: { id: string };

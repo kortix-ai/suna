@@ -15,12 +15,17 @@ export {
   type SlackInstallInput,
 } from './install-store';
 export {
+  buildSlackManifest,
   generateSlackManifest,
   resolveBaseUrl,
+  SLACK_BOT_SCOPES,
+  CANONICAL_DEV,
+  CANONICAL_PROD,
   type SlackManifest,
   type GenerateManifestInput,
+  type BuildManifestConfig,
 } from './slack-manifest';
-export { slackWebhookApp, relayTurnStep, relayTurnAnswer } from './slack-webhook';
+export { slackWebhookApp, relayTurnStep, relayTurnAnswer, relayTurnEnd } from './slack-webhook';
 export { telegramWebhookApp } from './telegram-webhook';
 export { slackOauthApp, buildSlackInstallUrl } from './slack-oauth';
 export { slackOauthMode } from './slack-oauth-mode';

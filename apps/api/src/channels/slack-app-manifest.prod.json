@@ -1,0 +1,133 @@
+{
+  "display_information": {
+    "name": "Kortix",
+    "description": "Your AI workforce, in Slack — @-mention an agent and it does the real work.",
+    "long_description": "Kortix is the AI command center for your company — your agents, integrations, automations, and memory in one place, with a workforce of AI agents that does real work across your tools, around the clock. This app brings that workforce into Slack.\n\nInvite the bot to a channel, @-mention it with a task, and an agent gets on it: working across your connected tools and replying in the thread as it goes. Follow-ups stay in the same conversation — Kortix keeps the full context.\n\n*What it can do*\n• Research, search your tools, and summarize threads or documents\n• Pull data, analyze it, and drop reports, decks, and CSVs back into the thread\n• Draft replies, docs, and updates — then post them or hand them off\n• Run multi-step work across thousands of connected integrations\n• Kick off and check on automations that run on a schedule or a trigger\n• Read repos, edit files, and open PRs too — when that's the job\n\n*A few things teammates ask it*\n• `@Kortix pull yesterday's sign-ups, group them by source, and drop the CSV here`\n• `@Kortix summarize this thread and draft a reply to the customer`\n• `@Kortix build me a one-pager on our Q2 numbers`\n• `@Kortix what changed across our tools this week?`\n\nConnect a Kortix project once, then talk to Kortix like you'd talk to anyone else on the team. No slash commands. No copy-paste. Just @-mention and reply.\n\n*AI Disclaimer*\nKortix uses AI to generate responses and perform tasks. While we strive for accuracy, AI-generated content may occasionally contain errors. Review important outputs before acting on them.\n\nManaged by Kortix · https://kortix.com",
+    "background_color": "#0a0a0a"
+  },
+  "features": {
+    "app_home": {
+      "home_tab_enabled": true,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
+    },
+    "assistant_view": {
+      "assistant_description": "Your AI workforce in Slack — give Kortix a task and an agent does the real work across your tools, then replies right here.",
+      "suggested_prompts": []
+    },
+    "bot_user": {
+      "display_name": "Kortix",
+      "always_online": true
+    },
+    "slash_commands": [
+      {
+        "command": "/kortix",
+        "url": "https://api.kortix.com/v1/webhooks/slack/commands",
+        "description": "Manage your Kortix project from Slack",
+        "usage_hint": "[projects | switch | agents | models | session | whoami | help]",
+        "should_escape": false
+      }
+    ],
+    "shortcuts": [
+      {
+        "name": "Open in Kortix",
+        "type": "message",
+        "callback_id": "open_session",
+        "description": "Open this thread's Kortix session on the web"
+      }
+    ]
+  },
+  "oauth_config": {
+    "redirect_urls": [
+      "https://api.kortix.com/v1/webhooks/slack/oauth/callback"
+    ],
+    "scopes": {
+      "bot": [
+        "app_mentions:read",
+        "assistant:write",
+        "bookmarks:read",
+        "bookmarks:write",
+        "calls:read",
+        "calls:write",
+        "canvases:read",
+        "canvases:write",
+        "channels:history",
+        "channels:join",
+        "channels:manage",
+        "channels:read",
+        "chat:write",
+        "chat:write.customize",
+        "chat:write.public",
+        "commands",
+        "conversations.connect:manage",
+        "conversations.connect:read",
+        "conversations.connect:write",
+        "dnd:read",
+        "emoji:read",
+        "files:read",
+        "files:write",
+        "groups:history",
+        "groups:read",
+        "groups:write",
+        "im:history",
+        "im:read",
+        "im:write",
+        "links.embed:write",
+        "links:read",
+        "links:write",
+        "lists:read",
+        "lists:write",
+        "metadata.message:read",
+        "mpim:history",
+        "mpim:read",
+        "mpim:write",
+        "pins:read",
+        "pins:write",
+        "reactions:read",
+        "reactions:write",
+        "reminders:read",
+        "reminders:write",
+        "remote_files:read",
+        "remote_files:share",
+        "remote_files:write",
+        "team.billing:read",
+        "team.preferences:read",
+        "team:read",
+        "usergroups:read",
+        "usergroups:write",
+        "users.profile:read",
+        "users:read",
+        "users:read.email",
+        "users:write",
+        "workflow.steps:execute"
+      ]
+    }
+  },
+  "settings": {
+    "event_subscriptions": {
+      "request_url": "https://api.kortix.com/v1/webhooks/slack",
+      "bot_events": [
+        "app_mention",
+        "app_home_opened",
+        "assistant_thread_started",
+        "assistant_thread_context_changed",
+        "message.im",
+        "message.channels",
+        "message.groups",
+        "message.mpim",
+        "reaction_added",
+        "reaction_removed",
+        "member_joined_channel",
+        "file_shared",
+        "link_shared"
+      ]
+    },
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://api.kortix.com/v1/webhooks/slack/interactivity"
+    },
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}

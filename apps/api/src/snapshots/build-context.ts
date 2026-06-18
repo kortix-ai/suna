@@ -37,6 +37,12 @@ const AGENT_CLI_SRC_PATH = process.env.KORTIX_SNAPSHOT_AGENT_CLI_PATH
   || resolve(REPO_ROOT, 'apps/sandbox/agent-cli');
 const EXECUTOR_SDK_SRC_PATH = process.env.KORTIX_SNAPSHOT_EXECUTOR_SDK_PATH
   || resolve(REPO_ROOT, 'packages/executor-sdk');
+// Canonical starter `.kortix/opencode` surface (pty plugin + standard tools +
+// skills). Staged into the context so the layer can warm a real opencode project
+// instance at build time (see dockerfile-layer.ts `opencodeConfigPath`), moving
+// the one-time first-instance cost off the session hot path.
+const OPENCODE_CONFIG_SRC_PATH = process.env.KORTIX_SNAPSHOT_OPENCODE_CONFIG_PATH
+  || resolve(REPO_ROOT, 'packages/starter/templates/base/.kortix/opencode');
 
 const OPENCODE_VERSION = '1.15.10';
 const AGENT_BROWSER_VERSION = '0.27.0';
@@ -48,7 +54,7 @@ function readPositiveIntEnv(name: string, fallback: number): number {
 
 /** Default resource spec, shared by every provider when a template omits one. */
 export const DEFAULT_CPU = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_CPU', 2);
-export const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 4);
+export const DEFAULT_MEMORY_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_MEMORY_GB', 6);
 export const DEFAULT_DISK_GB = readPositiveIntEnv('KORTIX_DEFAULT_SANDBOX_DISK_GB', 20);
 
 /** The entrypoint baked into every snapshot (provider default). */
@@ -103,6 +109,16 @@ export async function stageBuildContext(
   await copyFile(ENTRYPOINT_PATH, join(contextDir, 'kortix-entrypoint'));
   await cp(AGENT_CLI_SRC_PATH, join(contextDir, 'kortix-agent-cli'), { recursive: true });
   await cp(EXECUTOR_SDK_SRC_PATH, join(contextDir, 'kortix-executor-sdk'), { recursive: true });
+  // Stage the starter opencode config for the build-time instance warm-up.
+  // Best effort: if it's missing, skip the warm-up (the build still succeeds and
+  // sessions just pay the first-instance cost at runtime as before).
+  let opencodeConfigPath: string | undefined;
+  if (await isDir(OPENCODE_CONFIG_SRC_PATH)) {
+    await cp(OPENCODE_CONFIG_SRC_PATH, join(contextDir, 'kortix-opencode-config'), {
+      recursive: true,
+    });
+    opencodeConfigPath = 'kortix-opencode-config';
+  }
 
   // Canonical scaffold repo baked at /opt/kortix/scaffold.git. Built from the
   // DEFAULT starter with the SAME pinned commit metadata the project seeder
@@ -124,6 +140,7 @@ export async function stageBuildContext(
     entrypointScriptPath: 'kortix-entrypoint',
     agentCliPath: 'kortix-agent-cli',
     executorSdkPath: 'kortix-executor-sdk',
+    opencodeConfigPath,
   });
   if (typeof (globalThis as any).Bun?.write === 'function') {
     await (globalThis as any).Bun.write(composedPath, composed);
@@ -158,6 +175,14 @@ async function assertExists(path: string, envVarHint: string): Promise<void> {
     throw new Error(
       `Required artifact missing: ${path}. Set ${envVarHint} or run \`bun run build\` in apps/kortix-sandbox-agent-server.`,
     );
+  }
+}
+
+async function isDir(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
   }
 }
 

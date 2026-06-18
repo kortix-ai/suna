@@ -1,7 +1,7 @@
 export type WallpaperType = 'svg' | 'symbol' | 'aurora' | 'shader' | 'image';
 
 export interface Wallpaper {
-  id: string;
+  id: "brandmark" | "symbol" | "aurora" | "ascii-tunnel" | "matrix" | "nebula";
   name: string;
   type: WallpaperType;
   /** For 'svg' wallpapers — path to the SVG file */

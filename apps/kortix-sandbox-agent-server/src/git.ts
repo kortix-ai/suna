@@ -44,6 +44,42 @@ function execGit(
   })
 }
 
+/**
+ * Run a git command for the file API (list `ignored`, status). Like execGit but
+ * exported, with optional stdin (for `git check-ignore --stdin`) and a sane
+ * default timeout. Never throws on non-zero exit — returns the result so callers
+ * can treat "not a git repo" / no-match as empty rather than an error.
+ */
+export function runGit(
+  args: string[],
+  opts: { cwd?: string; input?: string; timeoutMs?: number } = {},
+): Promise<ExecResult> {
+  const timeoutMs = opts.timeoutMs ?? 10_000
+  return new Promise((resolve, reject) => {
+    const child = spawn('git', args, {
+      cwd: opts.cwd,
+      env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+      stdio: [opts.input !== undefined ? 'pipe' : 'ignore', 'pipe', 'pipe'],
+    })
+    let stdout = ''
+    let stderr = ''
+    let timer: ReturnType<typeof setTimeout> | undefined
+    if (timeoutMs > 0) {
+      timer = setTimeout(() => {
+        stderr += `\n[runGit] killed: exceeded ${timeoutMs}ms`
+        child.kill('SIGKILL')
+      }, timeoutMs)
+    }
+    child.stdout?.on('data', (d) => (stdout += d.toString()))
+    child.stderr?.on('data', (d) => (stderr += d.toString()))
+    child.on('error', (e) => { if (timer) clearTimeout(timer); reject(e) })
+    child.on('close', (code) => { if (timer) clearTimeout(timer); resolve({ code: code ?? 0, stdout, stderr }) })
+    if (opts.input !== undefined) {
+      child.stdin?.end(opts.input)
+    }
+  })
+}
+
 export function buildGitIdentityEnv(cfg: GitIdentityConfig): NodeJS.ProcessEnv {
   return {
     GIT_AUTHOR_NAME: cfg.gitUserName,
@@ -140,7 +176,18 @@ export function buildGitAuthArgs(
   }
 
   const headerValue = Buffer.from(`x-access-token:${token}`).toString('base64')
-  return ['-c', `http.${authOrigin}/.extraheader=AUTHORIZATION: basic ${headerValue}`]
+  const header = `AUTHORIZATION: basic ${headerValue}`
+  const args = ['-c', `http.${authOrigin}/.extraheader=${header}`]
+
+  // The Kortix git proxy is the sandbox's own control-plane URL. During the
+  // initial clone we do not rely on HOME-scoped credential helper config, so
+  // add a one-command fallback header that git applies to the proxy request.
+  // This is intentionally limited to /v1/git URLs: direct upstream clones keep
+  // the host-scoped header only.
+  if (repoUrl && /\/v1\/git\//.test(repoUrl)) {
+    args.push('-c', `http.extraheader=${header}`)
+  }
+  return args
 }
 
 async function gitWithAuth(
@@ -417,6 +464,21 @@ export async function isRepoMaterialized(target: string): Promise<boolean> {
   return pathExists(`${target}/.git`)
 }
 
+/**
+ * Remove a STALE git lock before a checkout. A `.git/index.lock` left behind by
+ * a git process that crashed or was killed mid-op (e.g. the daemon was OOM-killed
+ * or restarted during materialization) makes every later `git checkout` fail with
+ * "Unable to create '.../index.lock': File exists" — which surfaced to users as
+ * "failed to create local session branch … Another git process seems to be
+ * running". Safe here: the session-branch checkout is the sole sequential git op
+ * on a freshly-materialized workspace, so any lock present is necessarily stale.
+ */
+async function clearStaleGitLock(target: string): Promise<void> {
+  for (const lock of ['index.lock', 'HEAD.lock']) {
+    await rm(join(target, '.git', lock), { force: true }).catch(() => {})
+  }
+}
+
 async function checkoutSessionBranch(
   cfg: Config,
   target: string,
@@ -437,6 +499,7 @@ async function checkoutSessionBranch(
   ], { timeoutMs: 30_000 })
 
   if (fetched.code === 0) {
+    await clearStaleGitLock(target)
     const checkout = await gitWithAuth(token, cfg.repoUrl, [
       '-C',
       target,
@@ -460,6 +523,7 @@ async function checkoutSessionBranch(
     })
   }
 
+  await clearStaleGitLock(target)
   const local = await gitWithAuth(token, cfg.repoUrl, [
     '-C',
     target,
@@ -474,6 +538,7 @@ async function checkoutSessionBranch(
 }
 
 async function checkoutLocalSessionBranch(target: string, branch: string): Promise<void> {
+  await clearStaleGitLock(target)
   const local = await execGit([
     '-C',
     target,
@@ -485,6 +550,39 @@ async function checkoutLocalSessionBranch(target: string, branch: string): Promi
     throw new Error(`failed to create local session branch ${branch}: ${local.stderr}`)
   }
   logger.info('[git] created local session branch from baked checkout', { branch })
+}
+
+/**
+ * Boot-local fallback for an empty/branchless upstream (a managed repo that was
+ * provisioned but never seeded). Instead of failing the whole session on
+ * "Remote branch <base> not found in upstream origin", lay down a fresh local
+ * repo at `base` with one empty commit, so the session branch has a base to
+ * fork from and OpenCode boots normally. The agent then populates the tree, and
+ * the background remote-branch publish (createRemoteSessionBranch) / first push
+ * seeds the upstream for real. A cold sandbox now boots exactly like a warm/
+ * baked one — entirely from local git, never blocked on the remote.
+ *
+ * `dir` is the tmp clone target; the caller renames it into place afterwards.
+ */
+async function initLocalRepoAtBase(cfg: Config, dir: string, base: string): Promise<void> {
+  await rm(dir, { recursive: true, force: true }).catch(() => {})
+  await mkdir(dir, { recursive: true })
+  const init = await execGit(['-C', dir, 'init'])
+  if (init.code !== 0) throw new Error(`git init (empty upstream) failed: ${init.stderr}`)
+  // Rename the unborn branch to `base` — version-robust vs `git init -b`, which
+  // needs git ≥ 2.28.
+  const branch = await execGit(['-C', dir, 'checkout', '-b', base])
+  if (branch.code !== 0) throw new Error(`git checkout -b ${base} (empty upstream) failed: ${branch.stderr}`)
+  if (cfg.repoUrl) {
+    const addRemote = await execGit(['-C', dir, 'remote', 'add', 'origin', cfg.repoUrl])
+    if (addRemote.code !== 0) throw new Error(`git remote add origin (empty upstream) failed: ${addRemote.stderr}`)
+  }
+  const commit = await execGit(
+    ['-C', dir, 'commit', '--allow-empty', '-m', 'chore: initialize Kortix project'],
+    { env: buildGitIdentityEnv(cfg) },
+  )
+  if (commit.code !== 0) throw new Error(`git initial commit (empty upstream) failed: ${commit.stderr}`)
+  logger.info('[git] initialized fresh local repo at base (empty upstream)', { base, dir })
 }
 
 /**
@@ -572,6 +670,14 @@ export async function materializeRepo(cfg: Config): Promise<void> {
     ]
     const isTransientGit = (s: string) =>
       /early EOF|RPC failed|Connection reset|Recv failure|fetch-pack|unexpected disconnect|index-pack|Could not resolve host|Connection timed out|timed out|GnuTLS recv|SSL_read|TLS packet|Failed to connect|Empty reply|Operation too slow|transfer closed|server hung up|remote end hung up|Stream closed|HTTP 5/i.test(s)
+    // The upstream has no base branch yet — a freshly provisioned managed repo
+    // that was never seeded, or any empty repo. This is NOT a retryable failure:
+    // cloning it 4× more just fails 4× identically. We boot from a fresh local
+    // repo instead (see initLocalRepoAtBase below), so a cold sandbox starts
+    // exactly like a warm/baked one — 100% from local git, never blocked on the
+    // remote having `main`.
+    const isEmptyUpstream = (s: string) =>
+      /Remote branch .+ not found in upstream|Could not find remote branch|You appear to have cloned an empty repository|remote HEAD refers to nonexistent ref/i.test(s)
     const MAX_CLONE_ATTEMPTS = 4
     let cloned = { code: -1, stdout: '', stderr: '' } as Awaited<ReturnType<typeof gitWithAuth>>
     for (let attempt = 1; attempt <= MAX_CLONE_ATTEMPTS; attempt++) {
@@ -585,9 +691,10 @@ export async function materializeRepo(cfg: Config): Promise<void> {
         cfg.repoUrl,
         tmpTarget,
       ], { timeoutMs: 35_000 })
-      if (cloned.code !== 0 && cfg.cloneFilter && !isTransientGit(cloned.stderr)) {
+      if (cloned.code !== 0 && cfg.cloneFilter && !isTransientGit(cloned.stderr) && !isEmptyUpstream(cloned.stderr)) {
         // Remote may not advertise uploadpack.allowFilter — fall back to a full
-        // clone so a non-supporting host still boots (just slower).
+        // clone so a non-supporting host still boots (just slower). Skip this for
+        // an empty upstream: a full clone would fail identically (no base branch).
         logger.warn('[git] partial clone failed; retrying as a full clone', {
           stderr: cloned.stderr.slice(0, 200),
         })
@@ -595,6 +702,8 @@ export async function materializeRepo(cfg: Config): Promise<void> {
         cloned = await gitWithAuth(cloneToken, cfg.repoUrl, [...baseCloneArgs, cfg.repoUrl, tmpTarget], { timeoutMs: 35_000 })
       }
       if (cloned.code === 0) break
+      // Empty upstream is terminal-but-fine: stop retrying and init locally below.
+      if (isEmptyUpstream(cloned.stderr)) break
       const transient = isTransientGit(cloned.stderr)
       logger.warn('[git] clone attempt failed', { attempt, maxAttempts: MAX_CLONE_ATTEMPTS, transient, stderr: cloned.stderr.slice(0, 200) })
       if (!transient || attempt === MAX_CLONE_ATTEMPTS) break
@@ -602,8 +711,19 @@ export async function materializeRepo(cfg: Config): Promise<void> {
       await new Promise((r) => setTimeout(r, 500 * attempt + Math.floor(Math.random() * 700)))
     }
     if (cloned.code !== 0) {
-      await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
-      throw new Error(`git clone failed after ${MAX_CLONE_ATTEMPTS} attempt(s): ${cloned.stderr}`)
+      if (isEmptyUpstream(cloned.stderr)) {
+        // No base branch upstream → boot from a fresh local repo instead of
+        // hard-failing the whole session. The agent's work + the background
+        // remote-branch publish seed the upstream for real later.
+        logger.warn('[git] base branch missing upstream (empty repo) — booting from a fresh local repo', {
+          base,
+          stderr: cloned.stderr.slice(0, 200),
+        })
+        await initLocalRepoAtBase(cfg, tmpTarget, base)
+      } else {
+        await rm(tmpTarget, { recursive: true, force: true }).catch(() => {})
+        throw new Error(`git clone failed after ${MAX_CLONE_ATTEMPTS} attempt(s): ${cloned.stderr}`)
+      }
     }
     await rm(target, { recursive: true, force: true })
     await rename(tmpTarget, target)

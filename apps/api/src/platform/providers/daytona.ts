@@ -5,12 +5,14 @@
  * Extracted from the original account.ts provisioning logic.
  */
 
-import { getDaytona } from '../../shared/daytona';
+import { getDaytona, getDaytonaWarm } from '../../shared/daytona';
+import { warmRestoreScript, WARM_RESTORE_MARKERS, noteWarmPathFailure } from '../../snapshots/warm-bake';
 import { serviceKeyForExternalId } from '../service-key';
 import { config, SANDBOX_VERSION } from '../../config';
 // (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
 // own per-project snapshot, resolved by the snapshot builder. Callers
 // must pass `opts.snapshot`; there is no shared platform-wide image.)
+import { WarmRuntimeUnavailableError } from './index';
 import type {
   SandboxProvider,
   ProviderName,
@@ -21,6 +23,68 @@ import type {
   ProvisioningTraits,
   ProvisioningStatus,
 } from './index';
+
+// Short-TTL cache for getStatus on the session-open hot path. POST /sessions/:id/start
+// is polled ~every 800ms and each poll did an UNCACHED daytona.get() (~150-600ms)
+// just to confirm a freshly-claimed warm box is still running — pure overhead that
+// dominates the warm-start server cost. Box state changes far slower than the poll
+// cadence, so caching the 'running' verdict briefly collapses ~2/3 of those
+// provider round-trips. Only 'running' is cached (never 'stopped'/'unknown'), so
+// idle-stop / wake detection always reads fresh; start/stop/remove bust the entry.
+const STATUS_CACHE_TTL_MS = 1500;
+const runningStatusCache = new Map<string, number>(); // externalId → cachedAt (ms)
+
+/**
+ * Daytona sandbox lifecycle policy, applied as SDK create() params so a box
+ * self-manages even when the API/tunnel that created it dies — orphaned
+ * local-dev and ephemeral-env sessions are the dominant leak source, and the
+ * idle sweep can't see boxes it has no DB row for.
+ *
+ *  - autoStopInterval: idle → stop (compute billing ends). CLAMPED to >= 1 so a
+ *    box is NEVER created persistent. A 0 here (the old warm-pool "stay ready
+ *    until claimed" value) leaked 500+ never-stopping boxes that nothing reaped.
+ *    This is the setting that actually stops the money burn.
+ *  - autoArchiveInterval: stopped → archived to cold storage after a few days
+ *    (cheap, still resumable). Until then the stopped box stays warm-resumable.
+ *  - autoDeleteInterval: -1 by default → NEVER auto-delete. An idle box is
+ *    nearly free once stopped + cold-archived, so we never destroy its disk;
+ *    a session is only removed when the user explicitly deletes it.
+ */
+// A persistent (autoStop=0) warm-pool spare that nothing reaps is exactly what
+// caused the "500+ never-stopping boxes" leak noted above. reconcileWarmPool is
+// the primary reaper, but if the API/tunnel that owns the pool dies, nothing
+// runs it — so we FORCE a provider-side auto-delete backstop on every persistent
+// spare (≥ the pool's 6h max-age) regardless of the global -1/never default.
+const PERSISTENT_SPARE_AUTODELETE_FALLBACK_MIN = 24 * 60; // 24h
+
+export function daytonaLifecycle(autoStopOverride?: number): {
+  autoStopInterval: number;
+  autoArchiveInterval: number;
+  autoDeleteInterval: number;
+} {
+  // autoStopOverride === 0 is the WARM-POOL spare contract: "never auto-stop".
+  // A spare must stay RUNNING + warm until claimed — a hibernate would kill the
+  // pre-warmed opencode (and, for clone-at-park spares, the warmed plugin),
+  // defeating the whole pre-warm. Spares manage their own lifecycle via
+  // reconcileWarmPool, but because such a box never auto-stops we ALSO pin a
+  // finite provider auto-delete backstop (never -1) so a leaked spare self-
+  // destructs if the reaper stops running. EVERY other caller is clamped to >= 1
+  // so a normal session box can never be created persistent.
+  if (autoStopOverride === 0) {
+    const configuredDelete = config.KORTIX_SANDBOX_AUTODELETE_MINUTES;
+    return {
+      autoStopInterval: 0,
+      autoArchiveInterval: config.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
+      autoDeleteInterval: configuredDelete > 0 ? configuredDelete : PERSISTENT_SPARE_AUTODELETE_FALLBACK_MIN,
+    };
+  }
+  const stop = autoStopOverride ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES;
+  return {
+    autoStopInterval: Math.max(1, stop || config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15),
+    autoArchiveInterval: config.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
+    autoDeleteInterval: config.KORTIX_SANDBOX_AUTODELETE_MINUTES,
+  };
+}
 
 export class DaytonaProvider implements SandboxProvider {
   readonly name: ProviderName = 'daytona';
@@ -37,24 +101,6 @@ export class DaytonaProvider implements SandboxProvider {
   }
 
   async create(opts: CreateSandboxOpts): Promise<ProvisionResult> {
-    // Every Daytona sandbox boots from its project's own per-project
-    // snapshot (`kortix-snap-…`), resolved by the snapshot builder before
-    // we get here (see platform/services/session-sandbox.ts +
-    // snapshots/builder.ts). There is intentionally no shared platform
-    // fallback: a missing snapshot means the project's first build
-    // hasn't finished, which is a session-creation error — not something
-    // we paper over with an unrelated image.
-    const snapshot = opts.snapshot;
-    if (!snapshot) {
-      throw new Error(
-        'Daytona create() called without opts.snapshot. ' +
-        'Every sandbox must boot from a per-project snapshot built by ' +
-        'apps/api/src/snapshots/builder.ts. There is no shared fallback.',
-      );
-    }
-
-    const daytona = getDaytona();
-
     // KORTIX_URL is the public API base URL the sandbox calls back on. Strip
     // any route suffix so older env files that included /v1 or /v1/router still
     // resolve to the bare origin.
@@ -83,17 +129,59 @@ export class DaytonaProvider implements SandboxProvider {
       throw new Error('[daytona] create() called without KORTIX_TOKEN — sandbox cannot authenticate to the Kortix router.');
     }
 
+    // Experimental warm path: boot from the memory-state warm base on the WARM
+    // target and start the daemon post-restore (see createWarm). ANY warm
+    // failure — flaky restore, "Region not found" (the experimental region can
+    // be revoked org-side at any time), env-write failure — surfaces as
+    // WarmRuntimeUnavailableError so the session falls back to the normal
+    // Dockerfile-snapshot path instead of erroring. Warm is best-effort, never
+    // a hard dependency.
+    if (opts.warmBaseSnapshot) {
+      try {
+        return await this.createWarm(opts, opts.warmBaseSnapshot, envVars, sandboxApiBase, createTimeoutSeconds);
+      } catch (err) {
+        // Pause the warm path fleet-wide for the cooldown on ANY warm-create
+        // failure (flaky experimental restore, region revoked, env-write fail) —
+        // otherwise a degraded warm region makes EVERY session re-pay up to
+        // MAX_WARM_ATTEMPTS slow restore attempts before falling back to cold.
+        // After this, sessions go straight to the cold (instance-warm) path until
+        // the region recovers. Mirrors the probe-timeout pause in warm-bake.ts.
+        noteWarmPathFailure();
+        if (err instanceof WarmRuntimeUnavailableError) throw err;
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new WarmRuntimeUnavailableError(`warm create failed: ${msg}`);
+      }
+    }
+
+    // Every Daytona sandbox boots from its project's own per-project
+    // snapshot (`kortix-snap-…`), resolved by the snapshot builder before
+    // we get here (see platform/services/session-sandbox.ts +
+    // snapshots/builder.ts). There is intentionally no shared platform
+    // fallback: a missing snapshot means the project's first build
+    // hasn't finished, which is a session-creation error — not something
+    // we paper over with an unrelated image.
+    const snapshot = opts.snapshot;
+    if (!snapshot) {
+      throw new Error(
+        'Daytona create() called without opts.snapshot. ' +
+        'Every sandbox must boot from a per-project snapshot built by ' +
+        'apps/api/src/snapshots/builder.ts. There is no shared fallback.',
+      );
+    }
+
+    const daytona = getDaytona();
     const daytonaSandbox = await daytona.create(
       {
         snapshot,
         envVars,
-        // Idle → stop (hibernate, disk kept). Stopped → archive to cold storage
-        // (disk still kept, resumable). NEVER auto-delete: a sandbox is only ever
-        // removed when a user explicitly deletes the session. -1 disables Daytona
-        // auto-delete explicitly so no account-level default can drop a box.
-        autoStopInterval: opts.autoStopInterval ?? 15,
-        autoArchiveInterval: 30,
-        autoDeleteInterval: -1,
+        // Idle → stop → archive → delete. See daytonaLifecycle(): auto-stop is
+        // clamped to >= 1 so a normal session box can never be created persistent,
+        // a large auto-archive (default 3 days) keeps a hibernated box in the
+        // fast-resume "stopped" tier, and a finite auto-delete reclaims it if the
+        // API/tunnel that created it dies. Intervals are env-tunable
+        // (KORTIX_SANDBOX_AUTO*). A warm-pool spare passes autoStopInterval=0 →
+        // persistent (it manages its own lifecycle via reconcileWarmPool).
+        ...daytonaLifecycle(opts.autoStopInterval),
         public: false,
       },
       { timeout: createTimeoutSeconds },
@@ -115,30 +203,156 @@ export class DaytonaProvider implements SandboxProvider {
     };
   }
 
+  /**
+   * Warm path: create from the experimental memory-state warm base (~1.3s) on
+   * the WARM target, then start the session daemon post-restore. The daemon's
+   * identity (KORTIX_TOKEN, repo, branch, …) is written to an env file the
+   * daemon sources — create-time envVars don't survive a memory restore and the
+   * entrypoint doesn't re-run, so we inject + launch here.
+   */
+  private async createWarm(
+    opts: CreateSandboxOpts,
+    warmBaseSnapshot: string,
+    envVars: Record<string, string>,
+    sandboxApiBase: string,
+    timeout: number,
+  ): Promise<ProvisionResult> {
+    const daytona = getDaytonaWarm();
+
+    // Daytona's experimental region is non-deterministic in TWO ways: creates
+    // fail outright ("Sandbox failed to start: internal error"), and boxes that
+    // do start can come up WITHOUT the baked runtime (filesystem layer dropped).
+    // Retry through both; after the cap, give up so the caller falls back to the
+    // normal Dockerfile path rather than booting a broken box.
+    const MAX_WARM_ATTEMPTS = 4;
+    let sb: Awaited<ReturnType<typeof daytona.create>> | null = null;
+    let sawCreateFailure = false;
+    let envWriteFailed = false;
+    for (let attempt = 1; attempt <= MAX_WARM_ATTEMPTS; attempt++) {
+      let box: Awaited<ReturnType<typeof daytona.create>> | null = null;
+      try {
+        box = await daytona.create(
+          {
+            snapshot: warmBaseSnapshot,
+            ...daytonaLifecycle(opts.autoStopInterval),
+            public: false,
+          },
+          { timeout },
+        );
+      } catch (err) {
+        // The throw leaves an error-state box org-side that we have no handle
+        // to — swept below once the loop settles.
+        sawCreateFailure = true;
+        console.warn(
+          `[daytona] warm create attempt ${attempt}/${MAX_WARM_ATTEMPTS} failed:`,
+          err instanceof Error ? err.message : err,
+        );
+        continue;
+      }
+
+      // ONE in-box round-trip does it all: probe the baked runtime, reset the
+      // frozen clock, write the session env, and launch the daemon (was four
+      // serial executeCommands). The decision is driven by PARSED MARKER STRINGS
+      // (never exitCode — the SDK can return it undefined).
+      let result = '';
+      try {
+        const script = warmRestoreScript(envVars, Math.floor(Date.now() / 1000));
+        const r = await box.process.executeCommand(script, undefined, undefined, 60);
+        result = r.result ?? '';
+      } catch (err) {
+        // Box unreachable / command failed mid-flight — treat like a dropped
+        // restore and recreate (don't trust a half-initialized box).
+        console.warn(
+          `[daytona] warm restore attempt ${attempt}/${MAX_WARM_ATTEMPTS} command failed:`,
+          err instanceof Error ? err.message : err,
+        );
+        await box.delete().catch(() => {});
+        continue;
+      }
+
+      if (result.includes(WARM_RESTORE_MARKERS.noRuntime)) {
+        console.warn(
+          `[daytona] warm box ${box.id} restored without runtime ` +
+          `(experimental snapshot flakiness) — attempt ${attempt}/${MAX_WARM_ATTEMPTS}, recreating`,
+        );
+        await box.delete().catch(() => {});
+        continue;
+      }
+      if (!result.includes(WARM_RESTORE_MARKERS.wrote) || !result.includes(WARM_RESTORE_MARKERS.started)) {
+        // Runtime WAS present (no recreate marker) but the env write or daemon
+        // launch didn't confirm — not a flaky-restore case, so don't burn
+        // retries; surface a hard error (the caller falls back to the cold path).
+        envWriteFailed = true;
+        await box.delete().catch(() => {});
+        break;
+      }
+      sb = box; // KORTIX_WROTE + KORTIX_STARTED both seen → committed.
+      break;
+    }
+    if (sawCreateFailure) {
+      // Fire-and-forget: clear the error-state corpses failed creates left in
+      // the org (targeted by warm-base snapshot name + error state).
+      void import('../../snapshots/warm-bake')
+        .then(({ reapErroredWarmBoxes }) => reapErroredWarmBoxes(warmBaseSnapshot, (l) => console.log(l)))
+        .catch(() => {});
+    }
+    if (envWriteFailed) {
+      throw new Error('[daytona] warm create: session env write / daemon launch did not confirm');
+    }
+    if (!sb) {
+      throw new WarmRuntimeUnavailableError(
+        `warm base ${warmBaseSnapshot} unavailable after ${MAX_WARM_ATTEMPTS} attempts (create failures and/or dropped-runtime restores)`,
+      );
+    }
+
+    const externalId = sb.id;
+    const baseUrl = `${sandboxApiBase}/v1/p/${externalId}/8000`;
+    return {
+      externalId,
+      baseUrl,
+      metadata: {
+        provisionedBy: opts.userId,
+        daytonaSandboxId: externalId,
+        snapshot: warmBaseSnapshot,
+        warm: true,
+        version: SANDBOX_VERSION,
+      },
+    };
+  }
+
   async start(externalId: string): Promise<void> {
+    runningStatusCache.delete(externalId);
     const daytona = getDaytona();
     const sandbox = await daytona.get(externalId);
     await sandbox.start();
   }
 
   async stop(externalId: string): Promise<void> {
+    runningStatusCache.delete(externalId);
     const daytona = getDaytona();
     const sandbox = await daytona.get(externalId);
     await sandbox.stop();
   }
 
   async remove(externalId: string): Promise<void> {
+    runningStatusCache.delete(externalId);
     const daytona = getDaytona();
     const sandbox = await daytona.get(externalId);
     await daytona.delete(sandbox);
   }
 
   async getStatus(externalId: string): Promise<SandboxStatus> {
+    const cachedAt = runningStatusCache.get(externalId);
+    if (cachedAt !== undefined && Date.now() - cachedAt < STATUS_CACHE_TTL_MS) return 'running';
     try {
       const daytona = getDaytona();
       const sandbox = await daytona.get(externalId);
       const state = String(sandbox.state ?? '').toLowerCase();
-      if (state.includes('start') || state.includes('running') || state.includes('active')) return 'running';
+      if (state.includes('start') || state.includes('running') || state.includes('active')) {
+        runningStatusCache.set(externalId, Date.now());
+        return 'running';
+      }
+      runningStatusCache.delete(externalId);
       if (state.includes('stop') || state.includes('archive')) return 'stopped';
       return 'unknown';
     } catch {

@@ -1,8 +1,12 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/features/providers/auth-provider';
 import { authenticatedFetch } from '@/lib/auth-token';
-import { useAuth } from '@/components/AuthProvider';
 import { ensureSandbox, getSandboxUrl } from '@/lib/platform-client';
-import { getActiveOpenCodeUrl, getServerByInstanceId, resolveServerUrl } from '@/stores/server-store';
+import {
+  getActiveOpenCodeUrl,
+  getServerByInstanceId,
+  resolveServerUrl,
+} from '@/stores/server-store';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -11,7 +15,13 @@ export type TriggerType = 'cron' | 'webhook';
 export type ActionType = 'prompt' | 'command' | 'http' | 'ticket_create';
 export type TriggerSourceType = 'manual' | 'agent';
 
-export type ExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'timeout' | 'skipped';
+export type ExecutionStatus =
+  | 'pending'
+  | 'running'
+  | 'completed'
+  | 'failed'
+  | 'timeout'
+  | 'skipped';
 
 export interface Trigger {
   id: string;
@@ -194,7 +204,11 @@ async function getTriggersBaseUrl(instanceId?: string | null): Promise<string> {
   return `${await resolveSandboxBaseUrl(instanceId)}/kortix/triggers`;
 }
 
-async function fetchTriggersJson<T>(path: string, init?: RequestInit, instanceId?: string | null): Promise<T> {
+async function fetchTriggersJson<T>(
+  path: string,
+  init?: RequestInit,
+  instanceId?: string | null,
+): Promise<T> {
   const baseUrl = await getTriggersBaseUrl(instanceId);
   const response = await authenticatedFetch(`${baseUrl}${path}`, {
     ...init,
@@ -237,7 +251,13 @@ const createTrigger = async (data: CreateTriggerData): Promise<Trigger> => {
   return response.data;
 };
 
-const updateTrigger = async ({ id, data }: { id: string; data: UpdateTriggerData }): Promise<Trigger> => {
+const updateTrigger = async ({
+  id,
+  data,
+}: {
+  id: string;
+  data: UpdateTriggerData;
+}): Promise<Trigger> => {
   const response = await fetchTriggersJson<ApiSingleResponse>(`/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(data),
@@ -259,7 +279,9 @@ const resumeTrigger = async (id: string): Promise<Trigger> => {
   return response.data;
 };
 
-const runTrigger = async (id: string): Promise<{ execution_id: string; status: string; message: string }> => {
+const runTrigger = async (
+  id: string,
+): Promise<{ execution_id: string; status: string; message: string }> => {
   const response = await fetchTriggersJson<ApiRunResponse>(`/${id}/run`, { method: 'POST' });
   return response.data;
 };
@@ -390,7 +412,7 @@ const fetchSandboxModels = async (sandboxId: string): Promise<SandboxProvider[]>
     throw new Error(`Failed to fetch models (${response.status})`);
   }
 
-  const data = await response.json() as Record<string, unknown> | unknown[];
+  const data = (await response.json()) as Record<string, unknown> | unknown[];
   const rawProviders: any[] = Array.isArray(data) ? data : ((data.providers || []) as any[]);
   return rawProviders.map((provider: any) => ({
     id: provider.id || '',
@@ -409,8 +431,10 @@ const fetchSandboxAgents = async (sandboxId: string): Promise<SandboxAgent[]> =>
     throw new Error(`Failed to fetch agents (${response.status})`);
   }
 
-  const data = await response.json() as Record<string, unknown> | unknown[];
-  const rawAgents: any[] = Array.isArray(data) ? data : ((data.agents || Object.values(data)) as any[]);
+  const data = (await response.json()) as Record<string, unknown> | unknown[];
+  const rawAgents: any[] = Array.isArray(data)
+    ? data
+    : ((data.agents || Object.values(data)) as any[]);
   return rawAgents.map((agent: any) => ({
     name: agent.name || '',
     description: agent.description,

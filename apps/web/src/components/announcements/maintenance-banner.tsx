@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { X, ExternalLink, Info, AlertTriangle, AlertCircle, Clock } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { usePathname } from 'next/navigation';
 import { normalizeAppPathname } from '@/lib/instance-routes';
 import type { MaintenanceConfig, MaintenanceLevel } from '@/lib/maintenance-store';

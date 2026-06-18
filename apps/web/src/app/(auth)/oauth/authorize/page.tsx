@@ -1,0 +1,254 @@
+'use client';
+
+import { useTranslations } from 'next-intl';
+
+import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
+import { Button } from '@/components/ui/button';
+import { useAuth } from '@/features/providers/auth-provider';
+import { getEnv } from '@/lib/env-config';
+import { createClient } from '@/lib/supabase/client';
+import { Shield, X } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+
+const SCOPE_DESCRIPTIONS: Record<string, string> = {
+  profile: 'View your account information',
+  'machines:read': 'View your project session sandboxes',
+};
+
+export default function OAuthConsentPage() {
+  return (
+    <Suspense fallback={<ConnectingScreen forceConnecting minimal title="Authorizing" />}>
+      <OAuthConsent />
+    </Suspense>
+  );
+}
+
+function OAuthConsent() {
+  const tHardcodedUi = useTranslations('hardcodedUi');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const { user, isLoading } = useAuth();
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [consentRequest, setConsentRequest] = useState<{
+    clientName: string;
+    scopes: string[];
+  } | null>(null);
+
+  const requestId = searchParams.get('request_id') || '';
+  const clientName = consentRequest?.clientName || 'Unknown App';
+  const scopes = consentRequest?.scopes || [];
+
+  useEffect(() => {
+    if (!isLoading && !user) {
+      const currentUrl = new URL(window.location.href);
+      router.replace(
+        `/auth?returnUrl=${encodeURIComponent(currentUrl.pathname + currentUrl.search)}`,
+      );
+    }
+  }, [user, isLoading, router]);
+
+  useEffect(() => {
+    if (isLoading || !user || !requestId) return;
+    let cancelled = false;
+
+    async function loadConsentRequest() {
+      setError(null);
+      setConsentRequest(null);
+      try {
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          setError('Session expired. Please sign in again.');
+          return;
+        }
+
+        const backendUrl = getEnv().BACKEND_URL || '';
+        const res = await fetch(
+          `${backendUrl}/oauth/authorize/consent/${encodeURIComponent(requestId)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+            },
+          },
+        );
+        const data = await res.json().catch(() => null);
+        if (!res.ok) {
+          setError(data?.error_description || data?.error || 'Authorization request expired.');
+          return;
+        }
+        if (!cancelled) {
+          setConsentRequest({
+            clientName: data.client_name || 'Unknown App',
+            scopes: Array.isArray(data.scopes)
+              ? data.scopes.filter((scope: unknown): scope is string => typeof scope === 'string')
+              : String(data.scope || '')
+                  .split(' ')
+                  .filter(Boolean),
+          });
+        }
+      } catch {
+        if (!cancelled) setError('Network error. Please try again.');
+      }
+    }
+
+    loadConsentRequest();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, requestId, user]);
+
+  const handleConsent = async (approved: boolean) => {
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError('Session expired. Please sign in again.');
+        setSubmitting(false);
+        return;
+      }
+
+      const backendUrl = getEnv().BACKEND_URL || '';
+      const res = await fetch(`${backendUrl}/oauth/authorize/consent`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          request_id: requestId,
+          approved,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Unknown error' }));
+        setError(err.error_description || err.error || 'Authorization failed');
+        setSubmitting(false);
+        return;
+      }
+
+      const data = await res.json();
+      if (data.redirect_uri) {
+        window.location.href = data.redirect_uri;
+      }
+    } catch (err) {
+      setError('Network error. Please try again.');
+      setSubmitting(false);
+    }
+  };
+
+  if (isLoading || !user) {
+    return <ConnectingScreen forceConnecting minimal title="Authorizing" />;
+  }
+
+  if (!requestId) {
+    return (
+      <div className="bg-background fixed inset-0 flex items-center justify-center">
+        <div className="max-w-sm space-y-4 text-center">
+          <p className="text-destructive font-medium">
+            {tHardcodedUi.raw('appOauthAuthorizePage.line146JsxTextInvalidAuthorizationRequest')}
+          </p>
+          <p className="text-muted-foreground text-sm">
+            {tHardcodedUi.raw('appOauthAuthorizePage.line147JsxTextMissingRequiredParameters')}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!consentRequest) {
+    return (
+      <div className="bg-background fixed inset-0 flex items-center justify-center">
+        <div className="max-w-sm space-y-4 text-center">
+          {error ? (
+            <>
+              <p className="text-destructive font-medium">
+                {tHardcodedUi.raw(
+                  'appOauthAuthorizePage.line159JsxTextAuthorizationRequestUnavailable',
+                )}
+              </p>
+              <p className="text-muted-foreground text-sm">{error}</p>
+            </>
+          ) : (
+            <ConnectingScreen forceConnecting minimal title="Authorizing" />
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-background fixed inset-0 flex items-center justify-center px-4">
+      <div className="w-full max-w-sm space-y-6">
+        <div className="space-y-2 text-center">
+          <div className="mb-4 flex items-center justify-center">
+            <div className="bg-foreground/[0.06] border-foreground/[0.08] flex h-14 w-14 items-center justify-center rounded-full border">
+              <Shield className="text-foreground/50 h-6 w-6" />
+            </div>
+          </div>
+          <h1 className="text-xl font-semibold tracking-tight">Authorize {clientName}</h1>
+          <p className="text-muted-foreground text-sm">
+            <span className="text-foreground font-medium">{clientName}</span>
+            {tHardcodedUi.raw('appOauthAuthorizePage.line183JsxTextWantsToAccessYourKortixAccount')}
+          </p>
+        </div>
+
+        <div className="border-border bg-muted/30 space-y-3 rounded-2xl border p-4">
+          <p className="text-muted-foreground text-xs font-medium tracking-wider uppercase">
+            {tHardcodedUi.raw('appOauthAuthorizePage.line189JsxTextThisWillAllow')} {clientName} to:
+          </p>
+          <ul className="space-y-2">
+            {scopes.map((s) => (
+              <li key={s} className="flex items-start gap-2 text-sm">
+                <div className="bg-foreground/40 mt-1.5 size-1.5 shrink-0 rounded-full" />
+                <span>{SCOPE_DESCRIPTIONS[s] || s}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="border-border bg-muted/20 rounded-2xl border px-4 py-3">
+          <p className="text-muted-foreground text-xs">
+            {tHardcodedUi.raw('appOauthAuthorizePage.line202JsxTextSignedInAs')}
+          </p>
+          <p className="truncate text-sm font-medium">{user.email}</p>
+        </div>
+
+        {error && (
+          <div className="border-destructive/20 bg-destructive/5 text-destructive rounded-2xl border p-3 text-sm">
+            {error}
+          </div>
+        )}
+
+        <div className="flex gap-3">
+          <Button
+            variant="outline"
+            className="flex-1"
+            onClick={() => handleConsent(false)}
+            disabled={submitting}
+          >
+            <X className="size-4" />
+            Deny
+          </Button>
+          <Button className="flex-1" onClick={() => handleConsent(true)} disabled={submitting}>
+            {submitting ? 'Authorizing...' : 'Allow'}
+          </Button>
+        </div>
+
+        <p className="text-muted-foreground text-center text-xs">
+          {tHardcodedUi.raw('appOauthAuthorizePage.line232JsxTextYouCanRevokeAccessAtAnyTimeFrom')}
+        </p>
+      </div>
+    </div>
+  );
+}

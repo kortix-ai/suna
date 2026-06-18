@@ -4,15 +4,24 @@ import { memo } from 'react';
 import dynamic from 'next/dynamic';
 import { useTheme } from 'next-themes';
 
-const Shader = dynamic(() => import('@/lib/shaders-react').then((m) => m.Shader), {
-  ssr: false,
-});
-const Dither = dynamic(() => import('@/lib/shaders-react').then((m) => m.Dither), {
-  ssr: false,
-});
-const Plasma = dynamic(() => import('@/lib/shaders-react').then((m) => m.Plasma), {
-  ssr: false,
-});
+const Shader = dynamic(
+  () => import('@/lib/shaders-react').then((m) => m.Shader),
+  {
+    ssr: false,
+  },
+);
+const Dither = dynamic(
+  () => import('@/lib/shaders-react').then((m) => m.Dither),
+  {
+    ssr: false,
+  },
+);
+const Plasma = dynamic(
+  () => import('@/lib/shaders-react').then((m) => m.Plasma),
+  {
+    ssr: false,
+  },
+);
 const WaveDistortion = dynamic(
   () => import('@/lib/shaders-react').then((m) => m.WaveDistortion),
   { ssr: false },

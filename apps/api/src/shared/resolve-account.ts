@@ -2,12 +2,40 @@ import { and, eq } from 'drizzle-orm';
 import { HTTPException } from 'hono/http-exception';
 import { accounts, accountMembers, accountUser } from '@kortix/db';
 import { db } from './db';
+import { ttlMemo } from './ttl-memo';
+import { withTimeout } from './with-timeout';
+import { syncLegacyStripeSubscription } from '../billing/services/legacy-stripe-sync';
+
+// Legacy Stripe recovery sync — throttled to once per account per hour and
+// bounded to 1.5s on the request path.
+//
+// This runs on resolveAccountId — i.e. on EVERY account-agnostic billing/
+// account request. When the account has canonical billing state it early-exits
+// on one DB read, but for accounts with a Stripe customer mapping and no
+// active paid subscription it used to re-run the FULL Stripe dance every
+// request (customers.search by email + retrieve + subscriptions.list per
+// candidate — observed 8-12s) because a no-find persists nothing. The memo
+// caches the attempt itself so at most one request per hour pays it, and the
+// timeout caps what that one request pays — the sync keeps running in the
+// background and its writes land for the next request. The sync is purely a
+// recovery side effect (its result is never read here), so skipping the wait
+// is always safe.
+const syncLegacySubscriptionThrottled = ttlMemo({
+  ttlMs: 60 * 60 * 1000,
+  keyFn: (accountId: string) => accountId,
+  loader: async (accountId: string): Promise<void> => {
+    const result = await syncLegacyStripeSubscription(accountId);
+    if (result.status === 'error') {
+      console.warn(`[resolve-account] Stripe sync error for ${accountId}: ${result.error}`);
+    }
+  },
+});
 
 async function syncLegacySubscription(accountId: string): Promise<void> {
-  const { syncLegacyStripeSubscription } = await import('../billing/services/legacy-stripe-sync');
-  const result = await syncLegacyStripeSubscription(accountId);
-  if (result.status === 'error') {
-    console.warn(`[resolve-account] Stripe sync error for ${accountId}: ${result.error}`);
+  try {
+    await withTimeout(syncLegacySubscriptionThrottled(accountId), 1_500, 'legacy-stripe-sync');
+  } catch {
+    // Timeout or sync failure — never block account resolution on recovery.
   }
 }
 

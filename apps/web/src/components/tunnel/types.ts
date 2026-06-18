@@ -75,17 +75,26 @@ export const CAPABILITY_REGISTRY: CapabilityInfo[] = [
 ];
 
 export interface ScopeInfo {
-  key: string;  
-  capability: string;    
-  label: string;         
-  description: string;   
-  category: string;      
+  key: string;
+  capability: string;
+  label: string;
+  description: string;
+  category: string;
+  /**
+   * Enforceable scope fields merged into the grant. The backend
+   * permission-checker only restricts when the scope carries the fields it
+   * understands (e.g. `operations` for filesystem). Without this, a grant is
+   * treated as allow-all for the capability — so a quick toggle MUST narrow
+   * itself here or it silently grants far more than its label implies.
+   * Omit to grant the whole capability (e.g. shell exec, unrestricted).
+   */
+  grantScope?: Record<string, unknown>;
 }
 
 export const SCOPE_REGISTRY: ScopeInfo[] = [
-  { key: 'files:read',            capability: 'filesystem', label: 'Read files',          description: 'Read local files and directories',             category: 'Filesystem' },
-  { key: 'files:write',           capability: 'filesystem', label: 'Write files',         description: 'Create and modify local files',                category: 'Filesystem' },
-  { key: 'files:delete',          capability: 'filesystem', label: 'Delete files',        description: 'Delete local files and directories',           category: 'Filesystem' },
+  { key: 'files:read',            capability: 'filesystem', label: 'Read files',          description: 'Read and list local files and directories',    category: 'Filesystem', grantScope: { operations: ['read', 'list'] } },
+  { key: 'files:write',           capability: 'filesystem', label: 'Write files',         description: 'Create and modify local files',                category: 'Filesystem', grantScope: { operations: ['write'] } },
+  { key: 'files:delete',          capability: 'filesystem', label: 'Delete files',        description: 'Delete local files and directories',           category: 'Filesystem', grantScope: { operations: ['delete'] } },
   { key: 'shell:exec',            capability: 'shell',      label: 'Execute commands',    description: 'Run shell commands in terminal',               category: 'Shell' },
 ];
 

@@ -25,12 +25,23 @@ import { setupApp } from './setup';
 import { serversApp } from './servers';
 import { supabaseAuth, combinedAuth } from './middleware/auth';
 import { requestDeadline } from './middleware/request-deadline';
+// Statically imported (NOT await import() in the handlers): on a long-running
+// `bun --hot` dev process, dynamic import() can wedge permanently after enough
+// hot reloads — the promise never settles, the handler hangs, and Bun's
+// idleTimeout kills the socket with an empty reply. Frontend-polled routes
+// (maintenance banner, user-roles) must never sit behind a dynamic import.
+import { db, hasDatabase } from './shared/db';
+import { getPlatformRole } from './shared/platform-roles';
+import { platformSettings } from '@kortix/db';
+import { eq } from 'drizzle-orm';
 import { ensureSchema } from './ensure-schema';
 import { initModelPricing, stopModelPricing } from './router/config/model-pricing';
 import { tunnelApp, wsHandlers as tunnelWsHandlers, startTunnelService, stopTunnelService, getTunnelServiceStatus } from './tunnel';
 import { accessControlApp } from './access-control';
 import { startAccessControlCache, stopAccessControlCache } from './shared/access-control-cache';
+import { startTmpReaper, stopTmpReaper } from './snapshots/tmp-reaper';
 import { startLeaderElection, stopLeaderElection, isLeader } from './shared/leader-election';
+import { marketplaceApp } from './marketplace';
 import { oauthApp } from './oauth';
 import {
   projectWebhooksApp,
@@ -40,6 +51,8 @@ import {
 } from './projects';
 import { startProjectMaintenance, stopProjectMaintenance } from './projects/maintenance';
 import { kickStartupPreBuild } from './snapshots/builder';
+import { kickWarmBaseBuild } from './snapshots/warm-bake';
+import { warmSnapshotsEnabled } from './shared/daytona';
 import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
 import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
@@ -116,10 +129,23 @@ const corsOrigins = [
   ]),
 ];
 
+// Preview env (ephemeral per-PR API): also allow the matching preview frontends.
+// Their origins are dynamic per PR (Vercel deploy URLs + *.preview.kortix.com
+// aliases) so they can't be enumerated above. Scoped to INTERNAL_KORTIX_ENV=preview
+// only — dev/prod keep the strict static allowlist.
+const allowPreviewOrigins = config.INTERNAL_KORTIX_ENV === 'preview';
+const PREVIEW_ORIGIN = /^https:\/\/[a-z0-9-]+\.(vercel\.app|preview\.kortix\.com)$/i;
+
 app.use(
   '*',
   cors({
-    origin: corsOrigins,
+    origin: (origin) => {
+      // No Origin header (same-origin, curl, server-to-server) → not a CORS request.
+      if (!origin) return origin;
+      if (corsOrigins.includes(origin)) return origin;
+      if (allowPreviewOrigins && PREVIEW_ORIGIN.test(origin)) return origin;
+      return null; // not allowed → no Access-Control-Allow-Origin
+    },
     allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowHeaders: ['Content-Type', 'Authorization', 'X-Kortix-Token', 'X-Api-Key', 'Accept', 'X-Kortix-Signature', 'X-Hub-Signature-256', 'traceparent', 'tracestate', 'X-Request-Id'],
     credentials: true,
@@ -269,8 +295,10 @@ const HealthSchema = z
     instance: z.string(),
     started_at: z.string(),
     uptime_seconds: z.number(),
+    memory_mb: z.number(),
     timestamp: z.string(),
     billing_enabled: z.boolean(),
+    warm_snapshots: z.boolean(),
     tunnel: z.any(),
     leader: z.boolean(),
   })
@@ -286,8 +314,15 @@ const healthHandler = (c: any) =>
     instance: API_INSTANCE,
     started_at: STARTED_AT,
     uptime_seconds: Math.round(process.uptime()),
+    // Resident memory (MB) for this pod — a quick leak/OOM-risk signal against
+    // the container's memory limit, without needing metrics-server/dashboards.
+    memory_mb: Math.round(process.memoryUsage().rss / 1024 / 1024),
     timestamp: new Date().toISOString(),
     billing_enabled: config.KORTIX_BILLING_INTERNAL_ENABLED,
+    // Whether the Daytona warm-snapshot path is live in this env (flag + key +
+    // warm target all present) — see snapshots/warm-bake.ts. Surfaced here so a
+    // misconfigured env var is visible remotely instead of failing silently.
+    warm_snapshots: warmSnapshotsEnabled(),
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
   });
@@ -381,10 +416,7 @@ app.openapi(
     responses: { 200: json(MaintenanceSchema, 'Maintenance config') },
   }),
   async (c: any) => {
-  const { hasDatabase, db } = await import('./shared/db');
   if (!hasDatabase) return c.json(DEFAULT_MAINTENANCE);
-  const { platformSettings } = await import('@kortix/db');
-  const { eq } = await import('drizzle-orm');
   const [row] = await db
     .select({ value: platformSettings.value })
     .from(platformSettings)
@@ -406,16 +438,13 @@ app.openapi(
   }),
   async (c: any) => {
   const accountId = c.get('userId') as string;
-  const { getPlatformRole } = await import('./shared/platform-roles');
   const role = await getPlatformRole(accountId);
   if (role !== 'admin' && role !== 'super_admin') {
     return c.json({ error: 'Admin access required' }, 403);
   }
-  const { hasDatabase, db } = await import('./shared/db');
   if (!hasDatabase) return c.json({ error: 'Database not configured' }, 503);
   const body = await c.req.json().catch(() => ({}));
   const config = { ...DEFAULT_MAINTENANCE, ...body, updatedAt: new Date().toISOString() };
-  const { platformSettings } = await import('@kortix/db');
   await db
     .insert(platformSettings)
     .values({ key: MAINTENANCE_KEY, value: config, updatedAt: new Date() })
@@ -470,8 +499,6 @@ app.openapi(
     },
   }),
   async (c: any) => {
-  const { getPlatformRole } = await import('./shared/platform-roles');
-
   const accountId = c.get('userId') as string;
   const role = await getPlatformRole(accountId);
   const isAdmin = role === 'admin' || role === 'super_admin';
@@ -564,6 +591,7 @@ app.route('/v1/platform', platformApp); // /v1/platform, /v1/platform/sandbox/ve
 registerLegacyMigrationRoutes(projectsApp); // /v1/projects/legacy-migration/* (lazy migration)
 registerSunaMigrationRoutes(projectsApp); // /v1/projects/suna-migration/* (OG Suna → opencode, user-triggered)
 app.route('/v1/projects', projectsApp); // /v1/projects — Git-backed Kortix projects
+app.route('/v1/marketplace', marketplaceApp); // /v1/marketplace — browse the registry catalog
 
 // Universal git smart-HTTP proxy — every git-backed project's client origin.
 // Auth is handled inside (git sends Basic/Bearer, not combinedAuth's Bearer),
@@ -596,6 +624,13 @@ if (config.KORTIX_DEPLOYMENTS_ENABLED) {
 
 // Access control — public endpoints for signup gating
 app.route('/v1/access', accessControlApp); // /v1/access/signup-status, /v1/access/check-email, /v1/access/request-access
+
+// Setup links — PUBLIC, token-gated. An agent-minted (encrypted, short-lived,
+// value-only) token is the bearer capability, so a human can fill in a secret
+// or 1-click a Pipedream connect from a Slack link with no login. The mint half
+// is authenticated, on projectsApp (/v1/projects/:id/{secret,connect}-requests).
+import { setupLinksPublicApp } from './setup-links/public-app';
+app.route('/v1/setup-links', setupLinksPublicApp); // /v1/setup-links/{secret,connector}/:token
 
 // Setup — local/self-hosted only. Hidden when billing is enabled so the admin
 // surface isn't exposed on managed/cloud deployments.
@@ -771,6 +806,10 @@ let schemaReady = false;
 async function startReplicaServices() {
   startAccessControlCache();
   startTunnelService();
+  // Every replica stages snapshot/session-boot build contexts in tmpdir and can
+  // leak them on error paths; sweep stale ones so they don't fill node disk and
+  // trip DiskPressure evictions. Runs on all replicas (not leader-gated).
+  startTmpReaper();
 }
 
 // Singleton background WORKERS — must run on EXACTLY ONE replica at a time
@@ -790,6 +829,10 @@ async function startSingletonWorkers() {
   // the first session anywhere lands on a cache hit. Idempotent + best-effort;
   // the session-boot graceful path is the lazy fallback if this is skipped.
   kickStartupPreBuild();
+  // Experimental: pre-bake the shared memory-state warm base so the first
+  // session can boot from it (~1.3s). No-op unless KORTIX_WARM_SNAPSHOT_ENABLED
+  // + DAYTONA_WARM_TARGET are set; best-effort.
+  kickWarmBaseBuild();
   startLegacyMigrationWorker();
   startSunaMigrationWorker();
   // IAM V2 time-bounded grants: tick every 60s, emit one audit event per row
@@ -831,6 +874,7 @@ async function shutdown(signal: string) {
   stopModelPricing();
   stopTunnelService();
   stopAccessControlCache();
+  stopTmpReaper();
   // Flush observability data before exit
   await Promise.allSettled([appLogger.flush(), flushSentry()]);
   process.exit(0);
@@ -869,6 +913,15 @@ import { matchPreviewWsPath, preparePreviewWsUpgrade, previewWsHandlers } from '
 
 export default {
   port: config.PORT,
+
+  // Bun's default HTTP idleTimeout is 10s: a handler that hasn't written any
+  // bytes by then gets its socket closed with an EMPTY reply — no status, no
+  // body — which clients report as a bare network error and Better Stack as a
+  // URL-only timeout. Raise it above the 25s request deadline so a genuinely
+  // stuck request surfaces as the middleware's clean 503 (with Retry-After)
+  // instead of a socket kill. Long-poll/SSE surfaces opt out per-request via
+  // server.timeout(req, 0) below.
+  idleTimeout: 30,
 
   async fetch(req: Request, server: any): Promise<Response | undefined> {
     const url = getRequestUrl(req, config.PORT);

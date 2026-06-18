@@ -1,6 +1,8 @@
 import { tool } from "@opencode-ai/plugin";
-import Replicate from "replicate";
 import { getEnv, getKortixRouterBase } from "./lib/get-env";
+// NOTE: `replicate` is imported lazily inside enrichImages() — a top-level
+// import makes opencode load this heavy SDK at sandbox boot (tool modules are
+// evaluated eagerly), adding ~seconds to cold start. Deferred to first use.
 
 const SERPER_DEFAULT_URL = "https://google.serper.dev";
 
@@ -96,6 +98,7 @@ async function enrichImages(images: EnrichedImage[]): Promise<EnrichedImage[]> {
     : getEnv("REPLICATE_API_TOKEN");
   if (!replicateToken || images.length === 0) return images;
 
+  const Replicate = (await import("replicate")).default;
   const replicate = new Replicate({
     auth: replicateToken,
     ...(replicateBaseUrl ? { baseUrl: replicateBaseUrl } : {}),

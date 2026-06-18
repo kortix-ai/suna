@@ -18,6 +18,10 @@ export interface SSEStreamOptions {
   url: string;
   /** Bearer token for Authorization header */
   token: string;
+  /** HTTP method (default GET). Use POST to send a JSON `body`. */
+  method?: 'GET' | 'POST';
+  /** JSON-serializable request body (only sent for non-GET methods). */
+  body?: unknown;
   /** Called when a named SSE event is received */
   onEvent?: (event: string, data: string) => void;
   /** Called when the connection is established */
@@ -43,7 +47,16 @@ export interface SSEStream {
  * Create a fetch-based SSE stream with header-based auth.
  */
 export function createSSEStream(options: SSEStreamOptions): SSEStream {
-  const { url, token, onEvent, onOpen, onError, signal: externalSignal } = options;
+  const {
+    url,
+    token,
+    method = 'GET',
+    body,
+    onEvent,
+    onOpen,
+    onError,
+    signal: externalSignal,
+  } = options;
 
   const listeners = new Map<string, Set<(data: string) => void>>();
   let abortController: AbortController | null = null;
@@ -72,12 +85,19 @@ export function createSSEStream(options: SSEStreamOptions): SSEStream {
       : abortController.signal;
 
     try {
+      const headers: Record<string, string> = {
+        'Accept': 'text/event-stream',
+        'Authorization': `Bearer ${token}`,
+      };
+      if (method !== 'GET' && body !== undefined) {
+        headers['Content-Type'] = 'application/json';
+      }
+
       const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Accept': 'text/event-stream',
-          'Authorization': `Bearer ${token}`,
-        },
+        method,
+        headers,
+        body:
+          method !== 'GET' && body !== undefined ? JSON.stringify(body) : undefined,
         signal: combinedSignal,
         credentials: 'include',
       });

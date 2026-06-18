@@ -41,7 +41,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion } from 'motion/react';
 import { VoiceRecorder } from '@/components/thread/chat-input/voice-recorder';
 import { ModelSelector } from './model-selector';
 import type {

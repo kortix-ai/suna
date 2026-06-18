@@ -3,6 +3,8 @@
 # Kortix sandbox image — the base Daytona snapshot for every project
 # session. Bakes:
 #   - git + ca-certificates + curl  (project repo materialization)
+#   - ripgrep                       (daemon /find text search; Node fallback
+#                                    covers images built before this was added)
 #   - opencode CLI                  (the supervised child process)
 #   - kortix-agent                  (compiled daemon from
 #                                    apps/kortix-sandbox-agent-server)
@@ -59,6 +61,7 @@ ARG TARGETARCH
 WORKDIR /cli
 COPY apps/cli ./apps/cli
 COPY packages/manifest-schema ./packages/manifest-schema
+COPY packages/registry ./packages/registry
 COPY packages/starter ./packages/starter
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
     && case "${TARGETARCH:-}" in \
@@ -75,8 +78,8 @@ RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","
 FROM oven/bun:1-debian
 
 ARG OPENCODE_VERSION=1.14.28
-# Keep in sync with AGENT_BROWSER_VERSION / PLAYWRIGHT_VERSION in
-# apps/api/src/snapshots/{builder,dockerfile-layer}.ts
+# Keep AGENT_BROWSER_VERSION / PLAYWRIGHT_VERSION in sync with the production
+# snapshot layer: apps/api/src/snapshots/dockerfile-layer.ts (and warm-bake.ts).
 ARG AGENT_BROWSER_VERSION=0.27.0
 ARG PLAYWRIGHT_VERSION=1.60.0
 
@@ -87,6 +90,7 @@ RUN apt-get update \
         git \
         nodejs \
         npm \
+        ripgrep \
         unzip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -112,19 +116,33 @@ RUN mkdir -p /opt/kortix/home/.bun/install/cache /tmp/oc-deps \
 # agent-browser (Vercel agent-browser): browser-automation CLI for the agent.
 # Chrome for Testing (what `agent-browser install` fetches) has no linux-arm64
 # build, so we source Chromium from Playwright instead — it ships both
-# linux-x64 and linux-arm64 builds and installs the OS libs via --with-deps —
-# and point agent-browser at it with AGENT_BROWSER_EXECUTABLE_PATH below.
-RUN npm install -g --no-audit --no-fund "agent-browser@${AGENT_BROWSER_VERSION}" \
-    && apt-get update \
-    && PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -sf "$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" /usr/local/bin/chromium \
-    && /usr/local/bin/chromium --version \
-    && agent-browser --version
+# linux-x64 and linux-arm64 builds and installs the OS libs via --with-deps.
+# We wire agent-browser to it TWO independent ways so it works out of the box
+# with no runtime download: (1) AGENT_BROWSER_EXECUTABLE_PATH → a stable
+# /usr/local/bin/chromium symlink, and (2) a symlink into agent-browser's OWN
+# browser cache (chrome-linux64) that its auto-detect finds even if the env var
+# is ever ignored again (vercel-labs/agent-browser#422). The build FAILS LOUDLY
+# if Chromium didn't wire up. HOME pins the cache to the runtime HOME so the
+# agent finds it at runtime. Keep PLAYWRIGHT_VERSION in sync with
+# apps/api/src/snapshots/dockerfile-layer.ts + warm-bake.ts.
 # --no-sandbox: container runs as root and Chromium refuses its own sandbox there.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \
     AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \
     AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage
+RUN npm install -g --no-audit --no-fund "agent-browser@${AGENT_BROWSER_VERSION}" \
+    && agent-browser --version \
+    && HOME=/opt/kortix/home npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/* \
+    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \
+    && test -n "$pw_chrome" \
+    && ln -sf "$pw_chrome" /usr/local/bin/chromium \
+    && mkdir -p /opt/kortix/home/.agent-browser/browsers \
+    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \
+    && /usr/local/bin/chromium --version \
+    # Match the resolved PATH, not the browser name ("Chromium" on arm64 vs
+    # "Google Chrome for Testing" on x64). Reads the detection line, not the
+    # launch verdict, so it's safe under cross-arch QEMU builds.
+    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'
 
 COPY --from=builder /agent/dist/kortix-agent /usr/local/bin/kortix-agent
 # The admin CLI every in-sandbox agent reaches for: `kortix cr open`,

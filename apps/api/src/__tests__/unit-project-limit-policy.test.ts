@@ -1,9 +1,9 @@
 /**
  * Unit test for the project-limit POLICY: `maxProjectsForAccount` — the
- * plan→max-project-count mapping. Free (and the placeholder `none`) → 1; any
- * paid tier → `MAX_PROJECTS_PER_ACCOUNT`; billing disabled (local / self-hosted)
- * → uncapped. The HTTP enforcement of this number lives in
- * `e2e-project-limit.test.ts`.
+ * plan→max-project-count mapping. Free (and the placeholder `none`) →
+ * `FREE_TIER_PROJECT_LIMIT`; any paid tier → `MAX_PROJECTS_PER_ACCOUNT`;
+ * Enterprise → uncapped; billing disabled (local / self-hosted) → uncapped.
+ * The HTTP enforcement of this number lives in `e2e-project-limit.test.ts`.
  */
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { MAX_PROJECTS_PER_ACCOUNT } from '../billing/services/tiers';
@@ -43,20 +43,20 @@ describe('maxProjectsForAccount — plan → project cap', () => {
     currentTier = 'free';
   });
 
-  test('free tier → exactly 1 (FREE_TIER_PROJECT_LIMIT)', async () => {
+  test('free tier → FREE_TIER_PROJECT_LIMIT (1)', async () => {
     currentTier = 'free';
     expect(FREE_TIER_PROJECT_LIMIT).toBe(1);
-    expect(await maxProjectsForAccount(nextAccount())).toBe(1);
+    expect(await maxProjectsForAccount(nextAccount())).toBe(FREE_TIER_PROJECT_LIMIT);
   });
 
-  test('no subscription row (null) is treated as free → 1', async () => {
+  test('no subscription row (null) is treated as free', async () => {
     currentTier = null;
-    expect(await maxProjectsForAccount(nextAccount())).toBe(1);
+    expect(await maxProjectsForAccount(nextAccount())).toBe(FREE_TIER_PROJECT_LIMIT);
   });
 
-  test("placeholder 'none' tier → 1", async () => {
+  test("placeholder 'none' tier → free limit", async () => {
     currentTier = 'none';
-    expect(await maxProjectsForAccount(nextAccount())).toBe(1);
+    expect(await maxProjectsForAccount(nextAccount())).toBe(FREE_TIER_PROJECT_LIMIT);
   });
 
   test('per-seat (team) plan → MAX_PROJECTS_PER_ACCOUNT', async () => {
@@ -72,6 +72,11 @@ describe('maxProjectsForAccount — plan → project cap', () => {
   test('legacy paid tier → MAX_PROJECTS_PER_ACCOUNT (any non-free tier is paid)', async () => {
     currentTier = 'tier_25_200';
     expect(await maxProjectsForAccount(nextAccount())).toBe(MAX_PROJECTS_PER_ACCOUNT);
+  });
+
+  test('enterprise → uncapped (unlimited projects)', async () => {
+    currentTier = 'enterprise';
+    expect(await maxProjectsForAccount(nextAccount())).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   test('billing disabled → uncapped regardless of tier', async () => {

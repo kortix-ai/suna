@@ -2,7 +2,13 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useMemo } from 'react';
+import { UnifiedMarkdown } from '@/components/markdown';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { InfoBanner } from '@/components/ui/info-banner';
+import { Skeleton } from '@/components/ui/skeleton';
+import { errorToast, successToast } from '@/components/ui/toast';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import {
   AlertTriangle,
@@ -19,20 +25,8 @@ import {
   RotateCcw,
   X,
 } from 'lucide-react';
-import { toast } from '@/lib/toast';
-
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Skeleton } from '@/components/ui/skeleton';
-import { Badge } from '@/components/ui/badge';
-import { InfoBanner } from '@/components/ui/info-banner';
-import { UnifiedMarkdown } from '@/components/markdown';
-import { DiffRenderer } from './diff-renderer';
+import { useMemo } from 'react';
+import type { ChangeRequestStatus } from '../api/change-requests';
 import {
   useChangeRequest,
   useChangeRequestDiff,
@@ -41,7 +35,7 @@ import {
   useMergeChangeRequest,
   useReopenChangeRequest,
 } from '../hooks/use-change-requests';
-import type { ChangeRequestStatus } from '../api/change-requests';
+import { DiffRenderer } from './diff-renderer';
 
 function relativeTime(iso: string): string {
   const seconds = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
@@ -142,29 +136,29 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
     if (!crId) return;
     mergeMutation.mutate(crId, {
       onSuccess: (res) => {
-        toast.success(
+        successToast(
           res.merge.fast_forward
             ? 'Merged (fast-forward)'
             : `Merged ${res.merge.merge_commit_sha.slice(0, 7)}`,
         );
       },
-      onError: (err) => toast.error(err.message),
+      onError: (err) => errorToast(err.message),
     });
   };
 
   const handleClose = () => {
     if (!crId) return;
     closeMutation.mutate(crId, {
-      onSuccess: () => toast.success('Change request closed'),
-      onError: (err) => toast.error(err.message),
+      onSuccess: () => successToast('Change request closed'),
+      onError: (err) => errorToast(err.message),
     });
   };
 
   const handleReopen = () => {
     if (!crId) return;
     reopenMutation.mutate(crId, {
-      onSuccess: () => toast.success('Change request reopened'),
-      onError: (err) => toast.error(err.message),
+      onSuccess: () => successToast('Change request reopened'),
+      onError: (err) => errorToast(err.message),
     });
   };
 
@@ -174,7 +168,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent
         hideCloseButton
-        className="max-w-4xl p-0 gap-0 overflow-hidden max-h-[88vh] flex flex-col"
+        className="flex max-h-[88vh] max-w-4xl flex-col gap-0 overflow-hidden p-0"
       >
         {/* Always render a DialogTitle for a11y; visually hidden when we have
             our custom header layout to avoid double-rendering. */}
@@ -182,8 +176,8 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
           <DialogTitle>{dialogTitle}</DialogTitle>
         </VisuallyHidden>
 
-        <DialogHeader className="flex flex-row items-center gap-3 border-b border-border/40 px-5 py-3 space-y-0">
-          <div className="flex-1 min-w-0">
+        <DialogHeader className="border-border/40 flex flex-row items-center gap-3 space-y-0 border-b px-5 py-3">
+          <div className="min-w-0 flex-1">
             {!cr ? (
               <div className="space-y-1.5">
                 <Skeleton className="h-5 w-2/3" />
@@ -191,14 +185,14 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-muted-foreground font-mono text-xs tabular-nums">
                     #{cr.number}
                   </span>
-                  <h2 className="text-sm font-medium leading-tight">{cr.title}</h2>
+                  <h2 className="text-sm leading-tight font-medium">{cr.title}</h2>
                   <StatusBadge status={cr.status} />
                 </div>
-                <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
+                <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-1.5 text-xs">
                   <GitBranch className="h-3 w-3" />
                   <span className="font-mono">{cr.head_ref}</span>
                   <span className="text-muted-foreground/60">→</span>
@@ -216,7 +210,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             )}
           </div>
           {/* Action buttons */}
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex shrink-0 items-center gap-1.5">
             {cr?.status === 'open' && (
               <>
                 <Button
@@ -262,22 +256,31 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
         {/* Native overflow scrolling — Radix ScrollArea's viewport doesn't
             reliably bound its height inside this flex dialog, so the body
             wouldn't scroll. A plain min-h-0 + overflow-y-auto flex child does. */}
-        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
-          <div className="px-5 py-4 space-y-3">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="space-y-3 px-5 py-4">
             {/* Description — authored by the agent as markdown (headings,
                 lists, code, links), so render it as such rather than raw text. */}
             {cr?.description && (
-              <div className="text-sm text-muted-foreground">
+              <div className="text-muted-foreground text-sm">
                 <UnifiedMarkdown content={cr.description} />
               </div>
             )}
 
             {/* Merge state banner */}
-            {cr?.status === 'open' && preview && (
-              preview.is_up_to_date ? (
-                <InfoBanner tone="neutral" icon={RefreshCcw} className="px-3 py-2">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line269JsxTextThisVersionIsAlreadyAtTheBaseNothing')}</InfoBanner>
+            {cr?.status === 'open' &&
+              preview &&
+              (preview.is_up_to_date ? (
+                <InfoBanner tone="neutral" icon={RefreshCcw} className="px-3 py-2">
+                  {tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsChangeRequestDetailDialog.line269JsxTextThisVersionIsAlreadyAtTheBaseNothing',
+                  )}
+                </InfoBanner>
               ) : preview.can_merge ? (
-                <InfoBanner tone="success" icon={Check} className="px-3 py-2">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line273JsxTextMergeableCleanly')}{' '}{preview.can_fast_forward ? ' (fast-forward)' : ' (3-way merge)'}.
+                <InfoBanner tone="success" icon={Check} className="px-3 py-2">
+                  {tHardcodedUi.raw(
+                    'featuresProjectFilesComponentsChangeRequestDetailDialog.line273JsxTextMergeableCleanly',
+                  )}{' '}
+                  {preview.can_fast_forward ? ' (fast-forward)' : ' (3-way merge)'}.
                 </InfoBanner>
               ) : (
                 <InfoBanner
@@ -285,7 +288,11 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                   icon={AlertTriangle}
                   className="px-3 py-2"
                   title={
-                    <>{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line283JsxTextConflictsIn')}{' '}{preview.conflicts.length} file
+                    <>
+                      {tHardcodedUi.raw(
+                        'featuresProjectFilesComponentsChangeRequestDetailDialog.line283JsxTextConflictsIn',
+                      )}{' '}
+                      {preview.conflicts.length} file
                       {preview.conflicts.length === 1 ? '' : 's'}
                     </>
                   }
@@ -296,8 +303,7 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                     ))}
                   </ul>
                 </InfoBanner>
-              )
-            )}
+              ))}
 
             {cr?.status === 'merged' && (
               <InfoBanner tone="neutral" icon={GitMerge} className="items-center px-3 py-2">
@@ -316,22 +322,22 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
             {diffQuery.isLoading ? (
               <Skeleton className="h-32 w-full rounded-2xl" />
             ) : diff && diff.files.length > 0 ? (
-              <div className="rounded-2xl border border-border/60 bg-card overflow-hidden">
-                <div className="flex items-center justify-between border-b border-border/60 px-3 py-2">
-                  <h3 className="text-xs font-medium text-foreground">
+              <div className="border-border/60 bg-card overflow-hidden rounded-2xl border">
+                <div className="border-border/60 flex items-center justify-between border-b px-3 py-2">
+                  <h3 className="text-foreground text-xs font-medium">
                     {diff.files.length} file{diff.files.length === 1 ? '' : 's'} changed
                   </h3>
-                  <span className="text-xs text-muted-foreground tabular-nums">
+                  <span className="text-muted-foreground text-xs tabular-nums">
                     <span className="text-emerald-600">+{totalLines.adds}</span>{' '}
                     <span className="text-red-600">-{totalLines.dels}</span>
                   </span>
                 </div>
-                <div className="divide-y divide-border/40">
+                <div className="divide-border/40 divide-y">
                   {diff.files.map((f) => (
                     <div key={f.path} className="flex items-center gap-2 px-3 py-1.5 text-xs">
                       <FileStatusIcon status={f.status} />
-                      <span className="font-mono text-foreground truncate">{f.path}</span>
-                      <span className="ml-auto text-xs text-muted-foreground tabular-nums">
+                      <span className="text-foreground truncate font-mono">{f.path}</span>
+                      <span className="text-muted-foreground ml-auto text-xs tabular-nums">
                         <span className="text-emerald-600">+{f.additions}</span>{' '}
                         <span className="text-red-600">-{f.deletions}</span>
                       </span>
@@ -339,14 +345,14 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                   ))}
                 </div>
                 {diff.patch && (
-                  <div className="border-t border-border/60">
+                  <div className="border-border/60 border-t">
                     {splitUnifiedPatch(diff.patch).map((chunk, i) => (
                       <div
                         key={chunk.path || i}
-                        className="border-b border-border/40 last:border-b-0"
+                        className="border-border/40 border-b last:border-b-0"
                       >
                         {chunk.path && (
-                          <div className="flex items-center gap-2 bg-muted/30 px-3 py-1.5 text-xs font-mono text-muted-foreground border-b border-border/40">
+                          <div className="bg-muted/30 text-muted-foreground border-border/40 flex items-center gap-2 border-b px-3 py-1.5 font-mono text-xs">
                             {chunk.path}
                           </div>
                         )}
@@ -357,7 +363,11 @@ export function ChangeRequestDetailDialog({ crId, onClose }: ChangeRequestDetail
                 )}
               </div>
             ) : (
-              <p className="rounded-2xl border border-dashed border-border/60 p-5 text-center text-xs text-muted-foreground">{tHardcodedUi.raw('featuresProjectFilesComponentsChangeRequestDetailDialog.line356JsxTextNoChangesDetected')}</p>
+              <p className="border-border/60 text-muted-foreground rounded-2xl border border-dashed p-5 text-center text-xs">
+                {tHardcodedUi.raw(
+                  'featuresProjectFilesComponentsChangeRequestDetailDialog.line356JsxTextNoChangesDetected',
+                )}
+              </p>
             )}
           </div>
         </div>

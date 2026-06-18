@@ -1,15 +1,15 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import Image from 'next/image';
-import { CalendarDays, Mail, MessageCircle, X } from 'lucide-react';
 import { toast } from '@/lib/toast';
+import { CalendarDays, Mail, MessageCircle, X } from 'lucide-react';
+import Image from 'next/image';
+import { useCallback, useEffect, useState } from 'react';
 
+import { DemoQualifierDialog } from '@/components/contact/demo-qualifier-dialog';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
-import { DemoQualifierDialog } from '@/components/contact/demo-qualifier-dialog';
 import { isWorkEmail } from '@/lib/personal-email';
 import { cn } from '@/lib/utils';
 
@@ -60,8 +60,7 @@ export function PersonalOnboardingWelcome({
   const [qualifierOpen, setQualifierOpen] = useState(false);
   const [visible, setVisible] = useState(false);
   const onboarding = useProjectOnboarding(projectId ?? '');
-  const wizardPending =
-    !!projectId && onboarding.hydrated && onboarding.status === 'pending';
+  const wizardPending = !!projectId && onboarding.hydrated && onboarding.status === 'pending';
 
   // Slide-in once dismissed-state has hydrated and we know we should render.
   useEffect(() => {
@@ -94,20 +93,20 @@ export function PersonalOnboardingWelcome({
       <div
         className={cn(
           'fixed z-40 transition-all duration-300 ease-out',
-          'bottom-4 right-4 sm:bottom-6 sm:right-6',
+          'right-4 bottom-4 sm:right-6 sm:bottom-6',
           'w-[min(480px,calc(100vw-2rem))]',
           visible ? 'translate-y-0 opacity-100' : 'translate-y-6 opacity-0',
         )}
         role="complementary"
         aria-label="Welcome from Marko"
       >
-        <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-card shadow-lg">
+        <div className="border-border/60 bg-card relative overflow-hidden rounded-2xl border shadow-lg">
           <button
             type="button"
             onClick={dismiss}
             aria-label="Dismiss"
             className={cn(
-              'absolute right-4 top-4 z-10 grid size-8 place-items-center rounded-full',
+              'absolute top-4 right-4 z-10 grid size-8 place-items-center rounded-full',
               'text-muted-foreground/70 hover:bg-muted hover:text-foreground',
               'transition-colors',
             )}
@@ -117,7 +116,7 @@ export function PersonalOnboardingWelcome({
 
           <div className="relative flex flex-col gap-5 p-6 sm:p-7">
             <div className="flex items-start gap-4">
-              <div className="relative size-12 shrink-0 overflow-hidden rounded-2xl border border-border/60 bg-muted">
+              <div className="border-border/60 bg-muted relative size-12 shrink-0 overflow-hidden rounded-2xl border">
                 <Image
                   src="/marko.png"
                   alt="Marko Kraemer"
@@ -129,16 +128,14 @@ export function PersonalOnboardingWelcome({
               </div>
 
               <div className="min-w-0 flex-1 pr-8">
-                <h2 className="text-base font-semibold tracking-tight text-foreground">
+                <h2 className="text-foreground text-base font-semibold tracking-tight">
                   Hey, I&rsquo;m Marko
                 </h2>
-                <p className="mt-0.5 text-sm text-muted-foreground">
-                  Founder &amp; CEO, Kortix
-                </p>
+                <p className="text-muted-foreground mt-0.5 text-sm">Founder &amp; CEO, Kortix</p>
               </div>
             </div>
 
-            <p className="text-sm leading-relaxed text-foreground/90">
+            <p className="text-foreground/90 text-sm leading-relaxed">
               Want a hand setting up your company&rsquo;s AI command center?
               {isPaid
                 ? ' Book a call or send me a WhatsApp message whenever you need help.'
@@ -152,11 +149,7 @@ export function PersonalOnboardingWelcome({
               </Button>
               {isPaid && (
                 <Button asChild variant="outline">
-                  <a
-                    href={`https://wa.me/${MARKO_WHATSAPP}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
+                  <a href={`https://wa.me/${MARKO_WHATSAPP}`} target="_blank" rel="noreferrer">
                     <MessageCircle />
                     WhatsApp
                   </a>

@@ -1,7 +1,7 @@
 'use client';
 
+import { errorToast, loadingToast } from '@/components/ui/toast';
 import { useCallback, useRef, useState } from 'react';
-import { toast } from '@/lib/toast';
 import { downloadDirectory } from '../api/opencode-files';
 import { useProjectContext } from '../context';
 
@@ -22,22 +22,26 @@ export function useDirectoryDownload() {
   const downloadDir = useCallback(
     async (dirPath: string, dirName: string) => {
       if (!projectId || !ref) {
-        toast.error('Project not ready');
+        errorToast('Project not ready');
         return;
       }
       if (activeRef.current.has(dirPath)) return;
       activeRef.current.add(dirPath);
       rerender();
 
-      const toastId = toast.loading(`Downloading ${dirName}…`, { duration: Infinity });
       try {
-        await downloadDirectory(projectId, ref, dirPath, dirName);
-        toast.success(`Downloaded ${dirName}.zip`, { id: toastId, duration: 3000 });
-      } catch (err) {
-        toast.error(
-          `Failed to download ${dirName}: ${err instanceof Error ? err.message : 'Unknown error'}`,
-          { id: toastId, duration: 5000 },
+        await loadingToast(
+          `Downloading ${dirName}…`,
+          () => downloadDirectory(projectId, ref, dirPath, dirName),
+          {
+            success: `Downloaded ${dirName}.zip`,
+            showErrorToast: true,
+            error: (err) =>
+              `Failed to download ${dirName}: ${err instanceof Error ? err.message : 'Unknown error'}`,
+          },
         );
+      } catch {
+        // loadingToast already surfaced the error toast
       } finally {
         activeRef.current.delete(dirPath);
         rerender();

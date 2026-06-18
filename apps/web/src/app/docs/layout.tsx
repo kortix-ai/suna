@@ -1,5 +1,5 @@
-import { source } from '@/lib/source';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { source } from '@/lib/source';
 import { DocsLayout } from 'fumadocs-ui/layouts/docs';
 import { RootProvider } from 'fumadocs-ui/provider';
 import { Github } from 'lucide-react';
@@ -14,10 +14,8 @@ function DocsLogo() {
           KortixLogo component so the docs stay in lockstep with the rest of
           the app's brand treatment. */}
       <KortixLogo variant="logomark" size={18} />
-      <span aria-hidden className="h-3.5 w-px shrink-0 bg-fd-border" />
-      <span className="text-[13px] font-medium tracking-tight text-fd-muted-foreground">
-        Docs
-      </span>
+      <span aria-hidden className="bg-fd-border h-3.5 w-px shrink-0" />
+      <span className="text-fd-muted-foreground text-[13px] font-medium tracking-tight">Docs</span>
     </span>
   );
 }

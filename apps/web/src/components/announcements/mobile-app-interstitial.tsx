@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 
 const STORAGE_KEY = 'kortix-mobile-banner-dismissed';
 const DISMISS_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days

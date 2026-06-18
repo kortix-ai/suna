@@ -101,6 +101,13 @@ resource "helm_release" "external_secrets" {
 # records IT created (tagged with the TXT owner), and domainFilters confines it
 # to api-eks.kortix.com — so it can never disturb api.kortix.com, api-ecs, or any
 # other record in the shared zone.
+#
+# zoneIdFilters pins the kortix.com hosted zone by ID. This is REQUIRED: the
+# domainFilters are subdomains (api-eks / preview-api), and external-dns's zone
+# discovery only matches a zone whose NAME equals or is a parent of a filter —
+# "kortix.com" is neither, so without the zone-id pin external-dns finds no
+# hosted zone, logs "no hosted zone matching record DNS Name", and silently
+# manages nothing. The domainFilters still scope which records it may write.
 resource "helm_release" "external_dns" {
   name       = "external-dns"
   repository = "https://kubernetes-sigs.github.io/external-dns/"
@@ -123,8 +130,14 @@ resource "helm_release" "external_dns" {
         }
       }
     }]
-    domainFilters = [var.api_domain]
-    policy        = "sync"
+    domainFilters = concat([var.api_domain], var.extra_domain_filters)
+    # Pin the kortix.com zone by ID via extraArgs (the chart silently drops a
+    # top-level `zoneIdFilters` value, so it never reached the container). REQUIRED:
+    # the domainFilters are subdomains, so without --zone-id-filter external-dns
+    # matches the zone NAME (kortix.com) against them, finds no match, discards the
+    # zone, and manages nothing.
+    extraArgs = var.cloudflare_zone_id != "" ? ["--zone-id-filter=${var.cloudflare_zone_id}"] : []
+    policy    = "sync"
     registry      = "txt"
     txtOwnerId    = var.cluster_name
     # Cloudflare proxying is decided per-record via the Ingress annotation
@@ -200,6 +213,19 @@ resource "helm_release" "cluster_autoscaler" {
   set {
     name  = "extraArgs.expander"
     value = "least-waste"
+  }
+  # Aggressive scale-down (dev): also reclaim nodes whose only blockers are pods
+  # with local storage (emptyDir caches: argo-cd/argo-rollouts/metrics-server) or
+  # kube-system pods without a PDB (external-dns). Without this the autoscaler
+  # NEVER drains a node — every node has such a pod — so a low-traffic cluster is
+  # pinned at its initial size. Conservative (true) by default; prod keeps it.
+  set {
+    name  = "extraArgs.skip-nodes-with-local-storage"
+    value = var.autoscaler_aggressive_scaledown ? "false" : "true"
+  }
+  set {
+    name  = "extraArgs.skip-nodes-with-system-pods"
+    value = var.autoscaler_aggressive_scaledown ? "false" : "true"
   }
 }
 

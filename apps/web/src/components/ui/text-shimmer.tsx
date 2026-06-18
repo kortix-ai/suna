@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo, type JSX } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
 
 export type TextShimmerProps = {
@@ -23,7 +23,7 @@ function TextShimmerComponent({
   repeat = Infinity,
 }: TextShimmerProps) {
   const MotionComponent = motion.create(
-    Component as keyof JSX.IntrinsicElements
+    Component as keyof JSX.IntrinsicElements,
   );
 
   const dynamicSpread = useMemo(() => {
@@ -37,7 +37,7 @@ function TextShimmerComponent({
         'text-transparent [--base-color:#a1a1aa] [--base-gradient-color:#000]',
         '[background-repeat:no-repeat,padding-box] [--bg:linear-gradient(90deg,#0000_calc(50%-var(--spread)),var(--base-gradient-color),#0000_calc(50%+var(--spread)))]',
         'dark:[--base-color:#71717a] dark:[--base-gradient-color:#ffffff] dark:[--bg:linear-gradient(90deg,#0000_calc(50%-var(--spread)),var(--base-gradient-color),#0000_calc(50%+var(--spread)))]',
-        className
+        className,
       )}
       initial={{ backgroundPosition: '100% center' }}
       animate={{ backgroundPosition: '0% center' }}

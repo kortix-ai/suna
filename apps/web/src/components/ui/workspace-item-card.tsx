@@ -5,7 +5,7 @@
  * No icons — name, kind badge, scope/meta line, description, action slot.
  */
 
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
@@ -61,7 +61,10 @@ export function WorkspaceItemCard({
               >
                 {item.name}
               </h3>
-              <Badge variant="secondary" className="text-xs px-1.5 py-0 shrink-0">
+              <Badge
+                variant="secondary"
+                className="text-xs px-1.5 py-0 shrink-0"
+              >
                 {item.kindLabel}
               </Badge>
             </div>
@@ -79,9 +82,7 @@ export function WorkspaceItemCard({
             </p>
           </div>
 
-          {actions && (
-            <div className="flex justify-end">{actions}</div>
-          )}
+          {actions && <div className="flex justify-end">{actions}</div>}
         </div>
       </SpotlightCard>
     </motion.div>

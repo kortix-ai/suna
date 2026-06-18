@@ -13,10 +13,15 @@ CREATE TABLE IF NOT EXISTS "kortix"."project_group_grants" (
   "account_id"  uuid NOT NULL REFERENCES "kortix"."accounts"("account_id") ON DELETE CASCADE,
   "role"        "kortix"."project_role" NOT NULL DEFAULT 'viewer',
   "granted_by"  uuid,
+  "expires_at"  timestamptz,
   "created_at"  timestamptz NOT NULL DEFAULT now(),
   "updated_at"  timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT "project_group_grants_pk" PRIMARY KEY ("project_id", "group_id")
 );
+
+-- Idempotent for DBs where the table existed before expires_at was added.
+ALTER TABLE "kortix"."project_group_grants"
+  ADD COLUMN IF NOT EXISTS "expires_at" timestamptz;
 
 CREATE INDEX IF NOT EXISTS "idx_project_group_grants_project"
   ON "kortix"."project_group_grants" ("project_id");
@@ -24,3 +29,6 @@ CREATE INDEX IF NOT EXISTS "idx_project_group_grants_group"
   ON "kortix"."project_group_grants" ("group_id");
 CREATE INDEX IF NOT EXISTS "idx_project_group_grants_account"
   ON "kortix"."project_group_grants" ("account_id");
+CREATE INDEX IF NOT EXISTS "idx_project_group_grants_expires_at"
+  ON "kortix"."project_group_grants" ("expires_at")
+  WHERE "expires_at" IS NOT NULL;

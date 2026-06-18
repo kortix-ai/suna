@@ -39,6 +39,11 @@ const fakeDb = {
     from: (table: { __table: string }) => ({
       where: () => ({
         limit: async (count: number) => rowsForTable(table).slice(0, count),
+        // resolveAccountId orders memberships by joinedAt to pick the
+        // user's primary (earliest) account.
+        orderBy: () => ({
+          limit: async (count: number) => rowsForTable(table).slice(0, count),
+        }),
       }),
     }),
   }),

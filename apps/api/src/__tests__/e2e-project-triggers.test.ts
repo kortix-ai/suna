@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
 import { mockIamEngineAllowAll, mockIamMembershipSyncNoop } from './helpers/iam-mocks';
-import { createHmac } from 'node:crypto';
+import { createHmac, randomUUID } from 'node:crypto';
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import {
@@ -11,6 +11,7 @@ import {
   projectSessions,
   projectTriggerRuntime,
   projects,
+  sessionLifecycleCommands,
 } from '@kortix/db';
 
 const USER_ID = '00000000-0000-4000-a000-000000000001';
@@ -32,6 +33,7 @@ let sandboxProvisionCalls = 0;
 let lastProvisionEnv: Record<string, string> | null = null;
 let runtimeRows: Array<{ projectId: string; slug: string; lastFiredAt: Date | null; updatedAt: Date }>;
 let sessionRows: Array<typeof projectSessions.$inferSelect>;
+let lifecycleCommandRows: Array<typeof sessionLifecycleCommands.$inferSelect>;
 let activeSessionCount = 0;
 let provisioningSessionCount = 0;
 let secretRows: Array<typeof projectSecrets.$inferSelect>;
@@ -68,6 +70,7 @@ function resetState() {
   lastProvisionEnv = null;
   runtimeRows = [];
   sessionRows = [];
+  lifecycleCommandRows = [];
   activeSessionCount = 0;
   provisioningSessionCount = 0;
   secretRows = [];
@@ -139,11 +142,20 @@ mock.module("../snapshots/builder", () => ({
   listSandboxTemplates: async () => [],
   resolveTemplate: async () => ({ slug: "default", spec: {}, isDefault: true }),
   kickPreBuild: () => {},
+  kickProjectTemplatePrebuilds: () => {},
+  kickStartupPreBuild: () => {},
+  reconcileProjectTemplates: async () => undefined,
+  reconcileStaleBuilds: async () => undefined,
+  ensurePlatformDefaultImage: async () => undefined,
   resolveCommitSha: async () => "a".repeat(40),
   DEFAULT_SANDBOX_SLUG: "default",
 }));
 
 mock.module('../projects/github', () => ({
+  parseGitHubRepoUrl: (repoUrl: string) => ({
+    owner: 'kortix-org',
+    repo: repoUrl.split('/').pop()?.replace(/\.git$/, '') ?? 'trigger-project',
+  }),
   buildGitHubAppInstallUrl: () => 'https://github.com/apps/kortix-test/installations/new',
   verifyGitHubAppInstallState: (state: string) => state,
   verifyGitHubAppInstallStatePayload: (state: string) => ({
@@ -151,6 +163,7 @@ mock.module('../projects/github', () => ({
     nonce: 'test-nonce',
     issuedAt: Math.floor(Date.now() / 1000),
   }),
+  createGitHubAppJwt: () => 'jwt-test',
   getGitHubPatAuthContext: () => ({ token: 'pat-token', source: 'pat', owner: 'kortix-org' }),
   commitFile: async (opts: { path: string; content: string; message: string }) => {
     repoFiles.set(opts.path, opts.content);
@@ -186,6 +199,11 @@ mock.module('../projects/github', () => ({
   listInstallationRepositories: async () => [],
   isGithubAppConfigured: () => false,
   isGithubPatConfigured: () => true,
+  isOrgAccount: async () => true,
+  deleteRepo: async () => undefined,
+  addCollaborator: async () => undefined,
+  getBranchCommitSha: async () => 'a'.repeat(40),
+  createBranchRef: async () => undefined,
 }));
 
 mock.module('../platform/services/session-sandbox', () => ({
@@ -193,6 +211,10 @@ mock.module('../platform/services/session-sandbox', () => ({
     sandboxProvisionCalls += 1;
     lastProvisionEnv = input.extraEnvVars;
   },
+}));
+
+mock.module('../platform/services/provider-balancer', () => ({
+  selectProvider: async () => 'local_docker',
 }));
 
 mock.module('../shared/resolve-account', () => ({
@@ -232,8 +254,10 @@ mock.module('../projects/secrets', () => ({
   decryptProjectSecret: (_p: string, v: string) => v.replace(/^enc:/, ''),
   isValidSecretName: (n: string) => /^[A-Z_][A-Z0-9_]*$/.test(n),
   listProjectSecrets: async () => ({}),
+  listProjectSecretsForUser: async () => ({}),
   listProjectSecretsSnapshot: async () => ({ env: {}, names: [], revision: 'empty' }),
   listProjectSecretsSnapshotForUser: async () => ({ env: {}, names: [], revision: 'empty' }),
+  projectSecretsRevision: async () => 'empty',
   getProjectSecretValue: async (_projectId: string, name: string) =>
     secretValues.get(name) ?? null,
 }));
@@ -244,10 +268,19 @@ mock.module('../shared/db', () => ({
     select: (fields?: Record<string, unknown>) => ({
       from: (table: unknown) => ({
         where: () => {
-          const result: any[] & { orderBy?: () => Promise<any[]>; limit?: () => Promise<any[]> } = [];
-          result.orderBy = async () => {
-            if (table === projectSessions) return sessionRows;
-            return [];
+          const result: any[] & { orderBy?: () => any; limit?: () => Promise<any[]> } = [];
+          result.orderBy = () => {
+            const rows =
+              table === sessionLifecycleCommands
+                ? lifecycleCommandRows
+                : table === projectSessions
+                  ? sessionRows
+                  : [];
+            const ordered = {
+              limit: async (limit: number) => rows.slice(0, limit),
+              then: (resolve: (rows: any[]) => unknown) => resolve(rows),
+            };
+            return ordered as any;
           };
           result.limit = async () => {
             if (fields && Object.keys(fields).includes('activeCount')) {
@@ -257,17 +290,22 @@ mock.module('../shared/db', () => ({
               return [{ provisioningCount: provisioningSessionCount }];
             }
             if (table === projects) return [projectRow];
-            if (table === accountMembers) return [{ accountId: ACCOUNT_ID, accountRole: 'owner', userId: USER_ID }];
+            if (table === accountMembers) {
+              return [{ accountId: ACCOUNT_ID, accountRole: 'owner', userId: USER_ID }];
+            }
             if (table === accountGithubInstallations) return [];
             if (table === projectMembers) return [];
+            if (table === sessionLifecycleCommands) return lifecycleCommandRows.slice(0, 1);
             return [];
           };
           // Some callers `await` directly without orderBy/limit (e.g. select
           // from runtime table). Make `result` a thenable that resolves to
           // the runtime rows for that table when iterated.
           (result as any).then = (resolve: (rows: any[]) => unknown) => {
-            if (table === projectTriggerRuntime) resolve(runtimeRows.filter((r) => r.projectId === PROJECT_ID));
-            else if (table === projectSecrets) resolve(secretRows);
+            if (table === projectTriggerRuntime) {
+              resolve(runtimeRows.filter((r) => r.projectId === PROJECT_ID));
+            } else if (table === projectSecrets) resolve(secretRows);
+            else if (table === sessionLifecycleCommands) resolve(lifecycleCommandRows);
             else resolve([]);
           };
           return result;
@@ -301,8 +339,64 @@ mock.module('../shared/db', () => ({
             sessionRows.push(row);
             return [row];
           }
+          if (table === sessionLifecycleCommands) {
+            const row: typeof sessionLifecycleCommands.$inferSelect = {
+              commandId: values.commandId ?? randomUUID(),
+              commandType: values.commandType,
+              source: values.source,
+              status: values.status ?? 'queued',
+              projectId: values.projectId,
+              sessionId: values.sessionId ?? null,
+              accountId: values.accountId,
+              actorUserId: values.actorUserId ?? null,
+              idempotencyKey: values.idempotencyKey ?? null,
+              payload: values.payload ?? {},
+              result: values.result ?? {},
+              attempts: values.attempts ?? 0,
+              availableAt: values.availableAt ?? now,
+              lockedBy: values.lockedBy ?? null,
+              lockedUntil: values.lockedUntil ?? null,
+              lastError: values.lastError ?? null,
+              createdAt: values.createdAt ?? now,
+              updatedAt: values.updatedAt ?? now,
+            };
+            lifecycleCommandRows.push(row);
+            return [row];
+          }
           return [];
         },
+        onConflictDoNothing: () => ({
+          returning: async () => {
+            if (table !== sessionLifecycleCommands || !values.idempotencyKey) return [];
+            const existing = lifecycleCommandRows.find(
+              (row) => row.idempotencyKey === values.idempotencyKey,
+            );
+            if (existing) return [];
+            const now = new Date('2026-01-02T00:00:00Z');
+            const row: typeof sessionLifecycleCommands.$inferSelect = {
+              commandId: values.commandId ?? randomUUID(),
+              commandType: values.commandType,
+              source: values.source,
+              status: values.status ?? 'queued',
+              projectId: values.projectId,
+              sessionId: values.sessionId ?? null,
+              accountId: values.accountId,
+              actorUserId: values.actorUserId ?? null,
+              idempotencyKey: values.idempotencyKey ?? null,
+              payload: values.payload ?? {},
+              result: values.result ?? {},
+              attempts: values.attempts ?? 0,
+              availableAt: values.availableAt ?? now,
+              lockedBy: values.lockedBy ?? null,
+              lockedUntil: values.lockedUntil ?? null,
+              lastError: values.lastError ?? null,
+              createdAt: values.createdAt ?? now,
+              updatedAt: values.updatedAt ?? now,
+            };
+            lifecycleCommandRows.push(row);
+            return [row];
+          },
+        }),
         onConflictDoUpdate: ({ set }: { set: any }) => {
           // Production code awaits this directly without calling .returning()
           // (`db.insert(...).values(...).onConflictDoUpdate({...})`). Make the
@@ -332,22 +426,40 @@ mock.module('../shared/db', () => ({
         },
       }),
     }),
-    update: () => ({
-      set: () => ({
+    update: (table: unknown) => ({
+      set: (setValues: any) => ({
         where: () => ({
-          returning: async () => [],
+          returning: async () => {
+            if (table === sessionLifecycleCommands) {
+              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
+              return lifecycleCommandRows;
+            }
+            return [];
+          },
+          then: (resolve: (rows: any[]) => unknown) => {
+            if (table === sessionLifecycleCommands) {
+              lifecycleCommandRows = lifecycleCommandRows.map((row) => ({ ...row, ...setValues }));
+            }
+            return resolve([]);
+          },
         }),
       }),
     }),
     delete: (table: unknown) => ({
       where: async () => {
         if (table === projectTriggerRuntime) runtimeRows = [];
+        if (table === sessionLifecycleCommands) lifecycleCommandRows = [];
       },
     }),
   },
 }));
 
-const { projectsApp, projectWebhooksApp, runProjectTriggerSweep } = await import('../projects/index');
+const {
+  drainSessionLifecycleQueue,
+  projectsApp,
+  projectWebhooksApp,
+  runProjectTriggerSweep,
+} = await import('../projects/index');
 
 function createApp() {
   const app = new Hono();
@@ -660,7 +772,7 @@ describe('git-backed triggers — runtime fire paths', () => {
     const body = await res.json();
     expect(body.status).toBe('fired');
     expect(body.session_id).toBeTruthy();
-    expect(branchCreateCalls).toBe(1);
+    expect(branchCreateCalls).toBe(0);
 
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
@@ -669,6 +781,33 @@ describe('git-backed triggers — runtime fire paths', () => {
     expect(runtimeRows).toHaveLength(1);
     expect(runtimeRows[0]!.slug).toBe('daily');
     expect(runtimeRows[0]!.lastFiredAt).toBeTruthy();
+  });
+
+  test('manual fire queues durably under backpressure', async () => {
+    seedManifest(cronEntry({
+      slug: 'daily',
+      name: 'Daily',
+      cron: '* * * * * *',
+      prompt: 'Run at {{ fired_at }}',
+    }));
+    provisioningSessionCount = 3;
+
+    const app = createApp();
+    const res = await app.request(`/v1/projects/${PROJECT_ID}/triggers/daily/fire`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      status: 'queued',
+      reason: 'project provisioning backpressure',
+      deduped: false,
+    });
+    expect(body.command_id).toBeTruthy();
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(runtimeRows).toHaveLength(1);
   });
 
   test('cron sweep fires due git-backed triggers', async () => {
@@ -684,6 +823,31 @@ describe('git-backed triggers — runtime fire paths', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('Sweep run');
+  });
+
+  test('cron sweep under backpressure queues and records accepted fire', async () => {
+    seedManifest(cronEntry({
+      slug: 'sweep',
+      name: 'Sweep',
+      cron: '* * * * * *',
+      prompt: 'Sweep run',
+    }));
+    provisioningSessionCount = 3;
+
+    const result = await runProjectTriggerSweep(new Date('2026-01-01T00:00:30Z'));
+    expect(result).toMatchObject({ scanned: 1, fired: 0, queued: 1, failed: 0 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(runtimeRows).toHaveLength(1);
+    expect(runtimeRows[0]!.lastFiredAt?.toISOString()).toBe('2026-01-01T00:00:30.000Z');
+
+    provisioningSessionCount = 0;
+    const retry = await runProjectTriggerSweep(new Date('2026-01-01T00:00:31Z'));
+    expect(retry).toMatchObject({ scanned: 1, fired: 1, queued: 0, failed: 0 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(runtimeRows).toHaveLength(1);
+    expect(runtimeRows[0]!.lastFiredAt?.toISOString()).toBe('2026-01-01T00:00:31.000Z');
   });
 
   test('webhook fires verify the HMAC signature and reject impostors', async () => {
@@ -732,6 +896,7 @@ describe('git-backed triggers — runtime fire paths', () => {
       headers: {
         'Content-Type': 'application/json',
         'X-Kortix-Signature': sign(rawBody, 'shhh'),
+        'X-Kortix-Delivery-Id': 'delivery-1',
       },
       body: rawBody,
     });
@@ -741,6 +906,92 @@ describe('git-backed triggers — runtime fire paths', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(sandboxProvisionCalls).toBe(1);
     expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');
+
+    const duplicate = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+        'X-Kortix-Delivery-Id': 'delivery-1',
+      },
+      body: rawBody,
+    });
+    expect(duplicate.status).toBe(202);
+    const duplicateBody = await duplicate.json();
+    expect(duplicateBody.status).toBe('deduped');
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sandboxProvisionCalls).toBe(1);
+  });
+
+  test('webhook trigger queues under backpressure and queue drain creates one session', async () => {
+    seedManifest(webhookEntry({
+      slug: 'hook',
+      name: 'Hook',
+      secretEnv: 'HOOK_SECRET',
+      prompt: 'New {{ body.action }}',
+    }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    provisioningSessionCount = 3;
+    const app = createApp();
+
+    const rawBody = JSON.stringify({ action: 'opened' });
+    const res = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+        'X-Kortix-Delivery-Id': 'queued-delivery-1',
+      },
+      body: rawBody,
+    });
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body.status).toBe('queued');
+    expect(body.command_id).toBeTruthy();
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(lifecycleCommandRows).toHaveLength(1);
+    expect(lifecycleCommandRows[0]!.status).toBe('queued');
+
+    provisioningSessionCount = 0;
+    const drained = await drainSessionLifecycleQueue({ workerId: 'test-worker', limit: 1 });
+    expect(drained).toEqual({ claimed: 1, succeeded: 1, failed: 0, queued: 0 });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(sandboxProvisionCalls).toBe(1);
+    expect(lastProvisionEnv?.KORTIX_INITIAL_PROMPT).toBe('New opened');
+    expect(lifecycleCommandRows[0]!.status).toBe('succeeded');
+    expect(lifecycleCommandRows[0]!.sessionId).toBeTruthy();
+  });
+
+  test('webhook under backpressure queues durably', async () => {
+    seedManifest(webhookEntry({
+      slug: 'hook',
+      name: 'Hook',
+      secretEnv: 'HOOK_SECRET',
+      prompt: 'New {{ body.action }}',
+    }));
+    secretValues.set('HOOK_SECRET', 'shhh');
+    provisioningSessionCount = 3;
+    const app = createApp();
+
+    const rawBody = JSON.stringify({ action: 'opened' });
+    const res = await app.request(`/v1/webhooks/projects/${PROJECT_ID}/hook`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Kortix-Signature': sign(rawBody, 'shhh'),
+      },
+      body: rawBody,
+    });
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    expect(body).toMatchObject({
+      status: 'queued',
+      reason: 'project provisioning backpressure',
+      deduped: false,
+    });
+    expect(body.command_id).toBeTruthy();
+    expect(sandboxProvisionCalls).toBe(0);
+    expect(runtimeRows).toHaveLength(1);
   });
 
   test('webhook accepts a valid static token (no HMAC) and rejects a wrong one', async () => {

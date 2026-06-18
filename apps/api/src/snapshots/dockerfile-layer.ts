@@ -30,6 +30,17 @@
 const DEFAULT_AGENT_BROWSER_VERSION = '0.27.0';
 
 /**
+ * Chromium source for `agent-browser`. agent-browser's own `install` fetches
+ * Chrome for Testing, which has NO linux-arm64 build — so we source Chromium
+ * from Playwright instead: it ships both linux-x64 AND linux-arm64, and
+ * `--with-deps` installs the OS libraries Chromium needs. Keep in sync with the
+ * pin in apps/sandbox/Dockerfile + apps/api/src/snapshots/warm-bake.ts, and bump
+ * RUNTIME_LAYER_VERSION in templates.ts when this changes so cached images
+ * rebuild (the rendered Dockerfile text is not itself part of the fingerprint).
+ */
+const PLAYWRIGHT_VERSION = '1.60.0';
+
+/**
  * Hardcoded "platform default" Dockerfile. Used when a session boots from
  * Kortix's default template — no user customization, just Ubuntu plus the
  * Kortix runtime layer on top. The workspace gets cloned at boot.
@@ -86,6 +97,15 @@ export interface BuildLayeredDockerfileOpts {
    * real snapshots.
    */
   executorSdkPath: string;
+  /**
+   * Path (in the build context) to the canonical starter `.kortix/opencode`
+   * config tree (pty plugin + standard tools + skills). When provided, the
+   * layer warms a real opencode PROJECT INSTANCE against it at build time so the
+   * costly first-instance work (Bun plugin auto-install/transpile, models.dev
+   * fetch, ripgrep) is cached into the image instead of paid on the session hot
+   * path. Optional — omit to skip the instance warm-up.
+   */
+  opencodeConfigPath?: string;
 }
 
 export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string {
@@ -98,6 +118,7 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     entrypointScriptPath,
     agentCliPath,
     executorSdkPath,
+    opencodeConfigPath,
   } = opts;
   const trimmed = normalizeUserDockerfileForSnapshot(userDockerfile).trimEnd();
 
@@ -179,9 +200,87 @@ export function buildLayeredDockerfile(opts: BuildLayeredDockerfileOpts): string
     `    && printf '{"name":"kortix-opencode-config","private":true,"dependencies":{"@mendable/firecrawl-js":"^4.25.1","@tavily/core":"^0.7.3","replicate":"^1.4.0"}}' > package.json \\`,
     '    && HOME=/opt/kortix/home BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache bun install',
     '',
+    // Warm a real opencode PROJECT INSTANCE at build time. The first time opencode
+    // creates an instance for a project dir it loads that dir's .kortix/opencode
+    // surface — importing the pty plugin + tools — which makes Bun auto-install /
+    // transpile the plugin dep tree and opencode fetch its model catalog +
+    // ripgrep. On a fresh VM that's a one-time ~6s stall (up to ~60s when npm /
+    // GitHub are contended) that gates runtimeReady right on the session hot path.
+    // We pay it ONCE here, against the canonical starter config staged at the SAME
+    // runtime path (/workspace) so Bun's content-addressed transpile cache hits at
+    // boot, then wipe /workspace (the session clones into it) while the warmed
+    // caches under /opt/kortix/home persist in the image layer. Measured: cold
+    // first-instance 6–60s → ~2–4s after this bake. Requires opencode + bun + the
+    // baked config deps above, so it must come after them. Best effort: a build
+    // without network (or a warm-up failure) just falls back to the runtime cost —
+    // set +e + trailing `true` keep the image build green.
+    ...(opencodeConfigPath
+      ? [
+          `COPY ${opencodeConfigPath}/ /opt/kortix/warm-config/.kortix/opencode/`,
+          'RUN set +e; \\',
+          '    export HOME=/opt/kortix/home \\',
+          '        XDG_DATA_HOME=/opt/kortix/home/.local/share \\',
+          '        XDG_CONFIG_HOME=/opt/kortix/home/.config \\',
+          '        XDG_CACHE_HOME=/opt/kortix/home/.cache \\',
+          '        BUN_INSTALL_CACHE_DIR=/opt/kortix/home/.bun/install/cache; \\',
+          '    mkdir -p /workspace/.kortix; \\',
+          '    cp -a /opt/kortix/warm-config/.kortix/opencode /workspace/.kortix/opencode; \\',
+          '    rm -rf /workspace/.kortix/opencode/node_modules; \\',
+          '    ln -s /opt/kortix/opencode-config-deps/node_modules /workspace/.kortix/opencode/node_modules; \\',
+          '    export OPENCODE_CONFIG_DIR=/workspace/.kortix/opencode; \\',
+          '    cd /workspace; \\',
+          '    opencode serve --port 4096 --hostname 127.0.0.1 >/tmp/oc-warm.log 2>&1 & oc_pid=$!; \\',
+          '    ready=0; \\',
+          '    for i in $(seq 1 300); do \\',
+          `        code=$(curl -s -o /dev/null -w '%{http_code}' -m 3 "http://127.0.0.1:4096/session?directory=/workspace" 2>/dev/null); \\`,
+          '        case "$code" in 200|204|301|302) ready=1; break;; esac; \\',
+          '        kill -0 "$oc_pid" 2>/dev/null || break; \\',
+          '        sleep 1; \\',
+          '    done; \\',
+          '    echo "=== instance-warm: ready=$ready ==="; \\',
+          '    kill "$oc_pid" 2>/dev/null; wait "$oc_pid" 2>/dev/null; \\',
+          '    find /workspace -mindepth 1 -delete 2>/dev/null; \\',
+          '    rm -rf /opt/kortix/warm-config; \\',
+          '    echo "=== instance-warm: opencode log tail ==="; tail -20 /tmp/oc-warm.log; \\',
+          '    rm -f /tmp/oc-warm.log; true',
+          '',
+        ]
+      : []),
+    // agent-browser (Vercel) — the browser-automation CLI the agent-browser
+    // skill drives. It must work OUT OF THE BOX with zero runtime download, so we
+    // bake a real Chromium into the image and wire agent-browser to it TWO
+    // independent ways:
+    //   1. AGENT_BROWSER_EXECUTABLE_PATH → a stable /usr/local/bin/chromium
+    //      symlink (the documented API; verified working on agent-browser 0.27.0).
+    //   2. a symlink into agent-browser's OWN browser cache (chrome-linux64),
+    //      which its auto-detect finds even if the env var is ever ignored again
+    //      — it WAS, historically (vercel-labs/agent-browser#422). Belt + braces.
+    // PLAYWRIGHT_BROWSERS_PATH is set BEFORE the install so Chromium lands in
+    // /opt/pw-browsers (a stable system path the symlinks resolve against). HOME
+    // is pinned to the runtime HOME (/opt/kortix/home, see opencode.ts) so the
+    // cache symlink lands where the agent looks at runtime. The build FAILS LOUDLY
+    // (chromium --version + `agent-browser doctor`) if Chromium didn't wire up —
+    // every sandbox ships a working browser; we never install one on the session
+    // hot path.
+    'ENV PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers \\',
+    '    AGENT_BROWSER_EXECUTABLE_PATH=/usr/local/bin/chromium \\',
+    '    AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
     `RUN npm install -g --no-audit --no-fund "agent-browser@${agentBrowserVersion}" \\`,
-    '    && agent-browser --version',
-    'ENV AGENT_BROWSER_ARGS=--no-sandbox,--disable-dev-shm-usage',
+    '    && agent-browser --version \\',
+    `    && HOME=/opt/kortix/home npx -y playwright@${PLAYWRIGHT_VERSION} install --with-deps chromium \\`,
+    '    && rm -rf /var/lib/apt/lists/* \\',
+    `    && pw_chrome="$(find /opt/pw-browsers -type f -path '*chrome-linux*/chrome' | head -n1)" \\`,
+    '    && test -n "$pw_chrome" \\',
+    '    && ln -sf "$pw_chrome" /usr/local/bin/chromium \\',
+    '    && mkdir -p /opt/kortix/home/.agent-browser/browsers \\',
+    '    && ln -sf "$(dirname "$pw_chrome")" /opt/kortix/home/.agent-browser/browsers/chrome-linux64 \\',
+    '    && /usr/local/bin/chromium --version \\',
+    // Assert agent-browser RESOLVES the browser via its env-independent cache —
+    // match the resolved path (deterministic), not the browser NAME (which is
+    // "Chromium" on arm64 but "Google Chrome for Testing" on x64). The doctor
+    // "Launch test" may itself fail under cross-arch QEMU emulation; we read the
+    // detection line, not the launch verdict, so the gate is emulation-safe.
+    "    && env -u AGENT_BROWSER_EXECUTABLE_PATH HOME=/opt/kortix/home agent-browser doctor 2>&1 | grep -qE 'pass.+chrome-linux64/chrome'",
     '',
     `COPY ${agentBinaryPath} /tmp/kortix-agent.gz`,
     `COPY ${cliBinaryPath} /tmp/kortix.gz`,

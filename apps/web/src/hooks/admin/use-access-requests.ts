@@ -1,6 +1,6 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/features/providers/auth-provider';
 import { backendApi } from '@/lib/api-client';
-import { useAuth } from '@/components/AuthProvider';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export interface AccessRequest {
   id: string;
@@ -19,7 +19,9 @@ interface AccessRequestsResponse {
   offset: number;
 }
 
-export function useAccessRequests(params: { status?: string; limit?: number; offset?: number } = {}) {
+export function useAccessRequests(
+  params: { status?: string; limit?: number; offset?: number } = {},
+) {
   const { user } = useAuth();
   const { status, limit = 50, offset = 0 } = params;
 
@@ -32,7 +34,7 @@ export function useAccessRequests(params: { status?: string; limit?: number; off
       query.set('offset', String(offset));
 
       const response = await backendApi.get<AccessRequestsResponse>(
-        `/access/requests?${query.toString()}`
+        `/access/requests?${query.toString()}`,
       );
 
       if (response.error) throw new Error(response.error.message);
@@ -49,7 +51,7 @@ export function useApproveRequest() {
   return useMutation({
     mutationFn: async (id: string) => {
       const response = await backendApi.post<{ success: boolean; email: string }>(
-        `/access/requests/${id}/approve`
+        `/access/requests/${id}/approve`,
       );
       if (response.error) throw new Error(response.error.message);
       return response.data!;
@@ -66,7 +68,7 @@ export function useRejectRequest() {
   return useMutation({
     mutationFn: async (id: string) => {
       const response = await backendApi.post<{ success: boolean; email: string }>(
-        `/access/requests/${id}/reject`
+        `/access/requests/${id}/reject`,
       );
       if (response.error) throw new Error(response.error.message);
       return response.data!;

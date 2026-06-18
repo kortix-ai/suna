@@ -1,0 +1,54 @@
+# Argo CD Application for EKS dev (dev-api-eks.kortix.com).
+#
+# Applied to the dev-eks cluster's OWN Argo CD (separate from prod-eks). Tracks
+# the `main` branch — deploy-dev-eks.yml bumps infra/k8s/envs/dev/values.yaml
+# image.tag on every push to main, and Argo reconciles it onto dev.
+#
+# SINGLE source (same rationale as prod): one revision, so it can't race a
+# multi-source $values resolution. A commit bumping image.tag IS the deploy;
+# git revert is the rollback.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/kortix-ai/suna.git
+    targetRevision: main
+    path: infra/k8s/charts/kortix-api
+    helm:
+      releaseName: kortix-api
+      valueFiles:
+        - ../../envs/dev/values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kortix-dev
+  # External Secrets Operator's admission webhook injects defaults
+  # (conversionStrategy/decodingStrategy/metadataPolicy) into the ExternalSecret,
+  # which git doesn't carry — ignore those fields so the app isn't perpetually
+  # OutOfSync. ESO owns them; this changes diffing only, nothing in-cluster.
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jqPathExpressions:
+        - .spec.dataFrom[]?.extract.conversionStrategy
+        - .spec.dataFrom[]?.extract.decodingStrategy
+        - .spec.dataFrom[]?.extract.metadataPolicy
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false
+      - ServerSideApply=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

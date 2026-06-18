@@ -15,4 +15,10 @@ export {
   kortixWorkspace,
 } from './env';
 export { kortixGet, kortixPost, kortixDelete } from './api';
+export {
+  mintSecretLink,
+  mintConnectLink,
+  type SecretLinkResult,
+  type ConnectLinkResult,
+} from './setup-links';
 export { formatDate, formatDateTime } from './format';

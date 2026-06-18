@@ -196,6 +196,16 @@ export interface StreamTextChunk {
   text: string;
 }
 
+// Updates the plan's title line. Also doubles as the keepalive heartbeat:
+// Slack auto-completes a stream after a few minutes without appends (painting
+// "Something went wrong" + an error badge on the in-progress task), so we
+// re-append the same title periodically to reset its inactivity timer without
+// changing what the user sees.
+export interface StreamPlanUpdateChunk {
+  type: 'plan_update';
+  title: string;
+}
+
 // Full Block Kit closing chunk — use for rich answers (headers, sections,
 // images, context actions). Slack validates these against the standard
 // Block Kit schema. Only valid as a closing chunk on chat.stopStream.
@@ -204,10 +214,11 @@ export interface StreamBlocksChunk {
   blocks: unknown[];
 }
 
-// A stream chunk — a plan checkpoint, a piece of answer text, or a full
-// Block Kit blocks payload. The answer must ride as `markdown_text` OR
-// `blocks` — chat.stopStream rejects top-level text alongside `chunks`.
-export type StreamChunk = StreamTaskChunk | StreamTextChunk | StreamBlocksChunk;
+// A stream chunk — a plan checkpoint, a plan title update, a piece of answer
+// text, or a full Block Kit blocks payload. The answer must ride as
+// `markdown_text` OR `blocks` — chat.stopStream rejects top-level text
+// alongside `chunks`.
+export type StreamChunk = StreamTaskChunk | StreamTextChunk | StreamPlanUpdateChunk | StreamBlocksChunk;
 
 export async function startStream(
   token: string,
@@ -237,17 +248,23 @@ export async function startStream(
   }
 }
 
+// Returns ok:false with the Slack error so callers can recover — the critical
+// case is `message_not_streaming`: Slack auto-completed the stream after an
+// inactivity window, and every further append silently vanishes unless the
+// caller falls back to chat.update on the (now plain) message.
 export async function appendStream(
   token: string,
   channel: string,
   ts: string,
   chunks: StreamChunk[],
-): Promise<void> {
+): Promise<{ ok: boolean; error?: string }> {
   try {
     const r = await slackApiCall(token, 'chat.appendStream', { channel, ts, chunks });
     if (!r.ok) console.warn('[slack-api] chat.appendStream failed', { error: r.error });
+    return { ok: r.ok, error: r.error };
   } catch (err) {
     console.warn('[slack-api] chat.appendStream error', err);
+    return { ok: false, error: (err as Error).message };
   }
 }
 
@@ -260,7 +277,13 @@ export async function stopStream(
   chunks: StreamChunk[],
 ): Promise<void> {
   try {
-    const r = await slackApiCall(token, 'chat.stopStream', { channel, ts, chunks });
+    // A bare stop (no chunks) is valid — used for the silent close when the
+    // turn ended with nothing left to say.
+    const r = await slackApiCall(token, 'chat.stopStream', {
+      channel,
+      ts,
+      ...(chunks.length > 0 ? { chunks } : {}),
+    });
     // A watchdog stop can race the agent's own stop — ignore "already stopped".
     if (!r.ok && r.error !== 'message_not_streaming' && r.error !== 'cant_update_message') {
       console.warn('[slack-api] chat.stopStream failed', { error: r.error });

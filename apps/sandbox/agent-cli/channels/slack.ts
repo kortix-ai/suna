@@ -10,6 +10,7 @@ import {
   getEnv,
   kortixProjectId,
   kortixSessionId,
+  kortixGet,
   kortixPost,
 } from '../lib';
 
@@ -267,44 +268,20 @@ async function download(opts: { url: string; out: string }) {
   return { ok: true, path: opts.out, size: buf.byteLength };
 }
 
-function manifest(opts: { url?: string; projectId?: string; name?: string }) {
-  const publicUrl = opts.url || getEnv('KORTIX_API_URL');
+// The manifest is built by apps/api (the SINGLE source of truth) and served at
+// GET /v1/webhooks/slack/<projectId>/manifest. We just fetch + present it, so
+// there's one manifest implementation no matter where you ask for it.
+async function manifest(opts: { url?: string; projectId?: string; name?: string }) {
   const projectId = opts.projectId || kortixProjectId();
-  if (!publicUrl) throw new CliError('--url required (or set KORTIX_API_URL)');
   if (!projectId) throw new CliError('--project-id required (or set KORTIX_PROJECT_ID)');
 
-  const requestUrl = `${publicUrl.replace(/\/$/, '')}/v1/webhooks/slack/${projectId}`;
-  const m = {
-    display_information: {
-      name: opts.name ?? 'Kortix',
-      description: 'Kortix project bot',
-      background_color: '#0a0a0a',
-    },
-    features: { bot_user: { display_name: opts.name ?? 'kortix', always_online: true } },
-    oauth_config: {
-      scopes: {
-        bot: [
-          'app_mentions:read', 'channels:history', 'channels:read', 'channels:join',
-          'chat:write', 'chat:write.public', 'files:read', 'files:write',
-          'groups:history', 'groups:read', 'im:history', 'im:read', 'im:write',
-          'mpim:history', 'mpim:read', 'reactions:read', 'reactions:write', 'users:read',
-        ],
-      },
-    },
-    settings: {
-      event_subscriptions: {
-        request_url: requestUrl,
-        bot_events: [
-          'app_mention', 'message.im', 'message.channels', 'message.groups', 'message.mpim',
-          'reaction_added', 'reaction_removed', 'member_joined_channel', 'file_shared',
-        ],
-      },
-      org_deploy_enabled: false,
-      socket_mode_enabled: false,
-      token_rotation_enabled: false,
-    },
-  };
-  return { ok: true, manifest: m, webhook_url: requestUrl };
+  const params: Record<string, string> = {};
+  if (opts.name) params.name = opts.name;
+  const m = await kortixGet<unknown>(`/webhooks/slack/${projectId}/manifest`, params);
+
+  const publicUrl = (opts.url || getEnv('KORTIX_API_URL') || '').replace(/\/$/, '');
+  const webhookUrl = publicUrl ? `${publicUrl}/v1/webhooks/slack/${projectId}` : undefined;
+  return { ok: true, manifest: m, webhook_url: webhookUrl };
 }
 
 function readTextFlag(flags: Record<string, string>): string | undefined {
@@ -452,7 +429,7 @@ async function main(): Promise<void> {
       out(await download({ url: flags.url!, out: flags.out! }));
       break;
     case 'manifest':
-      out(manifest({ url: flags.url, projectId: flags['project-id'], name: flags.name }));
+      out(await manifest({ url: flags.url, projectId: flags['project-id'], name: flags.name }));
       break;
     case 'ask':
       // `slack ask` was replaced by opencode's native `question` tool. Calling

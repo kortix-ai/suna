@@ -1,0 +1,60 @@
+{
+  "skill_name": "kortix-presentation",
+  "evals": [
+    {
+      "id": "create-pitch-deck",
+      "prompt": "Build a Kortix pitch deck — 6 slides introducing our coding-agent platform that runs in your own repo.",
+      "expected_output": "An on-brand .pptx generated with pptxgenjs, run through repair.py + office/validate.py until it passes, and visually QA'd. Should read /product-marketing.md and ../internal-comms for copy and ../brand-guidelines for visuals first.",
+      "assertions": [
+        "Reads product-marketing.md (or fallbacks) and ../brand-guidelines/SKILL.md before building.",
+        "Generates a .pptx via pptxgenjs using 6-char hex colors with no '#' prefix.",
+        "Uses Kortix neutrals plus exactly one accent (e.g. 2B91F7), not a rainbow.",
+        "Runs scripts/repair.py then office/validate.py (from inside office/) and iterates until 'All validations PASSED!'.",
+        "Composites the Kortix symbol top-left rather than generating or drawing a logo.",
+        "Avoids AI-slide hallmarks: no accent underline under titles, no colored side borders, no gradient fills."
+      ]
+    },
+    {
+      "id": "edit-existing-deck",
+      "prompt": "Here's deck.pptx from a client template — swap it to Kortix branding and fix the wording on slides 2 and 4.",
+      "expected_output": "Enters the editing flow: unpack → edit XML → clean → pack --original, recolored to Kortix tokens, validated, and visually checked.",
+      "assertions": [
+        "Uses office/unpack.py and office/pack.py (run from office/) rather than regenerating from scratch.",
+        "Recolors to Kortix neutrals + one accent and recolors the logo to the surface instead of redrawing it.",
+        "Removes template hallmarks (accent underlines, colored side borders, gradients) during the recolor.",
+        "Validates the result (pack.py --original or office/validate.py) and runs visual QA before delivering.",
+        "Edits each slide{N}.xml as an independent file and keeps one <a:p> per logical item."
+      ]
+    },
+    {
+      "id": "extract-deck-text",
+      "prompt": "Pull all the text out of this quarterly.pptx so I can paste it into an email.",
+      "expected_output": "Uses markitdown to extract text (and optionally thumbnail.py for a visual grid); does not regenerate or edit the file.",
+      "assertions": [
+        "Runs `python -m markitdown quarterly.pptx` to extract the content.",
+        "Does not modify or regenerate the source file for a read-only extraction task.",
+        "Returns the extracted text in a usable form."
+      ]
+    },
+    {
+      "id": "validation-gate-required",
+      "prompt": "I generated slides with pptxgenjs but PowerPoint says the file needs repair. Fix it.",
+      "expected_output": "Runs repair.py (which fixes phantom slideMaster entries, ZIP directory entries, and presentation.xml element order) then office/validate.py to confirm schema validity.",
+      "assertions": [
+        "Runs scripts/repair.py on the .pptx.",
+        "Knows raw pptxgenjs output is not schema-valid until repaired (notesMasterIdLst emitted out of order).",
+        "Confirms the fix with office/validate.py run from inside the office/ directory.",
+        "Iterates fix-and-verify until validation passes."
+      ]
+    },
+    {
+      "id": "defer-non-deck-image",
+      "prompt": "Make me a single square social graphic announcing our launch.",
+      "expected_output": "Recognizes this is a standalone image, not a slide deck, and defers to the kortix-image skill rather than producing a .pptx.",
+      "assertions": [
+        "Does not generate a .pptx for a single standalone image request.",
+        "Defers to ../kortix-image/SKILL.md for social/brand image generation."
+      ]
+    }
+  ]
+}

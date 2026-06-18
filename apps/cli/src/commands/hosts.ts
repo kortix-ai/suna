@@ -11,7 +11,7 @@ import {
 import { confirm, prompt } from '../prompts.ts';
 import { selectFromList } from '../tui-select.ts';
 import { C, pad, status } from '../style.ts';
-import { takeFlagValue } from '../command-helpers.ts';
+import { emitJson, takeFlagBool, takeFlagValue } from '../command-helpers.ts';
 import { runLogin } from './login.ts';
 
 const HELP = `Usage: kortix hosts <subcommand> [options]
@@ -27,16 +27,17 @@ Built-in hosts (always exist):
   kortix-internal-dev  Kortix-internal hosted dev (http://dev-api.kortix.com)
 
 Subcommands:
-  ls                                  List hosts (built-ins always exist)
+  ls                                  List hosts (built-ins always exist) (--json)
   use <name>                          Switch the active host
   add <name> --url <url> [--login]    Register a new host; with --login
                                       run the browser flow immediately
   rm <name>                           Remove a custom host; built-ins
                                       are reset instead
-  info [<name>]                       Show one host (or the active)
-  current                             Print the active host name
+  info [<name>]                       Show one host (or the active) (--json)
+  current                             Print the active host name (--json)
 
 Global options:
+  --json         Machine-readable JSON output (read subcommands).
   --force        Skip removal confirmation.
   -h, --help     Show this help.
 
@@ -61,7 +62,7 @@ export async function runHosts(argv: string[]): Promise<number> {
   switch (sub) {
     case 'ls':
     case 'list':
-      return hostsLs();
+      return hostsLs(takeFlagBool([...rest], ['--json']));
     case 'use':
     case 'switch':
       return hostsUse(rest[0]);
@@ -72,10 +73,13 @@ export async function runHosts(argv: string[]): Promise<number> {
     case 'delete':
       return hostsRm(rest);
     case 'info':
-    case 'show':
-      return hostsInfo(rest[0]);
+    case 'show': {
+      const restCopy = [...rest];
+      const json = takeFlagBool(restCopy, ['--json']);
+      return hostsInfo(restCopy[0], json);
+    }
     case 'current':
-      return hostsCurrent();
+      return hostsCurrent(takeFlagBool([...rest], ['--json']));
     default:
       process.stderr.write(`${status.err(`unknown subcommand "${sub}"`)}\n\n${HELP}`);
       return 2;
@@ -84,8 +88,12 @@ export async function runHosts(argv: string[]): Promise<number> {
 
 // ── ls ───────────────────────────────────────────────────────────────────
 
-function hostsLs(): number {
+function hostsLs(json = false): number {
   const rows = listHosts();
+  if (json) {
+    emitJson(rows.map((r) => hostJson(r.name, r.host, r.active)));
+    return 0;
+  }
   if (rows.length === 0) {
     process.stdout.write(
       `${C.dim}No hosts configured. Run \`kortix login\` or \`kortix self-host start\`.${C.reset}\n`,
@@ -280,7 +288,7 @@ async function hostsRm(args: string[]): Promise<number> {
 
 // ── info ─────────────────────────────────────────────────────────────────
 
-function hostsInfo(name: string | undefined): number {
+function hostsInfo(name: string | undefined, json = false): number {
   const target = name ?? activeHostName();
   if (!target) {
     process.stderr.write(`${status.err('No host configured. Pass a name or run `kortix login`.')}\n`);
@@ -293,6 +301,10 @@ function hostsInfo(name: string | undefined): number {
   }
 
   const active = activeHostName() === target;
+  if (json) {
+    emitJson(hostJson(target, host, active));
+    return 0;
+  }
   process.stdout.write('\n');
   process.stdout.write(
     `  ${C.bold}${target}${C.reset}${active ? `  ${C.green}● active${C.reset}` : ''}\n`,
@@ -307,17 +319,36 @@ function hostsInfo(name: string | undefined): number {
   return 0;
 }
 
-function hostsCurrent(): number {
+function hostsCurrent(json = false): number {
   const name = activeHostName();
   if (!name) {
     process.stderr.write(`${status.err('No active host.')}\n`);
     return 1;
+  }
+  if (json) {
+    const host = getHost(name);
+    emitJson(host ? hostJson(name, host, true) : { name, active: true });
+    return 0;
   }
   process.stdout.write(`${name}\n`);
   return 0;
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────
+
+/** Shape a host for JSON output. Never includes the raw token value. */
+function hostJson(name: string, host: Host, active: boolean) {
+  return {
+    name,
+    url: host.url,
+    user_email: host.user_email || null,
+    user_id: host.user_id || null,
+    account_id: host.account_id || null,
+    logged_in: Boolean(host.token),
+    logged_in_at: host.logged_in_at || null,
+    active,
+  };
+}
 
 function removeBoolFlag(argv: string[], names: string[]): boolean {
   for (let i = 0; i < argv.length; i += 1) {

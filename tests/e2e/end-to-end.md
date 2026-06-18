@@ -70,7 +70,7 @@ The single flow that, if green, proves the platform end-to-end. Each substep lin
 
 `INIT-1` `kortix init -y` empty dir → `kortix.toml` + `.kortix/` (Dockerfile, `.kortix/opencode/…`, canonical skill) written, agent skill wired (codex default → `AGENTS.md`; `--primary opencode|claude|cursor` → respective skill file/symlink), `git init -b main`. **Zero API calls.** Exit 0.
 `INIT-2` `kortix init` when `kortix.toml` exists, no `--force` → exit 1 (refuses).
-`INIT-3` `kortix init --primary opencode --agents claude,cursor -y` → primary + extra agent wiring written.
+`INIT-3` `kortix init --primary opencode --agents claude,cursor -y` → chosen agents wired via symlinks (native dir → OpenCode config) + `AGENTS.md` for Codex/Cursor; no `.cursor` rule file; unselected agents skipped.
 `INIT-4` `kortix init --no-git` → no repo created.
 `CREATE-1` `kortix <name>` (bare name, not a known/reserved subcommand) → creates sibling dir, scaffolds, `git init`, `git commit "chore: init kortix project"`. No API. Reserved names (`apps accounts mcp tunnel logs start stop restart open status`) → exit 2.
 `LOGIN-1` `kortix login --token kortix_pat_…` → validate `kortix_pat_` prefix → `GET /accounts/me` → 200 → host saved + active in `~/.config/kortix/config.json` (mode 0600).

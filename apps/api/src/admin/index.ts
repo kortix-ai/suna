@@ -321,6 +321,81 @@ adminApp.openapi(
   },
 );
 
+// ── Set plan tier (e.g. activate Enterprise) ─────────────────────────────────
+// Sales-assigned tiers (notably `enterprise`, which unlocks SSO + SCIM) have no
+// self-serve path — this is the audited way to flip an account onto one. Upserts
+// the credit_accounts row so it works whether or not the account has billed yet,
+// and clears the tier cache so the change takes effect immediately.
+adminApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/api/accounts/{id}/tier',
+    tags: ['admin'],
+    summary: "Set an account's plan tier (e.g. activate Enterprise)",
+    ...auth,
+    request: {
+      params: z.object({ id: z.string() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ tier: z.string() }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: json(z.object({ ok: z.boolean(), tier: z.string() }), 'Updated tier'),
+      400: json(z.record(z.string(), z.any()), 'Bad request'),
+      500: json(z.record(z.string(), z.any()), 'Server error'),
+      ...errors(401, 403),
+    },
+  }),
+  async (c: any) => {
+  try {
+    const accountId = c.req.param('id');
+    const actorUserId = c.get('userId') as string | undefined;
+    const body = await c.req.json().catch(() => ({}));
+    const tier = String(body.tier || '').trim();
+
+    const { isValidTier } = await import('../billing/services/tiers');
+    if (!isValidTier(tier)) return c.json({ error: `unknown tier "${tier}"` }, 400);
+
+    const { getSubscriptionInfo, upsertCreditAccount } = await import(
+      '../billing/repositories/credit-accounts'
+    );
+    const before = await getSubscriptionInfo(accountId);
+    await upsertCreditAccount(accountId, { tier });
+
+    // Tier feeds resolveAccountTier's 60s cache (LLM-gateway entitlement); clear
+    // so the change is visible immediately. The per-request entitlement read
+    // (SSO/SCIM gates) is uncached and already sees it.
+    const { clearAccountLimitCache } = await import('../shared/account-limits');
+    clearAccountLimitCache();
+
+    try {
+      const { recordAuditEvent } = await import('../shared/audit');
+      await recordAuditEvent({
+        accountId,
+        actorUserId,
+        action: 'admin.account.tier.set',
+        resourceType: 'credit_account',
+        resourceId: accountId,
+        before: { tier: before?.tier ?? null },
+        after: { tier },
+        ip: c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null,
+        userAgent: c.req.header('user-agent') || null,
+      });
+    } catch {
+      /* audit is best-effort — never block the tier change */
+    }
+
+    return c.json({ ok: true, tier });
+  } catch (e: any) {
+    return c.json({ error: e?.message || String(e) }, 500);
+  }
+  },
+);
+
 // ── Provider load-balancing: split weights ───────────────────────────────────
 // GET current weights + the allowed providers. Weights drive selectProvider()
 // (platform/services/provider-balancer); unset/zero -> first allowed provider.
@@ -447,8 +522,8 @@ adminApp.openapi(
       getProvider(oldProvider as any).remove(oldExternalId).catch((e: any) => console.warn('[migrate] old remove failed:', e?.message ?? e));
     }
     await db.delete(sessionSandboxes).where(eq(sessionSandboxes.sessionId, sessionId));
-    const { kickProvisionOnOpen } = await import('../projects/routes/shared');
-    await kickProvisionOnOpen(
+    const { allocateRuntimeOnOpen } = await import('../projects/routes/shared');
+    await allocateRuntimeOnOpen(
       { row: proj as any, userId: sess.createdBy ?? '' },
       { sandboxProvider: target, baseRef: sess.baseRef, agentName: sess.agentName },
       sess.projectId, sessionId,

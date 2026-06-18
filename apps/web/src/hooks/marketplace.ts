@@ -1,0 +1,162 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+
+import {
+  addMarketplaceSource,
+  getMarketplaceItem,
+  getMarketplaceItemFile,
+  installMarketplaceItem,
+  listFeaturedMarketplaces,
+  listInstalledItems,
+  listMarketplaceItems,
+  listMarketplaces,
+  listMarketplaceSources,
+  listRegistryUpdates,
+  removeMarketplaceSource,
+  uninstallMarketplaceItem,
+  updateMarketplaceItem,
+  type AddSourceInput,
+  type MarketplaceItem,
+} from '@/lib/marketplace-client';
+
+export function useMarketplaceItems(params: { query?: string; type?: string; source?: string }) {
+  return useQuery({
+    queryKey: ['marketplace-items', params.query ?? '', params.type ?? 'all', params.source ?? 'all'],
+    queryFn: () => listMarketplaceItems(params),
+    staleTime: 60_000,
+    // While the catalog is still streaming sources in (cold load), re-poll so
+    // newly-resolved sources appear without a manual refresh.
+    refetchInterval: (query) => (query.state.data?.loading ? 1500 : false),
+    // No placeholderData: switching marketplace/type must not flash the previous
+    // source's cards under the new header count (they'd disagree). Debounce
+    // already coalesces keystrokes, so the skeleton is brief + honest.
+  });
+}
+
+export function useMarketplaces() {
+  return useQuery({
+    queryKey: ['marketplaces'],
+    queryFn: listMarketplaces,
+    staleTime: 60_000,
+    refetchInterval: (query) => (query.state.data?.loading ? 1500 : false),
+  });
+}
+
+export function useFeaturedMarketplaces() {
+  return useQuery({
+    queryKey: ['marketplaces-featured'],
+    queryFn: listFeaturedMarketplaces,
+    staleTime: 60_000,
+  });
+}
+
+export function useMarketplaceItem(id: string | null) {
+  return useQuery({
+    queryKey: ['marketplace-item', id],
+    queryFn: () => getMarketplaceItem(id!),
+    enabled: !!id,
+    staleTime: 60_000,
+  });
+}
+
+export function useMarketplaceItemFile(id: string | null, target: string | null) {
+  return useQuery({
+    queryKey: ['marketplace-item-file', id, target],
+    queryFn: () => getMarketplaceItemFile(id!, target!),
+    enabled: !!id && !!target,
+    staleTime: 5 * 60_000,
+  });
+}
+
+export function useInstalledItems(projectId: string | null) {
+  return useQuery({
+    queryKey: ['marketplace-installed', projectId],
+    queryFn: () => listInstalledItems(projectId!),
+    enabled: !!projectId,
+    staleTime: 30_000,
+  });
+}
+
+export function useRegistryUpdates(projectId: string | null) {
+  return useQuery({
+    queryKey: ['marketplace-updates', projectId],
+    queryFn: () => listRegistryUpdates(projectId!),
+    enabled: !!projectId,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
+  });
+}
+
+export function useUpdateMarketplaceItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, name }: { projectId: string; name: string }) =>
+      updateMarketplaceItem(projectId, name),
+    onSuccess: (_data, { projectId }) => {
+      qc.invalidateQueries({ queryKey: ['marketplace-installed', projectId] });
+      qc.invalidateQueries({ queryKey: ['marketplace-updates', projectId] });
+      qc.invalidateQueries({ queryKey: ['project-detail', projectId] });
+    },
+  });
+}
+
+export function useInstallMarketplaceItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, id }: { projectId: string; id: string }) =>
+      installMarketplaceItem(projectId, id),
+    onSuccess: (_data, { projectId }) => {
+      qc.invalidateQueries({ queryKey: ['marketplace-installed', projectId] });
+      qc.invalidateQueries({ queryKey: ['marketplace-updates', projectId] });
+      qc.invalidateQueries({ queryKey: ['project-detail', projectId] });
+    },
+  });
+}
+
+export function useUninstallMarketplaceItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ projectId, name }: { projectId: string; name: string }) =>
+      uninstallMarketplaceItem(projectId, name),
+    onSuccess: (_data, { projectId }) => {
+      qc.invalidateQueries({ queryKey: ['marketplace-installed', projectId] });
+      qc.invalidateQueries({ queryKey: ['marketplace-updates', projectId] });
+      qc.invalidateQueries({ queryKey: ['project-detail', projectId] });
+    },
+  });
+}
+
+// ── "Add a marketplace" sources ─────────────────────────────────────────────
+
+export function useMarketplaceSources() {
+  return useQuery({
+    queryKey: ['marketplace-sources'],
+    queryFn: listMarketplaceSources,
+    staleTime: 60_000,
+  });
+}
+
+export function useAddMarketplaceSource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: AddSourceInput) => addMarketplaceSource(input),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['marketplace-sources'] });
+      qc.invalidateQueries({ queryKey: ['marketplace-items'] });
+      qc.invalidateQueries({ queryKey: ['marketplaces'] });
+      qc.invalidateQueries({ queryKey: ['marketplaces-featured'] });
+    },
+  });
+}
+
+export function useRemoveMarketplaceSource() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => removeMarketplaceSource(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['marketplace-sources'] });
+      qc.invalidateQueries({ queryKey: ['marketplace-items'] });
+      qc.invalidateQueries({ queryKey: ['marketplaces'] });
+      qc.invalidateQueries({ queryKey: ['marketplaces-featured'] });
+    },
+  });
+}

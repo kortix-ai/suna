@@ -28,6 +28,24 @@ variable "api_domain" {
   type        = string
 }
 
+variable "extra_domain_filters" {
+  description = "Extra external-dns domain filters beyond api_domain — e.g. preview-api.kortix.com so external-dns auto-manages per-PR preview records. Empty by default (single-host)."
+  type        = list(string)
+  default     = []
+}
+
+variable "autoscaler_aggressive_scaledown" {
+  description = "Let the cluster-autoscaler reclaim nodes blocked only by local-storage pods (emptyDir caches) or PDB-less kube-system pods. true for low-traffic dev so it can consolidate to a single node; false (conservative) for prod."
+  type        = bool
+  default     = false
+}
+
+variable "cloudflare_zone_id" {
+  description = "Cloudflare hosted zone ID for kortix.com. Pins external-dns zone discovery by ID so subdomain domainFilters (api-eks / preview-api) don't cause it to discard the zone and manage nothing. Empty = unset (no zone-id filter)."
+  type        = string
+  default     = ""
+}
+
 variable "cloudflare_api_token" {
   description = "Cloudflare API token external-dns uses to manage the record (DNS edit on the kortix.com zone)."
   type        = string

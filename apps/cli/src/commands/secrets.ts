@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs';
 import {
+  emitJson,
   resolveProjectContext,
   surfaceApiError,
+  takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import { loadLocalManifest } from '../manifest.ts';
@@ -19,8 +21,14 @@ at boot.
 
 Subcommands:
   ls                                List secret names + manifest [env] spec.
+                                    --json.
   set NAME=VALUE [NAME=VALUE …]     Upsert one or more secrets.
                                     Use \`NAME=-\` to read VALUE from stdin.
+  request NAME [NAME …]             Mint a short-lived link for a human to
+                                    ENTER the value(s) — you never see/handle
+                                    the raw key. Surface the URL (web: fill-in
+                                    modal, Slack: tappable link).
+                                    --scope runtime|connector  --expires <min>
   unset NAME [NAME …]               Remove one or more secrets.
 
 Global options:
@@ -37,6 +45,7 @@ export async function runSecrets(argv: string[]): Promise<number> {
 
   const sub = argv[0];
   const rest = argv.slice(1);
+  const json = takeFlagBool(rest, ['--json']);
   let projectFlag: string | undefined;
   let hostFlag: string | undefined;
   try {
@@ -51,9 +60,12 @@ export async function runSecrets(argv: string[]): Promise<number> {
   switch (sub) {
     case 'ls':
     case 'list':
-      return secretsLs(ctxOpts);
+      return secretsLs(ctxOpts, json);
     case 'set':
       return secretsSet(rest, ctxOpts);
+    case 'request':
+    case 'req':
+      return secretsRequest(rest, ctxOpts, json);
     case 'unset':
     case 'rm':
     case 'remove':
@@ -66,7 +78,7 @@ export async function runSecrets(argv: string[]): Promise<number> {
 
 type CtxOpts = { projectArg?: string; hostArg?: string };
 
-async function secretsLs(opts: CtxOpts): Promise<number> {
+async function secretsLs(opts: CtxOpts, json = false): Promise<number> {
   const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
 
@@ -99,6 +111,28 @@ async function secretsLs(opts: CtxOpts): Promise<number> {
   const requiredMissing = required.filter((n) => !setNames.has(n));
   const declared = new Set([...required, ...optional]);
   const undeclared = resp.items.filter((s) => !declared.has(s.name));
+
+  if (json) {
+    const requiredSet = new Set(required);
+    const optionalSet = new Set(optional);
+    emitJson({
+      secrets: resp.items.map((s) => ({
+        name: s.name,
+        has_value: true,
+        source: requiredSet.has(s.name)
+          ? 'required'
+          : optionalSet.has(s.name)
+            ? 'optional'
+            : 'undeclared',
+      })),
+      manifest: {
+        status: usingLocal ? 'local' : resp.manifest_status,
+        required,
+        optional,
+      },
+    });
+    return 0;
+  }
 
   process.stdout.write('\n');
   if (usingLocal) {
@@ -208,6 +242,50 @@ async function secretsSet(args: string[], opts: CtxOpts): Promise<number> {
   }
   process.stdout.write(`\n  ${C.dim}${okCount}/${pairs.length} set${C.reset}\n\n`);
   return okCount === pairs.length ? 0 : 1;
+}
+
+async function secretsRequest(rest: string[], opts: CtxOpts, json = false): Promise<number> {
+  let scope: string | undefined;
+  let expires: string | undefined;
+  try {
+    scope = takeFlagValue(rest, ['--scope']);
+    expires = takeFlagValue(rest, ['--expires']);
+  } catch (err) {
+    process.stderr.write(`${status.err((err as Error).message)}\n`);
+    return 2;
+  }
+  const names = rest.map((n) => n.trim().toUpperCase()).filter(Boolean);
+  if (names.length === 0) {
+    process.stderr.write(`${status.err('Pass at least one secret NAME to request.')}\n`);
+    return 2;
+  }
+
+  const ctx = resolveProjectContext(opts);
+  if (!ctx) return 1;
+
+  let resp: { url: string; names: string[]; scope: string; expires_at: string };
+  try {
+    resp = await ctx.client.post(`/projects/${ctx.projectId}/secret-requests`, {
+      names,
+      ...(scope ? { scope } : {}),
+      ...(expires ? { expires_in_minutes: Number(expires) } : {}),
+    });
+  } catch (err) {
+    return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(resp);
+    return 0;
+  }
+
+  process.stdout.write(
+    `\n  ${C.bold}Hand this link to whoever has the value${C.reset} ${C.faded}(${resp.names.join(', ')})${C.reset}\n` +
+      `  ${C.cyan}${resp.url}${C.reset}\n\n` +
+      `  ${C.dim}Web: opens a fill-in modal. Slack: a tappable link. You never see the value.${C.reset}\n` +
+      `  ${C.dim}Expires ${resp.expires_at}.${C.reset}\n\n`,
+  );
+  return 0;
 }
 
 async function secretsUnset(names: string[], opts: CtxOpts): Promise<number> {

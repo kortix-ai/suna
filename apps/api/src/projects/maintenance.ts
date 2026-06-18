@@ -7,6 +7,7 @@ import { deleteRemoteSessionBranch, type GitBackedProject } from './git';
 import { pauseComputeSession, tickRunningComputeCharges } from '../billing/services/compute-metering';
 import { reconcileStaleBuilds } from '../snapshots/builder';
 import { reconcileWarmPool } from '../platform/services/warm-pool';
+import { reconcileSnapshotQuota } from '../snapshots/quota-gc';
 
 const DEFAULT_IDLE_TTL_MS = 60 * 60 * 1000;
 const DEFAULT_BRANCH_RETENTION_DAYS = 90;
@@ -255,7 +256,7 @@ export async function runProjectMaintenance(): Promise<void> {
   if (maintenanceRunning) return;
   maintenanceRunning = true;
   try {
-    const [idle, branches, computeTick, staleBuilds, warmPool] = await Promise.all([
+    const [idle, branches, computeTick, staleBuilds, warmPool, snapshotGc] = await Promise.all([
       hibernateIdleSessionSandboxes(),
       sweepExpiredSessionBranches(),
       // Billing v2 — partial-bill any active compute sessions that haven't
@@ -276,12 +277,20 @@ export async function runProjectMaintenance(): Promise<void> {
         console.warn('[project-maintenance] warm-pool reconcile failed:', err instanceof Error ? err.message : err);
         return { reaped: 0, projects: 0 };
       }),
+      // GC superseded template snapshots (content-addressed names orphaned by
+      // every identity drift) before the 100/org Daytona quota fills up.
+      // Pressure-gated + bounded; no-op while the namespace is small.
+      reconcileSnapshotQuota().catch((err) => {
+        console.warn('[project-maintenance] snapshot quota GC failed:', err instanceof Error ? err.message : err);
+        return { namespaceCount: 0, eligible: 0, deleted: 0, dryRun: false };
+      }),
     ]);
     if (
       idle.stopped || idle.errors || branches.deleted || branches.errors ||
-      computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed || warmPool.reaped
+      computeTick.settled || staleBuilds.closedReady || staleBuilds.closedFailed || warmPool.reaped ||
+      snapshotGc.deleted
     ) {
-      console.log('[project-maintenance] completed', { idle, branches, computeTick, staleBuilds, warmPool });
+      console.log('[project-maintenance] completed', { idle, branches, computeTick, staleBuilds, warmPool, snapshotGc });
     }
   } finally {
     maintenanceRunning = false;

@@ -11,17 +11,29 @@
       "messages_tab_enabled": true,
       "messages_tab_read_only_enabled": false
     },
+    "assistant_view": {
+      "assistant_description": "Your AI workforce in Slack — give Kortix a task and an agent does the real work across your tools, then replies right here.",
+      "suggested_prompts": []
+    },
     "bot_user": {
       "display_name": "KortixDev",
       "always_online": true
     },
     "slash_commands": [
       {
-        "command": "/kortix",
+        "command": "/kortix-dev",
         "url": "https://dev-api.kortix.com/v1/webhooks/slack/commands",
         "description": "Manage your Kortix project from Slack",
-        "usage_hint": "[projects | switch | unbind | sessions | whoami | help]",
+        "usage_hint": "[projects | switch | agents | models | session | whoami | help]",
         "should_escape": false
+      }
+    ],
+    "shortcuts": [
+      {
+        "name": "Open in Kortix",
+        "type": "message",
+        "callback_id": "open_session",
+        "description": "Open this thread's Kortix session on the web"
       }
     ]
   },
@@ -32,40 +44,73 @@
     "scopes": {
       "bot": [
         "app_mentions:read",
+        "assistant:write",
+        "bookmarks:read",
+        "bookmarks:write",
+        "calls:read",
+        "calls:write",
+        "canvases:read",
+        "canvases:write",
         "channels:history",
-        "channels:read",
         "channels:join",
+        "channels:manage",
+        "channels:read",
         "chat:write",
+        "chat:write.customize",
         "chat:write.public",
+        "commands",
+        "conversations.connect:manage",
+        "conversations.connect:read",
+        "conversations.connect:write",
+        "dnd:read",
+        "emoji:read",
         "files:read",
         "files:write",
         "groups:history",
         "groups:read",
+        "groups:write",
         "im:history",
         "im:read",
         "im:write",
-        "mpim:history",
-        "mpim:read",
-        "reactions:read",
-        "reactions:write",
-        "users:read",
-        "team:read",
+        "links.embed:write",
         "links:read",
         "links:write",
-        "commands"
+        "lists:read",
+        "lists:write",
+        "metadata.message:read",
+        "mpim:history",
+        "mpim:read",
+        "mpim:write",
+        "pins:read",
+        "pins:write",
+        "reactions:read",
+        "reactions:write",
+        "reminders:read",
+        "reminders:write",
+        "remote_files:read",
+        "remote_files:share",
+        "remote_files:write",
+        "team.billing:read",
+        "team.preferences:read",
+        "team:read",
+        "usergroups:read",
+        "usergroups:write",
+        "users.profile:read",
+        "users:read",
+        "users:read.email",
+        "users:write",
+        "workflow.steps:execute"
       ]
     }
   },
   "settings": {
-    "interactivity": {
-      "is_enabled": true,
-      "request_url": "https://dev-api.kortix.com/v1/webhooks/slack/interactivity"
-    },
     "event_subscriptions": {
       "request_url": "https://dev-api.kortix.com/v1/webhooks/slack",
       "bot_events": [
         "app_mention",
         "app_home_opened",
+        "assistant_thread_started",
+        "assistant_thread_context_changed",
         "message.im",
         "message.channels",
         "message.groups",
@@ -76,6 +121,10 @@
         "file_shared",
         "link_shared"
       ]
+    },
+    "interactivity": {
+      "is_enabled": true,
+      "request_url": "https://dev-api.kortix.com/v1/webhooks/slack/interactivity"
     },
     "org_deploy_enabled": false,
     "socket_mode_enabled": false,

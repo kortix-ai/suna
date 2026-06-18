@@ -1,8 +1,20 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, MoreHorizontal, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  MoreHorizontal,
+  ChevronsLeft,
+  ChevronsRight,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface PaginationProps {
   currentPage: number;
@@ -31,10 +43,16 @@ export const Pagination: React.FC<PaginationProps> = ({
   showJumpToPage = true,
   showResultsInfo = true,
   pageSizeOptions = [10, 20, 50, 100],
-  position = 'standalone'
+  position = 'standalone',
 }) => {
   const [jumpToPageInput, setJumpToPageInput] = useState<string>('');
-  if (totalPages <= 1 && !showResultsInfo && !showPageSizeSelector && position === 'standalone') return null;
+  if (
+    totalPages <= 1 &&
+    !showResultsInfo &&
+    !showPageSizeSelector &&
+    position === 'standalone'
+  )
+    return null;
 
   const getVisiblePages = () => {
     const delta = 1;
@@ -47,7 +65,11 @@ export const Pagination: React.FC<PaginationProps> = ({
       rangeWithDots.push('...');
     }
 
-    for (let i = Math.max(2, currentPage - delta); i <= Math.min(totalPages - 1, currentPage + delta); i++) {
+    for (
+      let i = Math.max(2, currentPage - delta);
+      i <= Math.min(totalPages - 1, currentPage + delta);
+      i++
+    ) {
       if (i !== 1 && i !== totalPages) {
         range.push(i);
       }
@@ -57,12 +79,14 @@ export const Pagination: React.FC<PaginationProps> = ({
     if (currentPage + delta < totalPages - 1) {
       rangeWithDots.push('...');
     }
-    
+
     if (totalPages > 1) {
       rangeWithDots.push(totalPages);
     }
 
-    return rangeWithDots.filter((page, index, arr) => arr.indexOf(page) === index);
+    return rangeWithDots.filter(
+      (page, index, arr) => arr.indexOf(page) === index,
+    );
   };
 
   const handleJumpToPage = () => {
@@ -80,14 +104,17 @@ export const Pagination: React.FC<PaginationProps> = ({
   };
 
   const visiblePages = getVisiblePages();
-  
+
   // Safe calculations with fallback values
   const safeCurrentPage = Number(currentPage) || 1;
   const safePageSize = Number(pageSize) || 20;
   const safeTotalItems = Number(totalItems) || 0;
-  
+
   const startItem = (safeCurrentPage - 1) * safePageSize + 1;
-  const endItem = Math.min(safeCurrentPage * safePageSize, safeTotalItems || safeCurrentPage * safePageSize);
+  const endItem = Math.min(
+    safeCurrentPage * safePageSize,
+    safeTotalItems || safeCurrentPage * safePageSize,
+  );
 
   if (position === 'top') {
     return (
@@ -95,7 +122,7 @@ export const Pagination: React.FC<PaginationProps> = ({
         {showResultsInfo && (
           <div className="flex items-center space-x-2 text-sm text-muted-foreground">
             <span>
-              Showing {startItem}-{endItem} 
+              Showing {startItem}-{endItem}
               {totalItems ? ` of ${totalItems}` : ''} results
             </span>
           </div>
@@ -103,9 +130,11 @@ export const Pagination: React.FC<PaginationProps> = ({
         <div className="flex flex-col space-y-3 sm:space-y-0 sm:flex-row sm:items-center sm:space-x-4">
           {showPageSizeSelector && onPageSizeChange && (
             <div className="flex items-center space-x-2">
-              <span className="text-sm text-muted-foreground whitespace-nowrap">Show</span>
-              <Select 
-                value={pageSize.toString()} 
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                Show
+              </span>
+              <Select
+                value={pageSize.toString()}
                 onValueChange={(value) => onPageSizeChange(parseInt(value))}
                 disabled={isLoading}
               >
@@ -120,7 +149,9 @@ export const Pagination: React.FC<PaginationProps> = ({
                   ))}
                 </SelectContent>
               </Select>
-              <span className="text-sm text-muted-foreground whitespace-nowrap">per page</span>
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                per page
+              </span>
             </div>
           )}
           {totalPages > 1 && (
@@ -136,7 +167,7 @@ export const Pagination: React.FC<PaginationProps> = ({
                 <ChevronLeft className="h-4 w-4 mr-1" />
                 Prev
               </Button>
-              
+
               <span className="text-sm text-muted-foreground px-3">
                 Page {currentPage} of {totalPages}
               </span>
@@ -164,37 +195,45 @@ export const Pagination: React.FC<PaginationProps> = ({
       {showResultsInfo && position === 'standalone' && (
         <div className="flex items-center space-x-2 text-sm text-muted-foreground">
           <span>
-            Showing {startItem}-{endItem} 
+            Showing {startItem}-{endItem}
             {totalItems ? ` of ${totalItems}` : ''} results
           </span>
         </div>
       )}
       <div className="flex flex-col space-y-4 sm:space-y-0 sm:flex-row sm:items-center sm:space-x-4">
-        {showPageSizeSelector && onPageSizeChange && position === 'standalone' && (
-          <div className="flex items-center space-x-2">
-            <span className="text-sm text-muted-foreground whitespace-nowrap">Show</span>
-            <Select 
-              value={pageSize.toString()} 
-              onValueChange={(value) => onPageSizeChange(parseInt(value))}
-              disabled={isLoading}
-            >
-              <SelectTrigger className="w-16 h-8">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {pageSizeOptions.map((size) => (
-                  <SelectItem key={size} value={size.toString()}>
-                    {size}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <span className="text-sm text-muted-foreground whitespace-nowrap">per page</span>
-          </div>
-        )}
+        {showPageSizeSelector &&
+          onPageSizeChange &&
+          position === 'standalone' && (
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                Show
+              </span>
+              <Select
+                value={pageSize.toString()}
+                onValueChange={(value) => onPageSizeChange(parseInt(value))}
+                disabled={isLoading}
+              >
+                <SelectTrigger className="w-16 h-8">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {pageSizeOptions.map((size) => (
+                    <SelectItem key={size} value={size.toString()}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <span className="text-sm text-muted-foreground whitespace-nowrap">
+                per page
+              </span>
+            </div>
+          )}
         {showJumpToPage && totalPages > 5 && (
           <div className="flex items-center space-x-2">
-            <span className="text-sm text-muted-foreground whitespace-nowrap">Go to</span>
+            <span className="text-sm text-muted-foreground whitespace-nowrap">
+              Go to
+            </span>
             <Input
               type="number"
               min={1}
@@ -248,7 +287,7 @@ export const Pagination: React.FC<PaginationProps> = ({
                     </div>
                   ) : (
                     <Button
-                      variant={currentPage === page ? "default" : "outline"}
+                      variant={currentPage === page ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => onPageChange(page as number)}
                       disabled={isLoading}
@@ -263,9 +302,7 @@ export const Pagination: React.FC<PaginationProps> = ({
             </div>
           ) : (
             <div className="flex items-center px-3">
-              <span className="text-sm text-muted-foreground">
-                Page 1 of 1
-              </span>
+              <span className="text-sm text-muted-foreground">Page 1 of 1</span>
             </div>
           )}
 
@@ -293,4 +330,4 @@ export const Pagination: React.FC<PaginationProps> = ({
       </div>
     </div>
   );
-}; 
+};

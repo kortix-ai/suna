@@ -12,7 +12,6 @@ export const INSTANCE_SCOPED_ROUTES = [
   '/sessions',
   '/terminal',
   '/files',
-  '/tunnel',
   '/scheduled-tasks',
   '/commands',
   '/tools',

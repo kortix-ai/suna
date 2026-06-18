@@ -19,12 +19,15 @@ type RightSidebarContextProps = {
   toggleSidebar: () => void;
 };
 
-const RightSidebarContext = React.createContext<RightSidebarContextProps | null>(null);
+const RightSidebarContext =
+  React.createContext<RightSidebarContextProps | null>(null);
 
 export function useRightSidebar() {
   const context = React.useContext(RightSidebarContext);
   if (!context) {
-    throw new Error('useRightSidebar must be used within a RightSidebarProvider.');
+    throw new Error(
+      'useRightSidebar must be used within a RightSidebarProvider.',
+    );
   }
   return context;
 }
@@ -92,7 +95,11 @@ export function RightSidebarProvider({
   // When right sidebar expands, fire event so left sidebar can collapse
   React.useEffect(() => {
     if (open) {
-      window.dispatchEvent(new CustomEvent('sidebar-right-toggled', { detail: { expanded: true } }));
+      window.dispatchEvent(
+        new CustomEvent('sidebar-right-toggled', {
+          detail: { expanded: true },
+        }),
+      );
     }
   }, [open]);
 

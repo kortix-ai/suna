@@ -4,7 +4,7 @@ import { memo } from 'react';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
 import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { getWallpaperById, DEFAULT_WALLPAPER_ID } from '@/lib/wallpapers';
+import { getWallpaperById, DEFAULT_WALLPAPER_ID, Wallpaper } from '@/lib/wallpapers';
 import { AnimatedBg } from '@/components/ui/animated-bg';
 import { ShaderWallpaper } from '@/components/ui/shader-wallpaper';
 import { AsciiTunnelShader } from '@/components/ui/ascii-tunnel-shader';
@@ -12,7 +12,7 @@ import { MatrixShader } from '@/components/ui/matrix-shader';
 
 interface WallpaperBackgroundProps {
   /** Override the active wallpaper (e.g. for preview thumbnails). When omitted, reads from the user preferences store. */
-  wallpaperId?: string;
+  wallpaperId?: Wallpaper['id'];
   /** Render in preview mode (settings picker thumbnails). Centers the
    *  logo dead-center since there's no chat input below to balance. */
   preview?: boolean;
@@ -23,7 +23,7 @@ export const WallpaperBackground = memo(function WallpaperBackground({
   preview = false,
 }: WallpaperBackgroundProps = {}) {
   const storeWallpaperId = useUserPreferencesStore(
-    (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID
+    (s) => s.preferences.wallpaperId ?? DEFAULT_WALLPAPER_ID,
   );
   const wallpaperId = wallpaperIdProp ?? storeWallpaperId;
   const wallpaper = getWallpaperById(wallpaperId);
@@ -108,60 +108,60 @@ export const WallpaperBackground = memo(function WallpaperBackground({
         >
           {/* L1 — Animated arcs breathing on the edges */}
           <AnimatedBg
-          variant="hero"
-          blurMultiplier={1.4}
-          sizeMultiplier={1}
-          duration={12}
-          customArcs={{
-            left: [
-              {
-                pos: { left: -160, top: -40 },
-                size: 500,
-                tone: 'medium',
-                opacity: 0.14,
-                delay: 0,
-                x: [0, 7, -4, 0],
-                y: [0, 5, -3, 0],
-                scale: [0.88, 1.04, 0.94, 0.88],
-                blur: ['8px', '14px', '10px', '8px'],
-              },
-              {
-                pos: { left: -80, top: 280 },
-                size: 580,
-                tone: 'dark',
-                opacity: 0.18,
-                delay: 1.8,
-                x: [0, 8, -5, 0],
-                y: [0, 6, -3, 0],
-                scale: [0.9, 1.05, 0.95, 0.9],
-                blur: ['4px', '10px', '6px', '4px'],
-              },
-            ],
-            right: [
-              {
-                pos: { right: -140, top: -20 },
-                size: 540,
-                tone: 'dark',
-                opacity: 0.16,
-                delay: 0.9,
-                x: [0, -7, 4, 0],
-                y: [0, 6, -3, 0],
-                scale: [0.89, 1.05, 0.95, 0.89],
-                blur: ['6px', '12px', '8px', '6px'],
-              },
-              {
-                pos: { right: -60, top: 320 },
-                size: 440,
-                tone: 'light',
-                opacity: 0.1,
-                delay: 2.5,
-                x: [0, -6, 3, 0],
-                y: [0, 5, -3, 0],
-                scale: [0.92, 1.03, 0.96, 0.92],
-                blur: ['12px', '20px', '16px', '12px'],
-              },
-            ],
-          }}
+            variant="hero"
+            blurMultiplier={1.4}
+            sizeMultiplier={1}
+            duration={12}
+            customArcs={{
+              left: [
+                {
+                  pos: { left: -160, top: -40 },
+                  size: 500,
+                  tone: 'medium',
+                  opacity: 0.14,
+                  delay: 0,
+                  x: [0, 7, -4, 0],
+                  y: [0, 5, -3, 0],
+                  scale: [0.88, 1.04, 0.94, 0.88],
+                  blur: ['8px', '14px', '10px', '8px'],
+                },
+                {
+                  pos: { left: -80, top: 280 },
+                  size: 580,
+                  tone: 'dark',
+                  opacity: 0.18,
+                  delay: 1.8,
+                  x: [0, 8, -5, 0],
+                  y: [0, 6, -3, 0],
+                  scale: [0.9, 1.05, 0.95, 0.9],
+                  blur: ['4px', '10px', '6px', '4px'],
+                },
+              ],
+              right: [
+                {
+                  pos: { right: -140, top: -20 },
+                  size: 540,
+                  tone: 'dark',
+                  opacity: 0.16,
+                  delay: 0.9,
+                  x: [0, -7, 4, 0],
+                  y: [0, 6, -3, 0],
+                  scale: [0.89, 1.05, 0.95, 0.89],
+                  blur: ['6px', '12px', '8px', '6px'],
+                },
+                {
+                  pos: { right: -60, top: 320 },
+                  size: 440,
+                  tone: 'light',
+                  opacity: 0.1,
+                  delay: 2.5,
+                  x: [0, -6, 3, 0],
+                  y: [0, 5, -3, 0],
+                  scale: [0.92, 1.03, 0.96, 0.92],
+                  blur: ['12px', '20px', '16px', '12px'],
+                },
+              ],
+            }}
           />
         </div>
 
@@ -178,7 +178,6 @@ export const WallpaperBackground = memo(function WallpaperBackground({
           )}
           draggable={false}
         />
-
       </div>
     );
   }

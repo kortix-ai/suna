@@ -2,14 +2,14 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useMemo } from 'react';
-import { Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { ProviderList } from '@/components/providers/provider-list';
-import { GlobalProviderModal } from '@/components/providers/provider-modal';
-import { useProviderModalStore } from '@/stores/provider-modal-store';
-import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { ProviderList } from '@/features/providers/provider-list';
+import { GlobalProviderModal } from '@/features/providers/provider-modal';
+import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { useProviderModalStore } from '@/stores/provider-modal-store';
+import { Plus } from 'lucide-react';
+import { useMemo } from 'react';
 
 export default function ProvidersPage() {
   const tHardcodedUi = useTranslations('hardcodedUi');
@@ -23,19 +23,23 @@ export default function ProvidersPage() {
   }, [providersData]);
 
   return (
-    <div className="container mx-auto max-w-4xl px-3 sm:px-4 py-4 sm:py-8">
+    <div className="container mx-auto max-w-4xl px-3 py-4 sm:px-4 sm:py-8">
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-lg sm:text-xl font-semibold">{tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line27JsxTextLlmProviders')}</h1>
-            <p className="text-sm text-muted-foreground mt-1">{tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line29JsxTextConnectModelProvidersThatPowerYourAgent')}</p>
+            <h1 className="text-lg font-semibold sm:text-xl">
+              {tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line27JsxTextLlmProviders')}
+            </h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              {tHardcodedUi.raw(
+                'componentsPagesSettingsProvidersPage.line29JsxTextConnectModelProvidersThatPowerYourAgent',
+              )}
+            </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => openProviderModal('providers')}
-          >
-            <Plus className="h-4 w-4" />{tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line38JsxTextAddProvider')}</Button>
+          <Button variant="outline" size="sm" onClick={() => openProviderModal('providers')}>
+            <Plus className="h-4 w-4" />
+            {tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line38JsxTextAddProvider')}
+          </Button>
         </div>
 
         {isLoading ? (
@@ -49,14 +53,18 @@ export default function ProvidersPage() {
             showConnectButton={false}
           />
         ) : (
-          <div className="rounded-2xl border border-dashed border-border/60 py-16 flex flex-col items-center gap-4">
-            <p className="text-sm text-muted-foreground/60">{tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line54JsxTextNoProvidersConnectedYet')}</p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => openProviderModal('providers')}
-            >
-              <Plus className="h-4 w-4" />{tHardcodedUi.raw('componentsPagesSettingsProvidersPage.line61JsxTextConnectYourFirstProvider')}</Button>
+          <div className="border-border/60 flex flex-col items-center gap-4 rounded-2xl border border-dashed py-16">
+            <p className="text-muted-foreground/60 text-sm">
+              {tHardcodedUi.raw(
+                'componentsPagesSettingsProvidersPage.line54JsxTextNoProvidersConnectedYet',
+              )}
+            </p>
+            <Button variant="outline" size="sm" onClick={() => openProviderModal('providers')}>
+              <Plus className="h-4 w-4" />
+              {tHardcodedUi.raw(
+                'componentsPagesSettingsProvidersPage.line61JsxTextConnectYourFirstProvider',
+              )}
+            </Button>
           </div>
         )}
       </div>

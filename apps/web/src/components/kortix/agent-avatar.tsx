@@ -22,7 +22,7 @@ import {
   Stethoscope, ClipboardCheck, Activity, type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth } from '@/features/providers/auth-provider';
 import { getUserHandle } from '@/lib/kortix/user-handle';
 
 // ─── Icon map ────────────────────────────────────────────────────────────────

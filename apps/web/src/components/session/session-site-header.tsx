@@ -44,6 +44,7 @@ import { ExportTranscriptDialog } from '@/components/session/export-transcript-d
 import { CompactDialog } from '@/components/session/compact-dialog';
 import { SessionShareDialog } from '@/components/projects/session-share-dialog';
 import { RenameSessionDialog } from '@/components/projects/rename-session-dialog';
+import { sessionDisplayLabel } from '@/components/projects/session-label';
 import {
   deleteProjectSession,
   listProjectSessions,
@@ -273,7 +274,7 @@ export function SessionSiteHeader({
           <RenameSessionDialog
             projectId={projectId!}
             sessionId={projectSessionId!}
-            currentName={projectSession?.custom_name ?? ''}
+            currentName={projectSession ? sessionDisplayLabel(projectSession) : ''}
             open={renameOpen}
             onOpenChange={setRenameOpen}
           />

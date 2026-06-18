@@ -34,10 +34,11 @@ WORKDIR /cli
 
 ARG KORTIX_AGENT_BUN_TARGET=bun-linux-x64
 
-# Minimal workspace so bun resolves the two `@kortix/*` packages the CLI imports
+# Minimal workspace so bun resolves the `@kortix/*` packages the CLI imports
 # to their source, then compile (inlines them + smol-toml into one binary).
 COPY apps/cli ./apps/cli
 COPY packages/manifest-schema ./packages/manifest-schema
+COPY packages/registry ./packages/registry
 COPY packages/starter ./packages/starter
 RUN printf '{"name":"kortix-cli-build","private":true,"workspaces":["apps/cli","packages/*"]}\n' > package.json \
     && bun install --no-save \
@@ -61,6 +62,7 @@ COPY packages/db ./packages/db
 COPY packages/agent-tunnel ./packages/agent-tunnel
 COPY packages/starter ./packages/starter
 COPY packages/manifest-schema ./packages/manifest-schema
+COPY packages/registry ./packages/registry
 
 # Install pnpm and deps for this app + workspace packages it depends on.
 # --shamefully-hoist flattens node_modules (no symlinks) so COPY works on all Docker versions.
@@ -124,6 +126,9 @@ COPY --from=deps /app/packages/starter/templates ./packages/starter/templates
 COPY --from=deps /app/packages/manifest-schema/src ./packages/manifest-schema/src
 COPY --from=deps /app/packages/manifest-schema/package.json ./packages/manifest-schema/package.json
 COPY --from=deps /app/packages/manifest-schema/tsconfig.json ./packages/manifest-schema/tsconfig.json
+COPY --from=deps /app/packages/registry/src ./packages/registry/src
+COPY --from=deps /app/packages/registry/package.json ./packages/registry/package.json
+COPY --from=deps /app/packages/registry/tsconfig.json ./packages/registry/tsconfig.json
 
 # Copy SQL migrations used by ensureSchema() at runtime.
 COPY supabase/migrations ./supabase/migrations

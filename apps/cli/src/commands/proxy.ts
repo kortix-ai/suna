@@ -1,6 +1,8 @@
 import {
+  emitJson,
   resolveProjectContext,
   surfaceApiError,
+  takeFlagBool,
   takeFlagValue,
 } from '../command-helpers.ts';
 import { ApiError } from '../api/client.ts';
@@ -17,7 +19,7 @@ Subcommands:
   share <session-id> --port <N>      Create a public URL for <port>.
         [--ttl <duration>]            ttl examples: "1h", "7d", "permanent"
         [--label "<text>"]            Optional label for your records.
-  ls <session-id>                    List active share links.
+  ls <session-id> [--json]           List active share links.
   rm <session-id> <token>            Revoke a share link.
 
 Global options:
@@ -40,12 +42,14 @@ export async function runProxy(argv: string[]): Promise<number> {
   let portFlag: string | undefined;
   let ttlFlag: string | undefined;
   let labelFlag: string | undefined;
+  let json = false;
   try {
     projectFlag = takeFlagValue(rest, ['--project']);
     hostFlag = takeFlagValue(rest, ['--host']);
     portFlag = takeFlagValue(rest, ['--port', '-p']);
     ttlFlag = takeFlagValue(rest, ['--ttl']);
     labelFlag = takeFlagValue(rest, ['--label']);
+    json = takeFlagBool(rest, ['--json']);
   } catch (err) {
     process.stderr.write(`${status.err((err as Error).message)}\n`);
     return 2;
@@ -59,7 +63,7 @@ export async function runProxy(argv: string[]): Promise<number> {
       return proxyShare(rest[0], portFlag, ttlFlag, labelFlag, ctxOpts);
     case 'ls':
     case 'list':
-      return proxyLs(rest[0], ctxOpts);
+      return proxyLs(rest[0], ctxOpts, json);
     case 'rm':
     case 'revoke':
     case 'delete':
@@ -145,7 +149,7 @@ async function proxyShare(
   return 0;
 }
 
-async function proxyLs(sessionId: string | undefined, opts: CtxOpts): Promise<number> {
+async function proxyLs(sessionId: string | undefined, opts: CtxOpts, json = false): Promise<number> {
   const ctx = resolveProjectContext(opts);
   if (!ctx) return 1;
   const sandboxId = await resolveSandboxId(sessionId, ctx);
@@ -158,6 +162,11 @@ async function proxyLs(sessionId: string | undefined, opts: CtxOpts): Promise<nu
     );
   } catch (err) {
     return surfaceApiError(err);
+  }
+
+  if (json) {
+    emitJson(resp);
+    return 0;
   }
 
   // Try a few possible array shapes from the sandbox.

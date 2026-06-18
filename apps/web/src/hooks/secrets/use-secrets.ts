@@ -1,9 +1,9 @@
 'use client';
 
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useServerStore } from '@/stores/server-store';
+import { useAuth } from '@/features/providers/auth-provider';
 import { authenticatedFetch } from '@/lib/auth-token';
-import { useAuth } from '@/components/AuthProvider';
+import { useServerStore } from '@/stores/server-store';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 export const secretsKeys = {
   all: (instanceUrl: string | null) => ['secrets', instanceUrl ?? 'no-instance'] as const,

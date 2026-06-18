@@ -1,15 +1,40 @@
 export const siteConfig = {
-  url: process.env.KORTIX_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_URL || 'http://localhost:3000',
+  url:
+    process.env.KORTIX_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_APP_URL ||
+    process.env.NEXT_PUBLIC_URL ||
+    'http://localhost:3000',
   nav: {
     links: [
-      { id: 1, name: 'Product', href: '/' },
-      { id: 2, name: 'Developers', href: '/developers' },
-      { id: 3, name: 'Docs', href: '/docs' },
+      { id: 2, name: 'Enterprise', href: '/enterprise' },
+      { id: 3, name: 'Pricing', href: '/pricing' },
+      { id: 4, name: 'Docs', href: '/docs' },
+      {
+        id: 5,
+        name: 'Compare',
+        href: [
+          {
+            name: 'ChatGPT',
+            href: '/compare/chatgpt',
+          },
+          {
+            name: 'Zapier',
+            href: '/compare/zapier',
+          },
+          {
+            name: 'Viktor',
+            href: '/compare/viktor',
+          },
+          {
+            name: 'OpenClaw',
+            href: '/compare/openclaw',
+          },
+        ],
+      },
     ],
   },
   hero: {
-    description:
-      'Kortix – the open AI command center for your company.',
+    description: 'Kortix – the open AI command center for your company.',
   },
   footerLinks: [
     {

@@ -65,6 +65,17 @@ export const projectSessionStatusEnum = kortixSchema.enum('project_session_statu
   'completed',
 ]);
 
+export const sessionLifecycleCommandStatusEnum = kortixSchema.enum(
+  'session_lifecycle_command_status',
+  [
+    'queued',
+    'running',
+    'succeeded',
+    'failed',
+    'dead_lettered',
+  ],
+);
+
 export const projectRoleEnum = kortixSchema.enum('project_role', [
   'manager',
   'editor',
@@ -503,6 +514,13 @@ export const projectSessions = kortixSchema.table(
     index('idx_project_sessions_status').on(table.status),
     index('idx_project_sessions_created_by').on(table.createdBy),
     uniqueIndex('idx_project_sessions_project_branch').on(table.projectId, table.branchName),
+    // NOTE: a partial composite index `idx_project_sessions_account_active`
+    // ((account_id) WHERE status IN active-set) ALSO exists — created by the
+    // hand-written migration drizzle/20260617102106_account_active_session_index.sql
+    // to keep the concurrency-cap COUNT O(active) instead of O(full history).
+    // It is intentionally NOT declared here: re-adding it would make `db:generate`
+    // emit a conflicting `CREATE INDEX` against the already-built index. Manage it
+    // via that migration; its predicate mirrors ACTIVE_SESSION_STATUSES.
   ],
 );
 
@@ -531,6 +549,41 @@ export const projectSessionGrants = kortixSchema.table(
   ],
 );
 
+export const projectSessionPublicShares = kortixSchema.table(
+  'project_session_public_shares',
+  {
+    shareId: uuid('share_id').defaultRandom().primaryKey(),
+    tokenHash: text('token_hash').notNull(),
+    sessionId: text('session_id')
+      .notNull()
+      .references(() => projectSessions.sessionId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    createdBy: uuid('created_by'),
+    resourceType: text('resource_type').default('preview').notNull(),
+    label: text('label').default('App preview').notNull(),
+    port: integer('port'),
+    path: text('path').default('/').notNull(),
+    filePath: text('file_path'),
+    mode: text('mode').default('view').notNull(),
+    allowWebsocket: boolean('allow_websocket').default(false).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_project_session_public_shares_token_hash').on(table.tokenHash),
+    index('idx_project_session_public_shares_session').on(table.sessionId),
+    index('idx_project_session_public_shares_project').on(table.projectId),
+  ],
+);
+
 /**
  * Runtime state for triggers defined in the project repo
  * (.opencode/triggers/<slug>.md). The repo holds the trigger config; this
@@ -549,6 +602,43 @@ export const projectTriggerRuntime = kortixSchema.table(
   },
   (table) => [
     primaryKey({ columns: [table.projectId, table.slug] }),
+  ],
+);
+
+export const sessionLifecycleCommands = kortixSchema.table(
+  'session_lifecycle_commands',
+  {
+    commandId: uuid('command_id').defaultRandom().primaryKey(),
+    commandType: varchar('command_type', { length: 64 }).notNull(),
+    source: varchar('source', { length: 64 }).notNull(),
+    status: sessionLifecycleCommandStatusEnum('status').default('queued').notNull(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    sessionId: text('session_id').references(() => projectSessions.sessionId, {
+      onDelete: 'set null',
+    }),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    actorUserId: uuid('actor_user_id'),
+    idempotencyKey: text('idempotency_key'),
+    payload: jsonb('payload').default({}).notNull().$type<Record<string, unknown>>(),
+    result: jsonb('result').default({}).notNull().$type<Record<string, unknown>>(),
+    attempts: integer('attempts').default(0).notNull(),
+    availableAt: timestamp('available_at', { withTimezone: true }).defaultNow().notNull(),
+    lockedBy: text('locked_by'),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_session_lifecycle_commands_idempotency').on(table.idempotencyKey),
+    index('idx_session_lifecycle_commands_due').on(table.status, table.availableAt),
+    index('idx_session_lifecycle_commands_project').on(table.projectId),
+    index('idx_session_lifecycle_commands_session').on(table.sessionId),
+    index('idx_session_lifecycle_commands_locked').on(table.lockedUntil),
   ],
 );
 
@@ -593,6 +683,11 @@ export const chatChannelBindings = kortixSchema.table(
     channelName: varchar('channel_name', { length: 256 }),
     channelType: varchar('channel_type', { length: 32 }),
     pickerTs: varchar('picker_ts', { length: 64 }),
+    // Per-channel agent + model overrides. Null = use the project/platform
+    // default. Sessions started from this channel inherit these so different
+    // channels bound to the same project can run different agents/models.
+    agentName: varchar('agent_name', { length: 128 }),
+    opencodeModel: varchar('opencode_model', { length: 128 }),
     installedAt: timestamp('installed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

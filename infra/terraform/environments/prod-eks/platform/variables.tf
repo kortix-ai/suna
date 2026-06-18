@@ -56,3 +56,13 @@ variable "cloudflare_api_token" {
   type        = string
   sensitive   = true
 }
+
+variable "cloudflare_zone_id" {
+  description = <<-EOT
+    Cloudflare hosted zone ID for kortix.com. Pins external-dns zone discovery by
+    ID — without it the subdomain domainFilter causes external-dns to discard the
+    zone and manage nothing. Supply via TF_VAR_cloudflare_zone_id (same value the
+    cluster layer already uses).
+  EOT
+  type        = string
+}

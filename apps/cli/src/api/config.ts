@@ -173,6 +173,17 @@ export function deleteConfig(): void {
  *   2. `--host` flag (handled at the call site via `getHost(name)`)
  *   3. The `active` host in config.json
  */
+/**
+ * True when the platform-injected sandbox token (KORTIX_CLI_TOKEN /
+ * KORTIX_EXECUTOR_TOKEN) is present. `activeHost()` then resolves to a
+ * synthetic env host, which must outrank a `.kortix/link.json` host —
+ * inside a sandbox the named host has no stored credentials, so honoring
+ * the link would strand a fully-authenticated CLI on "not logged in".
+ */
+export function hasEnvTokenHost(): boolean {
+  return Boolean(process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_EXECUTOR_TOKEN);
+}
+
 export function activeHost(): Host | null {
   const envToken = process.env.KORTIX_CLI_TOKEN || process.env.KORTIX_EXECUTOR_TOKEN;
   if (envToken) {

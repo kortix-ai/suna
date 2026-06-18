@@ -16,12 +16,12 @@ import {
 import { useSidebar } from '@/components/ui/sidebar';
 import { isDesktop, desktopPlatform } from '@/lib/desktop';
 import {
-  getProjectSessionSandbox,
   listProjectSessions,
   type ProjectSession,
 } from '@/lib/projects-client';
 import { Button } from '@/components/ui/button';
 import { SessionShareDialog, SessionVisibilityBadge } from '@/components/projects/session-share-dialog';
+import { sessionDisplayLabel } from '@/components/projects/session-label';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
 import { useCloseProjectTab } from '@/hooks/projects/use-close-project-tab';
 
@@ -123,15 +123,14 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
   // routes + cached sandbox metadata instead of a cold compile + fetch.
   // In dev this is the bulk of the perceived close lag.
   useEffect(() => {
+    // Only prefetch the ROUTE (free, just warms Next's compile/router). Do NOT
+    // prefetch /start per tab — it provisions/wakes/ensures, and across many open
+    // tabs that floods the API into timeouts. The session page calls /start once
+    // when you actually open a tab.
     openTabIds.forEach((id) => {
       router.prefetch(`/projects/${projectId}/sessions/${id}`);
-      queryClient.prefetchQuery({
-        queryKey: ['project', 'session-sandbox', projectId, id],
-        queryFn: () => getProjectSessionSandbox(projectId, id),
-        staleTime: 15_000,
-      });
     });
-  }, [openTabIds, projectId, router, queryClient]);
+  }, [openTabIds, projectId, router]);
 
   // Load session metadata so tabs can show the real title instead of a UUID.
   const { data: sessions } = useQuery({
@@ -234,9 +233,11 @@ export function ProjectTabBar({ projectId }: ProjectTabBarProps) {
       <div className="flex-1 flex items-stretch overflow-x-auto px-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
         {openTabIds.map((tabId) => {
           const isActive = isTabActive(tabId);
-          // Sessions don't carry a user-set name yet (API model is branch-only).
-          // Fall back to a short id slice until naming ships.
-          const label = `session ${tabId.slice(0, 8)}`;
+          // Same label the sidebar shows (sessionDisplayLabel) so a session is
+          // called one thing everywhere; short-id fallback until the sessions
+          // query lands.
+          const tabSession = sessionById.get(tabId);
+          const label = tabSession ? sessionDisplayLabel(tabSession) : `session ${tabId.slice(0, 8)}`;
 
           return (
             <div

@@ -14,7 +14,7 @@ import {
 } from '@tanstack/react-query';
 import { useServerStore } from '@/stores/server-store';
 import { authenticatedFetch } from '@/lib/auth-token';
-import { useAuth } from '@/components/AuthProvider';
+import { useAuth } from '@/features/providers/auth-provider';
 import { getUserHandle } from '@/lib/kortix/user-handle';
 
 // ── Types ────────────────────────────────────────────────────────────────────

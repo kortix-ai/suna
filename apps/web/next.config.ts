@@ -1,9 +1,9 @@
-import type { NextConfig } from 'next';
-import fs from 'fs';
-import path from 'path';
-import { createMDX } from 'fumadocs-mdx/next';
-import { withSentryConfig } from '@sentry/nextjs';
 import { withBetterStack } from '@logtail/next';
+import { withSentryConfig } from '@sentry/nextjs';
+import fs from 'fs';
+import { createMDX } from 'fumadocs-mdx/next';
+import type { NextConfig } from 'next';
+import path from 'path';
 
 // Unified platform version. Prefer the explicit build env (CI passes
 // NEXT_PUBLIC_KORTIX_VERSION = X.Y.Z-dev.<sha> on dev, clean X.Y.Z on prod);
@@ -154,26 +154,21 @@ const nextConfig = (): NextConfig => ({
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],
     imageSizes: [16, 32, 48, 64, 96, 128, 256],
     qualities: [75, 100],
-  },
-
-  async redirects() {
-    return [
-      // /enterprise was renamed to /contact — keep old links alive.
+    remotePatterns: [
       {
-        source: '/enterprise',
-        destination: '/contact',
-        permanent: true,
+        protocol: 'https',
+        hostname: 'ke4pydspzeg0nm0o.public.blob.vercel-storage.com',
       },
       // The desktop shell historically launched at /dashboard, which never
       // existed and fell through to the marketing 404. The authed home is
       // /projects (see middleware). Redirect so already-shipped desktop builds
       // (URL baked in at compile time) recover instead of 404ing on launch.
-      {
-        source: '/dashboard',
-        destination: '/projects',
-        permanent: false,
-      },
-    ];
+      // {
+      //   source: '/dashboard',
+      //   destination: '/projects',
+      //   permanent: false,
+      // },
+    ],
   },
 
   async rewrites() {

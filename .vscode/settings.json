@@ -4,5 +4,22 @@
   "python.defaultInterpreterPath": "./backend/.venv/bin/python",
   "editor.fontFamily": "Monocraft",
   "terminal.integrated.fontFamily": "Monocraft",
-  "debug.console.fontFamily": "Monocraft"
+  "debug.console.fontFamily": "Monocraft",
+  "search.exclude": {
+    "**/.next": true,
+    "**/out": true,
+    "**/dist": true,
+    "**/build": true,
+    "**/node_modules": true,
+    "**/.turbo": true,
+    "**/.nx": true,
+    "**/coverage": true,
+    "**/test-results": true
+  },
+  "files.watcherExclude": {
+    "**/.next/**": true,
+    "**/node_modules/**": true
+  },
+  "search.useIgnoreFiles": true,
+  "search.useGlobalIgnoreFiles": true
 }

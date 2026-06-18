@@ -194,7 +194,7 @@ async function loadDefaultModeFor(projectId: string): Promise<DefaultMode> {
 }
 
 /** Load a pipedream connector's app slug, id, mode (verifies provider). */
-async function loadPipedreamConnector(projectId: string, slug: string) {
+export async function loadPipedreamConnector(projectId: string, slug: string) {
   const [row] = await db
     .select({ connectorId: executorConnectors.connectorId, providerType: executorConnectors.providerType, config: executorConnectors.config, credentialMode: executorConnectors.credentialMode })
     .from(executorConnectors)

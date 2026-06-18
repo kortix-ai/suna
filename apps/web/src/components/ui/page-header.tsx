@@ -9,7 +9,10 @@ interface PageHeaderProps {
   children: React.ReactNode;
 }
 
-export const PageHeader: React.FC<PageHeaderProps> = ({ icon: Icon, children }) => {
+export const PageHeader: React.FC<PageHeaderProps> = ({
+  icon: Icon,
+  children,
+}) => {
   return (
     <div className="relative overflow-hidden rounded-2xl sm:rounded-3xl flex items-center justify-center border bg-background/80">
       <AnimatedBg variant="header" blurMultiplier={1.3} sizeMultiplier={1.1} />
@@ -25,4 +28,4 @@ export const PageHeader: React.FC<PageHeaderProps> = ({ icon: Icon, children }) 
       </div>
     </div>
   );
-}; 
+};

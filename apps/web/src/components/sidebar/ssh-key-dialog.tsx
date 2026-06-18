@@ -55,7 +55,9 @@ type SSHAccessMeta = {
 
 function useCopy(text: string, label?: string) {
   const [copied, setCopied] = useState(false);
-  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const copy = useCallback(() => {
     navigator.clipboard.writeText(text);
     setCopied(true);

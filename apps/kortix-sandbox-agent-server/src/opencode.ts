@@ -29,7 +29,15 @@ export const OPENCODE_AUTH_PATH = `${OPENCODE_DATA_HOME}/opencode/auth.json`
 export const CODEX_AUTH_JSON_SECRET = 'CODEX_AUTH_JSON'
 export const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
 
-export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | undefined {
+// Assemble the inline opencode config (OPENCODE_CONFIG_CONTENT) the daemon hands
+// opencode at spawn. It MERGES over the repo's own opencode config and has three
+// independent contributors, any of which may apply:
+//   1. the Kortix Executor MCP server   (when KORTIX_EXECUTOR_TOKEN + API url)
+//   2. the Kortix LLM gateway provider  (when KORTIX_LLM_* env)
+//   3. a Slack permission override      (when this is a Slack session)
+// If NONE apply there's nothing to inject, so we return undefined and opencode
+// just uses the repo config as-is.
+export function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): string | undefined {
   const executorToken = env.KORTIX_EXECUTOR_TOKEN
   const apiUrl = env.KORTIX_API_URL
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
@@ -37,7 +45,11 @@ export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | 
 
   const hasExecutor = !!executorToken && !!apiUrl
   const hasLlmGateway = !!llmBaseUrl && !!llmApiKey
-  if (!hasExecutor && !hasLlmGateway) return undefined
+  // A Slack-provisioned session carries SLACK_CHANNEL_ID / SLACK_THREAD_TS (the
+  // session identity the API hands us at boot; also what the in-sandbox `slack`
+  // CLI uses to post back to the thread). Contributor #3 keys off it.
+  const isSlackSession = !!(env.SLACK_THREAD_TS || env.SLACK_CHANNEL_ID)
+  if (!hasExecutor && !hasLlmGateway && !isSlackSession) return undefined
 
   let base: Record<string, unknown> = {}
   if (env.OPENCODE_CONFIG_CONTENT) {
@@ -51,6 +63,7 @@ export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | 
   }
   const out: Record<string, unknown> = { ...base }
 
+  // (1) Kortix Executor MCP server.
   if (hasExecutor) {
     const mcp =
       out.mcp && typeof out.mcp === 'object' && !Array.isArray(out.mcp)
@@ -70,6 +83,7 @@ export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | 
     }
   }
 
+  // (2) Kortix LLM gateway provider.
   if (hasLlmGateway) {
     const provider =
       out.provider && typeof out.provider === 'object' && !Array.isArray(out.provider)
@@ -92,8 +106,25 @@ export function buildExecutorMcpConfigContent(env: NodeJS.ProcessEnv): string | 
     }
   }
 
+  // (3) Slack sessions: DENY opencode's blocking `question` tool. A Slack thread
+  // is async — there's no live form to answer a synchronous question, so the
+  // agent must ask via `slack send` instead; a `question` call would otherwise
+  // stall the turn. The web dashboard keeps the tool (it answers `question.asked`
+  // natively over opencode's SSE). This is the "make it impossible" half of the
+  // fix; the in-box question relay stays as a safety net (and the only path if a
+  // project's agent overrides this with its own `"*": "allow"`).
+  if (isSlackSession) {
+    const permission =
+      out.permission && typeof out.permission === 'object' && !Array.isArray(out.permission)
+        ? (out.permission as Record<string, unknown>)
+        : {}
+    out.permission = { ...permission, question: 'deny' }
+  }
+
   return JSON.stringify(out)
 }
+
+export const buildExecutorMcpConfigContent = buildOpencodeConfigContent
 
 const DEFAULT_KORTIX_MODEL = 'kortix/anthropic/claude-opus-4.8'
 
@@ -334,10 +365,18 @@ export function createOpencodeSupervisor(
 
     materializeOpencodeAuth(env)
 
-    const executorConfig = buildExecutorMcpConfigContent(baseEnv)
-    if (executorConfig) {
-      env.OPENCODE_CONFIG_CONTENT = executorConfig
-      logger.info('[opencode] registered kortix-executor MCP server')
+    // Boot profiling: when KORTIX_OPENCODE_DEBUG=1, ask opencode to emit its own
+    // verbose startup logs (interleaved into the daemon log via inherited
+    // stdio) so a real cold boot reveals where the spawn→ready window goes.
+    // Opt-in only — no log noise in normal operation.
+    if (process.env.KORTIX_OPENCODE_DEBUG === '1') {
+      env.OPENCODE_LOG_LEVEL = 'DEBUG'
+    }
+
+    const opencodeConfig = buildOpencodeConfigContent(baseEnv)
+    if (opencodeConfig) {
+      env.OPENCODE_CONFIG_CONTENT = opencodeConfig
+      logger.info('[opencode] applied inline config (executor MCP / LLM gateway / Slack permissions)')
     }
 
     const args = [
@@ -506,15 +545,46 @@ export async function probeOpencodeSessionApi(
 export async function waitForOpencodeReady(
   opencode: Opencode,
   directory?: string,
+  // Boot-profiling hook: fired once the moment opencode's port answers ANY
+  // HTTP (process bound + listening), which is strictly before /session serves
+  // 200 (== ready). The gap between this and `opencode-ready` localizes the
+  // cold-start cost: a big spawn→listening gap = process/runtime startup; a big
+  // listening→ready gap = opencode's internal app/session init.
+  onListening?: () => void,
 ): Promise<boolean> {
   const deadline = Date.now() + READY_TIMEOUT_MS
+  let listeningSeen = false
   while (Date.now() < deadline) {
     if (opencode.getState() === 'ok') return true
-    if (directory && await probeOpencodeSessionApi(opencode.getInternalUrl(), directory, 500)) {
-      opencode.markReady()
-      return true
+    if (directory) {
+      const probe = await probeOpencodeReadiness(opencode.getInternalUrl(), directory, 500)
+      if (probe !== 'down' && !listeningSeen) {
+        listeningSeen = true
+        onListening?.()
+      }
+      if (probe === 'ready') {
+        opencode.markReady()
+        return true
+      }
     }
     await new Promise((r) => setTimeout(r, directory ? BOOT_READY_POLL_MS : READY_POLL_MS))
   }
   return false
+}
+
+/** Richer boot probe: 'down' = port not answering at all, 'listening' = answers
+ *  HTTP but /session not 2xx yet, 'ready' = /session 2xx/3xx. */
+async function probeOpencodeReadiness(
+  baseUrl: string,
+  directory: string,
+  timeoutMs: number,
+): Promise<'down' | 'listening' | 'ready'> {
+  try {
+    const res = await fetch(`${baseUrl}/session?directory=${encodeURIComponent(directory)}`, {
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    return res.status >= 200 && res.status < 400 ? 'ready' : 'listening'
+  } catch {
+    return 'down'
+  }
 }

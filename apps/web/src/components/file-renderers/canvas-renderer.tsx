@@ -2,61 +2,43 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import {
-  Plus,
-  Minus,
-  MousePointer2,
-  Hand,
-  ImagePlus,
-  Maximize,
-  Save,
-  AlertCircle,
-  Trash2,
-  Copy,
-  Download,
-  Pencil,
-  Sparkles,
-  X,
-  Type,
-  Layers,
-  ArrowLeftRight,
-  Wand2,
-  Scissors,
-  Frame,
-  Palette,
-} from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { getEnv } from '@/lib/env-config';
-import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { KortixLoader } from '@/components/ui/kortix-loader';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Textarea } from '@/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { useAuth } from '@/features/providers/auth-provider';
+import { getEnv } from '@/lib/env-config';
 import { toast } from '@/lib/toast';
-import { useAuth } from '@/components/AuthProvider';
+import { cn } from '@/lib/utils';
+import {
+  AlertCircle,
+  ArrowLeftRight,
+  Copy,
+  Download,
+  Frame,
+  Hand,
+  ImagePlus,
+  Layers,
+  Maximize,
+  Minus,
+  MousePointer2,
+  Plus,
+  Save,
+  Scissors,
+  Trash2,
+  Type,
+  Wand2,
+  X,
+} from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // OCR detected text region with polygon bounding box
 interface TextRegion {
@@ -150,7 +132,9 @@ function sanitizeElement(el: Partial<CanvasElement> & { type?: string }): Canvas
   } as ImageCanvasElement;
 }
 
-function sanitizeElements(elements: (Partial<CanvasElement> & { type?: string })[]): CanvasElement[] {
+function sanitizeElements(
+  elements: (Partial<CanvasElement> & { type?: string })[],
+): CanvasElement[] {
   return (elements || []).map(sanitizeElement);
 }
 
@@ -194,7 +178,7 @@ function AIProcessingOverlay({ isVisible }: { isVisible: boolean }) {
   if (!isVisible) return null;
 
   return (
-    <div className="absolute inset-0 overflow-hidden rounded pointer-events-none z-20">
+    <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden rounded">
       {/* Dim overlay to make shimmer more visible */}
       <div className="absolute inset-0 bg-black/30" />
 
@@ -256,9 +240,9 @@ function SnapGuidesOverlay({
   if (guides.length === 0) return null;
 
   return (
-    <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 50 }}>
+    <div className="pointer-events-none absolute inset-0" style={{ zIndex: 50 }}>
       {guides.map((guide, idx) => {
-        const frame = frames.find(f => f.id === guide.frameId);
+        const frame = frames.find((f) => f.id === guide.frameId);
         if (!frame) return null;
 
         if (guide.type === 'vertical') {
@@ -314,7 +298,7 @@ function calculateSnapResult(
   elemCenterX: number,
   elemCenterY: number,
   frames: FrameCanvasElement[],
-  excludeFrameId?: string
+  excludeFrameId?: string,
 ): { snapX: number | null; snapY: number | null; guides: SnapGuide[] } {
   let snapX: number | null = null;
   let snapY: number | null = null;
@@ -414,7 +398,7 @@ function CanvasImageElement({
         } catch (err) {
           if (retryCount < maxRetries - 1 && !cancelled) {
             retryCount++;
-            await new Promise(r => setTimeout(r, 500 * retryCount));
+            await new Promise((r) => setTimeout(r, 500 * retryCount));
             continue;
           }
           if (!cancelled) {
@@ -427,7 +411,9 @@ function CanvasImageElement({
     };
     loadImage();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [element.src, sandboxId, authToken]);
 
   const posX = element.x * scale + stagePosition.x;
@@ -435,7 +421,11 @@ function CanvasImageElement({
   const width = element.width * scale;
   const height = element.height * scale;
 
-  const handleMouseDown = (e: React.MouseEvent, type: 'move' | 'resize' = 'move', handle?: string) => {
+  const handleMouseDown = (
+    e: React.MouseEvent,
+    type: 'move' | 'resize' = 'move',
+    handle?: string,
+  ) => {
     if (element.locked && type === 'move') return;
     e.stopPropagation();
     e.preventDefault();
@@ -577,23 +567,24 @@ function CanvasImageElement({
   if (loading) {
     return (
       <div
-        style={{ 
-          position: 'absolute', 
-          left: posX, 
-          top: posY, 
-          width, 
+        style={{
+          position: 'absolute',
+          left: posX,
+          top: posY,
+          width,
           height,
           zIndex: 100, // Above frames!
         }}
-        className="rounded overflow-hidden bg-card/50"
+        className="bg-card/50 overflow-hidden rounded"
       >
         {/* Shimmer loading effect - no text */}
-        <div className="relative w-full h-full">
+        <div className="relative h-full w-full">
           <div className="absolute inset-0 bg-black/30" />
           <div
             className="absolute inset-0"
             style={{
-              background: 'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%)',
+              background:
+                'linear-gradient(110deg, transparent 30%, rgba(255,255,255,0.15) 50%, transparent 70%)',
               backgroundSize: '200% 100%',
               animation: 'canvas-shimmer 2s ease-in-out infinite',
             }}
@@ -605,9 +596,12 @@ function CanvasImageElement({
 
   if (error || !imageSrc) {
     return (
-      <div style={{ position: 'absolute', left: posX, top: posY, width, height }} className="flex flex-col items-center justify-center bg-card/30 rounded border border-dashed border-border">
-        <AlertCircle className="h-5 w-5 text-muted-foreground mb-1" />
-        <span className="text-xs text-muted-foreground">Failed</span>
+      <div
+        style={{ position: 'absolute', left: posX, top: posY, width, height }}
+        className="bg-card/30 border-border flex flex-col items-center justify-center rounded border border-dashed"
+      >
+        <AlertCircle className="text-muted-foreground mb-1 h-5 w-5" />
+        <span className="text-muted-foreground text-xs">Failed</span>
       </div>
     );
   }
@@ -634,17 +628,22 @@ function CanvasImageElement({
     >
       {/* Image content - THIS gets clipped if inside frame */}
       <div
-        className="w-full h-full rounded overflow-hidden relative"
+        className="relative h-full w-full overflow-hidden rounded"
         style={{ clipPath: clipPath || undefined }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={imageSrc} alt={element.name} draggable={false} className="w-full h-full object-fill pointer-events-none" />
+        <img
+          src={imageSrc}
+          alt={element.name}
+          draggable={false}
+          className="pointer-events-none h-full w-full object-fill"
+        />
       </div>
 
       {/* Selection ring - OUTSIDE clipped area, always fully visible */}
       {isSelected && (
         <div
-          className="absolute inset-0 rounded ring-2 ring-blue-500 pointer-events-none"
+          className="pointer-events-none absolute inset-0 rounded ring-2 ring-blue-500"
           style={{ zIndex: 5 }}
         />
       )}
@@ -653,15 +652,39 @@ function CanvasImageElement({
       {isSelected && !element.locked && (
         <>
           {/* Corner handles - blue */}
-          <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nwse-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'nw')} />
-          <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nesw-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'ne')} />
-          <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nesw-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'sw')} />
-          <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nwse-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'se')} />
+          <div
+            className="absolute -top-1.5 -left-1.5 z-10 h-3 w-3 cursor-nwse-resize rounded-full border-2 border-blue-500 bg-white"
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'nw')}
+          />
+          <div
+            className="absolute -top-1.5 -right-1.5 z-10 h-3 w-3 cursor-nesw-resize rounded-full border-2 border-blue-500 bg-white"
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'ne')}
+          />
+          <div
+            className="absolute -bottom-1.5 -left-1.5 z-10 h-3 w-3 cursor-nesw-resize rounded-full border-2 border-blue-500 bg-white"
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'sw')}
+          />
+          <div
+            className="absolute -right-1.5 -bottom-1.5 z-10 h-3 w-3 cursor-nwse-resize rounded-full border-2 border-blue-500 bg-white"
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'se')}
+          />
           {/* Edge handles - blue */}
-          <div className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ew-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'w')} />
-          <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ew-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'e')} />
-          <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ns-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'n')} />
-          <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ns-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 's')} />
+          <div
+            className="absolute top-1/2 -left-1.5 z-10 h-3 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-blue-500 bg-white"
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'w')}
+          />
+          <div
+            className="absolute top-1/2 -right-1.5 z-10 h-3 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-blue-500 bg-white"
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'e')}
+          />
+          <div
+            className="absolute -top-1.5 left-1/2 z-10 h-3 w-3 -translate-x-1/2 cursor-ns-resize rounded-full border-2 border-blue-500 bg-white"
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'n')}
+          />
+          <div
+            className="absolute -bottom-1.5 left-1/2 z-10 h-3 w-3 -translate-x-1/2 cursor-ns-resize rounded-full border-2 border-blue-500 bg-white"
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 's')}
+          />
         </>
       )}
     </div>
@@ -686,7 +709,11 @@ function CanvasFrameElement({
   scale: number;
   stagePosition: { x: number; y: number };
   allElements?: CanvasElement[];
-  onMoveChildren?: (childStartPositions: { id: string; x: number; y: number }[], dx: number, dy: number) => void;
+  onMoveChildren?: (
+    childStartPositions: { id: string; x: number; y: number }[],
+    dx: number,
+    dy: number,
+  ) => void;
 }) {
   const [dragState, setDragState] = useState<{
     type: 'move' | 'resize';
@@ -706,7 +733,11 @@ function CanvasFrameElement({
   const width = element.width * scale;
   const height = element.height * scale;
 
-  const handleMouseDown = (e: React.MouseEvent, type: 'move' | 'resize' = 'move', handle?: string) => {
+  const handleMouseDown = (
+    e: React.MouseEvent,
+    type: 'move' | 'resize' = 'move',
+    handle?: string,
+  ) => {
     if (element.locked && type === 'move') return;
     e.stopPropagation();
     e.preventDefault();
@@ -718,15 +749,17 @@ function CanvasFrameElement({
     if (type === 'move' && allElements) {
       const frameRight = element.x + element.width;
       const frameBottom = element.y + element.height;
-      const children = allElements.filter(el => {
+      const children = allElements.filter((el) => {
         if (el.id === element.id || el.type === 'frame') return false;
         // Check if element overlaps with frame
         const elRight = el.x + el.width;
         const elBottom = el.y + el.height;
-        return el.x < frameRight && elRight > element.x && el.y < frameBottom && elBottom > element.y;
+        return (
+          el.x < frameRight && elRight > element.x && el.y < frameBottom && elBottom > element.y
+        );
       });
-      childIds = children.map(el => el.id);
-      childStartPositions = children.map(el => ({ id: el.id, x: el.x, y: el.y }));
+      childIds = children.map((el) => el.id);
+      childStartPositions = children.map((el) => ({ id: el.id, x: el.x, y: el.y }));
     }
 
     setDragState({
@@ -753,7 +786,11 @@ function CanvasFrameElement({
       if (dragState.type === 'move') {
         onChange({ x: dragState.startElemX + dx, y: dragState.startElemY + dy });
         // Also move children
-        if (onMoveChildren && dragState.childStartPositions && dragState.childStartPositions.length > 0) {
+        if (
+          onMoveChildren &&
+          dragState.childStartPositions &&
+          dragState.childStartPositions.length > 0
+        ) {
           onMoveChildren(dragState.childStartPositions, dx, dy);
         }
       } else if (dragState.type === 'resize' && dragState.handle) {
@@ -812,8 +849,8 @@ function CanvasFrameElement({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-   // eslint-disable-next-line react-hooks/exhaustive-deps
-   }, [dragState, scale, onChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragState, scale, onChange]);
 
   const isDragging = dragState?.type === 'move';
 
@@ -834,7 +871,7 @@ function CanvasFrameElement({
     >
       {/* Frame border only - background rendered separately */}
       <div
-        className="w-full h-full relative"
+        className="relative h-full w-full"
         style={{
           border: isSelected ? '2px solid #3b82f6' : '2px dashed #404040',
           borderRadius: '4px',
@@ -842,7 +879,7 @@ function CanvasFrameElement({
       >
         {/* Frame label - top left outside frame - THIS is the click target for selection/move */}
         <div
-          className="absolute left-0 flex items-center gap-1 px-1.5 py-0.5 rounded-t-sm"
+          className="absolute left-0 flex items-center gap-1 rounded-t-sm px-1.5 py-0.5"
           style={{
             top: '-22px',
             backgroundColor: isSelected ? '#3b82f6' : '#333333',
@@ -854,13 +891,13 @@ function CanvasFrameElement({
           onMouseDown={(e) => handleMouseDown(e, 'move')}
         >
           <Frame className="h-3 w-3" />
-          <span className="truncate max-w-[100px]">{element.name}</span>
+          <span className="max-w-[100px] truncate">{element.name}</span>
         </div>
 
         {/* Dimension indicator - bottom center when selected */}
         {isSelected && (
           <div
-            className="absolute left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-sm pointer-events-none"
+            className="pointer-events-none absolute left-1/2 -translate-x-1/2 rounded-sm px-2 py-0.5"
             style={{
               bottom: '-24px',
               backgroundColor: '#3b82f6',
@@ -878,14 +915,46 @@ function CanvasFrameElement({
       {/* Resize handles - blue when selected, pointer-events:auto so they're clickable */}
       {isSelected && !element.locked && (
         <>
-          <div className="absolute -top-1.5 -left-1.5 w-3 h-3 rounded-sm cursor-nwse-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'nw')} />
-          <div className="absolute -top-1.5 -right-1.5 w-3 h-3 rounded-sm cursor-nesw-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'ne')} />
-          <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 rounded-sm cursor-nesw-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'sw')} />
-          <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 rounded-sm cursor-nwse-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'se')} />
-          <div className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-3 rounded-sm cursor-ew-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'w')} />
-          <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 rounded-sm cursor-ew-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'e')} />
-          <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-sm cursor-ns-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 'n')} />
-          <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-sm cursor-ns-resize z-10" style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }} onMouseDown={(e) => handleMouseDown(e, 'resize', 's')} />
+          <div
+            className="absolute -top-1.5 -left-1.5 z-10 h-3 w-3 cursor-nwse-resize rounded-sm"
+            style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }}
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'nw')}
+          />
+          <div
+            className="absolute -top-1.5 -right-1.5 z-10 h-3 w-3 cursor-nesw-resize rounded-sm"
+            style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }}
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'ne')}
+          />
+          <div
+            className="absolute -bottom-1.5 -left-1.5 z-10 h-3 w-3 cursor-nesw-resize rounded-sm"
+            style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }}
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'sw')}
+          />
+          <div
+            className="absolute -right-1.5 -bottom-1.5 z-10 h-3 w-3 cursor-nwse-resize rounded-sm"
+            style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }}
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'se')}
+          />
+          <div
+            className="absolute top-1/2 -left-1.5 z-10 h-3 w-3 -translate-y-1/2 cursor-ew-resize rounded-sm"
+            style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }}
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'w')}
+          />
+          <div
+            className="absolute top-1/2 -right-1.5 z-10 h-3 w-3 -translate-y-1/2 cursor-ew-resize rounded-sm"
+            style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }}
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'e')}
+          />
+          <div
+            className="absolute -top-1.5 left-1/2 z-10 h-3 w-3 -translate-x-1/2 cursor-ns-resize rounded-sm"
+            style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }}
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 'n')}
+          />
+          <div
+            className="absolute -bottom-1.5 left-1/2 z-10 h-3 w-3 -translate-x-1/2 cursor-ns-resize rounded-sm"
+            style={{ pointerEvents: 'auto', backgroundColor: '#fff', border: '2px solid #3b82f6' }}
+            onMouseDown={(e) => handleMouseDown(e, 'resize', 's')}
+          />
         </>
       )}
     </div>
@@ -966,38 +1035,92 @@ function CropOverlay({
         // Handle each resize direction
         switch (dragState.handle) {
           case 'nw':
-            newX = Math.max(0, Math.min(dragState.startRect.x + dragState.startRect.width - minSize, dragState.startRect.x + dx));
-            newY = Math.max(0, Math.min(dragState.startRect.y + dragState.startRect.height - minSize, dragState.startRect.y + dy));
+            newX = Math.max(
+              0,
+              Math.min(
+                dragState.startRect.x + dragState.startRect.width - minSize,
+                dragState.startRect.x + dx,
+              ),
+            );
+            newY = Math.max(
+              0,
+              Math.min(
+                dragState.startRect.y + dragState.startRect.height - minSize,
+                dragState.startRect.y + dy,
+              ),
+            );
             newW = dragState.startRect.width - (newX - dragState.startRect.x);
             newH = dragState.startRect.height - (newY - dragState.startRect.y);
             break;
           case 'ne':
-            newY = Math.max(0, Math.min(dragState.startRect.y + dragState.startRect.height - minSize, dragState.startRect.y + dy));
-            newW = Math.max(minSize, Math.min(1 - dragState.startRect.x, dragState.startRect.width + dx));
+            newY = Math.max(
+              0,
+              Math.min(
+                dragState.startRect.y + dragState.startRect.height - minSize,
+                dragState.startRect.y + dy,
+              ),
+            );
+            newW = Math.max(
+              minSize,
+              Math.min(1 - dragState.startRect.x, dragState.startRect.width + dx),
+            );
             newH = dragState.startRect.height - (newY - dragState.startRect.y);
             break;
           case 'sw':
-            newX = Math.max(0, Math.min(dragState.startRect.x + dragState.startRect.width - minSize, dragState.startRect.x + dx));
+            newX = Math.max(
+              0,
+              Math.min(
+                dragState.startRect.x + dragState.startRect.width - minSize,
+                dragState.startRect.x + dx,
+              ),
+            );
             newW = dragState.startRect.width - (newX - dragState.startRect.x);
-            newH = Math.max(minSize, Math.min(1 - dragState.startRect.y, dragState.startRect.height + dy));
+            newH = Math.max(
+              minSize,
+              Math.min(1 - dragState.startRect.y, dragState.startRect.height + dy),
+            );
             break;
           case 'se':
-            newW = Math.max(minSize, Math.min(1 - dragState.startRect.x, dragState.startRect.width + dx));
-            newH = Math.max(minSize, Math.min(1 - dragState.startRect.y, dragState.startRect.height + dy));
+            newW = Math.max(
+              minSize,
+              Math.min(1 - dragState.startRect.x, dragState.startRect.width + dx),
+            );
+            newH = Math.max(
+              minSize,
+              Math.min(1 - dragState.startRect.y, dragState.startRect.height + dy),
+            );
             break;
           case 'n':
-            newY = Math.max(0, Math.min(dragState.startRect.y + dragState.startRect.height - minSize, dragState.startRect.y + dy));
+            newY = Math.max(
+              0,
+              Math.min(
+                dragState.startRect.y + dragState.startRect.height - minSize,
+                dragState.startRect.y + dy,
+              ),
+            );
             newH = dragState.startRect.height - (newY - dragState.startRect.y);
             break;
           case 's':
-            newH = Math.max(minSize, Math.min(1 - dragState.startRect.y, dragState.startRect.height + dy));
+            newH = Math.max(
+              minSize,
+              Math.min(1 - dragState.startRect.y, dragState.startRect.height + dy),
+            );
             break;
           case 'w':
-            newX = Math.max(0, Math.min(dragState.startRect.x + dragState.startRect.width - minSize, dragState.startRect.x + dx));
+            newX = Math.max(
+              0,
+              Math.min(
+                dragState.startRect.x + dragState.startRect.width - minSize,
+                dragState.startRect.x + dx,
+              ),
+            );
             newW = dragState.startRect.width - (newX - dragState.startRect.x);
             break;
           case 'e':
-            newW = Math.max(minSize, Math.min(1 - dragState.startRect.x, dragState.startRect.width + dx));
+            newW = Math.max(
+              minSize,
+              Math.min(1 - dragState.startRect.x, dragState.startRect.width + dx),
+            );
             break;
         }
 
@@ -1019,7 +1142,7 @@ function CropOverlay({
     <>
       {/* Dimmed overlay outside crop area */}
       <div
-        className="absolute pointer-events-none z-30"
+        className="pointer-events-none absolute z-30"
         style={{
           left: elemX,
           top: elemY,
@@ -1027,15 +1150,42 @@ function CropOverlay({
           height: elemHeight,
         }}
       >
-        <div className="absolute bg-black/50" style={{ left: 0, top: 0, width: '100%', height: cropRect.y * 100 + '%' }} />
-        <div className="absolute bg-black/50" style={{ left: 0, bottom: 0, width: '100%', height: (1 - cropRect.y - cropRect.height) * 100 + '%' }} />
-        <div className="absolute bg-black/50" style={{ left: 0, top: cropRect.y * 100 + '%', width: cropRect.x * 100 + '%', height: cropRect.height * 100 + '%' }} />
-        <div className="absolute bg-black/50" style={{ right: 0, top: cropRect.y * 100 + '%', width: (1 - cropRect.x - cropRect.width) * 100 + '%', height: cropRect.height * 100 + '%' }} />
+        <div
+          className="absolute bg-black/50"
+          style={{ left: 0, top: 0, width: '100%', height: cropRect.y * 100 + '%' }}
+        />
+        <div
+          className="absolute bg-black/50"
+          style={{
+            left: 0,
+            bottom: 0,
+            width: '100%',
+            height: (1 - cropRect.y - cropRect.height) * 100 + '%',
+          }}
+        />
+        <div
+          className="absolute bg-black/50"
+          style={{
+            left: 0,
+            top: cropRect.y * 100 + '%',
+            width: cropRect.x * 100 + '%',
+            height: cropRect.height * 100 + '%',
+          }}
+        />
+        <div
+          className="absolute bg-black/50"
+          style={{
+            right: 0,
+            top: cropRect.y * 100 + '%',
+            width: (1 - cropRect.x - cropRect.width) * 100 + '%',
+            height: cropRect.height * 100 + '%',
+          }}
+        />
       </div>
 
       {/* Crop rectangle */}
       <div
-        className="absolute border-2 border-blue-500 cursor-move z-40"
+        className="absolute z-40 cursor-move border-2 border-blue-500"
         style={{
           left: cropX,
           top: cropY,
@@ -1045,21 +1195,45 @@ function CropOverlay({
         onMouseDown={(e) => handleMouseDown(e, 'move')}
       >
         {/* Corner handles */}
-        <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nwse-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'nw')} />
-        <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nesw-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'ne')} />
-        <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nesw-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'sw')} />
-        <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nwse-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'se')} />
+        <div
+          className="absolute -top-1.5 -left-1.5 z-10 h-3 w-3 cursor-nwse-resize rounded-full border-2 border-blue-500 bg-white"
+          onMouseDown={(e) => handleMouseDown(e, 'resize', 'nw')}
+        />
+        <div
+          className="absolute -top-1.5 -right-1.5 z-10 h-3 w-3 cursor-nesw-resize rounded-full border-2 border-blue-500 bg-white"
+          onMouseDown={(e) => handleMouseDown(e, 'resize', 'ne')}
+        />
+        <div
+          className="absolute -bottom-1.5 -left-1.5 z-10 h-3 w-3 cursor-nesw-resize rounded-full border-2 border-blue-500 bg-white"
+          onMouseDown={(e) => handleMouseDown(e, 'resize', 'sw')}
+        />
+        <div
+          className="absolute -right-1.5 -bottom-1.5 z-10 h-3 w-3 cursor-nwse-resize rounded-full border-2 border-blue-500 bg-white"
+          onMouseDown={(e) => handleMouseDown(e, 'resize', 'se')}
+        />
         {/* Edge handles */}
-        <div className="absolute top-1/2 -left-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ew-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'w')} />
-        <div className="absolute top-1/2 -right-1.5 -translate-y-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ew-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'e')} />
-        <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ns-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'n')} />
-        <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-ns-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 's')} />
+        <div
+          className="absolute top-1/2 -left-1.5 z-10 h-3 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-blue-500 bg-white"
+          onMouseDown={(e) => handleMouseDown(e, 'resize', 'w')}
+        />
+        <div
+          className="absolute top-1/2 -right-1.5 z-10 h-3 w-3 -translate-y-1/2 cursor-ew-resize rounded-full border-2 border-blue-500 bg-white"
+          onMouseDown={(e) => handleMouseDown(e, 'resize', 'e')}
+        />
+        <div
+          className="absolute -top-1.5 left-1/2 z-10 h-3 w-3 -translate-x-1/2 cursor-ns-resize rounded-full border-2 border-blue-500 bg-white"
+          onMouseDown={(e) => handleMouseDown(e, 'resize', 'n')}
+        />
+        <div
+          className="absolute -bottom-1.5 left-1/2 z-10 h-3 w-3 -translate-x-1/2 cursor-ns-resize rounded-full border-2 border-blue-500 bg-white"
+          onMouseDown={(e) => handleMouseDown(e, 'resize', 's')}
+        />
 
         {/* Grid lines for rule of thirds */}
-        <div className="absolute top-1/3 left-0 right-0 border-t border-blue-400/30" />
-        <div className="absolute top-2/3 left-0 right-0 border-t border-blue-400/30" />
-        <div className="absolute left-1/3 top-0 bottom-0 border-l border-blue-400/30" />
-        <div className="absolute left-2/3 top-0 bottom-0 border-l border-blue-400/30" />
+        <div className="absolute top-1/3 right-0 left-0 border-t border-blue-400/30" />
+        <div className="absolute top-2/3 right-0 left-0 border-t border-blue-400/30" />
+        <div className="absolute top-0 bottom-0 left-1/3 border-l border-blue-400/30" />
+        <div className="absolute top-0 bottom-0 left-2/3 border-l border-blue-400/30" />
       </div>
     </>
   );
@@ -1098,10 +1272,14 @@ function FloatingToolbar({
   onImageUpdate: (newSrc: string, newDimensions?: { width: number; height: number }) => void;
   onProcessingChange: (isProcessing: boolean, failed?: boolean) => void;
   onOcrProcessing: (isProcessing: boolean) => void; // OCR shimmer on SAME element (no duplicate)
-  onTextEditStateChange: (state: { regions: TextRegion[]; ocrImageSize: { width: number; height: number } } | null) => void;
+  onTextEditStateChange: (
+    state: { regions: TextRegion[]; ocrImageSize: { width: number; height: number } } | null,
+  ) => void;
   onTextRegionSelect?: (region: TextRegion) => void;
   externalSelectedRegion?: TextRegion | null;
-  onCropStateChange: (state: { cropRect: { x: number; y: number; width: number; height: number } } | null) => void;
+  onCropStateChange: (
+    state: { cropRect: { x: number; y: number; width: number; height: number } } | null,
+  ) => void;
   externalCropRect?: { x: number; y: number; width: number; height: number } | null;
   onCropCreate: (src: string, width: number, height: number) => void;
   authToken?: string;
@@ -1124,9 +1302,14 @@ function FloatingToolbar({
 
   // Crop mode state
   const [cropMode, setCropMode] = useState(false);
-  const [cropRect, setCropRect] = useState<{ x: number; y: number; width: number; height: number }>({
-    x: 0.1, y: 0.1, width: 0.8, height: 0.8 // Normalized 0-1
-  });
+  const [cropRect, setCropRect] = useState<{ x: number; y: number; width: number; height: number }>(
+    {
+      x: 0.1,
+      y: 0.1,
+      width: 0.8,
+      height: 0.8, // Normalized 0-1
+    },
+  );
   const [isCropping, setIsCropping] = useState(false);
 
   // Sync with external selected region (from canvas-level clicks)
@@ -1134,11 +1317,12 @@ function FloatingToolbar({
     if (externalSelectedRegion && externalSelectedRegion.id !== selectedTextRegion?.id) {
       setSelectedTextRegion(externalSelectedRegion);
       // Only pre-fill text if confidence is high enough (> 0.6), otherwise let user type
-      const prefillText = externalSelectedRegion.confidence > 0.6 ? externalSelectedRegion.text : '';
+      const prefillText =
+        externalSelectedRegion.confidence > 0.6 ? externalSelectedRegion.text : '';
       setNewTextContent(prefillText);
       setShowTextEditDialog(true);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalSelectedRegion]);
 
   // Reset text edit mode when element changes (user clicks different image)
@@ -1172,7 +1356,7 @@ function FloatingToolbar({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
         body: JSON.stringify({ image_base64: imageBase64 }),
       });
@@ -1193,26 +1377,28 @@ function FloatingToolbar({
       setOcrImageSize({ width: ocrWidth, height: ocrHeight });
 
       // Convert backend response to TextRegion format
-      const regions: TextRegion[] = (result.text_lines || []).map((line: {
-        id: string;
-        text: string;
-        confidence: number;
-        bbox: [number, number, number, number];
-        polygon: [number, number][];
-      }) => ({
-        id: line.id,
-        text: line.text,
-        confidence: line.confidence,
-        bbox: line.bbox as [number, number, number, number],
-        polygon: line.polygon as [number, number][],
-      }));
+      const regions: TextRegion[] = (result.text_lines || []).map(
+        (line: {
+          id: string;
+          text: string;
+          confidence: number;
+          bbox: [number, number, number, number];
+          polygon: [number, number][];
+        }) => ({
+          id: line.id,
+          text: line.text,
+          confidence: line.confidence,
+          bbox: line.bbox as [number, number, number, number],
+          polygon: line.polygon as [number, number][],
+        }),
+      );
 
       // Check OCR quality - if too poor, skip bounding boxes and just prompt
-      const avgConfidence = regions.length > 0
-        ? regions.reduce((sum, r) => sum + r.confidence, 0) / regions.length
-        : 0;
-      const lowConfidenceCount = regions.filter(r => r.confidence < 0.4).length;
-      const isLowQuality = avgConfidence < 0.35 || (regions.length > 0 && lowConfidenceCount / regions.length > 0.7);
+      const avgConfidence =
+        regions.length > 0 ? regions.reduce((sum, r) => sum + r.confidence, 0) / regions.length : 0;
+      const lowConfidenceCount = regions.filter((r) => r.confidence < 0.4).length;
+      const isLowQuality =
+        avgConfidence < 0.35 || (regions.length > 0 && lowConfidenceCount / regions.length > 0.7);
 
       if (regions.length === 0) {
         const fullText = (result.text || '').trim();
@@ -1245,7 +1431,9 @@ function FloatingToolbar({
       }
     } catch (err) {
       console.error('OCR error:', err);
-      toast.error('Failed to detect text: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error(
+        'Failed to detect text: ' + (err instanceof Error ? err.message : 'Unknown error'),
+      );
       setTextEditMode(false);
     } finally {
       setIsDetectingText(false);
@@ -1391,7 +1579,10 @@ function FloatingToolbar({
     }
   };
 
-  const handleAIAction = async (action: 'upscale' | 'remove_bg' | 'edit_text' | 'mark_edit', prompt?: string) => {
+  const handleAIAction = async (
+    action: 'upscale' | 'remove_bg' | 'edit_text' | 'mark_edit',
+    prompt?: string,
+  ) => {
     setIsProcessing(true);
     setActiveAction(action);
     onProcessingChange(true);
@@ -1416,7 +1607,7 @@ function FloatingToolbar({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
         body: JSON.stringify({
           action,
@@ -1439,7 +1630,10 @@ function FloatingToolbar({
           // Load the image to get its actual dimensions
           const img = new Image();
           img.onload = () => {
-            onImageUpdate(result.image_base64, { width: img.naturalWidth, height: img.naturalHeight });
+            onImageUpdate(result.image_base64, {
+              width: img.naturalWidth,
+              height: img.naturalHeight,
+            });
             toast.success(`Upscaled to ${img.naturalWidth}×${img.naturalHeight}!`);
           };
           img.onerror = () => {
@@ -1455,14 +1649,13 @@ function FloatingToolbar({
         }
       } else {
         toast.error(result.error || 'Processing failed', {
-          description: result.message || 'Please try again'
+          description: result.message || 'Please try again',
         });
       }
-
     } catch (err) {
       console.error('AI action error:', err);
       toast.error('Failed to process image', {
-        description: err instanceof Error ? err.message : 'Unknown error'
+        description: err instanceof Error ? err.message : 'Unknown error',
       });
     } finally {
       setIsProcessing(false);
@@ -1485,15 +1678,19 @@ function FloatingToolbar({
           zIndex: 100,
         }}
       >
-        <div className="flex items-center gap-2 bg-card border border-border rounded-full px-3 py-1.5">
-          <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1486JsxTextClickOnTextToEdit')}</span>
+        <div className="bg-card border-border flex items-center gap-2 rounded-full border px-3 py-1.5">
+          <span className="text-muted-foreground text-xs">
+            {tHardcodedUi.raw(
+              'componentsFileRenderersCanvasRenderer.line1486JsxTextClickOnTextToEdit',
+            )}
+          </span>
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 rounded-full text-xs"
+            className="h-6 rounded-full px-2 text-xs"
             onClick={cancelTextEditMode}
           >
-            <X className="h-3 w-3 mr-1" />
+            <X className="mr-1 h-3 w-3" />
             Cancel
           </Button>
         </div>
@@ -1503,24 +1700,25 @@ function FloatingToolbar({
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>{isLowQualityOcr ? 'Edit Text' : 'Replace text'}</DialogTitle>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-muted-foreground text-sm">
                 {isLowQualityOcr
-                  ? "Describe what text to change and what to replace it with"
+                  ? 'Describe what text to change and what to replace it with'
                   : selectedTextRegion && selectedTextRegion.confidence <= 60
-                    ? "Type what text you want in this area"
-                    : `Replacing: "${selectedTextRegion?.text || ''}"`
-                }
+                    ? 'Type what text you want in this area'
+                    : `Replacing: "${selectedTextRegion?.text || ''}"`}
               </p>
             </DialogHeader>
             <div className="space-y-4">
               <Textarea
                 value={newTextContent}
                 onChange={(e) => setNewTextContent(e.target.value)}
-                placeholder={isLowQualityOcr
-                  ? "e.g., Replace 'Hello' with 'Welcome' or Change the title to 'New Title'"
-                  : selectedTextRegion && selectedTextRegion.confidence <= 60
-                    ? "Type the new text you want here..."
-                    : "Enter replacement text..."}
+                placeholder={
+                  isLowQualityOcr
+                    ? "e.g., Replace 'Hello' with 'Welcome' or Change the title to 'New Title'"
+                    : selectedTextRegion && selectedTextRegion.confidence <= 60
+                      ? 'Type the new text you want here...'
+                      : 'Enter replacement text...'
+                }
                 className="min-h-[100px]"
                 autoFocus
               />
@@ -1528,7 +1726,10 @@ function FloatingToolbar({
                 <Button variant="outline" onClick={cancelTextEditMode}>
                   Cancel
                 </Button>
-                <Button onClick={applyTextReplacement} disabled={!newTextContent.trim() || isProcessing}>
+                <Button
+                  onClick={applyTextReplacement}
+                  disabled={!newTextContent.trim() || isProcessing}
+                >
                   {isProcessing ? <KortixLoader size="small" className="mr-2" /> : null}
                   {isLowQualityOcr ? 'Apply' : 'Replace'}
                 </Button>
@@ -1552,21 +1753,23 @@ function FloatingToolbar({
           zIndex: 100,
         }}
       >
-        <div className="flex items-center gap-2 bg-card border border-border rounded-full px-3 py-1.5">
-          <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1553JsxTextSelectArea')}</span>
+        <div className="bg-card border-border flex items-center gap-2 rounded-full border px-3 py-1.5">
+          <span className="text-muted-foreground text-xs">
+            {tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1553JsxTextSelectArea')}
+          </span>
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 px-2 rounded-full text-xs"
+            className="h-6 rounded-full px-2 text-xs"
             onClick={cancelCropMode}
             disabled={isCropping}
           >
-            <X className="h-3 w-3 mr-1" />
+            <X className="mr-1 h-3 w-3" />
             Cancel
           </Button>
           <Button
             size="sm"
-            className="h-6 px-3 rounded-full text-xs"
+            className="h-6 rounded-full px-3 text-xs"
             onClick={applyCrop}
             disabled={isCropping}
           >
@@ -1589,13 +1792,15 @@ function FloatingToolbar({
       }}
     >
       {/* File info - inline centered */}
-      <div className="flex items-center justify-center gap-2 mb-1">
-        <span className="text-xs text-muted-foreground truncate max-w-[150px]">{element.name}</span>
-        <span className="text-xs text-muted-foreground">{Math.round(element.width)}×{Math.round(element.height)}</span>
+      <div className="mb-1 flex items-center justify-center gap-2">
+        <span className="text-muted-foreground max-w-[150px] truncate text-xs">{element.name}</span>
+        <span className="text-muted-foreground text-xs">
+          {Math.round(element.width)}×{Math.round(element.height)}
+        </span>
       </div>
 
       {/* Main AI toolbar */}
-      <div className="flex items-center gap-0.5 bg-card border border-border rounded-full px-1.5 py-1">
+      <div className="bg-card border-border flex items-center gap-0.5 rounded-full border px-1.5 py-1">
         <TooltipProvider delayDuration={0}>
           {/* Upscale */}
           <Tooltip>
@@ -1603,19 +1808,25 @@ function FloatingToolbar({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                className="h-7 gap-1.5 rounded-full px-2 text-xs"
                 onClick={() => handleAIAction('upscale')}
                 disabled={isProcessing}
               >
                 {activeAction === 'upscale' ? (
                   <KortixLoader size="small" />
                 ) : (
-                  <span className="text-xs font-semibold border border-current rounded px-0.5">HD</span>
+                  <span className="rounded border border-current px-0.5 text-xs font-semibold">
+                    HD
+                  </span>
                 )}
                 Upscale
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1615JsxTextUpscaleImageWithAi')}</TooltipContent>
+            <TooltipContent>
+              {tHardcodedUi.raw(
+                'componentsFileRenderersCanvasRenderer.line1615JsxTextUpscaleImageWithAi',
+              )}
+            </TooltipContent>
           </Tooltip>
 
           {/* Remove Background */}
@@ -1624,22 +1835,34 @@ function FloatingToolbar({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                className="h-7 gap-1.5 rounded-full px-2 text-xs"
                 onClick={() => handleAIAction('remove_bg')}
                 disabled={isProcessing}
               >
                 {activeAction === 'remove_bg' ? (
                   <KortixLoader size="small" />
                 ) : (
-                  <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <svg
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 16 16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  >
                     <rect x="1" y="1" width="6" height="6" />
                     <rect x="9" y="1" width="6" height="6" strokeDasharray="2 1" />
                     <rect x="1" y="9" width="6" height="6" strokeDasharray="2 1" />
                     <rect x="9" y="9" width="6" height="6" />
                   </svg>
-                )}{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1638JsxTextRemoveBg')}</Button>
+                )}
+                {tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1638JsxTextRemoveBg')}
+              </Button>
             </TooltipTrigger>
-            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1641JsxTextRemoveBackgroundWithAi')}</TooltipContent>
+            <TooltipContent>
+              {tHardcodedUi.raw(
+                'componentsFileRenderersCanvasRenderer.line1641JsxTextRemoveBackgroundWithAi',
+              )}
+            </TooltipContent>
           </Tooltip>
 
           {/* Edit Text - OCR-based selection */}
@@ -1648,13 +1871,19 @@ function FloatingToolbar({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                className="h-7 gap-1.5 rounded-full px-2 text-xs"
                 onClick={startTextEditMode}
                 disabled={isProcessing || textEditMode}
               >
-                {isDetectingText ? <KortixLoader size="small" /> : <Type className="h-3.5 w-3.5" />}{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1655JsxTextEditText')}</Button>
+                {isDetectingText ? <KortixLoader size="small" /> : <Type className="h-3.5 w-3.5" />}
+                {tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1655JsxTextEditText')}
+              </Button>
             </TooltipTrigger>
-            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1658JsxTextSelectAndEditTextInImage')}</TooltipContent>
+            <TooltipContent>
+              {tHardcodedUi.raw(
+                'componentsFileRenderersCanvasRenderer.line1658JsxTextSelectAndEditTextInImage',
+              )}
+            </TooltipContent>
           </Tooltip>
 
           {/* Crop Copy */}
@@ -1663,7 +1892,7 @@ function FloatingToolbar({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                className="h-7 gap-1.5 rounded-full px-2 text-xs"
                 onClick={startCropMode}
                 disabled={isProcessing || cropMode}
               >
@@ -1671,7 +1900,11 @@ function FloatingToolbar({
                 Cut
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1675JsxTextCreateCroppedCopy')}</TooltipContent>
+            <TooltipContent>
+              {tHardcodedUi.raw(
+                'componentsFileRenderersCanvasRenderer.line1675JsxTextCreateCroppedCopy',
+              )}
+            </TooltipContent>
           </Tooltip>
 
           {/* Mark Edit - with prompt input */}
@@ -1682,13 +1915,19 @@ function FloatingToolbar({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                    className="h-7 gap-1.5 rounded-full px-2 text-xs"
                     disabled={isProcessing}
                   >
                     {activeAction === 'mark_edit' ? (
                       <KortixLoader size="small" />
                     ) : (
-                      <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                      <svg
+                        className="h-3.5 w-3.5"
+                        viewBox="0 0 16 16"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                      >
                         <rect x="2" y="2" width="12" height="12" strokeDasharray="3 2" rx="1" />
                         <path d="M6 8L7.5 9.5L10 6" strokeLinecap="round" strokeLinejoin="round" />
                       </svg>
@@ -1697,13 +1936,23 @@ function FloatingToolbar({
                   </Button>
                 </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1701JsxTextAiPoweredImageEditing')}</TooltipContent>
+              <TooltipContent>
+                {tHardcodedUi.raw(
+                  'componentsFileRenderersCanvasRenderer.line1701JsxTextAiPoweredImageEditing',
+                )}
+              </TooltipContent>
             </Tooltip>
             <PopoverContent className="w-80 p-3" align="end">
               <div className="space-y-3">
-                <div className="text-xs text-muted-foreground uppercase tracking-wide">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1705JsxTextAiImageEdit')}</div>
+                <div className="text-muted-foreground text-xs tracking-wide uppercase">
+                  {tHardcodedUi.raw(
+                    'componentsFileRenderersCanvasRenderer.line1705JsxTextAiImageEdit',
+                  )}
+                </div>
                 <Textarea
-                  placeholder={tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1707JsxAttrPlaceholderDescribeTheEditYouWantToMake')}
+                  placeholder={tHardcodedUi.raw(
+                    'componentsFileRenderersCanvasRenderer.line1707JsxAttrPlaceholderDescribeTheEditYouWantToMake',
+                  )}
                   value={editPrompt}
                   onChange={(e) => setEditPrompt(e.target.value)}
                   className="min-h-[80px] resize-none shadow-none"
@@ -1732,7 +1981,7 @@ function FloatingToolbar({
             </PopoverContent>
           </Popover>
 
-          <div className="w-px h-5 bg-border mx-0.5" />
+          <div className="bg-border mx-0.5 h-5 w-px" />
 
           {/* Download - dropdown menu */}
           <DropdownMenu>
@@ -1749,11 +1998,11 @@ function FloatingToolbar({
             <DropdownMenuContent align="center" className="min-w-[140px]">
               <DropdownMenuItem onClick={onDownloadPng} className="cursor-pointer">
                 <span className="font-medium">PNG</span>
-                <span className="ml-auto text-xs text-muted-foreground">Default</span>
+                <span className="text-muted-foreground ml-auto text-xs">Default</span>
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onDownloadSvg} className="cursor-pointer">
                 <span className="font-medium">SVG</span>
-                <span className="ml-auto text-xs text-muted-foreground">Vector</span>
+                <span className="text-muted-foreground ml-auto text-xs">Vector</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1761,7 +2010,12 @@ function FloatingToolbar({
           {/* Copy - icon only */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={onDuplicate}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-full"
+                onClick={onDuplicate}
+              >
                 <Copy className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
@@ -1771,7 +2025,12 @@ function FloatingToolbar({
           {/* Delete - icon only */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full text-destructive hover:text-destructive" onClick={onDelete}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-destructive hover:text-destructive h-7 w-7 rounded-full"
+                onClick={onDelete}
+              >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
@@ -1825,8 +2084,17 @@ function FrameFloatingToolbar({
 
   // Common preset colors
   const presetColors = [
-    'transparent', '#ffffff', '#000000', '#f5f5f5', '#1a1a1a',
-    '#ef4444', '#f97316', '#eab308', '#22c55e', '#3b82f6', '#8b5cf6',
+    'transparent',
+    '#ffffff',
+    '#000000',
+    '#f5f5f5',
+    '#1a1a1a',
+    '#ef4444',
+    '#f97316',
+    '#eab308',
+    '#22c55e',
+    '#3b82f6',
+    '#8b5cf6',
   ];
 
   // Apply size changes
@@ -1848,28 +2116,32 @@ function FrameFloatingToolbar({
       }}
     >
       {/* Frame toolbar */}
-      <div className="flex items-center gap-0.5 bg-card border border-border rounded-full px-1.5 py-1">
+      <div className="bg-card border-border flex items-center gap-0.5 rounded-full border px-1.5 py-1">
         <TooltipProvider delayDuration={0}>
           {/* Frame name - clickable to edit */}
           <Popover open={showNamePopover} onOpenChange={setShowNamePopover}>
             <Tooltip>
               <TooltipTrigger asChild>
                 <PopoverTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 rounded-full gap-1 text-xs"
-                  >
+                  <Button variant="ghost" size="sm" className="h-7 gap-1 rounded-full px-2 text-xs">
                     <Frame className="h-3 w-3" />
-                    <span className="truncate max-w-[80px]">{element.name}</span>
+                    <span className="max-w-[80px] truncate">{element.name}</span>
                   </Button>
                 </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1868JsxTextRenameFrame')}</TooltipContent>
+              <TooltipContent>
+                {tHardcodedUi.raw(
+                  'componentsFileRenderersCanvasRenderer.line1868JsxTextRenameFrame',
+                )}
+              </TooltipContent>
             </Tooltip>
             <PopoverContent className="w-auto p-3" align="center">
               <div className="space-y-2">
-                <div className="text-xs text-muted-foreground font-medium">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1872JsxTextFrameName')}</div>
+                <div className="text-muted-foreground text-xs font-medium">
+                  {tHardcodedUi.raw(
+                    'componentsFileRenderersCanvasRenderer.line1872JsxTextFrameName',
+                  )}
+                </div>
                 <input
                   type="text"
                   value={tempName}
@@ -1880,12 +2152,12 @@ function FrameFloatingToolbar({
                       setShowNamePopover(false);
                     }
                   }}
-                  className="w-40 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  className="bg-background border-border h-7 w-40 rounded border px-2 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
                   autoFocus
                 />
                 <Button
                   size="sm"
-                  className="w-full h-7 text-xs"
+                  className="h-7 w-full text-xs"
                   onClick={() => {
                     onChange({ name: tempName.trim() || 'Frame' });
                     setShowNamePopover(false);
@@ -1897,7 +2169,7 @@ function FrameFloatingToolbar({
             </PopoverContent>
           </Popover>
 
-          <div className="w-px h-5 bg-border mx-0.5" />
+          <div className="bg-border mx-0.5 h-5 w-px" />
 
           {/* Size control */}
           <Popover open={showSizePopover} onOpenChange={setShowSizePopover}>
@@ -1907,64 +2179,87 @@ function FrameFloatingToolbar({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 rounded-full gap-1 text-xs font-mono"
+                    className="h-7 gap-1 rounded-full px-2 font-mono text-xs"
                   >
                     {Math.round(element.width)}×{Math.round(element.height)}
                   </Button>
                 </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1916JsxTextSetDimensions')}</TooltipContent>
+              <TooltipContent>
+                {tHardcodedUi.raw(
+                  'componentsFileRenderersCanvasRenderer.line1916JsxTextSetDimensions',
+                )}
+              </TooltipContent>
             </Tooltip>
             <PopoverContent className="w-auto p-3" align="center">
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="text-xs text-muted-foreground font-medium">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line1921JsxTextFrameSize')}</div>
+                  <div className="text-muted-foreground text-xs font-medium">
+                    {tHardcodedUi.raw(
+                      'componentsFileRenderersCanvasRenderer.line1921JsxTextFrameSize',
+                    )}
+                  </div>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="ghost" size="sm" className="h-5 px-1.5 text-xs text-muted-foreground">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-muted-foreground h-5 px-1.5 text-xs"
+                      >
                         Presets
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-48 p-1 max-h-64 overflow-y-auto" align="end" side="right">
+                    <PopoverContent
+                      className="max-h-64 w-48 overflow-y-auto p-1"
+                      align="end"
+                      side="right"
+                    >
                       {[
                         {
-                          cat: 'SOCIAL', items: [
+                          cat: 'SOCIAL',
+                          items: [
                             { n: 'Instagram Post', w: 1080, h: 1080 },
                             { n: 'Instagram Story', w: 1080, h: 1920 },
                             { n: 'TikTok', w: 1080, h: 1920 },
                             { n: 'Twitter Post', w: 1200, h: 675 },
                             { n: 'Facebook Post', w: 1200, h: 630 },
                             { n: 'YouTube Thumb', w: 1280, h: 720 },
-                          ]
+                          ],
                         },
                         {
-                          cat: 'DEVICES', items: [
+                          cat: 'DEVICES',
+                          items: [
                             { n: 'iPhone 15 Pro', w: 1179, h: 2556 },
                             { n: 'iPhone 15 Pro Max', w: 1290, h: 2796 },
                             { n: 'iPad Pro 11"', w: 1668, h: 2388 },
-                          ]
+                          ],
                         },
                         {
-                          cat: 'DESIGN', items: [
+                          cat: 'DESIGN',
+                          items: [
                             { n: 'Dribbble', w: 400, h: 300 },
                             { n: 'Dribbble HD', w: 800, h: 600 },
                             { n: 'Square', w: 1000, h: 1000 },
-                          ]
+                          ],
                         },
-                      ].map(cat => (
+                      ].map((cat) => (
                         <div key={cat.cat}>
-                          <div className="px-2 py-1 text-xs text-muted-foreground uppercase tracking-wider">{cat.cat}</div>
-                          {cat.items.map(p => (
+                          <div className="text-muted-foreground px-2 py-1 text-xs tracking-wider uppercase">
+                            {cat.cat}
+                          </div>
+                          {cat.items.map((p) => (
                             <button
                               key={p.n}
-                              className="w-full flex items-center justify-between px-2 py-1 text-xs hover:bg-accent rounded-lg text-left"
+                              className="hover:bg-accent flex w-full items-center justify-between rounded-lg px-2 py-1 text-left text-xs"
                               onClick={() => {
                                 setTempWidth(String(p.w));
                                 setTempHeight(String(p.h));
                               }}
                             >
                               <span>{p.n}</span>
-                              <span className="text-xs text-muted-foreground font-mono">{p.w}×{p.h}</span>
+                              <span className="text-muted-foreground font-mono text-xs">
+                                {p.w}×{p.h}
+                              </span>
                             </button>
                           ))}
                         </div>
@@ -1974,37 +2269,37 @@ function FrameFloatingToolbar({
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs text-muted-foreground uppercase">Width</label>
+                    <label className="text-muted-foreground text-xs uppercase">Width</label>
                     <input
                       type="number"
                       value={tempWidth}
                       onChange={(e) => setTempWidth(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && applySize()}
-                      className="w-20 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="bg-background border-border h-7 w-20 rounded border px-2 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
                       min={100}
                     />
                   </div>
-                  <X className="h-3 w-3 text-muted-foreground mt-4" />
+                  <X className="text-muted-foreground mt-4 h-3 w-3" />
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs text-muted-foreground uppercase">Height</label>
+                    <label className="text-muted-foreground text-xs uppercase">Height</label>
                     <input
                       type="number"
                       value={tempHeight}
                       onChange={(e) => setTempHeight(e.target.value)}
                       onKeyDown={(e) => e.key === 'Enter' && applySize()}
-                      className="w-20 h-7 px-2 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="bg-background border-border h-7 w-20 rounded border px-2 text-xs focus:ring-1 focus:ring-blue-500 focus:outline-none"
                       min={100}
                     />
                   </div>
                 </div>
-                <Button size="sm" className="w-full h-7 text-xs" onClick={applySize}>
+                <Button size="sm" className="h-7 w-full text-xs" onClick={applySize}>
                   Apply
                 </Button>
               </div>
             </PopoverContent>
           </Popover>
 
-          <div className="w-px h-5 bg-border mx-0.5" />
+          <div className="bg-border mx-0.5 h-5 w-px" />
 
           {/* Background color */}
           <Popover open={showColorPicker} onOpenChange={setShowColorPicker}>
@@ -2014,15 +2309,16 @@ function FrameFloatingToolbar({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                    className="h-7 gap-1.5 rounded-full px-2 text-xs"
                   >
                     <div
-                      className="w-3.5 h-3.5 rounded-sm border border-border"
+                      className="border-border h-3.5 w-3.5 rounded-sm border"
                       style={{
                         backgroundColor: element.backgroundColor || 'transparent',
-                        backgroundImage: !element.backgroundColor || element.backgroundColor === 'transparent'
-                          ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
-                          : undefined,
+                        backgroundImage:
+                          !element.backgroundColor || element.backgroundColor === 'transparent'
+                            ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
+                            : undefined,
                         backgroundSize: '6px 6px',
                         backgroundPosition: '0 0, 0 3px, 3px -3px, -3px 0px',
                       }}
@@ -2031,7 +2327,11 @@ function FrameFloatingToolbar({
                   </Button>
                 </PopoverTrigger>
               </TooltipTrigger>
-              <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2034JsxTextBackgroundColor')}</TooltipContent>
+              <TooltipContent>
+                {tHardcodedUi.raw(
+                  'componentsFileRenderersCanvasRenderer.line2034JsxTextBackgroundColor',
+                )}
+              </TooltipContent>
             </Tooltip>
             <PopoverContent className="w-auto p-2" align="center">
               <div className="grid grid-cols-6 gap-1">
@@ -2039,14 +2339,15 @@ function FrameFloatingToolbar({
                   <button
                     key={color}
                     className={cn(
-                      "w-6 h-6 rounded-sm border border-border hover:ring-2 hover:ring-blue-500 transition-colors",
-                      element.backgroundColor === color && "ring-2 ring-blue-500"
+                      'border-border h-6 w-6 rounded-sm border transition-colors hover:ring-2 hover:ring-blue-500',
+                      element.backgroundColor === color && 'ring-2 ring-blue-500',
                     )}
                     style={{
                       backgroundColor: color === 'transparent' ? 'transparent' : color,
-                      backgroundImage: color === 'transparent'
-                        ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
-                        : undefined,
+                      backgroundImage:
+                        color === 'transparent'
+                          ? 'linear-gradient(45deg, #ccc 25%, transparent 25%), linear-gradient(-45deg, #ccc 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #ccc 75%), linear-gradient(-45deg, transparent 75%, #ccc 75%)'
+                          : undefined,
                       backgroundSize: '8px 8px',
                       backgroundPosition: '0 0, 0 4px, 4px -4px, -4px 0px',
                     }}
@@ -2057,13 +2358,11 @@ function FrameFloatingToolbar({
                   />
                 ))}
                 {/* Custom color picker */}
-                <label
-                  className="w-6 h-6 rounded-sm border border-dashed border-muted-foreground hover:border-blue-500 hover:ring-2 hover:ring-blue-500 transition-colors cursor-pointer flex items-center justify-center overflow-hidden relative bg-background"
-                >
-                  <Plus className="h-3 w-3 text-muted-foreground" />
+                <label className="border-muted-foreground bg-background relative flex h-6 w-6 cursor-pointer items-center justify-center overflow-hidden rounded-sm border border-dashed transition-colors hover:border-blue-500 hover:ring-2 hover:ring-blue-500">
+                  <Plus className="text-muted-foreground h-3 w-3" />
                   <input
                     type="color"
-                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                     value={element.backgroundColor || '#ffffff'}
                     onChange={(e) => {
                       onChange({ backgroundColor: e.target.value });
@@ -2074,7 +2373,7 @@ function FrameFloatingToolbar({
             </PopoverContent>
           </Popover>
 
-          <div className="w-px h-5 bg-border mx-0.5" />
+          <div className="bg-border mx-0.5 h-5 w-px" />
 
           {/* Export as PNG */}
           <Tooltip>
@@ -2082,7 +2381,7 @@ function FrameFloatingToolbar({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                className="h-7 gap-1.5 rounded-full px-2 text-xs"
                 onClick={onExportFrame}
                 disabled={isExporting}
               >
@@ -2090,15 +2389,24 @@ function FrameFloatingToolbar({
                 Export
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2093JsxTextExportFrameAsPng')}</TooltipContent>
+            <TooltipContent>
+              {tHardcodedUi.raw(
+                'componentsFileRenderersCanvasRenderer.line2093JsxTextExportFrameAsPng',
+              )}
+            </TooltipContent>
           </Tooltip>
 
-          <div className="w-px h-5 bg-border mx-0.5" />
+          <div className="bg-border mx-0.5 h-5 w-px" />
 
           {/* Duplicate */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={onDuplicate}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 rounded-full"
+                onClick={onDuplicate}
+              >
                 <Copy className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
@@ -2108,7 +2416,12 @@ function FrameFloatingToolbar({
           {/* Delete */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full text-destructive hover:text-destructive" onClick={onDelete}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-destructive hover:text-destructive h-7 w-7 rounded-full"
+                onClick={onDelete}
+              >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
@@ -2152,18 +2465,18 @@ function MultiSelectToolbar({
 
   // Initialize image order when dialog opens
   const openMergeDialog = () => {
-    setImageOrder(elements.map(el => el.id));
+    setImageOrder(elements.map((el) => el.id));
     setShowMergeDialog(true);
   };
 
   // Get ordered elements based on current order (only image elements for merging)
   const orderedElements = imageOrder
-    .map(id => elements.find(el => el.id === id))
+    .map((id) => elements.find((el) => el.id === id))
     .filter((el): el is ImageCanvasElement => el !== undefined && el.type === 'image');
 
   // Swap two images in the order
   const swapImages = (idx1: number, idx2: number) => {
-    setImageOrder(prev => {
+    setImageOrder((prev) => {
       const newOrder = [...prev];
       [newOrder[idx1], newOrder[idx2]] = [newOrder[idx2], newOrder[idx1]];
       return newOrder;
@@ -2171,12 +2484,15 @@ function MultiSelectToolbar({
   };
 
   // Calculate center position of all selected elements
-  const bounds = elements.reduce((acc, el) => ({
-    minX: Math.min(acc.minX, el.x),
-    minY: Math.min(acc.minY, el.y),
-    maxX: Math.max(acc.maxX, el.x + el.width),
-    maxY: Math.max(acc.maxY, el.y + el.height),
-  }), { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity });
+  const bounds = elements.reduce(
+    (acc, el) => ({
+      minX: Math.min(acc.minX, el.x),
+      minY: Math.min(acc.minY, el.y),
+      maxX: Math.max(acc.maxX, el.x + el.width),
+      maxY: Math.max(acc.maxY, el.y + el.height),
+    }),
+    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity },
+  );
 
   const centerX = ((bounds.minX + bounds.maxX) / 2) * scale + stagePosition.x;
   const bottomY = bounds.maxY * scale + stagePosition.y + 8;
@@ -2206,7 +2522,7 @@ function MultiSelectToolbar({
           base64: await getImageAsBase64(el.src),
           width: el.width,
           height: el.height,
-        }))
+        })),
       );
 
       // Send to backend - use correct backend URL
@@ -2215,10 +2531,10 @@ function MultiSelectToolbar({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
         body: JSON.stringify({
-          images: imagesBase64.map(img => img.base64),
+          images: imagesBase64.map((img) => img.base64),
           prompt: mergePrompt,
         }),
       });
@@ -2260,12 +2576,15 @@ function MultiSelectToolbar({
       }}
     >
       {/* Selection info */}
-      <div className="flex items-center justify-center gap-2 mb-1">
-        <span className="text-xs text-muted-foreground">{elements.length}{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2263JsxTextImagesSelected')}</span>
+      <div className="mb-1 flex items-center justify-center gap-2">
+        <span className="text-muted-foreground text-xs">
+          {elements.length}
+          {tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2263JsxTextImagesSelected')}
+        </span>
       </div>
 
       {/* Merge toolbar */}
-      <div className="flex items-center gap-1 bg-card border border-border rounded-full px-2 py-1">
+      <div className="bg-card border-border flex items-center gap-1 rounded-full border px-2 py-1">
         <TooltipProvider delayDuration={0}>
           {/* Merge button - opens dialog */}
           <Tooltip>
@@ -2273,23 +2592,23 @@ function MultiSelectToolbar({
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 px-2 rounded-full gap-1.5 text-xs"
+                className="h-7 gap-1.5 rounded-full px-2 text-xs"
                 disabled={isProcessing}
                 onClick={openMergeDialog}
               >
-                {isProcessing ? (
-                  <KortixLoader size="small" />
-                ) : (
-                  <Layers className="h-3.5 w-3.5" />
-                )}
+                {isProcessing ? <KortixLoader size="small" /> : <Layers className="h-3.5 w-3.5" />}
                 Merge
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2287JsxTextMergeSelectedImagesWithAi')}</TooltipContent>
+            <TooltipContent>
+              {tHardcodedUi.raw(
+                'componentsFileRenderersCanvasRenderer.line2287JsxTextMergeSelectedImagesWithAi',
+              )}
+            </TooltipContent>
           </Tooltip>
 
           {/* Separator */}
-          <div className="w-px h-4 bg-border mx-1" />
+          <div className="bg-border mx-1 h-4 w-px" />
 
           {/* Delete all */}
           <Tooltip>
@@ -2297,14 +2616,18 @@ function MultiSelectToolbar({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-7 w-7 rounded-full text-destructive hover:text-destructive"
+                className="text-destructive hover:text-destructive h-7 w-7 rounded-full"
                 onClick={onDelete}
                 disabled={isProcessing}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2306JsxTextDeleteSelected')}</TooltipContent>
+            <TooltipContent>
+              {tHardcodedUi.raw(
+                'componentsFileRenderersCanvasRenderer.line2306JsxTextDeleteSelected',
+              )}
+            </TooltipContent>
           </Tooltip>
         </TooltipProvider>
       </div>
@@ -2313,32 +2636,36 @@ function MultiSelectToolbar({
       <Dialog open={showMergeDialog} onOpenChange={setShowMergeDialog}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2315JsxTextMergeImages')}</DialogTitle>
+            <DialogTitle>
+              {tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2315JsxTextMergeImages')}
+            </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             {/* Image order preview */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2320JsxTextImageOrderClickArrowsToSwap')}</label>
+              <label className="text-muted-foreground text-xs font-medium">
+                {tHardcodedUi.raw(
+                  'componentsFileRenderersCanvasRenderer.line2320JsxTextImageOrderClickArrowsToSwap',
+                )}
+              </label>
               <div className="flex items-center gap-2 overflow-x-auto py-2">
                 {orderedElements.map((el, idx) => (
                   <div key={el.id} className="flex items-center gap-1">
-                    <div className="relative group">
-                      <div className="w-16 h-16 rounded border border-border overflow-hidden bg-card shrink-0 relative">
+                    <div className="group relative">
+                      <div className="border-border bg-card relative h-16 w-16 shrink-0 overflow-hidden rounded border">
                         {el.src?.startsWith('data:') ? (
                           // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={el.src}
-                            alt={el.name}
-                            className="w-full h-full object-cover"
-                          />
+                          <img src={el.src} alt={el.name} className="h-full w-full object-cover" />
                         ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center text-xs text-muted-foreground p-1">
-                            <ImagePlus className="h-4 w-4 mb-0.5 opacity-50" />
-                            <span className="truncate w-full text-center text-xs">{el.name?.split('/').pop() || `Image ${idx + 1}`}</span>
+                          <div className="text-muted-foreground flex h-full w-full flex-col items-center justify-center p-1 text-xs">
+                            <ImagePlus className="mb-0.5 h-4 w-4 opacity-50" />
+                            <span className="w-full truncate text-center text-xs">
+                              {el.name?.split('/').pop() || `Image ${idx + 1}`}
+                            </span>
                           </div>
                         )}
                       </div>
-                      <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs px-1.5 rounded-full">
+                      <div className="bg-primary text-primary-foreground absolute -bottom-1 left-1/2 -translate-x-1/2 rounded-full px-1.5 text-xs">
                         {idx + 1}
                       </div>
                     </div>
@@ -2348,7 +2675,9 @@ function MultiSelectToolbar({
                         size="icon"
                         className="h-6 w-6 shrink-0"
                         onClick={() => swapImages(idx, idx + 1)}
-                        title={tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2350JsxAttrTitleSwapWithNext')}
+                        title={tHardcodedUi.raw(
+                          'componentsFileRenderersCanvasRenderer.line2350JsxAttrTitleSwapWithNext',
+                        )}
                       >
                         <ArrowLeftRight className="h-3 w-3" />
                       </Button>
@@ -2360,22 +2689,37 @@ function MultiSelectToolbar({
 
             {/* Merge prompt */}
             <div className="space-y-2">
-              <label className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2362JsxTextHowShouldTheseImagesBeMerged')}</label>
+              <label className="text-muted-foreground text-xs font-medium">
+                {tHardcodedUi.raw(
+                  'componentsFileRenderersCanvasRenderer.line2362JsxTextHowShouldTheseImagesBeMerged',
+                )}
+              </label>
               <Textarea
                 value={mergePrompt}
                 onChange={(e) => setMergePrompt(e.target.value)}
-                placeholder={tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line2366JsxAttrPlaceholderEGBlendSeamlesslyCreateACollageOverlay')}
+                placeholder={tHardcodedUi.raw(
+                  'componentsFileRenderersCanvasRenderer.line2366JsxAttrPlaceholderEGBlendSeamlesslyCreateACollageOverlay',
+                )}
                 className="min-h-[80px]"
                 autoFocus
               />
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => { setShowMergeDialog(false); setMergePrompt(''); }}>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowMergeDialog(false);
+                  setMergePrompt('');
+                }}
+              >
                 Cancel
               </Button>
               <Button
-                onClick={() => { setShowMergeDialog(false); handleMerge(); }}
+                onClick={() => {
+                  setShowMergeDialog(false);
+                  handleMerge();
+                }}
                 disabled={!mergePrompt.trim() || isProcessing}
               >
                 {isProcessing ? <KortixLoader size="small" className="mr-2" /> : null}
@@ -2389,7 +2733,14 @@ function MultiSelectToolbar({
   );
 }
 
-export function CanvasRenderer({ content, filePath, fileName, sandboxId, className, onSave }: CanvasRendererProps) {
+export function CanvasRenderer({
+  content,
+  filePath,
+  fileName,
+  sandboxId,
+  className,
+  onSave,
+}: CanvasRendererProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const { session } = useAuth();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -2425,7 +2776,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const [isPanning, setIsPanning] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [containerSize, setContainerSize] = useState({ width: 800, height: 600 });
-  const [selectionRect, setSelectionRect] = useState<{ startX: number; startY: number; x: number; y: number; w: number; h: number } | null>(null);
+  const [selectionRect, setSelectionRect] = useState<{
+    startX: number;
+    startY: number;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
@@ -2442,13 +2800,15 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const authToken = session?.access_token;
 
   // Memoized frames for snapping - available to child components
-  const frames = useMemo(() =>
-    elements.filter(el => el.type === 'frame') as FrameCanvasElement[],
-    [elements]
+  const frames = useMemo(
+    () => elements.filter((el) => el.type === 'frame') as FrameCanvasElement[],
+    [elements],
   );
 
   // Keep ref in sync with state
-  useEffect(() => { isSavingRef.current = isSaving; }, [isSaving]);
+  useEffect(() => {
+    isSavingRef.current = isSaving;
+  }, [isSaving]);
 
   // Parse content - handle empty, invalid, and valid JSON
   useEffect(() => {
@@ -2475,13 +2835,16 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       const currentElementCount = elements.length;
 
       // Only update if structure changed (avoids unnecessary re-renders during user editing)
-      if (!canvasData ||
-        JSON.stringify(parsed.elements?.map(e => e.id)) !== JSON.stringify(elements.map(e => e.id)) ||
-        parsed.background !== canvasData.background) {
+      if (
+        !canvasData ||
+        JSON.stringify(parsed.elements?.map((e) => e.id)) !==
+          JSON.stringify(elements.map((e) => e.id)) ||
+        parsed.background !== canvasData.background
+      ) {
         setCanvasData(parsed);
         setElements(sanitizeElements(parsed.elements || []));
         // Only reset centering if this is first load or elements were added
-        if (!hasCenteredRef.current || (newElementCount > currentElementCount)) {
+        if (!hasCenteredRef.current || newElementCount > currentElementCount) {
           hasCenteredRef.current = false;
         }
       }
@@ -2502,16 +2865,21 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         setElements([]);
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, fileName]);
 
-  useEffect(() => { setIsMounted(true); }, []);
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
     const updateSize = () => {
       if (containerRef.current) {
-        setContainerSize({ width: containerRef.current.offsetWidth, height: containerRef.current.offsetHeight });
+        setContainerSize({
+          width: containerRef.current.offsetWidth,
+          height: containerRef.current.offsetHeight,
+        });
       }
     };
     const observer = new ResizeObserver(updateSize);
@@ -2535,7 +2903,6 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   const forceFetch = useCallback(async () => {
     const hasUnsaved = hasUnsavedChangesRef.current;
     const isEditing = isUserEditingRef.current;
-    
 
     if (!sandboxId || !filePath || !authToken) {
       return;
@@ -2547,7 +2914,6 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     lastFetchTimeRef.current = Date.now();
 
     try {
-
       const newContent = await fetchFileAsText(filePath);
 
       if (!newContent) return;
@@ -2556,9 +2922,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         const parsed: CanvasData = JSON.parse(newContent);
         const serverCount = parsed.elements?.length || 0;
         const localCount = elementsRef.current.length;
-        const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
-        const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
-
+        const newElementIds = (parsed.elements || [])
+          .map((e) => e.id)
+          .sort()
+          .join(',');
+        const currentElementIds = elementsRef.current
+          .map((e) => e.id)
+          .sort()
+          .join(',');
 
         // Don't overwrite local state if we have more elements locally (user added something)
         if (localCount > serverCount) {
@@ -2575,20 +2946,20 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           }
         } else {
         }
-      } catch (parseErr) {
-      }
-    } catch (err) {
-    }
+      } catch (parseErr) {}
+    } catch (err) {}
   }, [sandboxId, filePath, authToken]);
 
   // Listen for canvas-tool-updated events to trigger immediate refresh
   useEffect(() => {
-
     const handleCanvasUpdate = (event: CustomEvent<{ canvasPath: string; timestamp: number }>) => {
       const eventPath = event.detail.canvasPath;
 
       // Check if this event is for our canvas
-      if (filePath && (filePath.includes(eventPath) || eventPath.includes(filePath.replace('canvases/', '')))) {
+      if (
+        filePath &&
+        (filePath.includes(eventPath) || eventPath.includes(filePath.replace('canvases/', '')))
+      ) {
         forceFetch();
       } else {
       }
@@ -2597,13 +2968,18 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     window.addEventListener('canvas-tool-updated', handleCanvasUpdate as EventListener);
 
     // Check for any pending events that were dispatched before listener was set up
-    const pendingEvents = (window as any).__pendingCanvasRefreshEvents as Map<string, number> | undefined;
+    const pendingEvents = (window as any).__pendingCanvasRefreshEvents as
+      | Map<string, number>
+      | undefined;
     if (pendingEvents && filePath) {
       // Check if any pending event matches our canvas
       for (const [eventPath, timestamp] of pendingEvents.entries()) {
         // Only process events from the last 10 seconds
         if (Date.now() - timestamp < 10000) {
-          if (filePath.includes(eventPath) || eventPath.includes(filePath.replace('canvases/', '').replace('/workspace/', ''))) {
+          if (
+            filePath.includes(eventPath) ||
+            eventPath.includes(filePath.replace('canvases/', '').replace('/workspace/', ''))
+          ) {
             pendingEvents.delete(eventPath); // Clear after processing
             forceFetch();
             break;
@@ -2630,7 +3006,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       // Skip if user is actively editing (has unsaved changes)
       const hasUnsaved = hasUnsavedChangesRef.current;
       const isEditing = isUserEditingRef.current;
-      
+
       if (hasUnsaved || isEditing) {
         return;
       }
@@ -2639,7 +3015,6 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       const now = Date.now();
       if (now - lastFetchTimeRef.current < POLL_INTERVAL - 200) return;
       lastFetchTimeRef.current = now;
-
 
       try {
         const newContent = await fetchFileAsText(filePath);
@@ -2650,9 +3025,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           const parsed: CanvasData = JSON.parse(newContent);
           const serverCount = parsed.elements?.length || 0;
           const localCount = elementsRef.current.length;
-          const newElementIds = (parsed.elements || []).map(e => e.id).sort().join(',');
-          const currentElementIds = elementsRef.current.map(e => e.id).sort().join(',');
-
+          const newElementIds = (parsed.elements || [])
+            .map((e) => e.id)
+            .sort()
+            .join(',');
+          const currentElementIds = elementsRef.current
+            .map((e) => e.id)
+            .sort()
+            .join(',');
 
           // Don't overwrite local state if we have more elements locally (user added something)
           if (localCount > serverCount) {
@@ -2669,10 +3049,8 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               hasCenteredRef.current = false; // Re-center to show new AI-added content
             }
           }
-        } catch (parseErr) {
-        }
-      } catch (err) {
-      }
+        } catch (parseErr) {}
+      } catch (err) {}
     };
 
     const interval = setInterval(fetchLatestContent, POLL_INTERVAL);
@@ -2686,8 +3064,11 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     if (hasCenteredRef.current) return; // Already centered, don't run again
     if (elements.length === 0 || containerSize.width === 0 || containerSize.height === 0) return;
 
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    elements.forEach(el => {
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
+    elements.forEach((el) => {
       minX = Math.min(minX, el.x);
       minY = Math.min(minY, el.y);
       maxX = Math.max(maxX, el.x + el.width);
@@ -2709,24 +3090,31 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
     const newScale = Math.max(fitScale, 0.15);
 
     // Position so content is centered in the container at the new scale
-    const newX = (containerSize.width / 2) - (contentCenterX * newScale);
-    const newY = (containerSize.height / 2) - (contentCenterY * newScale);
+    const newX = containerSize.width / 2 - contentCenterX * newScale;
+    const newY = containerSize.height / 2 - contentCenterY * newScale;
 
     setScale(newScale);
     setStagePosition({ x: newX, y: newY });
     hasCenteredRef.current = true;
   }, [elements, containerSize.width, containerSize.height]);
 
-  const handleZoomIn = () => setScale(s => Math.min(s * 1.15, 5));
-  const handleZoomOut = () => setScale(s => Math.max(s / 1.15, 0.1));
-  const handleResetView = () => { setScale(1); hasCenteredRef.current = false; };
+  const handleZoomIn = () => setScale((s) => Math.min(s * 1.15, 5));
+  const handleZoomOut = () => setScale((s) => Math.max(s / 1.15, 0.1));
+  const handleResetView = () => {
+    setScale(1);
+    hasCenteredRef.current = false;
+  };
 
   // Store current scale and position in refs for wheel handler (to avoid stale closures)
   const scaleRef = useRef(scale);
   const stagePositionRef = useRef(stagePosition);
 
-  useEffect(() => { scaleRef.current = scale; }, [scale]);
-  useEffect(() => { stagePositionRef.current = stagePosition; }, [stagePosition]);
+  useEffect(() => {
+    scaleRef.current = scale;
+  }, [scale]);
+  useEffect(() => {
+    stagePositionRef.current = stagePosition;
+  }, [stagePosition]);
 
   // Attach wheel listener with passive: false
   useEffect(() => {
@@ -2768,7 +3156,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           setStagePosition({ x: newPosX, y: newPosY });
         } else {
           // PAN mode - two-finger swipe on trackpad
-          setStagePosition(prev => ({
+          setStagePosition((prev) => ({
             x: prev.x - e.deltaX,
             y: prev.y - e.deltaY,
           }));
@@ -2778,13 +3166,16 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       container.addEventListener('wheel', handler, { passive: false });
 
       // Store handler ref for cleanup
-      (container as HTMLDivElement & { _wheelHandler?: (e: WheelEvent) => void })._wheelHandler = handler;
+      (container as HTMLDivElement & { _wheelHandler?: (e: WheelEvent) => void })._wheelHandler =
+        handler;
     });
 
     return () => {
       cancelAnimationFrame(rafId);
       if (currentContainer) {
-        const handler = (currentContainer as HTMLDivElement & { _wheelHandler?: (e: WheelEvent) => void })._wheelHandler;
+        const handler = (
+          currentContainer as HTMLDivElement & { _wheelHandler?: (e: WheelEvent) => void }
+        )._wheelHandler;
         if (handler) {
           currentContainer.removeEventListener('wheel', handler);
         }
@@ -2797,7 +3188,12 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
     if (toolMode === 'pan' || e.button === 1) {
       setIsPanning(true);
-      panStartRef.current = { x: e.clientX, y: e.clientY, stageX: stagePosition.x, stageY: stagePosition.y };
+      panStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        stageX: stagePosition.x,
+        stageY: stagePosition.y,
+      };
     } else if (toolMode === 'select') {
       // Start selection rectangle - clear selection, text edit state, and crop state
       setSelectedIds([]);
@@ -2842,14 +3238,18 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       if (selectionRect && selectionRect.w > 5 && selectionRect.h > 5) {
         // Find elements inside selection
         const selected: string[] = [];
-        elements.forEach(el => {
+        elements.forEach((el) => {
           const elLeft = el.x * scale + stagePosition.x;
           const elTop = el.y * scale + stagePosition.y;
           const elRight = elLeft + el.width * scale;
           const elBottom = elTop + el.height * scale;
 
-          if (elLeft < selectionRect.x + selectionRect.w && elRight > selectionRect.x &&
-            elTop < selectionRect.y + selectionRect.h && elBottom > selectionRect.y) {
+          if (
+            elLeft < selectionRect.x + selectionRect.w &&
+            elRight > selectionRect.x &&
+            elTop < selectionRect.y + selectionRect.h &&
+            elBottom > selectionRect.y
+          ) {
             selected.push(el.id);
           }
         });
@@ -2870,16 +3270,18 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   }, [isPanning, selectionRect, elements, scale, stagePosition]);
 
   const handleElementChange = (id: string, newAttrs: Partial<CanvasElement>) => {
-    setElements(prev => prev.map(el => el.id === id ? { ...el, ...newAttrs } as CanvasElement : el));
+    setElements((prev) =>
+      prev.map((el) => (el.id === id ? ({ ...el, ...newAttrs } as CanvasElement) : el)),
+    );
   };
 
   const handleElementSelect = (id: string, e?: React.MouseEvent) => {
     // Shift+click to add/remove from selection
     if (e?.shiftKey) {
-      setSelectedIds(prev => {
+      setSelectedIds((prev) => {
         if (prev.includes(id)) {
           // Remove from selection
-          return prev.filter(i => i !== id);
+          return prev.filter((i) => i !== id);
         } else {
           // Add to selection
           return [...prev, id];
@@ -2917,89 +3319,100 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
   }, [elements, canvasData, hasUnsavedChanges]);
 
   // Calculate next image position based on existing elements
-  const getNextImagePosition = useCallback((imgWidth: number, imgHeight: number) => {
-    const PADDING = 24;
+  const getNextImagePosition = useCallback(
+    (imgWidth: number, imgHeight: number) => {
+      const PADDING = 24;
 
-    if (elements.length === 0) {
-      // First image - center in visible area
-      const centerX = (containerSize.width / 2 - stagePosition.x) / scale - imgWidth / 2;
-      const centerY = (containerSize.height / 2 - stagePosition.y) / scale - imgHeight / 2;
-      return { x: centerX, y: centerY };
-    }
-
-    // Find the rightmost edge of existing elements
-    let maxRight = -Infinity;
-    let topAtMaxRight = 0;
-    elements.forEach(el => {
-      const right = el.x + el.width;
-      if (right > maxRight) {
-        maxRight = right;
-        topAtMaxRight = el.y;
+      if (elements.length === 0) {
+        // First image - center in visible area
+        const centerX = (containerSize.width / 2 - stagePosition.x) / scale - imgWidth / 2;
+        const centerY = (containerSize.height / 2 - stagePosition.y) / scale - imgHeight / 2;
+        return { x: centerX, y: centerY };
       }
-    });
 
-    // Place new image to the right of the rightmost element with padding
-    return { x: maxRight + PADDING, y: topAtMaxRight };
-  }, [elements, containerSize, stagePosition, scale]);
+      // Find the rightmost edge of existing elements
+      let maxRight = -Infinity;
+      let topAtMaxRight = 0;
+      elements.forEach((el) => {
+        const right = el.x + el.width;
+        if (right > maxRight) {
+          maxRight = right;
+          topAtMaxRight = el.y;
+        }
+      });
+
+      // Place new image to the right of the rightmost element with padding
+      return { x: maxRight + PADDING, y: topAtMaxRight };
+    },
+    [elements, containerSize, stagePosition, scale],
+  );
 
   // Handle paste from clipboard
-  const handlePaste = useCallback(async (e: ClipboardEvent) => {
-    // Don't interfere with input fields
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+  const handlePaste = useCallback(
+    async (e: ClipboardEvent) => {
+      // Don't interfere with input fields
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
 
-    const items = e.clipboardData?.items;
-    if (!items) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
 
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
-        e.preventDefault();
-        const file = item.getAsFile();
-        if (!file) continue;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (!file) continue;
 
-        // Mark as user editing to prevent polling from overwriting during paste
-        isUserEditingRef.current = true;
+          // Mark as user editing to prevent polling from overwriting during paste
+          isUserEditingRef.current = true;
 
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const img = new Image();
-          img.onload = () => {
-            // Scale proportionally if larger than max size
-            const maxSize = 800;
-            let imgWidth = img.width;
-            let imgHeight = img.height;
-            if (imgWidth > maxSize || imgHeight > maxSize) {
-              const scaleFactor = Math.min(maxSize / imgWidth, maxSize / imgHeight);
-              imgWidth = Math.round(imgWidth * scaleFactor);
-              imgHeight = Math.round(imgHeight * scaleFactor);
-            }
-            const { x, y } = getNextImagePosition(imgWidth, imgHeight);
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+              // Scale proportionally if larger than max size
+              const maxSize = 800;
+              let imgWidth = img.width;
+              let imgHeight = img.height;
+              if (imgWidth > maxSize || imgHeight > maxSize) {
+                const scaleFactor = Math.min(maxSize / imgWidth, maxSize / imgHeight);
+                imgWidth = Math.round(imgWidth * scaleFactor);
+                imgHeight = Math.round(imgHeight * scaleFactor);
+              }
+              const { x, y } = getNextImagePosition(imgWidth, imgHeight);
 
-            const newElement: CanvasElement = {
-              id: `img-${Date.now()}`,
-              type: 'image',
-              src: event.target?.result as string,
-              x, y,
-              width: imgWidth,
-              height: imgHeight,
-              rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, locked: false,
-              name: `pasted-image-${Date.now()}.png`,
+              const newElement: CanvasElement = {
+                id: `img-${Date.now()}`,
+                type: 'image',
+                src: event.target?.result as string,
+                x,
+                y,
+                width: imgWidth,
+                height: imgHeight,
+                rotation: 0,
+                scaleX: 1,
+                scaleY: 1,
+                opacity: 1,
+                locked: false,
+                name: `pasted-image-${Date.now()}.png`,
+              };
+              setElements((prev) => [...prev, newElement]);
+              setHasUnsavedChanges(true); // Immediately mark as unsaved
+              toast.success('Image pasted');
+
+              // Clear editing flag after a brief delay to allow state to settle
+              setTimeout(() => {
+                isUserEditingRef.current = false;
+              }, 500);
             };
-            setElements(prev => [...prev, newElement]);
-            setHasUnsavedChanges(true); // Immediately mark as unsaved
-            toast.success('Image pasted');
-            
-            // Clear editing flag after a brief delay to allow state to settle
-            setTimeout(() => {
-              isUserEditingRef.current = false;
-            }, 500);
+            img.src = event.target?.result as string;
           };
-          img.src = event.target?.result as string;
-        };
-        reader.readAsDataURL(file);
-        break; // Only paste first image
+          reader.readAsDataURL(file);
+          break; // Only paste first image
+        }
       }
-    }
-  }, [getNextImagePosition]);
+    },
+    [getNextImagePosition],
+  );
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -3021,16 +3434,19 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       }
 
       switch (e.key.toLowerCase()) {
-        case 'h': setToolMode('pan'); break;
+        case 'h':
+          setToolMode('pan');
+          break;
         case 'escape':
           setSelectedIds([]);
           setTextEditState(null);
           setSelectedTextRegion(null);
           setCropState(null);
           break;
-        case 'delete': case 'backspace':
+        case 'delete':
+        case 'backspace':
           if (selectedIds.length > 0) {
-            setElements(prev => prev.filter(el => !selectedIds.includes(el.id)));
+            setElements((prev) => prev.filter((el) => !selectedIds.includes(el.id)));
             setSelectedIds([]);
             setTextEditState(null);
             setSelectedTextRegion(null);
@@ -3084,78 +3500,88 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
   // Add a new frame to the canvas
   // Frame presets organized by category
-  const framePresets = useMemo(() => [
-    {
-      category: 'Social Media', items: [
-        { name: 'Instagram Post', width: 1080, height: 1080 },
-        { name: 'Instagram Story', width: 1080, height: 1920 },
-        { name: 'Instagram Reel', width: 1080, height: 1920 },
-        { name: 'TikTok', width: 1080, height: 1920 },
-        { name: 'Twitter Post', width: 1200, height: 675 },
-        { name: 'Twitter Header', width: 1500, height: 500 },
-        { name: 'Facebook Post', width: 1200, height: 630 },
-        { name: 'Facebook Cover', width: 820, height: 312 },
-        { name: 'LinkedIn Post', width: 1200, height: 627 },
-        { name: 'LinkedIn Cover', width: 1584, height: 396 },
-        { name: 'Pinterest Pin', width: 1000, height: 1500 },
-        { name: 'YouTube Thumbnail', width: 1280, height: 720 },
-        { name: 'YouTube Shorts', width: 1080, height: 1920 },
-      ]
-    },
-    {
-      category: 'Devices', items: [
-        { name: 'iPhone 15 Pro Max', width: 1290, height: 2796 },
-        { name: 'iPhone 15 Pro', width: 1179, height: 2556 },
-        { name: 'iPhone 15', width: 1179, height: 2556 },
-        { name: 'iPhone 14', width: 1170, height: 2532 },
-        { name: 'iPhone SE', width: 750, height: 1334 },
-        { name: 'iPad Pro 12.9"', width: 2048, height: 2732 },
-        { name: 'iPad Pro 11"', width: 1668, height: 2388 },
-        { name: 'Android Phone', width: 1080, height: 2400 },
-      ]
-    },
-    {
-      category: 'Design', items: [
-        { name: 'Dribbble Shot', width: 400, height: 300 },
-        { name: 'Dribbble Shot HD', width: 800, height: 600 },
-        { name: 'Behance Project', width: 1400, height: 788 },
-        { name: 'App Icon', width: 1024, height: 1024 },
-        { name: 'Favicon', width: 512, height: 512 },
-        { name: 'Open Graph', width: 1200, height: 630 },
-      ]
-    },
-    {
-      category: 'Print', items: [
-        { name: 'Business Card', width: 1050, height: 600 },
-        { name: 'Poster 18×24', width: 1800, height: 2400 },
-        { name: 'A4', width: 2480, height: 3508 },
-        { name: 'Square', width: 1000, height: 1000 },
-      ]
-    },
-  ], []);
+  const framePresets = useMemo(
+    () => [
+      {
+        category: 'Social Media',
+        items: [
+          { name: 'Instagram Post', width: 1080, height: 1080 },
+          { name: 'Instagram Story', width: 1080, height: 1920 },
+          { name: 'Instagram Reel', width: 1080, height: 1920 },
+          { name: 'TikTok', width: 1080, height: 1920 },
+          { name: 'Twitter Post', width: 1200, height: 675 },
+          { name: 'Twitter Header', width: 1500, height: 500 },
+          { name: 'Facebook Post', width: 1200, height: 630 },
+          { name: 'Facebook Cover', width: 820, height: 312 },
+          { name: 'LinkedIn Post', width: 1200, height: 627 },
+          { name: 'LinkedIn Cover', width: 1584, height: 396 },
+          { name: 'Pinterest Pin', width: 1000, height: 1500 },
+          { name: 'YouTube Thumbnail', width: 1280, height: 720 },
+          { name: 'YouTube Shorts', width: 1080, height: 1920 },
+        ],
+      },
+      {
+        category: 'Devices',
+        items: [
+          { name: 'iPhone 15 Pro Max', width: 1290, height: 2796 },
+          { name: 'iPhone 15 Pro', width: 1179, height: 2556 },
+          { name: 'iPhone 15', width: 1179, height: 2556 },
+          { name: 'iPhone 14', width: 1170, height: 2532 },
+          { name: 'iPhone SE', width: 750, height: 1334 },
+          { name: 'iPad Pro 12.9"', width: 2048, height: 2732 },
+          { name: 'iPad Pro 11"', width: 1668, height: 2388 },
+          { name: 'Android Phone', width: 1080, height: 2400 },
+        ],
+      },
+      {
+        category: 'Design',
+        items: [
+          { name: 'Dribbble Shot', width: 400, height: 300 },
+          { name: 'Dribbble Shot HD', width: 800, height: 600 },
+          { name: 'Behance Project', width: 1400, height: 788 },
+          { name: 'App Icon', width: 1024, height: 1024 },
+          { name: 'Favicon', width: 512, height: 512 },
+          { name: 'Open Graph', width: 1200, height: 630 },
+        ],
+      },
+      {
+        category: 'Print',
+        items: [
+          { name: 'Business Card', width: 1050, height: 600 },
+          { name: 'Poster 18×24', width: 1800, height: 2400 },
+          { name: 'A4', width: 2480, height: 3508 },
+          { name: 'Square', width: 1000, height: 1000 },
+        ],
+      },
+    ],
+    [],
+  );
 
-  const handleAddFrame = useCallback((width: number = 400, height: number = 300, presetName?: string) => {
-    const { x, y } = getNextImagePosition(width, height);
-    const frameCount = elements.filter(e => e.type === 'frame').length + 1;
+  const handleAddFrame = useCallback(
+    (width: number = 400, height: number = 300, presetName?: string) => {
+      const { x, y } = getNextImagePosition(width, height);
+      const frameCount = elements.filter((e) => e.type === 'frame').length + 1;
 
-    const newFrame: FrameCanvasElement = {
-      id: `frame-${Date.now()}`,
-      type: 'frame',
-      x,
-      y,
-      width,
-      height,
-      rotation: 0,
-      opacity: 1,
-      locked: false,
-      visible: true,
-      name: presetName || `Frame ${frameCount}`,
-      backgroundColor: undefined, // Transparent by default
-    };
-    setElements(prev => [...prev, newFrame]);
-    setSelectedIds([newFrame.id]);
-    toast.success('Frame added');
-  }, [elements, getNextImagePosition]);
+      const newFrame: FrameCanvasElement = {
+        id: `frame-${Date.now()}`,
+        type: 'frame',
+        x,
+        y,
+        width,
+        height,
+        rotation: 0,
+        opacity: 1,
+        locked: false,
+        visible: true,
+        name: presetName || `Frame ${frameCount}`,
+        backgroundColor: undefined, // Transparent by default
+      };
+      setElements((prev) => [...prev, newFrame]);
+      setSelectedIds([newFrame.id]);
+      toast.success('Frame added');
+    },
+    [elements, getNextImagePosition],
+  );
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -3179,13 +3605,18 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
           id: `img-${Date.now()}`,
           type: 'image',
           src: event.target?.result as string,
-          x, y,
+          x,
+          y,
           width: imgWidth,
           height: imgHeight,
-          rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, locked: false,
+          rotation: 0,
+          scaleX: 1,
+          scaleY: 1,
+          opacity: 1,
+          locked: false,
           name: file.name,
         };
-        setElements(prev => [...prev, newElement]);
+        setElements((prev) => [...prev, newElement]);
         toast.success(`Added ${file.name}`);
       };
       img.src = event.target?.result as string;
@@ -3206,7 +3637,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         },
         body: JSON.stringify({
           prompt: generatePrompt,
@@ -3230,7 +3661,9 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
       }
     } catch (err) {
       console.error('AI generate error:', err);
-      toast.error('Failed to generate images: ' + (err instanceof Error ? err.message : 'Unknown error'));
+      toast.error(
+        'Failed to generate images: ' + (err instanceof Error ? err.message : 'Unknown error'),
+      );
     } finally {
       setIsGenerating(false);
     }
@@ -3254,65 +3687,181 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         id: `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         type: 'image',
         src: imageSrc,
-        x, y,
+        x,
+        y,
         width: imgWidth,
         height: imgHeight,
-        rotation: 0, scaleX: 1, scaleY: 1, opacity: 1, locked: false,
+        rotation: 0,
+        scaleX: 1,
+        scaleY: 1,
+        opacity: 1,
+        locked: false,
         name: `generated-${Date.now()}.webp`,
       };
-      setElements(prev => [...prev, newElement]);
+      setElements((prev) => [...prev, newElement]);
       toast.success('Added to canvas');
     };
     img.src = imageSrc;
   };
 
   if (!isMounted) {
-    return <div className="flex items-center justify-center h-full w-full bg-card"><KortixLoader size="medium" /></div>;
+    return (
+      <div className="bg-card flex h-full w-full items-center justify-center">
+        <KortixLoader size="medium" />
+      </div>
+    );
   }
 
   // If no content AND no canvasData yet, show loading state
   // The useEffect creates empty canvas structure when content is null/empty
   if (!content && !canvasData) {
     return (
-      <div className="flex flex-col items-center justify-center h-full w-full gap-4 bg-background">
+      <div className="bg-background flex h-full w-full flex-col items-center justify-center gap-4">
         <KortixLoader size="medium" />
-        <div className="text-muted-foreground text-center text-sm">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3326JsxTextLoadingCanvas')}</div>
+        <div className="text-muted-foreground text-center text-sm">
+          {tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3326JsxTextLoadingCanvas')}
+        </div>
       </div>
     );
   }
 
-  const selectedElement = selectedIds.length === 1 ? elements.find(el => el.id === selectedIds[0]) : null;
+  const selectedElement =
+    selectedIds.length === 1 ? elements.find((el) => el.id === selectedIds[0]) : null;
 
   return (
-    <div className={cn("flex flex-col h-full w-full bg-background", className)} style={canvasData?.background ? { backgroundColor: canvasData.background } : undefined}>
-      <input ref={fileInputRef} type="file" accept={tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3336JsxAttrAcceptImage')} className="hidden" onChange={handleFileChange} />
+    <div
+      className={cn('bg-background flex h-full w-full flex-col', className)}
+      style={canvasData?.background ? { backgroundColor: canvasData.background } : undefined}
+    >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept={tHardcodedUi.raw(
+          'componentsFileRenderersCanvasRenderer.line3336JsxAttrAcceptImage',
+        )}
+        className="hidden"
+        onChange={handleFileChange}
+      />
 
       {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-card shrink-0">
+      <div className="border-border bg-card flex shrink-0 items-center justify-between border-b px-3 py-2">
         <div className="flex items-center gap-2">
           <TooltipProvider delayDuration={0}>
-            <div className="flex items-center border border-border rounded-full px-1 py-0.5">
-              <Tooltip><TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className={cn("h-7 w-7 rounded-full", toolMode === 'select' && "bg-primary text-primary-foreground")} onClick={() => setToolMode('select')}>
-                  <MousePointer2 className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger><TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3347JsxTextSelectV')}</TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className={cn("h-7 w-7 rounded-full", toolMode === 'pan' && "bg-primary text-primary-foreground")} onClick={() => setToolMode('pan')}>
-                  <Hand className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger><TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3352JsxTextPanH')}</TooltipContent></Tooltip>
+            <div className="border-border flex items-center rounded-full border px-1 py-0.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-7 w-7 rounded-full',
+                      toolMode === 'select' && 'bg-primary text-primary-foreground',
+                    )}
+                    onClick={() => setToolMode('select')}
+                  >
+                    <MousePointer2 className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3347JsxTextSelectV')}
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className={cn(
+                      'h-7 w-7 rounded-full',
+                      toolMode === 'pan' && 'bg-primary text-primary-foreground',
+                    )}
+                    onClick={() => setToolMode('pan')}
+                  >
+                    <Hand className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3352JsxTextPanH')}
+                </TooltipContent>
+              </Tooltip>
             </div>
 
-            <div className="flex items-center border border-border rounded-full px-1 py-0.5">
-              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={handleZoomOut}><Minus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3356JsxTextZoomOut')}</TooltipContent></Tooltip>
-              <span className="text-xs text-muted-foreground px-2 min-w-12 text-center">{Math.round(scale * 100)}%</span>
-              <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" onClick={handleZoomIn}><Plus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3358JsxTextZoomIn')}</TooltipContent></Tooltip>
+            <div className="border-border flex items-center rounded-full border px-1 py-0.5">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-full"
+                    onClick={handleZoomOut}
+                  >
+                    <Minus className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3356JsxTextZoomOut')}
+                </TooltipContent>
+              </Tooltip>
+              <span className="text-muted-foreground min-w-12 px-2 text-center text-xs">
+                {Math.round(scale * 100)}%
+              </span>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 rounded-full"
+                    onClick={handleZoomIn}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3358JsxTextZoomIn')}
+                </TooltipContent>
+              </Tooltip>
             </div>
 
-            <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleResetView}><Maximize className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3361JsxTextResetView')}</TooltipContent></Tooltip>
-            <Tooltip><TooltipTrigger asChild><Button id="canvas-save-btn" variant="ghost" size="icon" className={cn("h-8 w-8 relative", hasUnsavedChanges && "text-primary")} onClick={handleSave} disabled={isSaving || !onSave}>{isSaving ? <KortixLoader size="small" /> : <Save className="h-4 w-4" />}{hasUnsavedChanges && <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-primary rounded-full" />}</Button></TooltipTrigger><TooltipContent>{isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save changes (⌘S)' : 'No changes'}</TooltipContent></Tooltip>
-            <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleUploadClick}><ImagePlus className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3363JsxTextAddImage')}</TooltipContent></Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleResetView}>
+                  <Maximize className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3361JsxTextResetView')}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  id="canvas-save-btn"
+                  variant="ghost"
+                  size="icon"
+                  className={cn('relative h-8 w-8', hasUnsavedChanges && 'text-primary')}
+                  onClick={handleSave}
+                  disabled={isSaving || !onSave}
+                >
+                  {isSaving ? <KortixLoader size="small" /> : <Save className="h-4 w-4" />}
+                  {hasUnsavedChanges && (
+                    <span className="bg-primary absolute top-0.5 right-0.5 h-2 w-2 rounded-full" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isSaving ? 'Saving...' : hasUnsavedChanges ? 'Save changes (⌘S)' : 'No changes'}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleUploadClick}>
+                  <ImagePlus className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3363JsxTextAddImage')}
+              </TooltipContent>
+            </Tooltip>
             {/* Add Frame with presets */}
             <Popover>
               <Tooltip>
@@ -3323,12 +3872,16 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                     </Button>
                   </PopoverTrigger>
                 </TooltipTrigger>
-                <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3374JsxTextAddFrame')}</TooltipContent>
+                <TooltipContent>
+                  {tHardcodedUi.raw(
+                    'componentsFileRenderersCanvasRenderer.line3374JsxTextAddFrame',
+                  )}
+                </TooltipContent>
               </Tooltip>
-              <PopoverContent className="w-56 p-1 max-h-96 overflow-y-auto" align="start">
+              <PopoverContent className="max-h-96 w-56 overflow-y-auto p-1" align="start">
                 {/* Custom frame at top */}
                 <button
-                  className="w-full flex items-center px-2 py-1.5 text-sm hover:bg-accent rounded-lg transition-colors text-left mb-1"
+                  className="hover:bg-accent mb-1 flex w-full items-center rounded-lg px-2 py-1.5 text-left text-sm transition-colors"
                   onClick={() => handleAddFrame(400, 300)}
                 >
                   Custom
@@ -3336,17 +3889,19 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
                 {framePresets.map((category) => (
                   <div key={category.category}>
-                    <div className="px-2 py-1 text-xs text-muted-foreground uppercase tracking-wider">
+                    <div className="text-muted-foreground px-2 py-1 text-xs tracking-wider uppercase">
                       {category.category}
                     </div>
                     {category.items.map((preset) => (
                       <button
                         key={preset.name}
-                        className="w-full flex items-center justify-between px-2 py-1.5 text-sm hover:bg-accent rounded-lg transition-colors text-left"
+                        className="hover:bg-accent flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm transition-colors"
                         onClick={() => handleAddFrame(preset.width, preset.height, preset.name)}
                       >
                         <span>{preset.name}</span>
-                        <span className="text-xs text-muted-foreground font-mono">{preset.width}×{preset.height}</span>
+                        <span className="text-muted-foreground font-mono text-xs">
+                          {preset.width}×{preset.height}
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -3364,13 +3919,23 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                     </Button>
                   </PopoverTrigger>
                 </TooltipTrigger>
-                <TooltipContent>{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3415JsxTextGenerateWithAi')}</TooltipContent>
+                <TooltipContent>
+                  {tHardcodedUi.raw(
+                    'componentsFileRenderersCanvasRenderer.line3415JsxTextGenerateWithAi',
+                  )}
+                </TooltipContent>
               </Tooltip>
               <PopoverContent className="w-80 p-3" align="end">
                 <div className="space-y-3">
-                  <div className="text-xs text-muted-foreground uppercase tracking-wide">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3419JsxTextQuickImageGeneration')}</div>
+                  <div className="text-muted-foreground text-xs tracking-wide uppercase">
+                    {tHardcodedUi.raw(
+                      'componentsFileRenderersCanvasRenderer.line3419JsxTextQuickImageGeneration',
+                    )}
+                  </div>
                   <Textarea
-                    placeholder={tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3421JsxAttrPlaceholderDescribeTheImageYouWantToCreate')}
+                    placeholder={tHardcodedUi.raw(
+                      'componentsFileRenderersCanvasRenderer.line3421JsxAttrPlaceholderDescribeTheImageYouWantToCreate',
+                    )}
                     value={generatePrompt}
                     onChange={(e) => setGeneratePrompt(e.target.value)}
                     className="min-h-[80px] resize-none shadow-none"
@@ -3404,11 +3969,15 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                           key={idx}
                           onClick={() => addGeneratedImageToCanvas(src)}
                           style={{ borderColor: 'var(--border)' }}
-                          className="relative aspect-square rounded-lg overflow-hidden border outline-none transition-colors group cursor-pointer"
+                          className="group relative aspect-square cursor-pointer overflow-hidden rounded-lg border transition-colors outline-none"
                         >
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={src} alt={`Generated ${idx + 1}`} className="w-full h-full object-cover" />
-                          <div className="absolute top-1 right-1 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                          <img
+                            src={src}
+                            alt={`Generated ${idx + 1}`}
+                            className="h-full w-full object-cover"
+                          />
+                          <div className="bg-primary text-primary-foreground absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full opacity-0 transition-opacity group-hover:opacity-100">
                             <Plus className="h-3 w-3" />
                           </div>
                         </div>
@@ -3420,41 +3989,61 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             </Popover>
           </TooltipProvider>
         </div>
-        <div className="text-sm text-muted-foreground">{canvasData?.name || fileName?.replace('.kanvax', '')}</div>
+        <div className="text-muted-foreground text-sm">
+          {canvasData?.name || fileName?.replace('.kanvax', '')}
+        </div>
       </div>
 
       {/* Canvas */}
       <div
         ref={containerRef}
-        className="flex-1 relative overflow-hidden bg-background"
+        className="bg-background relative flex-1 overflow-hidden"
         style={{
-          cursor: isPanning ? 'grabbing' : toolMode === 'pan' ? 'grab' : selectionRect ? 'crosshair' : 'default',
+          cursor: isPanning
+            ? 'grabbing'
+            : toolMode === 'pan'
+              ? 'grab'
+              : selectionRect
+                ? 'crosshair'
+                : 'default',
           touchAction: 'none', // Prevent default touch behaviors
         }}
         onMouseDown={handleCanvasMouseDown}
       >
         {/* Grid - subtle */}
-        <div className="absolute inset-0 pointer-events-none" style={{
-          backgroundImage: 'linear-gradient(var(--foreground) 1px, transparent 1px), linear-gradient(90deg, var(--foreground) 1px, transparent 1px)',
-          backgroundSize: `${50 * scale}px ${50 * scale}px`,
-          backgroundPosition: `${stagePosition.x}px ${stagePosition.y}px`,
-          opacity: 0.02,
-        }} />
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            backgroundImage:
+              'linear-gradient(var(--foreground) 1px, transparent 1px), linear-gradient(90deg, var(--foreground) 1px, transparent 1px)',
+            backgroundSize: `${50 * scale}px ${50 * scale}px`,
+            backgroundPosition: `${stagePosition.x}px ${stagePosition.y}px`,
+            opacity: 0.02,
+          }}
+        />
 
         {elements.length === 0 && (
-          <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div className="text-center text-muted-foreground">
-              <ImagePlus className="h-16 w-16 mx-auto mb-4 opacity-50" />
-              <p className="text-lg font-medium">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3496JsxTextCanvasIsEmpty')}</p>
-              <p className="text-sm mt-1">{tHardcodedUi.raw('componentsFileRenderersCanvasRenderer.line3497JsxTextAddImagesToGetStarted')}</p>
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+            <div className="text-muted-foreground text-center">
+              <ImagePlus className="mx-auto mb-4 h-16 w-16 opacity-50" />
+              <p className="text-lg font-medium">
+                {tHardcodedUi.raw(
+                  'componentsFileRenderersCanvasRenderer.line3496JsxTextCanvasIsEmpty',
+                )}
+              </p>
+              <p className="mt-1 text-sm">
+                {tHardcodedUi.raw(
+                  'componentsFileRenderersCanvasRenderer.line3497JsxTextAddImagesToGetStarted',
+                )}
+              </p>
             </div>
           </div>
         )}
 
         {/* Render order: Frame backgrounds -> Images (clipped if inside frame) -> Frame borders on top */}
         {(() => {
-          const frames = elements.filter(el => el.type === 'frame') as FrameCanvasElement[];
-          const images = elements.filter(el => el.type === 'image') as ImageCanvasElement[];
+          const frames = elements.filter((el) => el.type === 'frame') as FrameCanvasElement[];
+          const images = elements.filter((el) => el.type === 'image') as ImageCanvasElement[];
 
           // Helper: check if image overlaps with frame (any percentage)
           const getOverlappingFrame = (img: ImageCanvasElement): FrameCanvasElement | null => {
@@ -3465,7 +4054,12 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               const frameBottom = frame.y + frame.height;
 
               // Check if any part overlaps
-              if (img.x < frameRight && imgRight > frame.x && img.y < frameBottom && imgBottom > frame.y) {
+              if (
+                img.x < frameRight &&
+                imgRight > frame.x &&
+                img.y < frameBottom &&
+                imgBottom > frame.y
+              ) {
                 return frame;
               }
             }
@@ -3487,10 +4081,16 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             const frameScreenH = frame.height * scale;
 
             // Calculate clip rect relative to image element (0-100%)
-            const clipLeft = Math.max(0, (frameScreenX - imgScreenX) / imgScreenW * 100);
-            const clipTop = Math.max(0, (frameScreenY - imgScreenY) / imgScreenH * 100);
-            const clipRight = Math.min(100, (frameScreenX + frameScreenW - imgScreenX) / imgScreenW * 100);
-            const clipBottom = Math.min(100, (frameScreenY + frameScreenH - imgScreenY) / imgScreenH * 100);
+            const clipLeft = Math.max(0, ((frameScreenX - imgScreenX) / imgScreenW) * 100);
+            const clipTop = Math.max(0, ((frameScreenY - imgScreenY) / imgScreenH) * 100);
+            const clipRight = Math.min(
+              100,
+              ((frameScreenX + frameScreenW - imgScreenX) / imgScreenW) * 100,
+            );
+            const clipBottom = Math.min(
+              100,
+              ((frameScreenY + frameScreenH - imgScreenY) / imgScreenH) * 100,
+            );
 
             return `polygon(${clipLeft}% ${clipTop}%, ${clipRight}% ${clipTop}%, ${clipRight}% ${clipBottom}%, ${clipLeft}% ${clipBottom}%)`;
           };
@@ -3552,71 +4152,76 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                   allElements={elements}
                   onMoveChildren={(childStartPositions, dx, dy) => {
                     // Move all children by the delta from their starting positions
-                    setElements(prev => prev.map(el => {
-                      const startPos = childStartPositions.find(c => c.id === el.id);
-                      if (startPos) {
-                        return { ...el, x: startPos.x + dx, y: startPos.y + dy };
-                      }
-                      return el;
-                    }));
+                    setElements((prev) =>
+                      prev.map((el) => {
+                        const startPos = childStartPositions.find((c) => c.id === el.id);
+                        if (startPos) {
+                          return { ...el, x: startPos.x + dx, y: startPos.y + dy };
+                        }
+                        return el;
+                      }),
+                    );
                   }}
                 />
               ))}
-
             </>
           );
         })()}
 
         {/* Processing shimmer overlay - Show on ENTIRE FRAME if processing element is inside */}
-        {processingElementId && (() => {
-          const processingEl = elements.find(el => el.id === processingElementId);
-          if (!processingEl || processingEl.type !== 'image') return null;
+        {processingElementId &&
+          (() => {
+            const processingEl = elements.find((el) => el.id === processingElementId);
+            if (!processingEl || processingEl.type !== 'image') return null;
 
-          // Check if processing image is inside a frame
-          const frames = elements.filter(el => el.type === 'frame') as FrameCanvasElement[];
-          let containingFrame: FrameCanvasElement | null = null;
-          
-          for (const frame of frames) {
-            const imgRight = processingEl.x + processingEl.width;
-            const imgBottom = processingEl.y + processingEl.height;
-            const frameRight = frame.x + frame.width;
-            const frameBottom = frame.y + frame.height;
+            // Check if processing image is inside a frame
+            const frames = elements.filter((el) => el.type === 'frame') as FrameCanvasElement[];
+            let containingFrame: FrameCanvasElement | null = null;
 
-            if (processingEl.x < frameRight && imgRight > frame.x && 
-                processingEl.y < frameBottom && imgBottom > frame.y) {
-              containingFrame = frame;
-              break;
+            for (const frame of frames) {
+              const imgRight = processingEl.x + processingEl.width;
+              const imgBottom = processingEl.y + processingEl.height;
+              const frameRight = frame.x + frame.width;
+              const frameBottom = frame.y + frame.height;
+
+              if (
+                processingEl.x < frameRight &&
+                imgRight > frame.x &&
+                processingEl.y < frameBottom &&
+                imgBottom > frame.y
+              ) {
+                containingFrame = frame;
+                break;
+              }
             }
-          }
 
-          // If inside frame, show shimmer on ENTIRE FRAME
-          // If not inside frame, show shimmer on the image itself
-          const targetEl = containingFrame || processingEl;
-          const posX = targetEl.x * scale + stagePosition.x;
-          const posY = targetEl.y * scale + stagePosition.y;
-          const width = targetEl.width * scale;
-          const height = targetEl.height * scale;
+            // If inside frame, show shimmer on ENTIRE FRAME
+            // If not inside frame, show shimmer on the image itself
+            const targetEl = containingFrame || processingEl;
+            const posX = targetEl.x * scale + stagePosition.x;
+            const posY = targetEl.y * scale + stagePosition.y;
+            const width = targetEl.width * scale;
+            const height = targetEl.height * scale;
 
-
-          return (
-            <div
-              key={`shimmer-${processingElementId}`}
-              style={{
-                position: 'absolute',
-                left: posX,
-                top: posY,
-                width,
-                height,
-                borderRadius: '4px',
-                overflow: 'hidden',
-                zIndex: 9999,
-                pointerEvents: 'none',
-              }}
-            >
-              <AIProcessingOverlay isVisible={true} />
-            </div>
-          );
-        })()}
+            return (
+              <div
+                key={`shimmer-${processingElementId}`}
+                style={{
+                  position: 'absolute',
+                  left: posX,
+                  top: posY,
+                  width,
+                  height,
+                  borderRadius: '4px',
+                  overflow: 'hidden',
+                  zIndex: 9999,
+                  pointerEvents: 'none',
+                }}
+              >
+                <AIProcessingOverlay isVisible={true} />
+              </div>
+            );
+          })()}
 
         {/* Snap Guides Overlay - shows alignment lines when dragging */}
         <SnapGuidesOverlay
@@ -3627,115 +4232,124 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         />
 
         {/* Crop Overlay - rendered at canvas level for proper pan/zoom sync */}
-        {cropState && selectedIds.length === 1 && (() => {
-          const selectedElement = elements.find(el => el.id === cropState.elementId);
-          if (!selectedElement) return null;
+        {cropState &&
+          selectedIds.length === 1 &&
+          (() => {
+            const selectedElement = elements.find((el) => el.id === cropState.elementId);
+            if (!selectedElement) return null;
 
-          return (
-            <CropOverlay
-              element={selectedElement}
-              scale={scale}
-              stagePosition={stagePosition}
-              cropRect={cropState.cropRect}
-              onCropChange={(newRect) => {
-                setCropState({ elementId: cropState.elementId, cropRect: newRect });
-              }}
-            />
-          );
-        })()}
+            return (
+              <CropOverlay
+                element={selectedElement}
+                scale={scale}
+                stagePosition={stagePosition}
+                cropRect={cropState.cropRect}
+                onCropChange={(newRect) => {
+                  setCropState({ elementId: cropState.elementId, cropRect: newRect });
+                }}
+              />
+            );
+          })()}
 
         {/* Text Edit Overlay - rendered at canvas level for proper pan/zoom sync */}
-        {textEditState && selectedIds.length === 1 && (() => {
-          const selectedElement = elements.find(el => el.id === textEditState.elementId);
-          if (!selectedElement) return null;
+        {textEditState &&
+          selectedIds.length === 1 &&
+          (() => {
+            const selectedElement = elements.find((el) => el.id === textEditState.elementId);
+            if (!selectedElement) return null;
 
-          // The element dimensions vs actual image dimensions may differ (object-fit: contain)
-          // We need to calculate where the image actually renders within the element
-          const elementWidth = selectedElement.width;
-          const elementHeight = selectedElement.height;
-          const ocrWidth = textEditState.ocrImageSize.width;
-          const ocrHeight = textEditState.ocrImageSize.height;
+            // The element dimensions vs actual image dimensions may differ (object-fit: contain)
+            // We need to calculate where the image actually renders within the element
+            const elementWidth = selectedElement.width;
+            const elementHeight = selectedElement.height;
+            const ocrWidth = textEditState.ocrImageSize.width;
+            const ocrHeight = textEditState.ocrImageSize.height;
 
-          // Calculate how image fits in element (object-fit: contain behavior)
-          const elementAspect = elementWidth / elementHeight;
-          const imageAspect = ocrWidth / ocrHeight;
+            // Calculate how image fits in element (object-fit: contain behavior)
+            const elementAspect = elementWidth / elementHeight;
+            const imageAspect = ocrWidth / ocrHeight;
 
-          let displayWidth: number, displayHeight: number, offsetX: number, offsetY: number;
+            let displayWidth: number, displayHeight: number, offsetX: number, offsetY: number;
 
-          if (imageAspect > elementAspect) {
-            // Image is wider - fit to width, letterbox top/bottom
-            displayWidth = elementWidth;
-            displayHeight = elementWidth / imageAspect;
-            offsetX = 0;
-            offsetY = (elementHeight - displayHeight) / 2;
-          } else {
-            // Image is taller - fit to height, letterbox left/right
-            displayHeight = elementHeight;
-            displayWidth = elementHeight * imageAspect;
-            offsetX = (elementWidth - displayWidth) / 2;
-            offsetY = 0;
-          }
+            if (imageAspect > elementAspect) {
+              // Image is wider - fit to width, letterbox top/bottom
+              displayWidth = elementWidth;
+              displayHeight = elementWidth / imageAspect;
+              offsetX = 0;
+              offsetY = (elementHeight - displayHeight) / 2;
+            } else {
+              // Image is taller - fit to height, letterbox left/right
+              displayHeight = elementHeight;
+              displayWidth = elementHeight * imageAspect;
+              offsetX = (elementWidth - displayWidth) / 2;
+              offsetY = 0;
+            }
 
-          // Calculate the actual image position in screen coordinates
-          const imageScreenX = (selectedElement.x + offsetX) * scale + stagePosition.x;
-          const imageScreenY = (selectedElement.y + offsetY) * scale + stagePosition.y;
-          const imageScreenWidth = displayWidth * scale;
-          const imageScreenHeight = displayHeight * scale;
+            // Calculate the actual image position in screen coordinates
+            const imageScreenX = (selectedElement.x + offsetX) * scale + stagePosition.x;
+            const imageScreenY = (selectedElement.y + offsetY) * scale + stagePosition.y;
+            const imageScreenWidth = displayWidth * scale;
+            const imageScreenHeight = displayHeight * scale;
 
-          // Scale factor from OCR coordinates to screen coordinates
-          const scaleX = imageScreenWidth / ocrWidth;
-          const scaleY = imageScreenHeight / ocrHeight;
+            // Scale factor from OCR coordinates to screen coordinates
+            const scaleX = imageScreenWidth / ocrWidth;
+            const scaleY = imageScreenHeight / ocrHeight;
 
-          return (
-            <svg
-              className="absolute pointer-events-none z-50"
-              style={{
-                left: imageScreenX,
-                top: imageScreenY,
-                width: imageScreenWidth,
-                height: imageScreenHeight,
-              }}
-              viewBox={`0 0 ${ocrWidth} ${ocrHeight}`}
-              preserveAspectRatio="none"
-            >
-              {textEditState.regions.map((region) => {
-                const isSelected = selectedTextRegion?.id === region.id;
+            return (
+              <svg
+                className="pointer-events-none absolute z-50"
+                style={{
+                  left: imageScreenX,
+                  top: imageScreenY,
+                  width: imageScreenWidth,
+                  height: imageScreenHeight,
+                }}
+                viewBox={`0 0 ${ocrWidth} ${ocrHeight}`}
+                preserveAspectRatio="none"
+              >
+                {textEditState.regions.map((region) => {
+                  const isSelected = selectedTextRegion?.id === region.id;
 
-                // Use polygon points for perspective-aware bounding box
-                const polygon = region.polygon;
-                if (!polygon || polygon.length < 4) return null;
+                  // Use polygon points for perspective-aware bounding box
+                  const polygon = region.polygon;
+                  if (!polygon || polygon.length < 4) return null;
 
-                // Create SVG polygon points string
-                const points = polygon.map(([x, y]) => `${x},${y}`).join(' ');
+                  // Create SVG polygon points string
+                  const points = polygon.map(([x, y]) => `${x},${y}`).join(' ');
 
-                return (
-                  <polygon
-                    key={region.id}
-                    points={points}
-                    className={cn(
-                      "cursor-pointer transition-colors pointer-events-auto",
-                      isSelected
-                        ? "fill-blue-500/20 stroke-blue-500"
-                        : "fill-transparent stroke-blue-400/50 hover:stroke-blue-500 hover:fill-blue-500/10"
-                    )}
-                    style={{
-                      strokeWidth: 2 / Math.min(scaleX, scaleY), // Keep stroke width consistent regardless of scale
-                    }}
-                    onClick={() => setSelectedTextRegion(region)}
-                  >
-                    <title>{region.text}</title>
-                  </polygon>
-                );
-              })}
-            </svg>
-          );
-        })()}
+                  return (
+                    <polygon
+                      key={region.id}
+                      points={points}
+                      className={cn(
+                        'pointer-events-auto cursor-pointer transition-colors',
+                        isSelected
+                          ? 'fill-blue-500/20 stroke-blue-500'
+                          : 'fill-transparent stroke-blue-400/50 hover:fill-blue-500/10 hover:stroke-blue-500',
+                      )}
+                      style={{
+                        strokeWidth: 2 / Math.min(scaleX, scaleY), // Keep stroke width consistent regardless of scale
+                      }}
+                      onClick={() => setSelectedTextRegion(region)}
+                    >
+                      <title>{region.text}</title>
+                    </polygon>
+                  );
+                })}
+              </svg>
+            );
+          })()}
 
         {/* Selection rectangle - blue */}
         {selectionRect && selectionRect.w > 0 && selectionRect.h > 0 && (
           <div
-            className="absolute border border-dashed border-blue-500 bg-blue-500/10 pointer-events-none"
-            style={{ left: selectionRect.x, top: selectionRect.y, width: selectionRect.w, height: selectionRect.h }}
+            className="pointer-events-none absolute border border-dashed border-blue-500 bg-blue-500/10"
+            style={{
+              left: selectionRect.x,
+              top: selectionRect.y,
+              width: selectionRect.w,
+              height: selectionRect.h,
+            }}
           />
         )}
 
@@ -3747,12 +4361,17 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             stagePosition={stagePosition}
             onChange={(newAttrs) => handleElementChange(selectedElement.id, newAttrs)}
             onDuplicate={() => {
-              const newEl = { ...selectedElement, id: `img-${Date.now()}`, x: selectedElement.x + selectedElement.width + 24, y: selectedElement.y };
-              setElements(prev => [...prev, newEl]);
+              const newEl = {
+                ...selectedElement,
+                id: `img-${Date.now()}`,
+                x: selectedElement.x + selectedElement.width + 24,
+                y: selectedElement.y,
+              };
+              setElements((prev) => [...prev, newEl]);
               setSelectedIds([newEl.id]);
             }}
             onDelete={() => {
-              setElements(prev => prev.filter(el => el.id !== selectedElement.id));
+              setElements((prev) => prev.filter((el) => el.id !== selectedElement.id));
               setSelectedIds([]);
               setTextEditState(null);
               setSelectedTextRegion(null);
@@ -3784,7 +4403,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                   method: 'POST',
                   headers: {
                     'Content-Type': 'application/json',
-                    ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {}),
+                    ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
                   },
                   body: JSON.stringify({
                     image_base64: imageBase64,
@@ -3806,7 +4425,8 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                   const url = URL.createObjectURL(blob);
                   const link = document.createElement('a');
                   link.href = url;
-                  link.download = (selectedElement.name || 'image').replace(/\.[^.]+$/, '') + '.svg';
+                  link.download =
+                    (selectedElement.name || 'image').replace(/\.[^.]+$/, '') + '.svg';
                   link.click();
                   URL.revokeObjectURL(url);
                   toast.success('SVG downloaded!');
@@ -3815,7 +4435,10 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                 }
               } catch (err) {
                 console.error('SVG conversion error:', err);
-                toast.error('Failed to convert to SVG: ' + (err instanceof Error ? err.message : 'Unknown error'));
+                toast.error(
+                  'Failed to convert to SVG: ' +
+                    (err instanceof Error ? err.message : 'Unknown error'),
+                );
               }
             }}
             onImageUpdate={(newSrc, newDimensions) => {
@@ -3827,18 +4450,20 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               const currentPlaceholderId = pendingPlaceholderIdRef.current;
               if (currentPlaceholderId) {
                 // Update the placeholder with the actual image
-                setElements(prev => prev.map(el =>
-                  el.id === currentPlaceholderId
-                    ? {
-                      ...el,
-                      src: newSrc,
-                      width: newWidth,
-                      height: newHeight,
-                      locked: false, // Unlock after processing
-                      name: el.name.replace('_processing', '_processed'),
-                    }
-                    : el
-                ));
+                setElements((prev) =>
+                  prev.map((el) =>
+                    el.id === currentPlaceholderId
+                      ? {
+                          ...el,
+                          src: newSrc,
+                          width: newWidth,
+                          height: newHeight,
+                          locked: false, // Unlock after processing
+                          name: el.name.replace('_processing', '_processed'),
+                        }
+                      : el,
+                  ),
+                );
                 setSelectedIds([currentPlaceholderId]);
                 pendingPlaceholderIdRef.current = null;
                 setPendingPlaceholderId(null);
@@ -3868,7 +4493,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                   name: `${selectedElement.name}_processing`,
                 };
 
-                setElements(prev => [...prev, placeholderElement]);
+                setElements((prev) => [...prev, placeholderElement]);
                 pendingPlaceholderIdRef.current = placeholderId; // Store in ref for reliable access
                 setPendingPlaceholderId(placeholderId);
                 setProcessingElementId(placeholderId); // Show shimmer on placeholder, not original
@@ -3876,7 +4501,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                 // Only cleanup on FAILURE - success is handled by onImageUpdate
                 const currentPlaceholderId = pendingPlaceholderIdRef.current;
                 if (currentPlaceholderId) {
-                  setElements(prev => prev.filter(el => el.id !== currentPlaceholderId));
+                  setElements((prev) => prev.filter((el) => el.id !== currentPlaceholderId));
                 }
                 pendingPlaceholderIdRef.current = null;
                 setPendingPlaceholderId(null);
@@ -3890,7 +4515,11 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             }}
             onTextEditStateChange={(state) => {
               if (state) {
-                setTextEditState({ elementId: selectedElement.id, regions: state.regions, ocrImageSize: state.ocrImageSize });
+                setTextEditState({
+                  elementId: selectedElement.id,
+                  regions: state.regions,
+                  ocrImageSize: state.ocrImageSize,
+                });
               } else {
                 setTextEditState(null);
                 setSelectedTextRegion(null);
@@ -3905,7 +4534,9 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                 setCropState(null);
               }
             }}
-            externalCropRect={cropState?.elementId === selectedElement.id ? cropState.cropRect : null}
+            externalCropRect={
+              cropState?.elementId === selectedElement.id ? cropState.cropRect : null
+            }
             onCropCreate={(src, width, height) => {
               const newEl: CanvasElement = {
                 id: `img-${Date.now()}`,
@@ -3923,7 +4554,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                 visible: true,
                 name: `${selectedElement.name.replace(/\.[^.]+$/, '')}_crop.png`,
               };
-              setElements(prev => [...prev, newEl]);
+              setElements((prev) => [...prev, newEl]);
               setSelectedIds([newEl.id]);
               setCropState(null);
             }}
@@ -3946,11 +4577,11 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                 id: `frame-${Date.now()}`,
                 x: selectedElement.x + selectedElement.width + 24,
               };
-              setElements(prev => [...prev, newEl]);
+              setElements((prev) => [...prev, newEl]);
               setSelectedIds([newEl.id]);
             }}
             onDelete={() => {
-              setElements(prev => prev.filter(el => el.id !== selectedElement.id));
+              setElements((prev) => prev.filter((el) => el.id !== selectedElement.id));
               setSelectedIds([]);
             }}
             onExportFrame={async () => {
@@ -3978,14 +4609,18 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                 const frameRight = frame.x + frame.width;
                 const frameBottom = frame.y + frame.height;
 
-                const imageElements = elements.filter(el => {
+                const imageElements = elements.filter((el) => {
                   if (el.type !== 'image') return false;
                   const img = el as ImageCanvasElement;
                   // Check if image intersects with frame
                   const imgRight = img.x + img.width;
                   const imgBottom = img.y + img.height;
-                  return img.x < frameRight && imgRight > frameLeft &&
-                    img.y < frameBottom && imgBottom > frameTop;
+                  return (
+                    img.x < frameRight &&
+                    imgRight > frameLeft &&
+                    img.y < frameBottom &&
+                    imgBottom > frameTop
+                  );
                 }) as ImageCanvasElement[];
 
                 // Sort by z-index (order in array)
@@ -4031,7 +4666,10 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                 toast.success('Frame exported!');
               } catch (err) {
                 console.error('Export error:', err);
-                toast.error('Failed to export frame: ' + (err instanceof Error ? err.message : 'Unknown error'));
+                toast.error(
+                  'Failed to export frame: ' +
+                    (err instanceof Error ? err.message : 'Unknown error'),
+                );
               }
             }}
             sandboxId={sandboxId}
@@ -4042,19 +4680,22 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         {/* Multi-select toolbar */}
         {selectedIds.length > 1 && (
           <MultiSelectToolbar
-            elements={elements.filter(el => selectedIds.includes(el.id))}
+            elements={elements.filter((el) => selectedIds.includes(el.id))}
             scale={scale}
             stagePosition={stagePosition}
             onStartMerge={() => {
               // Get the first selected element's size for the merged result
-              const selectedEls = elements.filter(el => selectedIds.includes(el.id));
+              const selectedEls = elements.filter((el) => selectedIds.includes(el.id));
               const firstEl = selectedEls[0];
 
               // Get bounds to position new image to the right
-              const bounds = selectedEls.reduce((acc, el) => ({
-                maxX: Math.max(acc.maxX, el.x + el.width),
-                minY: Math.min(acc.minY, el.y),
-              }), { maxX: -Infinity, minY: Infinity });
+              const bounds = selectedEls.reduce(
+                (acc, el) => ({
+                  maxX: Math.max(acc.maxX, el.x + el.width),
+                  minY: Math.min(acc.minY, el.y),
+                }),
+                { maxX: -Infinity, minY: Infinity },
+              );
 
               // Create temporary placeholder element - use first image's size
               const tempId = `merge-temp-${Date.now()}`;
@@ -4071,7 +4712,7 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               };
 
               // KEEP original elements, just add the temp placeholder
-              setElements(prev => [...prev, tempElement]);
+              setElements((prev) => [...prev, tempElement]);
               setSelectedIds([tempId]);
               setProcessingElementId(tempId); // Show shimmer on it
 
@@ -4079,21 +4720,21 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             }}
             onMergeComplete={(tempId, mergedImageSrc) => {
               // Replace temp element with actual merged image
-              setElements(prev => prev.map(el =>
-                el.id === tempId
-                  ? { ...el, src: mergedImageSrc, name: 'merged-image.png' }
-                  : el
-              ));
+              setElements((prev) =>
+                prev.map((el) =>
+                  el.id === tempId ? { ...el, src: mergedImageSrc, name: 'merged-image.png' } : el,
+                ),
+              );
               setProcessingElementId(null);
             }}
             onMergeFailed={(tempId) => {
               // Remove the temp element on failure
-              setElements(prev => prev.filter(el => el.id !== tempId));
+              setElements((prev) => prev.filter((el) => el.id !== tempId));
               setSelectedIds([]);
               setProcessingElementId(null);
             }}
             onDelete={() => {
-              setElements(prev => prev.filter(el => !selectedIds.includes(el.id)));
+              setElements((prev) => prev.filter((el) => !selectedIds.includes(el.id)));
               setSelectedIds([]);
             }}
             onProcessingChange={(isProcessing) => {
