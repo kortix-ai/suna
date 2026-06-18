@@ -32,15 +32,16 @@ describe('Per-seat pricing math', () => {
     expect(TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD + TYPICAL_LLM_BUDGET_PER_SEAT_USD).toBe(20);
   });
 
-  test('seat grant equals $40 × seat count (single fungible wallet)', () => {
-    expect(grantForSeats(1)).toBe(40);
-    expect(grantForSeats(5)).toBe(200);
-    expect(grantForSeats(10)).toBe(400);
+  test('seat grant equals $20 included credits × seat count (NOT the $40 price)', () => {
+    // The $40 seat includes $20 of usage credits; the other $20 is platform margin.
+    expect(grantForSeats(1)).toBe(20);
+    expect(grantForSeats(5)).toBe(100);
+    expect(grantForSeats(10)).toBe(200);
   });
 
   test('seat counts below 1 are clamped to 1', () => {
-    expect(grantForSeats(0)).toBe(40);
-    expect(grantForSeats(-3)).toBe(40);
+    expect(grantForSeats(0)).toBe(20);
+    expect(grantForSeats(-3)).toBe(20);
   });
 
   test('auto-topup defaults scale with seat count', () => {

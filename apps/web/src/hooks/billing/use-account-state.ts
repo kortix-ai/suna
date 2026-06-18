@@ -248,7 +248,7 @@ export function useCreatePerSeatCheckout() {
         useUpgradeDialogStore.getState().closeUpgradeDialog();
         await invalidateAccountState(queryClient, true, true, accountId);
         successToast('Subscription activated', {
-          description: `${data.seat_count} seat${data.seat_count === 1 ? '' : 's'} active · $40 of usage credit deposited.`,
+          description: `${data.seat_count} seat${data.seat_count === 1 ? '' : 's'} active · $${20 * data.seat_count} of usage credit deposited.`,
         });
         return;
       }

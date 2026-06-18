@@ -100,6 +100,23 @@ export type AppEnv = {
 
 // ─── Tier System (Billing) ──────────────────────────────────────────────────
 
+/**
+ * Enterprise feature gates, keyed by tier. These unlock the identity/governance
+ * surfaces that only Enterprise (sales-assigned) accounts get. A self-serve
+ * tier (Free / Team) has every flag `false`; the `enterprise` tier has them all
+ * `true`. Enforced server-side in the SCIM / SSO routes + the /scim/v2 data
+ * plane, and surfaced on the account-state `tier` block so the UI can hide the
+ * setup cards for non-entitled accounts. Add a key here, set it per tier in
+ * billing/services/tiers.ts, then guard the relevant route with
+ * `requireEntitlement(c, accountId, '<key>')`.
+ */
+export interface TierEntitlements {
+  /** SAML SSO provider config + JIT provisioning + group-claim mapping. */
+  sso: boolean;
+  /** SCIM 2.0 directory provisioning (token mint/revoke + /scim/v2 endpoints). */
+  scim: boolean;
+}
+
 export interface TierConfig {
   name: string;
   displayName: string;
@@ -112,6 +129,8 @@ export interface TierConfig {
   hidden: boolean;
   /** Max concurrent project sessions allowed for accounts on this tier. */
   concurrentSessionLimit: number;
+  /** Enterprise feature gates. Absent ⇒ treated as all-false. */
+  entitlements: TierEntitlements;
 }
 
 export interface DailyCreditConfig {
@@ -202,6 +221,9 @@ export interface AccountStateResponse {
     display_name: string;
     monthly_credits: number;
     can_purchase_credits: boolean;
+    /** Enterprise feature gates for this tier — drives whether the UI shows
+     *  the SSO / SCIM setup cards. */
+    entitlements: TierEntitlements;
   };
   /** @deprecated Model gates moved into provider configuration and sandbox model discovery. */
   models: ModelInfo[];

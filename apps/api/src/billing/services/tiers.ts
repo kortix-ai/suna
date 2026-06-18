@@ -1,4 +1,4 @@
-import type { TierConfig, DailyCreditConfig } from '../../types';
+import type { TierConfig, DailyCreditConfig, TierEntitlements } from '../../types';
 import { config } from '../../config';
 
 export const TOKEN_PRICE_MULTIPLIER = 1.2;
@@ -43,9 +43,16 @@ export function llmPriceMarkup(): number {
 // not enforced anywhere.
 
 export const PER_SEAT_PRICE_USD = 40;
-/** Display-only: rough indication for pricing-page copy. */
+/**
+ * Usage credits granted per seat each month. The $40 seat price includes $20 of
+ * usage credits (LLM + compute); the other $20 is platform margin. Decoupled
+ * from PER_SEAT_PRICE_USD on purpose — the price and the included usage are two
+ * different numbers. The two TYPICAL_* splits below add up to this value.
+ */
+export const INCLUDED_CREDITS_PER_SEAT_USD = 20;
+/** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
 export const TYPICAL_COMPUTE_BUDGET_PER_SEAT_USD = 12;
-/** Display-only: rough indication for pricing-page copy. */
+/** Display-only split of INCLUDED_CREDITS_PER_SEAT_USD for pricing-page copy. */
 export const TYPICAL_LLM_BUDGET_PER_SEAT_USD = 8;
 
 // Per-second sandbox compute pricing, keyed off the reserved spec (kortix.toml
@@ -98,12 +105,13 @@ export function defaultAutoTopupForSeats(seatCount: number): { threshold: number
 }
 
 /**
- * Monthly wallet grant for N seats. $20 per seat, fungible across compute
- * and LLM usage. Per-category transparency comes from the credit_ledger
- * (compute_debit / llm_debit), not from a wallet partition.
+ * Monthly wallet grant for N seats. INCLUDED_CREDITS_PER_SEAT_USD ($20) per
+ * seat, fungible across compute and LLM usage — NOT the full $40 seat price
+ * (the other $20 is platform margin). Per-category transparency comes from the
+ * credit_ledger (compute_debit / llm_debit), not from a wallet partition.
  */
 export function grantForSeats(seatCount: number): number {
-  return PER_SEAT_PRICE_USD * Math.max(1, seatCount);
+  return INCLUDED_CREDITS_PER_SEAT_USD * Math.max(1, seatCount);
 }
 
 // ─── Compute instance definitions ───────────────────────────────────────────
@@ -143,6 +151,12 @@ export function getComputeDescription(serverType: string): string {
 
 // ─── Tiers ──────────────────────────────────────────────────────────────────
 
+// Enterprise feature gates. Every self-serve tier (Free / Team) gets NONE;
+// the sales-assigned `enterprise` tier gets ALL. See TierEntitlements in
+// ../../types and the requireEntitlement() guard in the IAM routes.
+const NO_ENTERPRISE: TierEntitlements = { sso: false, scim: false };
+const ALL_ENTERPRISE: TierEntitlements = { sso: true, scim: true };
+
 const TIERS: Record<string, TierConfig> = {
   none: {
     name: 'none',
@@ -155,6 +169,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: true,
     concurrentSessionLimit: 50,
+    entitlements: NO_ENTERPRISE,
   },
 
   free: {
@@ -166,10 +181,12 @@ const TIERS: Record<string, TierConfig> = {
     canPurchaseCredits: false,
     models: ['haiku'],
     dailyCreditConfig: null,   // No daily credits — BYOC only
-    // Hidden from new signup flows. Existing rows with tier='free' continue
-    // to be honored for backwards compatibility (they remain billing_model='legacy').
+    // Hidden from new signup flows. Managed cloud is paid-only — new accounts
+    // resolve to tier 'none' and hit the subscribe wall. Existing rows with
+    // tier='free' (legacy / backwards-compat) continue to be honored.
     hidden: true,
     concurrentSessionLimit: 50,
+    entitlements: NO_ENTERPRISE,
   },
 
   pro: {
@@ -183,6 +200,7 @@ const TIERS: Record<string, TierConfig> = {
     dailyCreditConfig: null,
     hidden: false,
     concurrentSessionLimit: 200,
+    entitlements: NO_ENTERPRISE,
   },
 
   // Billing v2 — per-member seat plan. $20 × seat_count / month.
@@ -193,25 +211,47 @@ const TIERS: Record<string, TierConfig> = {
     displayName: 'Team',
     monthlyPrice: PER_SEAT_PRICE_USD,
     yearlyPrice: 0,
-    monthlyCredits: PER_SEAT_PRICE_USD,
+    monthlyCredits: INCLUDED_CREDITS_PER_SEAT_USD,
     canPurchaseCredits: true,
     models: ['all'],
     dailyCreditConfig: null,
     hidden: false,
     concurrentSessionLimit: 200,
+    entitlements: NO_ENTERPRISE,
+  },
+
+  // ── Enterprise (sales-assigned, not self-serve) ──────────────────────────
+  // Custom / contact-sales. Not purchasable through normal checkout — an
+  // operator sets credit_accounts.tier='enterprise' as part of the deal, and
+  // credits are granted out-of-band per the contract. This is the ONLY tier
+  // that unlocks the enterprise identity surfaces (SSO + SCIM). Hidden from the
+  // self-serve pricing grid (the public page renders a static "Contact sales"
+  // card); high session limit for big teams.
+  enterprise: {
+    name: 'enterprise',
+    displayName: 'Enterprise',
+    monthlyPrice: 0,
+    yearlyPrice: 0,
+    monthlyCredits: 0,
+    canPurchaseCredits: true,
+    models: ['all'],
+    dailyCreditConfig: null,
+    hidden: true,
+    concurrentSessionLimit: 5000,
+    entitlements: ALL_ENTERPRISE,
   },
 
   // ── Legacy tiers (kept for backward compat with existing DB rows) ────────
   // All hidden, resolve to their closest equivalent for display.
   // Legacy tiers: monthlyCredits = monthlyPrice (1:1 ratio, i.e. $20 plan → $20 credits → 2000 display credits)
-  tier_2_20:      { name: 'tier_2_20',      displayName: 'Plus (Legacy)',       monthlyPrice: 20,   yearlyPrice: 204,   monthlyCredits: 20,   canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 200 },
-  tier_6_50:      { name: 'tier_6_50',      displayName: 'Pro (Legacy)',        monthlyPrice: 50,   yearlyPrice: 510,   monthlyCredits: 50,   canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 300 },
-  tier_12_100:    { name: 'tier_12_100',    displayName: 'Business (Legacy)',   monthlyPrice: 100,  yearlyPrice: 1020,  monthlyCredits: 100,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 400 },
-  tier_25_200:    { name: 'tier_25_200',    displayName: 'Ultra (Legacy)',      monthlyPrice: 200,  yearlyPrice: 2040,  monthlyCredits: 200,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 500 },
-  tier_50_400:    { name: 'tier_50_400',    displayName: 'Enterprise (Legacy)', monthlyPrice: 400,  yearlyPrice: 4080,  monthlyCredits: 400,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 750 },
-  tier_125_800:   { name: 'tier_125_800',   displayName: 'Scale (Legacy)',      monthlyPrice: 800,  yearlyPrice: 8160,  monthlyCredits: 800,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 1000 },
-  tier_200_1000:  { name: 'tier_200_1000',  displayName: 'Max (Legacy)',        monthlyPrice: 1000, yearlyPrice: 10200, monthlyCredits: 1000, canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 1500 },
-  tier_150_1200:  { name: 'tier_150_1200',  displayName: 'Enterprise Max (Legacy)', monthlyPrice: 1200, yearlyPrice: 12240, monthlyCredits: 1200, canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 2000 },
+  tier_2_20:      { name: 'tier_2_20',      displayName: 'Plus (Legacy)',       monthlyPrice: 20,   yearlyPrice: 204,   monthlyCredits: 20,   canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 200,  entitlements: NO_ENTERPRISE },
+  tier_6_50:      { name: 'tier_6_50',      displayName: 'Pro (Legacy)',        monthlyPrice: 50,   yearlyPrice: 510,   monthlyCredits: 50,   canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 300,  entitlements: NO_ENTERPRISE },
+  tier_12_100:    { name: 'tier_12_100',    displayName: 'Business (Legacy)',   monthlyPrice: 100,  yearlyPrice: 1020,  monthlyCredits: 100,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 400,  entitlements: NO_ENTERPRISE },
+  tier_25_200:    { name: 'tier_25_200',    displayName: 'Ultra (Legacy)',      monthlyPrice: 200,  yearlyPrice: 2040,  monthlyCredits: 200,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 500,  entitlements: NO_ENTERPRISE },
+  tier_50_400:    { name: 'tier_50_400',    displayName: 'Enterprise (Legacy)', monthlyPrice: 400,  yearlyPrice: 4080,  monthlyCredits: 400,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 750,  entitlements: NO_ENTERPRISE },
+  tier_125_800:   { name: 'tier_125_800',   displayName: 'Scale (Legacy)',      monthlyPrice: 800,  yearlyPrice: 8160,  monthlyCredits: 800,  canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 1000, entitlements: NO_ENTERPRISE },
+  tier_200_1000:  { name: 'tier_200_1000',  displayName: 'Max (Legacy)',        monthlyPrice: 1000, yearlyPrice: 10200, monthlyCredits: 1000, canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 1500, entitlements: NO_ENTERPRISE },
+  tier_150_1200:  { name: 'tier_150_1200',  displayName: 'Enterprise Max (Legacy)', monthlyPrice: 1200, yearlyPrice: 12240, monthlyCredits: 1200, canPurchaseCredits: true, models: ['all'], dailyCreditConfig: null, hidden: true, concurrentSessionLimit: 2000, entitlements: NO_ENTERPRISE },
 };
 
 // ─── Stripe Price IDs ────────────────────────────────────────────────────────
@@ -424,6 +464,21 @@ export function tierGrantsAllModels(tierName: string): boolean {
   return getTier(tierName).models.includes('all');
 }
 
+/** Full entitlement set for a tier (enterprise feature gates). */
+export function getTierEntitlements(tierName: string): TierEntitlements {
+  return getTier(tierName).entitlements;
+}
+
+/**
+ * Whether a tier unlocks a specific enterprise feature (SSO, SCIM, …). The
+ * single source of truth for plan-gating the identity surfaces — used by the
+ * IAM route guard and the /scim/v2 data-plane middleware. Only the
+ * `enterprise` tier returns true today.
+ */
+export function tierHasEntitlement(tierName: string, key: keyof TierEntitlements): boolean {
+  return getTierEntitlements(tierName)[key] === true;
+}
+
 /** Returns the per-seat Stripe price ID for the current environment. */
 export function resolvePerSeatPriceId(): string | null {
   const prices = getStripePrices();
@@ -498,6 +553,8 @@ export function getTierOrder(tierName: string): number {
     'tier_125_800',
     'tier_200_1000',
     'tier_150_1200',
+    // Enterprise sits above everything — sales-assigned, highest entitlements.
+    'enterprise',
   ];
   const idx = order.indexOf(tierName);
   return idx >= 0 ? idx : 0;
