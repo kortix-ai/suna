@@ -8,7 +8,7 @@ import { roleAllows } from '../access';
 import { loadProjectConfig } from '../git';
 import { pollCodexDeviceAuth, startCodexDeviceAuth } from '../codex-device-auth';
 import { decryptProjectSecret, encryptProjectSecret, isValidSecretName } from '../secrets';
-import { propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
+import { applyProviderToActiveSandboxes, propagateProjectSecretsToActiveSandboxes } from '../lib/sandbox-env-sync';
 import { createRoute, z } from '@hono/zod-openapi';
 import { projectSecrets, projects, sessionSandboxes } from '@kortix/db';
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
@@ -512,6 +512,19 @@ projectsApp.openapi(
   if (sharing) await setSecretSharing(secretId, sharing);
 
   void propagateProjectSecretsToActiveSandboxes(projectId);
+
+  // When this secret IS a provider's API key (the client passes the opencode
+  // provider id for single-key BYO providers), register it live on EVERY active
+  // sandbox's opencode so its models are usable immediately — no restart. The
+  // env push above keeps a box authed across reboots; this makes it instant now.
+  const providerId = normalizeString(body.providerId ?? body.provider_id);
+  if (providerId && value !== null) {
+    void applyProviderToActiveSandboxes({ projectId, providerID: providerId, key: value, userId: loaded.userId })
+      .then((r) => {
+        if (r.total > 0) console.log(`[provider-apply] ${providerId}: live on ${r.applied}/${r.total} active sandbox(es)`);
+      })
+      .catch(() => {});
+  }
 
   const subject = await resolveShareSubject(loaded.userId);
   const views = await loadSecretViewsForUser(projectId, subject, true);

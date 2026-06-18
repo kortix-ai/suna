@@ -760,6 +760,12 @@ export async function upsertProjectSecret(
     /** Omit to change sharing only on an existing secret (value left untouched). */
     value?: string;
     sharing?: ConnectorSharing;
+    /**
+     * opencode provider id (single-key BYO providers). When set, the server
+     * registers this credential live on every active sandbox's opencode so the
+     * provider's models are usable immediately — no sandbox restart.
+     */
+    providerId?: string;
   },
 ) {
   return unwrap(

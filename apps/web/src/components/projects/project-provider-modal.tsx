@@ -811,11 +811,13 @@ function ApiKeyConnectForm({
   });
   const [error, setError] = useState<string | null>(null);
 
-  // A single-key BYO provider can be registered on the RUNNING session's
-  // opencode instantly (no sandbox restart) via the same auth.set path the
-  // in-session connect flow uses. Multi-key (Azure/Bedrock) + managed providers
-  // fall back to durable-only (applies on next session boot).
-  const canApplyLive = provider.envVars.length === 1 && !provider.managed && !!getActiveOpenCodeUrl();
+  // A single-key BYO provider can be registered on a RUNNING sandbox's opencode
+  // live (no restart). The FE applies it directly to the session you're in
+  // (instant feedback below), and passing `providerId` to the secret upsert makes
+  // the SERVER fan the same apply out to EVERY active sandbox of the project.
+  // Multi-key (Azure/Bedrock) + managed providers stay durable-only (next boot).
+  const isSingleKeyByo = provider.envVars.length === 1 && !provider.managed;
+  const canApplyLive = isSingleKeyByo && !!getActiveOpenCodeUrl();
 
   const upsert = useMutation({
     mutationFn: async () => {
@@ -834,6 +836,7 @@ function ApiKeyConnectForm({
             name: envVar,
             value: values[envVar] ?? '',
             sharing: selectionToIntent(sharing),
+            ...(isSingleKeyByo ? { providerId: provider.id } : {}),
           });
         }
       }
