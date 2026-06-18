@@ -6,7 +6,7 @@
  */
 
 import { getDaytona, getDaytonaWarm } from '../../shared/daytona';
-import { warmRestoreScript, WARM_RESTORE_MARKERS } from '../../snapshots/warm-bake';
+import { warmRestoreScript, WARM_RESTORE_MARKERS, noteWarmPathFailure } from '../../snapshots/warm-bake';
 import { serviceKeyForExternalId } from '../service-key';
 import { config, SANDBOX_VERSION } from '../../config';
 // (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
@@ -140,6 +140,13 @@ export class DaytonaProvider implements SandboxProvider {
       try {
         return await this.createWarm(opts, opts.warmBaseSnapshot, envVars, sandboxApiBase, createTimeoutSeconds);
       } catch (err) {
+        // Pause the warm path fleet-wide for the cooldown on ANY warm-create
+        // failure (flaky experimental restore, region revoked, env-write fail) —
+        // otherwise a degraded warm region makes EVERY session re-pay up to
+        // MAX_WARM_ATTEMPTS slow restore attempts before falling back to cold.
+        // After this, sessions go straight to the cold (instance-warm) path until
+        // the region recovers. Mirrors the probe-timeout pause in warm-bake.ts.
+        noteWarmPathFailure();
         if (err instanceof WarmRuntimeUnavailableError) throw err;
         const msg = err instanceof Error ? err.message : String(err);
         throw new WarmRuntimeUnavailableError(`warm create failed: ${msg}`);
