@@ -293,6 +293,7 @@ export function ProjectProviderModal({
               search={search}
               subview={subview}
               setSubview={setSubview}
+              onProviderConnected={onProviderConnected}
             />
           )}
 
@@ -513,12 +514,14 @@ function CatalogTab({
   search,
   subview,
   setSubview,
+  onProviderConnected,
 }: {
   projectId: string;
   connectedIds: Set<string>;
   search: string;
   subview: CatalogSubview;
   setSubview: (next: CatalogSubview) => void;
+  onProviderConnected?: (model: { providerID: string; modelID: string }) => void;
 }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const filtered = useMemo(() => {
