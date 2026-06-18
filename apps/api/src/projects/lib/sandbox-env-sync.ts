@@ -3,6 +3,7 @@ import { projectSessions, sessionSandboxes } from '@kortix/db';
 import { db } from '../../shared/db';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
 import { resolveShareSubject } from '../../executor/share';
+import { encodeKortixUserContext, KORTIX_USER_CONTEXT_HEADER } from '../../shared/kortix-user-context';
 import {
   listProjectSecretsForUser,
   projectSecretsRevision,
@@ -166,4 +167,123 @@ async function runBounded<T>(
     }
   });
   await Promise.all(workers);
+}
+
+// ── Live provider apply ──────────────────────────────────────────────────────
+// Register a newly-added provider credential on a RUNNING sandbox's opencode so
+// its models are usable immediately — no restart. opencode reads providers at
+// boot, so a hot env push alone leaves it stale; instead we drive opencode's own
+// runtime auth API (the exact calls the in-session connect flow uses):
+//   PUT  /auth/{providerID}   — write the credential into opencode's auth store
+//   POST /instance/dispose    — drop the cached instance so providers re-resolve
+// These are opencode passthrough paths (NOT /kortix/*), so the daemon proxy gates
+// them on a signed X-Kortix-User-Context header (HMAC over the box's service key)
+// rather than the bearer the /kortix/env push uses.
+
+const OPENCODE_AUTH_TIMEOUT_MS = 15_000;
+
+async function registerProviderOnBox(args: {
+  previewUrl: string;
+  previewToken: string | null;
+  serviceKey: string;
+  sandboxId: string;
+  userId: string;
+  providerID: string;
+  key: string;
+}): Promise<void> {
+  if (!isSecureOrPrivateTarget(args.previewUrl)) {
+    throw new Error('refusing to register provider over insecure transport (non-TLS public host)');
+  }
+  const userContext = encodeKortixUserContext(
+    { userId: args.userId, sandboxId: args.sandboxId, sandboxRole: 'owner', scopes: [] },
+    args.serviceKey,
+  );
+  const base = args.previewUrl.replace(/\/$/, '');
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    [KORTIX_USER_CONTEXT_HEADER]: userContext,
+    'X-Daytona-Skip-Preview-Warning': 'true',
+    'X-Daytona-Disable-CORS': 'true',
+  };
+  if (args.previewToken) headers['X-Daytona-Preview-Token'] = args.previewToken;
+
+  const setRes = await fetch(`${base}/auth/${encodeURIComponent(args.providerID)}`, {
+    method: 'PUT',
+    headers,
+    body: JSON.stringify({ type: 'api', key: args.key }),
+    signal: AbortSignal.timeout(OPENCODE_AUTH_TIMEOUT_MS),
+  });
+  if (!setRes.ok) {
+    const body = await setRes.text().catch(() => '');
+    throw new Error(`opencode auth.set ${args.providerID} failed: ${setRes.status}${body ? ` ${body.slice(0, 200)}` : ''}`);
+  }
+  // Best-effort re-discovery; a failure here just means the provider shows up on
+  // the next instance init rather than immediately.
+  await fetch(`${base}/instance/dispose`, {
+    method: 'POST',
+    headers,
+    signal: AbortSignal.timeout(OPENCODE_AUTH_TIMEOUT_MS),
+  }).catch(() => {});
+}
+
+/**
+ * Fan a newly-added provider credential out to EVERY active sandbox of the
+ * project, registering it live on each box's opencode. Best-effort + bounded:
+ * a per-box failure (booting box, transient error) is logged and skipped — the
+ * durable project secret remains the source of truth and applies on next boot.
+ * Returns {applied,total} for caller logging/telemetry.
+ */
+export async function applyProviderToActiveSandboxes(args: {
+  projectId: string;
+  providerID: string;
+  key: string;
+  userId: string;
+}): Promise<{ applied: number; total: number }> {
+  let applied = 0;
+  let total = 0;
+  if (!args.providerID || !args.key) return { applied, total };
+  try {
+    const rows = await db
+      .select({
+        externalId: sessionSandboxes.externalId,
+        sessionId: sessionSandboxes.sessionId,
+        config: sessionSandboxes.config,
+      })
+      .from(sessionSandboxes)
+      .where(and(eq(sessionSandboxes.projectId, args.projectId), eq(sessionSandboxes.status, 'active')));
+
+    const targets = rows.filter((r): r is typeof r & { externalId: string } => !!r.externalId);
+    total = targets.length;
+    if (total === 0) return { applied, total };
+
+    await runBounded(targets, FANOUT_CONCURRENCY, async (row) => {
+      const config = (row.config || {}) as Record<string, unknown>;
+      const serviceKey = typeof config.serviceKey === 'string' ? config.serviceKey : null;
+      if (!serviceKey) return;
+      try {
+        const { url, token } = await resolvePreviewLink(row.externalId, SANDBOX_SERVICE_PORT);
+        await registerProviderOnBox({
+          previewUrl: url,
+          previewToken: token,
+          serviceKey,
+          sandboxId: row.sessionId,
+          userId: args.userId,
+          providerID: args.providerID,
+          key: args.key,
+        });
+        applied++;
+      } catch (err) {
+        console.warn(
+          `[provider-apply] failed for sandbox ${row.externalId}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    });
+  } catch (err) {
+    console.warn(
+      `[provider-apply] fan-out failed for project ${args.projectId}:`,
+      err instanceof Error ? err.message : err,
+    );
+  }
+  return { applied, total };
 }
