@@ -6,14 +6,12 @@ name: Deploy Dev
 # release tag (see the dev-version job). So dev tracks prod automatically and
 # `main` carries no release-version bump.
 #
-#   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest, then deployed to
-#                   BOTH dev backends in parallel: EKS (primary) via GitOps (the
-#                   deploy-api job bumps infra/k8s/envs/dev/values.yaml to
-#                   :dev-<sha8> and Argo CD rolls the Deployment; the workflow
-#                   waits for it), and the ECS Fargate hot-standby (deploy-api-ecs
-#                   force-rolls kortix-dev on :dev-latest). dev-api.kortix.com is a
-#                   Cloudflare Worker that routes to either (dev-api-eks /
-#                   dev-api-ecs-fargate) — see infra/cloudflare/workers/api-router.
+#   - API image   → kortix/kortix-api:dev-<sha8> + :dev-latest, deployed to dev
+#                   EKS via GitOps: the deploy-api job bumps
+#                   infra/k8s/envs/dev/values.yaml to :dev-<sha8> and Argo CD rolls
+#                   the Deployment (the workflow waits for it). dev-api.kortix.com
+#                   is a Cloudflare Worker routing to dev-api-eks
+#                   (see infra/cloudflare/workers/api-router).
 #   - Frontend    → kortix/kortix-frontend:dev-<sha8> + :dev-latest (image is for
 #                   self-hosters). dev.kortix.com itself is deployed by Vercel
 #                   from `main` via Vercel's own Git integration — no deploy step.
@@ -283,88 +281,6 @@ jobs:
           {
             echo "### Deployed API → **dev** (EKS / Argo CD GitOps)"
             echo "Image \`kortix/kortix-api:${{ steps.bump.outputs.tag }}\` → \`infra/k8s/envs/dev/values.yaml\` → Argo CD rolled the dev Deployment."
-            echo "Live: \`$(printf '%s' "$h" | jq -c '{version,commit,environment}' 2>/dev/null || echo '?')\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  # ── Roll the dev ECS Fargate FALLBACK onto the same image ───────────────────
-  # EKS is primary (deploy-api above); ECS Fargate is the always-warm standby
-  # behind dev-api-ecs-fargate.kortix.com, so the dev-api Cloudflare Worker can
-  # fail over to it instantly (flip ACTIVE_BACKEND → ecs-fargate). Runs in
-  # PARALLEL with the EKS roll — it never gates or delays the primary deploy.
-  # Both run the same image against the same dev DB; that's safe because
-  # background-worker leadership is a single global DB lease
-  # (apps/api/src/shared/leader-election.ts), so only one side ever runs cron.
-  deploy-api-ecs:
-    name: Deploy API to dev (ECS fallback)
-    needs: [detect-changes, tag-api]
-    if: needs.detect-changes.outputs.api == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write # assume the AWS role via GitHub OIDC
-      contents: read
-    env:
-      AWS_REGION: us-west-2
-      CLUSTER: kortix-dev
-      SERVICE: kortix-dev
-      ROLE: arn:aws:iam::935064898258:role/kortix-gha-ecs-deploy
-    steps:
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v6
-        with:
-          role-to-assume: ${{ env.ROLE }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Guard — ECS service exists
-        id: guard
-        run: |
-          set -uo pipefail
-          st="$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
-                --query 'services[0].status' --output text 2>/dev/null || true)"
-          if [ "$st" = "ACTIVE" ]; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::ECS fallback service $SERVICE not ACTIVE (status=$st) — skipping."
-          fi
-
-      - name: Roll the ECS fallback onto the freshly-built image
-        if: steps.guard.outputs.exists == 'true'
-        run: |
-          set -euo pipefail
-          # The kortix-dev task definition pins kortix/kortix-api:dev-latest (the
-          # tag-api job just pushed it), so force-new-deployment re-pulls that tag
-          # and rolls the standby — same tracking model as the EKS primary.
-          echo "Rolling ECS fallback $SERVICE onto :dev-latest…"
-          DEP_ID="$(aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" \
-            --force-new-deployment \
-            --query 'service.deployments[?status==`PRIMARY`]|[0].id' --output text)"
-          # `wait services-stable` returns success even if the deployment circuit
-          # breaker rolled OUR deployment back (the service is "stable" again on
-          # the prior task set). So verify the deployment WE triggered actually
-          # completed and is still PRIMARY — else it was rolled back → go red.
-          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE" || true
-          STATE="$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
-            --query "services[0].deployments[?id=='$DEP_ID']|[0].rolloutState" --output text)"
-          PRIMARY_ID="$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
-            --query 'services[0].deployments[?status==`PRIMARY`]|[0].id' --output text)"
-          if [ "$STATE" = "FAILED" ] || { [ "$STATE" != "COMPLETED" ] && [ "$PRIMARY_ID" != "$DEP_ID" ]; }; then
-            echo "::error::dev ECS fallback roll failed/rolled back (deployment $DEP_ID state=$STATE, primary=$PRIMARY_ID). Recent events:"
-            aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
-              --query 'services[0].events[0:6].message' --output text || true
-            exit 1
-          fi
-          echo "✓ ECS fallback rolled (deployment $DEP_ID COMPLETED)"
-          aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" \
-            --query 'services[0].{running:runningCount,desired:desiredCount,rollout:deployments[0].rolloutState}' \
-            --output table
-
-      - name: Summary
-        if: always() && steps.guard.outputs.exists == 'true'
-        run: |
-          h="$(curl -s --max-time 10 "https://dev-api-ecs-fargate.kortix.com/v1/health" || true)"
-          {
-            echo "### Deployed API → **dev** (ECS Fargate fallback)"
-            echo "Rolled \`kortix/kortix-api:dev-latest\` onto ECS service \`kortix-dev\` (standby behind dev-api-ecs-fargate)."
             echo "Live: \`$(printf '%s' "$h" | jq -c '{version,commit,environment}' 2>/dev/null || echo '?')\`"
           } >> "$GITHUB_STEP_SUMMARY"
 

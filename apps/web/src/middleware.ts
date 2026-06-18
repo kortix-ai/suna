@@ -28,6 +28,8 @@ const PUBLIC_ROUTES = [
   '/api/auth',
   '/share', // Shared content should be public
   '/templates', // Template pages should be public
+  '/secret-intake', // Agent-minted secret setup links — token-gated, MUST be openable with no login (e.g. from a Slack link)
+  '/connect', // Agent-minted Pipedream Quick Connect links — token-gated, MUST be openable with no login (distinct from authed /connectors)
   '/master-login', // Master password admin login
   '/checkout', // Public checkout wrapper for Apple compliance
   '/support', // Support page should be public
@@ -42,12 +44,17 @@ const PUBLIC_ROUTES = [
   '/install.sh',
   '/download', // Desktop installer redirector (per-platform latest)
   '/design-system', // Living design system / brand guidelines should be public
+  '/presentation', // Standalone product deck (/presentation) should be public
   '/contact', // Request-a-demo / contact page should be public
   '/developers', // Developer walkthrough landing page should be public
   '/countryerror', // Country restriction error page should be public
   '/enterprise', // Enterprise page should be public
   '/pricing', // Pricing page should be public
   '/use-cases', // Use cases page should be public
+  '/solutions', // Solutions / persona landing pages should be public
+  '/compare', // Competitor comparison pages should be public
+  '/integrations', // Integrations directory + per-tool pages should be public
+  '/security', // Security & trust page should be public
   '/maintenance', // Maintenance page must be accessible without auth
   '/debug', // Dev-only visual harnesses (tools, connecting, error) — unlinked
   '/game-of-life', // Conway's Game of Life seeded from the Kortix logo — public, unauthenticated

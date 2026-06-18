@@ -19,6 +19,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useApprovePermissionRequest, useDenyPermissionRequest, type TunnelPermissionRequest } from '@/hooks/tunnel/use-tunnel';
 import { useTunnelStore } from '@/stores/tunnel-store';
+import { toast } from '@/lib/toast';
 import { EXPIRY_OPTIONS, getExpiresAt, getCapabilityInfo, getDefaultScope } from './types';
 import type { PermissionScope, FilesystemScope, ShellScope, NetworkScope } from './types';
 import { FilesystemScopeEditor } from './scope-editors/filesystem-scope-editor';
@@ -89,8 +90,12 @@ export function TunnelPermissionRequestDialog() {
         expiresAt,
       });
       removePendingRequest(currentRequest.requestId);
+      toast.success(`Granted ${currentRequest.capability} access`);
     } catch (err) {
       console.error('Failed to approve:', err);
+      toast.error('Failed to grant access', {
+        description: err instanceof Error ? err.message : undefined,
+      });
     }
   };
 
@@ -98,8 +103,12 @@ export function TunnelPermissionRequestDialog() {
     try {
       await denyMutation.mutateAsync(currentRequest.requestId);
       removePendingRequest(currentRequest.requestId);
+      toast.success('Request denied');
     } catch (err) {
       console.error('Failed to deny:', err);
+      toast.error('Failed to deny request', {
+        description: err instanceof Error ? err.message : undefined,
+      });
     }
   };
 

@@ -89,6 +89,16 @@ project-scoped — it cannot enumerate other projects or hit account-level
 routes. Trying `kortix projects ls` from inside the sandbox returns 403;
 that's intentional. Use `kortix projects info` to inspect **this** project.
 
+**Getting a credential — never punt to the dashboard.** When you need an API key
+or an app connected, **mint a setup link and surface the URL in the same turn** —
+don't tell the human to "open Customize → Connectors", and don't ask them to
+paste a raw key into chat. Use the `request_secret` / `connect` tools on the
+`kortix-executor` MCP (or `secrets request` / `executor connect` /
+`kortix secrets request` / `kortix connectors link`). The human gets a fill-in
+modal (web) or a tappable link (Slack); you never touch the raw value. Do this
+automatically whenever you add or need a tool. Full playbook in the
+**credentials-and-setup-links** reference below.
+
 **Full reference:** `.kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md`
 — every command, every flag, every env var, common workflows. Load it
 when you need exact syntax.
@@ -171,6 +181,18 @@ The platform never reads opencode's config dir; OpenCode never reads `kortix.tom
 </contract>
 
 <references>
+
+<reference path=".kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md">
+  How to get a credential you don't have — an API key, or an app connected —
+  by minting a short-lived **setup link** and surfacing the URL, instead of
+  punting the human to the dashboard or asking them to paste a raw key. Covers
+  the two link kinds (secret intake / Pipedream Quick Connect), how to mint each
+  (the `request_secret` + `connect` MCP tools, the `secrets request` /
+  `executor connect` shims, the `kortix secrets request` / `kortix connectors
+  link` CLI), what the human sees (web modal vs Slack link), how to verify it
+  landed, and the security model. Load this whenever you hit "I need an API key /
+  I need this app connected" — it is the canonical, autonomous flow.
+</reference>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/kortix-cli.md">
   In-depth `kortix` CLI reference. Every subcommand (login, hosts,

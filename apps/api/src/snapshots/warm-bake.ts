@@ -125,7 +125,18 @@ export async function createHealthyBuilder(baseSnapshot: string, onLog?: (l: str
   for (let attempt = 1; attempt <= BUILDER_ATTEMPTS; attempt++) {
     let box: Sandbox | null = null;
     try {
-      box = await daytona.create({ snapshot: baseSnapshot }, { timeout: CREATE_TIMEOUT_S });
+      // A bake box is deleted on success/failure below, but if this process
+      // crashes mid-bake it would leak forever. Backstop it with the same
+      // self-managing lifecycle as session boxes so the SDK reclaims it.
+      box = await daytona.create(
+        {
+          snapshot: baseSnapshot,
+          autoStopInterval: Math.max(1, config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15),
+          autoArchiveInterval: config.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
+          autoDeleteInterval: config.KORTIX_SANDBOX_AUTODELETE_MINUTES,
+        },
+        { timeout: CREATE_TIMEOUT_S },
+      );
       // Health-gate the box before committing to a multi-minute bake: cheap
       // probe — outbound HTTPS to the npm registry must answer.
       const probe = await box.process.executeCommand(

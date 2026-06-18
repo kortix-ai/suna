@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { runAccess } from './commands/access.ts';
+import { runAdd } from './commands/add.ts';
 import { runApps } from './commands/apps.ts';
 import { runChannels } from './commands/channels.ts';
 import { runConnectors } from './commands/connectors.ts';
@@ -13,6 +14,7 @@ import { runInit } from './commands/init.ts';
 import { runLogin } from './commands/login.ts';
 import { runLogout } from './commands/logout.ts';
 import { runProjects } from './commands/projects.ts';
+import { runRegistry } from './commands/registry.ts';
 import { runSandboxes } from './commands/sandboxes.ts';
 import { runSecrets } from './commands/secrets.ts';
 import { runSelfHost } from './commands/self-host.ts';
@@ -20,6 +22,7 @@ import { runSessions } from './commands/sessions.ts';
 import { runSessionsChat } from './commands/sessions-chat.ts';
 import { runShip } from './commands/ship.ts';
 import { runTriggers } from './commands/triggers.ts';
+import { runTunnel } from './commands/tunnel.ts';
 import { runUninstall } from './commands/uninstall.ts';
 import { runUpdate } from './commands/update.ts';
 import { runValidate } from './commands/validate.ts';
@@ -60,10 +63,13 @@ const COMMANDS: readonly Command[] = [
   { name: 'triggers', args: '<subcommand>', blurb: 'List, fire, enable/disable triggers' },
   { name: 'channels', args: '<subcommand>', blurb: 'Connect Slack to this project (status/connect/disconnect/manifest)' },
   { name: 'connectors', args: '<subcommand>', blurb: 'Manage integrations agents call as tools (Pipedream/MCP/HTTP)' },
+  { name: 'add', args: '<item>', blurb: 'Install a skill/agent/command/file/bundle from a registry' },
+  { name: 'registry', args: '<subcommand>', blurb: 'Author + browse registries (build/validate/list/view/search)' },
   { name: 'sandboxes', args: '<subcommand>', blurb: 'Manage sandbox images: templates, builds, health' },
   { name: 'apps', args: '<subcommand>', blurb: 'Manage deployable apps (experimental)' },
   { name: 'cr', args: '<subcommand>', blurb: 'Open, review, merge change requests' },
   { name: 'access', args: '<subcommand>', blurb: 'Manage who can use this project (invite/grant/revoke)' },
+  { name: 'tunnel', args: '<subcommand>', blurb: 'See & drive your fleet of registered computers (Agent Tunnel)' },
   { name: 'update', blurb: 'Pull the latest CLI from kortix.com/install' },
   { name: 'uninstall', blurb: 'Remove the Kortix CLI from this machine' },
   { name: 'help', blurb: 'Show this help' },
@@ -173,11 +179,20 @@ async function main(argv: string[]): Promise<number> {
   if (argv[0] === 'triggers') {
     return runTriggers(argv.slice(1));
   }
+  if (argv[0] === 'tunnel') {
+    return runTunnel(argv.slice(1));
+  }
   if (argv[0] === 'channels') {
     return runChannels(argv.slice(1));
   }
   if (argv[0] === 'connectors') {
     return runConnectors(argv.slice(1));
+  }
+  if (argv[0] === 'add') {
+    return runAdd(argv.slice(1));
+  }
+  if (argv[0] === 'registry') {
+    return runRegistry(argv.slice(1));
   }
   if (argv[0] === 'sandboxes') {
     return runSandboxes(argv.slice(1));
@@ -203,7 +218,6 @@ async function main(argv: string[]): Promise<number> {
   const RESERVED_FUTURE_COMMANDS = new Set([
     'accounts',
     'mcp',
-    'tunnel',
     'logs',
     'start',
     'stop',
