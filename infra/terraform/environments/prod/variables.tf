@@ -1,7 +1,7 @@
 variable "aws_region" {
-  description = "AWS region for the prod resources."
+  description = "AWS region for the prod resources (colocated with the Supabase DB)."
   type        = string
-  default     = "us-west-2"
+  default     = "eu-west-2"
 }
 
 variable "cloudflare_zone_id" {

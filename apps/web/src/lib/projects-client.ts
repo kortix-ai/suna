@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
+import { markSessionFresh } from '@/lib/fresh-sessions';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
 export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace';
@@ -1160,11 +1161,23 @@ export interface SandboxTemplate {
   daytona_state: string;
   provider_state: string;
   ready: boolean;
+  /** Per-template warm pool config + live counts. null when the operator gate
+   *  is off (feature unavailable platform-wide). */
+  warm_pool?: {
+    enabled: boolean;
+    size: number;
+    /** Sandboxes parked and ready to claim instantly. */
+    ready: number;
+    /** Sandboxes currently booting toward ready. */
+    warming: number;
+  } | null;
 }
 
 export interface SandboxTemplatesResponse {
   items: SandboxTemplate[];
   default_slug: string | null;
+  /** Whether the warm pool feature is enabled platform-wide. */
+  warm_pool_available?: boolean;
 }
 
 export interface ProjectSnapshotBuild {
@@ -1184,6 +1197,8 @@ export interface ProjectSnapshotsResponse {
   templates: SandboxTemplate[];
   templates_error: string | null;
   builds: ProjectSnapshotBuild[];
+  /** Whether the warm pool feature is enabled platform-wide (gates the per-row control). */
+  warm_pool_available?: boolean;
 }
 
 export interface ProjectSandboxHealth {
@@ -1959,12 +1974,22 @@ export async function createProjectSession(
     session_id?: string;
   },
 ) {
-  return unwrap(
+  const session = unwrap(
     await backendApi.post<ProjectSession>(
       `/projects/${projectId}/sessions`,
       input ?? {},
     ),
   );
+  // Mark freshly-created EMPTY sessions so the session page shows the instant
+  // typeable shell instead of the resume loader. THE chokepoint for every empty
+  // project-session create path (sidebar button, ⌘T shortcut, command palette).
+  // `session_id` is exactly the route param those navigations land on.
+  // Skip when an initial_prompt is set: those sessions get a server-side reply,
+  // so they must mount the real chat to stream it (the shell would hold it back).
+  if (!input?.initial_prompt) {
+    markSessionFresh((session as ProjectSession | undefined)?.session_id);
+  }
+  return session;
 }
 
 export async function getProjectSession(
@@ -2393,29 +2418,19 @@ export async function updateAppsConfig(
   return updateExperimentalFeature(projectId, 'apps', input.enabled);
 }
 
-/** Configure the per-project warm sandbox pool (Customize → Sandbox). */
-export async function updateWarmPool(
+/**
+ * Configure the warm sandbox pool for one sandbox template (Customize → Sandbox).
+ * Warm pool is per-template + opt-in; `slug` selects which template (defaults to
+ * the platform default). Live ready/warming counts come back on each template via
+ * `listProjectSnapshots`.
+ */
+export async function updateTemplateWarmPool(
   projectId: string,
-  input: { enabled?: boolean; size?: number },
+  input: { slug: string; enabled?: boolean; size?: number },
 ) {
   return unwrap(
     await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input),
   );
-}
-
-export interface WarmPoolStatus {
-  available: boolean;
-  enabled: boolean;
-  size: number;
-  /** Sandboxes parked and ready to claim instantly. */
-  ready: number;
-  /** Sandboxes currently booting toward ready. */
-  warming: number;
-}
-
-/** Live warm pool config + status (ready / warming counts). */
-export async function getWarmPoolStatus(projectId: string): Promise<WarmPoolStatus> {
-  return unwrap(await backendApi.get<WarmPoolStatus>(`/projects/${projectId}/warm-pool`));
 }
 
 export async function setProjectOnboardingComplete(

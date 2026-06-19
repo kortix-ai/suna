@@ -271,8 +271,8 @@ export async function runProjectMaintenance(): Promise<void> {
         console.warn('[project-maintenance] stale-build reconcile failed:', err instanceof Error ? err.message : err);
         return { checked: 0, closedReady: 0, closedFailed: 0 };
       }),
-      // Keep each enabled project's warm sandbox pool at its desired size and
-      // reap dead/aged boxes. No-op when KORTIX_WARM_POOL_MAX_TOTAL=0.
+      // Keep each opted-in template's warm pool at its desired size and reap
+      // dead/aged boxes. No-op when KORTIX_WARM_POOL_ENABLED=false.
       reconcileWarmPool().catch((err) => {
         console.warn('[project-maintenance] warm-pool reconcile failed:', err instanceof Error ? err.message : err);
         return { reaped: 0, projects: 0 };

@@ -63,6 +63,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
+import { AssistantPendingRow } from '@/features/session/assistant-pending-row';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
@@ -5656,21 +5657,15 @@ export function SessionChat({
                         })()}
                       </div>
                     </div>
-                    <div className="flex items-center gap-3">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src="/kortix-logomark-white.svg"
-                        alt="Kortix"
-                        className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
-                      />
-                      {isRetrying && (
-                        <span className={cn('text-xs', STATUS_TEXT.warning)}>
-                          {tHardcodedUi.raw(
-                            'componentsSessionSessionChat.line5927JsxTextRetryingConnection',
-                          )}
-                        </span>
-                      )}
-                    </div>
+                    <AssistantPendingRow
+                      className="mt-6"
+                      status={
+                        isRetrying ? (
+                          <span className={cn('text-xs', STATUS_TEXT.warning)}>
+                            {tHardcodedUi.raw('componentsSessionSessionChat.line5927JsxTextRetryingConnection')}</span>
+                        ) : undefined
+                      }
+                    />
                   </div>
                 )}
 
@@ -5765,17 +5760,10 @@ export function SessionChat({
                 </ToolActivateContext.Provider>
 
                 {/* Busy indicator when no turns yet but session is busy */}
-                {commandError && <TurnErrorDisplay errorText={commandError} className="mt-2" />}
-                {!showOptimistic && isBusy && turns.length === 0 && (
-                  <div className="flex items-center gap-3">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src="/kortix-logomark-white.svg"
-                      alt="Kortix"
-                      className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
-                    />
-                  </div>
+                {commandError && (
+                  <TurnErrorDisplay errorText={commandError} className="mt-2" />
                 )}
+                {!showOptimistic && isBusy && turns.length === 0 && <AssistantPendingRow />}
               </div>
               {/* Spacer — ensures the last message can scroll to the top of
 						    the viewport (ChatGPT-style). Without this, scrollToBottom

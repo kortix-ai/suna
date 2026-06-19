@@ -3,6 +3,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Hint from '@/components/ui/hint';
+import { Item, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@/components/ui/item';
 import { KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import Loading from '@/components/ui/loading';
 import { Modal, ModalContent, ModalDescription, ModalTitle } from '@/components/ui/modal';
@@ -61,7 +62,7 @@ export function TeamPlanCheckout({ open, onOpenChange, accountState }: TeamPlanC
 
   return (
     <Modal open={open} onOpenChange={onOpenChange}>
-      <ModalContent className="gap-0 space-y-0 overflow-hidden p-0 lg:flex lg:h-[55dvh] lg:max-w-5xl lg:flex-col">
+      <ModalContent className="gap-0 space-y-0 overflow-hidden p-0 lg:flex lg:min-h-[55dvh] lg:max-w-5xl lg:flex-col">
         <ModalTitle className="sr-only">Subscribe to Kortix Team</ModalTitle>
         <ModalDescription className="sr-only">
           ${pricePerSeat} per seat per month. LLM compute and AI Computers for every teammate.
@@ -77,7 +78,7 @@ export function TeamPlanCheckout({ open, onOpenChange, accountState }: TeamPlanC
           </div>
 
           <div className="flex h-full min-h-0 flex-1 flex-col justify-between lg:col-span-7">
-            <div className="flex flex-col items-start space-y-8 px-6 py-8 pt-2 lg:py-8">
+            <div className="flex flex-col items-start space-y-8 px-6 py-8 pt-2 lg:py-6">
               <div className="space-y-4">
                 <Badge variant="kortix" className="rounded">
                   Kortix Team
@@ -149,26 +150,24 @@ export function TeamPlanCheckout({ open, onOpenChange, accountState }: TeamPlanC
                   </p>
                 </>
               ) : (
-                <div className="border-border/60 bg-background flex items-start gap-3 rounded-2xl border px-4 py-3.5">
+                <Item variant="outline" size="sm" className="items-start bg-none">
                   <Hint
                     label="Only account owners can subscribe. Your seat activates automatically once they do."
                     side="top"
                     className="max-w-xs text-xs"
                   >
-                    <span className="bg-muted text-muted-foreground mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full">
-                      <UserPlus className="size-4" />
-                    </span>
+                    <ItemMedia variant="icon">
+                      <UserPlus />
+                    </ItemMedia>
                   </Hint>
-                  <div className="space-y-0.5">
-                    <p className="text-foreground text-sm font-medium">
-                      Ask an account owner for a seat
-                    </p>
-                    <p className="text-muted-foreground text-xs leading-relaxed">
+                  <ItemContent>
+                    <ItemTitle>Ask an account owner for a seat</ItemTitle>
+                    <ItemDescription className="text-xs leading-relaxed">
                       Only account owners can manage billing. Once an owner subscribes to Kortix
                       Team, your seat is activated automatically.
-                    </p>
-                  </div>
-                </div>
+                    </ItemDescription>
+                  </ItemContent>
+                </Item>
               )}
             </div>
           </div>
