@@ -19,6 +19,7 @@ import {
   Platform,
   StyleSheet,
   useWindowDimensions,
+  InteractionManager,
 } from 'react-native';
 import { captureScreen } from 'react-native-view-shot';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
@@ -730,7 +731,7 @@ async function sendOpencodePrompt(
   sandboxUrl: string,
   opencodeSessionId: string,
   text: string,
-): Promise<void> {
+): Promise<boolean> {
   try {
     const token = await getAuthToken();
     const res = await fetch(
@@ -746,9 +747,12 @@ async function sendOpencodePrompt(
     );
     if (!res.ok) {
       log.error('[connect] initial prompt failed:', res.status, await res.text().catch(() => ''));
+      return false;
     }
+    return true;
   } catch (err: any) {
     log.error('[connect] initial prompt error:', err?.message || err);
+    return false;
   }
 }
 
@@ -1437,6 +1441,28 @@ export default function ProjectSessionScreen() {
     [projectSessions, activeSessionId],
   );
 
+  const handleOpenChangeRequest = useCallback(async () => {
+    const ps = activeProjectSession;
+    const targetSandboxUrl = ps?.sandbox_url || sandboxUrl;
+    const targetSessionId = ps?.opencode_session_id || activeSessionId;
+
+    if (!ps || !targetSandboxUrl || !targetSessionId) {
+      Alert.alert('Open change request', 'Open a running session before asking the agent to create a change request.');
+      return;
+    }
+
+    haptics.tap();
+    const baseRef = ps.base_ref || 'main';
+    const prompt = `Load the kortix-system skill and read about Versions & Change Requests. Then review the changes in this session, commit them, and open a change request to merge into \`${baseRef}\`. Give it a clear title and a description of what changed and why.`;
+    const sent = await sendOpencodePrompt(targetSandboxUrl, targetSessionId, prompt);
+
+    if (sent) {
+      Alert.alert('Open change request', 'Asked your agent to commit and open a change request.');
+    } else {
+      Alert.alert('Could not reach the agent', 'Please try again from the active session.');
+    }
+  }, [activeProjectSession, sandboxUrl, activeSessionId]);
+
   const handleRestartActiveSession = useCallback(() => {
     // Kortix id — restartProjectSession, the connecting screen, and
     // ensureAndOpen all operate in the Kortix id space, not the OpenCode one.
@@ -1708,7 +1734,10 @@ export default function ProjectSessionScreen() {
   }, [themePreference, setColorScheme, themeTransitionOpacity]);
 
   const handleUserMenuOpen = useCallback(() => {
-    setAccountMenuOpen(true);
+    setDrawerOpen(false);
+    InteractionManager.runAfterInteractions(() => {
+      setAccountMenuOpen(true);
+    });
   }, []);
 
   const handleSignOut = useCallback(() => {
@@ -1845,42 +1874,46 @@ export default function ProjectSessionScreen() {
         </TouchableOpacity>
 
         {/* Session list — the project's repo-first sessions */}
-        {projectSessionsLoading ? (
-          <View className="flex-1 items-center justify-center">
-            <ActivityIndicator size="small" color={mutedColor} />
-          </View>
-        ) : (
-          <ScrollView
-            className="flex-1"
-            contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 20 }}
+        <View style={{ flex: 1, minHeight: 0 }}>
+          {projectSessionsLoading ? (
+            <View className="flex-1 items-center justify-center">
+              <ActivityIndicator size="small" color={mutedColor} />
+            </View>
+          ) : (
+            <ScrollView
+              className="flex-1"
+              contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 20 }}
+            >
+              <AnimatedCollapsible expanded={sessionsExpanded}>
+                {projectSessions.length === 0 ? (
+                  <View className="items-center py-8">
+                    <Text className="text-sm text-muted-foreground">No sessions yet</Text>
+                  </View>
+                ) : (
+                  projectSessions.map((ps) => (
+                    <ProjectSessionListItem
+                      key={ps.session_id}
+                      item={ps}
+                      isActive={ps.session_id === activeProjectSessionId}
+                      onPress={handleOpenProjectSession}
+                    />
+                  ))
+                )}
+              </AnimatedCollapsible>
+            </ScrollView>
+          )}
+        </View>
+
+        {/* Pinned footer — user menu must stay tappable above the session list */}
+        <View style={{ flexShrink: 0 }}>
+          {/* Previous Chats — pre-OpenCode threads with bulk-convert (matches web sidebar) */}
+          <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
+
+          {/* Bottom: user info — card style matching desktop */}
+          <View
+            className="px-3 pt-2"
+            style={{ paddingBottom: insets.bottom + 8 }}
           >
-            <AnimatedCollapsible expanded={sessionsExpanded}>
-              {projectSessions.length === 0 ? (
-                <View className="items-center py-8">
-                  <Text className="text-sm text-muted-foreground">No sessions yet</Text>
-                </View>
-              ) : (
-                projectSessions.map((ps) => (
-                  <ProjectSessionListItem
-                    key={ps.session_id}
-                    item={ps}
-                    isActive={ps.session_id === activeProjectSessionId}
-                    onPress={handleOpenProjectSession}
-                  />
-                ))
-              )}
-            </AnimatedCollapsible>
-          </ScrollView>
-        )}
-
-        {/* Previous Chats — pre-OpenCode threads with bulk-convert (matches web sidebar) */}
-        <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
-
-        {/* Bottom: user info — card style matching desktop */}
-        <View
-          className="px-3 pt-2"
-          style={{ paddingBottom: insets.bottom + 8 }}
-        >
           <TouchableOpacity
             onPress={() => { haptics.tap(); handleUserMenuOpen(); }}
             activeOpacity={0.8}
@@ -1920,6 +1953,7 @@ export default function ProjectSessionScreen() {
             </View>
             <ChevronsUpDown size={14} color={mutedColor} />
           </TouchableOpacity>
+          </View>
         </View>
       </View>
     );
@@ -2501,12 +2535,12 @@ export default function ProjectSessionScreen() {
                 style={{
                   flex: 1,
                   marginTop: -24,
-                  borderTopLeftRadius: 28,
-                  borderTopRightRadius: 28,
+                  borderTopLeftRadius: 24,
+                  borderTopRightRadius: 24,
                   overflow: 'hidden',
-                  borderTopWidth: 2,
-                  borderLeftWidth: 2,
-                  borderRightWidth: 2,
+                  borderTopWidth: 1.5,
+                  borderLeftWidth: 1.5,
+                  borderRightWidth: 1.5,
                   borderColor: isDark ? '#222222' : '#e6e6e5',
                 }}
                 className="bg-background"
@@ -2555,12 +2589,12 @@ export default function ProjectSessionScreen() {
                 style={{
                   flex: 1,
                   marginTop: -24,
-                  borderTopLeftRadius: 28,
-                  borderTopRightRadius: 28,
+                  borderTopLeftRadius: 20,
+                  borderTopRightRadius: 20,
                   overflow: 'hidden',
-                  borderTopWidth: 2,
-                  borderLeftWidth: 2,
-                  borderRightWidth: 2,
+                  borderTopWidth: 1.5,
+                  borderLeftWidth: 1.5,
+                  borderRightWidth: 1.5,
                   borderColor: isDark ? '#222222' : '#e6e6e5',
                   opacity: isDashboardSending ? 0.3 : 1,
                 }}
@@ -2702,6 +2736,11 @@ export default function ProjectSessionScreen() {
                     exportTranscriptSheetRef.current?.present();
                   }
                 }}
+                onOpenChangeRequest={
+                  activeProjectSession
+                    ? handleOpenChangeRequest
+                    : undefined
+                }
                 onViewChanges={() => {
                   if (activeSessionId) {
                     viewChangesSheetRef.current?.present();
@@ -2846,16 +2885,18 @@ export default function ProjectSessionScreen() {
         </Drawer>
       </Drawer>
 
-      <AccountMenuSheet
-        open={accountMenuOpen}
-        name={(user?.user_metadata?.full_name as string | undefined) ?? undefined}
-        email={userEmail}
-        accountName={activeAccount?.name}
-        accountId={activeAccount?.account_id ?? null}
-        isSigningOut={isSigningOut}
-        onSignOut={handleSignOut}
-        onClose={() => setAccountMenuOpen(false)}
-      />
+      {accountMenuOpen ? (
+        <AccountMenuSheet
+          open
+          name={(user?.user_metadata?.full_name as string | undefined) ?? undefined}
+          email={userEmail}
+          accountName={activeAccount?.name}
+          accountId={activeAccount?.account_id ?? null}
+          isSigningOut={isSigningOut}
+          onSignOut={handleSignOut}
+          onClose={() => setAccountMenuOpen(false)}
+        />
+      ) : null}
 
       <ViewChangesSheet
         ref={viewChangesSheetRef}
@@ -2912,13 +2953,17 @@ export default function ProjectSessionScreen() {
           animationType="none"
           hardwareAccelerated
         >
-          <Animated.Image
-            source={{ uri: themeTransitionUri }}
-            resizeMode="cover"
-            fadeDuration={0}
+          <Animated.View
             style={[StyleSheet.absoluteFillObject, { opacity: themeTransitionOpacity }]}
             pointerEvents="none"
-          />
+          >
+            <Animated.Image
+              source={{ uri: themeTransitionUri }}
+              resizeMode="cover"
+              fadeDuration={0}
+              style={StyleSheet.absoluteFillObject}
+            />
+          </Animated.View>
         </Modal>
       )}
     </>

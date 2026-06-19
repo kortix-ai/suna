@@ -73,8 +73,14 @@ export function NewProjectSheet({ open, accountId, onClose, onCreated }: NewProj
   const amberIcon = isDark ? '#fbbf24' : '#d97706';
 
   useEffect(() => {
-    if (open) sheetRef.current?.present();
-    else sheetRef.current?.dismiss();
+    if (!open) {
+      sheetRef.current?.dismiss();
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      sheetRef.current?.present();
+    });
+    return () => cancelAnimationFrame(frame);
   }, [open]);
 
   // Default to the first installation when entering GitHub mode.

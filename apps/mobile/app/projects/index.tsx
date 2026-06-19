@@ -7,7 +7,7 @@
  */
 
 import * as React from 'react';
-import { View, ScrollView, RefreshControl, TextInput, Pressable, Alert } from 'react-native';
+import { View, ScrollView, RefreshControl, TextInput, Pressable, TouchableOpacity, Alert } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -108,6 +108,9 @@ export default function ProjectsScreen() {
   const canCreate =
     activeAccount?.account_role === 'owner' || activeAccount?.account_role === 'admin';
   const accountCount = accountsQuery.data?.length ?? 0;
+  const headerTopInset = insets.top + 8;
+  const headerBodyHeight = 46;
+  const headerHeight = headerTopInset + headerBodyHeight;
 
   const confirmArchive = React.useCallback(
     (p: KortixProject) => {
@@ -183,68 +186,12 @@ export default function ProjectsScreen() {
     <View style={{ flex: 1, backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF' }}>
       <Stack.Screen options={{ headerShown: false }} />
 
-      {/* Fixed header */}
-      <View
-        className="flex-row items-center justify-between"
-        style={{ paddingTop: insets.top + 8, paddingHorizontal: 20, paddingBottom: 10 }}
-      >
-        <View className="min-w-0 flex-1 flex-row items-center" style={{ gap: 12 }}>
-          <KortixLogo variant="symbol" size={28} color={isDark ? 'dark' : 'light'} />
-          {!!activeAccount && (
-            <Pressable
-              onPress={() => {
-                haptics.selection();
-                setAccountSheetOpen(true);
-              }}
-              disabled={accountCount < 2}
-              className="shrink flex-row items-center"
-              style={{ gap: 4 }}
-            >
-              <Text numberOfLines={1} className="font-roobert-medium text-[13px] text-muted-foreground" style={{ maxWidth: 150 }}>
-                {activeAccount.name}
-              </Text>
-              {accountCount > 1 && <Icon as={ChevronDown} size={14} className="text-muted-foreground" strokeWidth={2.2} />}
-            </Pressable>
-          )}
-        </View>
-
-        <View className="flex-row items-center" style={{ gap: 8 }}>
-          {canCreate && (
-            <Pressable
-              onPress={() => {
-                haptics.selection();
-                setNewProjectOpen(true);
-              }}
-              className="flex-row items-center rounded-full active:opacity-90"
-              style={{ gap: 6, paddingHorizontal: 14, height: 36, backgroundColor: theme.primary }}
-            >
-              <Icon as={Plus} size={16} color={theme.primaryForeground} strokeWidth={2.4} />
-              <Text className="font-roobert-medium text-[13px]" style={{ color: theme.primaryForeground }}>
-                New
-              </Text>
-            </Pressable>
-          )}
-          <Pressable
-            onPress={() => {
-              haptics.selection();
-              setAccountMenuOpen(true);
-            }}
-            className="items-center justify-center rounded-full active:opacity-85"
-            style={{ width: 34, height: 34, backgroundColor: isDark ? '#1f1f22' : '#ECECEC' }}
-          >
-            <Text className="font-roobert-semibold text-[14px] text-foreground">
-              {(user?.email?.trim()?.[0] || '?').toUpperCase()}
-            </Text>
-          </Pressable>
-        </View>
-      </View>
-
       <ScrollView
         style={{ flex: 1 }}
         alwaysBounceVertical
         keyboardShouldPersistTaps="handled"
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={subtle} />}
-        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingTop: 6, paddingBottom: 48 }}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingTop: headerHeight + 6, paddingBottom: 48 }}
       >
         {/* Title */}
         <Text className="font-roobert-semibold text-foreground" style={{ fontSize: 28, lineHeight: 36 }}>
@@ -392,31 +339,111 @@ export default function ProjectsScreen() {
         </View>
       </ScrollView>
 
-      <AccountSwitcherSheet
-        open={accountSheetOpen}
-        accounts={accountsQuery.data ?? []}
-        selectedAccountId={activeAccountId}
-        onSelect={(id) => setSelectedAccountId(id)}
-        onClose={() => setAccountSheetOpen(false)}
-      />
+      {/* Fixed header — above ScrollView so it receives touches */}
+      <View
+        pointerEvents="box-none"
+        className="flex-row items-center justify-between"
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 10,
+          elevation: 10,
+          paddingTop: headerTopInset,
+          paddingHorizontal: 20,
+          paddingBottom: 10,
+          backgroundColor: isDark ? '#0D0D0D' : '#FFFFFF',
+        }}
+      >
+        <View className="min-w-0 flex-1 flex-row items-center" style={{ gap: 12 }}>
+          <KortixLogo variant="symbol" size={28} color={isDark ? 'dark' : 'light'} />
+          {!!activeAccount && (
+            <TouchableOpacity
+              onPress={() => {
+                haptics.selection();
+                setAccountSheetOpen(true);
+              }}
+              disabled={accountCount < 2}
+              activeOpacity={0.7}
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+              className="shrink flex-row items-center"
+              style={{ gap: 4, opacity: accountCount < 2 ? 0.65 : 1 }}
+            >
+              <Text numberOfLines={1} className="font-roobert-medium text-[13px] text-muted-foreground" style={{ maxWidth: 150 }}>
+                {activeAccount.name}
+              </Text>
+              {accountCount > 1 && <Icon as={ChevronDown} size={14} className="text-muted-foreground" strokeWidth={2.2} />}
+            </TouchableOpacity>
+          )}
+        </View>
 
-      <NewProjectSheet
-        open={newProjectOpen}
-        accountId={activeAccountId}
-        onClose={() => setNewProjectOpen(false)}
-        onCreated={handleCreated}
-      />
+        <View className="flex-row items-center" style={{ gap: 8 }}>
+          {canCreate && (
+            <TouchableOpacity
+              onPress={() => {
+                haptics.selection();
+                setNewProjectOpen(true);
+              }}
+              activeOpacity={0.9}
+              hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+              className="flex-row items-center rounded-full"
+              style={{ gap: 6, paddingHorizontal: 14, height: 36, backgroundColor: theme.primary }}
+            >
+              <Icon as={Plus} size={16} color={theme.primaryForeground} strokeWidth={2.4} />
+              <Text className="font-roobert-medium text-[13px]" style={{ color: theme.primaryForeground }}>
+                New
+              </Text>
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity
+            onPress={() => {
+              haptics.selection();
+              setAccountMenuOpen(true);
+            }}
+            activeOpacity={0.85}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+            className="items-center justify-center rounded-full"
+            style={{ width: 34, height: 34, backgroundColor: isDark ? '#1f1f22' : '#ECECEC' }}
+          >
+            <Text className="font-roobert-semibold text-[14px] text-foreground">
+              {(user?.email?.trim()?.[0] || '?').toUpperCase()}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-      <AccountMenuSheet
-        open={accountMenuOpen}
-        name={(user?.user_metadata?.full_name as string | undefined) ?? undefined}
-        email={user?.email}
-        accountName={activeAccount?.name}
-        accountId={activeAccountId}
-        isSigningOut={isSigningOut}
-        onSignOut={handleSignOut}
-        onClose={() => setAccountMenuOpen(false)}
-      />
+      {accountSheetOpen ? (
+        <AccountSwitcherSheet
+          open
+          accounts={accountsQuery.data ?? []}
+          selectedAccountId={activeAccountId}
+          onSelect={(id) => setSelectedAccountId(id)}
+          onClose={() => setAccountSheetOpen(false)}
+        />
+      ) : null}
+
+      {newProjectOpen ? (
+        <NewProjectSheet
+          open
+          accountId={activeAccountId}
+          onClose={() => setNewProjectOpen(false)}
+          onCreated={handleCreated}
+        />
+      ) : null}
+
+      {accountMenuOpen ? (
+        <AccountMenuSheet
+          open
+          name={(user?.user_metadata?.full_name as string | undefined) ?? undefined}
+          email={user?.email}
+          accountName={activeAccount?.name}
+          accountId={activeAccountId}
+          isSigningOut={isSigningOut}
+          onSignOut={handleSignOut}
+          onClose={() => setAccountMenuOpen(false)}
+        />
+      ) : null}
     </View>
   );
 }

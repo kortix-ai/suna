@@ -39,7 +39,7 @@ export type BottomBarMenuItem =
 export interface BottomBarTab {
   id: string;
   label: string;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: React.ComponentProps<typeof Ionicons>['name'];
 }
 
 interface BottomBarProps {
@@ -51,6 +51,7 @@ interface BottomBarProps {
   onOpenTabs: () => void;
   onCompactSession?: () => void;
   onExportTranscript?: () => void;
+  onOpenChangeRequest?: () => void;
   onViewChanges?: () => void;
   onDiagnostics?: () => void;
   onRenameSession?: () => void;
@@ -89,6 +90,7 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
   onOpenTabs,
   onCompactSession,
   onExportTranscript,
+  onOpenChangeRequest,
   onViewChanges,
   onDiagnostics,
   onRenameSession,
@@ -182,13 +184,16 @@ export const BottomBar = forwardRef<BottomBarRef, BottomBarProps>(function Botto
     { icon: 'refresh-outline' as const, label: 'Restart session', destructive: false, onPress: () => { closeSheet(); onRestartSession?.(); } },
     { icon: 'download-outline' as const, label: 'Export transcript', destructive: false, onPress: () => { closeSheet(); onExportTranscript?.(); } },
     { icon: 'layers-outline' as const, label: 'Compact session', destructive: false, onPress: () => { closeSheet(); onCompactSession?.(); } },
+    ...(onOpenChangeRequest
+      ? [{ icon: 'git-pull-request-outline' as const, label: 'Open change request', destructive: false, onPress: () => { closeSheet(); onOpenChangeRequest(); } }]
+      : []),
     { icon: 'git-compare-outline' as const, label: 'View changes', destructive: false, onPress: () => { closeSheet(); onViewChanges?.(); } },
     { icon: 'alert-circle-outline' as const, label: 'Diagnostics', destructive: false, onPress: () => { closeSheet(); onDiagnostics?.(); } },
     { icon: 'archive-outline' as const, label: 'Archive session', destructive: false, onPress: () => { closeSheet(); onArchiveSession?.(); } },
     ...(onDeleteSession
       ? [{ icon: 'trash-outline' as const, label: 'Delete session', destructive: true, onPress: () => { closeSheet(); onDeleteSession(); } }]
       : []),
-  ], [closeSheet, onRenameSession, onShareSession, onRestartSession, onExportTranscript, onCompactSession, onViewChanges, onDiagnostics, onArchiveSession, onDeleteSession]);
+  ], [closeSheet, onRenameSession, onShareSession, onRestartSession, onExportTranscript, onCompactSession, onOpenChangeRequest, onViewChanges, onDiagnostics, onArchiveSession, onDeleteSession]);
 
 
   const EASE_OUT = Easing.bezier(0.22, 1, 0.36, 1);
