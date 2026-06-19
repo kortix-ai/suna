@@ -230,11 +230,17 @@ async function promoteSpareWhenReady(spareId: string, externalId: string, requir
       .limit(1);
     if (!row || row.poolState !== 'booting') return; // claimed/reaped/gone elsewhere
     if (row.status === 'error') return;
-    // /kortix/health bypasses the daemon auth gate, so it answers before claim.
+    // /kortix/health bypasses the daemon AUTH gate, so it answers before claim —
+    // but Daytona's preview PROXY still gates on the per-link preview token, so a
+    // tokenless fetch gets HTTP 400 and never sees the daemon. Send the preview
+    // token + skip-warning header (same as buildSandboxUpstreamHeaders) or the
+    // probe always fails and the spare never parks.
     let healthy = false;
     try {
-      const { url } = await resolvePreviewLink(externalId, DAEMON_PORT);
-      const r = await fetch(`${url.replace(/\/$/, '')}/kortix/health`, { signal: AbortSignal.timeout(8_000) });
+      const { url, token } = await resolvePreviewLink(externalId, DAEMON_PORT);
+      const headers: Record<string, string> = { 'X-Daytona-Skip-Preview-Warning': 'true' };
+      if (token) headers['X-Daytona-Preview-Token'] = token;
+      const r = await fetch(`${url.replace(/\/$/, '')}/kortix/health`, { headers, signal: AbortSignal.timeout(8_000) });
       if (requireRuntimeReady) {
         const body = r.ok ? ((await r.json().catch(() => null)) as { runtimeReady?: boolean } | null) : null;
         healthy = body?.runtimeReady === true;
