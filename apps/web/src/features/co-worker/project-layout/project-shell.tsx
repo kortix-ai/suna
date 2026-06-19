@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'motion/react';
 import { useParams, useRouter } from 'next/navigation';
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
@@ -10,17 +10,13 @@ import { CustomizeOverlay } from '@/components/projects/customize/customize-over
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { useSidebar } from '@/components/ui/sidebar';
-import { errorToast } from '@/components/ui/toast';
 import { ProjectTabBar } from '@/features/co-worker/project-header/project-tab-bar';
 import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
-import {
-  createProjectSession,
-  getProjectDetail,
-  prefetchSessionStart,
-} from '@/lib/projects-client';
+import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
@@ -41,7 +37,6 @@ interface ProjectShellProps {
 
 export function ProjectShell({ projectId, initialSidebarOpen, children }: ProjectShellProps) {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const { user, isLoading: authLoading } = useAuth();
 
   const { data: projectDetail } = useQuery({
@@ -76,23 +71,13 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     }
   }, []);
 
-  const createSession = useMutation({
-    mutationFn: () => createProjectSession(projectId),
-    onSuccess: (session) => {
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-      prefetchSessionStart(queryClient, projectId, session.session_id);
-      router.prefetch(`/projects/${projectId}/sessions/${session.session_id}`);
-      router.push(`/projects/${projectId}/sessions/${session.session_id}`);
-    },
-    onError: (err) => {
-      if ((err as any)?.code === 'concurrent_session_limit') return;
-      errorToast(err instanceof Error ? err.message : 'Failed to start session');
-    },
-  });
+  // Optimistic new-session: mint the id client-side and navigate immediately so
+  // the instant shell paints before the create POST returns (see
+  // useNewProjectSession). Shared with the sidebar / ⌘T-⌘J / command palette.
+  const newSession = useNewProjectSession(projectId);
   const handleNewSession = useCallback(() => {
-    if (createSession.isPending) return;
-    createSession.mutate();
-  }, [createSession]);
+    newSession();
+  }, [newSession]);
 
   useProjectShellShortcuts({ projectId, onNewSession: handleNewSession });
 

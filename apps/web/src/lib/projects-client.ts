@@ -3,6 +3,7 @@ import type { QueryClient } from '@tanstack/react-query';
 import { backendApi } from '@/lib/api-client';
 import { getSupabaseAccessTokenWithRetry } from '@/lib/auth-token';
 import { getEnv } from '@/lib/env-config';
+import { markSessionFresh } from '@/lib/fresh-sessions';
 
 /** Stable ids for experimental features (mirrors apps/api experimental/features). */
 export type ExperimentalFeatureKey = 'apps' | 'agent_tunnel' | 'marketplace';
@@ -1959,12 +1960,22 @@ export async function createProjectSession(
     session_id?: string;
   },
 ) {
-  return unwrap(
+  const session = unwrap(
     await backendApi.post<ProjectSession>(
       `/projects/${projectId}/sessions`,
       input ?? {},
     ),
   );
+  // Mark freshly-created EMPTY sessions so the session page shows the instant
+  // typeable shell instead of the resume loader. THE chokepoint for every empty
+  // project-session create path (sidebar button, ⌘T shortcut, command palette).
+  // `session_id` is exactly the route param those navigations land on.
+  // Skip when an initial_prompt is set: those sessions get a server-side reply,
+  // so they must mount the real chat to stream it (the shell would hold it back).
+  if (!input?.initial_prompt) {
+    markSessionFresh((session as ProjectSession | undefined)?.session_id);
+  }
+  return session;
 }
 
 export async function getProjectSession(
