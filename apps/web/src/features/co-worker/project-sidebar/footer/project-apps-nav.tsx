@@ -4,11 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 
 import { IconApp } from '@/components/ui/kortix-icons';
 import { SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { useAppsOverlayStore } from '@/stores/apps-overlay-store';
@@ -35,7 +31,7 @@ export function ProjectAppsNavItem({ projectId }: { projectId: string }) {
       <SidebarMenuButton
         onClick={() => openApps()}
         isActive={overlayOpen}
-        className="!text-sm font-normal !transition-none transform-none data-[active=true]:font-normal [&_svg]:!size-4"
+        className="transform-none !text-sm font-normal !transition-none data-[active=true]:font-normal [&_svg]:!size-4"
       >
         <IconApp />
         <span>Apps</span>
@@ -59,7 +55,7 @@ export function ProjectAppsRailItem({ projectId }: { projectId: string }) {
           aria-label="Apps"
           onClick={() => openApps()}
           className={cn(
-            'flex w-full items-center justify-center rounded-lg py-2 transition-colors duration-150 ease-out',
+            'flex size-8 items-center justify-center rounded-md transition-colors duration-150 ease-out',
             overlayOpen
               ? 'bg-sidebar-accent text-sidebar-accent-foreground'
               : 'text-sidebar-foreground hover:bg-sidebar-accent',

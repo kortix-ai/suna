@@ -5,7 +5,6 @@ import {
   SESSION_FILTER_OPTIONS,
   type SessionFilterValue,
 } from '@/components/projects/session-label';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
 import {
@@ -27,7 +26,6 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-  SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar';
 import { errorToast } from '@/components/ui/toast';
@@ -69,6 +67,7 @@ import {
   ChevronRight,
   List,
   MessagesSquare,
+  PanelLeft,
   Plus,
   Webhook,
   type LucideIcon,
@@ -94,9 +93,8 @@ const SESSION_FILTER_ICONS: Record<SessionFilterValue, LucideIcon | IconMynauiTy
 
 export function ProjectSidebar({ projectId }: { projectId: string }) {
   const router = useRouter();
-  const { state, setOpenMobile } = useSidebar();
+  const { state, setOpenMobile, toggleSidebar } = useSidebar();
   const isExpanded = state === 'expanded';
-  const [isHeaderHovered, setIsHeaderHovered] = useState(false);
   const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
@@ -196,7 +194,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               >
                 <Button type="button" variant="ghost" size="icon" asChild>
                   <Link href="/projects">
-                    <Icon.Kortix className="size-4.5" />
+                    <Icon.Kortix className="text-foreground size-4.5" />
                   </Link>
                 </Button>
                 <div className="w-full min-w-0">
@@ -211,20 +209,18 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 exit={{ opacity: 0, scale: 0.92, filter: 'blur(6px)' }}
                 transition={{ duration: 0.24, ease: [0.32, 0.72, 0, 1] }}
                 className="flex w-full items-center justify-center"
-                onMouseEnter={() => setIsHeaderHovered(true)}
-                onMouseLeave={() => setIsHeaderHovered(false)}
               >
-                {isHeaderHovered ? (
-                  <SidebarTrigger />
-                ) : (
-                  <span className="py-2">
-                    <KortixLogo
-                      variant="symbol"
-                      size={16}
-                      className="text-muted-foreground size-8"
-                    />
-                  </span>
-                )}
+                <Hint label="Expand sidebar">
+                  <button
+                    type="button"
+                    aria-label="Expand sidebar"
+                    onClick={toggleSidebar}
+                    className="group/expand text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground relative flex size-8 items-center justify-center rounded-md transition-colors duration-150 ease-out"
+                  >
+                    <Icon.Kortix className="absolute size-4.5 transition-all duration-200 ease-out group-hover/expand:scale-90 group-hover/expand:opacity-0" />
+                    <PanelLeft className="cn-rtl-flip absolute size-4 scale-90 opacity-0 transition-all duration-200 ease-out group-hover/expand:scale-100 group-hover/expand:opacity-100" />
+                  </button>
+                </Hint>
               </motion.div>
             )}
           </AnimatePresence>
@@ -233,11 +229,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
       <SidebarContent className="relative min-h-0 flex-1 [scrollbar-width:'none'] overflow-hidden [-ms-overflow-style:'none'] [&::-webkit-scrollbar]:hidden">
         <div
           className={cn(
-            'absolute inset-0 flex min-h-0 flex-col items-center px-2 pt-2 pb-2',
+            'absolute inset-0 flex min-h-0 flex-col items-center px-0 pt-0 pb-1',
             !isExpanded ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
           )}
         >
-          <div className="flex w-full flex-col items-center space-y-0.5">
+          <div className="flex w-full flex-col items-center gap-1">
             <Hint label="New session">
               <Button
                 type="button"
@@ -247,15 +243,15 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 disabled={createSession.isPending}
                 className={cn(
                   createSession.isPending && 'cursor-not-allowed opacity-50',
-                  'group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 flex items-center justify-center border-[1.2px] text-center text-sm! [&_svg]:size-5!',
+                  'text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 flex size-8 items-center justify-center border-[1.2px] [&_svg]:size-4!',
                 )}
               >
-                <Plus className="size-4" />
+                <Plus />
               </Button>
             </Hint>
           </div>
 
-          <div className="mt-auto flex w-full flex-col items-center space-y-0.5">
+          <div className="mt-auto flex w-full flex-col items-center gap-1">
             <ProjectSandboxAlertRailItem projectId={projectId} />
             <ProjectAppsRailItem projectId={projectId} />
             <ProjectSetupRailItem projectId={projectId} />

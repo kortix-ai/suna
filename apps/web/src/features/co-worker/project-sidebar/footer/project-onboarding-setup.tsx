@@ -88,7 +88,7 @@ function SetupPopoverBody({
             if (!step.done) onStep(step);
           }}
           className={cn(
-            'flex h-auto w-full min-w-0 shrink flex-row items-start justify-start whitespace-normal px-2.5 py-2',
+            'flex h-auto w-full min-w-0 shrink flex-row items-start justify-start px-2.5 py-2 whitespace-normal',
             step.done
               ? 'text-muted-foreground cursor-default'
               : 'text-foreground hover:bg-kortix-base/4 cursor-pointer',
@@ -160,12 +160,12 @@ function SetupPopoverBody({
         )}
       </div>
 
-      <div className="border-border border-t ">
+      <div className="border-border border-t">
         <Button
           asChild
           variant="ghost"
           size="lg"
-          className=" overflow-hidden rounded-none text-muted-foreground hover:bg-kortix-base/4 hover:text-foreground w-full justify-start "
+          className="text-muted-foreground hover:bg-kortix-base/4 hover:text-foreground w-full justify-start overflow-hidden rounded-none"
         >
           <Link href="/docs/quickstart" target="_blank" rel="noreferrer">
             <BookOpen className="size-3" />
@@ -218,13 +218,13 @@ export function ProjectSetupRailItem({ projectId }: { projectId: string }) {
     <Popover>
       <Hint label={`Set up project · ${setup.requiredDone}/${setup.requiredTotal}`}>
         <PopoverTrigger asChild>
-          <button
+          <SidebarMenuButton
             type="button"
             aria-label="Set up project"
-            className="hover:bg-sidebar-accent focus-visible:ring-primary/40 relative flex w-full items-center justify-center rounded-lg py-2 transition-colors duration-150 ease-out focus-visible:ring-1 focus-visible:outline-none"
+            className="flex items-center justify-center"
           >
-            <SetupRing value={setup.percent} />
-          </button>
+            <SetupRing value={setup.percent} className="size-5" />
+          </SidebarMenuButton>
         </PopoverTrigger>
       </Hint>
       <PopoverContent

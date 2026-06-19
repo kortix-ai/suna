@@ -44,7 +44,7 @@ export function ProjectCustomizeRailItem() {
   return (
     <Hint label="Customize">
       <SidebarMenuButton type="button" aria-label="Customize" onClick={onClick}>
-        <Config className="size-4" />
+        <Config className="size-4.5!" />
       </SidebarMenuButton>
     </Hint>
   );

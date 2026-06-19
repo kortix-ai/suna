@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { sessionDisplayLabel } from '@/components/projects/session-label';
 import { Button } from '@/components/ui/button';
 import { FadedScrollArea } from '@/components/ui/faded-scroll-area';
-import { SidebarTrigger, useSidebar } from '@/components/ui/sidebar';
+import { useSidebar } from '@/components/ui/sidebar';
 import {
   SessionVisibilityBadge,
   ShareSessionModal,
@@ -90,7 +90,7 @@ export function ProjectTabBar({
   projectId: string;
   hideTabSelector?: boolean;
 }) {
-  const sidebar = useSidebar();
+  const { state: sidebarState, toggleSidebar } = useSidebar();
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams<{ sessionId?: string }>();
@@ -147,7 +147,7 @@ export function ProjectTabBar({
   useEffect(() => {
     setIsMacDesktop(isDesktop() && desktopPlatform() === 'macos');
   }, []);
-  const needsTrafficLightSpace = isMacDesktop && sidebar.state === 'collapsed';
+  const needsTrafficLightSpace = isMacDesktop && sidebarState === 'collapsed';
 
   const hrefForTab = (id: string) => `/projects/${projectId}/sessions/${id}`;
 
@@ -158,9 +158,31 @@ export function ProjectTabBar({
       className="bg-sidebar relative flex min-w-0 flex-1 items-stretch overflow-hidden px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))] lg:pr-2 lg:pl-0"
       role="tablist"
     >
-      <div className="flex shrink-0 items-center px-1.5">
+      <div className="flex shrink-0 items-center gap-1.5 px-1.5">
         <div className="flex items-center md:hidden">
-          <SidebarTrigger />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Toggle sidebar"
+            onClick={toggleSidebar}
+            className="size-8"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+              className="size-5!"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3.75 9h16.5m-16.5 6.75h16.5"
+              ></path>
+            </svg>
+          </Button>
         </div>
         <Button
           type="button"

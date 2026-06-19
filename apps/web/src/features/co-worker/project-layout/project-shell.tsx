@@ -9,6 +9,7 @@ import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { CustomizeOverlay } from '@/components/projects/customize/customize-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
+import { useSidebar } from '@/components/ui/sidebar';
 import { errorToast } from '@/components/ui/toast';
 import { ProjectTabBar } from '@/features/co-worker/project-header/project-tab-bar';
 import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sidebar';
@@ -146,16 +147,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
             ) : null}
           </AnimatePresence>
 
-          <div
-            className={cn(
-              'bg-background border-border relative flex min-h-0 flex-1 flex-col overflow-hidden border-l-[1.5px]',
-              showProjectHeader
-                ? 'rounded-t-xl border-t-[1.5px] lg:rounded-tl-lg lg:rounded-tr-none'
-                : '',
-            )}
-          >
-            {children}
-          </div>
+          <ProjectSheelLayout showProjectHeader={showProjectHeader}>{children}</ProjectSheelLayout>
         </div>
 
         <CustomizeOverlay projectId={projectId} />
@@ -169,3 +161,29 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     </BillingAccountProvider>
   );
 }
+
+const ProjectSheelLayout = ({
+  showProjectHeader,
+  children,
+}: {
+  showProjectHeader: boolean;
+  children: React.ReactNode;
+}) => {
+  const { state } = useSidebar();
+  const isExpanded = state === 'expanded';
+  return (
+    <div
+      className={cn(
+        'bg-background border-border relative flex min-h-0 flex-1 flex-col overflow-hidden border-l-[1.5px]',
+        !isExpanded && 'ml-0.5',
+        showProjectHeader
+          ? 'rounded-t-xl border-t-[1.5px] lg:rounded-tl-lg lg:rounded-tr-none'
+          : '',
+      )}
+    >
+      {children}
+    </div>
+  );
+};
+
+export default ProjectSheelLayout;
