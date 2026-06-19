@@ -63,8 +63,22 @@ export function createGateway(hooks: GatewayHooks, config: GatewayConfig = {}, d
     }
   };
 
+  const breakerHealth = (): BreakerHealth[] =>
+    Array.from(breakers.entries()).map(([provider, breaker]) => ({
+      provider,
+      state: breaker.current,
+      failures: breaker.failureCount,
+    }));
+
   return {
     chatCompletions: (req: ChatCompletionRequest): Promise<Response> => handleChatCompletions(runtime, req),
     listModels,
+    breakerHealth,
   };
+}
+
+export interface BreakerHealth {
+  provider: string;
+  state: 'closed' | 'open' | 'half-open';
+  failures: number;
 }

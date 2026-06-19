@@ -48,6 +48,10 @@ export class CircuitBreaker {
   get current(): BreakerState {
     return this.state;
   }
+
+  get failureCount(): number {
+    return this.failures;
+  }
 }
 
 export interface BreakerBinding {

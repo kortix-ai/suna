@@ -4,6 +4,15 @@ import { config } from './config';
 import { createApiClient } from './clients/api-client';
 import { createLangfuseSink, type TraceSink } from './observability/langfuse';
 
+const STARTED_AT = Date.now();
+const SERVICE_VERSION = process.env.KORTIX_VERSION ?? 'dev';
+const SERVICE_COMMIT = process.env.KORTIX_COMMIT ?? 'unknown';
+const TRAFFIC_WINDOW_S = 300;
+// Below this volume in the window, a high error rate is statistical noise, not
+// an incident worth flagging.
+const ERROR_RATE_MIN_VOLUME = 20;
+const ERROR_RATE_ALERT = 0.5;
+
 export interface GatewayServer {
   app: Hono;
   traces: TraceSink | null;
@@ -45,18 +54,102 @@ export function buildServer(): GatewayServer {
     },
   );
 
+  // Rolling per-second traffic buckets feeding the health endpoint's error-rate
+  // signal — bounded to the window (≤300 buckets), pruned on every record.
+  const trafficBuckets = new Map<number, { req: number; err: number }>();
+  const recordOutcome = (status: number) => {
+    const sec = Math.floor(Date.now() / 1000);
+    const bucket = trafficBuckets.get(sec) ?? { req: 0, err: 0 };
+    bucket.req += 1;
+    if (status >= 500) bucket.err += 1;
+    trafficBuckets.set(sec, bucket);
+    const cutoff = sec - TRAFFIC_WINDOW_S;
+    for (const key of trafficBuckets.keys()) if (key < cutoff) trafficBuckets.delete(key);
+  };
+  const trafficSnapshot = () => {
+    const cutoff = Math.floor(Date.now() / 1000) - TRAFFIC_WINDOW_S;
+    let requests = 0;
+    let errors = 0;
+    for (const [sec, bucket] of trafficBuckets) {
+      if (sec >= cutoff) {
+        requests += bucket.req;
+        errors += bucket.err;
+      }
+    }
+    return {
+      window_s: TRAFFIC_WINDOW_S,
+      requests,
+      errors,
+      error_rate: requests ? Number((errors / requests).toFixed(4)) : 0,
+    };
+  };
+
   const app = new Hono();
 
-  app.get('/health', (c) => c.json({ ok: true }));
+  // Shallow liveness: the process is up. The k8s livenessProbe should point here
+  // so a dependency outage (which a restart can't fix) doesn't crash-loop the pod.
+  app.get('/health/live', (c) => c.json({ ok: true }));
+
+  // Deep health/readiness, built for an external monitor: an overall status, the
+  // specific incidents, dependency checks, and a rolling error rate. Returns HTTP
+  // 503 when unhealthy so a bot can alert on the status code alone, then read
+  // `incidents`/`checks` for the what.
+  app.get('/health', async (c) => {
+    const apiCheck = await api.ping();
+    const breakers = gateway.breakerHealth();
+    const openBreakers = breakers.filter((b) => b.state === 'open');
+    const traffic = trafficSnapshot();
+    const errorSpike =
+      traffic.requests >= ERROR_RATE_MIN_VOLUME && traffic.error_rate >= ERROR_RATE_ALERT;
+
+    const incidents: string[] = [];
+    if (!apiCheck.ok) incidents.push(`kortix api unreachable (${apiCheck.error ?? `http ${apiCheck.status}`})`);
+    if (openBreakers.length) incidents.push(`upstream circuit open: ${openBreakers.map((b) => b.provider).join(', ')}`);
+    if (errorSpike) incidents.push(`error rate ${(traffic.error_rate * 100).toFixed(0)}% over ${traffic.window_s}s`);
+
+    const status = !apiCheck.ok ? 'unhealthy' : incidents.length ? 'degraded' : 'healthy';
+
+    return c.json(
+      {
+        status,
+        service: 'kortix-llm-gateway',
+        version: SERVICE_VERSION,
+        commit: SERVICE_COMMIT,
+        uptime_s: Math.floor((Date.now() - STARTED_AT) / 1000),
+        timestamp: new Date().toISOString(),
+        incidents,
+        checks: {
+          api: {
+            status: apiCheck.ok ? 'up' : 'down',
+            latency_ms: apiCheck.latencyMs,
+            ...(apiCheck.status ? { http_status: apiCheck.status } : {}),
+            ...(apiCheck.error ? { error: apiCheck.error } : {}),
+          },
+          upstreams: {
+            status: openBreakers.length ? 'degraded' : 'ok',
+            tracked: breakers.length,
+            open: openBreakers.map((b) => b.provider),
+            breakers,
+          },
+          traces: { langfuse: traces ? 'enabled' : 'disabled' },
+        },
+        traffic,
+      },
+      status === 'unhealthy' ? 503 : 200,
+    );
+  });
 
   const chatCompletions = async (c: { req: { header: (k: string) => string | undefined; text: () => Promise<string> } }) => {
     try {
-      return await gateway.chatCompletions({
+      const res = await gateway.chatCompletions({
         authorization: c.req.header('authorization'),
         rawBody: await c.req.text(),
       });
+      recordOutcome(res.status);
+      return res;
     } catch (err) {
       console.error('[gateway] request failed', err);
+      recordOutcome(503);
       return new Response(JSON.stringify({ error: 'Gateway unavailable', code: 'gateway_error' }), {
         status: 503,
         headers: { 'content-type': 'application/json' },

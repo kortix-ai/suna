@@ -17,6 +17,13 @@ export class ApiUnavailableError extends Error {
   }
 }
 
+export interface ApiPingResult {
+  ok: boolean;
+  latencyMs: number;
+  status?: number;
+  error?: string;
+}
+
 export interface ApiClient {
   authenticate: (token: string) => Promise<AuthedPrincipal | null>;
   resolveUpstream: (principal: AuthedPrincipal, model: string) => Promise<UpstreamDescriptor[]>;
@@ -25,6 +32,7 @@ export interface ApiClient {
   recordUsage: (event: UsageEvent) => Promise<void>;
   recordTrace: (trace: GatewayTrace) => Promise<void>;
   listModels: (principal: AuthedPrincipal) => Promise<ModelCatalog>;
+  ping: () => Promise<ApiPingResult>;
 }
 
 export function createApiClient(opts: ApiClientOptions): ApiClient {
@@ -100,6 +108,22 @@ export function createApiClient(opts: ApiClientOptions): ApiClient {
     listModels: async (principal) => {
       const result = await post<{ models: ModelCatalog }>('/internal/gateway/models', { principal });
       return result.models ?? {};
+    },
+    ping: async () => {
+      const started = Date.now();
+      try {
+        const res = await fetchImpl(`${baseUrl}/health`, {
+          method: 'GET',
+          signal: AbortSignal.timeout(3_000),
+        });
+        return { ok: res.ok, latencyMs: Date.now() - started, status: res.status };
+      } catch (err) {
+        return {
+          ok: false,
+          latencyMs: Date.now() - started,
+          error: err instanceof Error ? err.message : String(err),
+        };
+      }
     },
   };
 }
