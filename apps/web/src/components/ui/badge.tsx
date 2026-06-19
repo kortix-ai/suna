@@ -55,6 +55,7 @@ const badgeVariants = cva(
       size: {
         default: 'px-3 py-1.5 text-xs gap-1 [&>svg]:size-3',
         sm: 'px-2 py-0.5 text-xs gap-0.5 [&>svg]:size-2.5',
+        xs: 'px-1.5 py-0.5 h-5 text-[11px] gap-0.5 [&>svg]:size-2',
       },
     },
     defaultVariants: {

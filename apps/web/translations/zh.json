@@ -5518,12 +5518,15 @@
     "componentsSessionDiffDialog": {
       "line32JsxTextFileChanges": "文件更改"
     },
-    "componentsSessionExportTranscriptDialog": {
+    "componentsSessionExportTranscriptModal": {
       "line118JsxTextExportTranscript": "导出记录",
       "line121JsxTextExportThisSessionAsAMarkdownFileConfigure": "将此会话导出为 Markdown 文件。请在下方配置要包含的内容。",
       "line131JsxTextAssistantMetadata": "助手元数据",
+      "line131JsxTextAssistantMetadataDescription": "在标题中包含代理名称、模型和响应时长。",
       "line145JsxTextToolCallDetails": "工具调用详情",
+      "line145JsxTextToolCallDetailsDescription": "在可折叠区块中包含工具的输入、输出和错误。",
       "line159JsxTextThinkingReasoning": "思考 / 推理",
+      "line159JsxTextThinkingReasoningDescription": "将模型的内部推理块作为引用文本包含在内。",
       "line176JsxTextLoadingMessages": "正在加载消息...",
       "line224JsxTextDownloadMd": "下载 .md"
     },

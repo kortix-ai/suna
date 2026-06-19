@@ -60,15 +60,15 @@ import { featureFlags } from '@/lib/feature-flags';
 import { toast } from '@/lib/toast';
 import { useServerStore } from '@/stores/server-store';
 
-import { CompactDialog } from '@/components/session/compact-dialog';
-import { DiffDialog } from '@/components/session/diff-dialog';
-import { flattenModels } from '@/components/session/session-chat-input';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
 import {
   MODEL_SELECTOR_PROVIDER_IDS,
   PROVIDER_LABELS,
   ProviderLogo,
 } from '@/features/providers/provider-branding';
+import { DiffDialog } from '@/features/session/diff-dialog';
+import { CompactModal } from '@/features/session/header/compact-modal';
+import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import { useCreatePty } from '@/hooks/opencode/use-opencode-pty';
 import {
@@ -2014,7 +2014,7 @@ export function CommandPalette() {
 
       {currentSessionId && (
         <>
-          <CompactDialog
+          <CompactModal
             sessionId={currentSessionId}
             open={compactOpen}
             onOpenChange={setCompactOpen}

@@ -1,6 +1,6 @@
 ---
 name: kortix-design-system
-description: "Kortix brand + design system: the rules, tokens, and component library for building any Kortix frontend UI (apps/web). Load this WHENEVER you create or edit a page, screen, component, list, card, badge, avatar, modal, form, empty state, or any visual surface in apps/web — and whenever deciding whether to reuse an existing component or add a new one. Enforces: always import from the design system, never hand-roll chrome, people-are-round / things-are-square avatars, and one standardized brand identity. Source of truth is globals.css + the live /design-system page + src/components/ui."
+description: "Kortix brand + design system: the rules, tokens, and component library for building any Kortix frontend UI (apps/web). Load this WHENEVER you create or edit a page, screen, component, list, card, badge, avatar, modal, form, empty state, toast, tooltip, or any visual surface in apps/web — and whenever deciding whether to reuse an existing component or add a new one. Enforces: always import from the design system, never hand-roll chrome, people-are-round / things-are-square avatars, toasts only via @/components/ui/toast, tooltips only via @/components/ui/hint, and one standardized brand identity. Source of truth is globals.css + the live /design-system page + src/components/ui."
 ---
 
 # Kortix Design System
@@ -40,7 +40,7 @@ For `apps/web`, **`apps/web/src/app/globals.css` is the implementation source of
 - **Typography details:** `globals.css` defines line-height tokens for every text size, `--tracking-normal: 0em`, antialiasing, `text-rendering: optimizeLegibility`, and Roobert feature settings (`ss10`, `ss09`, `ss03`, `ss04`, `ss14`, `palt`). Do not loosen body tracking or add arbitrary type utilities like `text-[10px]`, `text-[13.5px]`, or `text-[0.875em]`. Syntax/color utilities such as `text-[var(--shiki-dark)]` are allowed because they are colors, not font sizes.
 - **Navigation hierarchy:** Parent/child rows stay on the same readable title size (`text-sm` in dense sidebars). Show hierarchy with indentation, a border, a dot/icon, opacity, or metadata treatment — not by shrinking child titles below the parent.
 - **Radius:** use only the implemented radius tokens from `globals.css` (`rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-xl`, `rounded-2xl`) plus `rounded-md`. App chrome convention: main containers, cards, panels, dialogs, inputs, textareas, selects, popovers, dropdown/context menus, command palettes, tables, banners, alerts, and selectable option cards use `rounded-2xl`. Pills (buttons, badges) use `rounded-full`. Menu/list highlight rows use `rounded-lg`; tiny micro-bits (kbd keys, swatches, ≤24px icon squares) may use the smaller token that matches the primitive. Never use arbitrary radii like `rounded-[5px]`.
-- **Form controls:** `Input`, `Textarea`, `Select` share ONE treatment — `bg-card`, `border`, `rounded-2xl`, accent focus ring (`focus:ring-2 focus:ring-primary/50`), no shadow. `Input` is canonical; the other two mirror it. **Never** restyle a field per-usage (no per-field `bg-transparent`, `shadow-xs`, or a custom/neutral focus ring).
+- **Form controls:** `Input`, `Textarea`, `Select` share ONE treatment — `bg-card`, `border`, `rounded-lg`, accent focus ring (`focus:ring-2 focus:ring-primary/50`), no shadow. `Input` is canonical; the other two mirror it. **Never** restyle a field per-usage (no per-field `bg-transparent`, `shadow-xs`, or a custom/neutral focus ring).
 - **Spacing and borders:** use Tailwind spacing utilities backed by `--spacing: 0.23rem`; use `--spacing-sidebar` and desktop/titlebar inset variables only in shell chrome. Border color comes from `border-border`; border thickness follows the design-system components and the `--border-width` token where a primitive uses it. Do not invent heavier strokes.
 - **Shadows:** shadows exist but stay subtle. Use the implemented `shadow-2xs`…`shadow-2xl` tokens only when elevation is needed; most controls and dense app surfaces should remain flat. Never add glow, neon, colored shadows, or custom `box-shadow` values.
 - **Motion:** use duration/easing tokens from `globals.css`: `duration-fast` 100ms, `duration-normal` 150ms, `duration-moderate` 200ms, `duration-slow` 300ms, `duration-slower` 500ms; `ease-default`, `ease-in`, `ease-out`, `ease-in-out`. Default UI transitions are 150–200ms with `ease-default` or `ease-out`; repeated keyboard-driven actions should not animate.
@@ -75,6 +75,11 @@ Atoms
 - **`Tabs`** (+ `TabsListCompact`) — pill tabs.
 - **`Skeleton`** — loading; match the shape it replaces (round vs `rounded-lg`).
 
+Feedback
+
+- **`toast`** (`@/components/ui/toast`) — THE toast. Import `successToast`, `errorToast`, `infoToast`, `warningToast`, `progressToast`, and `loadingToast` from here only. **Never** import `sonner` directly, **never** use `@/lib/toast`, and **never** call raw `toast.success()` / `toast.error()` / `toast.custom()`. Use `loadingToast` for promise-backed actions; use `progressToast` with an `id` to update a toast in place.
+- **`Hint`** (`@/components/ui/hint`) — THE tooltip. Wrap the trigger in `<Hint label="…">…</Hint>` (or `content` for rich tooltip bodies). **Never** import `Tooltip`, `TooltipTrigger`, or `TooltipContent` from `@/components/ui/tooltip` in feature code — `hint.tsx` is the only public API for hover hints.
+
 ## Dos & Don'ts
 
 - ✅ Panels → `SectionCard`. ❌ `<section className="rounded-xl border border-border/70 bg-card">` with a hand-rolled header.
@@ -94,6 +99,8 @@ Atoms
 - ✅ Selected/active → tinted primary (`variant="subtle"`, `bg-primary/[0.05]`, `border-l-primary`). ❌ a flat grey selected/active state (`variant="secondary"`, `bg-muted`, hardcoded `bg-black/10`).
 - ✅ Modals: header `border-b`, padded body, **flush footer bar** (`flex items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-6 py-3`). ❌ `-mx-6`/`mt-4` hacks or leftover bottom padding under the footer.
 - ✅ One shared component imported everywhere. ❌ a second copy of an existing component (e.g. a local `CreateAccountModal`).
+- ✅ Toasts → `successToast` / `errorToast` / `infoToast` / `warningToast` / `progressToast` / `loadingToast` from `@/components/ui/toast`. ❌ `sonner`, `@/lib/toast`, or ad-hoc `toast.custom()` markup.
+- ✅ Hover hints → `<Hint label="…">` from `@/components/ui/hint`. ❌ importing `Tooltip` primitives from `@/components/ui/tooltip` in pages, features, or screens.
 
 ## Modal pattern (canonical)
 

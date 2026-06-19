@@ -202,25 +202,29 @@ export function resetForServerSwitch() {
 	clearProvisionVerified();
 
 	if (runtimeReady) {
-		// /start proved the runtime healthy server-side, so we start `connected`
-		// (no blocking provisioning overlay) — BUT we do NOT pre-assert health.
-		// Seeding healthy=true here flipped the `runtimeReady` selector
-		// (connected && healthy===true) synchronously, hiding the loading screen
-		// and crossfading the chat in BEFORE the client confirmed the runtime was
-		// actually reachable — so users saw the bootstrap agent already mid-turn.
-		// healthy=null keeps the loading screen up until the fast (~350ms) health
-		// poller confirms /kortix/health, while still skipping the blocking
-		// provisioning overlay — preserving most of the warm-path speedup.
+		// /start already resolved stage==='ready' (markRuntimeReadyVerified is set
+		// ONLY then — page.tsx), which the backend returns only after it reached the
+		// daemon and OpenCode answered: the runtime is PROVEN healthy server-side.
+		// So seed healthy=true (optimistic) — NOT healthy=null. The SSE event stream
+		// (use-opencode-events) AND message sync (use-session-sync) both gate on this
+		// same `healthy` flag, so seeding null left the FE UNSUBSCRIBED until the
+		// ~350ms client health poll flipped it green — by which point the server-side
+		// first turn (KORTIX_INITIAL_PROMPT, delivered during boot) had accumulated
+		// and bulk-rendered AT ONCE instead of streaming. healthy=true subscribes at
+		// the switch, so part.updated events render token-by-token, and also reclaims
+		// the redundant health RTT. The 350ms poller still runs and self-corrects to
+		// healthy=false (reconnect pill) if the browser genuinely can't reach the box,
+		// so this only narrows to the ready path where health was actually proven.
 		useSandboxConnectionStore.setState({
 			status: "connected",
 			failCount: 0,
-			initialCheckDone: false,
+			initialCheckDone: true,
 			wasConnected: true,
 			reconnectAttempts: 0,
 			disconnectedAt: null,
 			sandboxVersion: null,
 			openCodeVersion: null,
-			healthy: null,
+			healthy: true,
 			runtimeError: null,
 			recoveryPhase: "idle",
 			restartRequestedAt: null,

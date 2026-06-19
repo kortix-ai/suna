@@ -1,6 +1,6 @@
 /**
  * SessionRenameSheet — bottom sheet to rename a project session.
- * Ported from web's RenameSessionDialog: PATCH /projects/:id/sessions/:sid
+ * Ported from web's RenameSessionModal: PATCH /projects/:id/sessions/:sid
  * with { name }. Clearing the input reverts to the automatic title.
  */
 import React, { forwardRef, useCallback, useImperativeHandle, useRef, useState } from 'react';
@@ -19,10 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSheetBg } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
-import {
-  updateProjectSession,
-  type ProjectSession,
-} from '@/lib/projects/projects-client';
+import { updateProjectSession, type ProjectSession } from '@/lib/projects/projects-client';
 import { projectKeys } from '@/lib/projects/hooks';
 
 const MAX_NAME_LENGTH = 120;
@@ -56,8 +53,7 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
     }, []);
 
     const rename = useMutation({
-      mutationFn: (name: string) =>
-        updateProjectSession(projectId, session!.session_id, { name }),
+      mutationFn: (name: string) => updateProjectSession(projectId, session!.session_id, { name }),
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: projectKeys.projectSessions(projectId) });
         haptics.success();
@@ -84,7 +80,7 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
       (props: BottomSheetBackdropProps) => (
         <BottomSheetBackdrop {...props} disappearsOnIndex={-1} appearsOnIndex={0} opacity={0.4} />
       ),
-      [],
+      []
     );
 
     return (
@@ -98,7 +94,9 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
         android_keyboardInputMode="adjustResize"
         // Seed on presentation only (from -1), and re-seed on dismiss so the
         // next open never flashes the previous open's draft for a frame.
-        onAnimate={(from, to) => { if (from === -1 && to === 0) setValue(session?.custom_name ?? ''); }}
+        onAnimate={(from, to) => {
+          if (from === -1 && to === 0) setValue(session?.custom_name ?? '');
+        }}
         onDismiss={() => setValue(session?.custom_name ?? '')}
         backgroundStyle={{
           backgroundColor: getSheetBg(isDark),
@@ -110,24 +108,26 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
           width: 36,
           height: 5,
           borderRadius: 3,
-        }}
-      >
-        <BottomSheetView style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
+        }}>
+        <BottomSheetView
+          style={{ paddingHorizontal: 24, paddingTop: 8, paddingBottom: sheetPadding }}>
           {/* Header */}
-          <View className="flex-row items-center mb-5">
+          <View className="mb-5 flex-row items-center">
             <View
-              className="w-10 h-10 rounded-xl items-center justify-center mr-3"
+              className="mr-3 h-10 w-10 items-center justify-center rounded-xl"
               style={{
                 backgroundColor: isDark ? 'rgba(248, 248, 248, 0.08)' : 'rgba(18, 18, 21, 0.05)',
-              }}
-            >
+              }}>
               <Ionicons name="pencil-outline" size={20} color={fgColor} />
             </View>
             <View className="flex-1">
-              <Text className="text-lg font-roobert-semibold" style={{ color: fgColor }}>
+              <Text className="font-roobert-semibold text-lg" style={{ color: fgColor }}>
                 Rename session
               </Text>
-              <Text className="text-xs font-roobert mt-0.5" style={{ color: mutedColor }} numberOfLines={1}>
+              <Text
+                className="mt-0.5 font-roobert text-xs"
+                style={{ color: mutedColor }}
+                numberOfLines={1}>
                 Leave empty to use the automatic title
               </Text>
             </View>
@@ -162,17 +162,18 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
             onPress={handleSave}
             disabled={rename.isPending}
             activeOpacity={0.7}
-            className="rounded-full items-center justify-center"
+            className="items-center justify-center rounded-full"
             style={{
               paddingVertical: 14,
               backgroundColor: isDark ? '#F8F8F8' : '#121215',
               opacity: rename.isPending ? 0.6 : 1,
-            }}
-          >
+            }}>
             {rename.isPending ? (
               <ActivityIndicator size="small" color={isDark ? '#121215' : '#F8F8F8'} />
             ) : (
-              <Text className="text-[15px] font-roobert-medium" style={{ color: isDark ? '#121215' : '#F8F8F8' }}>
+              <Text
+                className="font-roobert-medium text-[15px]"
+                style={{ color: isDark ? '#121215' : '#F8F8F8' }}>
                 Save
               </Text>
             )}
@@ -180,5 +181,5 @@ export const SessionRenameSheet = forwardRef<BottomSheetModal, SessionRenameShee
         </BottomSheetView>
       </BottomSheetModal>
     );
-  },
+  }
 );

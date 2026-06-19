@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
 import { useTranslations } from 'next-intl';
 
-import React, { useState, useMemo } from 'react';
+import { Button } from '@/components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -10,10 +10,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -21,25 +19,39 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Calendar, ArrowRight, ArrowLeft, Clock, Loader2, Timer, Webhook, MessageSquare, Terminal, Globe, Ticket as TicketIcon } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { useColumns, useProjectAgents, useTickets } from '@/hooks/kortix/use-kortix-tickets';
+import { useSandbox } from '@/hooks/platform/use-sandbox';
 import {
   useCreateTrigger,
+  type ActionType,
   type SessionMode,
   type TriggerType,
-  type ActionType,
 } from '@/hooks/scheduled-tasks';
-import { useSandbox } from '@/hooks/platform/use-sandbox';
+import { featureFlags } from '@/lib/feature-flags';
 import { getSandboxUrl } from '@/lib/platform-client';
 import { toast } from '@/lib/toast';
-import { ScheduleBuilder } from './schedule-builder';
 import { cn } from '@/lib/utils';
-import { featureFlags } from '@/lib/feature-flags';
-import { useTickets, useColumns, useProjectAgents } from '@/hooks/kortix/use-kortix-tickets';
+import {
+  ArrowLeft,
+  ArrowRight,
+  Calendar,
+  Clock,
+  Globe,
+  Loader2,
+  MessageSquare,
+  Terminal,
+  Ticket as TicketIcon,
+  Timer,
+  Webhook,
+} from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { ScheduleBuilder } from './schedule-builder';
 
 // Shared selectors from ChatInput (same as used in channels)
-import { AgentSelector, flattenModels } from '@/components/session/session-chat-input';
-import { ModelSelector } from '@/components/session/model-selector';
-import { useVisibleAgents, useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+import { ModelSelector } from '@/features/session/model-selector';
+import { AgentSelector, flattenModels } from '@/features/session/session-chat-input';
+import { useOpenCodeProviders, useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
 
 interface TaskConfigDialogProps {
   open: boolean;
@@ -52,14 +64,29 @@ interface TaskConfigDialogProps {
 }
 
 const TIMEZONES = [
-  'UTC', 'America/New_York', 'America/Chicago', 'America/Denver',
-  'America/Los_Angeles', 'Europe/London', 'Europe/Berlin', 'Europe/Paris',
-  'Asia/Tokyo', 'Asia/Shanghai', 'Asia/Kolkata', 'Australia/Sydney',
+  'UTC',
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'Europe/London',
+  'Europe/Berlin',
+  'Europe/Paris',
+  'Asia/Tokyo',
+  'Asia/Shanghai',
+  'Asia/Kolkata',
+  'Australia/Sydney',
 ];
 
 type Step = 'source' | 'action' | 'config';
 
-export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, defaultTicketId }: TaskConfigDialogProps) {
+export function TaskConfigDialog({
+  open,
+  onOpenChange,
+  onCreated,
+  projectId,
+  defaultTicketId,
+}: TaskConfigDialogProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [step, setStep] = useState<Step>('source');
 
@@ -78,7 +105,10 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
   const [prompt, setPrompt] = useState('');
   const [sessionMode, setSessionMode] = useState<SessionMode>('new');
   const [agentName, setAgentName] = useState<string | null>(null);
-  const [selectedModel, setSelectedModel] = useState<{ providerID: string; modelID: string } | null>(null);
+  const [selectedModel, setSelectedModel] = useState<{
+    providerID: string;
+    modelID: string;
+  } | null>(null);
 
   // Command action
   const [command, setCommand] = useState('');
@@ -166,8 +196,11 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
     } else if (actionType === 'command') {
       action.command = command.trim();
       if (commandArgs.trim()) {
-        try { action.args = JSON.parse(commandArgs.trim()); }
-        catch { action.args = commandArgs.trim().split(/\s+/); }
+        try {
+          action.args = JSON.parse(commandArgs.trim());
+        } catch {
+          action.args = commandArgs.trim().split(/\s+/);
+        }
       }
       if (workdir.trim()) action.workdir = workdir.trim();
     } else if (actionType === 'http') {
@@ -178,7 +211,10 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
       action.title = newTicketTitle.trim();
       if (newTicketBody.trim()) action.body_md = newTicketBody.trim();
       if (newTicketColumn) action.column = newTicketColumn;
-      const slugs = newTicketAssignees.split(',').map((s) => s.trim()).filter(Boolean);
+      const slugs = newTicketAssignees
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
       if (slugs.length) action.assignee_slugs = slugs;
     }
 
@@ -213,11 +249,15 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[540px] max-h-[90vh] flex flex-col gap-0 p-0">
-        <DialogHeader className="shrink-0 space-y-0.5 border-b border-border/60 px-6 pt-6 pb-4">
-          <DialogTitle className="text-sm font-semibold flex items-center gap-2">
-            <Calendar className="h-3.5 w-3.5 text-muted-foreground" />{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line217JsxTextCreateTrigger')}</DialogTitle>
-          <DialogDescription className="text-xs text-muted-foreground/60">
+      <DialogContent className="flex max-h-[90vh] flex-col gap-0 p-0 sm:max-w-[540px]">
+        <DialogHeader className="border-border/60 shrink-0 space-y-0.5 border-b px-6 pt-6 pb-4">
+          <DialogTitle className="flex items-center gap-2 text-sm font-semibold">
+            <Calendar className="text-muted-foreground h-3.5 w-3.5" />
+            {tHardcodedUi.raw(
+              'componentsScheduledTasksTaskConfigDialog.line217JsxTextCreateTrigger',
+            )}
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground/60 text-xs">
             {step === 'source' && 'Choose when this trigger should fire.'}
             {step === 'action' && 'Choose what happens when the trigger fires.'}
             {step === 'config' && 'Configure the details.'}
@@ -229,7 +269,11 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
           {step === 'source' && (
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line232JsxTextTriggerSource')}</div>
+                <div className="text-foreground/40 px-1 text-xs font-semibold tracking-[0.08em] uppercase">
+                  {tHardcodedUi.raw(
+                    'componentsScheduledTasksTaskConfigDialog.line232JsxTextTriggerSource',
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -241,10 +285,14 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                         : 'border-border/50 bg-muted/20 hover:bg-muted/35',
                     )}
                   >
-                    <Timer className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <Timer className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium text-foreground">Cron</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line249JsxTextTimeBasedSchedule')}</div>
+                      <div className="text-foreground text-sm font-medium">Cron</div>
+                      <div className="text-muted-foreground/60 mt-0.5 text-xs">
+                        {tHardcodedUi.raw(
+                          'componentsScheduledTasksTaskConfigDialog.line249JsxTextTimeBasedSchedule',
+                        )}
+                      </div>
                     </div>
                   </button>
                   <button
@@ -257,10 +305,14 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                         : 'border-border/50 bg-muted/20 hover:bg-muted/35',
                     )}
                   >
-                    <Webhook className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                    <Webhook className="text-muted-foreground mt-0.5 h-4 w-4 shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <div className="text-sm font-medium text-foreground">Webhook</div>
-                      <div className="mt-0.5 text-xs text-muted-foreground/60">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line267JsxTextFiresOnHttpRequest')}</div>
+                      <div className="text-foreground text-sm font-medium">Webhook</div>
+                      <div className="text-muted-foreground/60 mt-0.5 text-xs">
+                        {tHardcodedUi.raw(
+                          'componentsScheduledTasksTaskConfigDialog.line267JsxTextFiresOnHttpRequest',
+                        )}
+                      </div>
                     </div>
                   </button>
                 </div>
@@ -269,7 +321,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
               {/* Source config — timezone moved to the modal footer */}
               {sourceType === 'cron' && (
                 <div className="space-y-1.5 pt-1">
-                  <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">
+                  <div className="text-foreground/40 px-1 text-xs font-semibold tracking-[0.08em] uppercase">
                     Schedule
                   </div>
                   <ScheduleBuilder value={cronExpr} onChange={setCronExpr} />
@@ -280,23 +332,52 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                 <div className="space-y-3 pt-2">
                   <div className="space-y-2">
                     <Label>Path</Label>
-                    <Input type="text" value={webhookPath} onChange={(e) => setWebhookPath(e.target.value)} placeholder="/hooks/my-endpoint" />
+                    <Input
+                      type="text"
+                      value={webhookPath}
+                      onChange={(e) => setWebhookPath(e.target.value)}
+                      placeholder="/hooks/my-endpoint"
+                    />
                   </div>
 
-                   {/* Full URL preview */}
-                  <div className="rounded-2xl bg-muted/50 border p-3 space-y-1.5">
-                    <div className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line293JsxTextExternalUrl')}</div>
-                    <code className="text-xs font-mono text-foreground break-all block">
-                      {webhookBaseUrl}{webhookPath || '/hooks/...'}
+                  {/* Full URL preview */}
+                  <div className="bg-muted/50 space-y-1.5 rounded-2xl border p-3">
+                    <div className="text-muted-foreground text-xs font-medium">
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line293JsxTextExternalUrl',
+                      )}
+                    </div>
+                    <code className="text-foreground block font-mono text-xs break-all">
+                      {webhookBaseUrl}
+                      {webhookPath || '/hooks/...'}
                     </code>
-                    <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line298JsxTextSendA')}<span className="font-mono">POST</span>{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line298JsxTextRequestToThisUrlToFireTheTrigger')}{webhookSecret ? ' Include the secret in the ' : ' Optionally protect with a secret via '}
-                      <code className="text-xs font-mono">X-Kortix-Trigger-Secret</code> header.
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line298JsxTextSendA',
+                      )}
+                      <span className="font-mono">POST</span>
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line298JsxTextRequestToThisUrlToFireTheTrigger',
+                      )}
+                      {webhookSecret
+                        ? ' Include the secret in the '
+                        : ' Optionally protect with a secret via '}
+                      <code className="font-mono text-xs">X-Kortix-Trigger-Secret</code> header.
                     </p>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line305JsxTextSecretOptional')}</Label>
-                    <Input value={webhookSecret} onChange={(e) => setWebhookSecret(e.target.value)} placeholder="shared-secret" type="password" />
+                    <Label>
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line305JsxTextSecretOptional',
+                      )}
+                    </Label>
+                    <Input
+                      value={webhookSecret}
+                      onChange={(e) => setWebhookSecret(e.target.value)}
+                      placeholder="shared-secret"
+                      type="password"
+                    />
                   </div>
                 </div>
               )}
@@ -306,23 +387,44 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
           {/* ─── Step 2: Action Type ─────────────────────────────── */}
           {step === 'action' && (
             <div className="space-y-1.5">
-              <div className="px-1 text-xs font-semibold uppercase tracking-[0.08em] text-foreground/40">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line317JsxTextActionType')}</div>
+              <div className="text-foreground/40 px-1 text-xs font-semibold tracking-[0.08em] uppercase">
+                {tHardcodedUi.raw(
+                  'componentsScheduledTasksTaskConfigDialog.line317JsxTextActionType',
+                )}
+              </div>
               <div className="grid grid-cols-1 gap-2">
                 {[
-                  { id: 'prompt'  as ActionType, icon: MessageSquare, title: 'Prompt',  desc: 'Send to an AI agent' },
-                  { id: 'command' as ActionType, icon: Terminal,      title: 'Command', desc: 'Run a shell command' },
-                  { id: 'http'    as ActionType, icon: Globe,         title: 'HTTP',    desc: 'Call an external URL' },
+                  {
+                    id: 'prompt' as ActionType,
+                    icon: MessageSquare,
+                    title: 'Prompt',
+                    desc: 'Send to an AI agent',
+                  },
+                  {
+                    id: 'command' as ActionType,
+                    icon: Terminal,
+                    title: 'Command',
+                    desc: 'Run a shell command',
+                  },
+                  {
+                    id: 'http' as ActionType,
+                    icon: Globe,
+                    title: 'HTTP',
+                    desc: 'Call an external URL',
+                  },
                   // "Create Ticket" — only with the multi-project paradigm
                   // AND when scoped to a project.
                   ...(featureFlags.enableProjects
-                    ? [{
-                        id: 'ticket_create' as ActionType,
-                        icon: TicketIcon,
-                        title: 'Create ticket',
-                        desc: 'Drop a new ticket on the board',
-                        disabled: !projectId,
-                        disabledHint: 'Only available when the trigger is scoped to a project',
-                      }]
+                    ? [
+                        {
+                          id: 'ticket_create' as ActionType,
+                          icon: TicketIcon,
+                          title: 'Create ticket',
+                          desc: 'Drop a new ticket on the board',
+                          disabled: !projectId,
+                          disabledHint: 'Only available when the trigger is scoped to a project',
+                        },
+                      ]
                     : []),
                 ].map((action) => {
                   const Icon = action.icon;
@@ -334,21 +436,21 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                       type="button"
                       onClick={() => !isDisabled && setActionType(action.id)}
                       disabled={isDisabled}
-                      title={isDisabled && 'disabledHint' in action ? action.disabledHint : undefined}
+                      title={
+                        isDisabled && 'disabledHint' in action ? action.disabledHint : undefined
+                      }
                       className={cn(
                         'group flex h-auto w-full items-center gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors',
                         isActive
                           ? 'border-primary/50 bg-primary/[0.04]'
                           : 'border-border/50 bg-muted/20 hover:bg-muted/35',
-                        isDisabled && 'cursor-not-allowed opacity-50 hover:bg-muted/20',
+                        isDisabled && 'hover:bg-muted/20 cursor-not-allowed opacity-50',
                       )}
                     >
-                      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <Icon className="text-muted-foreground h-4 w-4 shrink-0" />
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium text-foreground">{action.title}</div>
-                        <div className="mt-0.5 text-xs text-muted-foreground/60">
-                          {action.desc}
-                        </div>
+                        <div className="text-foreground text-sm font-medium">{action.title}</div>
+                        <div className="text-muted-foreground/60 mt-0.5 text-xs">{action.desc}</div>
                       </div>
                     </button>
                   );
@@ -362,7 +464,15 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
             <div className="space-y-5">
               <div className="space-y-2">
                 <Label htmlFor="task-name">Name</Label>
-                <Input type="text" id="task-name" value={name} onChange={(e) => setName(e.target.value)} placeholder={tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line374JsxAttrPlaceholderDailyReport')} />
+                <Input
+                  type="text"
+                  id="task-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder={tHardcodedUi.raw(
+                    'componentsScheduledTasksTaskConfigDialog.line374JsxAttrPlaceholderDailyReport',
+                  )}
+                />
               </div>
 
               {/* Ticket binding — only when scoped to a project. Binding makes
@@ -370,13 +480,28 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                   the same session and the agent sees ticket_id in its event. */}
               {projectId && projectTickets.length > 0 && (
                 <div className="space-y-2">
-                  <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line382JsxTextBindToTicketOptional')}</Label>
-                  <Select value={ticketId || '__none__'} onValueChange={(v) => setTicketId(v === '__none__' ? '' : v)}>
-                    <SelectTrigger className="cursor-pointer hover:bg-muted/40 transition-colors">
-                      <SelectValue placeholder={tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line385JsxAttrPlaceholderNoTicket')} />
+                  <Label>
+                    {tHardcodedUi.raw(
+                      'componentsScheduledTasksTaskConfigDialog.line382JsxTextBindToTicketOptional',
+                    )}
+                  </Label>
+                  <Select
+                    value={ticketId || '__none__'}
+                    onValueChange={(v) => setTicketId(v === '__none__' ? '' : v)}
+                  >
+                    <SelectTrigger className="hover:bg-muted/40 cursor-pointer transition-colors">
+                      <SelectValue
+                        placeholder={tHardcodedUi.raw(
+                          'componentsScheduledTasksTaskConfigDialog.line385JsxAttrPlaceholderNoTicket',
+                        )}
+                      />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="__none__" className="cursor-pointer text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line388JsxTextNoTicketGenericProjectTrigger')}</SelectItem>
+                      <SelectItem value="__none__" className="text-muted-foreground cursor-pointer">
+                        {tHardcodedUi.raw(
+                          'componentsScheduledTasksTaskConfigDialog.line388JsxTextNoTicketGenericProjectTrigger',
+                        )}
+                      </SelectItem>
                       {projectTickets.map((t) => (
                         <SelectItem key={t.id} value={t.id} className="cursor-pointer">
                           #{t.number} · {t.title}
@@ -384,7 +509,15 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line397JsxTextEachFireThreadsOntoOneSessionPerTicket')}<code className="font-mono">ticket_comment</code>{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line397JsxTextStatusUpdates')}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {tHardcodedUi.raw(
+                      'componentsScheduledTasksTaskConfigDialog.line397JsxTextEachFireThreadsOntoOneSessionPerTicket',
+                    )}
+                    <code className="font-mono">ticket_comment</code>
+                    {tHardcodedUi.raw(
+                      'componentsScheduledTasksTaskConfigDialog.line397JsxTextStatusUpdates',
+                    )}
+                  </p>
                 </div>
               )}
 
@@ -393,22 +526,45 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                   <div className="space-y-2">
                     <Label htmlFor="task-prompt">Prompt</Label>
                     <Textarea
-                      id="task-prompt" value={prompt} onChange={(e) => setPrompt(e.target.value)}
-                      placeholder={tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line408JsxAttrPlaceholderGenerateTheDailyStatusReportAndSaveIt')}
+                      id="task-prompt"
+                      value={prompt}
+                      onChange={(e) => setPrompt(e.target.value)}
+                      placeholder={tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line408JsxAttrPlaceholderGenerateTheDailyStatusReportAndSaveIt',
+                      )}
                       rows={4}
                     />
-                    <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line411JsxTextTheInstructionSentToYourAgentOnEach')}</p>
+                    <p className="text-muted-foreground text-xs">
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line411JsxTextTheInstructionSentToYourAgentOnEach',
+                      )}
+                    </p>
                   </div>
 
                   <div className="space-y-2">
-                    <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line415JsxTextSessionMode')}</Label>
-                    <Select value={sessionMode} onValueChange={(v) => setSessionMode(v as SessionMode)}>
-                      <SelectTrigger className="cursor-pointer hover:bg-muted/40 transition-colors">
+                    <Label>
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line415JsxTextSessionMode',
+                      )}
+                    </Label>
+                    <Select
+                      value={sessionMode}
+                      onValueChange={(v) => setSessionMode(v as SessionMode)}
+                    >
+                      <SelectTrigger className="hover:bg-muted/40 cursor-pointer transition-colors">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="new" className="cursor-pointer">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line421JsxTextNewSession')}</SelectItem>
-                        <SelectItem value="reuse" className="cursor-pointer">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line422JsxTextReuseSession')}</SelectItem>
+                        <SelectItem value="new" className="cursor-pointer">
+                          {tHardcodedUi.raw(
+                            'componentsScheduledTasksTaskConfigDialog.line421JsxTextNewSession',
+                          )}
+                        </SelectItem>
+                        <SelectItem value="reuse" className="cursor-pointer">
+                          {tHardcodedUi.raw(
+                            'componentsScheduledTasksTaskConfigDialog.line422JsxTextReuseSession',
+                          )}
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -416,7 +572,7 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                   {/* Agent — shared CommandPopover component from ChatInput */}
                   <div className="space-y-2">
                     <Label>Agent</Label>
-                    <div className="rounded-2xl border bg-card px-2 py-1">
+                    <div className="bg-card rounded-2xl border px-2 py-1">
                       <AgentSelector
                         agents={agents}
                         selectedAgent={agentName}
@@ -429,10 +585,14 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                   <div className="space-y-2">
                     <Label>Model</Label>
                     {modelsLoading ? (
-                      <div className="flex items-center gap-2 h-9 px-3 text-sm text-muted-foreground">
-                        <Loader2 className="h-3 w-3 animate-spin" />{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line444JsxTextLoadingModels')}</div>
+                      <div className="text-muted-foreground flex h-9 items-center gap-2 px-3 text-sm">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        {tHardcodedUi.raw(
+                          'componentsScheduledTasksTaskConfigDialog.line444JsxTextLoadingModels',
+                        )}
+                      </div>
                     ) : (
-                      <div className="rounded-2xl border bg-card px-2 py-1">
+                      <div className="bg-card rounded-2xl border px-2 py-1">
                         <ModelSelector
                           models={models}
                           selectedModel={selectedModel}
@@ -448,16 +608,41 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                 <>
                   <div className="space-y-2">
                     <Label>Command</Label>
-                    <Input type="text" value={command} onChange={(e) => setCommand(e.target.value)} placeholder="bash" />
+                    <Input
+                      type="text"
+                      value={command}
+                      onChange={(e) => setCommand(e.target.value)}
+                      placeholder="bash"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Arguments</Label>
-                    <Input type="text" value={commandArgs} onChange={(e) => setCommandArgs(e.target.value)} placeholder={tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line467JsxAttrPlaceholderCScriptsBackupSh')} />
-                    <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line468JsxTextJsonArrayOrSpaceSeparated')}</p>
+                    <Input
+                      type="text"
+                      value={commandArgs}
+                      onChange={(e) => setCommandArgs(e.target.value)}
+                      placeholder={tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line467JsxAttrPlaceholderCScriptsBackupSh',
+                      )}
+                    />
+                    <p className="text-muted-foreground text-xs">
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line468JsxTextJsonArrayOrSpaceSeparated',
+                      )}
+                    </p>
                   </div>
                   <div className="space-y-2">
-                    <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line471JsxTextWorkingDirectoryOptional')}</Label>
-                    <Input type="text" value={workdir} onChange={(e) => setWorkdir(e.target.value)} placeholder="/workspace" />
+                    <Label>
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line471JsxTextWorkingDirectoryOptional',
+                      )}
+                    </Label>
+                    <Input
+                      type="text"
+                      value={workdir}
+                      onChange={(e) => setWorkdir(e.target.value)}
+                      placeholder="/workspace"
+                    />
                   </div>
                 </>
               )}
@@ -466,27 +651,55 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
                 <>
                   <div className="space-y-2">
                     <Label>URL</Label>
-                    <Input type="text" value={httpUrl} onChange={(e) => setHttpUrl(e.target.value)} placeholder="https://hooks.slack.com/services/XXX" />
+                    <Input
+                      type="text"
+                      value={httpUrl}
+                      onChange={(e) => setHttpUrl(e.target.value)}
+                      placeholder="https://hooks.slack.com/services/XXX"
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label>Method</Label>
                     <Select value={httpMethod} onValueChange={setHttpMethod}>
-                      <SelectTrigger className="cursor-pointer hover:bg-muted/40 transition-colors">
+                      <SelectTrigger className="hover:bg-muted/40 cursor-pointer transition-colors">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="POST" className="cursor-pointer">POST</SelectItem>
-                        <SelectItem value="GET" className="cursor-pointer">GET</SelectItem>
-                        <SelectItem value="PUT" className="cursor-pointer">PUT</SelectItem>
-                        <SelectItem value="PATCH" className="cursor-pointer">PATCH</SelectItem>
-                        <SelectItem value="DELETE" className="cursor-pointer">DELETE</SelectItem>
+                        <SelectItem value="POST" className="cursor-pointer">
+                          POST
+                        </SelectItem>
+                        <SelectItem value="GET" className="cursor-pointer">
+                          GET
+                        </SelectItem>
+                        <SelectItem value="PUT" className="cursor-pointer">
+                          PUT
+                        </SelectItem>
+                        <SelectItem value="PATCH" className="cursor-pointer">
+                          PATCH
+                        </SelectItem>
+                        <SelectItem value="DELETE" className="cursor-pointer">
+                          DELETE
+                        </SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line499JsxTextBodyTemplateOptional')}</Label>
-                    <Textarea value={httpBody} onChange={(e) => setHttpBody(e.target.value)} placeholder={tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line500JsxAttrPlaceholderTextAlertMessage')} rows={3} />
-                    <p className="text-xs text-muted-foreground">{'Use {{ var }} for template variables from webhook payloads'}</p>
+                    <Label>
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line499JsxTextBodyTemplateOptional',
+                      )}
+                    </Label>
+                    <Textarea
+                      value={httpBody}
+                      onChange={(e) => setHttpBody(e.target.value)}
+                      placeholder={tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line500JsxAttrPlaceholderTextAlertMessage',
+                      )}
+                      rows={3}
+                    />
+                    <p className="text-muted-foreground text-xs">
+                      {'Use {{ var }} for template variables from webhook payloads'}
+                    </p>
                   </div>
                 </>
               )}
@@ -494,49 +707,93 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
               {actionType === 'ticket_create' && (
                 <>
                   <div className="space-y-2">
-                    <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line509JsxTextTicketTitle')}</Label>
+                    <Label>
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line509JsxTextTicketTitle',
+                      )}
+                    </Label>
                     <Input
                       type="text"
                       value={newTicketTitle}
                       onChange={(e) => setNewTicketTitle(e.target.value)}
-                      placeholder={tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line514JsxAttrPlaceholderSummarySource')}
+                      placeholder={tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line514JsxAttrPlaceholderSummarySource',
+                      )}
                     />
-                    <p className="text-xs text-muted-foreground">{'Supports {{ var }} substitution from webhook payloads.'}</p>
+                    <p className="text-muted-foreground text-xs">
+                      {'Supports {{ var }} substitution from webhook payloads.'}
+                    </p>
                   </div>
                   <div className="space-y-2">
-                    <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line519JsxTextBodyOptional')}</Label>
+                    <Label>
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line519JsxTextBodyOptional',
+                      )}
+                    </Label>
                     <Textarea
                       value={newTicketBody}
                       onChange={(e) => setNewTicketBody(e.target.value)}
                       rows={3}
-                      placeholder={tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line524JsxAttrPlaceholderFromUserNNText')}
+                      placeholder={tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskConfigDialog.line524JsxAttrPlaceholderFromUserNNText',
+                      )}
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-2">
-                      <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line529JsxTextLandInColumn')}</Label>
-                      <Select value={newTicketColumn || '__default__'} onValueChange={(v) => setNewTicketColumn(v === '__default__' ? '' : v)}>
-                        <SelectTrigger className="cursor-pointer hover:bg-muted/40 transition-colors">
-                          <SelectValue placeholder={tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line532JsxAttrPlaceholderBacklogDefault')} />
+                      <Label>
+                        {tHardcodedUi.raw(
+                          'componentsScheduledTasksTaskConfigDialog.line529JsxTextLandInColumn',
+                        )}
+                      </Label>
+                      <Select
+                        value={newTicketColumn || '__default__'}
+                        onValueChange={(v) => setNewTicketColumn(v === '__default__' ? '' : v)}
+                      >
+                        <SelectTrigger className="hover:bg-muted/40 cursor-pointer transition-colors">
+                          <SelectValue
+                            placeholder={tHardcodedUi.raw(
+                              'componentsScheduledTasksTaskConfigDialog.line532JsxAttrPlaceholderBacklogDefault',
+                            )}
+                          />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="__default__" className="cursor-pointer text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line535JsxTextFirstColumnDefault')}</SelectItem>
+                          <SelectItem
+                            value="__default__"
+                            className="text-muted-foreground cursor-pointer"
+                          >
+                            {tHardcodedUi.raw(
+                              'componentsScheduledTasksTaskConfigDialog.line535JsxTextFirstColumnDefault',
+                            )}
+                          </SelectItem>
                           {projectColumns.map((c) => (
-                            <SelectItem key={c.key} value={c.key} className="cursor-pointer">{c.label}</SelectItem>
+                            <SelectItem key={c.key} value={c.key} className="cursor-pointer">
+                              {c.label}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line543JsxTextAssignTo')}</Label>
+                      <Label>
+                        {tHardcodedUi.raw(
+                          'componentsScheduledTasksTaskConfigDialog.line543JsxTextAssignTo',
+                        )}
+                      </Label>
                       <Input
                         type="text"
                         value={newTicketAssignees}
                         onChange={(e) => setNewTicketAssignees(e.target.value)}
-                        placeholder={tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line548JsxAttrPlaceholderEngineerQa')}
+                        placeholder={tHardcodedUi.raw(
+                          'componentsScheduledTasksTaskConfigDialog.line548JsxAttrPlaceholderEngineerQa',
+                        )}
                         className="font-mono text-sm"
                       />
-                      <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskConfigDialog.line552JsxTextCommaSeparatedAgentSlugs')}{projectAgents.length > 0 && (
+                      <p className="text-muted-foreground text-xs">
+                        {tHardcodedUi.raw(
+                          'componentsScheduledTasksTaskConfigDialog.line552JsxTextCommaSeparatedAgentSlugs',
+                        )}
+                        {projectAgents.length > 0 && (
                           <> Available: {projectAgents.map((a) => a.slug).join(', ')}</>
                         )}
                       </p>
@@ -549,17 +806,22 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
         </div>
 
         {/* ─── Footer ────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between gap-3 shrink-0 border-t border-border/60 bg-muted/30 px-6 py-3">
+        <div className="border-border/60 bg-muted/30 flex shrink-0 items-center justify-between gap-3 border-t px-6 py-3">
           <div className="flex items-center gap-2">
             {step !== 'source' && (
-              <Button variant="ghost" size="sm" onClick={() => setStep(step === 'config' ? 'action' : 'source')} className="cursor-pointer">
-                <ArrowLeft className="h-4 w-4 mr-1" /> Back
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setStep(step === 'config' ? 'action' : 'source')}
+                className="cursor-pointer"
+              >
+                <ArrowLeft className="mr-1 h-4 w-4" /> Back
               </Button>
             )}
             {step === 'source' && sourceType === 'cron' && (
               <Select value={timezone} onValueChange={setTimezone}>
                 <SelectTrigger
-                  className="h-8 w-auto gap-1.5 rounded-full border-border/50 bg-transparent px-3 text-sm text-muted-foreground hover:bg-muted/40 hover:text-foreground cursor-pointer"
+                  className="border-border/50 text-muted-foreground hover:bg-muted/40 hover:text-foreground h-8 w-auto cursor-pointer gap-1.5 rounded-full bg-transparent px-3 text-sm"
                   title="Timezone"
                 >
                   <Clock className="h-3.5 w-3.5" />
@@ -576,21 +838,28 @@ export function TaskConfigDialog({ open, onOpenChange, onCreated, projectId, def
             )}
           </div>
           <div className="flex gap-3">
-            <Button variant="outline" size="sm" onClick={handleClose} className="cursor-pointer ">Cancel</Button>
+            <Button variant="outline" size="sm" onClick={handleClose} className="cursor-pointer">
+              Cancel
+            </Button>
             {step === 'source' && (
               <Button size="sm" onClick={() => setStep('action')} className="cursor-pointer">
-                Next <ArrowRight className="h-4 w-4 ml-1" />
+                Next <ArrowRight className="ml-1 h-4 w-4" />
               </Button>
             )}
             {step === 'action' && (
               <Button size="sm" onClick={() => setStep('config')} className="cursor-pointer">
-                Next <ArrowRight className="h-4 w-4 ml-1" />
+                Next <ArrowRight className="ml-1 h-4 w-4" />
               </Button>
             )}
             {step === 'config' && (
-              <Button size="sm" onClick={handleCreate} disabled={!isValid() || createMutation.isPending} className="cursor-pointer ">
+              <Button
+                size="sm"
+                onClick={handleCreate}
+                disabled={!isValid() || createMutation.isPending}
+                className="cursor-pointer"
+              >
                 {createMutation.isPending ? 'Creating...' : 'Create Trigger'}
-                <ArrowRight className="h-4 w-4 ml-2" />
+                <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             )}
           </div>

@@ -828,6 +828,24 @@ export const sessionSandboxes = kortixSchema.table(
 );
 
 /**
+ * Warm-pool presence — one row per project a user currently has OPEN. The web
+ * client heartbeats while the project tab is visible and beacons a "leave" on
+ * close. The warm-pool reconcile keeps spares only for present projects and
+ * reaps them when presence stops, so cost tracks projects-open-right-now rather
+ * than every project touched in the last 6h. Cross-pod (a DB row, not an
+ * in-memory map, so the leader reconcile sees every pod's presence).
+ */
+export const warmPoolPresence = kortixSchema.table(
+  'warm_pool_presence',
+  {
+    projectId: uuid('project_id').primaryKey(),
+    accountId: uuid('account_id').notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [index('idx_warm_pool_presence_seen').on(table.lastSeenAt)],
+);
+
+/**
  * Provider analytics — an append-only telemetry log, one row per terminal
  * provisioning/migration outcome. Written fire-and-forget from the provision
  * path (the `provisionTimeline` is already computed, so capture is ~free) and

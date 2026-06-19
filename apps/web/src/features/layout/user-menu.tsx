@@ -20,7 +20,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import {
   SidebarContext,
   SidebarMenu,
@@ -42,13 +41,7 @@ import { resetClientState } from '@/lib/utils/reset-client-state';
 import { useAccountSettingsModalStore } from '@/stores/account-settings-modal-store';
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useReferralDialog } from '@/stores/referral-dialog';
-import {
-  BookOpen,
-  ChevronsUpDown,
-  CogOneSolid,
-  CreditCardSolid,
-  HomeSolid,
-} from '@mynaui/icons-react';
+import { BookOpen, CogOne, CreditCard, HomeSolid } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
 import { Download, LifeBuoy, LogOut, Store } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -126,24 +119,25 @@ export function UserMenu({
   const trigger =
     variant === 'header' ? (
       <Button
+        variant="transparent"
         size="icon"
-        className="bg-background hover:bg-background dark:hover:bg-foreground dark:bg-foreground m-0 border-none p-0"
-        aria-label={tHardcodedUi.raw('componentsLayoutUserMenu.line142JsxAttrAriaLabelYourMenu')}
+        className="m-0 size-8 overflow-hidden rounded-sm p-0"
       >
         <UserAvatar
           email={user.email}
-          name={user.name}
+          name={currentAccount?.name}
           avatarUrl={user.avatar}
           size="sm"
-          className="rounded-none"
+          className="size-full rounded-sm"
         />
       </Button>
     ) : (
       <SidebarMenuButton
         size="lg"
         className={cn(
-          'group/user relative h-auto gap-2 rounded-2xl border border-transparent bg-transparent px-1.5 py-1',
-          'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
+          'group/user relative gap-2 px-2.5 py-1',
+          // 'hover:bg-sidebar-accent/60 data-[state=open]:bg-sidebar-accent',
+          'relative flex cursor-pointer items-center gap-2 rounded-md px-2 transition-colors duration-150',
           'group-data-[collapsible=icon]:!justify-center group-data-[collapsible=icon]:!gap-0 group-data-[collapsible=icon]:!px-0',
         )}
       >
@@ -151,16 +145,15 @@ export function UserMenu({
           email={user.email}
           name={user.name}
           avatarUrl={user.avatar}
-          size="sm"
-          className="ring-border/40 ring-1"
+          size="md"
+          className="border-border border"
         />
-        <div className="grid min-w-0 flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
+        <div className="flex min-w-0 flex-1 flex-col items-start justify-start space-y-0 text-left leading-tight group-data-[collapsible=icon]:hidden">
           <span className="text-foreground truncate text-sm font-medium tracking-tight">
             {user.name}
           </span>
-          <span className="text-muted-foreground/80 mt-0.5 truncate text-xs">{user.email}</span>
+          <span className="text-muted-foreground/80 truncate text-xs">{user.email}</span>
         </div>
-        <ChevronsUpDown className="text-muted-foreground/30 ml-auto size-3 shrink-0 group-data-[collapsible=icon]:hidden" />
       </SidebarMenuButton>
     );
 
@@ -176,11 +169,17 @@ export function UserMenu({
         {currentAccount && (
           <>
             <DropdownMenuItem
-              onSelect={() =>
+              onClick={() =>
                 deferAfterClose(() => router.push(`/accounts/${currentAccount.account_id}`))
               }
             >
-              <EntityAvatar label={currentAccount.name} size="lg" />
+              <UserAvatar
+                email={user.email}
+                name={user.name}
+                avatarUrl={user.avatar}
+                size="lg"
+                className="border-border border"
+              />
               <div className="min-w-0 flex-1 leading-tight">
                 <div className="text-foreground truncate text-sm font-medium">
                   {currentAccount.name}
@@ -195,18 +194,18 @@ export function UserMenu({
           </>
         )}
 
-        <DropdownMenuItem onSelect={() => deferAfterClose(() => router.push('/projects'))}>
+        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/projects'))}>
           <HomeSolid />
           Home
         </DropdownMenuItem>
 
-        <DropdownMenuItem onSelect={() => deferAfterClose(() => router.push('/marketplace'))}>
+        <DropdownMenuItem onClick={() => deferAfterClose(() => router.push('/marketplace'))}>
           <Store />
           Marketplace
         </DropdownMenuItem>
 
         <DropdownMenuItem
-          onSelect={() =>
+          onClick={() =>
             deferAfterClose(() => {
               if (!openExternalRoute('/docs')) router.push('/docs');
             })
@@ -216,36 +215,36 @@ export function UserMenu({
           Docs
         </DropdownMenuItem>
 
-        <DropdownMenuItem onSelect={() => deferAfterClose(() => setDownloadOpen(true))}>
+        <DropdownMenuItem onClick={() => deferAfterClose(() => setDownloadOpen(true))}>
           <Download />
           Download apps
         </DropdownMenuItem>
 
-        <DropdownMenuItem onSelect={() => deferAfterClose(() => setSupportOpen(true))}>
+        <DropdownMenuItem onClick={() => deferAfterClose(() => setSupportOpen(true))}>
           <LifeBuoy />
           Support
         </DropdownMenuItem>
 
-        <DropdownMenuItem onSelect={() => openUserSettings('general')}>
-          <CogOneSolid />
+        <DropdownMenuItem onClick={() => openUserSettings('general')}>
+          <CogOne />
 
           {tHardcodedUi.raw('componentsLayoutUserMenu.line209JsxAttrLabelUserSettings')}
         </DropdownMenuItem>
 
         {isBillingEnabled() && canManageBilling && (
           <DropdownMenuItem
-            onSelect={() =>
+            onClick={() =>
               deferAfterClose(() =>
                 useAccountSettingsModalStore.getState().openAccountSettings({ tab: 'billing' }),
               )
             }
           >
-            <CreditCardSolid />
+            <CreditCard />
             Billing
           </DropdownMenuItem>
         )}
 
-        <DropdownMenuItem variant="destructive" onSelect={openLogoutConfirm}>
+        <DropdownMenuItem variant="destructive" onClick={openLogoutConfirm}>
           <LogOut />
 
           {tHardcodedUi.raw('componentsLayoutUserMenu.line248JsxAttrLabelLogOut')}

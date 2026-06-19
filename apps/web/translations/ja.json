@@ -5522,12 +5522,15 @@
     "componentsSessionDiffDialog": {
       "line32JsxTextFileChanges": "ファイル変更"
     },
-    "componentsSessionExportTranscriptDialog": {
+    "componentsSessionExportTranscriptModal": {
       "line118JsxTextExportTranscript": "トランスクリプトをエクスポート",
       "line121JsxTextExportThisSessionAsAMarkdownFileConfigure": "このセッションを Markdown ファイルとしてエクスポートします。含める内容を以下で設定してください。",
       "line131JsxTextAssistantMetadata": "アシスタントのメタデータ",
+      "line131JsxTextAssistantMetadataDescription": "ヘッダーにエージェント名、モデル、応答時間を含めます。",
       "line145JsxTextToolCallDetails": "ツール呼び出しの詳細",
+      "line145JsxTextToolCallDetailsDescription": "ツールの入力、出力、エラーを折りたたみ可能なセクションに含めます。",
       "line159JsxTextThinkingReasoning": "思考 / 推論",
+      "line159JsxTextThinkingReasoningDescription": "モデルの内部推論ブロックを引用テキストとして含めます。",
       "line176JsxTextLoadingMessages": "メッセージを読み込み中...",
       "line224JsxTextDownloadMd": ".md をダウンロード"
     },

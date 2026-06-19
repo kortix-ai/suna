@@ -25,7 +25,6 @@ import {
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 
-import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
 import { ConnectingScreen } from '@/components/dashboard/connecting-screen';
 import { AuditTab } from '@/components/iam/audit-tab';
 import { AuditWebhooksCard } from '@/components/iam/audit-webhooks-card';
@@ -77,7 +76,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { UserAvatar } from '@/components/ui/user-avatar';
 import { BillingTab } from '@/features/accounts/settings/billing-tab';
 import { TransactionsTab } from '@/features/accounts/settings/transactions-tab';
+import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { useAuth } from '@/features/providers/auth-provider';
+import { useAccountState } from '@/hooks/billing';
 import { addGroupMembers, listGroups } from '@/lib/iam-client';
 import {
   type AccountDetail,
@@ -98,7 +99,6 @@ import {
   updateAccountName,
 } from '@/lib/projects-client';
 import { usePermissions } from '@/lib/use-permission';
-import { useAccountState } from '@/hooks/billing';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 
@@ -320,7 +320,7 @@ export default function AccountSettingsPage() {
                         upgrade-dialog store; mount its renderer here (the global
                         one lives only on share pages) so the dialog actually
                         appears, scoped to THIS account via the provider above. */}
-                  <GlobalUpgradeDialog />
+                  <GlobalUpgradeModal />
                 </BillingAccountProvider>
               </TabsContent>
             )}

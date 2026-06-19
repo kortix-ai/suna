@@ -167,10 +167,12 @@ export function DisclosureTrigger({
 export function DisclosureContent({
   children,
   className,
+  contentClassName,
   variant = 'default',
 }: {
   children: React.ReactNode;
   className?: string;
+  contentClassName?: string;
   variant?: 'default' | 'outline';
 }) {
   const { open, variants } = useDisclosure();
@@ -210,6 +212,7 @@ export function DisclosureContent({
             animate="expanded"
             exit="collapsed"
             variants={combinedVariants}
+            className={contentClassName}
           >
             {children}
           </motion.div>

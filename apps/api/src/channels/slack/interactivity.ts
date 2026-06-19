@@ -369,11 +369,14 @@ export async function handleBlockAction(payload: SlackInteractionPayload): Promi
     .where(eq(projects.projectId, projectId))
     .limit(1);
   if (token && pickerTs) {
+    // DM channel ids start with 'D' — a <#D…> mention renders as a dead link
+    // there, so phrase it as "this DM" instead of a channel mention.
+    const target = channelId.startsWith('D') ? 'this DM' : `<#${channelId}>`;
     await updateMessage(
       token,
       channelId,
       pickerTs,
-      `✓ Linked <#${channelId}> to *${proj?.name ?? 'project'}*.`,
+      `✓ Linked ${target} to *${proj?.name ?? 'project'}*.`,
     );
   }
 
