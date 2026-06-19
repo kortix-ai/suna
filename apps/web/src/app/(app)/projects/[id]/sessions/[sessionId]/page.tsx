@@ -7,12 +7,12 @@ import { Loader2, RotateCcw } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { ProjectShell } from '@/components/projects/project-shell';
-import { SessionChat } from '@/components/session/session-chat';
-import { SessionLayout } from '@/components/session/session-layout';
-import { SessionStartingLoader } from '@/components/session/session-starting-loader';
 import { Button } from '@/components/ui/button';
+import { ProjectShell } from '@/features/co-worker/project-layout/project-shell';
 import { useAuth } from '@/features/providers/auth-provider';
+import { SessionChat } from '@/features/session/session-chat';
+import { SessionLayout } from '@/features/session/session-layout';
+import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { useAccountState } from '@/hooks/billing';
 import {
   clearOpencodeEnsureGuard,

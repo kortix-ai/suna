@@ -3186,6 +3186,16 @@ export default function BrandPage() {
                     <EntityAvatar icon={FolderGit2} />
                     <EntityAvatar icon={Users} size="lg" />
                   </div>
+                  <div className="flex items-center gap-4">
+                    <span className="text-muted-foreground w-24 text-xs tracking-wider uppercase">
+                      Chalk
+                    </span>
+                    {['Atlas', 'Beacon', 'Cobalt', 'Drift', 'Ember', 'Forge', 'Glacier'].map(
+                      (label) => (
+                        <EntityAvatar key={label} label={label} />
+                      ),
+                    )}
+                  </div>
                 </DemoContainer>
               </div>
 

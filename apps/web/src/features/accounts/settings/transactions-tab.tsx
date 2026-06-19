@@ -1,6 +1,6 @@
 'use client';
 
-import CreditTransactions from '@/components/billing/credit-transactions';
+import CreditTransactions from '@/features/billing/credit-transactions';
 import { useTranslations } from 'next-intl';
 
 export function TransactionsTab() {

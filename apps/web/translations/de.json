@@ -5522,12 +5522,15 @@
     "componentsSessionDiffDialog": {
       "line32JsxTextFileChanges": "Dateiänderungen"
     },
-    "componentsSessionExportTranscriptDialog": {
+    "componentsSessionExportTranscriptModal": {
       "line118JsxTextExportTranscript": "Transkript exportieren",
       "line121JsxTextExportThisSessionAsAMarkdownFileConfigure": "Diese Sitzung als Markdown-Datei exportieren. Lege unten fest, was enthalten sein soll.",
       "line131JsxTextAssistantMetadata": "Assistenten-Metadaten",
+      "line131JsxTextAssistantMetadataDescription": "Agentenname, Modell und Antwortdauer in Überschriften einbeziehen.",
       "line145JsxTextToolCallDetails": "Details zu Tool-Aufrufen",
+      "line145JsxTextToolCallDetailsDescription": "Tool-Eingaben, -Ausgaben und -Fehler in einklappbaren Abschnitten einbeziehen.",
       "line159JsxTextThinkingReasoning": "Denken / Schlussfolgerungen",
+      "line159JsxTextThinkingReasoningDescription": "Interne Denkblöcke des Modells als zitierten Text einbeziehen.",
       "line176JsxTextLoadingMessages": "Nachrichten werden geladen...",
       "line224JsxTextDownloadMd": ".md herunterladen"
     },

@@ -1,16 +1,12 @@
-"use client";
+'use client';
 
 import { useTranslations } from 'next-intl';
 
-import React, { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { InfoBanner } from '@/components/ui/info-banner';
 import {
   Select,
   SelectContent,
@@ -18,41 +14,45 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { AgentSelector } from '@/features/session/session-chat-input';
+import { useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
+import { useSandbox } from '@/hooks/platform/use-sandbox';
 import {
-  X,
-  Trash2,
+  useDeleteTrigger,
+  useRunTrigger,
+  useToggleTrigger,
+  useTriggerExecutions,
+  useUpdateTrigger,
+  type Execution,
+  type ExecutionStatus,
+  type SessionMode,
+  type Trigger,
+} from '@/hooks/scheduled-tasks';
+import { getSandboxUrl } from '@/lib/platform-client';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
+  Loader2,
+  Play,
   Power,
   PowerOff,
   Save,
-  Play,
-  Timer,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  AlertTriangle,
   SkipForward,
-  Loader2,
-  ExternalLink,
+  Timer,
+  Trash2,
   Webhook,
+  X,
+  XCircle,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import React, { useMemo, useState } from 'react';
 import { ScheduleBuilder } from './schedule-builder';
-import {
-  useUpdateTrigger,
-  useDeleteTrigger,
-  useToggleTrigger,
-  useRunTrigger,
-  useTriggerExecutions,
-  type Trigger,
-  type Execution,
-  type SessionMode,
-  type ExecutionStatus,
-} from '@/hooks/scheduled-tasks';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
-import { useSandbox } from '@/hooks/platform/use-sandbox';
-import { getSandboxUrl } from '@/lib/platform-client';
-import { AgentSelector } from '@/components/session/session-chat-input';
-import { useVisibleAgents } from '@/hooks/opencode/use-opencode-sessions';
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -79,11 +79,20 @@ function describeCron(expr: string): string {
     if (sec.startsWith('*/') && min === '*' && hour === '*') return `Every ${sec.slice(2)}s`;
     if (sec === '0' && min.startsWith('*/') && hour === '*') return `Every ${min.slice(2)}m`;
     if (sec === '0' && min === '0' && hour.startsWith('*/')) return `Every ${hour.slice(2)}h`;
-    if (sec === '0' && !min.includes('*') && !hour.includes('*') && day === '*' && month === '*' && weekday === '*') {
+    if (
+      sec === '0' &&
+      !min.includes('*') &&
+      !hour.includes('*') &&
+      day === '*' &&
+      month === '*' &&
+      weekday === '*'
+    ) {
       return `Daily at ${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
     }
     return expr;
-  } catch { return expr; }
+  } catch {
+    return expr;
+  }
 }
 
 function formatDuration(ms: number | null): string {
@@ -100,24 +109,37 @@ function formatDateTime(dateStr: string | null): string {
 
 function getStatusIcon(status: ExecutionStatus) {
   switch (status) {
-    case 'completed': return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />;
-    case 'failed': return <XCircle className="h-3.5 w-3.5 text-red-500" />;
-    case 'timeout': return <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />;
-    case 'skipped': return <SkipForward className="h-3.5 w-3.5 text-muted-foreground" />;
-    case 'running': return <Loader2 className="h-3.5 w-3.5 text-blue-500 animate-spin" />;
-    case 'pending': return <Clock className="h-3.5 w-3.5 text-muted-foreground" />;
-    default: return <Clock className="h-3.5 w-3.5 text-muted-foreground" />;
+    case 'completed':
+      return <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />;
+    case 'failed':
+      return <XCircle className="h-3.5 w-3.5 text-red-500" />;
+    case 'timeout':
+      return <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />;
+    case 'skipped':
+      return <SkipForward className="text-muted-foreground h-3.5 w-3.5" />;
+    case 'running':
+      return <Loader2 className="h-3.5 w-3.5 animate-spin text-blue-500" />;
+    case 'pending':
+      return <Clock className="text-muted-foreground h-3.5 w-3.5" />;
+    default:
+      return <Clock className="text-muted-foreground h-3.5 w-3.5" />;
   }
 }
 
 function getStatusColor(status: ExecutionStatus): string {
   switch (status) {
-    case 'completed': return 'text-emerald-600 dark:text-emerald-400';
-    case 'failed': return 'text-red-600 dark:text-red-400';
-    case 'timeout': return 'text-amber-600 dark:text-amber-400';
-    case 'skipped': return 'text-muted-foreground';
-    case 'running': return 'text-blue-600 dark:text-blue-400';
-    default: return 'text-muted-foreground';
+    case 'completed':
+      return 'text-emerald-600 dark:text-emerald-400';
+    case 'failed':
+      return 'text-red-600 dark:text-red-400';
+    case 'timeout':
+      return 'text-amber-600 dark:text-amber-400';
+    case 'skipped':
+      return 'text-muted-foreground';
+    case 'running':
+      return 'text-blue-600 dark:text-blue-400';
+    default:
+      return 'text-muted-foreground';
   }
 }
 
@@ -133,7 +155,9 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
   const router = useRouter();
   const { sandbox } = useSandbox();
   const webhookBaseUrl = useMemo(() => {
-    try { if (sandbox) return getSandboxUrl(sandbox); } catch {}
+    try {
+      if (sandbox) return getSandboxUrl(sandbox);
+    } catch {}
     return 'https://<sandbox-url>';
   }, [sandbox]);
   const [tab, setTab] = useState<'settings' | 'executions'>('settings');
@@ -169,7 +193,16 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
     setAgentName(trigger.agentName || null);
     setWebhookPath(trigger.webhook?.path || '');
     setIsDirty(false);
-  }, [trigger.id, trigger.name, trigger.cronExpr, trigger.timezone, trigger.prompt, trigger.sessionMode, trigger.agentName, trigger.webhook?.path]);
+  }, [
+    trigger.id,
+    trigger.name,
+    trigger.cronExpr,
+    trigger.timezone,
+    trigger.prompt,
+    trigger.sessionMode,
+    trigger.agentName,
+    trigger.webhook?.path,
+  ]);
 
   const markDirty = () => setIsDirty(true);
 
@@ -219,7 +252,13 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
 
   const handleDelete = async () => {
     if (!trigger.triggerId) return;
-    if (!confirm(tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line219CallConfirmAreYouSureYouWantToDeleteThis'))) {
+    if (
+      !confirm(
+        tHardcodedUi.raw(
+          'componentsScheduledTasksTaskDetailPanel.line219CallConfirmAreYouSureYouWantToDeleteThis',
+        ),
+      )
+    ) {
       return;
     }
     try {
@@ -232,18 +271,24 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
   };
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="flex h-full flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b">
+      <div className="flex items-center justify-between border-b p-4">
         <div className="flex items-center gap-3">
-          <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-muted">
-            {trigger.type === 'cron' ? <Timer className="h-5 w-5" /> : <Webhook className="h-5 w-5" />}
+          <div className="bg-muted flex h-10 w-10 items-center justify-center rounded-2xl">
+            {trigger.type === 'cron' ? (
+              <Timer className="h-5 w-5" />
+            ) : (
+              <Webhook className="h-5 w-5" />
+            )}
           </div>
           <div>
-            <h2 className="font-semibold text-foreground">{trigger.name}</h2>
+            <h2 className="text-foreground font-semibold">{trigger.name}</h2>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-muted-foreground">
-                {trigger.type === 'cron' ? describeCron(trigger.cronExpr || '') : `${trigger.webhook?.method || 'POST'} ${trigger.webhook?.path || ''}`}
+              <span className="text-muted-foreground text-xs">
+                {trigger.type === 'cron'
+                  ? describeCron(trigger.cronExpr || '')
+                  : `${trigger.webhook?.method || 'POST'} ${trigger.webhook?.path || ''}`}
               </span>
               <Badge variant={trigger.isActive ? 'highlight' : 'secondary'} className="text-xs">
                 {trigger.type === 'cron' ? (trigger.isActive ? 'Active' : 'Paused') : 'Webhook'}
@@ -281,10 +326,14 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
             {/* Name */}
             <div className="space-y-2">
               <Label htmlFor="edit-name">Name</Label>
-              <Input type="text"
+              <Input
+                type="text"
                 id="edit-name"
                 value={name}
-                onChange={(e) => { setName(e.target.value); markDirty(); }}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  markDirty();
+                }}
               />
             </div>
 
@@ -294,20 +343,31 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
                   <Label>Schedule</Label>
                   <ScheduleBuilder
                     value={cronExpr}
-                    onChange={(v) => { setCronExpr(v); markDirty(); }}
+                    onChange={(v) => {
+                      setCronExpr(v);
+                      markDirty();
+                    }}
                     compact
                   />
                 </div>
 
                 <div className="space-y-2">
                   <Label>Timezone</Label>
-                   <Select value={timezone} onValueChange={(v) => { setTimezone(v); markDirty(); }}>
-                    <SelectTrigger className="cursor-pointer hover:bg-muted/40 transition-colors">
+                  <Select
+                    value={timezone}
+                    onValueChange={(v) => {
+                      setTimezone(v);
+                      markDirty();
+                    }}
+                  >
+                    <SelectTrigger className="hover:bg-muted/40 cursor-pointer transition-colors">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       {TIMEZONES.map((tz) => (
-                        <SelectItem key={tz} value={tz} className="cursor-pointer">{tz}</SelectItem>
+                        <SelectItem key={tz} value={tz} className="cursor-pointer">
+                          {tz}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -316,19 +376,40 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
             ) : (
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line316JsxTextWebhookPath')}</Label>
-                  <Input type="text" value={webhookPath} onChange={(e) => { setWebhookPath(e.target.value); markDirty(); }} placeholder="/hooks/my-endpoint" />
+                  <Label>
+                    {tHardcodedUi.raw(
+                      'componentsScheduledTasksTaskDetailPanel.line316JsxTextWebhookPath',
+                    )}
+                  </Label>
+                  <Input
+                    type="text"
+                    value={webhookPath}
+                    onChange={(e) => {
+                      setWebhookPath(e.target.value);
+                      markDirty();
+                    }}
+                    placeholder="/hooks/my-endpoint"
+                  />
                 </div>
 
                 {/* Full external URL + curl example */}
-                <div className="rounded-2xl bg-muted/50 border p-3 space-y-2">
-                  <div className="text-xs font-medium text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line322JsxTextExternalUrl')}</div>
-                  <code className="text-xs font-mono text-foreground break-all block select-all">
-                    {webhookBaseUrl}{trigger.webhook?.path || webhookPath || '/hooks/...'}
+                <div className="bg-muted/50 space-y-2 rounded-2xl border p-3">
+                  <div className="text-muted-foreground text-xs font-medium">
+                    {tHardcodedUi.raw(
+                      'componentsScheduledTasksTaskDetailPanel.line322JsxTextExternalUrl',
+                    )}
+                  </div>
+                  <code className="text-foreground block font-mono text-xs break-all select-all">
+                    {webhookBaseUrl}
+                    {trigger.webhook?.path || webhookPath || '/hooks/...'}
                   </code>
-                  <div className="text-xs font-medium text-muted-foreground pt-1">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line326JsxTextExampleCurl')}</div>
-                  <code className="text-xs font-mono text-foreground/70 break-all block select-all whitespace-pre-wrap">
-{`curl -X POST "${webhookBaseUrl}${trigger.webhook?.path || webhookPath}"${trigger.webhook?.secretProtected ? ` \\\n  -H "X-Kortix-Trigger-Secret: <secret>"` : ''} \\
+                  <div className="text-muted-foreground pt-1 text-xs font-medium">
+                    {tHardcodedUi.raw(
+                      'componentsScheduledTasksTaskDetailPanel.line326JsxTextExampleCurl',
+                    )}
+                  </div>
+                  <code className="text-foreground/70 block font-mono text-xs break-all whitespace-pre-wrap select-all">
+                    {`curl -X POST "${webhookBaseUrl}${trigger.webhook?.path || webhookPath}"${trigger.webhook?.secretProtected ? ` \\\n  -H "X-Kortix-Trigger-Secret: <secret>"` : ''} \\
   -H "Content-Type: application/json" \\
   -d '{"key": "value"}'`}
                   </code>
@@ -336,7 +417,7 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
 
                 <div className="space-y-2">
                   <Label>Secret</Label>
-                  <div className="h-9 px-3 flex items-center rounded-2xl border bg-muted/50 text-sm text-muted-foreground">
+                  <div className="bg-muted/50 text-muted-foreground flex h-9 items-center rounded-2xl border px-3 text-sm">
                     {trigger.webhook?.secretProtected ? 'Protected' : 'None'}
                   </div>
                 </div>
@@ -345,134 +426,181 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
 
             {/* Prompt (for prompt actions) */}
             {(trigger.action_type === 'prompt' || !trigger.action_type) && (
-            <div className="space-y-2">
-              <Label htmlFor="edit-prompt">Prompt</Label>
-              <Textarea
-                id="edit-prompt"
-                value={prompt}
-                onChange={(e) => { setPrompt(e.target.value); markDirty(); }}
-                placeholder={tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line351JsxAttrPlaceholderTheInstructionSentToYourAgent')}
-                rows={4}
-              />
-            </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-prompt">Prompt</Label>
+                <Textarea
+                  id="edit-prompt"
+                  value={prompt}
+                  onChange={(e) => {
+                    setPrompt(e.target.value);
+                    markDirty();
+                  }}
+                  placeholder={tHardcodedUi.raw(
+                    'componentsScheduledTasksTaskDetailPanel.line351JsxAttrPlaceholderTheInstructionSentToYourAgent',
+                  )}
+                  rows={4}
+                />
+              </div>
             )}
 
             {/* Session Mode */}
             {(trigger.action_type === 'prompt' || !trigger.action_type) && (
-            <div className="space-y-2">
-              <Label>{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line360JsxTextSessionMode')}</Label>
-              <Select
-                value={sessionMode}
-                onValueChange={(v) => { setSessionMode(v as SessionMode); markDirty(); }}
-              >
-                <SelectTrigger className="cursor-pointer hover:bg-muted/40 transition-colors">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="new" className="cursor-pointer">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line369JsxTextNewSession')}</SelectItem>
-                  <SelectItem value="reuse" className="cursor-pointer">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line370JsxTextReuseSession')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              <div className="space-y-2">
+                <Label>
+                  {tHardcodedUi.raw(
+                    'componentsScheduledTasksTaskDetailPanel.line360JsxTextSessionMode',
+                  )}
+                </Label>
+                <Select
+                  value={sessionMode}
+                  onValueChange={(v) => {
+                    setSessionMode(v as SessionMode);
+                    markDirty();
+                  }}
+                >
+                  <SelectTrigger className="hover:bg-muted/40 cursor-pointer transition-colors">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new" className="cursor-pointer">
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskDetailPanel.line369JsxTextNewSession',
+                      )}
+                    </SelectItem>
+                    <SelectItem value="reuse" className="cursor-pointer">
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskDetailPanel.line370JsxTextReuseSession',
+                      )}
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             )}
 
             {/* Agent Name (for prompt actions) */}
             {(trigger.action_type === 'prompt' || !trigger.action_type) && (
-            <div className="space-y-2">
-              <Label>Agent</Label>
-              <div className="rounded-2xl border bg-card px-2 py-1">
-                <AgentSelector
-                  agents={agents}
-                  selectedAgent={agentName}
-                  onSelect={(next) => { setAgentName(next); markDirty(); }}
-                />
+              <div className="space-y-2">
+                <Label>Agent</Label>
+                <div className="bg-card rounded-2xl border px-2 py-1">
+                  <AgentSelector
+                    agents={agents}
+                    selectedAgent={agentName}
+                    onSelect={(next) => {
+                      setAgentName(next);
+                      markDirty();
+                    }}
+                  />
+                </div>
               </div>
-            </div>
             )}
 
             {/* Info */}
-            <div className="rounded-2xl bg-muted/50 p-3 space-y-1.5 text-sm">
+            <div className="bg-muted/50 space-y-1.5 rounded-2xl p-3 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Type</span>
-                <span className="font-medium capitalize">{trigger.type} → {trigger.action_type ?? 'prompt'}</span>
+                <span className="font-medium capitalize">
+                  {trigger.type} → {trigger.action_type ?? 'prompt'}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line397JsxTextNextRun')}</span>
-                 <span className="font-medium">
-                   {trigger.type === 'cron' ? (trigger.isActive ? formatDateTime(trigger.nextRunAt) : 'Paused') : 'On demand'}
-                 </span>
+                <span className="text-muted-foreground">
+                  {tHardcodedUi.raw(
+                    'componentsScheduledTasksTaskDetailPanel.line397JsxTextNextRun',
+                  )}
+                </span>
+                <span className="font-medium">
+                  {trigger.type === 'cron'
+                    ? trigger.isActive
+                      ? formatDateTime(trigger.nextRunAt)
+                      : 'Paused'
+                    : 'On demand'}
+                </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line403JsxTextLastRun')}</span>
+                <span className="text-muted-foreground">
+                  {tHardcodedUi.raw(
+                    'componentsScheduledTasksTaskDetailPanel.line403JsxTextLastRun',
+                  )}
+                </span>
                 <span className="font-medium">{formatDateTime(trigger.lastRunAt)}</span>
               </div>
               {(trigger.action_type === 'prompt' || !trigger.action_type) && (
-              <>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Model</span>
-                <span className="font-medium">{trigger.modelId || 'Default (Sonnet)'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Agent</span>
-                <span className="font-medium">{trigger.agentName || 'Default'}</span>
-              </div>
-              </>
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Model</span>
+                    <span className="font-medium">{trigger.modelId || 'Default (Sonnet)'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Agent</span>
+                    <span className="font-medium">{trigger.agentName || 'Default'}</span>
+                  </div>
+                </>
               )}
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Created</span>
-                <span className="font-medium">{new Date(trigger.createdAt).toLocaleDateString()}</span>
+                <span className="font-medium">
+                  {new Date(trigger.createdAt).toLocaleDateString()}
+                </span>
               </div>
             </div>
 
             {/* Actions */}
             <div className="space-y-2 pt-2">
-               {isDirty && (
-                 <Button
+              {isDirty && (
+                <Button
                   onClick={handleSave}
                   disabled={updateMutation.isPending}
-                  className="w-full cursor-pointer "
+                  className="w-full cursor-pointer"
                 >
-                  <Save className="h-4 w-4 mr-2" />
+                  <Save className="mr-2 h-4 w-4" />
                   {updateMutation.isPending ? 'Saving...' : 'Save Changes'}
                 </Button>
               )}
               {trigger.triggerId && (
-              <Button
-                variant="outline"
-                onClick={handleRun}
-                disabled={runMutation.isPending}
-                className="w-full cursor-pointer "
-              >
-                <Play className="h-4 w-4 mr-2" />
-                {runMutation.isPending ? 'Running...' : 'Run Now'}
-              </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleRun}
+                  disabled={runMutation.isPending}
+                  className="w-full cursor-pointer"
+                >
+                  <Play className="mr-2 h-4 w-4" />
+                  {runMutation.isPending ? 'Running...' : 'Run Now'}
+                </Button>
               )}
               {trigger.triggerId && (
-              <Button
-                variant="outline"
-                onClick={handleToggle}
-                disabled={toggleMutation.isPending}
-                className="w-full cursor-pointer "
-              >
-                {trigger.isActive ? (
-                  <>
-                    <PowerOff className="h-4 w-4 mr-2" />{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line457JsxTextPauseTrigger')}</>
-                ) : (
-                  <>
-                    <Power className="h-4 w-4 mr-2" />{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line462JsxTextResumeTrigger')}</>
-                )}
-              </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleToggle}
+                  disabled={toggleMutation.isPending}
+                  className="w-full cursor-pointer"
+                >
+                  {trigger.isActive ? (
+                    <>
+                      <PowerOff className="mr-2 h-4 w-4" />
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskDetailPanel.line457JsxTextPauseTrigger',
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <Power className="mr-2 h-4 w-4" />
+                      {tHardcodedUi.raw(
+                        'componentsScheduledTasksTaskDetailPanel.line462JsxTextResumeTrigger',
+                      )}
+                    </>
+                  )}
+                </Button>
               )}
               {trigger.triggerId && (
-              <Button
-                variant="outline"
-                onClick={handleDelete}
-                disabled={deleteMutation.isPending}
-                className="w-full cursor-pointer "
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                {deleteMutation.isPending ? 'Deleting...' : 'Delete Trigger'}
-              </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleDelete}
+                  disabled={deleteMutation.isPending}
+                  className="w-full cursor-pointer"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  {deleteMutation.isPending ? 'Deleting...' : 'Delete Trigger'}
+                </Button>
               )}
             </div>
           </div>
@@ -480,17 +608,29 @@ export function TaskDetailPanel({ trigger, onClose }: TaskDetailPanelProps) {
           /* Executions Tab */
           <div className="space-y-3">
             {executions.length === 0 ? (
-              <div className="text-center py-8">
-                <Clock className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
-                <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line486JsxTextNoExecutionsYet')}</p>
-                <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line488JsxTextExecutionsWillAppearHereOnceTheTriggerRuns')}</p>
+              <div className="py-8 text-center">
+                <Clock className="text-muted-foreground mx-auto mb-2 h-8 w-8" />
+                <p className="text-muted-foreground text-sm">
+                  {tHardcodedUi.raw(
+                    'componentsScheduledTasksTaskDetailPanel.line486JsxTextNoExecutionsYet',
+                  )}
+                </p>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {tHardcodedUi.raw(
+                    'componentsScheduledTasksTaskDetailPanel.line488JsxTextExecutionsWillAppearHereOnceTheTriggerRuns',
+                  )}
+                </p>
               </div>
             ) : (
-                executions.map((exec) => (
-                  <ExecutionItem key={exec.executionId} execution={exec} onOpenSession={(sessionId) => router.push(`/sessions/${sessionId}`)} />
-                ))
-              )}
-            </div>
+              executions.map((exec) => (
+                <ExecutionItem
+                  key={exec.executionId}
+                  execution={exec}
+                  onOpenSession={(sessionId) => router.push(`/sessions/${sessionId}`)}
+                />
+              ))
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -514,7 +654,7 @@ function ExecutionItem({
     <div
       className={cn(
         'rounded-2xl border p-3 text-sm transition-colors',
-        canOpenSession ? 'cursor-pointer hover:bg-muted/30' : 'cursor-default'
+        canOpenSession ? 'hover:bg-muted/30 cursor-pointer' : 'cursor-default',
       )}
       onClick={() => {
         if (execution.sessionId) {
@@ -527,31 +667,35 @@ function ExecutionItem({
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {getStatusIcon(execution.status)}
-          <span className={cn("font-medium capitalize", getStatusColor(execution.status))}>
+          <span className={cn('font-medium capitalize', getStatusColor(execution.status))}>
             {execution.status}
           </span>
           {execution.retryCount > 0 && (
-            <span className="text-xs text-muted-foreground">(retry {execution.retryCount})</span>
+            <span className="text-muted-foreground text-xs">(retry {execution.retryCount})</span>
           )}
         </div>
-        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="text-muted-foreground flex items-center gap-3 text-xs">
           {execution.sessionId && <ExternalLink className="h-3.5 w-3.5" />}
           <span>{formatDuration(execution.durationMs)}</span>
           <span>{execution.startedAt ? new Date(execution.startedAt).toLocaleString() : '--'}</span>
         </div>
       </div>
       {execution.sessionId && (
-        <div className="mt-2 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line547JsxTextOpenSession')}{execution.sessionId}`
+        <div className="text-muted-foreground mt-2 text-xs">
+          {tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line547JsxTextOpenSession')}
+          {execution.sessionId}`
         </div>
       )}
       {execution.exitCode !== undefined && execution.exitCode !== null && (
-        <div className="mt-1 text-xs text-muted-foreground">{tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line552JsxTextExitCode')}<span className={execution.exitCode === 0 ? 'text-emerald-500' : 'text-amber-500'}>{execution.exitCode}</span>
+        <div className="text-muted-foreground mt-1 text-xs">
+          {tHardcodedUi.raw('componentsScheduledTasksTaskDetailPanel.line552JsxTextExitCode')}
+          <span className={execution.exitCode === 0 ? 'text-emerald-500' : 'text-amber-500'}>
+            {execution.exitCode}
+          </span>
         </div>
       )}
       {execution.httpStatus !== undefined && execution.httpStatus !== null && (
-        <div className="mt-1 text-xs text-muted-foreground">
-          HTTP {execution.httpStatus}
-        </div>
+        <div className="text-muted-foreground mt-1 text-xs">HTTP {execution.httpStatus}</div>
       )}
       {expanded && execution.errorMessage && (
         <InfoBanner tone="destructive" icon={AlertTriangle} className="mt-2">

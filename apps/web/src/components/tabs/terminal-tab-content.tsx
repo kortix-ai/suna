@@ -2,24 +2,24 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useCallback, useEffect, useRef } from 'react';
-import dynamic from 'next/dynamic';
-import { CircleDashed, Plus, Terminal } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useCreatePty, useOpenCodePtyList, useRemovePty } from '@/hooks/opencode/use-opencode-pty';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useServerStore } from '@/stores/server-store';
-import { useOpenCodePtyList, useCreatePty, useRemovePty } from '@/hooks/opencode/use-opencode-pty';
-import { useTabStore, openTabAndNavigate } from '@/stores/tab-store';
+import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import { CircleDashed, Plus, Terminal } from 'lucide-react';
+import dynamic from 'next/dynamic';
+import { useCallback, useEffect, useRef } from 'react';
 
 // Lazy-load terminal components to avoid SSR issues with xterm.js
 const SSHTerminal = dynamic(
-  () => import('@/components/session/ssh-terminal').then(mod => ({ default: mod.SSHTerminal })),
-  { ssr: false }
+  () => import('@/features/session/ssh-terminal').then((mod) => ({ default: mod.SSHTerminal })),
+  { ssr: false },
 );
 
 const PtyTerminal = dynamic(
-  () => import('@/components/session/pty-terminal').then(mod => ({ default: mod.PtyTerminal })),
-  { ssr: false }
+  () => import('@/features/session/pty-terminal').then((mod) => ({ default: mod.PtyTerminal })),
+  { ssr: false },
 );
 
 interface TerminalTabContentProps {
@@ -113,7 +113,7 @@ export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTab
   // Sandbox mode — shared SSH terminal
   if (currentSandboxId) {
     return (
-      <div className="h-full w-full bg-background">
+      <div className="bg-background h-full w-full">
         <SSHTerminal sandboxId={currentSandboxId} className="h-full" />
       </div>
     );
@@ -123,9 +123,9 @@ export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTab
   // race between tab navigation and the PTY list refetch after creation.
   if (isLoading || (!pty && !hasSeenPty.current)) {
     return (
-      <div className="h-full w-full flex flex-col items-center justify-center bg-background">
-        <CircleDashed className="h-4 w-4 text-muted-foreground animate-spin" />
-        <span className="text-xs text-muted-foreground mt-2">Connecting...</span>
+      <div className="bg-background flex h-full w-full flex-col items-center justify-center">
+        <CircleDashed className="text-muted-foreground h-4 w-4 animate-spin" />
+        <span className="text-muted-foreground mt-2 text-xs">Connecting...</span>
       </div>
     );
   }
@@ -133,22 +133,21 @@ export function TerminalTabContent({ ptyId, tabId, hidden = false }: TerminalTab
   // PTY not found — show prompt to open a new terminal
   if (!pty) {
     return (
-      <div className="h-full w-full flex flex-col items-center justify-center bg-background gap-3">
-        <Terminal className="h-8 w-8 text-muted-foreground/30" />
-        <span className="text-xs text-muted-foreground">{tHardcodedUi.raw('componentsTabsTerminalTabContent.line135JsxTextTerminalSessionEnded')}</span>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={handleNewTerminal}
-          className="gap-1.5"
-        >
-          <Plus className="h-3.5 w-3.5" />{tHardcodedUi.raw('componentsTabsTerminalTabContent.line143JsxTextNewTerminal')}</Button>
+      <div className="bg-background flex h-full w-full flex-col items-center justify-center gap-3">
+        <Terminal className="text-muted-foreground/30 h-8 w-8" />
+        <span className="text-muted-foreground text-xs">
+          {tHardcodedUi.raw('componentsTabsTerminalTabContent.line135JsxTextTerminalSessionEnded')}
+        </span>
+        <Button variant="outline" size="sm" onClick={handleNewTerminal} className="gap-1.5">
+          <Plus className="h-3.5 w-3.5" />
+          {tHardcodedUi.raw('componentsTabsTerminalTabContent.line143JsxTextNewTerminal')}
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="h-full w-full relative bg-background">
+    <div className="bg-background relative h-full w-full">
       <PtyTerminal
         pty={pty}
         serverUrl={serverUrl}

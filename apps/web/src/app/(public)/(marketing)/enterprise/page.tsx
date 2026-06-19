@@ -1,12 +1,12 @@
 'use client';
 
-import { DemoQualifierDialog } from '@/components/contact/demo-qualifier-dialog';
 import { Reveal } from '@/components/home/reveal';
 import { Badge } from '@/components/ui/badge';
 import { KORTIX_BULLET_GRADIENT, KortixAsterisk } from '@/components/ui/kortix-asterisk';
 import { Button } from '@/components/ui/marketing/button';
 import KortixGrid from '@/components/ui/marketing/gridder';
 import { KortixLetterField } from '@/components/ui/marketing/kortix-letter-field';
+import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { cn } from '@/lib/utils';
 import { Box, Building2, GitBranch, KeyRound, Server } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -364,7 +364,7 @@ const EnterprisePage = () => {
         <div className="h-24 sm:h-28" />
       </div>
 
-      <DemoQualifierDialog
+      <DemoQualifierModal
         open={calOpen}
         onOpenChange={setCalOpen}
         calLink={CAL_LINK}
