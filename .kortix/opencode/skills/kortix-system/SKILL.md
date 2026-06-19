@@ -258,6 +258,7 @@ kortix_cli = ["project.deploy", "project.cr.open"]   # what it may do via the Ko
 - Manifest has **no `[[agents]]`** at all → no restriction (full access). Existing projects are unchanged.
 - Agent **is listed** → its `connectors` + `kortix_cli` (default each = none if omitted).
 - Manifest **has `[[agents]]` but this agent isn't listed** → default-**deny** (it still runs its `.md`, but with no connectors and no Kortix-CLI powers).
+- **Your default agent:** with no `[[agents]]` it has **full access** (merge / deploy / spawn sub-agents, ∩ the user). The moment you adopt `[[agents]]`, **declare it too** — `[[agents]] name = "kortix"`, `kortix_cli = "all"`, `connectors = "all"` — or it falls under the unlisted-deny rule above. So: keep the default agent `"all"` and scope the *specialists* down.
 - The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing `kortix.toml` only takes effect once the **CR is merged** (read from the default branch).
 
 **`kortix_cli` — the grantable enum** (project-scoped only; account-level admin actions
