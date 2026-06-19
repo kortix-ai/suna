@@ -10,6 +10,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { ProjectShell } from '@/features/co-worker/project-layout/project-shell';
 import { useAuth } from '@/features/providers/auth-provider';
+import { InstantSessionShell } from '@/features/session/instant-session-shell';
 import { SessionChat } from '@/features/session/session-chat';
 import { SessionLayout } from '@/features/session/session-layout';
 import { SessionStartingLoader } from '@/features/session/session-starting-loader';
@@ -22,6 +23,7 @@ import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-event
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
 import { useProjectPresence } from '@/hooks/platform/use-project-presence';
 import { isBillingEnabled } from '@/lib/config';
+import { clearSessionFresh, isSessionFresh } from '@/lib/fresh-sessions';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
 import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
 import {
@@ -196,21 +198,52 @@ export default function ProjectSessionPage() {
     openUpgradeDialog({ reason: 'subscription_required', accountId: projectAccountId });
   }, [noPlan, openUpgradeDialog, projectAccountId]);
 
-  // ── Crossfade: ONE persistent loader fades out as the chat fades in ───────
-  // The loader is rendered at a SINGLE stable tree position for the whole
-  // pre-ready lifecycle, so it never remounts → never re-blanks its delay gate
-  // (the old "disappears for a second then reappears" bug). The chat mounts
-  // UNDER the loader the moment the sandbox is switched, warms up invisibly,
-  // then crossfades in once ActiveSessionChat reports it's actually ready.
+  // ── Crossfade: the instant shell fades out as the real chat fades in ──────
+  // Instead of a blocking full-screen loader, we render a fully-interactive
+  // session shell (welcome wallpaper + live input) at a SINGLE stable tree
+  // position for the whole pre-ready lifecycle, so it never remounts. The user
+  // can read + type immediately; provisioning runs silently underneath. The real
+  // chat mounts UNDER the shell the moment the sandbox is switched, warms up
+  // invisibly, then crossfades in once ActiveSessionChat reports it's ready —
+  // picking up any first message the user sent in the shell via the
+  // pending-prompt handoff.
   const [chatReady, setChatReady] = useState(false);
   const [loaderMounted, setLoaderMounted] = useState(true);
+  // A freshly-created session shows the instant typeable shell instead of a
+  // resume loader; `shellSubmitted` tracks whether a first message exists yet
+  // (typed in the shell, or handed off from the home composer).
+  const [shellSubmitted, setShellSubmitted] = useState(false);
+  const freshRef = useRef<boolean>(false);
   // Reset the crossfade when the route's session changes (render-phase, idempotent).
   const lifecycleForRef = useRef<string | null>(null);
   if (lifecycleForRef.current !== sessionId) {
     lifecycleForRef.current = sessionId;
     if (chatReady) setChatReady(false);
     if (!loaderMounted) setLoaderMounted(true);
+    // Resolve freshness + whether a first message is already pending, ONCE per
+    // route. Fresh = just created (registry set by useCreateOpenCodeSession) OR a
+    // pending prompt is already staged (home composer). Resumes are neither.
+    let fresh = false;
+    let pending = false;
+    if (typeof window !== 'undefined') {
+      pending =
+        !!sessionStorage.getItem(`opencode_pending_prompt:${sessionId}`) ||
+        !!sessionStorage.getItem(`project_pending_prompt:${sessionId}`);
+      fresh = pending || isSessionFresh(sessionId);
+    }
+    freshRef.current = fresh;
+    setShellSubmitted(pending);
   }
+  const isFresh = freshRef.current;
+  // Retire the fresh mark only once the real chat has taken over (NOT on mount —
+  // React StrictMode's dev double-mount would clear it before the persisting
+  // mount reads it, dropping us back to the loader). chatReady fires seconds
+  // later, after the double-mount settles, so freshRef is always captured first.
+  // Until then the in-memory mark survives re-navigation to this still-empty
+  // session; a hard reload clears the whole registry (then it's a resume).
+  useEffect(() => {
+    if (chatReady) clearSessionFresh(sessionId);
+  }, [chatReady, sessionId]);
 
   // Terminal/gated states fully REPLACE the content (no chat to fade to).
   const gated = !authLoading && !!user && noPlan;
@@ -223,6 +256,11 @@ export default function ProjectSessionPage() {
   // every sandbox-coupled hook reads the active server at render time.
   const canMountChat =
     !!sandbox && sandbox.status === 'active' && activeInstanceId === sandbox.sandbox_id;
+  // For a fresh session, hold the real chat until the user actually sends their
+  // first message. The instant shell is the typing surface until then — and the
+  // chat's pending-prompt migration is one-shot, so mounting it before the
+  // message exists would consume the (empty) handoff and drop the send.
+  const mountChat = canMountChat && (!isFresh || shellSubmitted);
 
   // From the first paint we mount ProjectShell so the project's sidebar is
   // always visible — no full-page "Preparing workspace" flash.
@@ -269,7 +307,15 @@ export default function ProjectSessionPage() {
       );
     }
 
-    // Dual-layer: the chat mounts under a persistent loader and crossfades in.
+    // Dual-layer: the real chat mounts under the instant shell (fresh sessions)
+    // or the staged loader (resumes) and crossfades in once it's ready.
+    //
+    // PERF: mount the runtime connection + event stream EAGERLY (as soon as the
+    // sandbox is switched), so the health probe, SSE stream, and OpenCode pin are
+    // already warm by the time the user sends — the first message doesn't pay the
+    // connect cost. The heavy ActiveSessionChat itself still waits for `mountChat`
+    // (a first message exists) so its one-shot pending-prompt handoff isn't
+    // consumed empty.
     return (
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
         {canMountChat && (
@@ -281,12 +327,14 @@ export default function ProjectSessionPage() {
           >
             <ProjectSessionRuntimeConnection>
               <OpenCodeEventStreamProvider />
-              <ActiveSessionChat
-                projectId={projectId}
-                sessionId={sessionId}
-                pinFromStart={start?.opencode_session_id ?? null}
-                onChatReady={() => setChatReady(true)}
-              />
+              {mountChat && (
+                <ActiveSessionChat
+                  projectId={projectId}
+                  sessionId={sessionId}
+                  pinFromStart={start?.opencode_session_id ?? null}
+                  onChatReady={() => setChatReady(true)}
+                />
+              )}
             </ProjectSessionRuntimeConnection>
           </div>
         )}
@@ -301,7 +349,16 @@ export default function ProjectSessionPage() {
               chatReady ? 'pointer-events-none opacity-0' : 'opacity-100',
             )}
           >
-            <SessionStartingLoader stage={authLoading || !user ? 'provisioning' : startStage} />
+            {isFresh ? (
+              <InstantSessionShell
+                projectId={projectId}
+                sessionId={sessionId}
+                stage={authLoading || !user ? 'provisioning' : startStage}
+                onSubmit={() => setShellSubmitted(true)}
+              />
+            ) : (
+              <SessionStartingLoader stage={authLoading || !user ? 'provisioning' : startStage} />
+            )}
           </div>
         )}
       </div>
@@ -445,6 +502,15 @@ function ActiveSessionChat({
       const toKey = `opencode_pending_prompt:${chatSessionId}`;
       if (sessionStorage.getItem(toKey) === null) sessionStorage.setItem(toKey, pending);
       sessionStorage.removeItem(fromKey);
+    }
+    // Carry the agent/model/variant selections the instant shell stashed too.
+    const fromOptKey = `project_pending_options:${sessionId}`;
+    const pendingOptions = sessionStorage.getItem(fromOptKey);
+    if (pendingOptions) {
+      const toOptKey = `opencode_pending_options:${chatSessionId}`;
+      if (sessionStorage.getItem(toOptKey) === null)
+        sessionStorage.setItem(toOptKey, pendingOptions);
+      sessionStorage.removeItem(fromOptKey);
     }
   }
 

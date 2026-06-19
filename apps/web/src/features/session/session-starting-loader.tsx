@@ -7,23 +7,19 @@ import { cn } from '@/lib/utils';
 import type { SessionStartStage } from '@/lib/projects-client';
 
 /**
- * The ONE loader shown while a session's Kortix Computer comes up. All the heavy
- * lifting (provision / wake / OpenCode readiness + pin) is server-side behind
- * POST /sessions/:id/start — this just reports the real stage it returns.
+ * The ONE loader shown while a session's Kortix Computer comes up — full-screen
+ * for resumes, and dead-center in the side panel while a fresh session boots.
+ * All the heavy lifting (provision / wake / OpenCode readiness + pin) is
+ * server-side behind POST /sessions/:id/start; this just reports the real stage.
  *
- * IMPORTANT — layout stability: the outer flex-1 container is ALWAYS rendered so
- * it always occupies the content area. Only the visible loader CONTENT is held
- * back ~700ms (so a warm open / transient re-render never flashes it). Returning
- * null instead collapsed the content area to zero height, which let the chat
- * input snap to the top and then jump back down — the janky "input jumps" bug.
+ * Visual: super-minimal, perfectly centered. A single kortix-green pulse, the
+ * heading, a clean stepped checklist (no connector rails), and one quiet hint.
  */
 const LOADER_DELAY_MS = 700;
 /**
- * How long we sit in the backend `starting` stage before softly advancing the
- * timeline from "Preparing your workspace" to "Starting the agent". Both happen
- * within that one backend stage (clone → OpenCode boot, in that order), so the
- * advance reflects real ordering — and we never mark the LAST sub-step done
- * until the backend actually reports `ready`.
+ * How long we sit in the backend `starting` stage before softly advancing from
+ * "Preparing your workspace" to "Starting the agent". Both happen within that
+ * one backend stage (clone → OpenCode boot), so the advance reflects real order.
  */
 const STARTING_SUBSTEP_MS = 5_000;
 /** After this long, swap the footer copy to set expectations for a cold start. */
@@ -54,14 +50,23 @@ function activeStep(stage: SessionStartStage, msInStage: number): number {
 
 export function SessionStartingLoader({
   stage = 'provisioning',
+  /** Delay before the content fades in. The full-screen resume loader keeps the
+   *  default so a warm open never flashes it; the side panel passes 0 because the
+   *  user opened it deliberately and expects to see status immediately. */
+  delayMs = LOADER_DELAY_MS,
 }: {
   stage?: SessionStartStage;
+  delayMs?: number;
 }) {
-  const [show, setShow] = useState(false);
+  const [show, setShow] = useState(delayMs <= 0);
   useEffect(() => {
-    const t = setTimeout(() => setShow(true), LOADER_DELAY_MS);
+    if (delayMs <= 0) {
+      setShow(true);
+      return;
+    }
+    const t = setTimeout(() => setShow(true), delayMs);
     return () => clearTimeout(t);
-  }, []);
+  }, [delayMs]);
 
   // A 1s tick drives both the in-stage soft-advance and the footer copy.
   const [now, setNow] = useState(() => Date.now());
@@ -84,90 +89,65 @@ export function SessionStartingLoader({
   const slow = now - mountedAt.current >= SLOW_AFTER_MS;
 
   return (
-    <div className="flex min-h-0 flex-1 items-center justify-center px-6">
-      {show && (
-        <div className="flex w-full max-w-xs flex-col gap-6">
-          <div className="flex items-center gap-2.5">
-            <span className="relative flex h-2 w-2" aria-hidden>
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-kortix-green/60" />
-              <span className="relative inline-flex h-2 w-2 rounded-full bg-kortix-green" />
-            </span>
-            <h2 className="text-foreground text-sm font-semibold">Kortix Computer is starting</h2>
-          </div>
-
-          <ol className="flex flex-col" aria-live="polite">
-            {STEPS.map((step, i) => {
-              const done = i < active;
-              const current = i === active;
-              const isLast = i === STEPS.length - 1;
-              return (
-                <li
-                  key={step.label}
-                  className="flex gap-3"
-                  aria-current={current ? 'step' : undefined}
-                >
-                  {/* Node + connector rail */}
-                  <div className="flex flex-col items-center">
-                    <span
-                      className={cn(
-                        'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors duration-moderate',
-                        done
-                          ? 'border-kortix-green/30 bg-kortix-green/10 text-kortix-green'
-                          : current
-                            ? 'border-kortix-green/40 text-kortix-green'
-                            : 'border-border bg-transparent',
-                      )}
-                    >
-                      {done ? (
-                        <Check className="h-3 w-3" strokeWidth={2.5} />
-                      ) : current ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <span className="h-1.5 w-1.5 rounded-full bg-border" />
-                      )}
-                    </span>
-                    {!isLast && (
-                      <span
-                        className={cn(
-                          'mt-1 w-px flex-1 transition-colors duration-moderate',
-                          done ? 'bg-kortix-green/25' : 'bg-border',
-                        )}
-                      />
-                    )}
-                  </div>
-
-                  {/* Label + description */}
-                  <div className={cn('flex flex-col', isLast ? 'pb-0' : 'pb-4')}>
-                    <span
-                      className={cn(
-                        'text-sm leading-5 transition-colors duration-moderate',
-                        current
-                          ? 'text-foreground font-medium'
-                          : done
-                            ? 'text-muted-foreground'
-                            : 'text-muted-foreground/50',
-                      )}
-                    >
-                      {step.label}
-                    </span>
-                    {current && (
-                      <span className="text-muted-foreground/60 text-xs leading-5">
-                        {step.description}
-                      </span>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-
-          <p className="text-muted-foreground/50 text-xs leading-relaxed">
-            {slow
-              ? 'Still preparing — a cold start can take a little longer than usual.'
-              : 'This usually takes a few seconds while your workspace and files are prepared.'}
-          </p>
+    <div className="flex h-full min-h-0 w-full flex-1 items-center justify-center px-8">
+      <div
+        className={cn(
+          'flex flex-col items-center gap-9 transition-opacity duration-500',
+          show ? 'opacity-100' : 'opacity-0',
+        )}
+      >
+        {/* Brand heartbeat + heading, grouped. */}
+        <div className="flex flex-col items-center gap-4">
+          <span className="relative flex h-2.5 w-2.5" aria-hidden>
+            <span className="bg-kortix-green/40 absolute inline-flex h-full w-full animate-ping rounded-full" />
+            <span className="bg-kortix-green relative inline-flex h-2.5 w-2.5 rounded-full" />
+          </span>
+          <h2 className="text-foreground text-[13px] font-medium tracking-tight">
+            Kortix Computer is starting
+          </h2>
         </div>
-      )}
+
+        {/* Auto-width so the checklist is a centered block under the heading. */}
+        <ol className="flex flex-col gap-3.5" aria-live="polite">
+          {STEPS.map((step, i) => {
+            const done = i < active;
+            const current = i === active;
+            return (
+              <li
+                key={step.label}
+                className="flex items-center gap-2.5"
+                aria-current={current ? 'step' : undefined}
+              >
+                <span className="flex h-3.5 w-3.5 shrink-0 items-center justify-center">
+                  {done ? (
+                    <Check className="text-kortix-green h-3.5 w-3.5" strokeWidth={2.5} />
+                  ) : current ? (
+                    <Loader2 className="text-kortix-green h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <span className="bg-muted-foreground/25 h-1 w-1 rounded-full" />
+                  )}
+                </span>
+                <span
+                  className={cn(
+                    'text-[13px] leading-none tracking-tight transition-colors duration-500',
+                    current
+                      ? 'text-foreground font-medium'
+                      : done
+                        ? 'text-muted-foreground'
+                        : 'text-muted-foreground/40',
+                  )}
+                >
+                  {step.label}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+
+        <p className="text-muted-foreground/40 text-center text-[11px] leading-relaxed">
+          {slow ? 'A cold start can take a little longer.' : 'This usually takes a few seconds.'}
+        </p>
+      </div>
     </div>
   );
 }

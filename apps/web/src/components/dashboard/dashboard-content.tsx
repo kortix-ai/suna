@@ -5,17 +5,14 @@ import { useTranslations } from 'next-intl';
 import { NoInstanceState } from '@/components/dashboard/no-instance-state';
 import { useSidebar } from '@/components/ui/sidebar';
 import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { type AttachedFile, SessionChatInput } from '@/features/session/session-chat-input';
-import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
-import { formatModelString, useOpenCodeLocal } from '@/hooks/opencode/use-opencode-local';
-import type { Command } from '@/hooks/opencode/use-opencode-sessions';
 import {
-  useCreateOpenCodeSession,
-  useOpenCodeAgents,
-  useOpenCodeCommands,
-  useOpenCodeProviders,
-  useSendOpenCodeMessage,
-} from '@/hooks/opencode/use-opencode-sessions';
+  ComposerChatInput,
+  type ComposerOptions,
+} from '@/features/session/composer-chat-input';
+import type { AttachedFile } from '@/features/session/session-chat-input';
+import { formatModelString } from '@/hooks/opencode/use-opencode-local';
+import type { Command } from '@/hooks/opencode/use-opencode-sessions';
+import { useCreateOpenCodeSession } from '@/hooks/opencode/use-opencode-sessions';
 import { useSandbox } from '@/hooks/platform/use-sandbox';
 import { useIsMobile } from '@/hooks/utils';
 import { getClient } from '@/lib/opencode-sdk';
@@ -44,7 +41,6 @@ export function DashboardContent() {
   const isMobile = useIsMobile();
   const { setOpen: setSidebarOpenState, setOpenMobile } = useSidebar();
   const createSession = useCreateOpenCodeSession();
-  const sendMessage = useSendOpenCodeMessage();
 
   // No-instance fallback: when the user has no sandbox at all, render the
   // claim/onboarding hero in-place instead of bouncing to a dedicated page.
@@ -67,17 +63,8 @@ export function DashboardContent() {
     window.history.replaceState({}, '', `${clean.pathname}${clean.search}`);
   }, [queryClient]);
 
-  // Data
-  const { data: agents } = useOpenCodeAgents();
-  const { data: providers } = useOpenCodeProviders();
-  const { data: commands } = useOpenCodeCommands();
-  const { data: config } = useOpenCodeConfig();
-
-  // Unified model/agent/variant state
-  const local = useOpenCodeLocal({ agents, providers, config });
-
   const handleSend = useCallback(
-    async (text: string, files?: AttachedFile[]) => {
+    async (text: string, files: AttachedFile[] | undefined, options: ComposerOptions) => {
       if ((!text.trim() && !files?.length) || isSending) return;
 
       playSound('send');
@@ -100,10 +87,6 @@ export function DashboardContent() {
           usePendingFilesStore.getState().setPendingFiles(files);
         }
 
-        const options: Record<string, unknown> = {};
-        if (local.agent.current) options.agent = local.agent.current.name;
-        if (local.model.currentKey) options.model = local.model.currentKey;
-        if (local.model.variant.current) options.variant = local.model.variant.current;
         if (Object.keys(options).length > 0) {
           sessionStorage.setItem(`opencode_pending_options:${session.id}`, JSON.stringify(options));
         }
@@ -129,18 +112,11 @@ export function DashboardContent() {
         setIsSending(false);
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [
-      isSending,
-      createSession,
-      local.agent.current,
-      local.model.currentKey,
-      local.model.variant.current,
-    ],
+    [isSending, createSession],
   );
 
   const handleCommand = useCallback(
-    async (cmd: Command, args?: string) => {
+    async (cmd: Command, args: string | undefined, options: ComposerOptions) => {
       try {
         const session = await createSession.mutateAsync();
         openTabAndNavigate({
@@ -156,9 +132,9 @@ export function DashboardContent() {
             sessionID: session.id,
             command: cmd.name,
             arguments: args || '',
-            ...(local.agent.current && { agent: local.agent.current.name }),
-            ...(local.model.currentKey && { model: formatModelString(local.model.currentKey) }),
-            ...(local.model.variant.current && { variant: local.model.variant.current }),
+            ...(options.agent && { agent: options.agent }),
+            ...(options.model && { model: formatModelString(options.model) }),
+            ...(options.variant && { variant: options.variant }),
           } as any)
           .catch(() => {
             toast.warning('Failed to execute command');
@@ -167,8 +143,7 @@ export function DashboardContent() {
         toast.warning('Failed to create session');
       }
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [createSession, local.agent.current, local.model.currentKey, local.model.variant.current],
+    [createSession],
   );
 
   if (showNoInstanceState) {
@@ -234,23 +209,11 @@ export function DashboardContent() {
       <div className="relative z-10 min-h-0 flex-1" />
 
       {/* Chat Input — pinned to bottom, overlays the wallpaper */}
-      <SessionChatInput
+      <ComposerChatInput
         onSend={handleSend}
-        disabled={isSending}
-        placeholder={tHardcodedUi.raw(
-          'componentsDashboardDashboardContent.line228JsxAttrPlaceholderAskAnything',
-        )}
-        agents={local.agent.list}
-        selectedAgent={local.agent.current?.name ?? null}
-        onAgentChange={(name) => local.agent.set(name ?? undefined)}
-        models={local.model.list}
-        selectedModel={local.model.currentKey ?? null}
-        onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
-        variants={local.model.variant.list}
-        selectedVariant={local.model.variant.current ?? null}
-        onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
-        commands={commands || []}
         onCommand={handleCommand}
+        disabled={isSending}
+        placeholder={tHardcodedUi.raw('componentsDashboardDashboardContent.line228JsxAttrPlaceholderAskAnything')}
       />
     </div>
   );
