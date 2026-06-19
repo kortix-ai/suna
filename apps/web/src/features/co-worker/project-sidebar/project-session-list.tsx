@@ -275,8 +275,6 @@ function ProjectSessionRow({
           {SourceIcon && (
             <Hint
               side="top"
-              alignOffset={0}
-              sideOffset={6}
               label={source.triggerSlug ? `${source.label} · ${source.triggerSlug}` : source.label}
             >
               <span className="text-muted-foreground/70 flex h-4 w-4 shrink-0 items-center justify-center">
@@ -436,7 +434,7 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
           <circle
             cx="8"
             cy="8"
-            r="7.25"
+            r="6.3"
             stroke="currentColor"
             fill="none"
             strokeWidth="1.5"

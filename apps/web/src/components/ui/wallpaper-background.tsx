@@ -29,18 +29,18 @@ export const WallpaperBackground = memo(function WallpaperBackground({
 
   if (wallpaper.type === 'svg') {
     return (
-      // <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
-      //   <img
-      //     src={wallpaper.svgUrl}
-      //     alt=""
-      //     className={cn(
-      //       'absolute left-1/2 h-auto w-[140%] -translate-x-1/2 -translate-y-1/2 object-contain invert select-none sm:w-[160%] lg:w-[162%] dark:invert-0',
-      //       centerTopClass,
-      //     )}
-      //     draggable={false}
-      //   />
-      // </div>
-      null
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={wallpaper.svgUrl}
+          alt=""
+          className={cn(
+            'absolute left-1/2 h-auto w-[140%] -translate-x-1/2 -translate-y-1/2 object-contain invert select-none sm:w-[160%] lg:w-[162%] dark:invert-0',
+            centerTopClass,
+          )}
+          draggable={false}
+        />
+      </div>
     );
   }
 

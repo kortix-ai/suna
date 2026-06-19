@@ -10,12 +10,13 @@ import { CustomizeOverlay } from '@/components/projects/customize/customize-over
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { useSidebar } from '@/components/ui/sidebar';
-import { ProjectTabBar } from '@/features/co-worker/project-header/project-tab-bar';
+import { ProjectTopBar } from '@/features/co-worker/project-header/project-top-bar';
 import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sidebar';
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { getProjectDetail } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
@@ -87,6 +88,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
   const tabsByProject = useProjectSessionTabsStore((s) => s.tabsByProject);
   const openTab = useProjectSessionTabsStore((s) => s.openTab);
   const openTabIds = useMemo(() => tabsByProject[projectId] ?? [], [tabsByProject, projectId]);
+  const isMobile = useIsMobile();
   const disableTabSelector = useUserPreferencesStore(
     (s) => s.preferences.disableTabSelector ?? false,
   );
@@ -95,7 +97,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     if (activeSessionId) openTab(projectId, activeSessionId);
   }, [projectId, activeSessionId, openTab]);
 
-  const showProjectHeader = openTabIds.length > 0 || activeSessionId !== null;
+  const hasOpenTabs = openTabIds.length > 0;
+  const showProjectHeader = !isMobile ? hasOpenTabs : hasOpenTabs || activeSessionId !== null;
   const isSwitchingProject = useIsSwitchingProject();
 
   if (authLoading || !user) {
@@ -127,7 +130,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
                 transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
                 className="overflow-hidden"
               >
-                <ProjectTabBar projectId={projectId} hideTabSelector={disableTabSelector} />
+                <ProjectTopBar projectId={projectId} hideTabSelector={disableTabSelector} />
               </motion.div>
             ) : null}
           </AnimatePresence>
