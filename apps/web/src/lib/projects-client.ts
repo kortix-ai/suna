@@ -1161,11 +1161,23 @@ export interface SandboxTemplate {
   daytona_state: string;
   provider_state: string;
   ready: boolean;
+  /** Per-template warm pool config + live counts. null when the operator gate
+   *  is off (feature unavailable platform-wide). */
+  warm_pool?: {
+    enabled: boolean;
+    size: number;
+    /** Sandboxes parked and ready to claim instantly. */
+    ready: number;
+    /** Sandboxes currently booting toward ready. */
+    warming: number;
+  } | null;
 }
 
 export interface SandboxTemplatesResponse {
   items: SandboxTemplate[];
   default_slug: string | null;
+  /** Whether the warm pool feature is enabled platform-wide. */
+  warm_pool_available?: boolean;
 }
 
 export interface ProjectSnapshotBuild {
@@ -1185,6 +1197,8 @@ export interface ProjectSnapshotsResponse {
   templates: SandboxTemplate[];
   templates_error: string | null;
   builds: ProjectSnapshotBuild[];
+  /** Whether the warm pool feature is enabled platform-wide (gates the per-row control). */
+  warm_pool_available?: boolean;
 }
 
 export interface ProjectSandboxHealth {
@@ -2404,29 +2418,19 @@ export async function updateAppsConfig(
   return updateExperimentalFeature(projectId, 'apps', input.enabled);
 }
 
-/** Configure the per-project warm sandbox pool (Customize → Sandbox). */
-export async function updateWarmPool(
+/**
+ * Configure the warm sandbox pool for one sandbox template (Customize → Sandbox).
+ * Warm pool is per-template + opt-in; `slug` selects which template (defaults to
+ * the platform default). Live ready/warming counts come back on each template via
+ * `listProjectSnapshots`.
+ */
+export async function updateTemplateWarmPool(
   projectId: string,
-  input: { enabled?: boolean; size?: number },
+  input: { slug: string; enabled?: boolean; size?: number },
 ) {
   return unwrap(
     await backendApi.patch<KortixProject>(`/projects/${projectId}/warm-pool`, input),
   );
-}
-
-export interface WarmPoolStatus {
-  available: boolean;
-  enabled: boolean;
-  size: number;
-  /** Sandboxes parked and ready to claim instantly. */
-  ready: number;
-  /** Sandboxes currently booting toward ready. */
-  warming: number;
-}
-
-/** Live warm pool config + status (ready / warming counts). */
-export async function getWarmPoolStatus(projectId: string): Promise<WarmPoolStatus> {
-  return unwrap(await backendApi.get<WarmPoolStatus>(`/projects/${projectId}/warm-pool`));
 }
 
 export async function setProjectOnboardingComplete(

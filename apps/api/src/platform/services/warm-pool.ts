@@ -1,12 +1,14 @@
 /**
  * Warm sandbox pre-warm — API driver for the daemon's KORTIX_WARM_POOL mode.
  *
- * GATED OFF BY DEFAULT (config.KORTIX_WARM_POOL_MAX_TOTAL = 0 ⇒ warmPoolEnabled()
- * false). When disabled, every exported entry point is inert: the allocator
- * skips the claim path and cold-provisions byte-identically to today, and
- * reconcile only reaps stray pool rows. Enable (MAX_TOTAL > 0) ONLY after
- * live-validating the claim path on a real deploy — the daemon runPoolMode claim
- * behaviour (clone + opencode warm post-claim) can't be unit-tested.
+ * AVAILABLE BY DEFAULT but off per-template: KORTIX_WARM_POOL_ENABLED defaults
+ * on, so the per-template opt-in toggles render — yet every template starts OFF,
+ * so nothing warms (and nothing is billed) until a template is opted in. Set
+ * KORTIX_WARM_POOL_ENABLED=false to make every exported entry point inert: the
+ * allocator skips the claim path and cold-provisions byte-identically to today,
+ * and reconcile only reaps stray pool rows. There is no global cap — cost is
+ * bounded per-account (billing gate), per-template (size), by presence-reap, and
+ * by the provider's autoStop clamp.
  *
  * Design (decoupled from the durable session id — unlike the retired pool):
  *   - spawnSpare:  provision a SESSION-LESS box with env KORTIX_WARM_POOL=1 so the
@@ -47,6 +49,9 @@ const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle
 const CLAIM_STALE_MS = 5 * 60 * 1000; // a 'claiming' row older than this → the claimant died → reap (>> a normal claim's <15s, so reconcile never races a live claim)
 const READY_PROBE_INTERVAL_MS = 2000;
 const MAX_WARM_SIZE = 25;
+/** Ready-count a template defaults to when first turned ON (operator default
+ *  KORTIX_WARM_POOL_SIZE, overridable per-template in the UI). */
+const DEFAULT_WARM_SIZE = Math.max(0, config.KORTIX_WARM_POOL_SIZE);
 const DNAH_ENV_PATH = '/tmp/dnah-env'; // MUST match the daemon (main.ts reloadSessionEnv + poll)
 const DAEMON_PORT = 8000;
 
@@ -55,24 +60,49 @@ export interface WarmPoolConfig {
   size: number;
 }
 
-/** Master gate. False at the default (MAX_TOTAL=0) ⇒ the whole driver is inert. */
-export const warmPoolEnabled = (): boolean => config.KORTIX_WARM_POOL_MAX_TOTAL > 0;
+/** Master gate. Default ON (the feature is available, off per-template). Set
+ *  KORTIX_WARM_POOL_ENABLED=false to make the whole driver inert (claim path
+ *  skipped, every create cold-provisions). NOT tied to the optional global cap. */
+export const warmPoolEnabled = (): boolean => config.KORTIX_WARM_POOL_ENABLED;
 
-/** Effective per-project warm config. `enabled` is false unless the pool is on
- *  AND the project hasn't opted out (projects.metadata.warm_pool.enabled). */
+/**
+ * Per-template warm config, read from `projects.metadata.warm_pool_templates[slug]`.
+ * OPT-IN: `enabled` is true only when the operator gate is on AND this template's
+ * slug was explicitly turned on (UI). Size defaults to DEFAULT_WARM_SIZE (1).
+ *
+ * The old project-wide opt-OUT `warm_pool` field is intentionally ignored — warm
+ * pool is now off by default and configured per sandbox template, so any project
+ * that was auto-warming under the old default goes cold until a template is
+ * explicitly opted in.
+ */
+export function resolveTemplateWarmConfig(metadata: unknown, slug: string): WarmPoolConfig {
+  const map = (metadata as Record<string, unknown> | null | undefined)?.warm_pool_templates;
+  const raw =
+    map && typeof map === 'object' && !Array.isArray(map)
+      ? (map as Record<string, unknown>)[slug]
+      : undefined;
+  const cfg = raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : null;
+  const optedIn = cfg?.enabled === true;
+  const size =
+    cfg && typeof cfg.size === 'number' && Number.isInteger(cfg.size) && cfg.size >= 0
+      ? Math.min(cfg.size, MAX_WARM_SIZE)
+      : DEFAULT_WARM_SIZE;
+  return { enabled: warmPoolEnabled() && optedIn, size };
+}
+
+/** Every slug a project has warm config for, with its resolved (gated) config. */
+export function listProjectWarmTemplates(metadata: unknown): Array<{ slug: string } & WarmPoolConfig> {
+  const map = (metadata as Record<string, unknown> | null | undefined)?.warm_pool_templates;
+  if (!map || typeof map !== 'object' || Array.isArray(map)) return [];
+  return Object.keys(map as Record<string, unknown>).map((slug) => ({
+    slug,
+    ...resolveTemplateWarmConfig(metadata, slug),
+  }));
+}
+
+/** Back-compat shim: the project's DEFAULT-template warm config. */
 export function resolveWarmConfig(metadata: unknown): WarmPoolConfig {
-  const defaultSize = Math.max(0, config.KORTIX_WARM_POOL_SIZE);
-  const wp = (metadata as Record<string, unknown> | null | undefined)?.warm_pool;
-  if (wp && typeof wp === 'object' && !Array.isArray(wp)) {
-    const raw = wp as Record<string, unknown>;
-    const optedOut = raw.enabled === false;
-    const size =
-      typeof raw.size === 'number' && Number.isInteger(raw.size) && raw.size >= 0
-        ? Math.min(raw.size, MAX_WARM_SIZE)
-        : defaultSize;
-    return { enabled: warmPoolEnabled() && !optedOut, size };
-  }
-  return { enabled: warmPoolEnabled(), size: defaultSize };
+  return resolveTemplateWarmConfig(metadata, DEFAULT_SANDBOX_SLUG);
 }
 
 /** Why a pool row should be reaped, or null to keep it. Pure (unit-testable). */
@@ -108,13 +138,31 @@ export async function getWarmPoolCounts(projectId: string): Promise<{ ready: num
   return { ready, warming };
 }
 
-async function countGlobalWarm(): Promise<number> {
-  const [row] = await db
-    .select({ n: sql<number>`count(*)::int` })
-    .from(sessionSandboxes)
-    .where(inArray(sessionSandboxes.poolState, ['booting', 'parked', 'claiming']))
-    .limit(1);
-  return Number(row?.n ?? 0);
+/** Per-slug live counts for a project: slug → { ready (parked), warming (booting) }.
+ *  Spares are tagged with `metadata.warmSpareSlug` at spawn; older untagged spares
+ *  fall back to the default slug (they were always built from the default image). */
+export async function getWarmCountsBySlug(
+  projectId: string,
+): Promise<Map<string, { ready: number; warming: number }>> {
+  const res = await db.execute(sql`
+    SELECT COALESCE(metadata->>'warmSpareSlug', ${DEFAULT_SANDBOX_SLUG}) AS slug, pool_state, count(*)::int AS n
+    FROM kortix.session_sandboxes
+    WHERE project_id = ${projectId} AND pool_state IN ('parked', 'booting')
+    GROUP BY 1, 2
+  `);
+  const rows = ((res as unknown as { rows?: any[] }).rows ?? (res as unknown as any[])) as Array<{
+    slug: string;
+    pool_state: string;
+    n: number;
+  }>;
+  const out = new Map<string, { ready: number; warming: number }>();
+  for (const r of rows) {
+    const cur = out.get(r.slug) ?? { ready: 0, warming: 0 };
+    if (r.pool_state === 'parked') cur.ready = Number(r.n);
+    else if (r.pool_state === 'booting') cur.warming = Number(r.n);
+    out.set(r.slug, cur);
+  }
+  return out;
 }
 
 async function reapWarmSandbox(row: { sandboxId: string; externalId: string | null; provider: string }): Promise<void> {
@@ -128,7 +176,9 @@ async function reapWarmSandbox(row: { sandboxId: string; externalId: string | nu
 
 // ── Spare provisioning ───────────────────────────────────────────────────────
 
-/** Provision one session-less spare for a project (boots the daemon's pool mode). */
+/** Provision one session-less spare for a project + sandbox template `slug`
+ *  (boots the daemon's pool mode). The spare is tagged with `warmSpareSlug` so a
+ *  claim only binds it to a session that asked for the SAME template. */
 async function spawnSpare(project: {
   projectId: string;
   accountId: string;
@@ -136,7 +186,7 @@ async function spawnSpare(project: {
   defaultBranch: string;
   manifestPath: string | null;
   metadata?: unknown;
-}, gitAuthToken: string | null): Promise<void> {
+}, slug: string, gitAuthToken: string | null): Promise<void> {
   if (!project.repoUrl) return;
   const spareId = randomUUID();
   const provider = await selectProvider();
@@ -145,10 +195,6 @@ async function spawnSpare(project: {
     // claim — the claim env never overwrites it), persisted as config.serviceKey
     // so the proxy + the claim-write can authenticate to the box.
     const sandboxKey = await createApiKey({ sandboxId: spareId, accountId: project.accountId, title: 'Warm Spare Token', type: 'sandbox' });
-
-    const projMeta = (project.metadata ?? {}) as Record<string, unknown>;
-    const rawSlug = typeof projMeta.default_sandbox_slug === 'string' ? projMeta.default_sandbox_slug.trim() : '';
-    const slug = rawSlug || DEFAULT_SANDBOX_SLUG;
 
     await db.insert(sessionSandboxes).values({
       sandboxId: spareId,
@@ -161,7 +207,7 @@ async function spawnSpare(project: {
       poolState: 'booting',
       baseUrl: null,
       config: { serviceKey: sandboxKey.secretKey },
-      metadata: { warmSpare: true },
+      metadata: { warmSpare: true, warmSpareSlug: slug },
     });
 
     // Boot the project's normal Dockerfile snapshot (NOT the experimental warm
@@ -268,9 +314,12 @@ interface ClaimedSpare {
   serviceKey: string; // the PARK key — stays the claimed row's serviceKey
 }
 
-/** Atomically take one parked spare (flip parked→claiming). Single statement +
- *  SKIP LOCKED so concurrent creates never grab the same spare. */
-async function claimSpare(projectId: string): Promise<ClaimedSpare | null> {
+/** Atomically take one parked spare for the project + template `slug` (flip
+ *  parked→claiming). Single statement + SKIP LOCKED so concurrent creates never
+ *  grab the same spare. The slug match guarantees a session only ever binds a
+ *  spare built from the SAME sandbox template (else a custom-template session
+ *  could claim a default-image spare). */
+async function claimSpare(projectId: string, slug: string): Promise<ClaimedSpare | null> {
   const res = await db.execute(sql`
     UPDATE kortix.session_sandboxes
     SET pool_state = 'claiming', updated_at = now()
@@ -278,6 +327,7 @@ async function claimSpare(projectId: string): Promise<ClaimedSpare | null> {
       SELECT s.sandbox_id FROM kortix.session_sandboxes s
       WHERE s.project_id = ${projectId}
         AND s.pool_state = 'parked'
+        AND COALESCE(s.metadata->>'warmSpareSlug', ${DEFAULT_SANDBOX_SLUG}) = ${slug}
         -- A parked spare's box has finished provisioning, so its status is
         -- 'active' (the box-ready finish in session-sandbox.ts sets it); it is
         -- 'provisioning' only in the brief window before that finish lands. The
@@ -430,6 +480,9 @@ export interface ClaimSpareForSessionInput {
   projectId: string;
   userId: string;
   provider: SandboxProviderName;
+  /** Sandbox template the session asked for. Only a spare built from the SAME
+   *  template is claimable; defaults to the platform default template. */
+  slug?: string;
   /** The exact env the cold path would inject (buildSessionSandboxEnvVars output). */
   builtEnvVars: Record<string, string>;
   sessionMetadata: Record<string, unknown>;
@@ -441,9 +494,10 @@ export interface ClaimSpareForSessionInput {
  */
 export async function claimSpareForSession(input: ClaimSpareForSessionInput): Promise<{ externalId: string } | null> {
   if (!warmPoolEnabled()) return null;
+  const slug = (input.slug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
   let spare: ClaimedSpare | null = null;
   try {
-    spare = await claimSpare(input.projectId);
+    spare = await claimSpare(input.projectId, slug);
     if (!spare) return null;
 
     // Per-session executor/LLM tokens — delivered via the claim env file and read
@@ -539,7 +593,9 @@ async function reapProjectSpares(projectId: string): Promise<number> {
   return rows.length;
 }
 
-/** Bring a project's parked spares toward its desired size (best-effort). */
+/** Bring a project's parked spares toward each opted-in template's size
+ *  (best-effort). Each sandbox template the project turned ON is refilled
+ *  independently toward its own ready-count, bounded by the global cap. */
 export async function refillProjectPool(projectId: string, _forUserId?: string | null): Promise<void> {
   if (!warmPoolEnabled()) return;
   if (refillInFlight.has(projectId)) return;
@@ -551,19 +607,17 @@ export async function refillProjectPool(projectId: string, _forUserId?: string |
       .where(eq(projects.projectId, projectId))
       .limit(1);
     if (!project || !project.repoUrl) return;
+
+    const wantTemplates = listProjectWarmTemplates(project.metadata).filter((t) => t.enabled && t.size > 0);
+    if (wantTemplates.length === 0) return;
+
     // Don't pre-warm an account that can't create sessions: session-create 402s
     // for it (assertBillingActive), so any spare we'd park can never be claimed —
-    // it would just consume the global MAX_TOTAL cap and starve projects that CAN
-    // use one (the dominant reason a returning user's project had no spare ready
-    // → cold start). Mirrors the session-create billing gate.
+    // it would just burn a box (and the account's credits) for nothing. Mirrors
+    // the session-create billing gate.
     if (!(await checkBillingActive(project.accountId)).ok) return;
-    const cfg = resolveWarmConfig(project.metadata);
-    if (!cfg.enabled || cfg.size <= 0) return;
 
-    const { ready, warming } = await getWarmPoolCounts(projectId);
-    const globalRemaining = config.KORTIX_WARM_POOL_MAX_TOTAL - (await countGlobalWarm());
-    const want = Math.max(0, Math.min(cfg.size - (ready + warming), globalRemaining));
-    if (want <= 0) return;
+    const countsBySlug = await getWarmCountsBySlug(projectId);
 
     // Resolve a git auth token once so spares can build the snapshot if needed.
     let gitAuthToken: string | null = null;
@@ -572,7 +626,17 @@ export async function refillProjectPool(projectId: string, _forUserId?: string |
       gitAuthToken = (await resolveProjectGitAuth(project as any)).auth?.token ?? null;
     } catch { /* cache-hit boots don't need it */ }
 
-    await Promise.allSettled(Array.from({ length: want }, () => spawnSpare(project, gitAuthToken)));
+    // No global cap — each opted-in template warms toward its own size. Cost is
+    // bounded per-account (billing gate), per-template (size ≤ 25), by presence-
+    // reap, and by the provider's autoStop clamp.
+    const spawns: Array<Promise<void>> = [];
+    for (const t of wantTemplates) {
+      const have = countsBySlug.get(t.slug) ?? { ready: 0, warming: 0 };
+      const want = t.size - (have.ready + have.warming);
+      if (want <= 0) continue;
+      for (let i = 0; i < want; i++) spawns.push(spawnSpare(project, t.slug, gitAuthToken));
+    }
+    await Promise.allSettled(spawns);
   } catch (err) {
     console.warn('[warm-pool] refill failed:', err instanceof Error ? err.message : err);
   } finally {
