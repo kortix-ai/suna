@@ -18,6 +18,21 @@ env:
 # experimental region.
 extraEnv:
   KORTIX_WARM_SNAPSHOT_ENABLED: "false"
+  # Warm fast path for NEW sessions — restores the pre-mid-June "fast" start that
+  # was lost when KORTIX_WARM_SNAPSHOT_ENABLED was flipped off (flaky region) with
+  # no replacement enabled (the pool's master switch KORTIX_WARM_POOL_MAX_TOTAL
+  # defaults to 0, so "pool-only mode" was inert). The pool runs on the reliable
+  # region and is a pure accelerator: a claim miss/error falls straight through to
+  # the unchanged cold provision (session-runtime-allocator.ts:83-88), so it can
+  # only speed starts up, never slow them. MAX_TOTAL caps standing spares (cost);
+  # SIZE is per-project (default 2). Tune up if dev runs more concurrent projects.
+  KORTIX_WARM_POOL_MAX_TOTAL: "10"
+  # Overlap the ~8s stopped-box resume with navigation: pre-resume the user's most
+  # recently stopped session on project presence (throttled 30s, 1/project).
+  KORTIX_PRERESUME_ENABLED: "true"
+  # Keep boxes in the instant "running" tier longer so casual returns (>15m idle)
+  # don't pay the resume wall. Dev-only; prod stays at the 15m default for now.
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES: "60"
 # PRE-CUTOVER: dev-api-eks is the candidate while dev-api.kortix.com is still
 # served by ECS, so EKS runs API-only and ECS keeps ownership of the dev-tier
 # singleton workers (one Postgres leader lease is shared across both on the dev
