@@ -31,7 +31,7 @@ extraEnv:
   # unit-warm-pool.test.ts asserts the pool is off there.
   KORTIX_WARM_POOL_MAX_TOTAL: "3"
   KORTIX_WARM_POOL_SIZE: "1"
-  KORTIX_WARM_POOL_CLONE_AT_PARK: "1"
+  KORTIX_WARM_POOL_CLONE_AT_PARK: "true"
   KORTIX_WARM_POOL_PRESENCE_MINUTES: "15"
 # PRE-CUTOVER: dev-api-eks is the candidate while dev-api.kortix.com is still
 # served by ECS, so EKS runs API-only and ECS keeps ownership of the dev-tier
