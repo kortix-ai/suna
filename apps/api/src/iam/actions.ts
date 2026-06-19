@@ -84,6 +84,12 @@ export const PROJECT_ACTIONS = {
   PROJECT_TRIGGER_UPDATE: 'project.trigger.update',
   PROJECT_TRIGGER_DELETE: 'project.trigger.delete',
   PROJECT_TRIGGER_FIRE: 'project.trigger.fire',
+
+  PROJECT_GATEWAY_LOGS_READ: 'project.gateway.logs.read',
+  PROJECT_GATEWAY_SPEND_READ: 'project.gateway.spend.read',
+  PROJECT_GATEWAY_ROUTING_EDIT: 'project.gateway.routing.edit',
+  PROJECT_GATEWAY_BUDGET_SET: 'project.gateway.budget.set',
+  PROJECT_GATEWAY_KEYS_MANAGE: 'project.gateway.keys.manage',
 } as const;
 
 // ─── Trigger-scoped actions (when scoped to an individual trigger) ─────────

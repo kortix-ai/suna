@@ -1,5 +1,5 @@
-ALTER TYPE "kortix"."sandbox_provider" ADD VALUE 'platinum';--> statement-breakpoint
-CREATE TABLE "kortix"."provider_events" (
+ALTER TYPE "kortix"."sandbox_provider" ADD VALUE IF NOT EXISTS 'platinum';--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "kortix"."provider_events" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"provider" text NOT NULL,
 	"kind" text NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE "kortix"."provider_events" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE INDEX "idx_provider_events_provider" ON "kortix"."provider_events" USING btree ("provider");--> statement-breakpoint
-CREATE INDEX "idx_provider_events_kind" ON "kortix"."provider_events" USING btree ("kind");--> statement-breakpoint
-CREATE INDEX "idx_provider_events_outcome" ON "kortix"."provider_events" USING btree ("outcome");--> statement-breakpoint
-CREATE INDEX "idx_provider_events_created" ON "kortix"."provider_events" USING btree ("created_at");
+CREATE INDEX IF NOT EXISTS "idx_provider_events_provider" ON "kortix"."provider_events" USING btree ("provider");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_provider_events_kind" ON "kortix"."provider_events" USING btree ("kind");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_provider_events_outcome" ON "kortix"."provider_events" USING btree ("outcome");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_provider_events_created" ON "kortix"."provider_events" USING btree ("created_at");

@@ -1620,6 +1620,103 @@ export const usageEvents = kortixSchema.table(
   ],
 );
 
+// ─── Gateway (observability + control plane) ───────────────────────────────
+
+export const gatewayRequestLogs = kortixSchema.table(
+  'gateway_request_logs',
+  {
+    logId: uuid('log_id').defaultRandom().primaryKey(),
+    requestId: text('request_id').notNull(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id').references(() => projects.projectId, { onDelete: 'set null' }),
+    actorUserId: uuid('actor_user_id'),
+    keyId: uuid('key_id'),
+    requestedModel: text('requested_model').notNull(),
+    resolvedModel: text('resolved_model').notNull(),
+    provider: text('provider').notNull(),
+    status: integer('status').notNull(),
+    ok: boolean('ok').notNull(),
+    errorCode: text('error_code'),
+    errorMessage: text('error_message'),
+    latencyMs: integer('latency_ms').default(0).notNull(),
+    attempts: integer('attempts').default(0).notNull(),
+    candidatesTried: jsonb('candidates_tried').default([]).$type<string[]>(),
+    inputTokens: integer('input_tokens').default(0).notNull(),
+    outputTokens: integer('output_tokens').default(0).notNull(),
+    cachedTokens: integer('cached_tokens').default(0).notNull(),
+    upstreamCost: numeric('upstream_cost', { precision: 12, scale: 6 }).default('0').notNull(),
+    finalCost: numeric('final_cost', { precision: 12, scale: 6 }).default('0').notNull(),
+    streaming: boolean('streaming').default(false).notNull(),
+    billingMode: text('billing_mode'),
+    request: jsonb('request').$type<Record<string, unknown>>(),
+    response: jsonb('response').$type<Record<string, unknown>>(),
+    metadata: jsonb('metadata').default({}).$type<Record<string, unknown>>(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_gateway_logs_request_id').on(table.requestId),
+    index('idx_gateway_logs_account_time').on(table.accountId, table.createdAt),
+    index('idx_gateway_logs_project_time').on(table.projectId, table.createdAt),
+    index('idx_gateway_logs_model').on(table.provider, table.resolvedModel),
+    index('idx_gateway_logs_account_ok').on(table.accountId, table.ok),
+  ],
+);
+
+export const gatewayApiKeys = kortixSchema.table(
+  'gateway_api_keys',
+  {
+    keyId: uuid('key_id').defaultRandom().primaryKey(),
+    accountId: uuid('account_id')
+      .notNull()
+      .references(() => accounts.accountId, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    name: varchar('name', { length: 255 }).notNull(),
+    keyPrefix: varchar('key_prefix', { length: 24 }).notNull(),
+    secretKeyHash: varchar('secret_key_hash', { length: 128 }).notNull(),
+    status: apiKeyStatusEnum('status').default('active').notNull(),
+    createdBy: uuid('created_by'),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_gateway_keys_secret_hash').on(table.secretKeyHash),
+    index('idx_gateway_keys_project').on(table.projectId),
+    index('idx_gateway_keys_account').on(table.accountId),
+  ],
+);
+
+export const gatewayBudgetScopeEnum = kortixSchema.enum('gateway_budget_scope', ['project', 'member']);
+export const gatewayBudgetPeriodEnum = kortixSchema.enum('gateway_budget_period', ['day', 'week', 'month']);
+export const gatewayBudgetActionEnum = kortixSchema.enum('gateway_budget_action', ['block', 'warn']);
+
+export const gatewayBudgets = kortixSchema.table(
+  'gateway_budgets',
+  {
+    budgetId: uuid('budget_id').defaultRandom().primaryKey(),
+    projectId: uuid('project_id')
+      .notNull()
+      .references(() => projects.projectId, { onDelete: 'cascade' }),
+    scope: gatewayBudgetScopeEnum('scope').notNull(),
+    subjectUserId: uuid('subject_user_id'),
+    limitUsd: numeric('limit_usd', { precision: 12, scale: 4 }).notNull(),
+    period: gatewayBudgetPeriodEnum('period').default('month').notNull(),
+    action: gatewayBudgetActionEnum('action').default('block').notNull(),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_gateway_budgets_project').on(table.projectId),
+    index('idx_gateway_budgets_lookup').on(table.projectId, table.scope),
+  ],
+);
+
 // ─── Billing / Credits ─────────────────────────────────────────────────────
 
 export const billingCustomers = kortixSchema.table(

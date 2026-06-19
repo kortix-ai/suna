@@ -348,6 +348,33 @@ export function apiLaunchEnv(ports: Ports, c: SlotCreds, opts: ApiLaunchOpts = {
     KORTIX_BILLING_INTERNAL_ENABLED: billing ? 'true' : 'false',
     ...(billing ? { STRIPE_WEBHOOK_SECRET: opts.stripeWebhookSecret! } : {}),
     CORS_ALLOWED_ORIGINS: `http://localhost:${ports.web}`,
+    // Route sandbox model calls through the local standalone gateway. Proxy mode
+    // (no BASE_URL): the API reverse-proxies /v1/llm-gateway/* to 127.0.0.1:gateway,
+    // and sandboxes reach it via the API's tunnel origin. Overrides .env so the
+    // worktree is self-contained.
+    LLM_GATEWAY_ENABLED: 'true',
+    LLM_GATEWAY_BASE_URL: '',
+    LLM_GATEWAY_PROXY_PORT: String(ports.gateway),
+    GATEWAY_INTERNAL_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,
+    // Managed ("kortix/*") models route to AWS Bedrock; the API builds the
+    // descriptor with these and ships it to the standalone gateway. Region
+    // always set; the API key passes through from the parent shell when present
+    // (else it comes from the dotenvx-decrypted apps/api/.env).
+    AWS_BEDROCK_REGION: process.env.AWS_BEDROCK_REGION || 'us-west-2',
+    ...(process.env.AWS_BEDROCK_API_KEY ? { AWS_BEDROCK_API_KEY: process.env.AWS_BEDROCK_API_KEY } : {}),
+  };
+}
+
+// Env for the standalone LLM gateway (apps/llm-gateway). It has no .env of its
+// own, so everything it needs comes from here: its port, the in-worktree API URL
+// it calls back for auth/resolution, and the shared internal token. LANGFUSE_*
+// (optional tracing) passes through from the parent shell if set.
+export function gatewayLaunchEnv(ports: Ports): Record<string, string> {
+  return {
+    PORT: String(ports.gateway),
+    KORTIX_API_URL: `http://localhost:${ports.api}`,
+    GATEWAY_INTERNAL_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,
+    GATEWAY_API_TOKEN: DEV_GATEWAY_INTERNAL_TOKEN,
   };
 }
 

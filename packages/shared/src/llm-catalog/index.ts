@@ -11,6 +11,8 @@ export interface CatalogProvider {
   name: string;
   env?: string[];
   doc?: string;
+  api?: string | null;
+  npm?: string | null;
   models: CatalogModel[];
 }
 
@@ -23,6 +25,71 @@ export interface Catalog {
 }
 
 export const CATALOG = catalogJson as Catalog;
+
+export interface ManagedModel {
+  id: string;
+  name: string;
+  bedrockModelId: string;
+  openRouterModelId: string;
+  inputPerMillion: number;
+  outputPerMillion: number;
+  cachedInputPerMillion: number;
+  tier: 'flagship' | 'balanced' | 'fast';
+}
+
+// Managed model ids are single-segment (no `provider/` prefix). They are served
+// to opencode under the `kortix` provider, so opencode references them as
+// `kortix/<id>` (e.g. `kortix/claude-opus-4.8`) and sends `<id>` as the wire
+// model. A bare, slash-free id is what lets the gateway tell a managed request
+// (`claude-opus-4.8` → Bedrock) apart from a BYOK one (`anthropic/claude-...` →
+// the user's own key) without the two ever colliding.
+export const MANAGED_MODELS: ManagedModel[] = [
+  {
+    id: 'claude-opus-4.8',
+    name: 'Claude Opus 4.8',
+    bedrockModelId: 'us.anthropic.claude-opus-4-8',
+    openRouterModelId: 'anthropic/claude-opus-4.8',
+    inputPerMillion: 5,
+    outputPerMillion: 25,
+    cachedInputPerMillion: 0.5,
+    tier: 'flagship',
+  },
+  {
+    id: 'claude-sonnet-4.6',
+    name: 'Claude Sonnet 4.6',
+    bedrockModelId: 'us.anthropic.claude-sonnet-4-6',
+    openRouterModelId: 'anthropic/claude-sonnet-4.6',
+    inputPerMillion: 3,
+    outputPerMillion: 15,
+    cachedInputPerMillion: 0.3,
+    tier: 'balanced',
+  },
+  {
+    id: 'claude-haiku-4.5',
+    name: 'Claude Haiku 4.5',
+    bedrockModelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    openRouterModelId: 'anthropic/claude-haiku-4.5',
+    inputPerMillion: 1,
+    outputPerMillion: 5,
+    cachedInputPerMillion: 0.1,
+    tier: 'fast',
+  },
+];
+
+const MANAGED_BY_ID = new Map(MANAGED_MODELS.map((m) => [m.id, m] as const));
+
+export function getManagedModel(id: string): ManagedModel | undefined {
+  return MANAGED_BY_ID.get(id);
+}
+
+export function isManagedModelId(id: string): boolean {
+  return MANAGED_BY_ID.has(id);
+}
+
+export const DEFAULT_MANAGED_MODEL_IDS = MANAGED_MODELS.map((m) => m.id);
+
+export const MANAGED_FLAGSHIP_MODEL_ID =
+  (MANAGED_MODELS.find((m) => m.tier === 'flagship') ?? MANAGED_MODELS[0]).id;
 
 export const MODEL_SELECTOR_PROVIDER_IDS = [
   'kortix-yolo',

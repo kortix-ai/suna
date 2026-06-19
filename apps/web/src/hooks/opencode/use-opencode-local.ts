@@ -11,7 +11,7 @@
  * - Variant persistence via useModelStore
  */
 
-import type { FlatModel } from '@/features/session/session-chat-input';
+import { flattenModels, type FlatModel } from '@/features/session/session-chat-input';
 import { featureFlags } from '@/lib/feature-flags';
 import type { Agent, Config, ProviderListResponse } from '@opencode-ai/sdk/v2/client';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
@@ -133,63 +133,20 @@ export function useOpenCodeLocal({
   config,
   sessionId,
 }: UseOpenCodeLocalOptions): OpenCodeLocal {
-  // ---- Flatten models from providers (only connected) ----
-  const flatModels = useMemo<FlatModel[]>(() => {
-    if (!providers) return [];
-    const all = Array.isArray(providers.all) ? providers.all : [];
-    const connected = Array.isArray(providers.connected) ? providers.connected : [];
-    const result: FlatModel[] = [];
-    for (const p of all) {
-      if (!connected.includes(p.id)) continue;
-      for (const [modelID, model] of Object.entries(p.models)) {
-        const caps = (model as any).capabilities;
-        const modalities = (model as any).modalities;
-        result.push({
-          providerID: p.id,
-          providerName: p.name,
-          modelID,
-          modelName: (model.name || modelID).replace('(latest)', '').trim(),
-          variants: model.variants,
-          capabilities: caps
-            ? {
-                reasoning: caps.reasoning ?? false,
-                vision: caps.input?.image ?? false,
-                toolcall: caps.toolcall ?? false,
-              }
-            : {
-                reasoning: (model as any).reasoning ?? false,
-                vision: modalities?.input?.includes('image') ?? false,
-                toolcall: (model as any).tool_call ?? false,
-              },
-          contextWindow: (model as any).limit?.context,
-          releaseDate: (model as any).release_date,
-          family: (model as any).family,
-          cost: (model as any).cost
-            ? {
-                input: (model as any).cost.input ?? 0,
-                output: (model as any).cost.output ?? 0,
-              }
-            : undefined,
-          providerSource: (p as any).source,
-        });
-      }
-    }
-    return result;
-  }, [providers]);
+  // ---- Flatten models from providers (shared with the chat input, so the
+  // gateway-only allowlist applies here too — native providers never leak in) ----
+  const flatModels = useMemo<FlatModel[]>(() => flattenModels(providers), [providers]);
 
   // ---- Model store (persisted: visibility, recent, variant) ----
   const modelStore = useModelStore(flatModels);
 
-  // ---- Model validation (matches SolidJS web app: checks model exists AND provider is connected) ----
+  // ---- Model validation: a model is valid only if it's in the flattened list,
+  // which is already filtered to connected + gateway-only providers. This keeps
+  // default/recent resolution from ever selecting a native (bypass) model. ----
   const isModelValid = useCallback(
-    (model: ModelKey): boolean => {
-      if (!providers) return false;
-      const all = Array.isArray(providers.all) ? providers.all : [];
-      const connected = Array.isArray(providers.connected) ? providers.connected : [];
-      const provider = all.find((x) => x.id === model.providerID);
-      return !!provider?.models[model.modelID] && connected.includes(model.providerID);
-    },
-    [providers],
+    (model: ModelKey): boolean =>
+      flatModels.some((m) => m.providerID === model.providerID && m.modelID === model.modelID),
+    [flatModels],
   );
 
   // ---- First valid model from a list of fallback sources ----

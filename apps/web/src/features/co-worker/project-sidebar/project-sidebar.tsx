@@ -33,6 +33,7 @@ import {
   ProjectAppsNavItem,
   ProjectAppsRailItem,
 } from '@/features/co-worker/project-sidebar/footer/project-apps-nav';
+import { ProjectGatewayNavItem, ProjectGatewayRailItem } from '@/components/projects/gateway/gateway-nav';
 import { ProjectChangeRequestsNavItem } from '@/features/co-worker/project-sidebar/footer/project-change-requests-nav';
 import {
   ProjectCustomizeNavItem,
@@ -254,6 +255,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
           <div className="mt-auto flex w-full flex-col items-center gap-1">
             <ProjectSandboxAlertRailItem projectId={projectId} />
             <ProjectAppsRailItem projectId={projectId} />
+            <ProjectGatewayRailItem />
             <ProjectSetupRailItem projectId={projectId} />
             <ProjectCustomizeRailItem />
           </div>
@@ -358,6 +360,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <ProjectSandboxAlert projectId={projectId} />
               <ProjectChangeRequestsNavItem projectId={projectId} />
               <ProjectAppsNavItem projectId={projectId} />
+              <ProjectGatewayNavItem />
               <OnboardingSetupNavItem projectId={projectId} />
               <ProjectCustomizeNavItem />
             </SidebarMenu>

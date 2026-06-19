@@ -13,6 +13,7 @@
  * zustand-like pattern via useState + useCallback.
  */
 
+import { DEFAULT_MANAGED_MODEL_IDS, MANAGED_FLAGSHIP_MODEL_ID } from '@kortix/shared/llm-catalog';
 import type { FlatModel } from '@/features/session/session-chat-input';
 import { safeSetItem } from '@/lib/storage/managed-storage';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
@@ -148,10 +149,9 @@ export function setGlobalDefaultModel(model: ModelKey | undefined): void {
 /**
  * Fallback allowlist for the rare non-gateway model that carries no release-date
  * metadata: only the flagship shows out of the box, everything else is opt-in via
- * "Manage models". The managed Kortix gateway no longer flows through here — it
- * shows its whole catalog by default (see `isManagedGatewayModel` below).
+ * "Manage models".
  */
-const DEFAULT_VISIBLE_MODEL_IDS = new Set<string>(['anthropic/claude-opus-4.8']);
+const DEFAULT_VISIBLE_MODEL_IDS = new Set<string>([MANAGED_FLAGSHIP_MODEL_ID]);
 
 /**
  * Provider id of the managed Kortix LLM gateway (see the sandbox's
@@ -162,8 +162,20 @@ const DEFAULT_VISIBLE_MODEL_IDS = new Set<string>(['anthropic/claude-opus-4.8'])
  */
 const MANAGED_GATEWAY_PROVIDER_ID = 'kortix';
 
-function isManagedGatewayModel(model: ModelKey): boolean {
-  return model.providerID === MANAGED_GATEWAY_PROVIDER_ID;
+const SUBSCRIPTION_PROVIDER_ID = 'codex';
+
+// The gateway bakes its ENTIRE routable catalog (every BYOK provider's models)
+// into opencode so any model is callable the instant its key is connected — no
+// session restart. The picker must therefore NOT show all of it by default: a
+// `kortix` model is on out-of-the-box only when it's a platform-managed default
+// or its underlying provider is connected (live, from project secrets). The
+// rest stay one search away. Single source for the managed set lives in
+// @kortix/shared (mirrors the gateway's managed-ids).
+const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
+
+function subProviderOf(modelID: string): string {
+  const slash = modelID.indexOf('/');
+  return slash === -1 ? modelID : modelID.slice(0, slash);
 }
 
 function isDefaultVisible(model: ModelKey): boolean {
@@ -232,8 +244,12 @@ function computeLatestSet(models: FlatModel[]): Set<string> {
 // Hook
 // ============================================================================
 
-export function useModelStore(allModels: FlatModel[]) {
+export function useModelStore(
+  allModels: FlatModel[],
+  opts?: { connectedProviderIds?: Set<string> },
+) {
   const store = useSyncExternalStore(subscribe, getStore, getStore);
+  const connectedProviderIds = opts?.connectedProviderIds;
 
   // Compute latest set
   const latestSet = useMemo(() => computeLatestSet(allModels), [allModels]);
@@ -253,11 +269,20 @@ export function useModelStore(allModels: FlatModel[]) {
       const key = `${model.providerID}:${model.modelID}`;
       const state = visibilityMap.get(key);
       if (state === 'hide') return false;
+      // Gateway (kortix) models. The catalog is namespaced `<provider>/<model>`,
+      // and connection is AUTHORITATIVE — it overrides any stale `show` pin, so a
+      // disconnected provider's models disappear (even ones you'd used) and a
+      // freshly connected provider's models appear, with no per-model pinning.
+      // Visible only when: Codex subscription (`codex/<id>`, present once
+      // connected), a platform-managed default, or the BYOK provider is
+      // connected. Everything else is search-only so the catalog can't flood.
+      if (model.providerID === MANAGED_GATEWAY_PROVIDER_ID) {
+        const sub = subProviderOf(model.modelID);
+        if (sub === SUBSCRIPTION_PROVIDER_ID) return true;
+        if (MANAGED_MODEL_IDS.has(model.modelID)) return true;
+        return connectedProviderIds?.has(sub) ?? false;
+      }
       if (state === 'show') return true;
-      // Managed Kortix gateway: show the whole curated catalog by default.
-      // It's a small, hand-picked set we control, so every model is on unless
-      // the user explicitly hides it.
-      if (isManagedGatewayModel(model)) return true;
       if (latestSet.has(key)) return true;
       const m = allModels.find(
         (x) => x.providerID === model.providerID && x.modelID === model.modelID,
@@ -275,7 +300,7 @@ export function useModelStore(allModels: FlatModel[]) {
       }
       return false;
     },
-    [visibilityMap, latestSet, allModels],
+    [visibilityMap, latestSet, allModels, connectedProviderIds],
   );
 
   // Check if a model is in the latest set

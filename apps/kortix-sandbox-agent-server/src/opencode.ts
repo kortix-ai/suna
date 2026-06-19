@@ -30,7 +30,7 @@ export const OPENCODE_AUTH_JSON_SECRET = 'OPENCODE_AUTH_JSON'
 //   3. a Slack permission override      (when this is a Slack session)
 // If NONE apply there's nothing to inject, so we return undefined and opencode
 // just uses the repo config as-is.
-export function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): string | undefined {
+export async function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): Promise<string | undefined> {
   const executorToken = env.KORTIX_EXECUTOR_TOKEN
   const apiUrl = env.KORTIX_API_URL
   const llmBaseUrl = env.KORTIX_LLM_BASE_URL
@@ -84,15 +84,7 @@ export function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): string | und
         : {}
     out.provider = {
       ...provider,
-      kortix: {
-        npm: '@ai-sdk/openai-compatible',
-        name: 'Kortix',
-        options: {
-          baseURL: llmBaseUrl,
-          apiKey: llmApiKey,
-        },
-        models: KORTIX_GATEWAY_MODELS,
-      },
+      kortix: await buildKortixProvider(llmBaseUrl!, llmApiKey!),
     }
     if (!('model' in out) || typeof out.model !== 'string') {
       out.model = DEFAULT_KORTIX_MODEL
@@ -117,9 +109,54 @@ export function buildOpencodeConfigContent(env: NodeJS.ProcessEnv): string | und
   return JSON.stringify(out)
 }
 
+async function buildKortixProvider(llmBaseUrl: string, llmApiKey: string): Promise<Record<string, unknown>> {
+  return {
+    npm: '@ai-sdk/openai-compatible',
+    name: 'Kortix',
+    options: {
+      baseURL: llmBaseUrl,
+      apiKey: llmApiKey,
+    },
+    models: await fetchGatewayModels(llmBaseUrl, llmApiKey),
+  }
+}
+
 export const buildExecutorMcpConfigContent = buildOpencodeConfigContent
 
-const DEFAULT_KORTIX_MODEL = 'kortix/anthropic/claude-opus-4.8'
+const GATEWAY_MODELS_RETRY_DELAYS_MS = [500, 1000, 2000, 4000, 8000]
+
+async function fetchGatewayModels(
+  baseUrl: string,
+  apiKey: string,
+): Promise<Record<string, KortixGatewayModel>> {
+  const url = `${baseUrl.replace(/\/+$/, '')}/models`
+  const attempts = GATEWAY_MODELS_RETRY_DELAYS_MS.length + 1
+  logger.info(`[opencode] fetching gateway models from ${url}`)
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      const res = await fetch(url, { headers: { authorization: `Bearer ${apiKey}` } })
+      if (!res.ok) {
+        const detail = (await res.text().catch(() => '')).slice(0, 200)
+        throw new Error(`HTTP ${res.status}${detail ? ` ${detail}` : ''}`)
+      }
+      const body = (await res.json()) as { models?: Record<string, KortixGatewayModel> }
+      const models = body.models ?? {}
+      if (Object.keys(models).length === 0) throw new Error('gateway returned an empty catalog')
+      logger.info(`[opencode] fetched ${Object.keys(models).length} gateway models from ${url}`)
+      return models
+    } catch (err) {
+      logger.warn(
+        `[opencode] gateway models fetch failed (attempt ${attempt + 1}/${attempts}) ${url}: ${(err as Error).message}`,
+      )
+      const delay = GATEWAY_MODELS_RETRY_DELAYS_MS[attempt]
+      if (delay) await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
+  logger.error(`[opencode] gateway models unavailable after ${attempts} attempts (${url}); using minimal fallback`)
+  return MINIMAL_FALLBACK_MODELS
+}
+
+const DEFAULT_KORTIX_MODEL = 'kortix/claude-opus-4.8'
 
 type KortixGatewayModel = {
   name: string
@@ -130,8 +167,8 @@ type KortixGatewayModel = {
   limit?: { context?: number; output?: number }
 }
 
-const KORTIX_GATEWAY_MODELS: Record<string, KortixGatewayModel> = {
-  'anthropic/claude-opus-4.8': {
+const MINIMAL_FALLBACK_MODELS: Record<string, KortixGatewayModel> = {
+  'claude-opus-4.8': {
     name: 'Claude Opus 4.8',
     reasoning: true,
     tool_call: true,
@@ -328,7 +365,7 @@ export function createOpencodeSupervisor(
     } catch {}
   }
 
-  function spawnChild(bin: string) {
+  async function spawnChild(bin: string) {
     sweepBunExtractions()
     try {
       mkdirSync(OPENCODE_HOME, { recursive: true })
@@ -358,6 +395,26 @@ export function createOpencodeSupervisor(
 
     materializeOpencodeAuth(env)
 
+    // Withhold provider API keys (ANTHROPIC_API_KEY, OPENAI_API_KEY, …) from the
+    // opencode process. With any such key in its env, opencode auto-connects a
+    // NATIVE provider and calls it directly — bypassing the gateway (no logs /
+    // spend / budgets) and leaving stale models that survive a BYOK disconnect.
+    // The gateway must be the only LLM path, so the API hands us the exact names
+    // to strip (Codex/OpenCode subscription auth is excluded — it's already been
+    // consumed into auth.json by materializeOpencodeAuth above). This only touches
+    // the opencode process env; it doesn't change what the container itself holds.
+    const denyEnv = (env.KORTIX_OPENCODE_DENY_ENV || '').split(',').map((n) => n.trim()).filter(Boolean)
+    let withheld = 0
+    for (const name of denyEnv) {
+      if (name in env) {
+        delete env[name]
+        withheld++
+      }
+    }
+    if (withheld > 0) {
+      logger.info(`[opencode] withheld ${withheld} provider credential(s) from opencode (gateway-only routing)`)
+    }
+
     // Boot profiling: when KORTIX_OPENCODE_DEBUG=1, ask opencode to emit its own
     // verbose startup logs (interleaved into the daemon log via inherited
     // stdio) so a real cold boot reveals where the spawn→ready window goes.
@@ -366,10 +423,18 @@ export function createOpencodeSupervisor(
       env.OPENCODE_LOG_LEVEL = 'DEBUG'
     }
 
-    const opencodeConfig = buildOpencodeConfigContent(baseEnv)
+    const opencodeConfig = await buildOpencodeConfigContent(baseEnv)
     if (opencodeConfig) {
-      env.OPENCODE_CONFIG_CONTENT = opencodeConfig
-      logger.info('[opencode] applied inline config (executor MCP / LLM gateway / Slack permissions)')
+      // The assembled config carries the gateway's full model catalog, which is
+      // ~400KB — far over Linux's 128KB per-env-var ceiling (MAX_ARG_STRLEN).
+      // Inlining it via OPENCODE_CONFIG_CONTENT makes execve fail with E2BIG and
+      // opencode never spawns ("runtime not ready"). Hand it a file path instead.
+      const configPath = join(OPENCODE_CONFIG_HOME, 'kortix-opencode.json')
+      mkdirSync(dirname(configPath), { recursive: true })
+      writeFileSync(configPath, opencodeConfig, { mode: 0o600 })
+      env.OPENCODE_CONFIG = configPath
+      delete env.OPENCODE_CONFIG_CONTENT
+      logger.info(`[opencode] wrote config (${opencodeConfig.length} bytes) to ${configPath}`)
     }
 
     const args = [
@@ -397,7 +462,7 @@ export function createOpencodeSupervisor(
       restartDelayMs = Math.min(restartDelayMs * 2, 30_000)
       logger.info('[opencode] restarting', { delayMs: delay })
       setTimeout(() => {
-        if (!stopping && binaryPath) spawnChild(binaryPath)
+        if (!stopping && binaryPath) void spawnChild(binaryPath)
       }, delay)
     })
 
@@ -446,7 +511,7 @@ export function createOpencodeSupervisor(
       binaryPath = bin
       opencodeCwd = await resolveOpencodeCwd(cfg)
       try {
-        spawnChild(bin)
+        await spawnChild(bin)
       } catch (err) {
         logger.error('[opencode] initial spawn failed', err)
       }

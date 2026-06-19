@@ -59,8 +59,16 @@ import {
 } from '@/features/co-worker/shared/sharing-picker';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
 import type { FlatModel } from '@/features/session/session-chat-input';
+import { DEFAULT_MANAGED_MODEL_IDS } from '@kortix/shared/llm-catalog';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
+
+// Kortix's "Managed" plan covers the curated default models (OpenRouter-routed,
+// no key needed). The opencode `kortix` provider also carries the full BYOK
+// catalog (every routable model) so any model is callable the moment its key is
+// connected — but those are NOT "included with your plan", so the Managed
+// provider must report only the managed set, not the whole catalog.
+const MANAGED_MODEL_ID_SET = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
 import {
   LLM_PROVIDERS,
   LLM_PROVIDER_BY_ID,
@@ -99,6 +107,9 @@ export interface ProjectProviderModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   defaultTab?: ActiveTab;
+  initialProviderId?: string;
+  asPanel?: boolean;
+  allowedTabs?: ActiveTab[];
 }
 
 export function ProjectProviderModal({
@@ -106,6 +117,9 @@ export function ProjectProviderModal({
   open,
   onOpenChange,
   defaultTab,
+  initialProviderId,
+  asPanel = false,
+  allowedTabs,
 }: ProjectProviderModalProps) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   // Gate the secrets fetch on `open`. The modal is always mounted by callers
@@ -134,11 +148,13 @@ export function ProjectProviderModal({
     const connectedIds = new Set(ocProviders?.connected ?? []);
     const kortix = (ocProviders?.all ?? []).find((p) => p.id === 'kortix');
     if (!kortix || !connectedIds.has('kortix')) return null;
-    const models: LlmProviderModel[] = Object.entries(kortix.models ?? {}).map(([id, m]) => ({
-      id,
-      name: ((m as { name?: string }).name || id).replace('(latest)', '').trim(),
-      released: (m as { release_date?: string }).release_date ?? null,
-    }));
+    const models: LlmProviderModel[] = Object.entries(kortix.models ?? {})
+      .filter(([id]) => MANAGED_MODEL_ID_SET.has(id))
+      .map(([id, m]) => ({
+        id,
+        name: ((m as { name?: string }).name || id).replace('(latest)', '').trim(),
+        released: (m as { release_date?: string }).release_date ?? null,
+      }));
     return {
       id: 'kortix',
       label: kortix.name || 'Kortix',
@@ -169,8 +185,13 @@ export function ProjectProviderModal({
 
   const hasConnections = connectedProviders.length > 0;
 
+  const clampTab = useCallback(
+    (t: ActiveTab): ActiveTab => (allowedTabs && !allowedTabs.includes(t) ? allowedTabs[0] : t),
+    [allowedTabs],
+  );
+
   const [activeTab, setActiveTab] = useState<ActiveTab>(() =>
-    pickInitialTab(defaultTab, hasConnections),
+    clampTab(pickInitialTab(defaultTab, hasConnections)),
   );
   const [subview, setSubview] = useState<CatalogSubview>({ kind: 'list' });
   const [search, setSearch] = useState('');
@@ -178,8 +199,13 @@ export function ProjectProviderModal({
   // Reset whenever the dialog is reopened.
   useEffect(() => {
     if (open) {
-      setActiveTab(pickInitialTab(defaultTab, hasConnections));
-      setSubview({ kind: 'list' });
+      if (initialProviderId) {
+        setActiveTab(clampTab('catalog'));
+        setSubview({ kind: 'connect', providerId: initialProviderId });
+      } else {
+        setActiveTab(clampTab(pickInitialTab(defaultTab, hasConnections)));
+        setSubview({ kind: 'list' });
+      }
       setSearch('');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -200,9 +226,104 @@ export function ProjectProviderModal({
         ? 'Search models...'
         : 'Search providers...';
 
+  const showTab = (t: ActiveTab) => !allowedTabs || allowedTabs.includes(t);
+  const showTabBar = !allowedTabs || allowedTabs.length > 1;
+
+  const body = (
+    <>
+      {!inSubflow && (
+        <div className={`flex items-center gap-3 px-5 ${asPanel ? 'border-b border-border/50 py-3' : 'pb-3'}`}>
+          {showTabBar && (
+            <FilterBar>
+              {showTab('connected') && (
+                <FilterBarItem
+                  data-state={activeTab === 'connected' ? 'active' : 'inactive'}
+                  onClick={() => switchTab('connected')}
+                  className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
+                >
+                  Connected
+                  {connectedProviders.length > 0 && (
+                    <span className="text-muted-foreground/40 ml-0.5 text-xs tabular-nums">
+                      {connectedProviders.length}
+                    </span>
+                  )}
+                </FilterBarItem>
+              )}
+              {showTab('catalog') && (
+                <FilterBarItem
+                  data-state={activeTab === 'catalog' ? 'active' : 'inactive'}
+                  onClick={() => switchTab('catalog')}
+                  className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
+                >
+                  {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line178JsxTextAddProvider')}
+                </FilterBarItem>
+              )}
+              {showTab('models') && (
+                <FilterBarItem
+                  data-state={activeTab === 'models' ? 'active' : 'inactive'}
+                  onClick={() => switchTab('models')}
+                  className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
+                >
+                  Models
+                </FilterBarItem>
+              )}
+            </FilterBar>
+          )}
+
+          <div className={`relative h-9 min-w-0 ${showTabBar ? 'ml-auto max-w-[260px] flex-1' : 'w-full'}`}>
+            <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2" />
+            <Input
+              type="text"
+              placeholder={searchPlaceholder}
+              autoComplete="off"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="border-border/50 bg-foreground/[0.05] focus-visible:ring-ring/40 h-9 w-full rounded-full pl-9 text-xs shadow-none focus-visible:ring-1"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {secretsQuery.isLoading && (
+          <div className="flex min-h-[200px] items-center justify-center">
+            <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
+          </div>
+        )}
+
+        {!secretsQuery.isLoading && activeTab === 'connected' && (
+          <ConnectedTab
+            projectId={projectId}
+            connectedProviders={connectedProviders}
+            search={search}
+            onAddProvider={() => switchTab('catalog')}
+          />
+        )}
+
+        {!secretsQuery.isLoading && activeTab === 'catalog' && (
+          <CatalogTab
+            projectId={projectId}
+            connectedIds={new Set(connectedProviders.map((p) => p.id))}
+            search={search}
+            subview={subview}
+            setSubview={setSubview}
+          />
+        )}
+
+        {!secretsQuery.isLoading && activeTab === 'models' && (
+          <ModelsTab connectedProviders={connectedProviders} search={search} />
+        )}
+      </div>
+    </>
+  );
+
+  if (asPanel) {
+    return <div className="flex min-h-0 flex-1 flex-col">{body}</div>;
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="!grid h-[min(80vh,680px)] w-[calc(100vw-2rem)] max-w-[600px] grid-rows-[auto_auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+      <DialogContent className="flex h-[min(80vh,680px)] w-[calc(100vw-2rem)] max-w-[600px] flex-col gap-0 overflow-hidden p-0">
         <DialogHeader className="space-y-0.5 px-5 pt-5 pr-12 pb-3">
           <DialogTitle className="text-sm font-semibold">
             {tHardcodedUi.raw('componentsProjectsProjectProviderModal.line151JsxTextLlmProviders')}
@@ -213,84 +334,7 @@ export function ProjectProviderModal({
             )}
           </DialogDescription>
         </DialogHeader>
-
-        {!inSubflow && (
-          <div className="flex items-center gap-3 px-5 pb-3">
-            <FilterBar>
-              <FilterBarItem
-                data-state={activeTab === 'connected' ? 'active' : 'inactive'}
-                onClick={() => switchTab('connected')}
-                className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
-              >
-                Connected
-                {connectedProviders.length > 0 && (
-                  <span className="text-muted-foreground/40 ml-0.5 text-xs tabular-nums">
-                    {connectedProviders.length}
-                  </span>
-                )}
-              </FilterBarItem>
-              <FilterBarItem
-                data-state={activeTab === 'catalog' ? 'active' : 'inactive'}
-                onClick={() => switchTab('catalog')}
-                className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
-              >
-                {tHardcodedUi.raw(
-                  'componentsProjectsProjectProviderModal.line178JsxTextAddProvider',
-                )}
-              </FilterBarItem>
-              <FilterBarItem
-                data-state={activeTab === 'models' ? 'active' : 'inactive'}
-                onClick={() => switchTab('models')}
-                className="text-xs data-[state=active]:shadow-none data-[state=active]:ring-0"
-              >
-                Models
-              </FilterBarItem>
-            </FilterBar>
-
-            <div className="relative ml-auto h-9 max-w-[260px] min-w-0 flex-1">
-              <Search className="text-muted-foreground/60 pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2" />
-              <Input
-                type="text"
-                placeholder={searchPlaceholder}
-                autoComplete="off"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="border-border/50 bg-foreground/[0.05] focus-visible:ring-ring/40 h-9 w-full rounded-full pl-9 text-xs shadow-none focus-visible:ring-1"
-              />
-            </div>
-          </div>
-        )}
-
-        <div className="min-h-0 overflow-y-auto">
-          {secretsQuery.isLoading && (
-            <div className="flex min-h-[200px] items-center justify-center">
-              <Loader2 className="text-muted-foreground h-4 w-4 animate-spin" />
-            </div>
-          )}
-
-          {!secretsQuery.isLoading && activeTab === 'connected' && (
-            <ConnectedTab
-              projectId={projectId}
-              connectedProviders={connectedProviders}
-              search={search}
-              onAddProvider={() => switchTab('catalog')}
-            />
-          )}
-
-          {!secretsQuery.isLoading && activeTab === 'catalog' && (
-            <CatalogTab
-              projectId={projectId}
-              connectedIds={new Set(connectedProviders.map((p) => p.id))}
-              search={search}
-              subview={subview}
-              setSubview={setSubview}
-            />
-          )}
-
-          {!secretsQuery.isLoading && activeTab === 'models' && (
-            <ModelsTab connectedProviders={connectedProviders} search={search} />
-          )}
-        </div>
+        {body}
       </DialogContent>
     </Dialog>
   );

@@ -7,6 +7,7 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo } from
 
 import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { CustomizeOverlay } from '@/components/projects/customize/customize-overlay';
+import { GatewayOverlay } from '@/components/projects/gateway/gateway-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
 import { useSidebar } from '@/components/ui/sidebar';
@@ -16,6 +17,7 @@ import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sid
 import { AppProviders } from '@/features/layout/app-providers';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectShellShortcuts } from '@/hooks/projects/use-project-shell-shortcuts';
+import { useGatewayCatalogSync } from '@/hooks/opencode/use-gateway-catalog-sync';
 import {
   createProjectSession,
   getProjectDetail,
@@ -49,6 +51,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     queryFn: () => getProjectDetail(projectId),
     enabled: !!projectId,
   });
+
+  useGatewayCatalogSync(projectId);
 
   useEffect(() => {
     if (!authLoading && !user) router.replace('/auth');
@@ -153,6 +157,8 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
         <CustomizeOverlay projectId={projectId} />
 
         <AppsOverlay projectId={projectId} />
+
+        <GatewayOverlay projectId={projectId} />
 
         <ProjectOnboardingWizard projectId={projectId} />
 
