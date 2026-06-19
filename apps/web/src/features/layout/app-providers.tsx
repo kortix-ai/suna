@@ -1,12 +1,12 @@
 'use client';
 
-import { NewInstanceModal } from '@/components/billing/pricing/new-instance-modal';
-import { GlobalUpgradeDialog } from '@/components/billing/upgrade-dialog';
 import { SidebarLeft } from '@/components/sidebar/sidebar-left';
 import { SidebarRight } from '@/components/sidebar/sidebar-right';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { RightSidebarProvider } from '@/components/ui/sidebar-right-provider';
 import { SidePanelUserSettings } from '@/features/accounts/settings/side-panel-user-settings';
+import { NewInstanceModal } from '@/features/billing/pricing/new-instance-modal';
+import { GlobalUpgradeModal } from '@/features/billing/global-upgrade-modal';
 import { useModelHydration } from '@/hooks/opencode/use-model-hydration';
 import { isBillingEnabled } from '@/lib/config';
 import { pruneAllRegisteredCaches } from '@/lib/storage/managed-storage';
@@ -151,7 +151,7 @@ export function AppProviders({
         {children}
         {showGlobalNewInstanceModal && <GlobalNewInstanceModal />}
         {showGlobalUserSettingsModal && <GlobalUserSettingsModal />}
-        {isBillingEnabled() && <GlobalUpgradeDialog />}
+        {isBillingEnabled() && <GlobalUpgradeModal />}
       </SubscriptionStoreSync>
     </DeleteOperationEffectsWrapper>
   );

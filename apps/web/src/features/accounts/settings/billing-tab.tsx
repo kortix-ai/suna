@@ -1,15 +1,15 @@
 'use client';
 
-import { AccountOverviewTab } from '@/components/billing/account-overview';
-import { AutoTopupCard } from '@/components/billing/auto-topup-card';
-import { ClaimPerSeatCard } from '@/components/billing/claim-per-seat-card';
-import { SeatManagementCard } from '@/components/billing/seat-management-card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { errorToast } from '@/components/ui/toast';
+import { AccountOverviewTab } from '@/features/billing/account-overview';
+import { AutoTopupCard } from '@/features/billing/auto-topup-card';
+import { ClaimPerSeatCard } from '@/features/billing/claim-per-seat-card';
+import { SeatManagementCard } from '@/features/billing/seat-management-card';
 import { useAuth } from '@/features/providers/auth-provider';
 import {
   accountStateKeys,

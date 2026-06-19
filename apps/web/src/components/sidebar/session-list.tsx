@@ -2,43 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useState, useMemo, useCallback, startTransition, useEffect, useRef, memo } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
-import { normalizeAppPathname, getActiveInstanceIdFromCookie, getCurrentInstanceIdFromPathname, buildInstancePath } from '@/lib/instance-routes';
-import {
-  MoreHorizontal,
-  Trash2,
-  Frown,
-  MessageCircle,
-  Pencil,
-  Archive,
-  ArchiveRestore,
-  ChevronRight,
-  ChevronDown,
-  Layers,
-} from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { restartSandbox } from '@/lib/platform-client';
-import { toast } from '@/lib/toast';
-import { markRecoveryRequested, useSandboxConnectionStore } from '@/stores/sandbox-connection-store';
-import { useAdminRole } from '@/hooks/admin/use-admin-role';
-import { useAdminSandboxHealth, useAdminSandboxRepair } from '@/hooks/admin/use-admin-sandboxes';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { DeleteConfirmationDialog } from '@/components/thread/DeleteConfirmationDialog';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -49,30 +13,70 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { useSidebar } from '@/components/ui/sidebar';
-import { DeleteConfirmationDialog } from '@/components/thread/DeleteConfirmationDialog';
-import { CompactDialog } from '@/components/session/compact-dialog';
+import { Button } from '@/components/ui/button';
 import {
-  useOpenCodeSessions,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { useSidebar } from '@/components/ui/sidebar';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { CompactModal } from '@/features/session/header/compact-modal';
+import { useAdminRole } from '@/hooks/admin/use-admin-role';
+import { useAdminSandboxHealth, useAdminSandboxRepair } from '@/hooks/admin/use-admin-sandboxes';
+import type { Session } from '@/hooks/opencode/use-opencode-sessions';
+import {
   useDeleteOpenCodeSession,
+  useOpenCodeSessions,
   useUpdateOpenCodeSession,
 } from '@/hooks/opencode/use-opencode-sessions';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useBackgroundSessionPrefetch } from '@/hooks/opencode/use-session-prefetch';
+import { useTriggers } from '@/hooks/scheduled-tasks';
 import { useDebouncedBusySessions } from '@/hooks/use-debounced-busy-sessions';
+import {
+  buildInstancePath,
+  getActiveInstanceIdFromCookie,
+  getCurrentInstanceIdFromPathname,
+  normalizeAppPathname,
+} from '@/lib/instance-routes';
+import { classifySession, isSidebarHidden } from '@/lib/kortix/session-category';
+import { restartSandbox } from '@/lib/platform-client';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
 import { useSyncStore } from '@/stores/opencode-sync-store';
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { useTabStore, openTabAndNavigate } from '@/stores/tab-store';
+  markRecoveryRequested,
+  useSandboxConnectionStore,
+} from '@/stores/sandbox-connection-store';
 import { useServerStore } from '@/stores/server-store';
-import { childMapByParent, sortSessions, allDescendantIds } from '@/ui';
-import type { Session } from '@/hooks/opencode/use-opencode-sessions';
-import { useBackgroundSessionPrefetch, prefetchSession } from '@/hooks/opencode/use-session-prefetch';
-import { classifySession, isSidebarHidden } from '@/lib/kortix/session-category';
-import { useTriggers } from '@/hooks/scheduled-tasks';
+import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
+import { allDescendantIds, childMapByParent, sortSessions } from '@/ui';
+import {
+  Archive,
+  ArchiveRestore,
+  ChevronDown,
+  ChevronRight,
+  Frown,
+  Layers,
+  MessageCircle,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+} from 'lucide-react';
 import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 // ============================================================================
 // Session Row — flat, uniform layout for both parent and child sessions
@@ -117,7 +121,7 @@ const SessionRow = memo(function SessionRow({
 
   const displayTitle = session.title?.includes('@worker')
     ? session.title.replace(/\s*\(@worker\)\s*$/, '')
-    : (session.title || 'Untitled');
+    : session.title || 'Untitled';
 
   return (
     <Link
@@ -127,7 +131,7 @@ const SessionRow = memo(function SessionRow({
     >
       <div
         className={cn(
-          'flex items-center gap-2 rounded-lg cursor-pointer transition-colors duration-150',
+          'flex cursor-pointer items-center gap-2 rounded-lg transition-colors duration-150',
           'pr-1.5',
           isChild ? 'py-0.5 pl-2.5' : 'py-1 pl-2.5',
           isActive
@@ -141,14 +145,14 @@ const SessionRow = memo(function SessionRow({
         onMouseLeave={() => setIsHovering(false)}
       >
         {/* Status dot — busy or pending */}
-        {(isBusy || pendingCount > 0) ? (
+        {isBusy || pendingCount > 0 ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex-shrink-0">
                 {pendingCount > 0 ? (
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse block" />
+                  <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
                 ) : (
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse block" />
+                  <span className="block h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
                 )}
               </div>
             </TooltipTrigger>
@@ -179,7 +183,7 @@ const SessionRow = memo(function SessionRow({
                 type="button"
                 aria-label={isExpanded ? 'Collapse sub-sessions' : 'Expand sub-sessions'}
                 className={cn(
-                  'flex-shrink-0 inline-flex items-center rounded-full px-1.5 py-0.5 text-xs tabular-nums transition-colors cursor-pointer',
+                  'inline-flex flex-shrink-0 cursor-pointer items-center rounded-full px-1.5 py-0.5 text-xs tabular-nums transition-colors',
                   isExpanded
                     ? 'bg-sidebar-accent/80 text-sidebar-foreground'
                     : 'text-muted-foreground/50 hover:bg-sidebar-accent/60 hover:text-muted-foreground',
@@ -194,7 +198,8 @@ const SessionRow = memo(function SessionRow({
               </button>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs">
-              {isExpanded ? 'Collapse' : 'Expand'} {childCount} sub-{childCount === 1 ? 'session' : 'sessions'}
+              {isExpanded ? 'Collapse' : 'Expand'} {childCount} sub-
+              {childCount === 1 ? 'session' : 'sessions'}
             </TooltipContent>
           </Tooltip>
         )}
@@ -203,23 +208,25 @@ const SessionRow = memo(function SessionRow({
         {pendingCount > 0 && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="flex-shrink-0 h-4 min-w-4 px-1 rounded-full bg-amber-500/15 text-amber-500 text-xs font-medium flex items-center justify-center">
+              <span className="flex h-4 min-w-4 flex-shrink-0 items-center justify-center rounded-full bg-amber-500/15 px-1 text-xs font-medium text-amber-500">
                 {pendingCount}
               </span>
             </TooltipTrigger>
             <TooltipContent side="right" className="text-xs">
-              {pendingCount} {pendingCount === 1 ? 'question' : 'questions'}{tHardcodedUi.raw('componentsSidebarSessionList.line208JsxTextWaitingForYourInput')}</TooltipContent>
+              {pendingCount} {pendingCount === 1 ? 'question' : 'questions'}
+              {tHardcodedUi.raw('componentsSidebarSessionList.line208JsxTextWaitingForYourInput')}
+            </TooltipContent>
           </Tooltip>
         )}
 
         {/* Context menu — visible on hover */}
-        <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
+        <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 className={cn(
-                  'p-0.5 rounded-md hover:bg-sidebar-accent transition-colors duration-150 text-muted-foreground hover:text-sidebar-foreground cursor-pointer',
-                  isHovering ? 'opacity-100' : 'opacity-0 pointer-events-none',
+                  'hover:bg-sidebar-accent text-muted-foreground hover:text-sidebar-foreground cursor-pointer rounded-md p-0.5 transition-colors duration-150',
+                  isHovering ? 'opacity-100' : 'pointer-events-none opacity-0',
                 )}
                 onClick={(e) => {
                   e.preventDefault();
@@ -399,7 +406,7 @@ function SessionGroup({
 
       {/* Children — indented under parent with subtle left border */}
       {hasChildren && isExpanded && (
-        <div className="ml-5 border-l border-border/30 dark:border-border/20 pl-1">
+        <div className="border-border/30 dark:border-border/20 ml-5 border-l pl-1">
           {childSessions.map(renderChild)}
         </div>
       )}
@@ -424,7 +431,9 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<{ id: string; name: string } | null>(null);
   const [isArchiveDialogOpen, setIsArchiveDialogOpen] = useState(false);
-  const [sessionToArchive, setSessionToArchive] = useState<{ id: string; name: string } | null>(null);
+  const [sessionToArchive, setSessionToArchive] = useState<{ id: string; name: string } | null>(
+    null,
+  );
   const [showArchived, setShowArchived] = useState(false);
   const [recoveringHost, setRecoveringHost] = useState(false);
   const SESSION_PAGE_SIZE = 50;
@@ -438,9 +447,12 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   // Auto-refetch sessions when connection recovers from error state
   const connectionStatus = useSandboxConnectionStore((s) => s.status);
   const recoveryPhase = useSandboxConnectionStore((s) => s.recoveryPhase);
-  const activeServer = useServerStore((s) => s.servers.find((server) => server.id === s.activeServerId));
+  const activeServer = useServerStore((s) =>
+    s.servers.find((server) => server.id === s.activeServerId),
+  );
   const routeInstanceId = getCurrentInstanceIdFromPathname(rawPathname);
-  const activeInstanceId = routeInstanceId || getActiveInstanceIdFromCookie() || activeServer?.instanceId || '';
+  const activeInstanceId =
+    routeInstanceId || getActiveInstanceIdFromCookie() || activeServer?.instanceId || '';
   const supportsLayeredHealth = activeServer?.provider === 'justavps';
   const { data: adminRole } = useAdminRole({ enabled: !!activeInstanceId });
   const isAdmin = !!adminRole?.isAdmin;
@@ -455,14 +467,22 @@ export function SessionList({ projectId }: SessionListProps = {}) {
       ? adminHealth.recommended_action
       : 'restart_workload'
     : 'restart_workload';
-  const storageFull = !!adminHealth && (adminHealth.layers.host.details.disk_full === true || adminHealth.layers.runtime.details.storage_full === true);
+  const storageFull =
+    !!adminHealth &&
+    (adminHealth.layers.host.details.disk_full === true ||
+      adminHealth.layers.runtime.details.storage_full === true);
   const primaryRepairLabel =
-    primaryRepairAction === 'restart_runtime' ? 'Restart runtime'
-      : primaryRepairAction === 'restart_workload' ? 'Restart workload'
-      : primaryRepairAction === 'start_workload' ? 'Start workload'
-      : primaryRepairAction === 'start_host' ? 'Start host'
-      : primaryRepairAction === 'reboot_host' ? 'Reboot host'
-      : 'Repair';
+    primaryRepairAction === 'restart_runtime'
+      ? 'Restart runtime'
+      : primaryRepairAction === 'restart_workload'
+        ? 'Restart workload'
+        : primaryRepairAction === 'start_workload'
+          ? 'Start workload'
+          : primaryRepairAction === 'start_host'
+            ? 'Start host'
+            : primaryRepairAction === 'reboot_host'
+              ? 'Reboot host'
+              : 'Repair';
   const prevConnectionRef = useRef(connectionStatus);
   useEffect(() => {
     const prev = prevConnectionRef.current;
@@ -557,12 +577,15 @@ export function SessionList({ projectId }: SessionListProps = {}) {
     return result;
   }, [sessions, childMap, manualExpanded, hasActiveDescendant, activeSessionId]);
 
-  const handleToggleExpand = useCallback((sessionId: string) => {
-    setManualExpanded((prev) => ({
-      ...prev,
-      [sessionId]: !(prev[sessionId] ?? expandedNodes[sessionId] ?? false),
-    }));
-  }, [expandedNodes]);
+  const handleToggleExpand = useCallback(
+    (sessionId: string) => {
+      setManualExpanded((prev) => ({
+        ...prev,
+        [sessionId]: !(prev[sessionId] ?? expandedNodes[sessionId] ?? false),
+      }));
+    },
+    [expandedNodes],
+  );
 
   // Get status for a session (busy + pending)
   const getStatus = useCallback(
@@ -585,9 +608,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
   const { data: triggers } = useTriggers();
   const triggerNames = useMemo(() => {
     if (!triggers) return [];
-    const list = projectId
-      ? triggers.filter((t: any) => t.project_id === projectId)
-      : triggers;
+    const list = projectId ? triggers.filter((t: any) => t.project_id === projectId) : triggers;
     return list.map((t: any) => t.name as string);
   }, [triggers, projectId]);
 
@@ -601,18 +622,25 @@ export function SessionList({ projectId }: SessionListProps = {}) {
     // Hide agent-bound and trigger-fire sessions from the sidebar — those
     // belong in the project Sessions tab, grouped by agent/trigger. Keep
     // human chats + PM onboarding (user needs to answer there).
-    list = list.filter((s) => !isSidebarHidden(classifySession(
-      { id: s.id, title: s.title, parentID: s.parentID ?? null },
-      { triggerNames },
-    )));
+    list = list.filter(
+      (s) =>
+        !isSidebarHidden(
+          classifySession(
+            { id: s.id, title: s.title, parentID: s.parentID ?? null },
+            { triggerNames },
+          ),
+        ),
+    );
     const baseSorted = [...list].sort(sortSessions(Date.now()));
     return baseSorted.sort((a, b) => {
       const aPending = getPendingCount(a.id);
       const bPending = getPendingCount(b.id);
       if (aPending > 0 && bPending === 0) return -1;
       if (bPending > 0 && aPending === 0) return 1;
-      const aIsBusy = aPending === 0 && (debouncedBusy[a.id] || statuses[a.id]?.type === 'busy') ? 1 : 0;
-      const bIsBusy = bPending === 0 && (debouncedBusy[b.id] || statuses[b.id]?.type === 'busy') ? 1 : 0;
+      const aIsBusy =
+        aPending === 0 && (debouncedBusy[a.id] || statuses[a.id]?.type === 'busy') ? 1 : 0;
+      const bIsBusy =
+        bPending === 0 && (debouncedBusy[b.id] || statuses[b.id]?.type === 'busy') ? 1 : 0;
       if (aIsBusy > bIsBusy) return -1;
       if (bIsBusy > aIsBusy) return 1;
       return 0;
@@ -632,8 +660,8 @@ export function SessionList({ projectId }: SessionListProps = {}) {
     e.preventDefault();
     if (isMobile) setOpenMobile(false);
 
-    const session = rootSessions.find(s => s.id === sessionId) ||
-      sessions?.find(s => s.id === sessionId);
+    const session =
+      rootSessions.find((s) => s.id === sessionId) || sessions?.find((s) => s.id === sessionId);
     const parentId = session?.parentID;
     openTabAndNavigate({
       id: sessionId,
@@ -660,9 +688,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
       setRenameSessionId(null);
       return;
     }
-    updateSession(
-      { sessionId: renameSessionId, title: renameValue.trim() },
-    );
+    updateSession({ sessionId: renameSessionId, title: renameValue.trim() });
     setRenameSessionId(null);
   };
 
@@ -712,15 +738,19 @@ export function SessionList({ projectId }: SessionListProps = {}) {
       return;
     }
     setRecoveringHost(true);
-    const phase = primaryRepairAction === 'restart_runtime'
-      ? 'restarting_runtime'
-      : primaryRepairAction === 'reboot_host' || primaryRepairAction === 'start_host'
-        ? 'restarting_host'
-        : 'restarting_workload';
+    const phase =
+      primaryRepairAction === 'restart_runtime'
+        ? 'restarting_runtime'
+        : primaryRepairAction === 'reboot_host' || primaryRepairAction === 'start_host'
+          ? 'restarting_host'
+          : 'restarting_workload';
     markRecoveryRequested(phase);
     try {
       if (supportsLayeredHealth && isAdmin && activeInstanceId) {
-        await adminRepairMutation.mutateAsync({ sandboxId: activeInstanceId, action: primaryRepairAction });
+        await adminRepairMutation.mutateAsync({
+          sandboxId: activeInstanceId,
+          action: primaryRepairAction,
+        });
       } else {
         await restartSandbox(activeInstanceId);
       }
@@ -731,7 +761,16 @@ export function SessionList({ projectId }: SessionListProps = {}) {
     } finally {
       setTimeout(() => setRecoveringHost(false), 15_000);
     }
-  }, [activeInstanceId, adminRepairMutation, isAdmin, primaryRepairAction, primaryRepairLabel, recoveringHost, refetch, supportsLayeredHealth]);
+  }, [
+    activeInstanceId,
+    adminRepairMutation,
+    isAdmin,
+    primaryRepairAction,
+    primaryRepairLabel,
+    recoveringHost,
+    refetch,
+    supportsLayeredHealth,
+  ]);
 
   const confirmDelete = () => {
     if (!sessionToDelete) return;
@@ -754,8 +793,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
     setSessionToDelete(null);
   };
 
-  const isActiveSession = (sessionId: string) =>
-    pathname?.includes(sessionId) || false;
+  const isActiveSession = (sessionId: string) => pathname?.includes(sessionId) || false;
 
   if (state === 'collapsed' && !isMobile) return null;
 
@@ -782,11 +820,13 @@ export function SessionList({ projectId }: SessionListProps = {}) {
           <Button
             onClick={() => setShowArchived((v) => !v)}
             variant="ghost"
-            className="flex items-center gap-1.5 w-full px-3 py-1.5 h-auto rounded-lg text-xs text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent justify-start"
+            className="text-muted-foreground hover:text-sidebar-foreground hover:bg-sidebar-accent flex h-auto w-full items-center justify-start gap-1.5 rounded-lg px-3 py-1.5 text-xs"
           >
             <Archive className="size-3" />
             <span>Archived</span>
-            <span className="ml-auto text-xs tabular-nums bg-muted px-1.5 py-0.5 rounded-full">{archivedSessions.length}</span>
+            <span className="bg-muted ml-auto rounded-full px-1.5 py-0.5 text-xs tabular-nums">
+              {archivedSessions.length}
+            </span>
             {showArchived ? (
               <ChevronDown className="size-3" />
             ) : (
@@ -794,20 +834,18 @@ export function SessionList({ projectId }: SessionListProps = {}) {
             )}
           </Button>
           {showArchived && (
-            <div className="space-y-0.5 mt-0.5 mb-1">
+            <div className="mt-0.5 mb-1 space-y-0.5">
               {archivedSessions.map((session) => (
                 <div
                   key={session.id}
-                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors duration-150 group cursor-pointer"
+                  className="text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground group flex cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors duration-150"
                 >
-                  <span className="flex-1 truncate text-xs">
-                    {session.title || 'Untitled'}
-                  </span>
+                  <span className="flex-1 truncate text-xs">{session.title || 'Untitled'}</span>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <button
                         onClick={() => handleUnarchiveSession(session.id)}
-                        className="p-0.5 rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-sidebar-foreground transition-colors cursor-pointer"
+                        className="hover:bg-sidebar-accent text-muted-foreground hover:text-sidebar-foreground cursor-pointer rounded-md p-0.5 transition-colors"
                       >
                         <ArchiveRestore className="size-3.5" />
                       </button>
@@ -820,7 +858,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
                     <TooltipTrigger asChild>
                       <button
                         onClick={() => handleDeleteSession(session.id, session.title || 'Untitled')}
-                        className="p-0.5 rounded-md hover:bg-sidebar-accent text-muted-foreground hover:text-sidebar-foreground transition-colors cursor-pointer"
+                        className="hover:bg-sidebar-accent text-muted-foreground hover:text-sidebar-foreground cursor-pointer rounded-md p-0.5 transition-colors"
                       >
                         <Trash2 className="size-3.5" />
                       </button>
@@ -841,50 +879,59 @@ export function SessionList({ projectId }: SessionListProps = {}) {
         {isLoading ? (
           <div className="space-y-0.5">
             {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-3 px-3 py-1.5 rounded-lg">
-                <div className="h-3.5 w-24 bg-muted rounded animate-pulse" />
+              <div key={i} className="flex items-center gap-3 rounded-lg px-3 py-1.5">
+                <div className="bg-muted h-3.5 w-24 animate-pulse rounded" />
               </div>
             ))}
           </div>
         ) : error ? (
-          <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-            <Frown className="h-8 w-8 text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground">
+          <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+            <Frown className="text-muted-foreground mb-3 h-8 w-8" />
+            <p className="text-muted-foreground text-sm">
               {recoveryPhase === 'restarting_host'
                 ? 'Rebooting host'
                 : recoveryPhase === 'restarting_workload'
                   ? 'Restarting workload'
                   : recoveryPhase === 'restarting_runtime'
                     ? 'Restarting runtime services'
-                : storageFull
-                  ? 'Instance disk full'
-                : adminHealth && adminHealth.layers.runtime.status === 'degraded' && adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy'
-                  ? 'Runtime services unavailable'
-                : adminHealth && adminHealth.layers.workload.status !== 'healthy'
-                  ? 'Workspace container unavailable'
-                : connectionStatus === 'unreachable'
-                  ? 'Workspace offline'
-                  : 'Failed to connect'}
+                    : storageFull
+                      ? 'Instance disk full'
+                      : adminHealth &&
+                          adminHealth.layers.runtime.status === 'degraded' &&
+                          adminHealth.layers.host.status === 'healthy' &&
+                          adminHealth.layers.workload.status === 'healthy'
+                        ? 'Runtime services unavailable'
+                        : adminHealth && adminHealth.layers.workload.status !== 'healthy'
+                          ? 'Workspace container unavailable'
+                          : connectionStatus === 'unreachable'
+                            ? 'Workspace offline'
+                            : 'Failed to connect'}
             </p>
-            <p className="text-xs text-muted-foreground mt-1 max-w-[220px] leading-relaxed">
+            <p className="text-muted-foreground mt-1 max-w-[220px] text-xs leading-relaxed">
               {recoveryPhase === 'restarting_host'
                 ? 'Host reboot accepted. Waiting for the machine and workspace services to come back online.'
                 : recoveryPhase === 'restarting_workload'
                   ? 'Workload restart accepted. Waiting for the container and workspace services to come back online.'
-                : recoveryPhase === 'restarting_runtime'
+                  : recoveryPhase === 'restarting_runtime'
                     ? 'Runtime restart accepted. Waiting for core services to come back online.'
-                : storageFull
-                  ? 'The host and container are alive, but storage is full. Free disk space before restarting services.'
-                : adminHealth && adminHealth.layers.runtime.status === 'degraded' && adminHealth.layers.host.status === 'healthy' && adminHealth.layers.workload.status === 'healthy'
-                  ? 'Host and workload are healthy, but runtime services inside the workspace are failing. Restart the runtime layer first.'
-                : adminHealth && adminHealth.layers.workload.status !== 'healthy'
-                  ? 'The host is up, but the managed workload service or container is unhealthy. Restart the workload layer first.'
-                : connectionStatus === 'unreachable'
-                ? 'We cannot reach this instance right now. Restart the workload to bring the sandbox services back online.'
-                : 'Could not reach server'}
+                    : storageFull
+                      ? 'The host and container are alive, but storage is full. Free disk space before restarting services.'
+                      : adminHealth &&
+                          adminHealth.layers.runtime.status === 'degraded' &&
+                          adminHealth.layers.host.status === 'healthy' &&
+                          adminHealth.layers.workload.status === 'healthy'
+                        ? 'Host and workload are healthy, but runtime services inside the workspace are failing. Restart the runtime layer first.'
+                        : adminHealth && adminHealth.layers.workload.status !== 'healthy'
+                          ? 'The host is up, but the managed workload service or container is unhealthy. Restart the workload layer first.'
+                          : connectionStatus === 'unreachable'
+                            ? 'We cannot reach this instance right now. Restart the workload to bring the sandbox services back online.'
+                            : 'Could not reach server'}
             </p>
             <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-              {connectionStatus === 'unreachable' && activeServer?.provider === 'justavps' && activeInstanceId && primaryRepairAction ? (
+              {connectionStatus === 'unreachable' &&
+              activeServer?.provider === 'justavps' &&
+              activeInstanceId &&
+              primaryRepairAction ? (
                 <Button
                   onClick={() => void handleRecoverHost()}
                   variant="default"
@@ -894,31 +941,31 @@ export function SessionList({ projectId }: SessionListProps = {}) {
                   {recoveringHost ? 'Restarting…' : primaryRepairLabel}
                 </Button>
               ) : null}
-              <Button
-                onClick={() => refetch()}
-                variant="muted"
-                size="sm"
-              >
+              <Button onClick={() => refetch()} variant="muted" size="sm">
                 Retry
               </Button>
             </div>
           </div>
         ) : rootSessions.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-            <MessageCircle className="h-8 w-8 text-muted-foreground mb-3" />
-            <p className="text-sm text-muted-foreground">{tHardcodedUi.raw('componentsSidebarSessionList.line906JsxTextNoSessionsYet')}</p>
-            <p className="text-xs text-muted-foreground mt-1">{tHardcodedUi.raw('componentsSidebarSessionList.line907JsxTextStartANewSessionToGetGoing')}</p>
+          <div className="flex flex-col items-center justify-center px-6 py-12 text-center">
+            <MessageCircle className="text-muted-foreground mb-3 h-8 w-8" />
+            <p className="text-muted-foreground text-sm">
+              {tHardcodedUi.raw('componentsSidebarSessionList.line906JsxTextNoSessionsYet')}
+            </p>
+            <p className="text-muted-foreground mt-1 text-xs">
+              {tHardcodedUi.raw(
+                'componentsSidebarSessionList.line907JsxTextStartANewSessionToGetGoing',
+              )}
+            </p>
           </div>
         ) : (
           <div className="space-y-px">
             {/* Pending sessions — need user input */}
-            {rootSessions.filter((s) => getPendingCount(s.id) > 0).map((session) => (
-              <SessionGroup
-                key={session.id}
-                session={session}
-                {...sharedGroupProps}
-              />
-            ))}
+            {rootSessions
+              .filter((s) => getPendingCount(s.id) > 0)
+              .map((session) => (
+                <SessionGroup key={session.id} session={session} {...sharedGroupProps} />
+              ))}
 
             {/* Remaining sessions (paginated) */}
             {(() => {
@@ -928,19 +975,17 @@ export function SessionList({ projectId }: SessionListProps = {}) {
               return (
                 <>
                   {visible.map((session) => (
-                    <SessionGroup
-                      key={session.id}
-                      session={session}
-                      {...sharedGroupProps}
-                    />
+                    <SessionGroup key={session.id} session={session} {...sharedGroupProps} />
                   ))}
                   {hasMore && (
                     <Button
                       type="button"
                       onClick={() => setDisplayLimit((l) => l + SESSION_PAGE_SIZE)}
                       variant="ghost"
-                      className="w-full h-auto py-1.5 text-xs text-muted-foreground hover:text-foreground hover:bg-sidebar-accent rounded-lg"
-                    >{tHardcodedUi.raw('componentsSidebarSessionList.line941JsxTextShowMore')}{remaining.length - displayLimit} remaining)
+                      className="text-muted-foreground hover:text-foreground hover:bg-sidebar-accent h-auto w-full rounded-lg py-1.5 text-xs"
+                    >
+                      {tHardcodedUi.raw('componentsSidebarSessionList.line941JsxTextShowMore')}
+                      {remaining.length - displayLimit} remaining)
                     </Button>
                   )}
                 </>
@@ -965,10 +1010,24 @@ export function SessionList({ projectId }: SessionListProps = {}) {
       <AlertDialog open={isArchiveDialogOpen} onOpenChange={setIsArchiveDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>{tHardcodedUi.raw('componentsSidebarSessionList.line966JsxTextArchiveSession')}</AlertDialogTitle>
-            <AlertDialogDescription>{tHardcodedUi.raw('componentsSidebarSessionList.line968JsxTextAreYouSureYouWantToArchive')}{' '}
-              <span className="font-semibold">{tHardcodedUi.raw('componentsSidebarSessionList.line969JsxTextLdquo')}{sessionToArchive?.name}{tHardcodedUi.raw('componentsSidebarSessionList.line969JsxTextRdquo')}</span>?
-              <br />{tHardcodedUi.raw('componentsSidebarSessionList.line971JsxTextYouCanRestoreItLaterFromTheArchived')}</AlertDialogDescription>
+            <AlertDialogTitle>
+              {tHardcodedUi.raw('componentsSidebarSessionList.line966JsxTextArchiveSession')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {tHardcodedUi.raw(
+                'componentsSidebarSessionList.line968JsxTextAreYouSureYouWantToArchive',
+              )}{' '}
+              <span className="font-semibold">
+                {tHardcodedUi.raw('componentsSidebarSessionList.line969JsxTextLdquo')}
+                {sessionToArchive?.name}
+                {tHardcodedUi.raw('componentsSidebarSessionList.line969JsxTextRdquo')}
+              </span>
+              ?
+              <br />
+              {tHardcodedUi.raw(
+                'componentsSidebarSessionList.line971JsxTextYouCanRestoreItLaterFromTheArchived',
+              )}
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="cursor-pointer">Cancel</AlertDialogCancel>
@@ -987,31 +1046,44 @@ export function SessionList({ projectId }: SessionListProps = {}) {
 
       {/* Compact dialog */}
       {compactSessionId && (
-        <CompactDialog
+        <CompactModal
           sessionId={compactSessionId}
           open={!!compactSessionId}
-          onOpenChange={(open) => { if (!open) setCompactSessionId(null); }}
+          onOpenChange={(open) => {
+            if (!open) setCompactSessionId(null);
+          }}
         />
       )}
 
       {/* Rename dialog */}
       <Dialog
         open={!!renameSessionId}
-        onOpenChange={(open) => { if (!open) setRenameSessionId(null); }}
+        onOpenChange={(open) => {
+          if (!open) setRenameSessionId(null);
+        }}
       >
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>{tHardcodedUi.raw('componentsSidebarSessionList.line1005JsxTextRenameSession')}</DialogTitle>
-            <DialogDescription>{tHardcodedUi.raw('componentsSidebarSessionList.line1007JsxTextEnterANewNameForThisSession')}</DialogDescription>
+            <DialogTitle>
+              {tHardcodedUi.raw('componentsSidebarSessionList.line1005JsxTextRenameSession')}
+            </DialogTitle>
+            <DialogDescription>
+              {tHardcodedUi.raw(
+                'componentsSidebarSessionList.line1007JsxTextEnterANewNameForThisSession',
+              )}
+            </DialogDescription>
           </DialogHeader>
-          <Input type="text"
+          <Input
+            type="text"
             value={renameValue}
             onChange={(e) => setRenameValue(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') confirmRename();
             }}
             autoFocus
-            placeholder={tHardcodedUi.raw('componentsSidebarSessionList.line1017JsxAttrPlaceholderSessionTitle')}
+            placeholder={tHardcodedUi.raw(
+              'componentsSidebarSessionList.line1017JsxAttrPlaceholderSessionTitle',
+            )}
           />
           <DialogFooter>
             <Button
@@ -1022,11 +1094,7 @@ export function SessionList({ projectId }: SessionListProps = {}) {
             >
               Cancel
             </Button>
-            <Button
-              size="sm"
-              onClick={confirmRename}
-              className="cursor-pointer"
-            >
+            <Button size="sm" onClick={confirmRename} className="cursor-pointer">
               Save
             </Button>
           </DialogFooter>

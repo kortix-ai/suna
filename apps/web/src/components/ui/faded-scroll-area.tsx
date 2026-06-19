@@ -8,11 +8,16 @@ export const FadedScrollArea = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<'div'> & {
     fadeColor?: string;
+    orientation?: 'vertical' | 'horizontal';
   }
->(function FadedScrollArea({ children, className, fadeColor = 'from-sidebar' }, ref) {
+>(function FadedScrollArea(
+  { children, className, fadeColor = 'from-sidebar', orientation = 'vertical' },
+  ref,
+) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [showTopFade, setShowTopFade] = useState(false);
-  const [showBottomFade, setShowBottomFade] = useState(false);
+  const [showStartFade, setShowStartFade] = useState(false);
+  const [showEndFade, setShowEndFade] = useState(false);
+  const isHorizontal = orientation === 'horizontal';
 
   const setScrollRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -29,17 +34,32 @@ export const FadedScrollArea = React.forwardRef<
   const updateScrollFades = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
+
+    if (isHorizontal) {
+      const { scrollLeft, scrollWidth, clientWidth } = el;
+      const maxScroll = scrollWidth - clientWidth;
+      const canScroll = maxScroll > 1;
+      if (!canScroll) {
+        setShowStartFade(false);
+        setShowEndFade(false);
+        return;
+      }
+      setShowStartFade(scrollLeft > 1);
+      setShowEndFade(scrollLeft < maxScroll - 1);
+      return;
+    }
+
     const { scrollTop, scrollHeight, clientHeight } = el;
     const maxScroll = scrollHeight - clientHeight;
     const canScroll = maxScroll > 1;
     if (!canScroll) {
-      setShowTopFade(false);
-      setShowBottomFade(false);
+      setShowStartFade(false);
+      setShowEndFade(false);
       return;
     }
-    setShowTopFade(scrollTop > 1);
-    setShowBottomFade(scrollTop < maxScroll - 1);
-  }, []);
+    setShowStartFade(scrollTop > 1);
+    setShowEndFade(scrollTop < maxScroll - 1);
+  }, [isHorizontal]);
 
   useLayoutEffect(() => {
     updateScrollFades();
@@ -60,26 +80,41 @@ export const FadedScrollArea = React.forwardRef<
   }, [updateScrollFades]);
 
   return (
-    <div className="relative">
+    <div
+      className={cn(
+        'relative flex min-h-0 min-w-0',
+        isHorizontal ? 'h-full flex-1' : 'h-full flex-col',
+      )}
+    >
       <div
         className={cn(
-          'pointer-events-none absolute inset-x-0 top-0 z-10 h-10 bg-gradient-to-b to-transparent transition-opacity',
+          'pointer-events-none absolute z-10 transition-opacity',
           fadeColor,
-          showTopFade ? 'opacity-100' : 'opacity-0',
+          isHorizontal
+            ? 'inset-y-0 left-0 w-10 bg-gradient-to-r to-transparent'
+            : 'inset-x-0 top-0 h-10 bg-gradient-to-b to-transparent',
+          showStartFade ? 'opacity-100' : 'opacity-0',
         )}
         aria-hidden
       />
       <div
         className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 z-10 h-10 bg-gradient-to-t to-transparent transition-opacity',
+          'pointer-events-none absolute z-10 transition-opacity',
           fadeColor,
-          showBottomFade ? 'opacity-100' : 'opacity-0',
+          isHorizontal
+            ? 'inset-y-0 right-0 w-10 bg-gradient-to-l to-transparent'
+            : 'inset-x-0 bottom-0 h-10 bg-gradient-to-t to-transparent',
+          showEndFade ? 'opacity-100' : 'opacity-0',
         )}
         aria-hidden
       />
       <div
         ref={setScrollRef}
-        className={cn('scrollbar-hide h-full min-h-0 flex-1 overflow-y-auto pb-0', className)}
+        className={cn(
+          'scrollbar-hide min-h-0 min-w-0 flex-1 pb-0',
+          isHorizontal ? 'overflow-x-auto overflow-y-hidden' : 'overflow-y-auto',
+          className,
+        )}
       >
         {children}
       </div>

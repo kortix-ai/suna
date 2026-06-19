@@ -2,9 +2,9 @@
 
 import { motion } from 'motion/react';
 
-const favicon = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
+export const faviconUrl = (d: string) => `https://www.google.com/s2/favicons?domain=${d}&sz=128`;
 
-const INTEGRATIONS = [
+export const INTEGRATION_DOMAINS = [
   'gmail.com',
   'slack.com',
   'discord.com',
@@ -184,7 +184,7 @@ function LogoMarquee({ items, reverse = false }: { items: string[]; reverse?: bo
             {/* Dynamic Google favicon URLs are intentionally left outside next/image config. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={favicon(d)}
+              src={faviconUrl(d)}
               alt=""
               width={22}
               height={22}
@@ -202,10 +202,10 @@ function LogoMarquee({ items, reverse = false }: { items: string[]; reverse?: bo
   );
 }
 
-const INTEGRATIONS_MID = Math.ceil(INTEGRATIONS.length / 3);
-const INTEGRATIONS_ROW_1 = INTEGRATIONS.slice(0, INTEGRATIONS_MID);
-const INTEGRATIONS_ROW_2 = INTEGRATIONS.slice(INTEGRATIONS_MID, INTEGRATIONS_MID * 2);
-const INTEGRATIONS_ROW_3 = INTEGRATIONS.slice(INTEGRATIONS_MID);
+const INTEGRATIONS_MID = Math.ceil(INTEGRATION_DOMAINS.length / 3);
+const INTEGRATIONS_ROW_1 = INTEGRATION_DOMAINS.slice(0, INTEGRATIONS_MID);
+const INTEGRATIONS_ROW_2 = INTEGRATION_DOMAINS.slice(INTEGRATIONS_MID, INTEGRATIONS_MID * 2);
+const INTEGRATIONS_ROW_3 = INTEGRATION_DOMAINS.slice(INTEGRATIONS_MID);
 
 export function LogoMarqueeRows() {
   return (

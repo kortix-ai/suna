@@ -2,15 +2,12 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useMemo } from 'react';
-import { usePathname } from 'next/navigation';
 import { ArrowLeft, BookOpen } from 'lucide-react';
+import { usePathname } from 'next/navigation';
+import { useMemo } from 'react';
 
-import { ProjectShell } from '@/components/projects/project-shell';
-import {
-  NotFoundCard,
-  NotFoundNoise,
-} from '@/components/common/not-found-state';
+import { NotFoundCard, NotFoundNoise } from '@/components/common/not-found-state';
+import { ProjectShell } from '@/features/co-worker/project-layout/project-shell';
 
 /**
  * Dashboard 404 — the not-found boundary for `/projects/[id]/*`.
@@ -33,7 +30,7 @@ export default function ProjectNotFound() {
   }, [pathname]);
 
   const card = (
-    <div className="relative flex flex-1 min-h-0 flex-col items-center justify-center overflow-hidden px-4 py-16 sm:px-6">
+    <div className="relative flex min-h-0 flex-1 flex-col items-center justify-center overflow-hidden px-4 py-16 sm:px-6">
       <NotFoundNoise />
       <NotFoundCard
         actions={[
@@ -57,7 +54,7 @@ export default function ProjectNotFound() {
   // shell needs one to mount its sidebar.
   if (!projectId) {
     return (
-      <div className="relative flex min-h-dvh w-full flex-col items-center justify-center bg-background">
+      <div className="bg-background relative flex min-h-dvh w-full flex-col items-center justify-center">
         {card}
       </div>
     );

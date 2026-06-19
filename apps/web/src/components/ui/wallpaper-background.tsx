@@ -1,20 +1,17 @@
 'use client';
 
-import { memo } from 'react';
-import Image from 'next/image';
-import { cn } from '@/lib/utils';
-import { useUserPreferencesStore } from '@/stores/user-preferences-store';
-import { getWallpaperById, DEFAULT_WALLPAPER_ID, Wallpaper } from '@/lib/wallpapers';
 import { AnimatedBg } from '@/components/ui/animated-bg';
-import { ShaderWallpaper } from '@/components/ui/shader-wallpaper';
 import { AsciiTunnelShader } from '@/components/ui/ascii-tunnel-shader';
 import { MatrixShader } from '@/components/ui/matrix-shader';
+import { ShaderWallpaper } from '@/components/ui/shader-wallpaper';
+import { cn } from '@/lib/utils';
+import { DEFAULT_WALLPAPER_ID, getWallpaperById, Wallpaper } from '@/lib/wallpapers';
+import { useUserPreferencesStore } from '@/stores/user-preferences-store';
+import Image from 'next/image';
+import { memo } from 'react';
 
 interface WallpaperBackgroundProps {
-  /** Override the active wallpaper (e.g. for preview thumbnails). When omitted, reads from the user preferences store. */
   wallpaperId?: Wallpaper['id'];
-  /** Render in preview mode (settings picker thumbnails). Centers the
-   *  logo dead-center since there's no chat input below to balance. */
   preview?: boolean;
 }
 
@@ -28,51 +25,34 @@ export const WallpaperBackground = memo(function WallpaperBackground({
   const wallpaperId = wallpaperIdProp ?? storeWallpaperId;
   const wallpaper = getWallpaperById(wallpaperId);
 
-  // Real pages lift the logo slightly above geometric center to balance
-  // the visual weight of the chat input pinned at the bottom. Picker
-  // thumbnails have no input, so the lift just reads as off-center —
-  // center the logo dead-on in preview mode.
   const centerTopClass = preview ? 'top-[50%]' : 'top-[46%]';
 
-  // ── Variant 1: Brandmark ──────────────────────────────────────────────
-  // Full-bleed oversized Kortix symbol outline, faded
   if (wallpaper.type === 'svg') {
     return (
-      <div
-        className="absolute inset-0 pointer-events-none overflow-hidden"
-        aria-hidden="true"
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={wallpaper.svgUrl}
-          alt=""
-          // Sized relative to the wallpaper container (not the viewport), so this
-          // looks identical whether rendered full-bleed on a real page or scaled
-          // inside an appearance-tab preview thumbnail.
-          className={cn(
-            'absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-[140%] sm:w-[160%] lg:w-[162%] h-auto object-contain select-none invert dark:invert-0',
-            centerTopClass,
-          )}
-          draggable={false}
-        />
-      </div>
+      // <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+      //   <img
+      //     src={wallpaper.svgUrl}
+      //     alt=""
+      //     className={cn(
+      //       'absolute left-1/2 h-auto w-[140%] -translate-x-1/2 -translate-y-1/2 object-contain invert select-none sm:w-[160%] lg:w-[162%] dark:invert-0',
+      //       centerTopClass,
+      //     )}
+      //     draggable={false}
+      //   />
+      // </div>
+      null
     );
   }
 
-  // ── Variant 2: Symbol ─────────────────────────────────────────────────
-  // Tiny Kortix symbol, dead center, ghost-level opacity
   if (wallpaper.type === 'symbol') {
     return (
-      <div
-        className="absolute inset-0 pointer-events-none overflow-hidden"
-        aria-hidden="true"
-      >
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={wallpaper.symbolUrl}
           alt=""
           className={cn(
-            'absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-[clamp(36px,9%,130px)] h-auto object-contain select-none opacity-100 dark:invert',
+            'absolute left-1/2 h-auto w-[clamp(36px,9%,130px)] -translate-x-1/2 -translate-y-1/2 object-contain opacity-100 select-none dark:invert',
             centerTopClass,
           )}
           draggable={false}
@@ -81,19 +61,10 @@ export const WallpaperBackground = memo(function WallpaperBackground({
     );
   }
 
-  // ── Variant 3: Aurora ─────────────────────────────────────────────────
-  // Layered composition: background symbol watermark + animated arcs
-  // breathing on the edges + logomark center + grain overlay.
-  //
-  // The arcs use fixed pixel positions tuned for a 1280×720 frame, so we
-  // render them at that reference size inside a container-query box and
-  // scale the whole layer to fit the actual wallpaper container. This
-  // makes the layout look identical at full-page and at thumbnail sizes
-  // without any JS measurement.
   if (wallpaper.type === 'aurora') {
     return (
       <div
-        className="absolute inset-0 pointer-events-none overflow-hidden"
+        className="pointer-events-none absolute inset-0 overflow-hidden"
         aria-hidden="true"
         style={{ containerType: 'size' }}
       >
@@ -102,8 +73,7 @@ export const WallpaperBackground = memo(function WallpaperBackground({
           style={{
             width: 1280,
             height: 720,
-            transform:
-              'scaleX(calc(100cqw / 1280px)) scaleY(calc(100cqh / 720px))',
+            transform: 'scaleX(calc(100cqw / 1280px)) scaleY(calc(100cqh / 720px))',
           }}
         >
           {/* L1 — Animated arcs breathing on the edges */}
@@ -173,7 +143,7 @@ export const WallpaperBackground = memo(function WallpaperBackground({
           src={wallpaper.svgUrl}
           alt=""
           className={cn(
-            'absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-[clamp(48px,13%,170px)] h-auto object-contain select-none invert dark:invert-0',
+            'absolute left-1/2 h-auto w-[clamp(48px,13%,170px)] -translate-x-1/2 -translate-y-1/2 object-contain invert select-none dark:invert-0',
             centerTopClass,
           )}
           draggable={false}
@@ -187,10 +157,7 @@ export const WallpaperBackground = memo(function WallpaperBackground({
   // and logomark overlay keep the UX identical across shader variants.
   if (wallpaper.type === 'shader') {
     return (
-      <div
-        className="absolute inset-0 pointer-events-none overflow-hidden"
-        aria-hidden="true"
-      >
+      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
         {wallpaper.id === 'ascii-tunnel' ? (
           <AsciiTunnelShader />
         ) : wallpaper.id === 'matrix' ? (
@@ -206,7 +173,7 @@ export const WallpaperBackground = memo(function WallpaperBackground({
           src={wallpaper.svgUrl}
           alt=""
           className={cn(
-            'absolute left-1/2 -translate-x-1/2 -translate-y-1/2 w-[clamp(48px,13%,170px)] h-auto object-contain select-none opacity-90 drop-shadow-[0_2px_20px_rgba(0,0,0,0.35)] invert dark:invert-0',
+            'absolute left-1/2 h-auto w-[clamp(48px,13%,170px)] -translate-x-1/2 -translate-y-1/2 object-contain opacity-90 drop-shadow-[0_2px_20px_rgba(0,0,0,0.35)] invert select-none dark:invert-0',
             wallpaper.id === 'ascii-tunnel' ? 'top-[50%]' : centerTopClass,
           )}
           draggable={false}
@@ -217,11 +184,8 @@ export const WallpaperBackground = memo(function WallpaperBackground({
 
   // ── Fallback: Image wallpaper ─────────────────────────────────────────
   return (
-    <div
-      className="absolute inset-0 pointer-events-none overflow-hidden"
-      aria-hidden="true"
-    >
-      <div className="absolute inset-0 dark:block hidden">
+    <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden="true">
+      <div className="absolute inset-0 hidden dark:block">
         <Image
           src={wallpaper.darkUrl!}
           alt=""

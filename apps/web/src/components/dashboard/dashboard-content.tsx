@@ -2,32 +2,32 @@
 
 import { useTranslations } from 'next-intl';
 
-import React, { useEffect, useState, useCallback } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { useIsMobile } from '@/hooks/utils';
-import { toast } from '@/lib/toast';
+import { NoInstanceState } from '@/components/dashboard/no-instance-state';
 import { useSidebar } from '@/components/ui/sidebar';
+import { WallpaperBackground } from '@/components/ui/wallpaper-background';
+import { type AttachedFile, SessionChatInput } from '@/features/session/session-chat-input';
+import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
+import { formatModelString, useOpenCodeLocal } from '@/hooks/opencode/use-opencode-local';
+import type { Command } from '@/hooks/opencode/use-opencode-sessions';
 import {
   useCreateOpenCodeSession,
-  useSendOpenCodeMessage,
   useOpenCodeAgents,
-  useOpenCodeProviders,
   useOpenCodeCommands,
+  useOpenCodeProviders,
+  useSendOpenCodeMessage,
 } from '@/hooks/opencode/use-opencode-sessions';
-import { getClient } from '@/lib/opencode-sdk';
-import { openTabAndNavigate } from '@/stores/tab-store';
-import { useServerStore } from '@/stores/server-store';
-import { type AttachedFile, SessionChatInput } from '@/components/session/session-chat-input';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
-import { WallpaperBackground } from '@/components/ui/wallpaper-background';
-import { useOpenCodeLocal, formatModelString } from '@/hooks/opencode/use-opencode-local';
-import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
-import { NoInstanceState } from '@/components/dashboard/no-instance-state';
 import { useSandbox } from '@/hooks/platform/use-sandbox';
-import { Menu } from 'lucide-react';
-import type { Command } from '@/hooks/opencode/use-opencode-sessions';
+import { useIsMobile } from '@/hooks/utils';
+import { getClient } from '@/lib/opencode-sdk';
 import { playSound } from '@/lib/sounds';
+import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
+import { usePendingFilesStore } from '@/stores/pending-files-store';
+import { useServerStore } from '@/stores/server-store';
+import { openTabAndNavigate } from '@/stores/tab-store';
+import { useQueryClient } from '@tanstack/react-query';
+import { Menu } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
 // ============================================================================
 // Dashboard Content
@@ -105,10 +105,7 @@ export function DashboardContent() {
         if (local.model.currentKey) options.model = local.model.currentKey;
         if (local.model.variant.current) options.variant = local.model.variant.current;
         if (Object.keys(options).length > 0) {
-          sessionStorage.setItem(
-            `opencode_pending_options:${session.id}`,
-            JSON.stringify(options),
-          );
+          sessionStorage.setItem(`opencode_pending_options:${session.id}`, JSON.stringify(options));
         }
 
         openTabAndNavigate({
@@ -133,7 +130,13 @@ export function DashboardContent() {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [isSending, createSession, local.agent.current, local.model.currentKey, local.model.variant.current],
+    [
+      isSending,
+      createSession,
+      local.agent.current,
+      local.model.currentKey,
+      local.model.variant.current,
+    ],
   );
 
   const handleCommand = useCallback(
@@ -148,16 +151,18 @@ export function DashboardContent() {
           serverId: useServerStore.getState().activeServerId,
         });
         const client = getClient();
-        void client.session.command({
-          sessionID: session.id,
-          command: cmd.name,
-          arguments: args || '',
-          ...(local.agent.current && { agent: local.agent.current.name }),
-          ...(local.model.currentKey && { model: formatModelString(local.model.currentKey) }),
-          ...(local.model.variant.current && { variant: local.model.variant.current }),
-        } as any).catch(() => {
-          toast.warning('Failed to execute command');
-        });
+        void client.session
+          .command({
+            sessionID: session.id,
+            command: cmd.name,
+            arguments: args || '',
+            ...(local.agent.current && { agent: local.agent.current.name }),
+            ...(local.model.currentKey && { model: formatModelString(local.model.currentKey) }),
+            ...(local.model.variant.current && { variant: local.model.variant.current }),
+          } as any)
+          .catch(() => {
+            toast.warning('Failed to execute command');
+          });
       } catch {
         toast.warning('Failed to create session');
       }
@@ -168,16 +173,18 @@ export function DashboardContent() {
 
   if (showNoInstanceState) {
     return (
-      <div className="relative flex flex-col h-full bg-background">
+      <div className="bg-background relative flex h-full flex-col">
         {isMobile && (
-          <div className="absolute left-3 top-1.5 z-10">
+          <div className="absolute top-1.5 left-3 z-10">
             <button
               onClick={() => {
                 setSidebarOpenState(true);
                 setOpenMobile(true);
               }}
-              className="flex items-center justify-center h-9 w-9 -ml-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 active:bg-accent transition-colors touch-manipulation"
-              aria-label={tHardcodedUi.raw('componentsDashboardDashboardContent.line177JsxAttrAriaLabelOpenMenu')}
+              className="text-muted-foreground hover:text-foreground hover:bg-accent/50 active:bg-accent -ml-1.5 flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg transition-colors"
+              aria-label={tHardcodedUi.raw(
+                'componentsDashboardDashboardContent.line177JsxAttrAriaLabelOpenMenu',
+              )}
             >
               <Menu className="h-5 w-5" />
             </button>
@@ -189,17 +196,19 @@ export function DashboardContent() {
   }
 
   return (
-    <div className="relative flex flex-col h-full bg-background">
+    <div className="bg-background relative flex h-full flex-col">
       {/* Mobile menu button */}
       {isMobile && (
-        <div className="absolute left-3 top-1.5 z-10">
+        <div className="absolute top-1.5 left-3 z-10">
           <button
             onClick={() => {
               setSidebarOpenState(true);
               setOpenMobile(true);
             }}
-            className="flex items-center justify-center h-9 w-9 -ml-1.5 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/50 active:bg-accent transition-colors touch-manipulation"
-            aria-label={tHardcodedUi.raw('componentsDashboardDashboardContent.line199JsxAttrAriaLabelOpenMenu')}
+            className="text-muted-foreground hover:text-foreground hover:bg-accent/50 active:bg-accent -ml-1.5 flex h-9 w-9 touch-manipulation items-center justify-center rounded-lg transition-colors"
+            aria-label={tHardcodedUi.raw(
+              'componentsDashboardDashboardContent.line199JsxAttrAriaLabelOpenMenu',
+            )}
           >
             <Menu className="h-5 w-5" />
           </button>
@@ -211,24 +220,26 @@ export function DashboardContent() {
           a separate opaque block. Emphasized-exit curve yanks it on send. */}
       <div
         className={cn(
-          "absolute inset-0 z-0 pointer-events-none transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.3,0,0.8,0.15)]",
-          isSending ? "opacity-0 -translate-y-1" : "opacity-100 translate-y-0",
+          'pointer-events-none absolute inset-0 z-0 transition-[opacity,transform] duration-150 ease-[cubic-bezier(0.3,0,0.8,0.15)]',
+          isSending ? '-translate-y-1 opacity-0' : 'translate-y-0 opacity-100',
         )}
       >
-        <div className="relative w-full h-full overflow-hidden">
+        <div className="relative h-full w-full overflow-hidden">
           <WallpaperBackground />
         </div>
       </div>
 
       {/* Spacer — keeps the input anchored to the bottom while the wallpaper
           is absolute-positioned behind. */}
-      <div className="relative flex-1 min-h-0 z-10" />
+      <div className="relative z-10 min-h-0 flex-1" />
 
       {/* Chat Input — pinned to bottom, overlays the wallpaper */}
       <SessionChatInput
         onSend={handleSend}
         disabled={isSending}
-        placeholder={tHardcodedUi.raw('componentsDashboardDashboardContent.line228JsxAttrPlaceholderAskAnything')}
+        placeholder={tHardcodedUi.raw(
+          'componentsDashboardDashboardContent.line228JsxAttrPlaceholderAskAnything',
+        )}
         agents={local.agent.list}
         selectedAgent={local.agent.current?.name ?? null}
         onAgentChange={(name) => local.agent.set(name ?? undefined)}
