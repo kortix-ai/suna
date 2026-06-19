@@ -53,6 +53,7 @@ import { startProjectMaintenance, stopProjectMaintenance } from './projects/main
 import { kickStartupPreBuild } from './snapshots/builder';
 import { kickWarmBaseBuild } from './snapshots/warm-bake';
 import { warmSnapshotsEnabled } from './shared/daytona';
+import { warmPoolEnabled } from './platform/services/warm-pool';
 import { startLegacyMigrationWorker, stopLegacyMigrationWorker } from './projects/legacy-migration-worker';
 import { registerLegacyMigrationRoutes } from './projects/legacy-migration-routes';
 import { registerSunaMigrationRoutes } from './projects/suna-migration/suna-migration-routes';
@@ -320,6 +321,13 @@ const HealthSchema = z
     timestamp: z.string(),
     billing_enabled: z.boolean(),
     warm_snapshots: z.boolean(),
+    warm_pool: z.object({
+      enabled: z.boolean(),
+      max_total: z.number(),
+      size: z.number(),
+      clone_at_park: z.boolean(),
+      presence_minutes: z.number(),
+    }),
     tunnel: z.any(),
     leader: z.boolean(),
   })
@@ -344,6 +352,18 @@ const healthHandler = (c: any) =>
     // warm target all present) — see snapshots/warm-bake.ts. Surfaced here so a
     // misconfigured env var is visible remotely instead of failing silently.
     warm_snapshots: warmSnapshotsEnabled(),
+    // Whether the warm POOL is live in THIS pod + its tuning. Surfaced so a
+    // values.yaml extraEnv that never reached the running pod (e.g. a stuck
+    // Argo sync) is visible remotely instead of silently leaving every start
+    // cold. Config-only — no DB query, so /health stays cheap (see the Better
+    // Stack logging-spiral fix). enabled === KORTIX_WARM_POOL_MAX_TOTAL > 0.
+    warm_pool: {
+      enabled: warmPoolEnabled(),
+      max_total: config.KORTIX_WARM_POOL_MAX_TOTAL,
+      size: config.KORTIX_WARM_POOL_SIZE,
+      clone_at_park: config.KORTIX_WARM_POOL_CLONE_AT_PARK,
+      presence_minutes: config.KORTIX_WARM_POOL_PRESENCE_MINUTES,
+    },
     tunnel: getTunnelServiceStatus(),
     leader: isLeader(),
   });
