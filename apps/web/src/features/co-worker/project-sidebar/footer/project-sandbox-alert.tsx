@@ -3,7 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { RefreshCw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Disclosure, DisclosureContent, DisclosureTrigger } from '@/components/ui/disclosure';
@@ -124,22 +124,22 @@ function SandboxAlertContent({
 
   return (
     <div className="w-full overflow-hidden">
-      <div className="px-4 pb-3">
-        <p className="text-muted-foreground text-xs">
+      <div className="px-2 pb-3">
+        <p className="text-muted-foreground text-xs text-balance">
           {severity === 'critical'
             ? 'New sessions will rebuild on the next start, but the most recent build is failing.'
             : 'A new sandbox image is building. Sessions can start once it’s ready.'}
-          {!failure && (
-            <Button
-              variant="transparent"
-              size="sm"
-              className="text-muted-foreground m-0 inline-flex h-fit w-fit p-0 align-baseline text-xs"
-              onClick={() => openCustomize('sandbox')}
-            >
-              Details
-            </Button>
-          )}
         </p>
+        {!failure && (
+          <Button
+            variant="transparent"
+            size="sm"
+            className="text-foreground/70 m-0 inline-flex h-fit w-fit p-0 align-baseline text-xs"
+            onClick={() => openCustomize('sandbox')}
+          >
+            Details
+          </Button>
+        )}
       </div>
 
       {failure && (
@@ -204,6 +204,7 @@ function SandboxAlertContent({
 }
 
 export function ProjectSandboxAlert({ projectId }: { projectId: string }) {
+  const [isOpen, setIsOpen] = useState(false);
   const { data } = useSandboxHealth(projectId);
   const severity = severityOf(data);
   if (!severity || !data) return null;
@@ -213,23 +214,24 @@ export function ProjectSandboxAlert({ projectId }: { projectId: string }) {
     <SidebarMenuItem>
       <Disclosure
         variant="outline"
-        className={cn('bg-foreground/5 w-full overflow-hidden text-sm shadow-none')}
+        open={isOpen}
+        onOpenChange={setIsOpen}
+        className={cn(
+          'w-full overflow-hidden rounded-md border-none text-sm shadow-none',
+          isOpen && 'bg-foreground/5',
+        )}
       >
-        <DisclosureTrigger variant="outline">
-          <button
-            type="button"
-            className={cn(
-              'flex w-full items-center gap-2 px-4 py-2 text-left font-medium',
-              tone.text,
-            )}
+        <DisclosureTrigger>
+          <SidebarMenuButton
+            className={cn('px-2.5 text-sm! font-medium [&_svg]:size-3.5!', tone.text)}
           >
             {severity === 'building' ? (
-              <Loading className="text-foreground! size-3.5" />
+              <Loading className="text-muted-foreground!" />
             ) : (
               <DangerTriangleSolid className="size-4" />
             )}
             <span>{SEVERITY_LABEL[severity]}</span>
-          </button>
+          </SidebarMenuButton>
         </DisclosureTrigger>
         <DisclosureContent variant="outline">
           <SandboxAlertContent projectId={projectId} health={data} severity={severity} />

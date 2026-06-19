@@ -1,78 +1,59 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { SandboxImage } from '@/features/session/sandbox-image';
+import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
 import {
-  ArrowDown,
-  ArrowUp,
   AlertTriangle,
-  ArrowUpLeft,
+  ArrowDown,
   Brain,
   Check,
   CheckCircle,
   ChevronDown,
   ChevronRight,
-  Globe,
-  Search,
-  ChevronUp,
   Copy,
-  Cpu,
   ExternalLink,
   FileText,
   GitFork,
+  Globe,
   Image as ImageIcon,
   Layers,
-  ListPlus,
   Loader2,
   MessageSquare,
   Pencil,
   Reply,
   Scissors,
-  Send,
+  Search,
   Terminal,
   Timer,
-  X,
 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
+import { usePathname, useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useSessionWallpaperLayer } from '@/features/session/session-wallpaper-layer';
-import { usePathname, useRouter } from 'next/navigation';
-import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
-import { SandboxImage } from '@/features/session/sandbox-image';
 
+import { GridFileCard } from '@/components/thread/file-attachment/GridFileCard';
+import { SessionSiteHeader } from '@/features/session/header/session-site-header';
 import { ConnectProviderDialog } from '@/features/session/model-selector';
+import {
+  type QuestionAction,
+  QuestionPrompt,
+  type QuestionPromptHandle,
+} from '@/features/session/question-prompt';
 import {
   type AttachedFile,
   SessionChatInput,
   type TrackedMention,
 } from '@/features/session/session-chat-input';
 import { SessionContextModal } from '@/features/session/session-context-modal';
-import {
-  SessionRetryDisplay,
-  TurnErrorDisplay,
-} from '@/features/session/session-error-banner';
-import { SessionSiteHeader } from '@/features/session/header/session-site-header';
-import {
-  QuestionPrompt,
-  type QuestionPromptHandle,
-  type QuestionAction,
-} from '@/features/session/question-prompt';
+import { SessionRetryDisplay, TurnErrorDisplay } from '@/features/session/session-error-banner';
 import { SessionWelcome } from '@/features/session/session-welcome';
-import { GridFileCard } from '@/components/thread/file-attachment/GridFileCard';
 
-import { ToolPartRenderer, ToolActivateContext } from '@/features/session/tool-renderers';
-import {
-  contextToolSummary,
-  contextToolTrigger,
-} from '@/features/session/tool-meta';
 import { SandboxUrlDetector } from '@/components/thread/content/sandbox-url-detector';
-import { Button } from '@/components/ui/button';
+import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
 import { Badge } from '@/components/ui/badge';
-import { STATUS_TEXT, STATUS_BG, STATUS_BORDER } from '@/components/ui/status';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible';
+import { Button } from '@/components/ui/button';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
   Dialog,
   DialogContent,
@@ -81,26 +62,21 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { SessionStartingLoader } from '@/features/session/session-starting-loader';
-import { AnimatedThinkingText } from '@/components/ui/animated-thinking-text';
+import { STATUS_BG, STATUS_BORDER, STATUS_TEXT } from '@/components/ui/status';
 import { Textarea } from '@/components/ui/textarea';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { uploadFile } from '@/features/files/api/opencode-files';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { searchWorkspaceFiles } from '@/features/files';
+import { uploadFile } from '@/features/files/api/opencode-files';
+import { SessionStartingLoader } from '@/features/session/session-starting-loader';
+import { contextToolSummary, contextToolTrigger } from '@/features/session/tool-meta';
+import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool-renderers';
 import { useOpenCodeConfig } from '@/hooks/opencode/use-opencode-config';
 import {
-  useOpenCodeLocal,
-  parseModelKey,
   formatModelString,
+  parseModelKey,
+  useOpenCodeLocal,
 } from '@/hooks/opencode/use-opencode-local';
-import type {
-  PromptPart,
-  ProviderListResponse,
-} from '@/hooks/opencode/use-opencode-sessions';
+import type { PromptPart, ProviderListResponse } from '@/hooks/opencode/use-opencode-sessions';
 import {
   ascendingId,
   rejectQuestion,
@@ -119,41 +95,40 @@ import { useSessionSync } from '@/hooks/opencode/use-session-sync';
 import { useAutoScroll } from '@/hooks/use-auto-scroll';
 import { getClient } from '@/lib/opencode-sdk';
 // billingApi / invalidateAccountState / useQueryClient removed — billing is handled server-side by the router
+import { ChatMinimap } from '@/features/session/chat-minimap';
+import { SubSessionModal } from '@/features/session/sub-session-modal';
+import {
+  type AgentRefLike,
+  buildAgentRefsBlock,
+  buildFileRefsBlock,
+  type FileRefLike,
+} from '@/lib/project-preamble';
 import { playSound } from '@/lib/sounds';
 import { cn } from '@/lib/utils';
 import {
-  stripKortixSystemTags,
-  extractSessionReport,
   extractKortixSystemMessages,
-  type SessionReport,
+  extractSessionReport,
   type KortixSystemMessage,
+  type SessionReport,
+  stripKortixSystemTags,
 } from '@/lib/utils/kortix-system-tags';
-import { SubSessionModal } from '@/features/session/sub-session-modal';
-import { ChatMinimap } from '@/features/session/chat-minimap';
-import { useMessageJumpStore } from '@/stores/message-jump-store';
-import { toast as sonnerToast } from 'sonner';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSessionBrowserStore } from '@/stores/session-browser-store';
-import { usePendingFilesStore } from '@/stores/pending-files-store';
-import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
-import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
-import { useFilePreviewStore } from '@/stores/file-preview-store';
-import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
-import { useSyncStore } from '@/stores/opencode-sync-store';
 import { useChatSendStore } from '@/stores/chat-send-store';
-import { useServerStore, getActiveOpenCodeUrl } from '@/stores/server-store';
+import { useFilePreviewStore } from '@/stores/file-preview-store';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useMessageJumpStore } from '@/stores/message-jump-store';
+import { useOnboardingModeStore } from '@/stores/onboarding-mode-store';
+import { useOpenCodeCompactionStore } from '@/stores/opencode-compaction-store';
+import { useOpenCodePendingStore } from '@/stores/opencode-pending-store';
+import { useSyncStore } from '@/stores/opencode-sync-store';
+import { usePendingFilesStore } from '@/stores/pending-files-store';
+import { getActiveOpenCodeUrl, useServerStore } from '@/stores/server-store';
+import { useSessionBrowserStore } from '@/stores/session-browser-store';
 import { openTabAndNavigate, useTabStore } from '@/stores/tab-store';
-import {
-  buildFileRefsBlock,
-  buildAgentRefsBlock,
-  type FileRefLike,
-  type AgentRefLike,
-} from '@/lib/project-preamble';
 // Shared UI primitives (framework-agnostic, reusable on mobile)
 import {
   type AgentPart,
-  type Command,
   collectTurnParts,
+  type Command,
   type FilePart,
   findLastTextPart,
   formatCost,
@@ -169,7 +144,6 @@ import {
   getTurnStatus,
   getWorkingState,
   groupMessagesIntoTurns,
-  hasDiffs,
   isAgentPart,
   isAttachment,
   isCompactionPart,
@@ -177,26 +151,20 @@ import {
   isLastUserMessage,
   isPatchPart,
   isReasoningPart,
-  isShellMode,
   isSnapshotPart,
   isTextPart,
   isToolPart,
   isToolPartHidden,
   type MessageWithParts,
   type Part,
-  type PartWithMessage,
-  type PatchPart,
   type PermissionRequest,
   type QuestionRequest,
   type ReasoningPart,
-  type RetryInfo,
-  type SnapshotPart,
   shouldShowToolPart,
   splitUserParts,
   type TextPart,
   type ToolPart,
   type Turn,
-  type TurnCostInfo,
 } from '@/ui';
 
 // ============================================================================
@@ -222,10 +190,8 @@ function buildForkPrompt(parts: Part[], text?: string): PromptPart[] {
   const next: PromptPart[] = [];
   const value =
     text ??
-    parts.find(
-      (part): part is TextPart =>
-        isTextPart(part) && !part.synthetic && !part.ignored,
-    )?.text ??
+    parts.find((part): part is TextPart => isTextPart(part) && !part.synthetic && !part.ignored)
+      ?.text ??
     '';
   if (value) next.push({ type: 'text', text: value });
   for (const part of parts) {
@@ -324,9 +290,7 @@ function formatCommandError(errorLike: unknown): string {
         ? data.providerID
         : 'selected provider';
     const modelID =
-      typeof data?.modelID === 'string' && data.modelID
-        ? data.modelID
-        : 'selected model';
+      typeof data?.modelID === 'string' && data.modelID ? data.modelID : 'selected model';
     if (providerID === '[object Object]') {
       return 'Invalid model selection was sent to the command endpoint. Please reselect a model and try again.';
     }
@@ -352,26 +316,18 @@ function formatCommandError(errorLike: unknown): string {
 // System message indicator — subtle inline pill for kortix_system messages
 // ============================================================================
 
-function SystemMessageIndicator({
-  messages,
-}: {
-  messages: KortixSystemMessage[];
-}) {
+function SystemMessageIndicator({ messages }: { messages: KortixSystemMessage[] }) {
   if (messages.length === 0) return null;
 
   // Combine all messages into a single line: "Goal · iteration 3/50"
-  const parts = messages.map((msg) =>
-    msg.detail ? `${msg.label} · ${msg.detail}` : msg.label,
-  );
+  const parts = messages.map((msg) => (msg.detail ? `${msg.label} · ${msg.detail}` : msg.label));
   const text = parts.join('  ·  ');
 
   return (
-    <div className="flex items-center gap-2 -my-1">
-      <div className="flex-1 h-px bg-border/30" />
-      <span className="text-xs text-muted-foreground/30 select-none whitespace-nowrap">
-        {text}
-      </span>
-      <div className="flex-1 h-px bg-border/30" />
+    <div className="-my-1 flex items-center gap-2">
+      <div className="bg-border/30 h-px flex-1" />
+      <span className="text-muted-foreground/30 text-xs whitespace-nowrap select-none">{text}</span>
+      <div className="bg-border/30 h-px flex-1" />
     </div>
   );
 }
@@ -390,55 +346,47 @@ function AnsweredQuestionCard({
   const [expanded, setExpanded] = useState(defaultExpanded);
   const input = (part.state as any)?.input ?? {};
   const metadata = (part.state as any)?.metadata ?? {};
-  const questions: Array<{ question: string; options?: { label: string }[] }> =
-    Array.isArray(input.questions) ? input.questions : [];
-  const answers: string[][] = Array.isArray(metadata.answers)
-    ? metadata.answers
+  const questions: Array<{ question: string; options?: { label: string }[] }> = Array.isArray(
+    input.questions,
+  )
+    ? input.questions
     : [];
+  const answers: string[][] = Array.isArray(metadata.answers) ? metadata.answers : [];
   if (questions.length === 0 || answers.length === 0) return null;
 
   const answeredCount = answers.filter((a) => a.length > 0).length;
 
   return (
     <Collapsible open={expanded} onOpenChange={setExpanded}>
-      <div className="rounded-2xl border border-border/40 bg-muted/20 overflow-hidden">
+      <div className="border-border/40 bg-muted/20 overflow-hidden rounded-2xl border">
         <CollapsibleTrigger asChild>
           <Button
             type="button"
             variant="ghost"
-            className="flex items-center gap-1.5 w-full px-2.5 py-1.5 h-auto text-left rounded-none justify-start hover:bg-muted/40"
+            className="hover:bg-muted/40 flex h-auto w-full items-center justify-start gap-1.5 rounded-none px-2.5 py-1.5 text-left"
           >
-            <MessageSquare className="size-3.5 text-muted-foreground shrink-0" />
-            <span className="text-xs font-medium text-foreground">
-              Questions
-            </span>
-            <span className="text-xs text-muted-foreground/70">
-              {answeredCount} answered
-            </span>
+            <MessageSquare className="text-muted-foreground size-3.5 shrink-0" />
+            <span className="text-foreground text-xs font-medium">Questions</span>
+            <span className="text-muted-foreground/70 text-xs">{answeredCount} answered</span>
             <ChevronDown
               className={cn(
-                'size-3 text-muted-foreground ml-auto transition-transform',
+                'text-muted-foreground ml-auto size-3 transition-transform',
                 expanded && 'rotate-180',
               )}
             />
           </Button>
         </CollapsibleTrigger>
         <CollapsibleContent>
-          <div className="border-t border-border/30">
+          <div className="border-border/30 border-t">
             {questions.map((q, i) => {
               const answer = answers[i] || [];
               const answerText = answer.join(', ') || 'No answer';
               return (
-                <div
-                  key={i}
-                  className="px-2.5 py-2 border-b border-border/30 last:border-b-0"
-                >
-                  <div className="[&_*]:!text-muted-foreground/70 [&_p]:!my-0 [&_p]:!leading-relaxed [&_p]:!text-xs [&_ul]:!my-0 [&_ol]:!my-0 [&_li]:!my-0 [&_code]:!text-xs [&_strong]:!text-muted-foreground/60">
+                <div key={i} className="border-border/30 border-b px-2.5 py-2 last:border-b-0">
+                  <div className="[&_*]:!text-muted-foreground/70 [&_strong]:!text-muted-foreground/60 [&_code]:!text-xs [&_li]:!my-0 [&_ol]:!my-0 [&_p]:!my-0 [&_p]:!text-xs [&_p]:!leading-relaxed [&_ul]:!my-0">
                     <UnifiedMarkdown content={q.question} />
                   </div>
-                  <div className="text-sm font-medium text-foreground mt-0.5">
-                    {answerText}
-                  </div>
+                  <div className="text-foreground mt-0.5 text-sm font-medium">{answerText}</div>
                 </div>
               );
             })}
@@ -477,12 +425,10 @@ function HighlightMentions({
 
   const segments = useMemo(() => {
     type MentionType = 'file' | 'agent' | 'session';
-    if (!cleanText)
-      return [{ text: cleanText, type: undefined as MentionType | undefined }];
+    if (!cleanText) return [{ text: cleanText, type: undefined as MentionType | undefined }];
 
     // Detect session @mentions first (titles can contain spaces)
-    const sessionDetected: { start: number; end: number; type: MentionType }[] =
-      [];
+    const sessionDetected: { start: number; end: number; type: MentionType }[] = [];
     for (const s of sessions) {
       const needle = `@${s.title}`;
       const idx = cleanText.indexOf(needle);
@@ -497,15 +443,12 @@ function HighlightMentions({
 
     const agentSet = new Set(agentNames || []);
     const mentionRegex = /@(\S+)/g;
-    const detected: { start: number; end: number; type: MentionType }[] = [
-      ...sessionDetected,
-    ];
+    const detected: { start: number; end: number; type: MentionType }[] = [...sessionDetected];
     let match: RegExpExecArray | null;
     while ((match = mentionRegex.exec(cleanText)) !== null) {
       const mStart = match.index;
       // Skip if overlaps with a session mention
-      if (sessionDetected.some((s) => mStart >= s.start && mStart < s.end))
-        continue;
+      if (sessionDetected.some((s) => mStart >= s.start && mStart < s.end)) continue;
       const name = match[1];
       // Treat @ses_<id> tokens as session mentions
       const type: MentionType = name.startsWith('ses_')
@@ -526,16 +469,14 @@ function HighlightMentions({
     let lastIndex = 0;
     for (const ref of detected) {
       if (ref.start < lastIndex) continue;
-      if (ref.start > lastIndex)
-        result.push({ text: cleanText.slice(lastIndex, ref.start) });
+      if (ref.start > lastIndex) result.push({ text: cleanText.slice(lastIndex, ref.start) });
       result.push({
         text: cleanText.slice(ref.start, ref.end),
         type: ref.type,
       });
       lastIndex = ref.end;
     }
-    if (lastIndex < cleanText.length)
-      result.push({ text: cleanText.slice(lastIndex) });
+    if (lastIndex < cleanText.length) result.push({ text: cleanText.slice(lastIndex) });
     return result;
   }, [cleanText, agentNames, sessions]);
 
@@ -595,9 +536,7 @@ function HighlightMentions({
         ) : (
           <span
             key={i}
-            className={cn(
-              (seg.type === 'file' || seg.type === 'agent') && mentionClassStatic,
-            )}
+            className={cn((seg.type === 'file' || seg.type === 'agent') && mentionClassStatic)}
           >
             {seg.text}
           </span>
@@ -698,9 +637,7 @@ function parseProjectReferences(text: string): {
   let cleaned = text.replace(/<project_ref\b([\s\S]*?)\/>/g, '');
   // Strip the instruction header (description uses [^)]* which is safe
   // because the header never contains a literal `)` before its closing one).
-  cleaned = cleaned
-    .replace(/\n*Referenced projects \([^)]*\):\n?/g, '')
-    .trim();
+  cleaned = cleaned.replace(/\n*Referenced projects \([^)]*\):\n?/g, '').trim();
   return { cleanText: cleaned, projects: [] };
 }
 
@@ -726,22 +663,17 @@ function parseFileMentionReferences(text: string): {
   files: ParsedFileMentionRef[];
 } {
   const files: ParsedFileMentionRef[] = [];
-  let cleaned = text.replace(
-    /<file_ref\b([\s\S]*?)\/>/g,
-    (_, attrs: string) => {
-      const pick = (key: string): string | undefined => {
-        const m = attrs.match(new RegExp(`${key}="([^"]*?)"`));
-        return m ? unescapeAttr(m[1]) : undefined;
-      };
-      const path = pick('path');
-      const name = pick('name') ?? path;
-      if (path) files.push({ path, name: name || path });
-      return '';
-    },
-  );
-  cleaned = cleaned
-    .replace(/\n*Referenced files \([^)]*\):\n?/g, '')
-    .trim();
+  let cleaned = text.replace(/<file_ref\b([\s\S]*?)\/>/g, (_, attrs: string) => {
+    const pick = (key: string): string | undefined => {
+      const m = attrs.match(new RegExp(`${key}="([^"]*?)"`));
+      return m ? unescapeAttr(m[1]) : undefined;
+    };
+    const path = pick('path');
+    const name = pick('name') ?? path;
+    if (path) files.push({ path, name: name || path });
+    return '';
+  });
+  cleaned = cleaned.replace(/\n*Referenced files \([^)]*\):\n?/g, '').trim();
   return { cleanText: cleaned, files };
 }
 
@@ -750,21 +682,16 @@ function parseAgentMentionReferences(text: string): {
   agents: ParsedAgentMentionRef[];
 } {
   const agents: ParsedAgentMentionRef[] = [];
-  let cleaned = text.replace(
-    /<agent_ref\b([\s\S]*?)\/>/g,
-    (_, attrs: string) => {
-      const pick = (key: string): string | undefined => {
-        const m = attrs.match(new RegExp(`${key}="([^"]*?)"`));
-        return m ? unescapeAttr(m[1]) : undefined;
-      };
-      const name = pick('name');
-      if (name) agents.push({ name });
-      return '';
-    },
-  );
-  cleaned = cleaned
-    .replace(/\n*Referenced agents \([^)]*\):\n?/g, '')
-    .trim();
+  let cleaned = text.replace(/<agent_ref\b([\s\S]*?)\/>/g, (_, attrs: string) => {
+    const pick = (key: string): string | undefined => {
+      const m = attrs.match(new RegExp(`${key}="([^"]*?)"`));
+      return m ? unescapeAttr(m[1]) : undefined;
+    };
+    const name = pick('name');
+    if (name) agents.push({ name });
+    return '';
+  });
+  cleaned = cleaned.replace(/\n*Referenced agents \([^)]*\):\n?/g, '').trim();
   return { cleanText: cleaned, agents };
 }
 
@@ -779,9 +706,7 @@ function parseReplyContext(text: string): {
   const match = text.match(/<reply_context>([\s\S]*?)<\/reply_context>/);
   if (!match) return { cleanText: text, replyContext: null };
   const replyContext = match[1].trim();
-  const cleanText = text
-    .replace(/<reply_context>[\s\S]*?<\/reply_context>\s*/, '')
-    .trim();
+  const cleanText = text.replace(/<reply_context>[\s\S]*?<\/reply_context>\s*/, '').trim();
   return { cleanText, replyContext };
 }
 
@@ -810,10 +735,8 @@ interface DCPNotification {
   summary?: string;
 }
 
-const DCP_TAG_REGEX =
-  /<dcp-notification\s+([^>]*)>([\s\S]*?)<\/dcp-notification>/g;
-const DCP_ITEM_REGEX =
-  /<dcp-item\s+tool="([^"]*?)"\s+description="([^"]*?)"\s*\/>/g;
+const DCP_TAG_REGEX = /<dcp-notification\s+([^>]*)>([\s\S]*?)<\/dcp-notification>/g;
+const DCP_ITEM_REGEX = /<dcp-item\s+tool="([^"]*?)"\s+description="([^"]*?)"\s*\/>/g;
 const DCP_DISTILLED_REGEX = /<dcp-distilled>([\s\S]*?)<\/dcp-distilled>/;
 const DCP_SUMMARY_REGEX = /<dcp-summary>([\s\S]*?)<\/dcp-summary>/;
 
@@ -885,9 +808,7 @@ function parseSystemNotifications(text: string): {
 
       notifications.push({
         tag: tag.toLowerCase(),
-        label: tag
-          .replace(/[-_]/g, ' ')
-          .replace(/\b\w/g, (c) => c.toUpperCase()),
+        label: tag.replace(/[-_]/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
         fields,
         body: bodyLines.join('\n').trim(),
       });
@@ -965,16 +886,11 @@ function parseDCPNotifications(text: string): {
   // First try XML format
   const cleanText = text
     .replace(DCP_TAG_REGEX, (_, attrs: string, body: string) => {
-      const type = (parseAttr(attrs, 'type') || 'prune') as
-        | 'prune'
-        | 'compress';
+      const type = (parseAttr(attrs, 'type') || 'prune') as 'prune' | 'compress';
       const tokensSaved = parseInt(parseAttr(attrs, 'tokens-saved') || '0', 10);
       const batchSaved = parseInt(parseAttr(attrs, 'batch-saved') || '0', 10);
       const prunedCount = parseInt(parseAttr(attrs, 'pruned-count') || '0', 10);
-      const extractedTokens = parseInt(
-        parseAttr(attrs, 'extracted-tokens') || '0',
-        10,
-      );
+      const extractedTokens = parseInt(parseAttr(attrs, 'extracted-tokens') || '0', 10);
       const reason = parseAttr(attrs, 'reason');
 
       // Parse items
@@ -990,15 +906,11 @@ function parseDCPNotifications(text: string): {
 
       // Parse distilled
       const distilledMatch = body.match(DCP_DISTILLED_REGEX);
-      const distilled = distilledMatch
-        ? unescapeXml(distilledMatch[1])
-        : undefined;
+      const distilled = distilledMatch ? unescapeXml(distilledMatch[1]) : undefined;
 
       // Compress-specific
-      const messagesCount =
-        parseInt(parseAttr(attrs, 'messages-count') || '0', 10) || undefined;
-      const toolsCount =
-        parseInt(parseAttr(attrs, 'tools-count') || '0', 10) || undefined;
+      const messagesCount = parseInt(parseAttr(attrs, 'messages-count') || '0', 10) || undefined;
+      const toolsCount = parseInt(parseAttr(attrs, 'tools-count') || '0', 10) || undefined;
       const topic = parseAttr(attrs, 'topic');
       const summaryMatch = body.match(DCP_SUMMARY_REGEX);
       const summary = summaryMatch ? unescapeXml(summaryMatch[1]) : undefined;
@@ -1051,11 +963,7 @@ function formatDCPTokens(tokens: number): string {
   return tokens.toString();
 }
 
-function DCPNotificationCard({
-  notification,
-}: {
-  notification: DCPNotification;
-}) {
+function DCPNotificationCard({ notification }: { notification: DCPNotification }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   const [expanded, setExpanded] = useState(false);
   const isPrune = notification.type === 'prune';
@@ -1063,23 +971,23 @@ function DCPNotificationCard({
   const hasDetails = hasItems || notification.distilled || notification.summary;
 
   return (
-    <div className="rounded-2xl border border-border/60 bg-card/50 overflow-hidden">
+    <div className="border-border/60 bg-card/50 overflow-hidden rounded-2xl border">
       {/* Header */}
       <Button
         onClick={() => hasDetails && setExpanded(!expanded)}
         variant="ghost"
         className={cn(
-          'flex items-center gap-2 w-full px-3 py-2 h-auto border-b border-border/40 bg-muted/30 rounded-none justify-start',
+          'border-border/40 bg-muted/30 flex h-auto w-full items-center justify-start gap-2 rounded-none border-b px-3 py-2',
           !hasDetails && 'pointer-events-none',
         )}
       >
-        <Scissors className="size-3.5 text-muted-foreground/70 flex-shrink-0" />
-        <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
+        <Scissors className="text-muted-foreground/70 size-3.5 flex-shrink-0" />
+        <span className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
           {isPrune ? 'Context Pruned' : 'Context Compressed'}
         </span>
 
         {/* Stats pills */}
-        <div className="flex items-center gap-1.5 ml-auto">
+        <div className="ml-auto flex items-center gap-1.5">
           {notification.reason && (
             <Badge variant="muted" size="sm">
               {DCP_REASON_LABELS[notification.reason] || notification.reason}
@@ -1090,13 +998,11 @@ function DCPNotificationCard({
               {notification.prunedCount} pruned
             </Badge>
           )}
-          {!isPrune &&
-            notification.messagesCount &&
-            notification.messagesCount > 0 && (
-              <Badge variant="info" size="sm">
-                {notification.messagesCount} msgs
-              </Badge>
-            )}
+          {!isPrune && notification.messagesCount && notification.messagesCount > 0 && (
+            <Badge variant="info" size="sm">
+              {notification.messagesCount} msgs
+            </Badge>
+          )}
           {notification.batchSaved > 0 && (
             <Badge variant="success" size="sm">
               -{formatDCPTokens(notification.batchSaved)} tokens
@@ -1108,7 +1014,7 @@ function DCPNotificationCard({
           {hasDetails && (
             <ChevronDown
               className={cn(
-                'size-3 text-muted-foreground/50 transition-transform',
+                'text-muted-foreground/50 size-3 transition-transform',
                 expanded && 'rotate-180',
               )}
             />
@@ -1118,23 +1024,20 @@ function DCPNotificationCard({
 
       {/* Expandable details */}
       {expanded && hasDetails && (
-        <div className="px-3 py-2 space-y-2">
+        <div className="space-y-2 px-3 py-2">
           {/* Pruned items list */}
           {hasItems && (
             <div className="space-y-0.5">
               {notification.items.map((item, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-2 text-xs text-muted-foreground/80"
-                >
-                  <span className="text-muted-foreground/40">{tHardcodedUi.raw('componentsSessionSessionChat.line1124JsxTextRarr')}</span>
-                  <span className="font-mono text-xs px-1 py-0.5 rounded bg-muted/50 text-muted-foreground/70">
+                <div key={i} className="text-muted-foreground/80 flex items-center gap-2 text-xs">
+                  <span className="text-muted-foreground/40">
+                    {tHardcodedUi.raw('componentsSessionSessionChat.line1124JsxTextRarr')}
+                  </span>
+                  <span className="bg-muted/50 text-muted-foreground/70 rounded px-1 py-0.5 font-mono text-xs">
                     {item.tool}
                   </span>
                   {item.description && (
-                    <span className="truncate max-w-[300px]">
-                      {item.description}
-                    </span>
+                    <span className="max-w-[300px] truncate">{item.description}</span>
                   )}
                 </div>
               ))}
@@ -1143,7 +1046,7 @@ function DCPNotificationCard({
 
           {/* Compress topic */}
           {notification.topic && (
-            <div className="text-xs text-muted-foreground/80">
+            <div className="text-muted-foreground/80 text-xs">
               <span className="text-muted-foreground/50">Topic:</span>{' '}
               <span>{notification.topic}</span>
             </div>
@@ -1151,11 +1054,11 @@ function DCPNotificationCard({
 
           {/* Distilled content */}
           {notification.distilled && (
-            <div className="mt-1.5 border-t border-border/30 pt-1.5">
-              <div className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider mb-1">
+            <div className="border-border/30 mt-1.5 border-t pt-1.5">
+              <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
                 Distilled
               </div>
-              <div className="text-xs text-muted-foreground/80 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs break-words whitespace-pre-wrap">
                 {notification.distilled}
               </div>
             </div>
@@ -1163,11 +1066,11 @@ function DCPNotificationCard({
 
           {/* Compress summary */}
           {notification.summary && (
-            <div className="mt-1.5 border-t border-border/30 pt-1.5">
-              <div className="text-xs font-medium text-muted-foreground/60 uppercase tracking-wider mb-1">
+            <div className="border-border/30 mt-1.5 border-t pt-1.5">
+              <div className="text-muted-foreground/60 mb-1 text-xs font-medium tracking-wider uppercase">
                 Summary
               </div>
-              <div className="text-xs text-muted-foreground/80 whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+              <div className="text-muted-foreground/80 max-h-32 overflow-y-auto text-xs break-words whitespace-pre-wrap">
                 {notification.summary}
               </div>
             </div>
@@ -1178,11 +1081,7 @@ function DCPNotificationCard({
   );
 }
 
-function SystemNotificationCard({
-  notification,
-}: {
-  notification: SystemNotification;
-}) {
+function SystemNotificationCard({ notification }: { notification: SystemNotification }) {
   const [open, setOpen] = useState(false);
 
   // Show first 1-2 short field values inline as muted detail
@@ -1198,8 +1097,7 @@ function SystemNotificationCard({
     notification.fields.length > 2 ||
     notification.fields.some(([, v]) => v.length >= 40);
 
-  const isError =
-    notification.tag.includes('failed') || notification.tag.includes('blocker');
+  const isError = notification.tag.includes('failed') || notification.tag.includes('blocker');
   const isWarning = notification.tag.includes('stopped');
 
   const iconColor = isError
@@ -1211,25 +1109,23 @@ function SystemNotificationCard({
   const trigger = (
     <div
       className={cn(
-        'flex items-center gap-1.5 px-2.5 py-1.5 rounded-2xl',
-        'bg-muted/20 border border-border/40',
-        'text-xs select-none max-w-full',
-        hasExpandable && 'cursor-pointer hover:bg-muted/40 transition-colors',
+        'flex items-center gap-1.5 rounded-2xl px-2.5 py-1.5',
+        'bg-muted/20 border-border/40 border',
+        'max-w-full text-xs select-none',
+        hasExpandable && 'hover:bg-muted/40 cursor-pointer transition-colors',
       )}
     >
       <Terminal className={cn('size-3.5 flex-shrink-0', iconColor)} />
       <span className="text-muted-foreground/70 truncate">
         {notification.label}
         {inlineDetail && (
-          <span className="text-muted-foreground/40 ml-1.5 font-mono">
-            {inlineDetail}
-          </span>
+          <span className="text-muted-foreground/40 ml-1.5 font-mono">{inlineDetail}</span>
         )}
       </span>
       {hasExpandable && (
         <ChevronRight
           className={cn(
-            'size-3 text-muted-foreground/30 transition-transform flex-shrink-0 ml-auto',
+            'text-muted-foreground/30 ml-auto size-3 flex-shrink-0 transition-transform',
             open && 'rotate-90',
           )}
         />
@@ -1243,14 +1139,12 @@ function SystemNotificationCard({
     <Collapsible open={open} onOpenChange={setOpen}>
       <CollapsibleTrigger asChild>{trigger}</CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="px-3 py-2 text-xs space-y-1 border border-t-0 border-border/40 rounded-b-lg bg-muted/10">
+        <div className="border-border/40 bg-muted/10 space-y-1 rounded-b-lg border border-t-0 px-3 py-2 text-xs">
           {notification.fields.length > 0 && (
             <div className="space-y-0.5">
               {notification.fields.map(([key, value], i) => (
-                <div key={i} className="flex gap-2 min-w-0">
-                  <span className="text-muted-foreground/40 flex-shrink-0">
-                    {key}:
-                  </span>
+                <div key={i} className="flex min-w-0 gap-2">
+                  <span className="text-muted-foreground/40 flex-shrink-0">{key}:</span>
                   <span className="text-muted-foreground/60 font-mono text-xs break-all">
                     {value}
                   </span>
@@ -1259,7 +1153,7 @@ function SystemNotificationCard({
             </div>
           )}
           {notification.body && (
-            <div className="text-muted-foreground/50 font-mono text-xs whitespace-pre-wrap break-all max-h-48 overflow-y-auto">
+            <div className="text-muted-foreground/50 max-h-48 overflow-y-auto font-mono text-xs break-all whitespace-pre-wrap">
               {notification.body.slice(0, 2000)}
             </div>
           )}
@@ -1278,16 +1172,11 @@ function SystemNotificationCard({
 function isNotificationOnlyMessage(parts: Part[]): boolean {
   if (parts.length === 0) return false;
   const textParts = parts.filter(
-    (p) =>
-      isTextPart(p) &&
-      !(p as TextPart).synthetic &&
-      !(p as any).ignored,
+    (p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored,
   ) as TextPart[];
   if (textParts.length === 0) return false;
   const raw = textParts.map((p) => p.text || '').join('\n');
-  const { cleanText, notifications } = parseSystemNotifications(
-    stripKortixSystemTags(raw),
-  );
+  const { cleanText, notifications } = parseSystemNotifications(stripKortixSystemTags(raw));
   return notifications.length > 0 && !cleanText.trim();
 }
 
@@ -1300,12 +1189,7 @@ function isNotificationOnlyMessage(parts: Part[]): boolean {
 function NotificationTurn({ turn }: { turn: Turn }) {
   const rawText = useMemo(() => {
     return turn.userMessage.parts
-      .filter(
-        (p) =>
-          isTextPart(p) &&
-          !(p as TextPart).synthetic &&
-          !(p as any).ignored,
-      )
+      .filter((p) => isTextPart(p) && !(p as TextPart).synthetic && !(p as any).ignored)
       .map((p) => (p as TextPart).text || '')
       .join('\n');
   }, [turn.userMessage.parts]);
@@ -1318,7 +1202,7 @@ function NotificationTurn({ turn }: { turn: Turn }) {
   if (notifications.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-1.5 w-full">
+    <div className="flex w-full flex-col gap-1.5">
       {notifications.map((n, i) => (
         <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
       ))}
@@ -1362,17 +1246,22 @@ function EditPartDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
+      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-2xl">
         <DialogHeader className="flex-shrink-0">
-          <DialogTitle>{tHardcodedUi.raw('componentsSessionSessionChat.line1360JsxTextEditForkPrompt')}</DialogTitle>
+          <DialogTitle>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1360JsxTextEditForkPrompt')}
+          </DialogTitle>
           <DialogDescription>
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1362JsxTextThisCreatesANativeForkAtThisMessage')}</DialogDescription>
+            {tHardcodedUi.raw(
+              'componentsSessionSessionChat.line1362JsxTextThisCreatesANativeForkAtThisMessage',
+            )}
+          </DialogDescription>
         </DialogHeader>
-        <div className="flex-1 min-h-0 py-2">
+        <div className="min-h-0 flex-1 py-2">
           <Textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            className="min-h-[120px] max-h-[50vh] h-full text-sm resize-y"
+            className="h-full max-h-[50vh] min-h-[120px] resize-y text-sm"
             autoFocus
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -1383,21 +1272,16 @@ function EditPartDialog({
           />
         </div>
         <DialogFooter className="flex-shrink-0">
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
             Cancel
           </Button>
           <Button
             onClick={handleSave}
             disabled={loading || !text.trim() || text.trim() === initialText}
           >
-            {loading ? (
-              <Loader2 className="size-3.5 animate-spin mr-1.5" />
-            ) : null}
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1395JsxTextForkWithEdits')}</Button>
+            {loading ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1395JsxTextForkWithEdits')}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1420,23 +1304,23 @@ function ConfirmForkDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{tHardcodedUi.raw('componentsSessionSessionChat.line1418JsxTextForkSession')}</DialogTitle>
+          <DialogTitle>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1418JsxTextForkSession')}
+          </DialogTitle>
           <DialogDescription>
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1420JsxTextThisWillCreateANewSessionFromThis')}</DialogDescription>
+            {tHardcodedUi.raw(
+              'componentsSessionSessionChat.line1420JsxTextThisWillCreateANewSessionFromThis',
+            )}
+          </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
-          >
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
             Cancel
           </Button>
           <Button onClick={onConfirm} disabled={loading}>
-            {loading ? (
-              <Loader2 className="size-3.5 animate-spin mr-1.5" />
-            ) : null}
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1436JsxTextForkSession')}</Button>
+            {loading ? <Loader2 className="mr-1.5 size-3.5 animate-spin" /> : null}
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1436JsxTextForkSession')}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1485,7 +1369,8 @@ function PartActions({
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">
-            {tHardcodedUi.raw('componentsSessionSessionChat.line1485JsxTextEditForkPrompt')}</TooltipContent>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line1485JsxTextEditForkPrompt')}
+          </TooltipContent>
         </Tooltip>
       </div>
 
@@ -1521,8 +1406,7 @@ function detectCommandFromText(
   if (!commands || !rawText) return undefined;
 
   const trimmedRawText = rawText.trim();
-  const escapeRegExp = (value: string) =>
-    value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
   for (const cmd of commands) {
     if (!cmd.template) continue;
@@ -1604,12 +1488,8 @@ function detectCommandFromText(
     if (!fullTemplateMatch) continue;
 
     let args: string | undefined;
-    const captures = fullTemplateMatch
-      .slice(1)
-      .map((value) => value?.trim() ?? '');
-    const argumentsIndex = placeholderOrder.findIndex(
-      (name) => name.toUpperCase() === 'ARGUMENTS',
-    );
+    const captures = fullTemplateMatch.slice(1).map((value) => value?.trim() ?? '');
+    const argumentsIndex = placeholderOrder.findIndex((name) => name.toUpperCase() === 'ARGUMENTS');
     const bestCapture =
       (argumentsIndex >= 0 ? captures[argumentsIndex] : undefined) ||
       captures.find((value) => value.length > 0);
@@ -1633,9 +1513,7 @@ function UserMessageRow({
   commandInfo?: { name: string; args?: string };
   commands?: Command[];
 }) {
-  const openFileInComputer = useKortixComputerStore(
-    (s) => s.openFileInComputer,
-  );
+  const openFileInComputer = useKortixComputerStore((s) => s.openFileInComputer);
   const openPreview = useFilePreviewStore((s) => s.openPreview);
   const { attachments, stickyParts } = useMemo(
     () => splitUserParts(message.parts),
@@ -1647,10 +1525,7 @@ function UserMessageRow({
   const visibleTextParts = stickyParts
     .filter(isTextPart)
     .filter(
-      (p) =>
-        (p as TextPart).text?.trim() &&
-        !(p as TextPart).synthetic &&
-        !(p as any).ignored,
+      (p) => (p as TextPart).text?.trim() && !(p as TextPart).synthetic && !(p as any).ignored,
     ) as TextPart[];
   const rawVisibleText = visibleTextParts.map((p) => p.text).join('\n');
   const rawText = stripSystemPtyText(rawVisibleText);
@@ -1681,10 +1556,7 @@ function UserMessageRow({
   // System notification XML — parsed LAST so all other XML subsystems
   // (file refs, session refs, reply context, etc.) consume their tags first.
   // Whatever XML blocks remain are system notifications.
-  const {
-    cleanText: text,
-    notifications: systemNotifications,
-  } = useMemo(
+  const { cleanText: text, notifications: systemNotifications } = useMemo(
     () => parseSystemNotifications(textAfterSessions),
     [textAfterSessions],
   );
@@ -1702,9 +1574,7 @@ function UserMessageRow({
   // Detect channel message (Telegram/Slack) in user message
   const channelMessageInfo = useMemo(() => {
     if (!rawText) return undefined;
-    const headerMatch = rawText.match(
-      /^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/,
-    );
+    const headerMatch = rawText.match(/^\[(\w+)\s*·\s*([^·]+?)\s*·\s*message from\s+([^\]]+)\]\s*/);
     if (!headerMatch) return undefined;
     const platform = headerMatch[1] as 'Telegram' | 'Slack';
     const context = headerMatch[2].trim();
@@ -1714,24 +1584,18 @@ function UserMessageRow({
       /\n\s*(Chat ID:|── Telegram instructions|── Slack instructions)/,
     );
     const messageText =
-      instrStart >= 0
-        ? afterHeader.slice(0, instrStart).trim()
-        : afterHeader.trim();
+      instrStart >= 0 ? afterHeader.slice(0, instrStart).trim() : afterHeader.trim();
     return { platform, context, userName, messageText };
   }, [rawText]);
 
   // Detect trigger_event in user message
   const triggerEventInfo = useMemo(() => {
     if (!rawText) return undefined;
-    const match = rawText.match(
-      /<trigger_event>\s*([\s\S]*?)\s*<\/trigger_event>/,
-    );
+    const match = rawText.match(/<trigger_event>\s*([\s\S]*?)\s*<\/trigger_event>/);
     if (!match) return undefined;
     try {
       const data = JSON.parse(match[1]);
-      const promptText = rawText
-        .replace(/<trigger_event>[\s\S]*?<\/trigger_event>/, '')
-        .trim();
+      const promptText = rawText.replace(/<trigger_event>[\s\S]*?<\/trigger_event>/, '').trim();
       return { data, prompt: promptText };
     } catch {
       return undefined;
@@ -1742,9 +1606,7 @@ function UserMessageRow({
   const ignoredTextParts = stickyParts
     .filter(isTextPart)
     .filter((p) => (p as any).ignored && (p as TextPart).text?.trim());
-  const ignoredRawText = ignoredTextParts
-    .map((p) => (p as TextPart).text)
-    .join('\n');
+  const ignoredRawText = ignoredTextParts.map((p) => (p as TextPart).text).join('\n');
   const dcpNotifications = useMemo(() => {
     if (!ignoredRawText) return [];
     return parseDCPNotifications(ignoredRawText).notifications;
@@ -1756,8 +1618,7 @@ function UserMessageRow({
   // Inline file references
   const inlineFiles = stickyParts.filter(isFilePart) as FilePart[];
   const filesWithSource = inlineFiles.filter(
-    (f) =>
-      f.source?.text?.start !== undefined && f.source?.text?.end !== undefined,
+    (f) => f.source?.text?.start !== undefined && f.source?.text?.end !== undefined,
   );
 
   // Agent mentions
@@ -1826,18 +1687,13 @@ function UserMessageRow({
         type: 'file' as SegType,
       })),
       ...agentParts
-        .filter(
-          (a) => a.source?.start !== undefined && a.source?.end !== undefined,
-        )
+        .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
         .map((a) => ({
           start: a.source!.start,
           end: a.source!.end,
           type: 'agent' as SegType,
         })),
-    ].filter(
-      (r) =>
-        !sessionDetected.some((s) => r.start >= s.start && r.start < s.end),
-    );
+    ].filter((r) => !sessionDetected.some((s) => r.start >= s.start && r.start < s.end));
 
     // Merge session + server refs
     const allRefs = [...sessionDetected, ...serverRefs];
@@ -1848,8 +1704,7 @@ function UserMessageRow({
       let lastIndex = 0;
       for (const ref of allRefs) {
         if (ref.start < lastIndex) continue;
-        if (ref.start > lastIndex)
-          result.push({ text: text.slice(lastIndex, ref.start) });
+        if (ref.start > lastIndex) result.push({ text: text.slice(lastIndex, ref.start) });
         result.push({ text: text.slice(ref.start, ref.end), type: ref.type });
         lastIndex = ref.end;
       }
@@ -1885,8 +1740,7 @@ function UserMessageRow({
     let lastIndex = 0;
     for (const ref of detected) {
       if (ref.start < lastIndex) continue;
-      if (ref.start > lastIndex)
-        result.push({ text: text.slice(lastIndex, ref.start) });
+      if (ref.start > lastIndex) result.push({ text: text.slice(lastIndex, ref.start) });
       result.push({ text: text.slice(ref.start, ref.end), type: ref.type });
       lastIndex = ref.end;
     }
@@ -1904,12 +1758,9 @@ function UserMessageRow({
     attachments.length > 0
   );
 
-  if (
-    !hasUserContent &&
-    (dcpNotifications.length > 0 || systemNotifications.length > 0)
-  ) {
+  if (!hasUserContent && (dcpNotifications.length > 0 || systemNotifications.length > 0)) {
     return (
-      <div className="flex flex-col gap-1.5 w-full">
+      <div className="flex w-full flex-col gap-1.5">
         {systemNotifications.map((n, i) => (
           <SystemNotificationCard key={`${n.tag}-${i}`} notification={n} />
         ))}
@@ -1923,37 +1774,28 @@ function UserMessageRow({
   // Channel messages (Telegram/Slack): render as a branded card with user name
   if (channelMessageInfo) {
     const isTelegram = channelMessageInfo.platform === 'Telegram';
-    const brandColor = isTelegram
-      ? CHANNEL_BRAND_COLOR.Telegram
-      : CHANNEL_BRAND_COLOR.Slack;
+    const brandColor = isTelegram ? CHANNEL_BRAND_COLOR.Telegram : CHANNEL_BRAND_COLOR.Slack;
     return (
       <div className="flex flex-col items-end gap-1">
-        <div className="inline-flex flex-col gap-1.5 px-4 py-2.5 rounded-2xl border border-border/60 bg-muted/40 max-w-[85%]">
+        <div className="border-border/60 bg-muted/40 inline-flex max-w-[85%] flex-col gap-1.5 rounded-2xl border px-4 py-2.5">
           <div className="flex items-center gap-2">
-            <svg
-              className="size-3.5 shrink-0"
-              viewBox="0 0 24 24"
-              fill={brandColor}
-            >
+            <svg className="size-3.5 shrink-0" viewBox="0 0 24 24" fill={brandColor}>
               {isTelegram ? (
                 <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 00-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.74-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .38z" />
               ) : (
                 <path d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.523 2.521 2.527 2.527 0 0 1-2.52-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.52-2.522v-2.522h2.52zM15.165 17.688a2.527 2.527 0 0 1-2.52-2.523 2.526 2.526 0 0 1 2.52-2.52h6.313A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.523h-6.313z" />
               )}
             </svg>
-            <span
-              className="text-xs font-medium"
-              style={{ color: brandColor }}
-            >
+            <span className="text-xs font-medium" style={{ color: brandColor }}>
               {channelMessageInfo.platform}
             </span>
-            <span className="text-xs text-muted-foreground">·</span>
-            <span className="text-sm font-medium text-foreground">
+            <span className="text-muted-foreground text-xs">·</span>
+            <span className="text-foreground text-sm font-medium">
               {channelMessageInfo.userName}
             </span>
           </div>
           {channelMessageInfo.messageText && (
-            <div className="text-sm text-foreground break-words">
+            <div className="text-foreground text-sm break-words">
               {channelMessageInfo.messageText}
             </div>
           )}
@@ -1966,21 +1808,21 @@ function UserMessageRow({
   if (triggerEventInfo) {
     return (
       <div className="flex flex-col items-end gap-1">
-        <div className="inline-flex flex-col gap-1.5 px-4 py-2.5 rounded-2xl border border-border/60 bg-muted/40">
+        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-2xl border px-4 py-2.5">
           <div className="flex items-center gap-2">
-            <Timer className="size-3.5 text-muted-foreground shrink-0" />
-            <span className="font-mono text-sm text-foreground">
+            <Timer className="text-muted-foreground size-3.5 shrink-0" />
+            <span className="text-foreground font-mono text-sm">
               {triggerEventInfo.data?.trigger || 'Scheduled Task'}
             </span>
             {triggerEventInfo.data?.data?.manual && (
-              <span className="text-xs font-medium text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              <span className="text-muted-foreground bg-muted rounded px-1.5 py-0.5 text-xs font-medium">
                 Manual
               </span>
             )}
           </div>
           {triggerEventInfo.prompt && (
             <div
-              className="text-xs text-muted-foreground pl-5.5 break-words max-w-[400px]"
+              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs break-words"
               style={{ paddingLeft: '1.375rem' }}
             >
               {triggerEventInfo.prompt}
@@ -1995,16 +1837,14 @@ function UserMessageRow({
   if (effectiveCommandInfo) {
     return (
       <div className="flex flex-col items-end gap-1">
-        <div className="inline-flex flex-col gap-1.5 px-4 py-2.5 rounded-2xl border border-border/60 bg-muted/40">
+        <div className="border-border/60 bg-muted/40 inline-flex flex-col gap-1.5 rounded-2xl border px-4 py-2.5">
           <div className="flex items-center gap-2">
-            <Terminal className="size-3.5 text-muted-foreground shrink-0" />
-            <span className="font-mono text-sm text-foreground">
-              /{effectiveCommandInfo.name}
-            </span>
+            <Terminal className="text-muted-foreground size-3.5 shrink-0" />
+            <span className="text-foreground font-mono text-sm">/{effectiveCommandInfo.name}</span>
           </div>
           {effectiveCommandInfo.args && (
             <div
-              className="text-xs text-muted-foreground pl-5.5 break-words max-w-[400px]"
+              className="text-muted-foreground max-w-[400px] pl-5.5 text-xs break-words"
               style={{ paddingLeft: '1.375rem' }}
             >
               {effectiveCommandInfo.args}
@@ -2013,19 +1853,16 @@ function UserMessageRow({
         </div>
         {/* DCP notifications from ignored parts */}
         {dcpNotifications.length > 0 && (
-          <div className="flex flex-col gap-1.5 w-full mt-1">
+          <div className="mt-1 flex w-full flex-col gap-1.5">
             {dcpNotifications.map((n, i) => (
               <DCPNotificationCard key={i} notification={n} />
             ))}
           </div>
         )}
         {systemNotifications.length > 0 && (
-          <div className="flex flex-col gap-1.5 w-full mt-1">
+          <div className="mt-1 flex w-full flex-col gap-1.5">
             {systemNotifications.map((n, i) => (
-              <SystemNotificationCard
-                key={`cmd-${n.tag}-${i}`}
-                notification={n}
-              />
+              <SystemNotificationCard key={`cmd-${n.tag}-${i}`} notification={n} />
             ))}
           </div>
         )}
@@ -2037,19 +1874,16 @@ function UserMessageRow({
     <div className="flex flex-col items-end gap-1">
       <div
         className={cn(
-          'flex flex-col max-w-[90%] rounded-3xl rounded-br-lg bg-card border overflow-hidden',
-          canExpand && 'cursor-pointer hover:bg-card/80 transition-colors',
+          'bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border',
+          canExpand && 'hover:bg-card/80 cursor-pointer transition-colors',
         )}
         onClick={() => canExpand && setExpanded(!expanded)}
       >
         {/* Attachment thumbnails (images/PDFs) */}
         {attachments.length > 0 && (
-          <div className="flex gap-2 p-3 pb-0 flex-wrap">
+          <div className="flex flex-wrap gap-2 p-3 pb-0">
             {attachments.map((file) => (
-              <div
-                key={file.id}
-                className="rounded-lg overflow-hidden border border-border/50"
-              >
+              <div key={file.id} className="border-border/50 overflow-hidden rounded-lg border">
                 {file.mime?.startsWith('image/') && file.url ? (
                   <SandboxImage
                     src={file.url}
@@ -2058,18 +1892,14 @@ function UserMessageRow({
                     preview
                   />
                 ) : file.mime === 'application/pdf' ? (
-                  <div className="flex items-center gap-2 px-3 py-2 bg-muted/30">
-                    <FileText className="size-4 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">
-                      {file.filename || 'PDF'}
-                    </span>
+                  <div className="bg-muted/30 flex items-center gap-2 px-3 py-2">
+                    <FileText className="text-muted-foreground size-4" />
+                    <span className="text-muted-foreground text-xs">{file.filename || 'PDF'}</span>
                   </div>
                 ) : (
-                  <div className="flex items-center gap-2 px-3 py-2 bg-muted/30">
-                    <ImageIcon className="size-4 text-muted-foreground" />
-                    <span className="text-xs text-muted-foreground">
-                      {file.filename || 'File'}
-                    </span>
+                  <div className="bg-muted/30 flex items-center gap-2 px-3 py-2">
+                    <ImageIcon className="text-muted-foreground size-4" />
+                    <span className="text-muted-foreground text-xs">{file.filename || 'File'}</span>
                   </div>
                 )}
               </div>
@@ -2079,7 +1909,7 @@ function UserMessageRow({
 
         {/* Uploaded file references (from <file> XML tags) */}
         {uploadedFiles.length > 0 && (
-          <div className="flex gap-2 p-3 pb-0 flex-wrap">
+          <div className="flex flex-wrap gap-2 p-3 pb-0">
             {uploadedFiles.map((f, i) => (
               <div key={i} onClick={(e) => e.stopPropagation()}>
                 <GridFileCard
@@ -2095,23 +1925,21 @@ function UserMessageRow({
         {/* Project references — compact neutral chips, one per referenced project */}
         {/* Reply context banner */}
         {replyContext && (
-          <div className="flex items-center gap-2 mx-3 mt-3 mb-0 px-3 py-1.5 rounded-2xl bg-primary/5 border border-primary/10">
-            <Reply className="size-3 text-primary/60 flex-shrink-0" />
-            <span className="text-xs text-muted-foreground truncate">
-              {replyContext.length > 150
-                ? `${replyContext.slice(0, 150)}...`
-                : replyContext}
+          <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+            <Reply className="text-primary/60 size-3 flex-shrink-0" />
+            <span className="text-muted-foreground truncate text-xs">
+              {replyContext.length > 150 ? `${replyContext.slice(0, 150)}...` : replyContext}
             </span>
           </div>
         )}
 
         {/* Text content */}
         {text && (
-          <div className="relative group px-4 py-3">
+          <div className="group relative px-4 py-3">
             <div
               ref={textRef}
               className={cn(
-                'text-sm leading-relaxed whitespace-pre-wrap break-words min-w-0',
+                'min-w-0 text-sm leading-relaxed break-words whitespace-pre-wrap',
                 !expanded && 'max-h-[200px] overflow-hidden',
               )}
             >
@@ -2165,9 +1993,7 @@ function UserMessageRow({
                   ) : (
                     <span
                       key={i}
-                      className={cn(
-                        seg.type === 'agent' && 'font-medium text-foreground',
-                      )}
+                      className={cn(seg.type === 'agent' && 'text-foreground font-medium')}
                     >
                       {seg.text}
                     </span>
@@ -2180,44 +2006,34 @@ function UserMessageRow({
 
             {/* Gradient fade overlay for collapsed long messages */}
             {canExpand && !expanded && (
-              <div className="absolute inset-x-0 bottom-3 h-10 bg-gradient-to-t from-card to-transparent pointer-events-none" />
+              <div className="from-card pointer-events-none absolute inset-x-0 bottom-3 h-10 bg-gradient-to-t to-transparent" />
             )}
 
             {/* Expand/collapse indicator */}
             {canExpand && (
-              <div className="absolute bottom-3 right-4 p-1 rounded-md bg-card/80 backdrop-blur-sm text-muted-foreground z-10">
+              <div className="bg-card/80 text-muted-foreground absolute right-4 bottom-3 z-10 rounded-md p-1 backdrop-blur-sm">
                 <ChevronDown
-                  className={cn(
-                    'size-3.5 transition-transform',
-                    expanded && 'rotate-180',
-                  )}
+                  className={cn('size-3.5 transition-transform', expanded && 'rotate-180')}
                 />
               </div>
             )}
           </div>
         )}
       </div>
-      {isEdited && (
-        <span className="text-xs text-muted-foreground/50 pr-1">
-          edited
-        </span>
-      )}
+      {isEdited && <span className="text-muted-foreground/50 pr-1 text-xs">edited</span>}
 
       {/* DCP notifications from ignored parts (rendered below user bubble if mixed) */}
       {dcpNotifications.length > 0 && (
-        <div className="flex flex-col gap-1.5 w-full mt-1">
+        <div className="mt-1 flex w-full flex-col gap-1.5">
           {dcpNotifications.map((n, i) => (
             <DCPNotificationCard key={i} notification={n} />
           ))}
         </div>
       )}
       {systemNotifications.length > 0 && (
-        <div className="flex flex-col gap-1.5 w-full mt-1">
+        <div className="mt-1 flex w-full flex-col gap-1.5">
           {systemNotifications.map((n, i) => (
-            <SystemNotificationCard
-              key={`mixed-${n.tag}-${i}`}
-              notification={n}
-            />
+            <SystemNotificationCard key={`mixed-${n.tag}-${i}`} notification={n} />
           ))}
         </div>
       )}
@@ -2273,13 +2089,7 @@ function closeUnterminatedCodeFence(text: string): string {
   return `${text}\n\n\`\`\``;
 }
 
-function ThrottledMarkdown({
-  content,
-  isStreaming,
-}: {
-  content: string;
-  isStreaming: boolean;
-}) {
+function ThrottledMarkdown({ content, isStreaming }: { content: string; isStreaming: boolean }) {
   // During streaming, only close unterminated code fences (safe — just
   // appends closing backticks). Do NOT trim table rows — that strips
   // real content mid-stream and causes garbled text until completion.
@@ -2306,16 +2116,14 @@ function GroupedReasoningCard({
   // Determine if the last part is still streaming
   const lastPart = parts[parts.length - 1];
   const lastEnd = (lastPart as any).time?.end;
-  const reasoningStreaming =
-    isStreaming && !(typeof lastEnd === 'number' && lastEnd > 0);
+  const reasoningStreaming = isStreaming && !(typeof lastEnd === 'number' && lastEnd > 0);
 
   // Find the earliest start across all parts for the live timer
   const earliestStart = useMemo(() => {
     let earliest: number | undefined;
     for (const p of parts) {
       const s = (p as any).time?.start;
-      if (typeof s === 'number' && (earliest === undefined || s < earliest))
-        earliest = s;
+      if (typeof s === 'number' && (earliest === undefined || s < earliest)) earliest = s;
     }
     return earliest;
   }, [parts]);
@@ -2326,9 +2134,7 @@ function GroupedReasoningCard({
       return;
     }
     const update = () =>
-      setStreamSeconds(
-        Math.max(0, Math.round((Date.now() - earliestStart) / 1000)),
-      );
+      setStreamSeconds(Math.max(0, Math.round((Date.now() - earliestStart) / 1000)));
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
@@ -2358,18 +2164,13 @@ function GroupedReasoningCard({
         const boldMatch = t.match(/\*\*(.+?)\*\*/);
         if (boldMatch) return boldMatch[1];
         const firstLine = t.split('\n')[0].replace(/^#+\s*/, '');
-        return firstLine.length > 80
-          ? firstLine.slice(0, 77) + '...'
-          : firstLine;
+        return firstLine.length > 80 ? firstLine.slice(0, 77) + '...' : firstLine;
       }
     }
     return '';
   }, [parts]);
 
-  const nonEmptyParts = useMemo(
-    () => parts.filter((p) => p.text?.trim()),
-    [parts],
-  );
+  const nonEmptyParts = useMemo(() => parts.filter((p) => p.text?.trim()), [parts]);
 
   if (nonEmptyParts.length === 0) return null;
 
@@ -2379,27 +2180,25 @@ function GroupedReasoningCard({
         <div
           className={cn(
             'flex items-center gap-1.5 py-0.5',
-            'text-xs select-none cursor-pointer',
+            'cursor-pointer text-xs select-none',
             'text-muted-foreground/70',
-            'transition-colors max-w-full group/reasoning',
+            'group/reasoning max-w-full transition-colors',
           )}
         >
           <Brain
             className={cn(
-              'size-3.5 flex-shrink-0 text-muted-foreground/50',
+              'text-muted-foreground/50 size-3.5 flex-shrink-0',
               reasoningStreaming && 'animate-pulse-heartbeat',
             )}
           />
 
-          <span className="min-w-0 flex-1 truncate">
-            {preview || 'Thinking'}
-          </span>
+          <span className="min-w-0 flex-1 truncate">{preview || 'Thinking'}</span>
           {reasoningStreaming && (
-            <Loader2 className="size-3 animate-spin flex-shrink-0 text-muted-foreground/40" />
+            <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
           )}
           <ChevronRight
             className={cn(
-              'size-3 transition-transform flex-shrink-0',
+              'size-3 flex-shrink-0 transition-transform',
               'text-muted-foreground/30 opacity-0 group-hover/reasoning:opacity-100',
               open && 'rotate-90 opacity-100',
             )}
@@ -2408,8 +2207,8 @@ function GroupedReasoningCard({
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <div className="ml-[18px] mt-0.5 mb-1.5 pl-3 border-l border-border/30">
-          <div className="space-y-2 text-muted-foreground/50 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-xs [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-xs [&_.kortix-markdown_li]:!leading-[1.5] [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60">
+        <div className="border-border/30 mt-0.5 mb-1.5 ml-[18px] border-l pl-3">
+          <div className="text-muted-foreground/50 [&_.kortix-markdown_div]:!text-muted-foreground/50 [&_.kortix-markdown_li]:!text-muted-foreground/50 [&_.kortix-markdown_strong]:!text-muted-foreground/60 [&_.kortix-markdown_em]:!text-muted-foreground/60 space-y-2 [&_.kortix-markdown]:italic [&_.kortix-markdown_div]:!text-xs [&_.kortix-markdown_div]:!leading-[1.5] [&_.kortix-markdown_li]:!text-xs [&_.kortix-markdown_li]:!leading-[1.5]">
             {nonEmptyParts.map((p, i) => (
               <div key={p.id ?? i}>
                 <ThrottledMarkdown content={p.text!} isStreaming={false} />
@@ -2468,8 +2267,7 @@ function SameToolGroup({
       !!busy &&
       entries.some(
         ({ part }) =>
-          (part.state as any)?.status === 'pending' ||
-          (part.state as any)?.status === 'running',
+          (part.state as any)?.status === 'pending' || (part.state as any)?.status === 'running',
       ),
     [busy, entries],
   );
@@ -2487,9 +2285,7 @@ function SameToolGroup({
   }, [entries]);
 
   const durationLabel =
-    !anyRunning && totalDurationMs >= 1000
-      ? `${Math.round(totalDurationMs / 1000)}s`
-      : '';
+    !anyRunning && totalDurationMs >= 1000 ? `${Math.round(totalDurationMs / 1000)}s` : '';
 
   const isContext = toolName === '__context__';
   const isResearch = toolName === '__research__';
@@ -2499,8 +2295,7 @@ function SameToolGroup({
       const s = contextToolSummary(entries.map((e) => e.part));
       const items: string[] = [];
       if (s.read > 0) items.push(`${s.read} read${s.read > 1 ? 's' : ''}`);
-      if (s.search > 0)
-        items.push(`${s.search} search${s.search > 1 ? 'es' : ''}`);
+      if (s.search > 0) items.push(`${s.search} search${s.search > 1 ? 'es' : ''}`);
       if (s.list > 0) items.push(`${s.list} list${s.list > 1 ? 's' : ''}`);
       const summary = items.join(', ');
       const prefix = anyRunning ? 'Gathering context' : 'Gathered context';
@@ -2518,8 +2313,7 @@ function SameToolGroup({
         else if (n === 'scrape' || n === 'scrape_webpage') scrapes++;
       }
       const items: string[] = [];
-      if (searches > 0)
-        items.push(`${searches} search${searches > 1 ? 'es' : ''}`);
+      if (searches > 0) items.push(`${searches} search${searches > 1 ? 'es' : ''}`);
       if (fetches > 0) items.push(`${fetches} fetch${fetches > 1 ? 'es' : ''}`);
       if (scrapes > 0) items.push(`${scrapes} scrape${scrapes > 1 ? 's' : ''}`);
       const summary = items.join(', ');
@@ -2537,38 +2331,38 @@ function SameToolGroup({
         <div
           className={cn(
             'flex items-center gap-1.5 py-0.5',
-            'text-xs select-none cursor-pointer',
+            'cursor-pointer text-xs select-none',
             'text-muted-foreground/70',
-            'transition-colors max-w-full group/grp',
+            'group/grp max-w-full transition-colors',
           )}
         >
           {isResearch ? (
             <Globe
               className={cn(
-                'size-3.5 flex-shrink-0 text-muted-foreground/50',
+                'text-muted-foreground/50 size-3.5 flex-shrink-0',
                 anyRunning && 'animate-pulse-heartbeat',
               )}
             />
           ) : (
             <Search
               className={cn(
-                'size-3.5 flex-shrink-0 text-muted-foreground/50',
+                'text-muted-foreground/50 size-3.5 flex-shrink-0',
                 anyRunning && 'animate-pulse-heartbeat',
               )}
             />
           )}
           <span className="min-w-0 flex-1 truncate">{headerLabel}</span>
           {durationLabel && (
-            <span className="text-xs font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
+            <span className="text-muted-foreground/40 flex-shrink-0 font-mono text-xs tabular-nums">
               {durationLabel}
             </span>
           )}
           {anyRunning && (
-            <Loader2 className="size-3 animate-spin flex-shrink-0 text-muted-foreground/40" />
+            <Loader2 className="text-muted-foreground/40 size-3 flex-shrink-0 animate-spin" />
           )}
           <ChevronRight
             className={cn(
-              'size-3 transition-transform flex-shrink-0',
+              'size-3 flex-shrink-0 transition-transform',
               'text-muted-foreground/30 opacity-0 group-hover/grp:opacity-100',
               open && 'rotate-90 opacity-100',
             )}
@@ -2577,7 +2371,7 @@ function SameToolGroup({
       </CollapsibleTrigger>
 
       <CollapsibleContent>
-        <div className="ml-[18px] mt-0.5 mb-1.5 pl-3 border-l border-border/30 space-y-0.5">
+        <div className="border-border/30 mt-0.5 mb-1.5 ml-[18px] space-y-0.5 border-l pl-3">
           {isContext
             ? entries.map(({ part }) => {
                 const t = contextToolTrigger(part);
@@ -2586,31 +2380,28 @@ function SameToolGroup({
                   (part.state as any)?.status === 'running';
                 const s = (part.state as any)?.time?.start;
                 const e = (part.state as any)?.time?.end;
-                const dur =
-                  typeof s === 'number' && typeof e === 'number' && e > s
-                    ? e - s
-                    : 0;
+                const dur = typeof s === 'number' && typeof e === 'number' && e > s ? e - s : 0;
                 return (
                   <div
                     key={part.id}
-                    className="flex items-center gap-1.5 py-0.5 text-xs text-muted-foreground/60 min-w-0"
+                    className="text-muted-foreground/60 flex min-w-0 items-center gap-1.5 py-0.5 text-xs"
                   >
                     <span className="flex-shrink-0">{t.title}</span>
                     {!running && t.subtitle && (
                       <span
-                        className="font-mono truncate min-w-0 flex-1 opacity-70"
+                        className="min-w-0 flex-1 truncate font-mono opacity-70"
                         title={t.subtitle}
                       >
                         {t.subtitle}
                       </span>
                     )}
                     {!running && dur >= 1000 && (
-                      <span className="ml-auto text-xs font-mono tabular-nums flex-shrink-0 text-muted-foreground/40">
+                      <span className="text-muted-foreground/40 ml-auto flex-shrink-0 font-mono text-xs tabular-nums">
                         {Math.round(dur / 1000)}s
                       </span>
                     )}
                     {running && (
-                      <Loader2 className="size-2.5 animate-spin flex-shrink-0 text-muted-foreground/40" />
+                      <Loader2 className="text-muted-foreground/40 size-2.5 flex-shrink-0 animate-spin" />
                     )}
                   </div>
                 );
@@ -2664,10 +2455,7 @@ interface SessionTurnProps {
   /** Disable redirect-style tool navigation (used during onboarding) */
   disableToolNavigation?: boolean;
   /** Permission reply handler */
-  onPermissionReply: (
-    requestId: string,
-    reply: 'once' | 'always' | 'reject',
-  ) => Promise<void>;
+  onPermissionReply: (requestId: string, reply: 'once' | 'always' | 'reject') => Promise<void>;
 }
 
 function SessionTurn({
@@ -2702,18 +2490,10 @@ function SessionTurn({
   // (todowrite, task, question) don't count as "steps".
   const hasSteps = useMemo(() => {
     return allParts.some(({ part }) => {
-      if (
-        part.type === 'compaction' ||
-        part.type === 'snapshot' ||
-        part.type === 'patch'
-      )
+      if (part.type === 'compaction' || part.type === 'snapshot' || part.type === 'patch')
         return true;
       if (isToolPart(part)) {
-        if (
-          part.tool === 'todowrite' ||
-          part.tool === 'task' ||
-          part.tool === 'question'
-        )
+        if (part.tool === 'todowrite' || part.tool === 'task' || part.tool === 'question')
           return false;
         return shouldShowToolPart(part);
       }
@@ -2721,8 +2501,7 @@ function SessionTurn({
     });
   }, [allParts]);
   const hasReasoning = useMemo(
-    () =>
-      allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim()),
+    () => allParts.some(({ part }) => isReasoningPart(part) && !!part.text?.trim()),
     [allParts],
   );
   const isLast = useMemo(
@@ -2810,15 +2589,8 @@ function SessionTurn({
       for (const part of msg.parts) {
         if (part.type !== 'tool') continue;
         const tool = part as ToolPart;
-        if (
-          tool.tool === 'question' &&
-          tool.state.status === 'error' &&
-          'error' in tool.state
-        ) {
-          return (tool.state as { error: string }).error.replace(
-            /^Error:\s*/,
-            '',
-          );
+        if (tool.tool === 'question' && tool.state.status === 'error' && 'error' in tool.state) {
+          return (tool.state as { error: string }).error.replace(/^Error:\s*/, '');
         }
       }
     }
@@ -2838,12 +2610,8 @@ function SessionTurn({
   const nextQuestion = useMemo(() => {
     const sessionQuestions = questions.filter((q) => q.sessionID === sessionId);
     if (sessionQuestions.length === 0) return undefined;
-    const turnMessageIds = new Set(
-      turn.assistantMessages.map((m) => m.info.id),
-    );
-    const matched = sessionQuestions.find(
-      (q) => q.tool && turnMessageIds.has(q.tool.messageID),
-    );
+    const turnMessageIds = new Set(turn.assistantMessages.map((m) => m.info.id));
+    const matched = sessionQuestions.find((q) => q.tool && turnMessageIds.has(q.tool.messageID));
     if (matched) return matched;
     if (isLast) return sessionQuestions[0];
     return undefined;
@@ -2947,10 +2715,7 @@ function SessionTurn({
         // Question was answered (output exists and assistant continued)
         // but metadata.answers was never set (e.g. after page reload).
         // Parse answers from the output string as a fallback.
-        const parsed = parseAnswersFromOutput(
-          toolOutput,
-          (tool.state as any)?.input,
-        );
+        const parsed = parseAnswersFromOutput(toolOutput, (tool.state as any)?.input);
         if (parsed) {
           const syntheticPart = {
             ...tool,
@@ -2971,9 +2736,7 @@ function SessionTurn({
         // Show a minimal answered card using the input questions
         // with placeholder answers extracted from context.
         const input = (tool.state as any)?.input;
-        const questionsList: { question: string }[] = Array.isArray(
-          input?.questions,
-        )
+        const questionsList: { question: string }[] = Array.isArray(input?.questions)
           ? input.questions
           : [];
         if (questionsList.length > 0) {
@@ -3119,9 +2882,7 @@ function SessionTurn({
 
   // ---- Status throttling (2.5s) ----
   const lastStatusChangeRef = useRef(Date.now());
-  const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
+  const statusTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const childMessages = undefined as MessageWithParts[] | undefined; // placeholder for child session delegation
   const rawStatus = useMemo(
     () => getTurnStatus(allParts, childMessages),
@@ -3155,9 +2916,7 @@ function SessionTurn({
       return;
     }
     const update = () =>
-      setRetrySecondsLeft(
-        Math.max(0, Math.round((retryInfo.next - Date.now()) / 1000)),
-      );
+      setRetrySecondsLeft(Math.max(0, Math.round((retryInfo.next - Date.now()) / 1000)));
     update();
     const timer = setInterval(update, 1000);
     return () => clearInterval(timer);
@@ -3215,9 +2974,7 @@ function SessionTurn({
           onPermissionReply={onPermissionReply}
           defaultOpen
         />
-        {turnError && (
-          <TurnErrorDisplay errorText={turnError} className="mt-2" />
-        )}
+        {turnError && <TurnErrorDisplay errorText={turnError} className="mt-2" />}
         <ConnectProviderDialog
           open={connectProviderOpen}
           onOpenChange={setConnectProviderOpen}
@@ -3234,14 +2991,14 @@ function SessionTurn({
   if (isCompaction && !working && response) {
     return (
       <div className="group/turn">
-        <div className="rounded-2xl border border-border/60 bg-card/50 overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-border/40 bg-muted/40">
-            <Layers className="size-3.5 text-muted-foreground/70" />
-            <span className="text-xs font-medium text-muted-foreground/70 uppercase tracking-wider">
+        <div className="border-border/60 bg-card/50 overflow-hidden rounded-2xl border">
+          <div className="border-border/40 bg-muted/40 flex items-center gap-2 border-b px-4 py-2.5">
+            <Layers className="text-muted-foreground/70 size-3.5" />
+            <span className="text-muted-foreground/70 text-xs font-medium tracking-wider uppercase">
               Compaction
             </span>
           </div>
-          <div className="px-4 py-3 text-sm text-muted-foreground/90 [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_strong]:text-foreground/90">
+          <div className="text-muted-foreground/90 [&_h1]:text-foreground [&_h2]:text-foreground [&_h3]:text-foreground [&_strong]:text-foreground/90 px-4 py-3 text-sm">
             <SandboxUrlDetector content={response} isStreaming={false} />
           </div>
         </div>
@@ -3269,7 +3026,7 @@ function SessionTurn({
   // ============================================================================
 
   return (
-    <div className="space-y-3 group/turn">
+    <div className="group/turn space-y-3">
       {/* ── Session report card — clickable, opens worker session modal ── */}
       {sessionReport && (
         <>
@@ -3277,12 +3034,10 @@ function SessionTurn({
             role="button"
             tabIndex={0}
             onClick={() => setSessionReportModalOpen(true)}
-            onKeyDown={(e) =>
-              e.key === 'Enter' && setSessionReportModalOpen(true)
-            }
+            onKeyDown={(e) => e.key === 'Enter' && setSessionReportModalOpen(true)}
             className={cn(
-              'flex items-center gap-2 px-3 py-2 rounded-2xl text-xs',
-              'border select-none cursor-pointer transition-colors group/report',
+              'flex items-center gap-2 rounded-2xl px-3 py-2 text-xs',
+              'group/report cursor-pointer border transition-colors select-none',
               sessionReport.status === 'COMPLETE'
                 ? cn(STATUS_BG.success, STATUS_BORDER.success, 'hover:bg-emerald-500/15')
                 : 'bg-destructive/5 border-destructive/20 hover:bg-destructive/10',
@@ -3291,24 +3046,19 @@ function SessionTurn({
             {sessionReport.status === 'COMPLETE' ? (
               <CheckCircle className={cn('size-3.5 flex-shrink-0', STATUS_TEXT.success)} />
             ) : (
-              <AlertTriangle className="size-3.5 text-destructive flex-shrink-0" />
+              <AlertTriangle className="text-destructive size-3.5 flex-shrink-0" />
             )}
-            <div className="flex items-center gap-1.5 min-w-0 flex-1">
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
               <span
                 className={cn(
                   'font-medium',
-                  sessionReport.status === 'COMPLETE'
-                    ? STATUS_TEXT.success
-                    : 'text-destructive',
+                  sessionReport.status === 'COMPLETE' ? STATUS_TEXT.success : 'text-destructive',
                 )}
               >
-                Worker{' '}
-                {sessionReport.status === 'COMPLETE' ? 'Complete' : 'Failed'}
+                Worker {sessionReport.status === 'COMPLETE' ? 'Complete' : 'Failed'}
               </span>
               {sessionReport.project && (
-                <span className="text-muted-foreground/60">
-                  · {sessionReport.project}
-                </span>
+                <span className="text-muted-foreground/60">· {sessionReport.project}</span>
               )}
               {sessionReport.prompt && (
                 <span className="text-muted-foreground/40 truncate">
@@ -3316,7 +3066,7 @@ function SessionTurn({
                 </span>
               )}
             </div>
-            <ExternalLink className="size-3 flex-shrink-0 text-muted-foreground/30 group-hover/report:text-muted-foreground/60 transition-colors" />
+            <ExternalLink className="text-muted-foreground/30 group-hover/report:text-muted-foreground/60 size-3 flex-shrink-0 transition-colors" />
           </div>
           <SubSessionModal
             open={sessionReportModalOpen}
@@ -3344,24 +3094,14 @@ function SessionTurn({
             commands={commands}
           />
           {userMessageText && (
-            <div className="flex justify-end mt-1 opacity-0 group-hover/turn:opacity-100 transition-opacity duration-150">
+            <div className="mt-1 flex justify-end opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-xs"
-                    onClick={handleCopyUser}
-                  >
-                    {userCopied ? (
-                      <Check className="size-3.5" />
-                    ) : (
-                      <Copy className="size-3.5" />
-                    )}
+                  <Button variant="ghost" size="icon-xs" onClick={handleCopyUser}>
+                    {userCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>
-                  {userCopied ? 'Copied!' : 'Copy'}
-                </TooltipContent>
+                <TooltipContent>{userCopied ? 'Copied!' : 'Copy'}</TooltipContent>
               </Tooltip>
               {(() => {
                 const userTextPart = turn.userMessage.parts.find(
@@ -3376,9 +3116,7 @@ function SessionTurn({
                   <PartActions
                     part={userTextPart}
                     isBusy={isBusy}
-                    onEditFork={(newText) =>
-                      onEditFork(turn.userMessage.info.id, newText)
-                    }
+                    onEditFork={(newText) => onEditFork(turn.userMessage.info.id, newText)}
                     loading={editForkLoading}
                   />
                 );
@@ -3395,7 +3133,11 @@ function SessionTurn({
                       <GitFork className="size-3.5" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>{tHardcodedUi.raw('componentsSessionSessionChat.line3395JsxTextForkToNewSession')}</TooltipContent>
+                  <TooltipContent>
+                    {tHardcodedUi.raw(
+                      'componentsSessionSessionChat.line3395JsxTextForkToNewSession',
+                    )}
+                  </TooltipContent>
                 </Tooltip>
               )}
             </div>
@@ -3405,12 +3147,12 @@ function SessionTurn({
 
       {/* Kortix logo header */}
       {(working || hasSteps || hasReasoning) && (
-        <div className="flex items-center gap-2 mt-3">
+        <div className="mt-3 flex items-center gap-2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src="/kortix-logomark-white.svg"
             alt="Kortix"
-            className="dark:invert-0 invert flex-shrink-0 h-[14px] w-auto"
+            className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
           />
         </div>
       )}
@@ -3419,287 +3161,265 @@ function SessionTurn({
 			  Renders ALL parts from all assistant messages,
 			  EXCEPT: the response part (last text) is hidden when not working
 			  (it renders separately below as the Response section). */}
-      {(working || hasSteps || hasReasoning) &&
-        turn.assistantMessages.length > 0 && (
-          <div className="space-y-2">
-            {(() => {
-              // Same-tool grouping: consecutive calls of the SAME tool
-              // (e.g. 5 reads, 3 greps) fold into one collapsible.
-              // Singles stay individual. Reasoning groups separately.
-              // ALL tool rows get a left border rail for visual separation.
-              type ToolEntry = { part: ToolPart; message: MessageWithParts };
-              type RenderItem =
-                | { type: 'part'; part: Part; message: MessageWithParts }
-                | { type: 'reasoning-group'; parts: ReasoningPart[]; key: string }
-                | { type: 'tool-group'; toolName: string; entries: ToolEntry[]; key: string }
-                | { type: 'tool-single'; part: ToolPart; message: MessageWithParts };
+      {(working || hasSteps || hasReasoning) && turn.assistantMessages.length > 0 && (
+        <div className="space-y-2">
+          {(() => {
+            // Same-tool grouping: consecutive calls of the SAME tool
+            // (e.g. 5 reads, 3 greps) fold into one collapsible.
+            // Singles stay individual. Reasoning groups separately.
+            // ALL tool rows get a left border rail for visual separation.
+            type ToolEntry = { part: ToolPart; message: MessageWithParts };
+            type RenderItem =
+              | { type: 'part'; part: Part; message: MessageWithParts }
+              | { type: 'reasoning-group'; parts: ReasoningPart[]; key: string }
+              | { type: 'tool-group'; toolName: string; entries: ToolEntry[]; key: string }
+              | { type: 'tool-single'; part: ToolPart; message: MessageWithParts };
 
-              const items: RenderItem[] = [];
-              let pendingReasoning: ReasoningPart[] = [];
-              let pendingTools: ToolEntry[] = [];
-              let pendingToolName: string | null = null;
+            const items: RenderItem[] = [];
+            let pendingReasoning: ReasoningPart[] = [];
+            let pendingTools: ToolEntry[] = [];
+            let pendingToolName: string | null = null;
 
-              const flushReasoning = () => {
-                if (pendingReasoning.length > 0) {
-                  items.push({
-                    type: 'reasoning-group',
-                    parts: pendingReasoning,
-                    key: `reasoning-${(pendingReasoning[0] as any).id ?? items.length}`,
-                  });
-                  pendingReasoning = [];
+            const flushReasoning = () => {
+              if (pendingReasoning.length > 0) {
+                items.push({
+                  type: 'reasoning-group',
+                  parts: pendingReasoning,
+                  key: `reasoning-${(pendingReasoning[0] as any).id ?? items.length}`,
+                });
+                pendingReasoning = [];
+              }
+            };
+
+            const flushTools = () => {
+              if (pendingTools.length >= 2 && pendingToolName) {
+                items.push({
+                  type: 'tool-group',
+                  toolName: pendingToolName,
+                  entries: pendingTools,
+                  key: `tg-${pendingTools[0].part.id}`,
+                });
+              } else if (pendingTools.length === 1) {
+                items.push({
+                  type: 'tool-single',
+                  part: pendingTools[0].part,
+                  message: pendingTools[0].message,
+                });
+              }
+              pendingTools = [];
+              pendingToolName = null;
+            };
+
+            // Normalize tool name for grouping.
+            //   __context__ — read/glob/grep/list collapse into one
+            //                "Gathered context" pile (compact one-liners).
+            //   __research__ — web_search / webfetch / scrape collapse into
+            //                  one "Research" pile (full results expanded).
+            // Same-tool runs (e.g. 3× apply_patch, 3× edit) group naturally
+            // by their normalized tool name and render full per-call results.
+            const CONTEXT_SET = new Set(['read', 'glob', 'grep', 'list']);
+            const RESEARCH_SET = new Set([
+              'web_search',
+              'websearch',
+              'webfetch',
+              'web_fetch',
+              'scrape',
+              'scrape_webpage',
+            ]);
+            // Tools that always render as individual rows — never folded into
+            // a "Tool · Nx" pile. File writes/creations are distinct artifacts
+            // (index.html, styles.css, …) the user wants to see one-per-line.
+            // Shell commands are likewise distinct actions, each shown on its
+            // own row rather than collapsed into a "Shell · Nx" pile.
+            const NO_GROUP_SET = new Set(['write', 'bash']);
+            const norm = (t: string) => {
+              const n = t.replace(/^oc-/, '').replace(/-/g, '_');
+              if (CONTEXT_SET.has(n)) return '__context__';
+              if (RESEARCH_SET.has(n)) return '__research__';
+              return n;
+            };
+
+            for (const { part, message } of allParts) {
+              if (isReasoningPart(part)) {
+                if (part.text?.trim()) {
+                  flushTools();
+                  pendingReasoning.push(part);
                 }
-              };
+                continue;
+              }
+              flushReasoning();
 
-              const flushTools = () => {
-                if (pendingTools.length >= 2 && pendingToolName) {
-                  items.push({
-                    type: 'tool-group',
-                    toolName: pendingToolName,
-                    entries: pendingTools,
-                    key: `tg-${pendingTools[0].part.id}`,
-                  });
-                } else if (pendingTools.length === 1) {
-                  items.push({
-                    type: 'tool-single',
-                    part: pendingTools[0].part,
-                    message: pendingTools[0].message,
-                  });
-                }
-                pendingTools = [];
-                pendingToolName = null;
-              };
+              if (isToolPart(part)) {
+                const tp = part as ToolPart;
+                const hasPermission = !!getPermissionForTool(permissions, tp.callID);
+                const groupable =
+                  shouldShowToolPart(tp) &&
+                  tp.tool !== 'todowrite' &&
+                  tp.tool !== 'question' &&
+                  !NO_GROUP_SET.has(norm(tp.tool)) &&
+                  !hasPermission &&
+                  !isToolPartHidden(tp, message.info.id, hidden);
 
-              // Normalize tool name for grouping.
-              //   __context__ — read/glob/grep/list collapse into one
-              //                "Gathered context" pile (compact one-liners).
-              //   __research__ — web_search / webfetch / scrape collapse into
-              //                  one "Research" pile (full results expanded).
-              // Same-tool runs (e.g. 3× apply_patch, 3× edit) group naturally
-              // by their normalized tool name and render full per-call results.
-              const CONTEXT_SET = new Set(['read', 'glob', 'grep', 'list']);
-              const RESEARCH_SET = new Set([
-                'web_search',
-                'websearch',
-                'webfetch',
-                'web_fetch',
-                'scrape',
-                'scrape_webpage',
-              ]);
-              // Tools that always render as individual rows — never folded into
-              // a "Tool · Nx" pile. File writes/creations are distinct artifacts
-              // (index.html, styles.css, …) the user wants to see one-per-line.
-              // Shell commands are likewise distinct actions, each shown on its
-              // own row rather than collapsed into a "Shell · Nx" pile.
-              const NO_GROUP_SET = new Set(['write', 'bash']);
-              const norm = (t: string) => {
-                const n = t.replace(/^oc-/, '').replace(/-/g, '_');
-                if (CONTEXT_SET.has(n)) return '__context__';
-                if (RESEARCH_SET.has(n)) return '__research__';
-                return n;
-              };
-
-              for (const { part, message } of allParts) {
-                if (isReasoningPart(part)) {
-                  if (part.text?.trim()) {
+                if (groupable) {
+                  const n = norm(tp.tool);
+                  if (pendingToolName === n) {
+                    pendingTools.push({ part: tp, message });
+                  } else {
                     flushTools();
-                    pendingReasoning.push(part);
+                    pendingToolName = n;
+                    pendingTools = [{ part: tp, message }];
                   }
                   continue;
                 }
-                flushReasoning();
-
-                if (isToolPart(part)) {
-                  const tp = part as ToolPart;
-                  const hasPermission = !!getPermissionForTool(
-                    permissions,
-                    tp.callID,
-                  );
-                  const groupable =
-                    shouldShowToolPart(tp) &&
-                    tp.tool !== 'todowrite' &&
-                    tp.tool !== 'question' &&
-                    !NO_GROUP_SET.has(norm(tp.tool)) &&
-                    !hasPermission &&
-                    !isToolPartHidden(tp, message.info.id, hidden);
-
-                  if (groupable) {
-                    const n = norm(tp.tool);
-                    if (pendingToolName === n) {
-                      pendingTools.push({ part: tp, message });
-                    } else {
-                      flushTools();
-                      pendingToolName = n;
-                      pendingTools = [{ part: tp, message }];
-                    }
-                    continue;
-                  }
-                }
-
-                flushTools();
-                items.push({ type: 'part', part, message });
               }
-              flushReasoning();
+
               flushTools();
+              items.push({ type: 'part', part, message });
+            }
+            flushReasoning();
+            flushTools();
 
-              const reasoningActive =
-                working && permissions.length === 0 && questions.length === 0;
+            const reasoningActive = working && permissions.length === 0 && questions.length === 0;
 
-              return items.map((item) => {
-                // Reasoning group
-                if (item.type === 'reasoning-group') {
-                  return (
-                    <div key={item.key}>
-                      <GroupedReasoningCard
-                        parts={item.parts}
-                        isStreaming={reasoningActive}
-                      />
+            return items.map((item) => {
+              // Reasoning group
+              if (item.type === 'reasoning-group') {
+                return (
+                  <div key={item.key}>
+                    <GroupedReasoningCard parts={item.parts} isStreaming={reasoningActive} />
+                  </div>
+                );
+              }
+
+              // Same-tool group (2+ consecutive)
+              if (item.type === 'tool-group') {
+                return (
+                  <div key={item.key}>
+                    <SameToolGroup
+                      toolName={item.toolName}
+                      entries={item.entries}
+                      sessionId={sessionId}
+                      disableNavigation={disableToolNavigation}
+                      busy={working}
+                    />
+                  </div>
+                );
+              }
+
+              // Single tool (with left rail)
+              if (item.type === 'tool-single') {
+                if (!shouldShowToolPart(item.part)) return null;
+                const perm = getPermissionForTool(permissions, item.part.callID);
+                if (isToolPartHidden(item.part, item.message.info.id, hidden)) return null;
+                return (
+                  <div key={item.part.id}>
+                    <ToolPartRenderer
+                      part={item.part}
+                      sessionId={sessionId}
+                      disableNavigation={disableToolNavigation}
+                      permission={perm}
+                      onPermissionReply={onPermissionReply}
+                    />
+                  </div>
+                );
+              }
+
+              const { part, message } = item;
+
+              // When inline content rendering is active (text + answered questions in order),
+              // hide ALL text parts from steps since they render in the inline section
+              if (shouldUseInlineContent && isTextPart(part) && part.text?.trim()) return null;
+
+              // Text parts (intermediate + streaming response while working)
+              if (isTextPart(part)) {
+                if (!part.text?.trim()) return null;
+                // Text response rendering for no-step turns is handled below in
+                // the dedicated response section to avoid duplicate output.
+                if (!hasSteps) return null;
+                return (
+                  <div key={part.id} className="text-sm">
+                    <ThrottledMarkdown content={part.text} isStreaming={working} />
+                  </div>
+                );
+              }
+
+              // Compaction indicator
+              if (isCompactionPart(part)) {
+                return (
+                  <div key={part.id} className="flex items-center gap-2 py-2.5">
+                    <div className="bg-border h-px flex-1" />
+                    <div className="bg-muted/80 border-border/60 flex items-center gap-1.5 rounded-2xl border px-2.5 py-1">
+                      <Layers className="text-muted-foreground size-3" />
+                      <span className="text-muted-foreground text-xs font-semibold tracking-wide">
+                        Compaction
+                      </span>
                     </div>
-                  );
-                }
+                    <div className="bg-border h-px flex-1" />
+                  </div>
+                );
+              }
 
-                // Same-tool group (2+ consecutive)
-                if (item.type === 'tool-group') {
-                  return (
-                    <div key={item.key}>
-                      <SameToolGroup
-                        toolName={item.toolName}
-                        entries={item.entries}
-                        sessionId={sessionId}
-                        disableNavigation={disableToolNavigation}
-                        busy={working}
-                      />
-                    </div>
-                  );
-                }
-
-                // Single tool (with left rail)
-                if (item.type === 'tool-single') {
-                  if (!shouldShowToolPart(item.part)) return null;
-                  const perm = getPermissionForTool(permissions, item.part.callID);
-                  if (isToolPartHidden(item.part, item.message.info.id, hidden))
-                    return null;
-                  return (
-                    <div key={item.part.id}>
-                      <ToolPartRenderer
-                        part={item.part}
-                        sessionId={sessionId}
-                        disableNavigation={disableToolNavigation}
-                        permission={perm}
-                        onPermissionReply={onPermissionReply}
-                      />
-                    </div>
-                  );
-                }
-
-                const { part, message } = item;
-
-                // When inline content rendering is active (text + answered questions in order),
-                // hide ALL text parts from steps since they render in the inline section
-                if (
-                  shouldUseInlineContent &&
-                  isTextPart(part) &&
-                  part.text?.trim()
-                )
-                  return null;
-
-                // Text parts (intermediate + streaming response while working)
-                if (isTextPart(part)) {
-                  if (!part.text?.trim()) return null;
-                  // Text response rendering for no-step turns is handled below in
-                  // the dedicated response section to avoid duplicate output.
-                  if (!hasSteps) return null;
-                  return (
-                    <div key={part.id} className="text-sm">
-                      <ThrottledMarkdown
-                        content={part.text}
-                        isStreaming={working}
-                      />
-                    </div>
-                  );
-                }
-
-                // Compaction indicator
-                if (isCompactionPart(part)) {
-                  return (
-                    <div key={part.id} className="flex items-center gap-2 py-2.5">
-                      <div className="flex-1 h-px bg-border" />
-                      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-2xl bg-muted/80 border border-border/60">
-                        <Layers className="size-3 text-muted-foreground" />
-                        <span className="text-xs font-semibold text-muted-foreground tracking-wide">
-                          Compaction
-                        </span>
-                      </div>
-                      <div className="flex-1 h-px bg-border" />
-                    </div>
-                  );
-                }
-
-                // Tool parts
-                if (isToolPart(part)) {
-                  if (!shouldShowToolPart(part)) return null;
-                  if (part.tool === 'todowrite') return null;
-                  if (part.tool === 'question') {
-                    // When inline content rendering is active, answered questions
-                    // render in the inline content section — skip here to avoid duplicates.
-                    if (shouldUseInlineContent) return null;
-                    // Render answered questions inline at their natural position
-                    // so they appear exactly where the user answered them.
-                    const answeredPart = answeredQuestionPartsById.get(part.id);
-                    if (answeredPart) {
-                      return (
-                        <AnsweredQuestionCard
-                          key={part.id}
-                          part={answeredPart}
-                          defaultExpanded
-                        />
-                      );
-                    }
-                    // Unanswered/dismissed questions: don't render in steps;
-                    // dismissed ones show via the turnError banner.
-                    return null;
+              // Tool parts
+              if (isToolPart(part)) {
+                if (!shouldShowToolPart(part)) return null;
+                if (part.tool === 'todowrite') return null;
+                if (part.tool === 'question') {
+                  // When inline content rendering is active, answered questions
+                  // render in the inline content section — skip here to avoid duplicates.
+                  if (shouldUseInlineContent) return null;
+                  // Render answered questions inline at their natural position
+                  // so they appear exactly where the user answered them.
+                  const answeredPart = answeredQuestionPartsById.get(part.id);
+                  if (answeredPart) {
+                    return (
+                      <AnsweredQuestionCard key={part.id} part={answeredPart} defaultExpanded />
+                    );
                   }
-
-                  const perm = getPermissionForTool(permissions, part.callID);
-
-                  // Hide tool parts that have active permission
-                  if (isToolPartHidden(part, message.info.id, hidden))
-                    return null;
-
-                  return (
-                    <div key={part.id}>
-                      <ToolPartRenderer
-                        part={part}
-                        sessionId={sessionId}
-                        disableNavigation={disableToolNavigation}
-                        permission={perm}
-                        onPermissionReply={onPermissionReply}
-                      />
-                    </div>
-                  );
-                }
-
-                // Snapshot & patch parts — internal bookkeeping, not rendered in chat
-                if (isSnapshotPart(part) || isPatchPart(part)) {
+                  // Unanswered/dismissed questions: don't render in steps;
+                  // dismissed ones show via the turnError banner.
                   return null;
                 }
 
+                const perm = getPermissionForTool(permissions, part.callID);
+
+                // Hide tool parts that have active permission
+                if (isToolPartHidden(part, message.info.id, hidden)) return null;
+
+                return (
+                  <div key={part.id}>
+                    <ToolPartRenderer
+                      part={part}
+                      sessionId={sessionId}
+                      disableNavigation={disableToolNavigation}
+                      permission={perm}
+                      onPermissionReply={onPermissionReply}
+                    />
+                  </div>
+                );
+              }
+
+              // Snapshot & patch parts — internal bookkeeping, not rendered in chat
+              if (isSnapshotPart(part) || isPatchPart(part)) {
                 return null;
-              });
-            })()}
-          </div>
-        )}
+              }
+
+              return null;
+            });
+          })()}
+        </div>
+      )}
 
       {/* Kortix logo — shown when there are no steps and not working (otherwise logo is already above the steps trigger) */}
       {!hasSteps &&
         !hasReasoning &&
         !working &&
         (response || answeredQuestionParts.length > 0 || turnError) && (
-          <div className="flex items-center gap-2 mt-3 mb-3">
+          <div className="mt-3 mb-3 flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src="/kortix-logomark-white.svg"
               alt="Kortix"
-              className="dark:invert-0 invert flex-shrink-0 h-[14px] w-auto"
+              className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
             />
           </div>
         )}
@@ -3732,9 +3452,7 @@ function SessionTurn({
             return inlineContentParts!.map((item, idx) => {
               if (item.type === 'text') {
                 const isStreaming = idx === lastTextIdx;
-                const text = isStreaming
-                  ? item.part.text!
-                  : item.part.text!.trim();
+                const text = isStreaming ? item.part.text! : item.part.text!.trim();
                 return (
                   <div key={item.id} className="text-sm">
                     {isStreaming ? (
@@ -3745,13 +3463,7 @@ function SessionTurn({
                   </div>
                 );
               }
-              return (
-                <AnsweredQuestionCard
-                  key={item.id}
-                  part={item.part}
-                  defaultExpanded
-                />
-              );
+              return <AnsweredQuestionCard key={item.id} part={item.part} defaultExpanded />;
             });
           })()}
         </div>
@@ -3762,14 +3474,12 @@ function SessionTurn({
             !hasSteps &&
             response &&
             (commandForTurn ? (
-              <div className="rounded-2xl border border-border/60 bg-gradient-to-b from-muted/15 to-background overflow-hidden">
-                <div className="flex items-center gap-2 px-3 py-2 border-b border-border/50 bg-muted/25">
-                  <Terminal className="size-3.5 text-muted-foreground shrink-0" />
-                  <span className="font-mono text-xs text-foreground">
-                    /{commandForTurn.name}
-                  </span>
+              <div className="border-border/60 from-muted/15 to-background overflow-hidden rounded-2xl border bg-gradient-to-b">
+                <div className="border-border/50 bg-muted/25 flex items-center gap-2 border-b px-3 py-2">
+                  <Terminal className="text-muted-foreground size-3.5 shrink-0" />
+                  <span className="text-foreground font-mono text-xs">/{commandForTurn.name}</span>
                   {commandForTurn.args && (
-                    <span className="text-xs text-muted-foreground truncate">
+                    <span className="text-muted-foreground truncate text-xs">
                       {commandForTurn.args}
                     </span>
                   )}
@@ -3795,7 +3505,7 @@ function SessionTurn({
 				    → interrupt; hasSteps=false, working=false, hasReasoning=true,
 				    and without the !hasReasoning check the card rendered twice). */}
           {!hasSteps && !working && !hasReasoning && answeredQuestionParts.length > 0 && (
-            <div className="space-y-2 mt-3">
+            <div className="mt-3 space-y-2">
               {answeredQuestionParts.map(({ part }) => (
                 <AnsweredQuestionCard key={part.id} part={part as ToolPart} />
               ))}
@@ -3816,21 +3526,20 @@ function SessionTurn({
           )}
           <div
             className={cn(
-              'flex items-center gap-2 text-xs transition-colors py-1',
+              'flex items-center gap-2 py-1 text-xs transition-colors',
               'text-muted-foreground',
             )}
           >
             <span className="relative flex size-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-muted-foreground/30" />
-              <span className="relative inline-flex rounded-full size-3 bg-muted-foreground/50" />
+              <span className="bg-muted-foreground/30 absolute inline-flex h-full w-full animate-ping rounded-full" />
+              <span className="bg-muted-foreground/50 relative inline-flex size-3 rounded-full" />
             </span>
             {retryInfo ? (
-              <span className="text-muted-foreground/70">{tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry')}</span>
+              <span className="text-muted-foreground/70">
+                {tHardcodedUi.raw('componentsSessionSessionChat.line3820JsxTextWaitingToRetry')}
+              </span>
             ) : (
-              <AnimatedThinkingText
-                statusText={throttledStatus || undefined}
-                className="text-xs"
-              />
+              <AnimatedThinkingText statusText={throttledStatus || undefined} className="text-xs" />
             )}
             <span className="text-muted-foreground/50">·</span>
             <span className="text-muted-foreground/70">{duration}</span>
@@ -3845,17 +3554,16 @@ function SessionTurn({
 
       {/* ── Action bar (copy + duration/cost only — fork & revert live on user messages) ── */}
       {!working && response && (
-        <div className="flex items-center gap-0.5 opacity-0 group-hover/turn:opacity-100 transition-opacity duration-150">
+        <div className="flex items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover/turn:opacity-100">
           {/* Duration & cost */}
           {duration && (
-            <span className="text-xs text-muted-foreground/50 mr-1">
+            <span className="text-muted-foreground/50 mr-1 text-xs">
               {duration}
               {costInfo && (
                 <>
                   {' '}
                   · {formatCost(costInfo.cost)} ·{' '}
-                  {formatTokens(costInfo.tokens.input + costInfo.tokens.output)}
-                  t
+                  {formatTokens(costInfo.tokens.input + costInfo.tokens.output)}t
                 </>
               )}
             </span>
@@ -3863,11 +3571,7 @@ function SessionTurn({
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-xs" onClick={handleCopy}>
-                {copied ? (
-                  <Check className="size-3.5" />
-                ) : (
-                  <Copy className="size-3.5" />
-                )}
+                {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
               </Button>
             </TooltipTrigger>
             <TooltipContent>{copied ? 'Copied!' : 'Copy'}</TooltipContent>
@@ -3910,8 +3614,7 @@ export function SessionChat({
   const tHardcodedUi = useTranslations('hardcodedUi');
   const onboardingActive = useOnboardingModeStore((s) => s.active);
   const onboardingSessionId = useOnboardingModeStore((s) => s.sessionId);
-  const disableToolNavigation =
-    onboardingActive && onboardingSessionId === sessionId;
+  const disableToolNavigation = onboardingActive && onboardingSessionId === sessionId;
   // Every open session tab is pre-mounted at once (see layout-content.tsx), so
   // only the visible tab may be treated as "active" — otherwise every busy
   // session would react to global shortcuts (ESC-to-stop, auto question
@@ -3938,8 +3641,7 @@ export function SessionChat({
     },
     [sessionId, setSidePanelView, focusToolCall],
   );
-  const toolActivate =
-    readOnly || disableToolNavigation ? null : handleToolActivate;
+  const toolActivate = readOnly || disableToolNavigation ? null : handleToolActivate;
 
   // ---- Context modal ----
   const [contextModalOpen, setContextModalOpen] = useState(false);
@@ -3950,14 +3652,10 @@ export function SessionChat({
     label: string | null;
     canAct: boolean;
   }>({ label: null, canAct: true });
-  const handleQuestionActionChange = useCallback(
-    (action: QuestionAction, canAct: boolean) => {
-      const label =
-        action === 'next' ? 'Next' : action === 'submit' ? 'Submit' : null;
-      setQuestionAction({ label, canAct });
-    },
-    [],
-  );
+  const handleQuestionActionChange = useCallback((action: QuestionAction, canAct: boolean) => {
+    const label = action === 'next' ? 'Next' : action === 'submit' ? 'Submit' : null;
+    setQuestionAction({ label, canAct });
+  }, []);
 
   // ---- Reply-to state (text selection → reply) ----
   const [replyTo, setReplyTo] = useState<ReplyToContext | null>(null);
@@ -4019,8 +3717,7 @@ export function SessionChat({
   }, [selectionPopup]);
 
   // ---- KortixComputer side panel ----
-  const { isSidePanelOpen, setIsSidePanelOpen, openFileInComputer } =
-    useKortixComputerStore();
+  const { isSidePanelOpen, setIsSidePanelOpen, openFileInComputer } = useKortixComputerStore();
   const openPreview = useFilePreviewStore((s) => s.openPreview);
   const handleTogglePanel = useCallback(() => {
     setIsSidePanelOpen(!isSidePanelOpen);
@@ -4031,15 +3728,11 @@ export function SessionChat({
   // runtime is connected + healthy). We need it here too so the render logic
   // can tell "still booting" apart from "genuinely gone".
   const runtimeReady = useOpenCodeRuntimeReady();
-  const {
-    data: session,
-    isFetched: sessionFetched,
-  } = useOpenCodeSession(sessionId);
+  const { data: session, isFetched: sessionFetched } = useOpenCodeSession(sessionId);
   // useSessionSync is the SINGLE source of truth for messages (matches OpenCode SolidJS).
   // It fetches on first access, then SSE events keep it up to date.
   // No React Query fallback — prevents stale refetches from overwriting live data.
-  const { messages: syncMessages, isLoading: syncMessagesLoading } =
-    useSessionSync(sessionId);
+  const { messages: syncMessages, isLoading: syncMessagesLoading } = useSessionSync(sessionId);
   const messages = syncMessages.length > 0 ? syncMessages : undefined;
   const messagesLoading = syncMessagesLoading;
   // Scope agents to the session's directory so project-local agents
@@ -4085,15 +3778,9 @@ export function SessionChat({
 
   // ---- Polling fallback & optimistic send ----
   const [pollingActive, setPollingActive] = useState(false);
-  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(
-    null,
-  );
-  const [pendingUserMessageId, setPendingUserMessageId] = useState<
-    string | null
-  >(null);
-  const [confirmForkMessageId, setConfirmForkMessageId] = useState<
-    string | null
-  >(null);
+  const [pendingUserMessage, setPendingUserMessage] = useState<string | null>(null);
+  const [pendingUserMessageId, setPendingUserMessageId] = useState<string | null>(null);
+  const [confirmForkMessageId, setConfirmForkMessageId] = useState<string | null>(null);
   const [pendingCommand, setPendingCommand] = useState<{
     name: string;
     description?: string;
@@ -4101,35 +3788,27 @@ export function SessionChat({
   const [commandError, setCommandError] = useState<string | null>(null);
   // Map of user message IDs → command info, so UserMessageRow can render
   // a compact command pill instead of the raw expanded template text.
-  const commandMessagesRef = useRef<
-    Map<string, { name: string; args?: string }>
-  >(new Map());
+  const commandMessagesRef = useRef<Map<string, { name: string; args?: string }>>(new Map());
   // Stash the pending command info so we can associate it with the user message
   // even if the busy signal arrives before the message list updates.
-  const pendingCommandStashRef = useRef<{ name: string; args?: string } | null>(
-    null,
-  );
+  const pendingCommandStashRef = useRef<{ name: string; args?: string } | null>(null);
   // Track whether we're retrying a failed send (keeps loader visible)
   const [isRetrying, setIsRetrying] = useState(false);
   // Track whether a pending prompt send is in flight (dashboard→session flow).
   // Keeps isBusy true until the server acknowledges with a busy status.
   const [pendingSendInFlight, setPendingSendInFlight] = useState(false);
-  const [pendingSendMessageId, setPendingSendMessageId] = useState<
-    string | null
-  >(null);
+  const [pendingSendMessageId, setPendingSendMessageId] = useState<string | null>(null);
   // Grace period: don't stop polling immediately on idle after a recent send
   const lastSendTimeRef = useRef<number>(0);
   // ---- Optimistic prompt (from dashboard/project page) ----
   // Uses session-specific sessionStorage keys so pushState navigation works
   // (no dependency on ?new=true URL param which requires router.push).
-  const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(
-    () => {
-      if (typeof window !== 'undefined') {
-        return sessionStorage.getItem(`opencode_pending_prompt:${sessionId}`);
-      }
-      return null;
-    },
-  );
+  const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      return sessionStorage.getItem(`opencode_pending_prompt:${sessionId}`);
+    }
+    return null;
+  });
 
   const addOptimisticUserMessage = useCallback(
     (messageId: string, text: string, partIds?: string[]) => {
@@ -4178,9 +3857,7 @@ export function SessionChat({
 
     const attemptSend = (attempt: number) => {
       if (cancelled) return;
-      const pendingPrompt = sessionStorage.getItem(
-        `opencode_pending_prompt:${sessionId}`,
-      );
+      const pendingPrompt = sessionStorage.getItem(`opencode_pending_prompt:${sessionId}`);
       if (!pendingPrompt) {
         // Retry up to 5 times with 50ms delay to handle race condition
         if (attempt < 5) {
@@ -4200,9 +3877,7 @@ export function SessionChat({
       // Restore agent/model/variant selections from the dashboard
       const options: Record<string, unknown> = {};
       try {
-        const raw = sessionStorage.getItem(
-          `opencode_pending_options:${sessionId}`,
-        );
+        const raw = sessionStorage.getItem(`opencode_pending_options:${sessionId}`);
         if (raw) {
           const pendingOptions = JSON.parse(raw);
           sessionStorage.removeItem(`opencode_pending_options:${sessionId}`);
@@ -4230,8 +3905,7 @@ export function SessionChat({
       // retries 3 times internally for transient errors. We add one additional
       // outer retry (2 attempts total at this level) to cover cases where the
       // SDK client itself fails to initialize or the server takes longer to start.
-      const sendOpts =
-        Object.keys(options).length > 0 ? (options as any) : undefined;
+      const sendOpts = Object.keys(options).length > 0 ? (options as any) : undefined;
       const messageID = ascendingId('msg');
       const textPartId = ascendingId('prt');
       setPendingSendMessageId(messageID);
@@ -4246,10 +3920,7 @@ export function SessionChat({
       } catch {
         // SDK client failed to initialize — restore sessionStorage so the
         // user can retry (e.g. by refreshing). Reset all pending state.
-        sessionStorage.setItem(
-          `opencode_pending_prompt:${sessionId}`,
-          pendingPrompt,
-        );
+        sessionStorage.setItem(`opencode_pending_prompt:${sessionId}`, pendingPrompt);
         pendingPromptHandled.current = false;
         setPollingActive(false);
         setPendingSendInFlight(false);
@@ -4293,9 +3964,7 @@ export function SessionChat({
       };
       // Consume any pending files stored by the dashboard (File objects
       // can't survive sessionStorage, so they're in a Zustand store).
-      const pendingFiles = usePendingFilesStore
-        .getState()
-        .consumePendingFiles();
+      const pendingFiles = usePendingFilesStore.getState().consumePendingFiles();
 
       // Upload local files and build the parts array (text + file refs)
       const sendPendingPrompt = async () => {
@@ -4308,8 +3977,7 @@ export function SessionChat({
           (f): f is Extract<typeof f, { kind: 'local' }> => f.kind === 'local',
         );
         const remoteFiles = pendingFiles.filter(
-          (f): f is Extract<typeof f, { kind: 'remote' }> =>
-            f.kind === 'remote',
+          (f): f is Extract<typeof f, { kind: 'remote' }> => f.kind === 'remote',
         );
 
         // Include remote files (from fork drafts etc.)
@@ -4349,8 +4017,7 @@ export function SessionChat({
                 `<file path="${f.path}" mime="${f.mime}" filename="${f.filename}">\nThis file has been uploaded and is available at the path above.\n</file>`,
             )
             .join('\n');
-          (parts[0] as { type: 'text'; text: string }).text +=
-            `\n\n${uploadedFileRefs}`;
+          (parts[0] as { type: 'text'; text: string }).text += `\n\n${uploadedFileRefs}`;
         }
 
         return parts;
@@ -4394,10 +4061,7 @@ export function SessionChat({
     }
   }, [optimisticPrompt, messages]);
 
-  const agentNames = useMemo(
-    () => local.agent.list.map((a) => a.name),
-    [local.agent.list],
-  );
+  const agentNames = useMemo(() => local.agent.list.map((a) => a.name), [local.agent.list]);
 
   // ---- Check if any messages have tool calls ----
   // ---- Restore model/agent from last user message ----
@@ -4407,10 +4071,7 @@ export function SessionChat({
   // we don't overwrite it — the per-session selection takes priority via the
   // resolution chain in useOpenCodeLocal.
   const lastUserMessage = useMemo(
-    () =>
-      messages
-        ? [...messages].reverse().find((m) => m.info.role === 'user')
-        : undefined,
+    () => (messages ? [...messages].reverse().find((m) => m.info.role === 'user') : undefined),
     [messages],
   );
   const lastUserMsgIdRef = useRef<string | undefined>(undefined);
@@ -4438,8 +4099,7 @@ export function SessionChat({
     Boolean(s.compactingBySession[sessionId]),
   );
   const sessionStatus = syncStatus;
-  const isServerBusy =
-    sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
+  const isServerBusy = sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry';
 
   // Pending: last assistant message has no time.completed.
   // Used as a SECONDARY signal — only contributes to busy when the
@@ -4475,18 +4135,13 @@ export function SessionChat({
   // hasIncompleteAssistant only matters while the server also says busy
   // (prevents the idle→incomplete race). pendingSendInFlight covers the
   // gap between user send and server ack.
-  const effectiveBusy =
-    isServerBusy ||
-    pendingSendInFlight ||
-    isOptimisticCompacting;
+  const effectiveBusy = isServerBusy || pendingSendInFlight || isOptimisticCompacting;
 
   // Short visual fade (300ms) — matches the reference's 260ms delay-hide.
   // Goes true immediately, stays visible briefly after going idle so the
   // UI doesn't flicker between agentic steps. NOT a 2s debounce.
   const [isBusy, setIsBusy] = useState(effectiveBusy);
-  const busyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
+  const busyTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => {
     if (effectiveBusy) {
       clearTimeout(busyTimerRef.current);
@@ -4550,11 +4205,7 @@ export function SessionChat({
       // For a fresh pending turn we must have an exact parent match.
       // If cached parentID is missing or mismatched, the cache likely
       // belongs to an older turn and would prepend stale mid-stream text.
-      if (
-        !cached.parentID ||
-        !latestUserId ||
-        cached.parentID !== latestUserId
-      ) {
+      if (!cached.parentID || !latestUserId || cached.parentID !== latestUserId) {
         return;
       }
     }
@@ -4581,8 +4232,7 @@ export function SessionChat({
 
     const currentParts = store.parts[cached.messageID] ?? [];
     const existing = currentParts.find((p) => p.id === cached!.partID) as any;
-    const existingText =
-      typeof existing?.text === 'string' ? existing.text : '';
+    const existingText = typeof existing?.text === 'string' ? existing.text : '';
     if (cached.text.length <= existingText.length) {
       // Already restored or surpassed — mark as done.
       streamCacheRestoredRef.current = cacheFingerprint;
@@ -4598,13 +4248,7 @@ export function SessionChat({
       type: 'text',
       text: cached.text,
     } as any);
-  }, [
-    messages,
-    sessionId,
-    shouldRecoveryPoll,
-    streamCacheKey,
-    hasPendingUserReply,
-  ]);
+  }, [messages, sessionId, shouldRecoveryPoll, streamCacheKey, hasPendingUserReply]);
 
   // No client-side message queue: sends go straight to the server, which
   // serializes concurrent prompt_async calls per-session (so sending while the
@@ -4621,8 +4265,7 @@ export function SessionChat({
         const remaining = 5000 - timeSinceSend;
         const timer = setTimeout(() => {
           // Re-check: if still idle after grace period, stop polling
-          const currentStatus =
-            useSyncStore.getState().sessionStatus[sessionId];
+          const currentStatus = useSyncStore.getState().sessionStatus[sessionId];
           if (currentStatus?.type === 'idle') {
             setPollingActive(false);
           }
@@ -4648,9 +4291,7 @@ export function SessionChat({
     // already accepted and processed this send even if status events were missed.
     const hasAssistantReply = pendingSendMessageId
       ? !!messages?.some(
-          (m) =>
-            m.info.role === 'assistant' &&
-            (m.info as any).parentID === pendingSendMessageId,
+          (m) => m.info.role === 'assistant' && (m.info as any).parentID === pendingSendMessageId,
         )
       : false;
     if (hasAssistantReply) {
@@ -4747,8 +4388,7 @@ export function SessionChat({
   const scrollContainerCallbackRef = useCallback(
     (node: HTMLDivElement | null) => {
       // Always keep scrollRef updated
-      (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current =
-        node;
+      (scrollRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
       if (!node) return;
       if (initialScrollDoneRef.current === sessionId) return;
       initialScrollDoneRef.current = sessionId;
@@ -4793,8 +4433,7 @@ export function SessionChat({
   const allQuestions = useOpenCodePendingStore((s) => s.questions);
   const addQuestion = useOpenCodePendingStore((s) => s.addQuestion);
   const pendingPermissions = useMemo(
-    () =>
-      Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
+    () => Object.values(allPermissions).filter((p) => p.sessionID === sessionId),
     [allPermissions, sessionId],
   );
   const suppressedQuestionIdsRef = useRef<Map<string, number>>(new Map());
@@ -4819,12 +4458,9 @@ export function SessionChat({
   );
   const QUESTION_PROMPT_ANIMATION_MS = 320;
   const activePendingQuestion = pendingQuestions[0] ?? null;
-  const [renderedQuestion, setRenderedQuestion] =
-    useState<QuestionRequest | null>(null);
+  const [renderedQuestion, setRenderedQuestion] = useState<QuestionRequest | null>(null);
   const [questionPromptVisible, setQuestionPromptVisible] = useState(false);
-  const questionPromptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const questionPromptTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const nextQuestion = activePendingQuestion;
 
@@ -4855,22 +4491,16 @@ export function SessionChat({
   }, []);
   const questionHydrationInFlightRef = useRef(false);
   const lastQuestionHydrationAtRef = useRef(0);
-  const turns = useMemo(
-    () => (messages ? groupMessagesIntoTurns(messages) : []),
-    [messages],
-  );
+  const turns = useMemo(() => (messages ? groupMessagesIntoTurns(messages) : []), [messages]);
   const hasAnyMessages = turns.length > 0;
-  const hasChatContent =
-    hasAnyMessages || (!!optimisticPrompt && !hasAnyMessages);
+  const hasChatContent = hasAnyMessages || (!!optimisticPrompt && !hasAnyMessages);
   // Full-bleed wallpaper layer mounted by SessionLayout (null on mobile /
   // standalone). When present, the welcome wallpaper is portaled into it so it
   // spans the entire session width instead of shrinking with the chat panel.
   const wallpaperLayer = useSessionWallpaperLayer();
   const WELCOME_FADE_MS = 900;
   const [welcomeFadeActive, setWelcomeFadeActive] = useState(false);
-  const welcomeFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const welcomeFadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevHasChatContentRef = useRef(hasChatContent);
   useEffect(() => {
     const hadContent = prevHasChatContentRef.current;
@@ -4905,9 +4535,7 @@ export function SessionChat({
         if (p.type !== 'tool') return false;
         const tool = p as ToolPart;
         if (tool.tool !== 'question') return false;
-        return (
-          tool.state.status === 'running' || tool.state.status === 'pending'
-        );
+        return tool.state.status === 'running' || tool.state.status === 'pending';
       });
     });
   }, [messages]);
@@ -4979,8 +4607,7 @@ export function SessionChat({
     async (requestId: string, answers: string[][]) => {
       // Snapshot the question BEFORE removing it so we can cache the
       // answer against the tool part's ID.
-      const questionReq =
-        useOpenCodePendingStore.getState().questions[requestId];
+      const questionReq = useOpenCodePendingStore.getState().questions[requestId];
 
       suppressQuestionFor(requestId);
       // Optimistically remove the question so the textarea shows immediately
@@ -5003,9 +4630,7 @@ export function SessionChat({
           if (match) {
             optimisticAnswersCache.set(match.id, {
               answers,
-              input:
-                ((match as ToolPart).state?.input as Record<string, unknown>) ??
-                {},
+              input: ((match as ToolPart).state?.input as Record<string, unknown>) ?? {},
             });
           }
         }
@@ -5041,12 +4666,8 @@ export function SessionChat({
     () =>
       turns.some(
         (turn) =>
-          turn.assistantMessages.some(
-            (msg) => (msg.info as any).summary === true,
-          ) ||
-          turn.assistantMessages.some((msg) =>
-            msg.parts.some((p) => p.type === 'compaction'),
-          ),
+          turn.assistantMessages.some((msg) => (msg.info as any).summary === true) ||
+          turn.assistantMessages.some((msg) => msg.parts.some((p) => p.type === 'compaction')),
       ),
     [turns],
   );
@@ -5060,9 +4681,7 @@ export function SessionChat({
     const scrollEl = scrollRef.current;
     if (!contentEl || !scrollEl) return;
 
-    const target = contentEl.querySelector<HTMLElement>(
-      `[data-turn-id="${targetMessageId}"]`,
-    );
+    const target = contentEl.querySelector<HTMLElement>(`[data-turn-id="${targetMessageId}"]`);
     if (!target) {
       clearJumpTarget();
       return;
@@ -5119,13 +4738,7 @@ export function SessionChat({
         serverId: useServerStore.getState().activeServerId,
       });
     },
-    [
-      sessionId,
-      forkSession,
-      messages,
-      session?.directory,
-      session?.workspaceID,
-    ],
+    [sessionId, forkSession, messages, session?.directory, session?.workspaceID],
   );
 
   const handleEditFork = useCallback(
@@ -5137,8 +4750,7 @@ export function SessionChat({
         directory: session?.directory,
         workspace: session?.workspaceID,
       });
-      if (msg)
-        stashForkPrompt(forkedSession.id, buildForkPrompt(msg.parts, newText));
+      if (msg) stashForkPrompt(forkedSession.id, buildForkPrompt(msg.parts, newText));
 
       const title = forkedSession.title || 'Forked session';
       openTabAndNavigate({
@@ -5149,13 +4761,7 @@ export function SessionChat({
         serverId: useServerStore.getState().activeServerId,
       });
     },
-    [
-      sessionId,
-      forkSession,
-      messages,
-      session?.directory,
-      session?.workspaceID,
-    ],
+    [sessionId, forkSession, messages, session?.directory, session?.workspaceID],
   );
 
   // ============================================================================
@@ -5213,12 +4819,10 @@ export function SessionChat({
       // SolidJS approach where part IDs are sent with the prompt request.
       const textPartId = ascendingId('prt');
       const remoteFiles = (files ?? []).filter(
-        (file): file is Extract<AttachedFile, { kind: 'remote' }> =>
-          file.kind === 'remote',
+        (file): file is Extract<AttachedFile, { kind: 'remote' }> => file.kind === 'remote',
       );
       const localFiles = (files ?? []).filter(
-        (file): file is Extract<AttachedFile, { kind: 'local' }> =>
-          file.kind === 'local',
+        (file): file is Extract<AttachedFile, { kind: 'local' }> => file.kind === 'local',
       );
       // The server (/file/upload) assigns the final, collision-free path.
       // We pass the sanitized name for the upload and use it in the
@@ -5247,8 +4851,7 @@ export function SessionChat({
       let rawOptimisticMatch: RegExpExecArray | null;
       while ((rawOptimisticMatch = rawOptimisticRegex.exec(text)) !== null) {
         const rawId = rawOptimisticMatch[1];
-        if (sessionMentionsForOptimistic.some((m) => m.value === rawId))
-          continue;
+        if (sessionMentionsForOptimistic.some((m) => m.value === rawId)) continue;
         const found = allSessions?.find((s: any) => s.id === rawId);
         rawOptimisticSessionIds.push({
           kind: 'session',
@@ -5331,8 +4934,7 @@ export function SessionChat({
       // and send as XML text references (agent reads from disk on demand, not loaded into context)
       const textPrompt = { id: textPartId, type: 'text' as const, text };
       const parts: Array<
-        | typeof textPrompt
-        | { type: 'file'; mime: string; url: string; filename: string }
+        typeof textPrompt | { type: 'file'; mime: string; url: string; filename: string }
       > = [textPrompt];
       parts.push(
         ...remoteFiles.map((file) => ({
@@ -5371,8 +4973,7 @@ export function SessionChat({
 
       // Append session reference hints for @session mentions.
       // Merge tracked mentions with any raw @ses_<id> tags typed directly.
-      const trackedSessionMentions =
-        mentions?.filter((m) => m.kind === 'session' && m.value) ?? [];
+      const trackedSessionMentions = mentions?.filter((m) => m.kind === 'session' && m.value) ?? [];
 
       // Detect raw @ses_<id> patterns in the text (e.g. @ses_2ec118d4...)
       const rawSessionIdMentions: TrackedMention[] = [];
@@ -5400,10 +5001,7 @@ export function SessionChat({
         }
       }
 
-      const allSessionMentions = [
-        ...trackedSessionMentions,
-        ...rawSessionIdMentions,
-      ];
+      const allSessionMentions = [...trackedSessionMentions, ...rawSessionIdMentions];
       if (allSessionMentions.length > 0) {
         const refs = allSessionMentions
           .map((m) => `<session_ref id="${m.value}" title="${m.label}" />`)
@@ -5525,9 +5123,7 @@ export function SessionChat({
             continue;
           }
           handleSendError();
-          throw caughtErr instanceof Error
-            ? caughtErr
-            : new Error('Couldn’t reach the server.');
+          throw caughtErr instanceof Error ? caughtErr : new Error('Couldn’t reach the server.');
         }
 
         // The SDK resolves (not rejects) on HTTP errors, returning
@@ -5573,9 +5169,7 @@ export function SessionChat({
             extracted.length <= 160
               ? extracted
               : null);
-          throw new Error(
-            detail ?? `Couldn’t send your message (HTTP ${status ?? 'unknown'}).`,
-          );
+          throw new Error(detail ?? `Couldn’t send your message (HTTP ${status ?? 'unknown'}).`);
         }
 
         // Success — the server accepted the prompt (204) and streams the
@@ -5614,9 +5208,7 @@ export function SessionChat({
   const handleStop = useCallback(() => {
     // Guard against rapid clicks — ignore if an abort is already in flight
     if (abortSession.isPending) {
-      console.log(
-        `[handleStop] Ignoring - abort already in flight for session ${sessionId}`,
-      );
+      console.log(`[handleStop] Ignoring - abort already in flight for session ${sessionId}`);
       return;
     }
     console.log(`[handleStop] Stopping session ${sessionId}`);
@@ -5822,24 +5414,19 @@ export function SessionChat({
     ],
   );
 
-  const handleFileSearch = useCallback(
-    async (query: string): Promise<string[]> => {
-      try {
-        return await searchWorkspaceFiles(query);
-      } catch {
-        return [];
-      }
-    },
-    [],
-  );
+  const handleFileSearch = useCallback(async (query: string): Promise<string[]> => {
+    try {
+      return await searchWorkspaceFiles(query);
+    } catch {
+      return [];
+    }
+  }, []);
 
   const pathname = usePathname();
   const router = useRouter();
 
   // Thread context for subsessions only (real parentID).
-  const { data: parentSessionData } = useOpenCodeSession(
-    session?.parentID || '',
-  );
+  const { data: parentSessionData } = useOpenCodeSession(session?.parentID || '');
   const threadContext = useMemo(() => {
     if (!session?.parentID || !parentSessionData) return undefined;
     const projectRoute = pathname?.match(/^\/projects\/([^/]+)\/sessions\/([^/]+)/);
@@ -5894,17 +5481,14 @@ export function SessionChat({
   // Everything that isn't "we have content" and isn't the terminal not-found
   // state is loading — including the boot window where the query is still
   // disabled (isLoading=false) waiting on the runtime.
-  const isDataLoading =
-    !session && !isNotFound && !hasMessages && !optimisticPrompt;
+  const isDataLoading = !session && !isNotFound && !hasMessages && !optimisticPrompt;
   const showOptimistic = !!optimisticPrompt && !hasMessages;
-  const isTransitioningFromWelcome =
-    !prevHasChatContentRef.current && hasChatContent;
+  const isTransitioningFromWelcome = !prevHasChatContentRef.current && hasChatContent;
   // The welcome wallpaper is the EMPTY-STATE backdrop for a *resolved* session.
   // The loading/connecting phase never reaches here (it early-returns the loader
   // below), so this only needs to exclude the not-found screen.
   const shouldShowWelcomeOverlay =
-    !isNotFound &&
-    (!hasChatContent || welcomeFadeActive || isTransitioningFromWelcome);
+    !isNotFound && (!hasChatContent || welcomeFadeActive || isTransitioningFromWelcome);
 
   // The welcome wallpaper. When SessionLayout provides a root-level wallpaper
   // layer we portal it in there so it spans the FULL session width (never
@@ -5913,7 +5497,7 @@ export function SessionChat({
   const welcomeWallpaper = shouldShowWelcomeOverlay ? (
     <div
       className={cn(
-        'absolute inset-0 z-0 pointer-events-none transition-opacity ease-out',
+        'pointer-events-none absolute inset-0 z-0 transition-opacity ease-out',
         hasChatContent ? 'opacity-0' : 'opacity-100',
       )}
       style={{ transitionDuration: `${WELCOME_FADE_MS}ms` }}
@@ -5930,7 +5514,7 @@ export function SessionChat({
   // isDataLoading flips and the full shell renders in one shot.
   if (isDataLoading) {
     return (
-      <div className="relative flex flex-col h-full bg-background" data-testid="session-chat">
+      <div className="bg-background relative flex h-full flex-col" data-testid="session-chat">
         <SessionStartingLoader stage="ready" />
       </div>
     );
@@ -5939,7 +5523,7 @@ export function SessionChat({
   return (
     <div
       className={cn(
-        'relative flex flex-col h-full',
+        'relative flex h-full flex-col pt-10 md:pt-0',
         // Transparent in the welcome state so the root-level full-bleed wallpaper
         // (portaled into SessionLayout) reads through; solid once real content
         // takes over. Same base color either way, so non-welcome is unchanged.
@@ -5981,9 +5565,12 @@ export function SessionChat({
           session loader (SessionStartingLoader) carries through here on its
           "Connecting" phase so there's never a second, different loader. */}
       {isNotFound ? (
-        <div className="flex-1 flex flex-col items-center justify-center min-h-0 gap-3 text-center px-6">
-          <div className="text-sm text-muted-foreground">
-            {tHardcodedUi.raw('componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow')}</div>
+        <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
+          <div className="text-muted-foreground text-sm">
+            {tHardcodedUi.raw(
+              'componentsSessionSessionChat.line5821JsxTextThisSessionIsNotAccessibleRightNow',
+            )}
+          </div>
           <button
             type="button"
             onClick={() => {
@@ -5992,16 +5579,17 @@ export function SessionChat({
               } catch {}
               if (typeof window !== 'undefined') window.location.assign('/');
             }}
-            className="text-sm text-primary hover:underline"
+            className="text-primary text-sm hover:underline"
           >
-            {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}</button>
+            {tHardcodedUi.raw('componentsSessionSessionChat.line5833JsxTextGoToHome')}
+          </button>
         </div>
       ) : (
-        <div ref={chatAreaRef} className="relative flex-1 min-h-0 z-10">
+        <div ref={chatAreaRef} className="relative z-10 min-h-0 flex-1">
           <div
             ref={scrollContainerCallbackRef}
             className={cn(
-              'relative flex-1 overflow-y-auto scrollbar-hide px-4 py-4 h-full [scroll-behavior:auto] z-10',
+              'scrollbar-hide relative z-10 h-full flex-1 overflow-y-auto [scroll-behavior:auto] px-4 py-4',
               shouldShowWelcomeOverlay ? 'bg-transparent' : 'bg-background',
             )}
             onMouseUp={handleChatMouseUp}
@@ -6011,35 +5599,30 @@ export function SessionChat({
             <div
               ref={contentRef}
               role="log"
-              className="mx-auto max-w-3xl min-w-0 w-full px-3 sm:px-6"
+              className="mx-auto w-full max-w-3xl min-w-0 px-3 sm:px-6"
             >
-              <div className="flex flex-col min-w-0">
+              <div className="flex min-w-0 flex-col">
                 {/* Optimistic user message */}
                 {showOptimistic && (
                   <div data-turn-id="optimistic" className="mt-12 first:mt-0">
                     <div className="flex justify-end">
-                      <div className="flex flex-col max-w-[90%] rounded-3xl rounded-br-lg bg-card border overflow-hidden">
+                      <div className="bg-card flex max-w-[90%] flex-col overflow-hidden rounded-3xl rounded-br-lg border">
                         {(() => {
-                          const {
-                            cleanText: afterReply,
-                            replyContext: optReply,
-                          } = parseReplyContext(optimisticPrompt || '');
-                          const { cleanText: afterFiles, files } =
-                            parseFileReferences(afterReply);
-                          const { cleanText: afterProjects } =
-                            parseProjectReferences(afterFiles);
+                          const { cleanText: afterReply, replyContext: optReply } =
+                            parseReplyContext(optimisticPrompt || '');
+                          const { cleanText: afterFiles, files } = parseFileReferences(afterReply);
+                          const { cleanText: afterProjects } = parseProjectReferences(afterFiles);
                           const { cleanText: afterFileMentions } =
                             parseFileMentionReferences(afterProjects);
                           const { cleanText: afterAgentMentions } =
                             parseAgentMentionReferences(afterFileMentions);
-                          const { cleanText } =
-                            parseSessionReferences(afterAgentMentions);
+                          const { cleanText } = parseSessionReferences(afterAgentMentions);
                           return (
                             <>
                               {optReply && (
-                                <div className="flex items-center gap-2 mx-3 mt-3 mb-0 px-3 py-1.5 rounded-2xl bg-primary/5 border border-primary/10">
-                                  <Reply className="size-3 text-primary/60 flex-shrink-0" />
-                                  <span className="text-xs text-muted-foreground truncate">
+                                <div className="bg-primary/5 border-primary/10 mx-3 mt-3 mb-0 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                                  <Reply className="text-primary/60 size-3 flex-shrink-0" />
+                                  <span className="text-muted-foreground truncate text-xs">
                                     {optReply.length > 150
                                       ? `${optReply.slice(0, 150)}...`
                                       : optReply}
@@ -6047,17 +5630,12 @@ export function SessionChat({
                                 </div>
                               )}
                               {files.length > 0 && (
-                                <div className="flex gap-2 p-3 pb-0 flex-wrap">
+                                <div className="flex flex-wrap gap-2 p-3 pb-0">
                                   {files.map((f, i) => (
-                                    <div
-                                      key={i}
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
+                                    <div key={i} onClick={(e) => e.stopPropagation()}>
                                       <GridFileCard
                                         filePath={f.path}
-                                        fileName={
-                                          f.path.split('/').pop() || f.path
-                                        }
+                                        fileName={f.path.split('/').pop() || f.path}
                                         onClick={() => openPreview(f.path)}
                                       />
                                     </div>
@@ -6065,7 +5643,7 @@ export function SessionChat({
                                 </div>
                               )}
                               {cleanText && (
-                                <p className="text-sm leading-relaxed whitespace-pre-wrap px-4 py-3">
+                                <p className="px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap">
                                   <HighlightMentions
                                     text={cleanText}
                                     agentNames={agentNames}
@@ -6083,37 +5661,43 @@ export function SessionChat({
                       <img
                         src="/kortix-logomark-white.svg"
                         alt="Kortix"
-                        className="dark:invert-0 invert flex-shrink-0 h-[14px] w-auto"
+                        className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
                       />
                       {isRetrying && (
                         <span className={cn('text-xs', STATUS_TEXT.warning)}>
-                          {tHardcodedUi.raw('componentsSessionSessionChat.line5927JsxTextRetryingConnection')}</span>
+                          {tHardcodedUi.raw(
+                            'componentsSessionSessionChat.line5927JsxTextRetryingConnection',
+                          )}
+                        </span>
                       )}
                     </div>
                   </div>
                 )}
 
                 {isOptimisticCompacting && !hasCompactionTurn && (
-                  <div className="space-y-3 mt-12">
-                    <div className="flex items-center gap-3 py-4 my-3">
-                      <div className="flex-1 h-px bg-border" />
-                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted/80 border border-border/60">
-                        <Layers className="size-3.5 text-muted-foreground" />
-                        <span className="text-xs font-semibold text-muted-foreground tracking-wide">
+                  <div className="mt-12 space-y-3">
+                    <div className="my-3 flex items-center gap-3 py-4">
+                      <div className="bg-border h-px flex-1" />
+                      <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                        <Layers className="text-muted-foreground size-3.5" />
+                        <span className="text-muted-foreground text-xs font-semibold tracking-wide">
                           Compaction
                         </span>
                       </div>
-                      <div className="flex-1 h-px bg-border" />
+                      <div className="bg-border h-px flex-1" />
                     </div>
                     <div className="flex items-center gap-3">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src="/kortix-logomark-white.svg"
                         alt="Kortix"
-                        className="dark:invert-0 invert flex-shrink-0 h-[14px] w-auto"
+                        className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
                       />
-                      <div className="text-sm text-muted-foreground">
-                        {tHardcodedUi.raw('componentsSessionSessionChat.line5954JsxTextCompactingSession')}</div>
+                      <div className="text-muted-foreground text-sm">
+                        {tHardcodedUi.raw(
+                          'componentsSessionSessionChat.line5954JsxTextCompactingSession',
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -6122,77 +5706,73 @@ export function SessionChat({
                     ToolActivateContext makes inline tool rows open the side
                     panel (Actions) focused on that tool, instead of expanding. */}
                 <ToolActivateContext.Provider value={toolActivate}>
-                {turns.map((turn, turnIndex) => {
-                  // Check if this turn is a compaction summary
-                  const hasCompaction =
-                    turn.assistantMessages.some(
-                      (msg) => (msg.info as any).summary === true,
-                    ) ||
-                    turn.assistantMessages.some((msg) =>
-                      msg.parts.some((p) => p.type === 'compaction'),
-                    );
+                  {turns.map((turn, turnIndex) => {
+                    // Check if this turn is a compaction summary
+                    const hasCompaction =
+                      turn.assistantMessages.some((msg) => (msg.info as any).summary === true) ||
+                      turn.assistantMessages.some((msg) =>
+                        msg.parts.some((p) => p.type === 'compaction'),
+                      );
 
-                  // Notification-only early-return removed: it rendered the
-                  // user's pty_* card but skipped turn.assistantMessages,
-                  // hiding every subsequent assistant response in that turn.
-                  // Fall through to the normal turn renderer instead.
+                    // Notification-only early-return removed: it rendered the
+                    // user's pty_* card but skipped turn.assistantMessages,
+                    // hiding every subsequent assistant response in that turn.
+                    // Fall through to the normal turn renderer instead.
 
-                  return (
-                    <div
-                      key={turn.userMessage.info.id}
-                      data-turn-id={turn.userMessage.info.id}
-                      className={turnIndex === 0 ? '' : 'mt-12'}
-                    >
-                      {/* Compaction divider — shown before the first turn after compaction */}
-                      {hasCompaction && (
-                        <div className="flex items-center gap-3 py-4 my-3">
-                          <div className="flex-1 h-px bg-border" />
-                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted/80 border border-border/60">
-                            <Layers className="size-3.5 text-muted-foreground" />
-                            <span className="text-xs font-semibold text-muted-foreground tracking-wide">
-                              Compaction
-                            </span>
+                    return (
+                      <div
+                        key={turn.userMessage.info.id}
+                        data-turn-id={turn.userMessage.info.id}
+                        className={turnIndex === 0 ? '' : 'mt-12'}
+                      >
+                        {/* Compaction divider — shown before the first turn after compaction */}
+                        {hasCompaction && (
+                          <div className="my-3 flex items-center gap-3 py-4">
+                            <div className="bg-border h-px flex-1" />
+                            <div className="bg-muted/80 border-border/60 flex items-center gap-2 rounded-2xl border px-3 py-1.5">
+                              <Layers className="text-muted-foreground size-3.5" />
+                              <span className="text-muted-foreground text-xs font-semibold tracking-wide">
+                                Compaction
+                              </span>
+                            </div>
+                            <div className="bg-border h-px flex-1" />
                           </div>
-                          <div className="flex-1 h-px bg-border" />
-                        </div>
-                      )}
-                      <SessionTurn
-                        turn={turn}
-                        allMessages={messages!}
-                        sessionId={sessionId}
-                        sessionStatus={sessionStatus}
-                        permissions={pendingPermissions}
-                        questions={pendingQuestions}
-                        agentNames={agentNames}
-                        isFirstTurn={turnIndex === 0}
-                        isBusy={isBusy}
-                        isCompaction={hasCompaction}
-                        onFork={async (userMessageId) => {
-                          setConfirmForkMessageId(userMessageId);
-                        }}
-                        onEditFork={handleEditFork}
-                        providers={providers}
-                        commandMessages={commandMessagesRef.current}
-                        commands={commands}
-                        disableToolNavigation={disableToolNavigation}
-                        onPermissionReply={handlePermissionReply}
-                      />
-                    </div>
-                  );
-                })}
+                        )}
+                        <SessionTurn
+                          turn={turn}
+                          allMessages={messages!}
+                          sessionId={sessionId}
+                          sessionStatus={sessionStatus}
+                          permissions={pendingPermissions}
+                          questions={pendingQuestions}
+                          agentNames={agentNames}
+                          isFirstTurn={turnIndex === 0}
+                          isBusy={isBusy}
+                          isCompaction={hasCompaction}
+                          onFork={async (userMessageId) => {
+                            setConfirmForkMessageId(userMessageId);
+                          }}
+                          onEditFork={handleEditFork}
+                          providers={providers}
+                          commandMessages={commandMessagesRef.current}
+                          commands={commands}
+                          disableToolNavigation={disableToolNavigation}
+                          onPermissionReply={handlePermissionReply}
+                        />
+                      </div>
+                    );
+                  })}
                 </ToolActivateContext.Provider>
 
                 {/* Busy indicator when no turns yet but session is busy */}
-                {commandError && (
-                  <TurnErrorDisplay errorText={commandError} className="mt-2" />
-                )}
+                {commandError && <TurnErrorDisplay errorText={commandError} className="mt-2" />}
                 {!showOptimistic && isBusy && turns.length === 0 && (
                   <div className="flex items-center gap-3">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src="/kortix-logomark-white.svg"
                       alt="Kortix"
-                      className="dark:invert-0 invert flex-shrink-0 h-[14px] w-auto"
+                      className="h-[14px] w-auto flex-shrink-0 invert dark:invert-0"
                     />
                   </div>
                 )}
@@ -6210,7 +5790,7 @@ export function SessionChat({
           {selectionPopup && (
             <div
               data-reply-popup
-              className="absolute z-50 animate-in fade-in-0 slide-in-from-bottom-1 duration-150"
+              className="animate-in fade-in-0 slide-in-from-bottom-1 absolute z-50 duration-150"
               style={{
                 left: `${selectionPopup.x}px`,
                 top: `${selectionPopup.y}px`,
@@ -6242,18 +5822,19 @@ export function SessionChat({
             className={cn(
               'absolute bottom-4 left-1/2 -translate-x-1/2 transition-colors duration-300 ease-out',
               showScrollButton
-                ? 'opacity-100 translate-y-0 scale-100'
-                : 'opacity-0 translate-y-4 scale-95 pointer-events-none',
+                ? 'translate-y-0 scale-100 opacity-100'
+                : 'pointer-events-none translate-y-4 scale-95 opacity-0',
             )}
           >
             <Button
               variant="outline"
               size="sm"
-              className="rounded-full h-7 text-xs bg-background/90 border-border/60 shadow-lg"
+              className="bg-background/90 border-border/60 h-7 rounded-full text-xs shadow-lg"
               onClick={smoothScrollToAbsoluteBottom}
             >
-              <ArrowDown className="size-3 mr-1" />
-              {tHardcodedUi.raw('componentsSessionSessionChat.line6095JsxTextScrollToBottom')}</Button>
+              <ArrowDown className="mr-1 size-3" />
+              {tHardcodedUi.raw('componentsSessionSessionChat.line6095JsxTextScrollToBottom')}
+            </Button>
           </div>
         </div>
       )}
@@ -6274,9 +5855,7 @@ export function SessionChat({
           onCommand={handleCommand}
           models={local.model.list}
           selectedModel={local.model.currentKey ?? null}
-          onModelChange={(m) =>
-            local.model.set(m ?? undefined, { recent: true })
-          }
+          onModelChange={(m) => local.model.set(m ?? undefined, { recent: true })}
           variants={local.model.variant.list}
           selectedVariant={local.model.variant.current ?? null}
           onVariantChange={(v) => local.model.variant.set(v ?? undefined)}
@@ -6303,8 +5882,8 @@ export function SessionChat({
                 className={cn(
                   'overflow-hidden transition-[max-height,opacity,transform] ease-in-out',
                   questionPromptVisible
-                    ? 'max-h-[520px] opacity-100 translate-y-0 duration-300'
-                    : 'max-h-0 opacity-0 -translate-y-1 duration-320 pointer-events-none',
+                    ? 'max-h-[520px] translate-y-0 opacity-100 duration-300'
+                    : 'pointer-events-none max-h-0 -translate-y-1 opacity-0 duration-320',
                 )}
               >
                 <QuestionPrompt

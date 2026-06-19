@@ -61,7 +61,7 @@ import {
 } from '@/lib/projects-client';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
-import { HomeSolid, Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
+import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarClock,
@@ -191,11 +191,11 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
                 exit={{ opacity: 0, x: -8, filter: 'blur(6px)' }}
                 transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
-                className="flex w-full items-center justify-between gap-0.5"
+                className="flex w-full items-center justify-between gap-1"
               >
                 <Button type="button" variant="ghost" size="icon" asChild>
-                  <Link href={`/projects/${projectId}`}>
-                    <HomeSolid className="size-4.5" />
+                  <Link href="/projects">
+                    <Icon.Kortix className="size-4.5" />
                   </Link>
                 </Button>
                 <div className="w-full min-w-0">

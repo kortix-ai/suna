@@ -20,7 +20,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { EntityAvatar } from '@/components/ui/entity-avatar';
 import {
   SidebarContext,
   SidebarMenu,
@@ -120,16 +119,16 @@ export function UserMenu({
   const trigger =
     variant === 'header' ? (
       <Button
-        variant="ghost"
+        variant="transparent"
         size="icon"
-        className="bg-background hover:bg-background dark:hover:bg-foreground dark:bg-foreground *:text-foreground *:dark:text-background m-0 size-8 overflow-hidden rounded-sm border"
+        className="m-0 size-8 overflow-hidden rounded-sm p-0"
       >
         <UserAvatar
           email={user.email}
-          name={user.name}
+          name={currentAccount?.name}
           avatarUrl={user.avatar}
           size="sm"
-          className="rounded-none"
+          className="size-full rounded-sm"
         />
       </Button>
     ) : (
@@ -174,7 +173,13 @@ export function UserMenu({
                 deferAfterClose(() => router.push(`/accounts/${currentAccount.account_id}`))
               }
             >
-              <EntityAvatar label={currentAccount.name} size="lg" />
+              <UserAvatar
+                email={user.email}
+                name={user.name}
+                avatarUrl={user.avatar}
+                size="lg"
+                className="border-border border"
+              />
               <div className="min-w-0 flex-1 leading-tight">
                 <div className="text-foreground truncate text-sm font-medium">
                   {currentAccount.name}

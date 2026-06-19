@@ -47,13 +47,21 @@ import * as React from 'react';
 
 import { Icon } from '@/features/icon/icon';
 import { cn } from '@/lib/utils';
+import { DialogDepthProvider, dialogContentZ, dialogOverlayZ, useDialogDepth } from '@/lib/z-stack';
 import { Suspense, useEffect, useState } from 'react';
 import { Button } from './button';
 import Hint from './hint';
 import Loading from './loading';
 
 const Modal = ({ onOpenChange, ...props }: DialogPrimitive.DialogProps) => {
-  return <DialogPrimitive.Root onOpenChange={onOpenChange} {...props} />;
+  const parentDepth = useDialogDepth();
+  const depth = parentDepth + 1;
+
+  return (
+    <DialogDepthProvider depth={depth}>
+      <DialogPrimitive.Root onOpenChange={onOpenChange} {...props} />
+    </DialogDepthProvider>
+  );
 };
 
 const ModalTrigger = DialogPrimitive.Trigger;
@@ -65,21 +73,26 @@ const ModalPortal = DialogPrimitive.Portal;
 const ModalOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
->(({ className, ...props }, ref) => (
-  <DialogPrimitive.Overlay
-    className={cn(
-      'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-[999] bg-black/65 backdrop-blur-xs duration-200',
-      className,
-    )}
-    {...props}
-    ref={ref}
-  />
-));
+>(({ className, style, ...props }, ref) => {
+  const depth = useDialogDepth();
+
+  return (
+    <DialogPrimitive.Overlay
+      className={cn(
+        'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 bg-black/65 backdrop-blur-xs duration-200',
+        className,
+      )}
+      style={{ zIndex: dialogOverlayZ(depth), ...style }}
+      {...props}
+      ref={ref}
+    />
+  );
+});
 ModalOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const ModalVariants = cva(
   cn(
-    'fixed z-[999] gap-0 border p-0 shadow-lg overflow-y-auto',
+    'fixed gap-0 border p-0 shadow-lg overflow-y-auto',
     'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 duration-200',
     'lg:top-[50%] lg:left-[50%] lg:grid lg:w-full lg:max-w-lg lg:-translate-x-1/2 lg:-translate-y-1/2 lg:data-[state=closed]:zoom-out-95 lg:data-[state=open]:zoom-in-95 lg:rounded-xl',
     'lg:flex lg:h-full lg:flex-col space-y-4',
@@ -99,7 +112,7 @@ const ModalVariants = cva(
         right:
           'inset-y-0 right-0 h-full lg:h-fit w-3/4 border-l rounded-l-xl max-lg:data-[state=closed]:slide-out-to-right max-lg:data-[state=open]:slide-in-from-right sm:max-w-sm',
         fullscreen:
-          'inset-0 z-[999] bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 dark:bg-black/85',
+          'inset-0 bg-black/60 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 dark:bg-black/85',
       },
     },
     defaultVariants: {
@@ -137,43 +150,49 @@ const ModalContentInner = React.forwardRef<
       closeButtonChildren,
       closeOnOutsideClick = true,
       overlayClassName,
+      style,
       ...props
     },
     ref,
-  ) => (
-    <DialogPrimitive.Content
-      ref={ref}
-      className={cn(
-        ModalVariants({ side, className: modalClassName, variant }),
-        className,
-        'rounded-xl rounded-b-none lg:rounded-b-xl',
-      )}
-      onPointerDownOutside={closeOnOutsideClick ? undefined : (e) => e.preventDefault()}
-      {...props}
-    >
-      {children}
+  ) => {
+    const depth = useDialogDepth();
 
-      <div className="absolute top-3 right-3 flex items-center justify-end gap-2">
-        {closeButtonChildren}
-        {showCloseButton && (
-          <Hint label="Close" className="z-[9999]" side="top">
-            <ModalClose asChild>
-              <Button
-                variant="ghost"
-                className={cn(
-                  'size-8 p-0 text-xs font-semibold focus:outline-none',
-                  closeClassName,
-                )}
-              >
-                <Icon.Close className="text-primary size-4 stroke-1" />
-                <span className="sr-only">Close</span>
-              </Button>
-            </ModalClose>
-          </Hint>
+    return (
+      <DialogPrimitive.Content
+        ref={ref}
+        className={cn(
+          ModalVariants({ side, className: modalClassName, variant }),
+          className,
+          'rounded-xl rounded-b-none lg:rounded-b-xl',
         )}
-      </div>
-    </DialogPrimitive.Content>
-  ),
+        style={{ zIndex: dialogContentZ(depth), ...style }}
+        onPointerDownOutside={closeOnOutsideClick ? undefined : (e) => e.preventDefault()}
+        {...props}
+      >
+        {children}
+
+        <div className="absolute top-3 right-3 flex items-center justify-end gap-2">
+          {closeButtonChildren}
+          {showCloseButton && (
+            <Hint label="Close" className="z-[9999]" side="top">
+              <ModalClose asChild>
+                <Button
+                  variant="ghost"
+                  className={cn(
+                    'size-8 p-0 text-xs font-semibold focus:outline-none',
+                    closeClassName,
+                  )}
+                >
+                  <Icon.Close className="text-primary size-4 stroke-1" />
+                  <span className="sr-only">Close</span>
+                </Button>
+              </ModalClose>
+            </Hint>
+          )}
+        </div>
+      </DialogPrimitive.Content>
+    );
+  },
 );
 ModalContentInner.displayName = 'ModalContentInner';
 

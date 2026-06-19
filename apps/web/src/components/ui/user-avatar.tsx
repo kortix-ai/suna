@@ -2,6 +2,7 @@
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import { chalkColors } from '@kortix/shared';
 import * as React from 'react';
 
 function initialsFromIdentity(name: string | undefined, email: string): string {
@@ -53,6 +54,7 @@ export function UserAvatar({
     () => initialsFromIdentity(name ?? undefined, email || ''),
     [name, email],
   );
+  const chalk = chalkColors(`${name}`);
 
   return (
     <Avatar
@@ -68,8 +70,13 @@ export function UserAvatar({
       <AvatarFallback
         className={cn(
           'border-border text-foreground border bg-transparent font-semibold',
-          variant === 'primary' && 'bg-primary text-primary-foreground',
+          // variant === 'primary' && 'bg-primary text-primary-foreground',
         )}
+        style={{
+          backgroundColor: chalk.background,
+          color: chalk.foreground,
+          borderColor: chalk.border,
+        }}
       >
         {initials || '?'}
       </AvatarFallback>

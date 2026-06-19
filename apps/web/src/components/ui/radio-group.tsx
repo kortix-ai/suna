@@ -94,7 +94,7 @@ function RadioGroupItem({
           <span
             className={cn(
               'text-sm transition-[color,font-weight]',
-              'text-muted-foreground',
+              'text-foreground',
               'peer-data-[state=checked]:text-foreground peer-data-[state=checked]:font-medium',
               disabled && 'text-muted-foreground',
             )}
@@ -105,7 +105,7 @@ function RadioGroupItem({
         {description != null && (
           <span
             data-slot="radio-group-item-description"
-            className="text-muted-foreground block text-xs"
+            className="text-muted-foreground block text-[13px]"
           >
             {description}
           </span>

@@ -54,32 +54,32 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
             viewBox="0 0 200 200"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
-            className="size-4"
+            className="size-4 text-foreground"
           >
             <path
               d="M41.6667 75C55.4738 75 66.6667 63.8071 66.6667 50C66.6667 36.1929 55.4738 25 41.6667 25C27.8596 25 16.6667 36.1929 16.6667 50C16.6667 63.8071 27.8596 75 41.6667 75Z"
-              stroke="black"
+              stroke="currentColor"
               strokeWidth="16.6667"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
             <path
               d="M41.6667 75V175"
-              stroke="black"
+              stroke="currentColor"
               strokeWidth="16.6667"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
             <path
               d="M100 50H141.667C146.087 50 150.326 51.7559 153.452 54.8816C156.577 58.0072 158.333 62.2464 158.333 66.6667V125"
-              stroke="black"
+              stroke="currentColor"
               strokeWidth="16.6667"
               strokeLinecap="round"
               strokeLinejoin="round"
             />
             <path
               d="M158.333 175C172.14 175 183.333 163.807 183.333 150C183.333 136.193 172.14 125 158.333 125C144.526 125 133.333 136.193 133.333 150C133.333 163.807 144.526 175 158.333 175Z"
-              stroke="black"
+              stroke="currentColor"
               strokeWidth="16.6667"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -87,7 +87,7 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
             />
             <path
               d="M125 75L100 50L125 25"
-              stroke="black"
+              stroke="currentColor"
               strokeWidth="16.6667"
               strokeLinecap="round"
               strokeLinejoin="round"
@@ -112,39 +112,39 @@ export function SessionChangesIndicator({ sessionId }: { sessionId: string }) {
                 viewBox="0 0 200 200"
                 fill="none"
                 xmlns="http://www.w3.org/2000/svg"
-                className="size-4"
+                className="size-4 text-foreground"
               >
                 <path
                   d="M41.6667 75C55.4738 75 66.6667 63.8071 66.6667 50C66.6667 36.1929 55.4738 25 41.6667 25C27.8596 25 16.6667 36.1929 16.6667 50C16.6667 63.8071 27.8596 75 41.6667 75Z"
-                  stroke="black"
+                  stroke="currentColor"
                   strokeWidth="16.6667"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
                 <path
                   d="M41.6667 75V175"
-                  stroke="black"
+                  stroke="currentColor"
                   strokeWidth="16.6667"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
                 <path
                   d="M100 50H141.667C146.087 50 150.326 51.7559 153.452 54.8816C156.577 58.0072 158.333 62.2464 158.333 66.6667V125"
-                  stroke="black"
+                  stroke="currentColor"
                   strokeWidth="16.6667"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
                 <path
                   d="M158.333 175C172.14 175 183.333 163.807 183.333 150C183.333 136.193 172.14 125 158.333 125C144.526 125 133.333 136.193 133.333 150C133.333 163.807 144.526 175 158.333 175Z"
-                  stroke="black"
+                  stroke="currentColor"
                   strokeWidth="16.6667"
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 />
                 <path
                   d="M125 75L100 50L125 25"
-                  stroke="black"
+                  stroke="currentColor"
                   strokeWidth="16.6667"
                   strokeLinecap="round"
                   strokeLinejoin="round"

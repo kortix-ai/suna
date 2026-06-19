@@ -9,7 +9,6 @@ import { AppsOverlay } from '@/components/projects/apps/apps-overlay';
 import { CustomizeOverlay } from '@/components/projects/customize/customize-overlay';
 import { PersonalOnboardingWelcome } from '@/components/projects/personal-onboarding-welcome';
 import { ProjectOnboardingWizard } from '@/components/projects/project-onboarding-wizard';
-import { SidebarTrigger } from '@/components/ui/sidebar';
 import { errorToast } from '@/components/ui/toast';
 import { ProjectTabBar } from '@/features/co-worker/project-header/project-tab-bar';
 import { ProjectSidebar } from '@/features/co-worker/project-sidebar/project-sidebar';
@@ -110,7 +109,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
     if (activeSessionId) openTab(projectId, activeSessionId);
   }, [projectId, activeSessionId, openTab]);
 
-  const showTabBar = !disableTabSelector && openTabIds.length > 0;
+  const showProjectHeader = openTabIds.length > 0 || activeSessionId !== null;
   const isSwitchingProject = useIsSwitchingProject();
 
   if (authLoading || !user) {
@@ -133,7 +132,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
           </Suspense>
 
           <AnimatePresence initial={false}>
-            {showTabBar ? (
+            {showProjectHeader ? (
               <motion.div
                 key="project-tab-bar"
                 initial={{ height: 0, opacity: 0 }}
@@ -142,20 +141,7 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
                 transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
                 className="overflow-hidden"
               >
-                <ProjectTabBar projectId={projectId} />
-              </motion.div>
-            ) : openTabIds.length === 0 && activeSessionId === null ? (
-              <motion.div
-                key="project-mobile-menu-bar"
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-                className="overflow-hidden"
-              >
-                <div className="bg-sidebar flex h-[calc(38px+env(safe-area-inset-top,0px))] items-center pt-[env(safe-area-inset-top,0px)] pl-1.5 md:hidden">
-                  <SidebarTrigger />
-                </div>
+                <ProjectTabBar projectId={projectId} hideTabSelector={disableTabSelector} />
               </motion.div>
             ) : null}
           </AnimatePresence>
@@ -163,7 +149,9 @@ export function ProjectShell({ projectId, initialSidebarOpen, children }: Projec
           <div
             className={cn(
               'bg-background border-border relative flex min-h-0 flex-1 flex-col overflow-hidden border-l-[1.5px]',
-              showTabBar ? 'rounded-t-xl border-t-[1.5px] lg:rounded-tl-lg lg:rounded-tr-none' : '',
+              showProjectHeader
+                ? 'rounded-t-xl border-t-[1.5px] lg:rounded-tl-lg lg:rounded-tr-none'
+                : '',
             )}
           >
             {children}

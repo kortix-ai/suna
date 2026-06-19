@@ -18,7 +18,7 @@ import { desktopPlatform, isDesktop } from '@/lib/desktop';
 import { listProjectSessions, type ProjectSession } from '@/lib/projects-client';
 import { cn } from '@/lib/utils';
 import { useProjectSessionTabsStore } from '@/stores/project-session-tabs-store';
-import { Share } from '@mynaui/icons-react';
+import { HomeSolid, Share } from '@mynaui/icons-react';
 import Link from 'next/link';
 
 function ProjectSessionTab({
@@ -83,7 +83,13 @@ function ProjectSessionTab({
   );
 }
 
-export function ProjectTabBar({ projectId }: { projectId: string }) {
+export function ProjectTabBar({
+  projectId,
+  hideTabSelector = false,
+}: {
+  projectId: string;
+  hideTabSelector?: boolean;
+}) {
   const sidebar = useSidebar();
   const router = useRouter();
   const pathname = usePathname();
@@ -149,43 +155,61 @@ export function ProjectTabBar({ projectId }: { projectId: string }) {
 
   return (
     <div
-      className="bg-sidebar relative flex shrink-0 items-stretch overflow-hidden py-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))] pr-2"
+      className="bg-sidebar relative flex min-w-0 flex-1 items-stretch overflow-hidden px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top,0px))] lg:pr-2 lg:pl-0"
       role="tablist"
     >
-      <div className="flex shrink-0 items-center pr-1 pl-1.5 md:hidden">
-        <div className="bg-sidebar flex items-center pt-[env(safe-area-inset-top,0px)] pl-1.5 md:hidden">
+      <div className="flex shrink-0 items-center px-1.5">
+        <div className="flex items-center md:hidden">
           <SidebarTrigger />
         </div>
+        <Button
+          type="button"
+          variant={isProjectHome ? 'secondary' : 'ghost'}
+          size="icon"
+          className="shrink-0"
+          asChild
+        >
+          <Link href={`/projects/${projectId}`}>
+            <HomeSolid className="size-4.5" />
+          </Link>
+        </Button>
       </div>
 
-      <FadedScrollArea
-        orientation="horizontal"
-        fadeColor="from-sidebar"
-        className="flex items-stretch px-1"
+      {!hideTabSelector && (
+        <FadedScrollArea
+          orientation="horizontal"
+          fadeColor="from-sidebar"
+          className="min-w-0 flex-1 items-stretch px-1"
+        >
+          <div className="flex items-stretch gap-1">
+            {openTabIds.map((tabId) => {
+              const isActive = isTabActive(tabId);
+              const tabSession = sessionById.get(tabId);
+              const label = tabSession
+                ? sessionDisplayLabel(tabSession)
+                : `session ${tabId.slice(0, 8)}`;
+
+              return (
+                <ProjectSessionTab
+                  key={tabId}
+                  tabId={tabId}
+                  label={label}
+                  isActive={isActive}
+                  href={hrefForTab(tabId)}
+                  onClose={closeProjectTab}
+                />
+              );
+            })}
+          </div>
+        </FadedScrollArea>
+      )}
+
+      <div
+        className={cn(
+          'bg-sidebar relative z-20 flex h-full shrink-0 items-center gap-1.5',
+          hideTabSelector && 'ml-auto',
+        )}
       >
-        <div className="flex items-stretch gap-1">
-          {openTabIds.map((tabId) => {
-            const isActive = isTabActive(tabId);
-            const tabSession = sessionById.get(tabId);
-            const label = tabSession
-              ? sessionDisplayLabel(tabSession)
-              : `session ${tabId.slice(0, 8)}`;
-
-            return (
-              <ProjectSessionTab
-                key={tabId}
-                tabId={tabId}
-                label={label}
-                isActive={isActive}
-                href={hrefForTab(tabId)}
-                onClose={closeProjectTab}
-              />
-            );
-          })}
-        </div>
-      </FadedScrollArea>
-
-      <div className="bg-sidebar relative z-20 flex h-full shrink-0 items-center gap-1.5">
         {activeSession && (
           <>
             <SessionVisibilityBadge session={activeSession} />

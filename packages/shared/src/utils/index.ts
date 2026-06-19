@@ -8,3 +8,4 @@ export * from "./unicode";
 export * from "./credit-formatter";
 export * from "./string";
 export * from "./format-relative";
+export * from "./chalk-colors";

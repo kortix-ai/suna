@@ -1,23 +1,25 @@
 'use client';
 
 import Cal, { getCalApi } from '@calcom/embed-react';
-import { ArrowRight, Check, Loader2, Mail } from 'lucide-react';
+import { Check, Mail } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { isWorkEmail } from '@/lib/personal-email';
 
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { InfoBanner } from '@/components/ui/info-banner';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import Loading from '@/components/ui/loading';
+import {
+  Modal,
+  ModalBody,
+  ModalContent,
+  ModalDescription,
+  ModalFooter,
+  ModalHeader,
+  ModalTitle,
+} from '@/components/ui/modal';
 import {
   Select,
   SelectContent,
@@ -26,21 +28,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Shared demo qualifier
-//
-// One screening gate in front of EVERY booking calendar (public /contact demo
-// AND the in-app "Book a call with Marko" widget). Kortix is sold to COMPANIES
-// only, so we always capture name + work email + company, then route on size:
-//   • 11+ employees → the booking calendar (answers prefilled)
-//   • 1–10          → no call; we store the lead and confirm "request received"
-//
-// Cal only prefills a custom field when the config KEY equals its identifier and
-// (for a dropdown) the VALUE matches an option verbatim — so the identifiers +
-// COMPANY_SIZES values mirror the Cal "Booking questions" config 1:1. A target
-// event that lacks a given field simply ignores that prefill key (harmless).
-// ─────────────────────────────────────────────────────────────────────────────
+import { errorToast } from '@/components/ui/toast';
+import Link from 'next/link';
 
 const CAL_FIELD_COMPANY_SIZE = 'Company_size';
 const CAL_FIELD_COMPANY_NAME = 'Company_name';
@@ -66,26 +55,20 @@ const sizeQualifies = (s: CompanySize, email: string) =>
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export interface DemoQualifierDialogProps {
+export interface DemoQualifierModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Cal event to send qualified leads to (e.g. `team/kortix/demo`). */
   calLink: string;
-  /** A namespace UNIQUE to this calLink so embed UI config stays isolated. */
   calNamespace: string;
-  /** Capture label so we can tell which surface a lead came from. */
   source?: string;
   title?: string;
   description?: string;
-  /** Prefill for logged-in surfaces (the in-app widget). */
   defaultName?: string;
   defaultEmail?: string;
-  /** Fired once a qualified lead completes a booking (e.g. so an onboarding
-   *  wizard can mark the step done and advance). */
   onBookingSuccessful?: () => void;
 }
 
-export function DemoQualifierDialog({
+export function DemoQualifierModal({
   open,
   onOpenChange,
   calLink,
@@ -96,7 +79,7 @@ export function DemoQualifierDialog({
   defaultName = '',
   defaultEmail = '',
   onBookingSuccessful,
-}: DemoQualifierDialogProps) {
+}: DemoQualifierModalProps) {
   const [step, setStep] = useState<'form' | 'cal' | 'received'>('form');
   const [submitting, setSubmitting] = useState(false);
   const [name, setName] = useState(defaultName);
@@ -108,12 +91,10 @@ export function DemoQualifierDialog({
 
   const companySizes = useMemo(() => companySizesForEmail(email), [email]);
 
-  // 1–10 only applies to work-email leads; drop it if they switch to personal.
   useEffect(() => {
     if (size === '1-10' && !isWorkEmail(email)) setSize(null);
   }, [email, size]);
 
-  // Start on the form each time the dialog opens.
   useEffect(() => {
     if (open) {
       setStep('form');
@@ -121,7 +102,6 @@ export function DemoQualifierDialog({
     }
   }, [open]);
 
-  // Apply prefill if it arrives after mount (logged-in user resolves late).
   useEffect(() => {
     if (defaultName) setName((n) => n || defaultName);
   }, [defaultName]);
@@ -145,21 +125,26 @@ export function DemoQualifierDialog({
 
   const submit = useCallback(async () => {
     if (!EMAIL_RE.test(email.trim())) {
-      setError('Enter a valid work email so we can reach you.');
+      const message = 'Enter a valid work email so we can reach you.';
+      setError(message);
+      errorToast(message);
       return;
     }
     if (!company.trim()) {
-      setError('Tell us your company name.');
+      const message = 'Tell us your company name.';
+      setError(message);
+      errorToast(message);
       return;
     }
     if (!size) {
-      setError('Pick your company size.');
+      const message = 'Pick your company size.';
+      setError(message);
+      errorToast(message);
       return;
     }
     setError(null);
     const qualified = sizeQualifies(size, email);
 
-    // Persist the lead — best-effort: capture failures must never block routing.
     setSubmitting(true);
     try {
       await fetch('/api/demo-request', {
@@ -176,7 +161,9 @@ export function DemoQualifierDialog({
         }),
       });
     } catch {
-      /* swallow — routing happens regardless */
+      errorToast('Could not save demo request', {
+        description: "We'll still route you to the next step.",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -184,7 +171,6 @@ export function DemoQualifierDialog({
     setStep(qualified ? 'cal' : 'received');
   }, [email, size, name, company, goal, source]);
 
-  // Answers ride into the booking as prefill, keyed by each Cal field identifier.
   const calConfig: Record<string, string> = { layout: 'month_view' };
   if (name.trim()) calConfig.name = name.trim();
   if (email.trim()) calConfig.email = email.trim();
@@ -193,13 +179,14 @@ export function DemoQualifierDialog({
   if (goal.trim()) calConfig.notes = `Goal: ${goal.trim()}`;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Modal open={open} onOpenChange={onOpenChange}>
       {step === 'cal' ? (
-        <DialogContent
-          hideCloseButton
-          className="max-w-[min(980px,95vw)] gap-0 overflow-hidden rounded-2xl border-none bg-transparent p-0 shadow-none"
+        <ModalContent
+          showCloseButton={false}
+          variant="transparent"
+          className="max-w-[min(980px,95vw)] gap-0 overflow-hidden rounded-2xl border-none bg-transparent p-0 shadow-none lg:h-auto"
         >
-          <DialogTitle className="sr-only">{title}</DialogTitle>
+          <ModalTitle className="sr-only">{title}</ModalTitle>
           <div className="h-[82vh] max-h-[780px] overflow-hidden rounded-2xl">
             <Cal
               namespace={calNamespace}
@@ -208,21 +195,25 @@ export function DemoQualifierDialog({
               config={calConfig}
             />
           </div>
-        </DialogContent>
+        </ModalContent>
       ) : step === 'form' ? (
-        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[420px]">
+        <ModalContent
+          variant="base"
+          className="gap-0 space-y-0 overflow-hidden p-0 sm:max-w-[420px]"
+        >
           <form
+            className="contents"
             onSubmit={(e) => {
               e.preventDefault();
               void submit();
             }}
           >
-            <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-              <DialogTitle>{title}</DialogTitle>
-              <DialogDescription>{description}</DialogDescription>
-            </DialogHeader>
+            <ModalHeader className="pb-4">
+              <ModalTitle>{title}</ModalTitle>
+              <ModalDescription>{description}</ModalDescription>
+            </ModalHeader>
 
-            <div className="space-y-4 px-6 py-5">
+            <ModalBody className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="dq-name">
                   Name <span className="text-destructive">*</span>
@@ -303,34 +294,29 @@ export function DemoQualifierDialog({
               </div>
 
               {error && <p className="text-destructive text-sm">{error}</p>}
-            </div>
+            </ModalBody>
 
-            <DialogFooter className="justify-between px-4 pb-4">
+            <ModalFooter className="justify-between px-4 pb-4 sm:justify-between">
               <span className="text-muted-foreground text-xs">No spam — a human replies.</span>
-              <Button type="submit" disabled={submitting}>
+              <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
                 {submitting ? (
                   <>
-                    <Loader2 className="animate-spin" />
+                    <Loading className="animate-spin" />
                     Sending…
                   </>
                 ) : (
-                  <>
-                    Continue
-                    <ArrowRight />
-                  </>
+                  <>Continue</>
                 )}
               </Button>
-            </DialogFooter>
+            </ModalFooter>
           </form>
-        </DialogContent>
+        </ModalContent>
       ) : (
-        // Disqualified (1–10). Kortix is enterprise-only, so there's no
-        // self-serve path — we've stored the lead; just confirm we got it.
-        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[420px]">
-          <DialogHeader className="border-border/60 border-b px-6 pt-6 pb-4">
-            <DialogTitle>Request received</DialogTitle>
-            <DialogDescription>Thanks — we&apos;ve got your details.</DialogDescription>
-          </DialogHeader>
+        <ModalContent variant="base" className="gap-0 overflow-hidden p-0 sm:max-w-[420px]">
+          <ModalHeader className="border-border/60 border-b px-6 pt-6 pb-4">
+            <ModalTitle>Request received</ModalTitle>
+            <ModalDescription>Thanks — we&apos;ve got your details.</ModalDescription>
+          </ModalHeader>
 
           <div className="space-y-4 px-6 py-5">
             <InfoBanner tone="success" icon={Check} title="We'll be in touch">
@@ -342,17 +328,19 @@ export function DemoQualifierDialog({
             </p>
           </div>
 
-          <DialogFooter>
-            <Button asChild variant="ghost">
-              <a href={`mailto:${CONTACT_EMAIL}`}>
+          <ModalFooter className="sm:justify-between">
+            <Button asChild variant="ghost" className="w-full sm:w-auto">
+              <Link href={`mailto:${CONTACT_EMAIL}`}>
                 <Mail />
                 Email us
-              </a>
+              </Link>
             </Button>
-            <Button onClick={() => onOpenChange(false)}>Done</Button>
-          </DialogFooter>
-        </DialogContent>
+            <Button onClick={() => onOpenChange(false)} className="w-full sm:w-auto">
+              Done
+            </Button>
+          </ModalFooter>
+        </ModalContent>
       )}
-    </Dialog>
+    </Modal>
   );
 }
