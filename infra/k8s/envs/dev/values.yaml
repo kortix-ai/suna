@@ -6,7 +6,7 @@
 # Immutable dev tag (CI bumps to dev-<sha8> on each main push). Bootstrap value
 # is :dev-latest until the first deploy-dev-eks run pins an immutable sha.
 image:
-  tag: "dev-6a412378"
+  tag: "dev-d2efff1f"
 kortixVersion: ""
 env:
   internalKortixEnv: dev
@@ -18,6 +18,21 @@ env:
 # experimental region.
 extraEnv:
   KORTIX_WARM_SNAPSHOT_ENABLED: "false"
+  # Warm pool, Stage-2 (clone-at-park) — the lever that restores <6s starts for
+  # returning/2nd+ sessions, now that dev serves from EKS (reliable region). It's
+  # a pure accelerator: any claim miss/error falls through to the unchanged cold
+  # provision (session-runtime-allocator.ts:83-88), so it can only speed starts
+  # up. CLONE_AT_PARK=1 is REQUIRED for <6s: the spare clones the repo + warms
+  # opencode AT PARK (off the hot path), so a claim is a local `git checkout -B`
+  # (~0.5s, no network) instead of re-cloning (~9s). MAX_TOTAL is the hard fleet
+  # cap (also the master enable: warmPoolEnabled() = MAX_TOTAL>0) — kept low for
+  # the small dev pod; SIZE=1 spare per present project. Does NOT help a brand-new
+  # project's first session (cold). Must live here (k8s env), NOT in .env.dev —
+  # unit-warm-pool.test.ts asserts the pool is off there.
+  KORTIX_WARM_POOL_MAX_TOTAL: "3"
+  KORTIX_WARM_POOL_SIZE: "1"
+  KORTIX_WARM_POOL_CLONE_AT_PARK: "true"
+  KORTIX_WARM_POOL_PRESENCE_MINUTES: "15"
 # PRE-CUTOVER: dev-api-eks is the candidate while dev-api.kortix.com is still
 # served by ECS, so EKS runs API-only and ECS keeps ownership of the dev-tier
 # singleton workers (one Postgres leader lease is shared across both on the dev

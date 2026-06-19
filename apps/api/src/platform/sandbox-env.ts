@@ -12,6 +12,11 @@
  * mint explicitly.
  *
  * See router/config/proxy-services.ts for the upstream keys these map to.
+ *
+ * The sandbox is ALSO given `KORTIX_FRONTEND_URL` (a public, non-secret URL) so
+ * the agent/CLI can build user-facing dashboard links without string-munging the
+ * API host — see ./sandbox-frontend-url.ts. This module stays import-free of
+ * `config` so its predicates remain pure/testable without booting the server.
  */
 
 /**
