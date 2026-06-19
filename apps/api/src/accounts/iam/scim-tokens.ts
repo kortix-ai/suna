@@ -13,7 +13,7 @@ import {
   revokeScimToken,
 } from '../../repositories/scim';
 import { iamRouter, AccountIdParam, ScimTokenSchema } from './app';
-import { auditIam, readBody } from './helpers';
+import { auditIam, readBody, requireEntitlement } from './helpers';
 
 iamRouter.openapi(
   createRoute({
@@ -59,13 +59,15 @@ iamRouter.openapi(
     request: { params: AccountIdParam, body: { content: { 'application/json': { schema: z.object({ name: z.string(), expires_at: z.string().optional(), expiresAt: z.string().optional() }) } } } },
     responses: {
       201: json(ScimTokenSchema, 'The minted SCIM token (secret shown once)'),
-      ...errors(400, 401, 403),
+      ...errors(400, 401, 402, 403),
     },
   }),
   async (c: any) => {
   const userId = c.get('userId') as string;
   const accountId = c.req.param('accountId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const denied = await requireEntitlement(c, accountId, 'scim');
+  if (denied) return denied;
 
   const body = await readBody(c);
   const name = typeof body.name === 'string' ? body.name.trim() : '';
@@ -136,7 +138,7 @@ iamRouter.openapi(
     request: { params: z.object({ accountId: z.string(), tokenId: z.string() }) },
     responses: {
       200: json(z.object({ revoked: z.boolean() }), 'Revocation result'),
-      ...errors(401, 403, 404),
+      ...errors(401, 402, 403, 404),
     },
   }),
   async (c: any) => {
@@ -144,6 +146,8 @@ iamRouter.openapi(
   const accountId = c.req.param('accountId');
   const tokenId = c.req.param('tokenId');
   await assertAuthorized(userId, accountId, ACCOUNT_ACTIONS.ACCOUNT_WRITE);
+  const denied = await requireEntitlement(c, accountId, 'scim');
+  if (denied) return denied;
 
   const ok = await revokeScimToken(accountId, tokenId);
   if (!ok) return c.json({ error: 'token not found or already revoked' }, 404);

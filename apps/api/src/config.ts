@@ -132,10 +132,33 @@ const envSchema = z.object({
   // claim path is skipped and every create cold-provisions, byte-identically to
   // today). Set > 0 to enable — only after live-validating the claim path.
   KORTIX_WARM_POOL_MAX_TOTAL:      optInt(0),
+  // Stage-2 pre-warm: provision each spare WITH its project identity (repo, no
+  // session) and tell the daemon (KORTIX_WARM_POOL_CLONE_AT_PARK) to clone the
+  // base branch + warm the opencode project plugin AT PARK — so a claim only
+  // creates the session branch locally + adopts the warm opencode (~0.5s claim
+  // vs ~9s when the spare clones+warms on claim). Default off; turns a generic
+  // pool into per-project warm boxes (idle cost per hot project), so enable only
+  // for projects with predictable imminent sessions and after live-validation.
+  KORTIX_WARM_POOL_CLONE_AT_PARK:  optBoolFalse,
   // Presence window: only keep a warm pool while a user has touched the project
   // (authenticated portal activity) within this many minutes. Closing the tab
   // lets the pool reap, so we never hold idle boxes 24/7 for absent users.
   KORTIX_WARM_POOL_PRESENCE_MINUTES: optInt(15),
+
+  // ── Pause / resume tuning ─────────────────────────────────────────────────
+  // The sandbox idle→stop / stop→archive / →delete intervals live below as
+  // KORTIX_SANDBOX_AUTOSTOP_MINUTES / AUTOARCHIVE_MINUTES / AUTODELETE_MINUTES
+  // (consumed by daytonaLifecycle()). Main's 3-day auto-archive default already
+  // keeps a hibernated box in the fast-resume "stopped" tier far longer than the
+  // earlier 120m, so the pause/resume win is subsumed there.
+  // Pre-resume: on a user returning to a project, proactively provider.start
+  // their most-recently-stopped session(s) so the ~8s resume overlaps the
+  // user's navigation and the session is ready by the time they open it. Reuses
+  // resumeStoppedSandbox (idempotent with the on-open resume). GATED OFF by
+  // default (speculative compute — starts a box the user might not open). Enable
+  // after validating; tune how many recent sessions to pre-resume per project.
+  KORTIX_PRERESUME_ENABLED:         optBoolFalse,
+  KORTIX_PRERESUME_MAX_PER_PROJECT: optInt(1),
 
   // ── Legacy migration — reaching legacy JustAVPS VMs + backup storage ──────
   // The new backend has no JustAVPS provider, but it must reach legacy VMs to
@@ -215,6 +238,16 @@ const envSchema = z.object({
   // from the full-size Dockerfile image instead (slower refills, 2/4/20 spec).
   KORTIX_WARM_POOL_FULL_SIZE:  optBoolFalse,
 
+  // When a template's content hash changes and a fresh snapshot is built, drop
+  // the now-superseded predecessor immediately (reap-on-repoint) instead of
+  // leaving it for the lazy, pressure-gated quota GC. Keeps steady state at ~1
+  // snapshot per lineage so the org-wide 100-snapshot quota can't fill with
+  // stale builds (dev auto-deploys churn the default ~20×/day). Best-effort;
+  // only deletes managed (kortix-default-/tpl-/wproj-) names that no other
+  // template row still references. On by default; boot auto-heal covers the rare
+  // cross-env race where another env's row pointed at the reaped (identical) name.
+  KORTIX_SNAPSHOT_REAP_PREDECESSOR: optBoolTrue,
+
   // ── Platinum — Sandbox provisioning (conditional: required if platinum provider enabled) ──
   // Platinum is our own Cloud Hypervisor microVM API. PLATINUM_API_KEY is a
   // pt_live_… key; PLATINUM_API_URL is the control-plane base
@@ -238,6 +271,23 @@ const envSchema = z.object({
   // and deployments router which still reference it.
   SANDBOX_PORT_BASE:           optInt(14000),
   SANDBOX_CONTAINER_NAME:      z.string().optional().transform(v => v || undefined).default('kortix-sandbox'),
+
+  // ── Sandbox lifecycle (Daytona auto-stop / auto-archive / auto-delete) ────
+  // Set as SDK create() params so a box self-manages even if the API/tunnel
+  // that created it dies (orphaned local-dev & ephemeral-env sessions are the
+  // main leak source). All in MINUTES.
+  //   autostop   → idle box stops, compute billing ends. CLAMPED to >=1 at the
+  //                use site so a box is NEVER created persistent (a 0 here once
+  //                leaked 500+ never-stopping boxes via the warm-pool path).
+  //                This is what actually stops the money burn.
+  //   autoarchive→ stopped box moves to cold storage after a few days (cheap,
+  //                still resumable; kept warm-resumable in the meantime).
+  //   autodelete → NEVER (-1). A sandbox is only ever removed when a user
+  //                explicitly deletes the session — auto-stop + cold archive
+  //                make an idle box nearly free, so we never destroy disk.
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES:    optInt(15),
+  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: optInt(4320),   // 3 days
+  KORTIX_SANDBOX_AUTODELETE_MINUTES:  optInt(-1),     // never auto-delete
 
   // ── Internal Service Key (auto-generated if missing — never fails) ───────
   INTERNAL_SERVICE_KEY:        optStr,
@@ -493,7 +543,10 @@ export const config = {
   KORTIX_GIT_PROXY: env.KORTIX_GIT_PROXY,
   KORTIX_WARM_POOL_SIZE: env.KORTIX_WARM_POOL_SIZE,
   KORTIX_WARM_POOL_MAX_TOTAL: env.KORTIX_WARM_POOL_MAX_TOTAL,
+  KORTIX_WARM_POOL_CLONE_AT_PARK: env.KORTIX_WARM_POOL_CLONE_AT_PARK,
   KORTIX_WARM_POOL_PRESENCE_MINUTES: env.KORTIX_WARM_POOL_PRESENCE_MINUTES,
+  KORTIX_PRERESUME_ENABLED: env.KORTIX_PRERESUME_ENABLED,
+  KORTIX_PRERESUME_MAX_PER_PROJECT: env.KORTIX_PRERESUME_MAX_PER_PROJECT,
 
   // ─── Legacy migration ─────────────────────────────────────────────────────
   JUSTAVPS_PROXY_DOMAIN: env.JUSTAVPS_PROXY_DOMAIN,
@@ -540,6 +593,12 @@ export const config = {
   DAYTONA_WARM_TARGET: env.DAYTONA_WARM_TARGET,
   DAYTONA_WARM_BASE_SNAPSHOT: env.DAYTONA_WARM_BASE_SNAPSHOT,
   KORTIX_WARM_POOL_FULL_SIZE: env.KORTIX_WARM_POOL_FULL_SIZE,
+  KORTIX_SNAPSHOT_REAP_PREDECESSOR: env.KORTIX_SNAPSHOT_REAP_PREDECESSOR,
+
+  // Sandbox lifecycle intervals (minutes) — see schema comment above.
+  KORTIX_SANDBOX_AUTOSTOP_MINUTES: env.KORTIX_SANDBOX_AUTOSTOP_MINUTES,
+  KORTIX_SANDBOX_AUTOARCHIVE_MINUTES: env.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
+  KORTIX_SANDBOX_AUTODELETE_MINUTES: env.KORTIX_SANDBOX_AUTODELETE_MINUTES,
 
   PLATINUM_API_KEY: env.PLATINUM_API_KEY,
   PLATINUM_API_URL: env.PLATINUM_API_URL,

@@ -22,6 +22,7 @@
     "@hono/zod-openapi": "^0.19.10",
     "@kortix/db": "workspace:*",
     "@kortix/manifest-schema": "workspace:*",
+    "@kortix/registry": "workspace:*",
     "@kortix/shared": "workspace:*",
     "@kortix/starter": "workspace:*",
     "@logtail/node": "^0.5.8",

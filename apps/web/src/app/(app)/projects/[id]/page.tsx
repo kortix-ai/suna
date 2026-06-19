@@ -51,6 +51,7 @@ export default function ProjectIndexPage() {
       if (!text.trim() || busy) return;
 
       // Fast client-side pre-check (best-effort; backend is authoritative).
+      // Managed cloud is paid-only: no active subscription → prompt to subscribe.
       const noPlan =
         isBillingEnabled() &&
         !!accountState &&

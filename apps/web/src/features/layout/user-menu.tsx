@@ -50,7 +50,7 @@ import {
   HomeSolid,
 } from '@mynaui/icons-react';
 import { useQuery } from '@tanstack/react-query';
-import { Download, LifeBuoy, LogOut } from 'lucide-react';
+import { Download, LifeBuoy, LogOut, Store } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
@@ -198,6 +198,11 @@ export function UserMenu({
         <DropdownMenuItem onSelect={() => deferAfterClose(() => router.push('/projects'))}>
           <HomeSolid />
           Home
+        </DropdownMenuItem>
+
+        <DropdownMenuItem onSelect={() => deferAfterClose(() => router.push('/marketplace'))}>
+          <Store />
+          Marketplace
         </DropdownMenuItem>
 
         <DropdownMenuItem

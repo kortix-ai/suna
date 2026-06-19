@@ -166,14 +166,8 @@ export async function deleteRemoteSessionBranch(
 }
 
 /**
- * Commit a single file's contents onto `branch` and push — provider-agnostic.
- * Works for GitHub, GitLab, or any HTTPS git remote,
- * unlike the GitHub Contents-API path which only understands github.com URLs.
- *
- * Implemented with git plumbing in the bare mirror: hash the new blob, splice
- * it into the branch tip's tree through a throwaway index, `commit-tree`, then
- * push. If the branch doesn't exist yet (brand-new repo) it's created from an
- * empty tree. Returns the new commit SHA.
+ * Commit one file onto `branch` and push — a thin delegate over
+ * {@link commitMultipleFilesToBranch} (the single commit path).
  */
 export async function commitFileToBranch(
   project: GitBackedProject,
@@ -186,15 +180,47 @@ export async function commitFileToBranch(
     authorEmail?: string;
   },
 ): Promise<{ commitSha: string }> {
-  const filePath = normalizeTreePath(opts.path);
-  if (!filePath) throw new Error('File path is required');
+  if (!normalizeTreePath(opts.path)) throw new Error('File path is required');
+  const { commitSha } = await commitMultipleFilesToBranch(project, {
+    files: [{ path: opts.path, content: opts.content }],
+    message: opts.message,
+    branch: opts.branch,
+    authorName: opts.authorName,
+    authorEmail: opts.authorEmail,
+  });
+  return { commitSha };
+}
+
+/**
+ * Commit a set of file writes (+ optional deletions) in ONE commit and push —
+ * provider-agnostic (GitHub, GitLab, any HTTPS git remote), unlike the GitHub
+ * Contents-API path. Git plumbing in the bare mirror: hash each new blob, splice
+ * writes/removals into the branch tip's tree through a throwaway index,
+ * `commit-tree` once, then push (creating the branch from an empty tree if it
+ * doesn't exist). The marketplace install/uninstall paths commit an item's files
+ * + the updated registry-lock.json atomically.
+ */
+export async function commitMultipleFilesToBranch(
+  project: GitBackedProject,
+  opts: {
+    files?: Array<{ path: string; content: string }>;
+    /** Repo-relative paths to remove from the tree in the same commit. */
+    deletes?: string[];
+    message: string;
+    branch?: string;
+    authorName?: string;
+    authorEmail?: string;
+  },
+): Promise<{ commitSha: string; branch: string; fileCount: number }> {
+  const files = (opts.files ?? [])
+    .map((f) => ({ path: normalizeTreePath(f.path), content: f.content }))
+    .filter((f): f is { path: string; content: string } => Boolean(f.path));
+  const deletes = (opts.deletes ?? []).map((p) => normalizeTreePath(p)).filter((p): p is string => Boolean(p));
+  if (files.length === 0 && deletes.length === 0) throw new Error('Nothing to commit');
   const branch = validateRef(opts.branch || project.defaultBranch);
   const authHost = hostFromRepoUrl(project.repoUrl);
-  // Force a fresh fetch so the parent we build on is the real remote tip; the
-  // non-force push below then fails cleanly if a concurrent write raced us.
   const repoPath = await refreshMirror(project, true);
 
-  // Branch tip, if the branch already exists (absent on a fresh repo).
   const tip = await runGitCapture(['rev-parse', '--verify', `refs/heads/${branch}`], repoPath);
   const parentSha = tip.exitCode === 0 ? tip.stdout.trim() : null;
 
@@ -207,28 +233,42 @@ export async function commitFileToBranch(
     GIT_COMMITTER_EMAIL: email,
   };
 
-  // Scratch blob + index files inside a UNIQUE temp dir in the bare mirror dir
-  // (mkdtemp = unguessable name, no predictable-path/symlink race); cleaned up below.
   const tempDir = await mkdtemp(join(repoPath, '.kortix-tmp-'));
-  const blobFile = join(tempDir, 'blob');
   const indexFile = join(tempDir, 'index');
   const indexEnv = { GIT_INDEX_FILE: indexFile };
 
   try {
-    await writeFile(blobFile, opts.content, { flag: 'wx' });
-    const blobSha = (await runGit(['hash-object', '-w', blobFile], repoPath, false)).stdout.trim();
-    if (!/^[0-9a-f]{40}$/.test(blobSha)) throw new Error('git hash-object did not return a blob SHA');
+    // Hash every blob into the object store first.
+    const blobs: Array<{ path: string; sha: string }> = [];
+    let i = 0;
+    for (const file of files) {
+      const blobFile = join(tempDir, `blob-${i++}`);
+      await writeFile(blobFile, file.content, { flag: 'wx' });
+      const sha = (await runGit(['hash-object', '-w', blobFile], repoPath, false)).stdout.trim();
+      if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error('git hash-object did not return a blob SHA');
+      blobs.push({ path: file.path, sha });
+    }
 
-    // Seed the throwaway index from the parent tree (or empty), splice the file.
+    // Seed the throwaway index from the parent tree (or empty), splice all files.
     if (parentSha) await runGit(['read-tree', parentSha], repoPath, false, null, indexEnv);
     else await runGit(['read-tree', '--empty'], repoPath, false, null, indexEnv);
-    await runGit(
-      ['update-index', '--add', '--cacheinfo', `100644,${blobSha},${filePath}`],
-      repoPath,
-      false,
-      null,
-      indexEnv,
-    );
+    for (const b of blobs) {
+      await runGit(
+        ['update-index', '--add', '--cacheinfo', `100644,${b.sha},${b.path}`],
+        repoPath,
+        false,
+        null,
+        indexEnv,
+      );
+    }
+    // Deleting from the index needs a work tree defined (the mirror is bare, so
+    // `--force-remove` otherwise errors "must be run in a work tree"). Point
+    // GIT_WORK_TREE at the empty temp dir — the path is absent there, so it's
+    // removed from the index. (`--add --cacheinfo` above needs no work tree.)
+    const deleteEnv = deletes.length ? { ...indexEnv, GIT_WORK_TREE: tempDir } : indexEnv;
+    for (const path of deletes) {
+      await runGit(['update-index', '--force-remove', path], repoPath, false, null, deleteEnv);
+    }
     const treeSha = (await runGit(['write-tree'], repoPath, false, null, indexEnv)).stdout.trim();
     if (!/^[0-9a-f]{40}$/.test(treeSha)) throw new Error('git write-tree did not return a tree SHA');
 
@@ -238,7 +278,6 @@ export async function commitFileToBranch(
     const commitSha = (await runGit(commitArgs, repoPath, false, null, identEnv)).stdout.trim();
     if (!/^[0-9a-f]{40}$/.test(commitSha)) throw new Error('git commit-tree did not return a commit SHA');
 
-    // Advance the local ref (compare-and-swap when we knew the tip) and push.
     if (parentSha) await runGit(['update-ref', `refs/heads/${branch}`, commitSha, parentSha], repoPath, false);
     else await runGit(['update-ref', `refs/heads/${branch}`, commitSha], repoPath, false);
     await runGit(
@@ -251,7 +290,7 @@ export async function commitFileToBranch(
     );
 
     invalidateProjectMirror(project.projectId);
-    return { commitSha };
+    return { commitSha, branch, fileCount: files.length };
   } finally {
     await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
   }

@@ -6,6 +6,7 @@ import { config, SANDBOX_VERSION } from '../../config';
 import { generateSandboxKeyPair } from '../../shared/crypto';
 import { getAuthCandidates, getSandboxServiceKeyByExternalId } from '../services/sandbox-auth';
 import { isForbiddenSandboxEnv } from '../sandbox-env';
+import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import type {
   SandboxProvider,
   ProviderName,
@@ -542,6 +543,7 @@ export class LocalDockerProvider implements SandboxProvider {
     const sandboxApiBase = getSandboxInternalApiUrl();
     const desired: Record<string, string> = {
       KORTIX_API_URL: sandboxApiBase,
+      KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
       TUNNEL_API_URL: sandboxApiBase,
     };
 
@@ -823,6 +825,7 @@ export class LocalDockerProvider implements SandboxProvider {
     const MANAGED_VARS = new Set([
       'KORTIX_TOKEN',
       'KORTIX_API_URL',
+      'KORTIX_FRONTEND_URL',
       'TUNNEL_API_URL',
       'TUNNEL_TOKEN',
       'SANDBOX_ID',
@@ -873,6 +876,7 @@ export class LocalDockerProvider implements SandboxProvider {
       'SALT_FILE_PATH=/persistent/secrets/.salt',
       'ENCRYPTION_KEY_PATH=/persistent/secrets/.encryption-key',
       `KORTIX_API_URL=${sandboxApiBase}`,
+      `KORTIX_FRONTEND_URL=${sandboxFrontendBaseUrl()}`,
       `KORTIX_TOKEN=${authToken}`,
       `INTERNAL_SERVICE_KEY=${serviceKey}`,
       `TUNNEL_API_URL=${sandboxApiBase}`,

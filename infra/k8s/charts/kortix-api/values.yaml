@@ -29,7 +29,15 @@ autoscaling:
   targetMemoryUtilizationPercentage: 70
 
 # Pod resource envelope. requests drive scheduling + cluster-autoscaler; limits
-# cap noisy neighbours. Memory limit == request to avoid OOM surprises.
+# are the safety ceiling. The limits are deliberately HIGHER than requests
+# (Burstable QoS) so a transient spike can burst into spare node capacity
+# instead of being CFS-throttled or OOM-killed:
+#   - cpu limit "1" used to throttle the single-threaded event loop the moment a
+#     burst (e.g. an error/log storm) tried to use >1 core — turning a slow
+#     period into a hang. Headroom to 2 lets it ride the burst out.
+#   - memory limit == request ("1Gi") left zero slack, so a buffer spike (e.g. a
+#     backed-up log/telemetry queue) OOM-killed the pod. 2Gi absorbs it.
+# (Both failure modes were seen in the 2026-06-18 EKS incident.)
 resources:
   requests:
     cpu: "500m"
@@ -38,8 +46,8 @@ resources:
     # snapshot-context writers onto one node.
     ephemeral-storage: "2Gi"
   limits:
-    cpu: "1"
-    memory: "1Gi"
+    cpu: "2"
+    memory: "2Gi"
     # Cap per-pod ephemeral use: a runaway build-context leak evicts THAT pod
     # individually, instead of filling the node and tripping DiskPressure that
     # evicts healthy neighbours cluster-wide. The tmp-reaper keeps steady-state
@@ -64,6 +72,15 @@ preStopSleepSeconds: 10
 
 health:
   path: /v1/health
+  # Liveness probe path. The shallow `path` above answers in <1ms even when the
+  # event loop is badly degraded, so it never restarts a wedged-but-not-dead pod
+  # (this is why the 2026-06-18 incident ran 90 min with no auto-recovery). The
+  # API also serves /health/live, which returns 503 when event-loop lag is
+  # sustained-high → kubelet liveness fails → the pod restarts.
+  # DEPLOY ORDER: only set this to /health/live once an image that serves the
+  # route is live in this env (an old image would 404 the probe and crash-loop).
+  # Empty → falls back to `path` (no behavior change).
+  livenessPath: ""
   # startup probe covers slow first-boot (schema/migrations); liveness restarts a
   # hung pod; readiness gates ALB traffic.
   startupFailureThreshold: 30 # 30 * 5s = up to 150s to become healthy

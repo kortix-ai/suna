@@ -121,7 +121,7 @@ async function slashProjects(ctx: { teamId: string; channelId: string }): Promis
             type: 'button',
             text: { type: 'plain_text', text: 'Open dashboard', emoji: true },
             style: 'primary',
-            url: (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, ''),
+            url: (config.FRONTEND_URL || 'https://kortix.com').replace(/\/$/, ''),
             action_id: 'projects_empty_dashboard',
           },
         },
@@ -129,7 +129,7 @@ async function slashProjects(ctx: { teamId: string; channelId: string }): Promis
     };
   }
   const current = await currentChannelProjectId(ctx);
-  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
+  const dashboardBase = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/$/, '');
   const blocks: Array<Record<string, unknown>> = [
     {
       type: 'header',
@@ -212,7 +212,7 @@ async function slashSwitch(ctx: { teamId: string; channelId: string }): Promise<
             type: 'button',
             text: { type: 'plain_text', text: 'Open dashboard', emoji: true },
             style: 'primary',
-            url: (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, ''),
+            url: (config.FRONTEND_URL || 'https://kortix.com').replace(/\/$/, ''),
             action_id: 'switch_empty_dashboard',
           },
         },
@@ -318,7 +318,7 @@ async function slashSessions(ctx: { teamId: string; channelId: string }): Promis
     .from(projects)
     .where(inArray(projects.projectId, projectIds));
   const projectById = new Map(projectRows.map((p) => [p.projectId, p]));
-  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
+  const dashboardBase = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/$/, '');
   return {
     response_type: 'ephemeral',
     blocks: [
@@ -347,7 +347,7 @@ async function slashSessions(ctx: { teamId: string; channelId: string }): Promis
 async function slashWhoami(ctx: SlashCtx): Promise<SlashResponse> {
   const selection = await currentChannelSelection(ctx);
   const currentId = selection?.projectId ?? null;
-  const dashboardBase = (config.KORTIX_URL || 'https://kortix.com').replace(/\/$/, '');
+  const dashboardBase = (config.FRONTEND_URL || 'https://kortix.com').replace(/\/$/, '');
   if (!currentId) {
     return {
       response_type: 'ephemeral',
@@ -464,7 +464,7 @@ async function slashSession(ctx: SlashCtx): Promise<SlashResponse> {
       blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `*No sessions started in this channel yet.*\n\`@\`-mention me to start one.` } }],
     };
   }
-  const url = sessionWebUrl(config.KORTIX_URL, selection.projectId, s.sessionId);
+  const url = sessionWebUrl(config.FRONTEND_URL, selection.projectId, s.sessionId);
   const emoji = SESSION_STATUS_EMOJI[s.status] ?? '•';
   return {
     response_type: 'ephemeral',

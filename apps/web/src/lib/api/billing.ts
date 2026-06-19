@@ -93,6 +93,12 @@ export interface AccountState {
     display_name: string;
     monthly_credits: number;
     can_purchase_credits: boolean;
+    /** Enterprise feature gates for this tier (SSO / SCIM). Drives whether the
+     *  account-settings "Identity & directory" cards render. */
+    entitlements?: {
+      sso: boolean;
+      scim: boolean;
+    };
   };
   auto_topup?: {
     enabled: boolean;

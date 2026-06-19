@@ -6,8 +6,9 @@
  */
 
 import { getDaytona, getDaytonaWarm } from '../../shared/daytona';
-import { warmRestoreScript, WARM_RESTORE_MARKERS } from '../../snapshots/warm-bake';
+import { warmRestoreScript, WARM_RESTORE_MARKERS, noteWarmPathFailure } from '../../snapshots/warm-bake';
 import { serviceKeyForExternalId } from '../service-key';
+import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { config, SANDBOX_VERSION } from '../../config';
 // (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
 // own per-project snapshot, resolved by the snapshot builder. Callers
@@ -33,6 +34,58 @@ import type {
 // idle-stop / wake detection always reads fresh; start/stop/remove bust the entry.
 const STATUS_CACHE_TTL_MS = 1500;
 const runningStatusCache = new Map<string, number>(); // externalId → cachedAt (ms)
+
+/**
+ * Daytona sandbox lifecycle policy, applied as SDK create() params so a box
+ * self-manages even when the API/tunnel that created it dies — orphaned
+ * local-dev and ephemeral-env sessions are the dominant leak source, and the
+ * idle sweep can't see boxes it has no DB row for.
+ *
+ *  - autoStopInterval: idle → stop (compute billing ends). CLAMPED to >= 1 so a
+ *    box is NEVER created persistent. A 0 here (the old warm-pool "stay ready
+ *    until claimed" value) leaked 500+ never-stopping boxes that nothing reaped.
+ *    This is the setting that actually stops the money burn.
+ *  - autoArchiveInterval: stopped → archived to cold storage after a few days
+ *    (cheap, still resumable). Until then the stopped box stays warm-resumable.
+ *  - autoDeleteInterval: -1 by default → NEVER auto-delete. An idle box is
+ *    nearly free once stopped + cold-archived, so we never destroy its disk;
+ *    a session is only removed when the user explicitly deletes it.
+ */
+// A persistent (autoStop=0) warm-pool spare that nothing reaps is exactly what
+// caused the "500+ never-stopping boxes" leak noted above. reconcileWarmPool is
+// the primary reaper, but if the API/tunnel that owns the pool dies, nothing
+// runs it — so we FORCE a provider-side auto-delete backstop on every persistent
+// spare (≥ the pool's 6h max-age) regardless of the global -1/never default.
+const PERSISTENT_SPARE_AUTODELETE_FALLBACK_MIN = 24 * 60; // 24h
+
+export function daytonaLifecycle(autoStopOverride?: number): {
+  autoStopInterval: number;
+  autoArchiveInterval: number;
+  autoDeleteInterval: number;
+} {
+  // autoStopOverride === 0 is the WARM-POOL spare contract: "never auto-stop".
+  // A spare must stay RUNNING + warm until claimed — a hibernate would kill the
+  // pre-warmed opencode (and, for clone-at-park spares, the warmed plugin),
+  // defeating the whole pre-warm. Spares manage their own lifecycle via
+  // reconcileWarmPool, but because such a box never auto-stops we ALSO pin a
+  // finite provider auto-delete backstop (never -1) so a leaked spare self-
+  // destructs if the reaper stops running. EVERY other caller is clamped to >= 1
+  // so a normal session box can never be created persistent.
+  if (autoStopOverride === 0) {
+    const configuredDelete = config.KORTIX_SANDBOX_AUTODELETE_MINUTES;
+    return {
+      autoStopInterval: 0,
+      autoArchiveInterval: config.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
+      autoDeleteInterval: configuredDelete > 0 ? configuredDelete : PERSISTENT_SPARE_AUTODELETE_FALLBACK_MIN,
+    };
+  }
+  const stop = autoStopOverride ?? config.KORTIX_SANDBOX_AUTOSTOP_MINUTES;
+  return {
+    autoStopInterval: Math.max(1, stop || config.KORTIX_SANDBOX_AUTOSTOP_MINUTES || 15),
+    autoArchiveInterval: config.KORTIX_SANDBOX_AUTOARCHIVE_MINUTES,
+    autoDeleteInterval: config.KORTIX_SANDBOX_AUTODELETE_MINUTES,
+  };
+}
 
 export class DaytonaProvider implements SandboxProvider {
   readonly name: ProviderName = 'daytona';
@@ -67,6 +120,9 @@ export class DaytonaProvider implements SandboxProvider {
       // needs KORTIX_API_URL + KORTIX_TOKEN; tools derive every router endpoint
       // from KORTIX_API_URL and auth with KORTIX_TOKEN.
       KORTIX_API_URL: `${sandboxApiBase}/v1`,
+      // Frontend base for user-facing dashboard links (never the API host).
+      // Guaranteed here too so it is present even if a caller's env map omits it.
+      KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
       // Session identity, git context, KORTIX_TOKEN, and the project's own
       // secrets (incl. provider keys set via `kortix providers`, picked up by
       // opencode at boot) — see buildSessionSandboxEnvVars() and
@@ -88,6 +144,13 @@ export class DaytonaProvider implements SandboxProvider {
       try {
         return await this.createWarm(opts, opts.warmBaseSnapshot, envVars, sandboxApiBase, createTimeoutSeconds);
       } catch (err) {
+        // Pause the warm path fleet-wide for the cooldown on ANY warm-create
+        // failure (flaky experimental restore, region revoked, env-write fail) —
+        // otherwise a degraded warm region makes EVERY session re-pay up to
+        // MAX_WARM_ATTEMPTS slow restore attempts before falling back to cold.
+        // After this, sessions go straight to the cold (instance-warm) path until
+        // the region recovers. Mirrors the probe-timeout pause in warm-bake.ts.
+        noteWarmPathFailure();
         if (err instanceof WarmRuntimeUnavailableError) throw err;
         const msg = err instanceof Error ? err.message : String(err);
         throw new WarmRuntimeUnavailableError(`warm create failed: ${msg}`);
@@ -115,13 +178,14 @@ export class DaytonaProvider implements SandboxProvider {
       {
         snapshot,
         envVars,
-        // Idle → stop (hibernate, disk kept). Stopped → archive to cold storage
-        // (disk still kept, resumable). NEVER auto-delete: a sandbox is only ever
-        // removed when a user explicitly deletes the session. -1 disables Daytona
-        // auto-delete explicitly so no account-level default can drop a box.
-        autoStopInterval: opts.autoStopInterval ?? 15,
-        autoArchiveInterval: 30,
-        autoDeleteInterval: -1,
+        // Idle → stop → archive → delete. See daytonaLifecycle(): auto-stop is
+        // clamped to >= 1 so a normal session box can never be created persistent,
+        // a large auto-archive (default 3 days) keeps a hibernated box in the
+        // fast-resume "stopped" tier, and a finite auto-delete reclaims it if the
+        // API/tunnel that created it dies. Intervals are env-tunable
+        // (KORTIX_SANDBOX_AUTO*). A warm-pool spare passes autoStopInterval=0 →
+        // persistent (it manages its own lifecycle via reconcileWarmPool).
+        ...daytonaLifecycle(opts.autoStopInterval),
         public: false,
       },
       { timeout: createTimeoutSeconds },
@@ -174,9 +238,7 @@ export class DaytonaProvider implements SandboxProvider {
         box = await daytona.create(
           {
             snapshot: warmBaseSnapshot,
-            autoStopInterval: opts.autoStopInterval ?? 15,
-            autoArchiveInterval: 30,
-            autoDeleteInterval: -1,
+            ...daytonaLifecycle(opts.autoStopInterval),
             public: false,
           },
           { timeout },

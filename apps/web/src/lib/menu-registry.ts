@@ -553,16 +553,6 @@ export const menuRegistry: MenuItemDef[] = [
     kind: 'navigate',
     href: '/scheduled-tasks',
   },
-  {
-    id: 'tunnel',
-    label: 'Tunnel',
-    icon: Cable,
-    group: 'navigation',
-    subGroup: 'services',
-    showIn: ['rightSidebar'],
-    kind: 'navigate',
-    href: '/tunnel',
-  },
   ...(DEPLOYMENTS_ENABLED
     ? [
         {
@@ -633,16 +623,6 @@ export const menuRegistry: MenuItemDef[] = [
     showIn: ['commandPalette'],
     kind: 'navigate',
     href: '/files',
-  },
-  {
-    id: 'tunnel',
-    label: 'Tunnel',
-    icon: Cable,
-    group: 'navigation',
-    showIn: ['commandPalette'],
-    kind: 'navigate',
-    href: '/tunnel',
-    keywords: 'tunnel ngrok expose port localhost remote',
   },
   {
     id: 'running-services-cmd',

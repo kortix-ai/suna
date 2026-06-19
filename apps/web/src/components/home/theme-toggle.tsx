@@ -127,8 +127,8 @@ export function ThemeToggle({ variant = 'icon', className }: ThemeToggleProps) {
               fill="currentColor"
             ></path>
             <path
-              fill-rule="evenodd"
-              clip-rule="evenodd"
+              fillRule="evenodd"
+              clipRule="evenodd"
               d="M2 14H22C22 16.2091 20.2091 18 18 18H15V21C15 21.5523 14.5523 22 14 22H10C9.44772 22 9 21.5523 9 21V18H6C3.79086 18 2 16.2091 2 14ZM11 18V20H13V18H11Z"
               fill="currentColor"
             ></path>

@@ -1,0 +1,298 @@
+/**
+ * Registry / marketplace install — project-scoped.
+ *
+ *   POST /:projectId/registry/install { id }  → commit an item's files (+ lock)
+ *                                                onto the default branch, live
+ *                                                in the next session.
+ *   GET  /:projectId/registry                 → what's installed (from the lock).
+ *
+ * Reuses @kortix/registry server-side: resolve from the catalog, plan the
+ * install (with transitive bundle deps), and commit every file atomically via
+ * the provider-agnostic multi-file git helper.
+ */
+
+import { createRoute, z } from '@hono/zod-openapi';
+import { compareInstalled, parseLockContent, serializeLock } from '@kortix/registry';
+import { auth, errors, json } from '../../openapi';
+import { getCatalogItemDetail, resolveOpencodeDir } from '../../marketplace/catalog';
+import { buildInstall, catalogIdForName, resolveItemFiles } from '../../marketplace/install-service';
+import { commitMultipleFilesToBranch } from '../git/branches';
+import { readRepoFile } from '../git/files';
+import { loadProjectForUser } from '../lib/access';
+import { AnyObject, projectsApp } from '../lib/app';
+import { loadGitProject } from '../lib/git';
+import { readBody } from '../lib/serializers';
+
+async function repoFileOrNull(project: Parameters<typeof readRepoFile>[0], path: string): Promise<string | null> {
+  try {
+    return await readRepoFile(project, path, project.defaultBranch);
+  } catch {
+    return null;
+  }
+}
+
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/registry/install',
+    tags: ['marketplace'],
+    summary: 'POST /:projectId/registry/install',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      201: json(z.any(), 'Installed'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    const body = await readBody(c);
+    const id = typeof body?.id === 'string' ? body.id.trim() : '';
+    if (!id) return c.json({ error: 'id is required' }, 400);
+    const detail = await getCatalogItemDetail(id);
+    if (!detail) return c.json({ error: `Unknown item "${id}"` }, 400);
+
+    const project = await loadGitProject(loaded);
+    const manifestRaw = await repoFileOrNull(project, 'kortix.toml');
+    const configDir = resolveOpencodeDir(manifestRaw);
+    const existingLockRaw = await repoFileOrNull(project, 'registry-lock.json');
+    const legacyLockRaw = await repoFileOrNull(project, 'skills-lock.json');
+
+    let built;
+    try {
+      built = await buildInstall({
+        id,
+        configDir,
+        existingLockRaw,
+        legacyLockRaw,
+        now: new Date().toISOString(),
+      });
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 400);
+    }
+
+    const commit = await commitMultipleFilesToBranch(project, {
+      files: built.files,
+      message: `feat(registry): add ${detail.title}`,
+      branch: project.defaultBranch,
+    });
+
+    return c.json(
+      {
+        ok: true,
+        commit_sha: commit.commitSha,
+        branch: commit.branch,
+        file_count: commit.fileCount,
+        installed: built.installed,
+        capabilities: built.capabilities,
+      },
+      201,
+    );
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/registry',
+    tags: ['marketplace'],
+    summary: 'GET /:projectId/registry',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'Installed registry items'),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    const project = await loadGitProject(loaded);
+    const lockRaw = await repoFileOrNull(project, 'registry-lock.json');
+    const legacyRaw = await repoFileOrNull(project, 'skills-lock.json');
+    const lock = parseLockContent(lockRaw, legacyRaw);
+
+    return c.json({
+      installed: Object.entries(lock.items).map(([name, e]) => ({
+        name,
+        type: e.type,
+        source: e.source,
+        installed_at: e.installedAt ?? null,
+        file_count: e.files.length,
+      })),
+    });
+  },
+);
+
+// What's outdated — re-resolve each installed item from source, re-hash, and
+// compare to the lock. The "Updates available (N)" loop, WordPress-style.
+projectsApp.openapi(
+  createRoute({
+    method: 'get',
+    path: '/{projectId}/registry/updates',
+    tags: ['marketplace'],
+    summary: 'GET /:projectId/registry/updates',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'Per-item update status'),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'read');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    const project = await loadGitProject(loaded);
+    const manifestRaw = await repoFileOrNull(project, 'kortix.toml');
+    const configDir = resolveOpencodeDir(manifestRaw);
+    const lock = parseLockContent(
+      await repoFileOrNull(project, 'registry-lock.json'),
+      await repoFileOrNull(project, 'skills-lock.json'),
+    );
+
+    const updates = await Promise.all(
+      Object.entries(lock.items).map(async ([name, e]) => {
+        let fresh: Awaited<ReturnType<typeof resolveItemFiles>> = null;
+        try {
+          fresh = await resolveItemFiles(name, configDir);
+        } catch {
+          fresh = null; // unreachable source → orphaned
+        }
+        const diff = compareInstalled(e.files, fresh);
+        return { name, type: e.type, status: diff.status, changed: diff.changed.length + diff.added.length + diff.removed.length };
+      }),
+    );
+
+    return c.json({
+      updates,
+      update_available: updates.filter((u) => u.status === 'update-available').map((u) => u.name),
+    });
+  },
+);
+
+// Re-install an item from source (overwrites its files + refreshes the lock
+// hashes) — the "Update" button.
+projectsApp.openapi(
+  createRoute({
+    method: 'post',
+    path: '/{projectId}/registry/update',
+    tags: ['marketplace'],
+    summary: 'POST /:projectId/registry/update',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string() }),
+      body: { content: { 'application/json': { schema: AnyObject } } },
+    },
+    responses: {
+      200: json(z.any(), 'Updated'),
+      ...errors(400, 404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    const body = await readBody(c);
+    const name = typeof body?.name === 'string' ? body.name.trim() : '';
+    if (!name) return c.json({ error: 'name is required' }, 400);
+
+    const id = await catalogIdForName(name);
+    if (!id) return c.json({ error: `"${name}" is not in the catalog — cannot update (orphaned)` }, 400);
+
+    const project = await loadGitProject(loaded);
+    const manifestRaw = await repoFileOrNull(project, 'kortix.toml');
+    const configDir = resolveOpencodeDir(manifestRaw);
+
+    let built;
+    try {
+      built = await buildInstall({
+        id,
+        configDir,
+        existingLockRaw: await repoFileOrNull(project, 'registry-lock.json'),
+        legacyLockRaw: await repoFileOrNull(project, 'skills-lock.json'),
+        now: new Date().toISOString(),
+      });
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 400);
+    }
+
+    const commit = await commitMultipleFilesToBranch(project, {
+      files: built.files,
+      message: `chore(registry): update ${name}`,
+      branch: project.defaultBranch,
+    });
+
+    return c.json({
+      ok: true,
+      updated: name,
+      commit_sha: commit.commitSha,
+      branch: commit.branch,
+      file_count: commit.fileCount,
+      installed: built.installed,
+    });
+  },
+);
+
+projectsApp.openapi(
+  createRoute({
+    method: 'delete',
+    path: '/{projectId}/registry/{name}',
+    tags: ['marketplace'],
+    summary: 'DELETE /:projectId/registry/:name',
+    ...auth,
+    request: {
+      params: z.object({ projectId: z.string(), name: z.string() }),
+    },
+    responses: {
+      200: json(z.any(), 'Removed'),
+      ...errors(404),
+    },
+  }),
+  async (c: any) => {
+    const projectId = c.req.param('projectId');
+    const name = c.req.param('name');
+    const loaded = await loadProjectForUser(c, projectId, 'write');
+    if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    const project = await loadGitProject(loaded);
+    const lock = parseLockContent(
+      await repoFileOrNull(project, 'registry-lock.json'),
+      await repoFileOrNull(project, 'skills-lock.json'),
+    );
+    const entry = lock.items[name];
+    if (!entry) return c.json({ error: `"${name}" is not installed` }, 404);
+
+    const deletes = entry.files.map((f) => f.target);
+    delete lock.items[name];
+
+    const commit = await commitMultipleFilesToBranch(project, {
+      files: [{ path: 'registry-lock.json', content: serializeLock(lock) }],
+      deletes,
+      message: `chore(registry): remove ${name}`,
+      branch: project.defaultBranch,
+    });
+
+    return c.json({
+      ok: true,
+      removed: name,
+      commit_sha: commit.commitSha,
+      branch: commit.branch,
+      file_count: deletes.length,
+    });
+  },
+);

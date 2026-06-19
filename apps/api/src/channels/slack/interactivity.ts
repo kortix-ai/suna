@@ -257,7 +257,7 @@ export async function handleMessageShortcut(payload: SlackInteractionPayload): P
     return;
   }
 
-  const url = sessionWebUrl(config.KORTIX_URL, thread.projectId, thread.sessionId);
+  const url = sessionWebUrl(config.FRONTEND_URL, thread.projectId, thread.sessionId);
   await respondViaUrl(payload.response_url, {
     response_type: 'ephemeral',
     blocks: [

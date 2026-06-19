@@ -11,6 +11,7 @@ import {
 import { ApiError, createApiClient } from '../api/client.ts';
 import { startCallbackServer } from '../api/browser-auth.ts';
 import { C, status } from '../style.ts';
+import { webDashboardUrl } from '../web-url.ts';
 import type { MeResponse } from '../api/types.ts';
 
 const HELP = `Usage: kortix login [options]
@@ -203,32 +204,6 @@ async function browserLogin(apiBase: string): Promise<string | null> {
 function safeHostname(): string {
   const raw = hostname() || 'CLI';
   return raw.length > 60 ? `${raw.slice(0, 60)}…` : raw;
-}
-
-/** Best-effort mapping of api.kortix.com → kortix.com for the dashboard link. */
-function webDashboardUrl(apiBase: string): string {
-  // Local self-host: api at :8008 → dashboard at :3000.
-  try {
-    const url = new URL(apiBase);
-    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-      const devPort = process.env.KORTIX_DASHBOARD_URL;
-      if (devPort) return devPort.replace(/\/$/, '');
-      return `${url.protocol}//${url.hostname}:3000`;
-    }
-    if (url.hostname.startsWith('api.')) {
-      // api.kortix.com → kortix.com
-      url.hostname = url.hostname.slice(4);
-      return url.origin;
-    }
-    if (url.hostname.includes('-api.')) {
-      // dev-api.kortix.com → dev.kortix.com (and any <env>-api.<domain>)
-      url.hostname = url.hostname.replace('-api.', '.');
-      return url.origin;
-    }
-    return url.origin;
-  } catch {
-    return 'https://kortix.com';
-  }
 }
 
 function openInBrowser(url: string): void {

@@ -1,3 +1,3 @@
-Marketing homepage refresh, compare pages, and Cloud pricing update
+Redeploy
 
-...same notes...
+Redeploy

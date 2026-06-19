@@ -14,6 +14,7 @@ import { randomUUID } from 'node:crypto';
 import { resolveProjectGitAuth } from './git';
 import { isReservedSandboxEnvName, RESERVED_SANDBOX_ENV_NAMES } from './sandbox-env-names';
 import { selectProvider } from '../../platform/services/provider-balancer';
+import { sandboxFrontendBaseUrl } from '../../platform/sandbox-frontend-url';
 import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES, ProjectRow, ProjectSessionRow, RequestAuditContext, UUID_V4_REGEX, deriveKortixApiRoot, normalizeJsonObject, normalizeString } from './serializers';
 import { allocateSessionRuntime } from './session-runtime-allocator';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
@@ -220,11 +221,45 @@ export async function buildSessionSandboxEnvVars(input: {
       baseRef: input.baseRef,
       agentName: input.agentName,
       apiUrl: deriveKortixApiBase(),
+      frontendUrl: sandboxFrontendBaseUrl(),
       initialPrompt: input.initialPrompt,
       // Per-session model override (e.g. Slack turns pin a specific model).
       // The sandbox agent reads this and sets it on every opencode prompt call.
       opencodeModel: input.opencodeModel,
     }),
+  };
+}
+
+/**
+ * Stage-2 warm-spare env: the PROJECT identity a session-LESS spare needs to
+ * clone the base branch + warm the opencode project plugin AT PARK — and
+ * nothing more. Deliberately omits KORTIX_BRANCH_NAME / KORTIX_SESSION_ID /
+ * KORTIX_BOOTSTRAP_OPENCODE_SESSION / KORTIX_INITIAL_PROMPT so park stays on the
+ * base branch and warms via a readiness probe (no session created, nothing
+ * relayed). Also omits user runtime secrets: the clone authenticates with the
+ * box's own KORTIX_TOKEN (git proxy) and the plugin warm needs none — the
+ * claimant's full per-user env (secrets, channel binding, session id, branch,
+ * prompt) is staged at claim by stageClaimEnv, so no other user's secrets ever
+ * sit in a spare before it's bound.
+ */
+export function buildSpareSandboxEnvVars(input: {
+  projectId: string;
+  repoUrl: string;
+  baseRef: string;
+  agentName: string;
+}): Record<string, string> {
+  return {
+    KORTIX_PROJECT_AUTO_CLONE: '1',
+    // Full clone (see buildSessionSandboxEnvVars for why blobless is avoided).
+    KORTIX_CLONE_FILTER: '',
+    KORTIX_REPO_URL: config.KORTIX_GIT_PROXY ? proxyGitUrl(input.projectId) : input.repoUrl,
+    KORTIX_DEFAULT_BRANCH: input.baseRef,
+    KORTIX_BASE_REF: input.baseRef,
+    KORTIX_PROJECT_ID: input.projectId,
+    KORTIX_SERVICE_PORT: '8000',
+    KORTIX_AGENT_NAME: input.agentName,
+    KORTIX_API_URL: deriveKortixApiBase(),
+    KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
   };
 }
 

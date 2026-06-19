@@ -98,6 +98,7 @@ import {
   updateAccountName,
 } from '@/lib/projects-client';
 import { usePermissions } from '@/lib/use-permission';
+import { useAccountState } from '@/hooks/billing';
 import { cn } from '@/lib/utils';
 import { BillingAccountProvider } from '@/stores/billing-account-context';
 
@@ -120,13 +121,12 @@ const ROLE_LABEL: Record<AccountRole, string> = {
   member: 'Member',
 };
 
-// Build-time feature flag for the enterprise IdP surface (SAML SSO +
-// SCIM provisioning). Defaults OFF — those cards add real clutter for
-// the 95% of accounts that don't have an Okta/Azure AD/Google
-// Workspace IdP wired up. Set NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY=true
-// in the environment to bring them back. Backend endpoints stay live
-// either way so existing configurations keep working.
-const ENABLE_ENTERPRISE_IDENTITY = process.env.NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY === 'true';
+// The enterprise IdP surface (SAML SSO + SCIM provisioning) is now PLAN-GATED,
+// not env-gated: the cards render only for accounts whose tier carries the
+// `sso` / `scim` entitlement (i.e. the sales-assigned `enterprise` tier). This
+// matches the server-side enforcement in the SCIM/SSO routes — the API returns
+// 402 for non-entitled accounts — so the UI never offers a control that the
+// backend would reject. See `entitlements` on the account-state `tier` block.
 
 function formatDate(input: string | null | undefined) {
   if (!input) return '—';
@@ -192,6 +192,13 @@ export default function AccountSettingsPage() {
     enabled: !!user && !!accountId,
     staleTime: 20_000,
   });
+
+  // Enterprise identity (SSO + SCIM) is gated on the account's plan. The cards
+  // render only when the tier carries the entitlement — mirrors the server-side
+  // 402 so we never show a control the backend rejects.
+  const accountStateQuery = useAccountState({ accountId, enabled: !!user && !!accountId });
+  const entitlements = accountStateQuery.data?.tier?.entitlements;
+  const enterpriseIdentityEnabled = !!(entitlements?.sso || entitlements?.scim);
 
   // Granular capabilities sourced from the IAM engine. MUST be called
   // before any conditional return — moving these below the auth-loading
@@ -401,14 +408,12 @@ export default function AccountSettingsPage() {
                 </SettingsGroup>
 
                 {/* ── Identity & directory ─────────────────────── */}
-                {/* SAML SSO + SCIM are enterprise-only — only render
-                    when explicitly enabled. The flag is a build-time
-                    env var (NEXT_PUBLIC_ENABLE_ENTERPRISE_IDENTITY=true)
-                    so dev + prod can opt in independently. Backend
-                    endpoints stay live regardless so existing
-                    configurations keep working; this just hides the
-                    setup UI from the 95% of accounts that don't use it. */}
-                {ENABLE_ENTERPRISE_IDENTITY && (
+                {/* SAML SSO + SCIM are Enterprise-plan features. The cards
+                    render only when the account's tier carries the
+                    entitlement (sales-assigned `enterprise` tier); the
+                    SCIM/SSO API routes enforce the same gate server-side
+                    (402 for non-entitled accounts). */}
+                {enterpriseIdentityEnabled && (
                   <SettingsGroup
                     title="Identity & directory"
                     description="Bring members in from your IdP. Group memberships sync; admin still picks project access."

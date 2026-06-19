@@ -134,7 +134,14 @@ into every session sandbox at boot.
 | --- | --- |
 | `kortix secrets ls` | List secret names + manifest `[env]` spec; marks required-but-missing. |
 | `kortix secrets set NAME=VALUE …` | Upsert one or more. `NAME=-` reads VALUE from stdin (so values never appear in shell history). |
+| `kortix secrets request NAME …` | **Mint a short-lived link for a human to ENTER the value(s)** — you never see/handle the raw key. Surface the URL (web: fill-in modal, Slack: tappable link). `--scope runtime\|connector` (default `runtime` = injected into the sandbox env), `--expires <minutes>` (default 30). Use this when you need a key you don't have. |
 | `kortix secrets unset NAME …` | Remove. |
+
+> **Asking a human for a secret.** You usually don't *have* the value, so don't
+> use `set`. Run `kortix secrets request APOLLO_API_KEY` (or the `request_secret`
+> tool on the `kortix-executor` MCP), surface the returned URL, end your turn, and
+> when they say "done" confirm with `kortix secrets ls`. See the
+> **credentials-and-setup-links** reference.
 
 ### Env — dotenv ↔ secrets
 
