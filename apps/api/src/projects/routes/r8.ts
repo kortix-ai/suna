@@ -19,6 +19,7 @@ import { createRoute, z } from '@hono/zod-openapi';
 import { changeRequests, projectSessions, sessionSandboxes } from '@kortix/db';
 import { and, desc, eq } from 'drizzle-orm';
 import { loadProjectForUser, loadVisibleSession } from '../lib/access';
+import { assertAgentScope } from '../../iam/agent-scope';
 import { AnyObject, ChangeRequestSchema, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { UUID_V4_REGEX, normalizeString, readBody } from '../lib/serializers';
@@ -258,6 +259,10 @@ projectsApp.openapi(
     const body = await readBody(c);
     const loaded = await loadProjectForUser(c, projectId, 'write');
     if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+    // Per-agent gate: opening a CR is the agent's intended path to propose work.
+    // Default-deny — a scoped agent must be granted project.cr.open.
+    assertAgentScope(c, 'project.cr.open');
 
     const title = normalizeString(body.title);
     if (!title) return c.json({ error: 'title is required' }, 400);

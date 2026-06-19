@@ -17,6 +17,8 @@
 import { createRoute, z, type OpenAPIHono } from '@hono/zod-openapi';
 import { type Context } from 'hono';
 import { handleCall, type GatewayDeps } from './gateway';
+import { agentMayUseConnector } from '../iam/agent-scope';
+import type { AgentGrant } from '@kortix/db';
 import { parseSharingIntent, type SharingIntent } from './share';
 import { makeOpenApiApp, json, errors, auth } from '../openapi';
 
@@ -88,6 +90,9 @@ export interface ExecutorPrincipal {
   sessionId: string | null;
   /** The acting identity resolved to its group memberships (for sharing checks). */
   subject: { userId: string; groupIds: string[] };
+  /** Per-agent grant from the session token — restricts which connector
+   *  profiles this agent may call. Null = no restriction (non-agent token). */
+  agentGrant?: AgentGrant | null;
 }
 
 export interface CatalogAction {
@@ -288,6 +293,11 @@ export function createExecutorRouter(deps: ExecutorRouterDeps): OpenAPIHono {
       const actionPath = typeof body?.action === 'string' ? body.action.trim() : '';
       if (!connectorSlug || !actionPath) {
         return c.json({ error: 'connector and action are required' }, 400);
+      }
+      // Per-agent connector assignment: a scoped agent may call only the
+      // connector profiles its kortix.toml overlay lists. Default-deny otherwise.
+      if (!agentMayUseConnector(p.agentGrant ?? null, connectorSlug)) {
+        return c.json({ ok: false, status: 'denied', reason: 'connector_not_assigned' }, 403);
       }
       const args = body?.args && typeof body.args === 'object' ? (body.args as Record<string, unknown>) : {};
 

@@ -12,6 +12,7 @@ import { loadProjectForUser } from '../lib/access';
 import { AnyObject, projectsApp } from '../lib/app';
 import { withProjectGitAuth } from '../lib/git';
 import { normalizeString, readBody } from '../lib/serializers';
+import { assertAgentScope } from '../../iam/agent-scope';
 
 projectsApp.openapi(
   createRoute({
@@ -35,6 +36,11 @@ projectsApp.openapi(
   const body = await readBody(c);
   const loaded = await loadProjectForUser(c, projectId, 'write');
   if (!loaded) return c.json({ error: 'Not found' }, 404);
+
+  // Per-agent gate: merging a CR lands code on the base branch — the canonical
+  // destructive action. An agent-session token must be granted project.cr.merge
+  // (default-deny). Non-agent tokens (human dashboard / laptop CLI) pass through.
+  assertAgentScope(c, 'project.cr.merge');
 
   const cr = await getCrById(crId, projectId);
   if (!cr) return c.json({ error: 'Change request not found' }, 404);
