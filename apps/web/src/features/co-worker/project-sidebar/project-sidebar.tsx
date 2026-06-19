@@ -26,6 +26,7 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarRail,
   SidebarTrigger,
   useSidebar,
 } from '@/components/ui/sidebar';
@@ -372,7 +373,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
         <UserMenu user={user} variant="sidebar" />
       </SidebarFooter>
 
-      {/* <SidebarRail /> */}
+      <SidebarRail />
     </Sidebar>
   );
 }

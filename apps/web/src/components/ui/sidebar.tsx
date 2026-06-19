@@ -279,7 +279,7 @@ function SidebarRail({ className, ...props }: React.ComponentProps<'button'>) {
       onClick={toggleSidebar}
       title="Toggle Sidebar"
       className={cn(
-        'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex',
+        'absolute inset-y-0 z-20 mt-[44px] hidden h-[calc(100dvh-44px)] w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex',
         'after:pointer-events-none after:absolute after:inset-y-0 after:left-1/2 after:w-[3px] after:-translate-x-1/2 after:opacity-0 after:transition-opacity',
         'hover:after:bg-sidebar-border dark:hover:after:bg-kortix-base/40 hover:after:opacity-100',
         'after:[clip-path:polygon(calc(50%-0.0625rem)_0%,calc(50%+0.0625rem)_0%,calc(50%+0.125rem)_50%,calc(50%+0.0625rem)_100%,calc(50%-0.0625rem)_100%,calc(50%-0.125rem)_50%)]',
