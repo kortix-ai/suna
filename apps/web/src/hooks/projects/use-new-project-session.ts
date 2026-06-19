@@ -20,7 +20,11 @@ import { toast } from '@/lib/toast';
  * during the navigation; the session is persisted in the background.
  *
  * `onNavigate(sessionId)` runs synchronously right before the push — use it for
- * entry-point-specific side effects (open a tab, close a drawer, timing marks).
+ * entry-point-specific side effects (open a tab, close a drawer, timing marks,
+ * stashing a pending prompt so the shell auto-sends it once the box is ready).
+ *
+ * `create` carries create-time overrides (e.g. a chosen `sandbox_slug`) straight
+ * to the persist POST without changing the optimistic timing.
  */
 export function useNewProjectSession(projectId: string | undefined) {
   const router = useRouter();
@@ -28,7 +32,10 @@ export function useNewProjectSession(projectId: string | undefined) {
   const creatingRef = useRef(false);
 
   return useCallback(
-    (opts?: { onNavigate?: (sessionId: string) => void }) => {
+    (opts?: {
+      onNavigate?: (sessionId: string) => void;
+      create?: { sandbox_slug?: string };
+    }) => {
       if (!projectId || creatingRef.current) return;
       creatingRef.current = true;
 
@@ -42,7 +49,7 @@ export function useNewProjectSession(projectId: string | undefined) {
       router.push(`/projects/${projectId}/sessions/${sessionId}`);
 
       // Persist in the background — the page is already rendering the shell.
-      createProjectSession(projectId, { session_id: sessionId })
+      createProjectSession(projectId, { session_id: sessionId, ...opts?.create })
         .then(() => {
           queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
         })
