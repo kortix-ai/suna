@@ -25,11 +25,14 @@ extraEnv:
   # up. CLONE_AT_PARK=1 is REQUIRED for <6s: the spare clones the repo + warms
   # opencode AT PARK (off the hot path), so a claim is a local `git checkout -B`
   # (~0.5s, no network) instead of re-cloning (~9s). MAX_TOTAL is the hard fleet
-  # cap (also the master enable: warmPoolEnabled() = MAX_TOTAL>0) — kept low for
-  # the small dev pod; SIZE=1 spare per present project. Does NOT help a brand-new
-  # project's first session (cold). Must live here (k8s env), NOT in .env.dev —
-  # unit-warm-pool.test.ts asserts the pool is off there.
-  KORTIX_WARM_POOL_MAX_TOTAL: "3"
+  # cap (also the master enable: warmPoolEnabled() = MAX_TOTAL>0). SIZE=1 spare
+  # per present project. Does NOT help a brand-new project's first session (cold).
+  # Must live here (k8s env), NOT in .env.dev — unit-warm-pool.test.ts asserts the
+  # pool is off there. Raised 3→15: the pool now only pre-warms billing-active
+  # accounts (refillProjectPool gate), so the cap is no longer wasted on accounts
+  # that 402 on session-create — 15 gives each concurrently-active dev project its
+  # own spare instead of a 3-slot lottery the user's project usually lost.
+  KORTIX_WARM_POOL_MAX_TOTAL: "15"
   KORTIX_WARM_POOL_SIZE: "1"
   KORTIX_WARM_POOL_CLONE_AT_PARK: "true"
   KORTIX_WARM_POOL_PRESENCE_MINUTES: "15"

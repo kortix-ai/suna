@@ -34,6 +34,7 @@ import { selectProvider } from './provider-balancer';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
+import { checkBillingActive } from '../../billing/services/billing-gate';
 import { ensureSandboxImage, DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
 import { buildSpareSandboxEnvVars } from '../../projects/lib/sessions';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
@@ -500,6 +501,12 @@ export async function refillProjectPool(projectId: string, _forUserId?: string |
       .where(eq(projects.projectId, projectId))
       .limit(1);
     if (!project || !project.repoUrl) return;
+    // Don't pre-warm an account that can't create sessions: session-create 402s
+    // for it (assertBillingActive), so any spare we'd park can never be claimed —
+    // it would just consume the global MAX_TOTAL cap and starve projects that CAN
+    // use one (the dominant reason a returning user's project had no spare ready
+    // → cold start). Mirrors the session-create billing gate.
+    if (!(await checkBillingActive(project.accountId)).ok) return;
     const cfg = resolveWarmConfig(project.metadata);
     if (!cfg.enabled || cfg.size <= 0) return;
 
