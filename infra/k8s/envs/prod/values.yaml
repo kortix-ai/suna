@@ -18,11 +18,16 @@ env:
 workers:
   enabled: false
 
-# Run Drizzle migrations as a PreSync hook before each rollout (gates the release
-# on schema). Prod EKS owns the schema migration even though ECS owns the
-# leader-elected background workers (workers.enabled above).
+# Drizzle migrations as a PreSync hook before each rollout (gates the release on
+# schema). The hook (templates/migrate-job.yaml) is in place and ready, but is
+# DISABLED on prod until the prod Drizzle ledger is baselined: prod's schema was
+# built out-of-band (manual psql) so drizzle.__drizzle_migrations records only 1
+# of the 11 committed migrations. Enabling now would make `db:migrate` re-apply
+# already-applied migrations and fail the release. Flip to true ONLY after a
+# one-time, gated baseline reconciles the ledger to the live schema (see the
+# `migration` skill: show SQL, test on a throwaway DB, get go-ahead).
 migrate:
-  enabled: true
+  enabled: false
 
 # Prod sizing / HA (chart defaults are already prod-tuned; pinned here explicitly).
 replicas: 3
