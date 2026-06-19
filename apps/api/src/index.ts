@@ -1,7 +1,7 @@
 // ─── Observability (must be first — instruments before other imports) ────────
 import './lib/sentry';
 import { captureException, flushSentry, addBreadcrumb } from './lib/sentry';
-import { logger as appLogger } from './lib/logger';
+import { logger as appLogger, isLoggingTransportError } from './lib/logger';
 import { emitOtelSpan } from './lib/otel';
 import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
 import { getRequestUrl } from './lib/request-url';
@@ -77,6 +77,14 @@ import { adminApp } from './admin';
 process.on('unhandledRejection', (reason: unknown) => {
   try {
     const err = reason instanceof Error ? reason : new Error(String(reason));
+    // A logging-transport failure must NEVER be reported through the logging
+    // transport (Better Stack) — that re-enqueues, re-overflows, and spirals,
+    // which is exactly what took prod down on 2026-06-18. Record it locally and
+    // drop it. See logger.ts isLoggingTransportError.
+    if (isLoggingTransportError(`${err.message}\n${err.stack ?? ''}`)) {
+      appLogger.localError('Dropped logging-transport rejection', { error: err.message });
+      return;
+    }
     appLogger.error('Unhandled promise rejection', { error: err.message, stack: err.stack });
     captureException(err, { handler: 'unhandledRejection' });
   } catch {
@@ -86,6 +94,10 @@ process.on('unhandledRejection', (reason: unknown) => {
 
 process.on('uncaughtException', (err: Error) => {
   try {
+    if (isLoggingTransportError(`${err?.message ?? ''}\n${err?.stack ?? ''}`)) {
+      appLogger.localError('Dropped logging-transport exception', { error: err?.message ?? String(err) });
+      return;
+    }
     appLogger.error('Uncaught exception', { error: err?.message ?? String(err), stack: err?.stack });
     captureException(err, { handler: 'uncaughtException' });
   } catch {
@@ -231,7 +243,16 @@ app.use('*', async (c, next) => {
     (isProxyStartupProbe && (status === 502 || status === 503 || status === 504))
   );
 
-  if (!isExpectedProxyNoise) {
+  // Health/liveness probes fire every few seconds from the ALB + kubelet across
+  // every pod — by far the highest-volume request. A healthy probe carries no
+  // signal, and shipping one log line per probe is what feeds the Better Stack
+  // queue toward overflow. Suppress only SUCCESSFUL probes (a non-2xx still
+  // logs, so a failing/degraded probe stays fully visible).
+  const isHealthProbe =
+    path === '/health' || path === '/v1/health' || path.endsWith('/health/live');
+  const suppressLog = isExpectedProxyNoise || (isHealthProbe && status < 400);
+
+  if (!suppressLog) {
     const level = status >= 500 || duration > 5000 ? 'warn' : 'info';
     appLogger[level](`Request completed: ${method} ${path} ${status} ${duration}ms`, {
       status,
@@ -337,6 +358,50 @@ app.openapi(
   }),
   healthHandler,
 );
+
+// ─── Event-loop lag monitor → a real liveness signal ─────────────────────────
+//
+// The /health handlers above answer in <1ms even when the event loop is badly
+// degraded. During the 2026-06-18 incident that meant k8s liveness NEVER fired
+// and wedged pods were never restarted — a 90-minute outage instead of a ~45s
+// self-heal. This samples ACTUAL event-loop lag (a healthy loop drifts a few ms;
+// a starved one drifts into seconds) and exposes it at /health/live so a
+// degraded-but-not-dead pod can be detected and restarted by the kubelet.
+//
+// NOTE: the chart's livenessProbe still points at the shallow /v1/health by
+// default — flip health.livenessPath to /health/live only AFTER an image that
+// serves this route is confirmed live (otherwise old pods 404 their liveness
+// probe and crash-loop). See infra/k8s/charts/kortix-api.
+const MAX_EVENT_LOOP_LAG_MS = Number(process.env.HEALTH_MAX_EVENT_LOOP_LAG_MS || 5000);
+let eventLoopLagMs = 0;
+{
+  const SAMPLE_INTERVAL_MS = 1000;
+  let lastSample = performance.now();
+  const lagTimer = setInterval(() => {
+    const now = performance.now();
+    // How much longer than the interval the loop took to come back to this tick.
+    eventLoopLagMs = Math.max(0, now - lastSample - SAMPLE_INTERVAL_MS);
+    lastSample = now;
+  }, SAMPLE_INTERVAL_MS);
+  // Never keep the process alive just for the sampler.
+  (lagTimer as { unref?: () => void }).unref?.();
+}
+
+const livenessHandler = (c: any) => {
+  const lag = Math.round(eventLoopLagMs);
+  if (eventLoopLagMs > MAX_EVENT_LOOP_LAG_MS) {
+    // 503 → kubelet liveness fails → the pod is restarted (auto-recovery).
+    return c.json(
+      { status: 'degraded', event_loop_lag_ms: lag, threshold_ms: MAX_EVENT_LOOP_LAG_MS },
+      503,
+    );
+  }
+  return c.json({ status: 'ok', event_loop_lag_ms: lag });
+};
+
+// Unversioned + /v1 forms so either can be wired as the kubelet liveness probe.
+app.get('/health/live', livenessHandler);
+app.get('/v1/health/live', livenessHandler);
 
 // Health check under /v1 prefix (frontend uses NEXT_PUBLIC_BACKEND_URL which includes /v1)
 app.openapi(
