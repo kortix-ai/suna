@@ -20,6 +20,7 @@ import {
 } from '@/hooks/opencode/use-canonical-opencode-session';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
+import { useProjectPresence } from '@/hooks/platform/use-project-presence';
 import { isBillingEnabled } from '@/lib/config';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
 import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
@@ -64,6 +65,11 @@ export default function ProjectSessionPage() {
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
+
+  // Warm-pool presence: heartbeat while this project tab is open so a spare stays
+  // ready for the next session, and reap it on close. Keeps warm cost scoped to
+  // open projects (no-op unless the pool is enabled + the member can launch).
+  useProjectPresence(projectId);
 
   // Billing gate. An account with no active plan can't run a session — the
   // backend would never provision a sandbox, so polling for one spins forever.

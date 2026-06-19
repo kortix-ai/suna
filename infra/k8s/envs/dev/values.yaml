@@ -24,17 +24,22 @@ extraEnv:
   # provision (session-runtime-allocator.ts:83-88), so it can only speed starts
   # up. CLONE_AT_PARK=1 is REQUIRED for <6s: the spare clones the repo + warms
   # opencode AT PARK (off the hot path), so a claim is a local `git checkout -B`
-  # (~0.5s, no network) instead of re-cloning (~9s). MAX_TOTAL is the hard fleet
-  # cap (also the master enable: warmPoolEnabled() = MAX_TOTAL>0). SIZE=1 spare
-  # per present project. Does NOT help a brand-new project's first session (cold).
-  # Must live here (k8s env), NOT in .env.dev — unit-warm-pool.test.ts asserts the
-  # pool is off there. Raised 3→15: the pool now only pre-warms billing-active
-  # accounts (refillProjectPool gate), so the cap is no longer wasted on accounts
-  # that 402 on session-create — 15 gives each concurrently-active dev project its
-  # own spare instead of a 3-slot lottery the user's project usually lost.
-  KORTIX_WARM_POOL_MAX_TOTAL: "15"
-  KORTIX_WARM_POOL_SIZE: "1"
+  # (~0.5s, no network) instead of re-cloning (~9s).
+  #
+  # Per-project, active-only model: SIZE spares per project the user CURRENTLY has
+  # OPEN (FE presence heartbeat → DB presence → reconcile keeps/refills only
+  # present projects and reaps a project's spares the moment its tab closes). So
+  # MAX_TOTAL is now just a runaway COST CEILING, not the limiter — the real count
+  # is (projects open right now) × SIZE. Also master-enable: warmPoolEnabled() =
+  # MAX_TOTAL>0. Pre-warm is skipped for non-billing accounts (refillProjectPool
+  # gate). Must live here (k8s env), NOT in .env.dev (unit-warm-pool.test asserts
+  # off there). For prod, raise MAX_TOTAL to your cost budget (it caps concurrent
+  # open projects × SIZE, not total projects).
+  KORTIX_WARM_POOL_MAX_TOTAL: "20"
+  KORTIX_WARM_POOL_SIZE: "2"
   KORTIX_WARM_POOL_CLONE_AT_PARK: "true"
+  # Vestigial under the presence model (the DB-presence staleness window in
+  # warm-pool.ts governs reaping now); kept for back-compat.
   KORTIX_WARM_POOL_PRESENCE_MINUTES: "15"
 # PRE-CUTOVER: dev-api-eks is the candidate while dev-api.kortix.com is still
 # served by ECS, so EKS runs API-only and ECS keeps ownership of the dev-tier
