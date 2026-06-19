@@ -142,7 +142,7 @@ export function ProjectHome({
         <div className="mx-auto mb-4 w-full max-w-3xl space-y-4">
           <StarterPromptsCarousel onPick={applySuggestion} />
 
-          <div className={cn('bg-card border-border w-full overflow-visible rounded-xl border')}>
+          <div className={cn('bg-card border-border w-full overflow-visible rounded-lg border')}>
             <div className="px-3.5">
               <textarea
                 ref={textareaRef}
