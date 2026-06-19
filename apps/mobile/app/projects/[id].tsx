@@ -117,6 +117,8 @@ import {
 } from 'lucide-react-native';
 import type { BottomBarMenuItem } from '@/components/session/BottomBar';
 import { log } from '@/lib/logger';
+import { chalkColors } from '@kortix/shared';
+import Svg, { Circle } from 'react-native-svg';
 import { KortixLogo } from '@/components/ui/KortixLogo';
 import { PageHeader } from '@/components/ui/page-header';
 import BrandmarkBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
@@ -507,18 +509,82 @@ const STARTER_PROMPTS: { id: string; icon: string; label: string; prompt: string
 // sessions), each its own branch + sandbox. Unlike the OpenCode Session tree
 // these are flat and carry a provisioning status, so we render name + status.
 
-const PROJECT_SESSION_STATUS_META: Record<
-  ProjectSessionStatus,
-  { label: string; dot: string; pending: boolean }
-> = {
-  queued: { label: 'Queued', dot: '#F59E0B', pending: true },
-  branching: { label: 'Branching', dot: '#F59E0B', pending: true },
-  provisioning: { label: 'Provisioning', dot: '#F59E0B', pending: true },
-  running: { label: 'Running', dot: '#22C55E', pending: false },
-  stopped: { label: 'Stopped', dot: '#9CA3AF', pending: false },
-  failed: { label: 'Failed', dot: '#EF4444', pending: false },
-  completed: { label: 'Completed', dot: '#9CA3AF', pending: false },
+const PROJECT_SESSION_STATUS_LABELS: Record<ProjectSessionStatus, string> = {
+  queued: 'Queued',
+  branching: 'Branching',
+  provisioning: 'Provisioning',
+  running: 'Running',
+  stopped: 'Stopped',
+  failed: 'Failed',
+  completed: 'Completed',
 };
+
+const SESSION_STATUS_COLORS = {
+  yellow: 'hsl(48, 100%, 40%)',
+  green: 'hsl(135, 100%, 28.5%)',
+  red: 'hsl(360, 85.3%, 62%)',
+} as const;
+
+function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const isProvisioning = status === 'queued' || status === 'branching' || status === 'provisioning';
+  const spin = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!isProvisioning) {
+      spin.setValue(0);
+      return;
+    }
+    const animation = Animated.loop(
+      Animated.timing(spin, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [isProvisioning, spin]);
+
+  const rotate = spin.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
+  const color = isProvisioning
+    ? SESSION_STATUS_COLORS.yellow
+    : status === 'running'
+      ? SESSION_STATUS_COLORS.green
+      : status === 'stopped'
+        ? isDark
+          ? '#999999'
+          : '#6e6e6e'
+        : status === 'completed'
+          ? SESSION_STATUS_COLORS.green
+          : SESSION_STATUS_COLORS.red;
+
+  return (
+    <View className="h-4 w-4 shrink-0 items-center justify-center">
+      <Animated.View style={isProvisioning ? { transform: [{ rotate }] } : undefined}>
+        <Svg height={16} width={16} viewBox="0 0 16 16">
+          <Circle
+            cx={8}
+            cy={8}
+            r={6.3}
+            stroke={color}
+            fill="none"
+            strokeWidth={1.5}
+            strokeDasharray="3 3.4"
+          />
+          {(isProvisioning || status === 'failed') && (
+            <Circle cx={8} cy={8} r={4} fill={color} />
+          )}
+        </Svg>
+      </Animated.View>
+    </View>
+  );
+}
 
 function ProjectSessionListItem({
   item,
@@ -529,10 +595,6 @@ function ProjectSessionListItem({
   isActive: boolean;
   onPress: (s: ProjectSession) => void;
 }) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const mutedColor = isDark ? '#999999' : '#6e6e6e';
-  const meta = PROJECT_SESSION_STATUS_META[item.status] ?? PROJECT_SESSION_STATUS_META.stopped;
   const title = item.name || item.branch_name || 'New session';
 
   return (
@@ -541,19 +603,14 @@ function ProjectSessionListItem({
       className={`rounded-2xl px-3 py-2.5 mb-1 ${isActive ? 'bg-muted' : ''}`}
       activeOpacity={0.6}
     >
-      <View className="flex-row items-center">
-        <View className="h-2 w-2 rounded-full mr-2.5" style={{ backgroundColor: meta.dot }} />
+      <View className="flex-row items-center gap-2">
+        <SessionStatusDot status={item.status} />
         <Text
           className={`flex-1 text-sm ${isActive ? 'text-foreground font-semibold' : 'text-foreground'}`}
           numberOfLines={1}
         >
           {title}
         </Text>
-        {meta.pending ? (
-          <ActivityIndicator size="small" color={mutedColor} style={{ marginLeft: 8 }} />
-        ) : item.status !== 'running' ? (
-          <Text className="text-[11px] text-muted-foreground ml-2">{meta.label}</Text>
-        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -985,6 +1042,7 @@ export default function ProjectSessionScreen() {
   const { user, signOut, isSigningOut } = useAuthContext();
   const userEmail = user?.email || '';
   const userDisplayName = userEmail.split('@')[0] || 'User';
+  const userChalk = useMemo(() => chalkColors(userDisplayName), [userDisplayName]);
   const planLabel = 'Self-Hosted';
   const sandboxLabel = sandboxId || 'Sandbox';
   const sandboxHost = sandboxUrl ? sandboxUrl.replace(/^https?:\/\//, '') : undefined;
@@ -1075,7 +1133,7 @@ export default function ProjectSessionScreen() {
   const projectName = project?.name || 'Your project';
   const connectingStatusLabel = useMemo(() => {
     const ps = projectSessions.find((s) => s.session_id === connectingProjectSessionId);
-    return `${(ps && PROJECT_SESSION_STATUS_META[ps.status]?.label) || 'Provisioning'}…`;
+    return `${(ps && PROJECT_SESSION_STATUS_LABELS[ps.status]) || 'Provisioning'}…`;
   }, [projectSessions, connectingProjectSessionId]);
 
   // Only touch a sandbox once a session is actually open (its sandbox is switched
@@ -1917,7 +1975,7 @@ export default function ProjectSessionScreen() {
           <TouchableOpacity
             onPress={() => { haptics.tap(); handleUserMenuOpen(); }}
             activeOpacity={0.8}
-            className="flex-row items-center rounded-2xl border border-border"
+            className="flex-row items-center rounded-xl border border-border"
             style={{
               height: 48,
               paddingHorizontal: 8,
@@ -1926,8 +1984,17 @@ export default function ProjectSessionScreen() {
             }}
           >
             <View className="relative">
-              <View className="h-8 w-8 rounded-full bg-muted items-center justify-center">
-                <Text className="text-xs font-semibold text-muted-foreground uppercase">
+              <View
+                className="h-8 w-8 rounded-lg items-center justify-center border border-border"
+                style={{
+                  backgroundColor: userChalk.background,
+                  borderColor: userChalk.border,
+                }}
+              >
+                <Text
+                  className="text-xs font-semibold uppercase"
+                  style={{ color: userChalk.foreground }}
+                >
                   {userDisplayName.charAt(0)}
                 </Text>
               </View>

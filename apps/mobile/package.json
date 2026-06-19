@@ -18,6 +18,7 @@
   },
   "dependencies": {
     "@agentpress/shared": "file:./lib/agentpress-shared",
+    "@kortix/shared": "workspace:*",
     "@bacons/apple-targets": "^3.0.5",
     "@expensify/react-native-live-markdown": "0.1.317",
     "@gorhom/bottom-sheet": "^5.2.6",

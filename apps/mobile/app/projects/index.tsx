@@ -26,6 +26,7 @@ import { useAccounts, useArchiveProject, useProjects } from '@/lib/projects/hook
 import { useCurrentAccountStore } from '@/stores/current-account-store';
 import { useThemeColors } from '@/lib/theme-colors';
 import { haptics } from '@/lib/haptics';
+import { chalkColors } from '@kortix/shared';
 import type { KortixProject } from '@/lib/projects/projects-client';
 
 function relativeTime(input?: string) {
@@ -313,7 +314,9 @@ export default function ProjectsScreen() {
           {/* Cards — borderless list, hairline dividers between rows */}
           {filtered.length > 0 && (
             <View>
-              {filtered.map((project, i) => (
+              {filtered.map((project, i) => {
+                const chalk = chalkColors(project.name);
+                return (
                 <Pressable
                   key={project.project_id}
                   onPress={() => openProject(project)}
@@ -322,7 +325,14 @@ export default function ProjectsScreen() {
                   className="flex-row items-center active:opacity-60"
                   style={{ paddingVertical: 14, borderTopWidth: i === 0 ? 0 : 1, borderTopColor: cardBorder }}
                 >
-                  <Avatar variant="custom" size={38} fallbackText={project.name} />
+                  <Avatar
+                    variant="custom"
+                    size={38}
+                    fallbackText={project.name}
+                    backgroundColor={chalk.background}
+                    iconColor={chalk.foreground}
+                    borderColor={chalk.border}
+                  />
                   <View className="ml-3 flex-1">
                     <Text numberOfLines={1} className="font-roobert-semibold text-[15px] text-foreground">
                       {project.name}
@@ -333,7 +343,8 @@ export default function ProjectsScreen() {
                   </View>
                   <ChevronRight size={18} color={faint} />
                 </Pressable>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>

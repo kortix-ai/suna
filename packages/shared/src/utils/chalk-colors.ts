@@ -15,10 +15,10 @@ export interface ChalkColors {
 }
 
 export function chalkColors(label: string): ChalkColors {
-  const hash = hashLabel(label || '?');
+  const hash = hashLabel(label || "?");
   const hue = hash % 360;
-  const sat = 65 + (hash % 12);
-  const lift = (hash >> 3) % 5;
+  const sat = 35 + (hash % 12);
+  const lift = (hash >> 3) % 10;
   return {
     background: `hsl(${hue} ${sat}% ${77 + lift}%)`,
     foreground: `hsl(${hue} ${Math.min(sat + 10, 82)}% 27%)`,
