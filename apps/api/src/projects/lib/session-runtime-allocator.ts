@@ -90,6 +90,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       accountId: input.accountId,
       projectId: input.projectId,
       userId: input.userId,
+      agentName: input.agentName,
       provider: input.providerName,
       metadata: {
         session_id: input.sessionId,

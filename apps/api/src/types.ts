@@ -1,6 +1,7 @@
 import { z } from 'zod';
+import type { AgentGrant } from '@kortix/db';
 
-// === Request Schemas (Router) === 
+// === Request Schemas (Router) ===
 
 export const WebSearchRequestSchema = z.object({
   query: z.string().min(1, 'Query is required'),
@@ -91,6 +92,10 @@ export interface AuthVariables {
   tokenProjectId?: string;
   /** PAT token identity for the IAM engine (token-as-principal evaluation). */
   iamTokenId?: string;
+  /** Per-agent authorization grant — non-null only for agent-session tokens.
+   *  Read by assertAgentScope() to gate Kortix CLI/API actions on top of the
+   *  user's own role (net = userRole ∩ agentGrant). Null = full access. */
+  agentGrant?: AgentGrant | null;
 }
 
 // Hono environment type — Variables match exactly what the auth middleware sets.

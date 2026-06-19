@@ -106,6 +106,7 @@ export function validateManifest(
   rejectLegacySandboxes(parsed.sandboxes, 'sandboxes', issues);
   validateTriggers(parsed.triggers, 'triggers', issues);
   validateConnectors(parsed.connectors, 'connectors', issues);
+  validateAgents(parsed.agents, 'agents', issues);
   validateChannels(parsed.channels, 'channels', issues);
   validateApps(parsed.apps, 'apps', issues);
 
@@ -132,6 +133,87 @@ export function formatIssues(issues: ManifestIssue[], opts: { color?: boolean } 
 }
 
 // ─── Section validators ───────────────────────────────────────────────────
+
+/**
+ * The actions an agent's `[[agents]].kortix_cli` may grant — the project-scoped
+ * surface. MUST stay in sync with apps/api/src/iam/actions.ts (PROJECT_ACTIONS +
+ * CHANNEL_ACTIONS). Account-scoped admin actions (member.*, billing.*, token.*,
+ * project.create, …) are deliberately excluded: they are the hard ceiling and
+ * can never be granted to an agent.
+ */
+export const GRANTABLE_KORTIX_CLI_ACTIONS: readonly string[] = [
+  'project.read', 'project.write', 'project.delete', 'project.deploy',
+  'project.cr.open', 'project.cr.merge',
+  'project.session.read', 'project.session.start', 'project.session.exec', 'project.session.stop',
+  'project.members.read', 'project.members.manage',
+  'project.trigger.read', 'project.trigger.create', 'project.trigger.update', 'project.trigger.delete', 'project.trigger.fire',
+  'channel.read', 'channel.connect', 'channel.send', 'channel.disconnect',
+];
+
+/** Validate a `connectors` / `kortix_cli` grant value (array | "all" | "none"). */
+function validateGrantList(
+  value: unknown,
+  where: string,
+  label: string,
+  issues: ManifestIssue[],
+  checkAction: boolean,
+): void {
+  if (value === undefined || value === null) return;
+  if (typeof value === 'string') {
+    const v = value.trim().toLowerCase();
+    if (v !== 'all' && v !== 'none') {
+      issues.push({ path: where, message: `${label} string must be "all" or "none" (or an array of names).`, severity: 'error' });
+    }
+    return;
+  }
+  if (!Array.isArray(value)) {
+    issues.push({ path: where, message: `${label} must be an array of strings, "all", or "none".`, severity: 'error' });
+    return;
+  }
+  value.forEach((item, k) => {
+    if (typeof item !== 'string' || !item.trim()) {
+      issues.push({ path: `${where}[${k}]`, message: `${label} entries must be non-empty strings.`, severity: 'error' });
+      return;
+    }
+    const s = item.trim();
+    if (checkAction && s !== '*' && !GRANTABLE_KORTIX_CLI_ACTIONS.includes(s)) {
+      issues.push({
+        path: `${where}[${k}]`,
+        message: `"${s}" is not a grantable kortix_cli action (allowed: project.* / channel.*; account-scoped actions can never be granted to an agent).`,
+        severity: 'error',
+      });
+    }
+  });
+}
+
+/** `[[agents]]` — the per-agent scoping overlay (name + connectors + kortix_cli). */
+function validateAgents(node: unknown, path: string, issues: ManifestIssue[]): void {
+  if (node == null) return;
+  if (!Array.isArray(node)) {
+    issues.push({ path, message: '`agents` must be an array of tables — use `[[agents]]`.', severity: 'error' });
+    return;
+  }
+  const seen = new Set<string>();
+  node.forEach((entry, i) => {
+    const where = `${path}[${i}]`;
+    if (!isTable(entry)) {
+      issues.push({ path: where, message: 'must be a table.', severity: 'error' });
+      return;
+    }
+    const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+    if (!name) {
+      issues.push({ path: `${where}.name`, message: 'name is required.', severity: 'error' });
+    } else if (!SLUG_RE.test(name)) {
+      issues.push({ path: `${where}.name`, message: `"${name}" is not a valid agent name (lowercase letters, digits, dashes, underscores).`, severity: 'error' });
+    } else if (seen.has(name)) {
+      issues.push({ path: `${where}.name`, message: `duplicate agent name "${name}".`, severity: 'error' });
+    } else {
+      seen.add(name);
+    }
+    validateGrantList(entry.connectors, `${where}.connectors`, 'connectors', issues, false);
+    validateGrantList(entry.kortix_cli, `${where}.kortix_cli`, 'kortix_cli', issues, true);
+  });
+}
 
 function validateRoot(raw: Record<string, unknown>, issues: ManifestIssue[]): void {
   const versionRaw = raw.kortix_version;

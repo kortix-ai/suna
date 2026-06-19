@@ -161,3 +161,12 @@ nothing is worth changing.
 #   out_dir = "dist"
 #   [apps.env]
 #   NEXT_PUBLIC_API_URL = "https://api.example.com"
+
+# ─── Per-agent authorization (optional) ───────────────────────────
+# Scope what an agent may touch. Omit entirely = full access (default).
+# `kortix_cli` = Kortix CLI/API powers; `connectors` = which integrations.
+# Run `kortix validate --scopes` for the full grantable action list.
+# [[agents]]
+# name       = "release-bot"
+# connectors = ["github"]
+# kortix_cli = ["project.deploy", "project.cr.open"]   # open a CR, but not merge

@@ -232,6 +232,51 @@ The location of OpenCode's config dir is declared in `kortix.toml` under `[openc
 The platform never reads opencode's config dir; OpenCode never reads `kortix.toml`. Dashboard edits to triggers / env / apps are read-modify-writes on `kortix.toml` — they round-trip cleanly with edits made inside a session.
 </contract>
 
+<agent-authorization>
+## Per-agent authorization — `[[agents]]`
+
+An agent **is** its OpenCode `.md` (front matter + system prompt). Everything about
+*how an agent behaves* stays OpenCode-native in that file. `kortix.toml`'s optional
+`[[agents]]` block is a thin **scoping overlay**, keyed by the agent's name, that adds
+only the two things OpenCode's agent config cannot express:
+
+```toml
+[[agents]]
+name       = "release-bot"            # = the agent's .md name (e.g. .kortix/opencode/agents/release-bot.md)
+connectors = ["github"]               # which connector profiles it may call   (default: none)
+kortix_cli = ["project.deploy", "project.cr.open"]   # what it may do via the Kortix CLI/API (default: none)
+```
+
+**Which file owns what — never duplicate across the boundary:**
+
+| Setting | Lives in |
+| --- | --- |
+| system prompt, `model`, `mode`, `tools`, **`permission`** (incl. `permission.skill` to scope **skills**) | the agent's **`.md`** (OpenCode-native) |
+| **`connectors`** (integration access) + **`kortix_cli`** (Kortix CLI/API powers) | **`kortix.toml` `[[agents]]`** |
+
+**How the grant resolves at session start (backward-compatible):**
+- Manifest has **no `[[agents]]`** at all → no restriction (full access). Existing projects are unchanged.
+- Agent **is listed** → its `connectors` + `kortix_cli` (default each = none if omitted).
+- Manifest **has `[[agents]]` but this agent isn't listed** → default-**deny** (it still runs its `.md`, but with no connectors and no Kortix-CLI powers).
+- The effective grant is always **∩ the launching user's role** — an agent can never exceed the human who launched it. Editing `kortix.toml` only takes effect once the **CR is merged** (read from the default branch).
+
+**`kortix_cli` — the grantable enum** (project-scoped only; account-level admin actions
+like `member.*` / `billing.*` / `project.create` can NEVER be granted to an agent). Run
+`kortix validate --scopes` to print this list:
+
+```
+project.read  project.write  project.delete  project.deploy
+project.cr.open  project.cr.merge          # opening a CR ≠ merging it (merge lands code on main)
+project.session.read  project.session.start  project.session.exec  project.session.stop
+project.members.read  project.members.manage
+project.trigger.read  project.trigger.create  project.trigger.update  project.trigger.delete  project.trigger.fire
+channel.read  channel.connect  channel.send  channel.disconnect
+```
+
+`kortix validate` validates `[[agents]]` (rejecting unknown / account-scoped actions) and
+prints each agent's resolved scope. Use `kortix validate --scopes` to see the full enum.
+</agent-authorization>
+
 <references>
 
 <reference path=".kortix/opencode/skills/kortix-system/references/kortix/credentials-and-setup-links.md">
