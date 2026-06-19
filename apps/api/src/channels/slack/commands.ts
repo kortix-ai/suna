@@ -22,6 +22,10 @@ export interface SlashCtx {
   // reply for subcommands too slow for the synchronous 3s window (agent list
   // touches git). DB-only subcommands answer synchronously and ignore it.
   responseUrl?: string;
+  // DM fallback path: the Assistant pane delivers `/kortix …` as a plain message
+  // (no response_url), so deferred subcommands post their result through this
+  // instead of `respondViaUrl`. Set only by the DM command runner.
+  deferredDeliver?: (resp: SlashResponse) => Promise<void>;
 }
 
 export async function handleSlashCommand(
@@ -506,7 +510,8 @@ async function slashAgents(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
     };
   }
   // Listing agents touches git — too slow for the synchronous 3s window. Ack
-  // immediately and post the real picker to the response_url.
+  // immediately and post the real picker out-of-band: to the response_url for a
+  // real slash command, or straight into the DM for the message-fallback path.
   void (async () => {
     let agents: Awaited<ReturnType<typeof listProjectAgents>> = [];
     try {
@@ -514,11 +519,12 @@ async function slashAgents(ctx: SlashCtx, arg: string): Promise<SlashResponse> {
     } catch (err) {
       console.warn('[slack-webhook] listProjectAgents failed', err);
     }
-    await respondViaUrl(ctx.responseUrl, {
-      response_type: 'ephemeral',
-      replace_original: true,
-      blocks: buildAgentPickerBlocks(ctx, selection.agentName, agents),
-    });
+    const blocks = buildAgentPickerBlocks(ctx, selection.agentName, agents);
+    if (ctx.deferredDeliver) {
+      await ctx.deferredDeliver({ response_type: 'ephemeral', blocks });
+    } else {
+      await respondViaUrl(ctx.responseUrl, { response_type: 'ephemeral', replace_original: true, blocks });
+    }
   })();
   return { response_type: 'ephemeral', text: 'Loading agents…' };
 }
