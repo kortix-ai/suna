@@ -271,7 +271,14 @@ async function claimSpare(projectId: string): Promise<ClaimedSpare | null> {
       SELECT s.sandbox_id FROM kortix.session_sandboxes s
       WHERE s.project_id = ${projectId}
         AND s.pool_state = 'parked'
-        AND s.status = 'provisioning'
+        -- A parked spare's box has finished provisioning, so its status is
+        -- 'active' (the box-ready finish in session-sandbox.ts sets it); it is
+        -- 'provisioning' only in the brief window before that finish lands. The
+        -- old 'provisioning'-only filter never matched a parked spare, so EVERY
+        -- claim missed and fell back to a cold create — the pool never worked.
+        -- Accept both healthy states; pool_state='parked' already scopes to
+        -- session-less spares, and error/failed/stopped are excluded.
+        AND s.status IN ('active', 'provisioning')
         AND s.external_id IS NOT NULL
       ORDER BY s.created_at ASC
       LIMIT 1

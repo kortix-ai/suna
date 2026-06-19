@@ -10,6 +10,7 @@ import {
 } from '../command-helpers.ts';
 import { runSessionsChat, runSessionsLog, runSessionsStatus } from './sessions-chat.ts';
 import { C, pad, status } from '../style.ts';
+import { sessionWebUrl } from '../web-url.ts';
 import type { ProjectSession, ProjectSummary } from '../api/types.ts';
 
 const HELP = `Usage: kortix sessions <subcommand> [options]
@@ -467,7 +468,7 @@ async function sessionsOpen(sessionId: string | undefined, opts: CtxOpts): Promi
   if (!ctx) return 1;
   const auth = loadAuth();
   if (!auth) return 1;
-  const url = `${webDashboardUrl(auth.api_base)}/projects/${ctx.projectId}/sessions/${sessionId}`;
+  const url = sessionWebUrl(auth.api_base, ctx.projectId, sessionId);
   process.stdout.write(`${C.dim}Opening ${url}${C.reset}\n`);
   openInBrowser(url);
   return 0;
@@ -557,22 +558,6 @@ function formatRelative(iso: string): string {
   const d = Math.floor(h / 24);
   if (d < 30) return `${d}d ago`;
   return new Date(iso).toLocaleDateString();
-}
-
-function webDashboardUrl(apiBase: string): string {
-  try {
-    const url = new URL(apiBase);
-    if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
-      return `${url.protocol}//${url.hostname}:3000`;
-    }
-    if (url.hostname.startsWith('api.')) {
-      url.hostname = url.hostname.slice(4);
-      return url.origin;
-    }
-    return url.origin;
-  } catch {
-    return 'https://kortix.com';
-  }
 }
 
 function openInBrowser(url: string): void {

@@ -8,6 +8,7 @@
 import { getDaytona, getDaytonaWarm } from '../../shared/daytona';
 import { warmRestoreScript, WARM_RESTORE_MARKERS, noteWarmPathFailure } from '../../snapshots/warm-bake';
 import { serviceKeyForExternalId } from '../service-key';
+import { sandboxFrontendBaseUrl } from '../sandbox-frontend-url';
 import { config, SANDBOX_VERSION } from '../../config';
 // (DAYTONA_SNAPSHOT was removed — every sandbox boots from its project's
 // own per-project snapshot, resolved by the snapshot builder. Callers
@@ -119,6 +120,9 @@ export class DaytonaProvider implements SandboxProvider {
       // needs KORTIX_API_URL + KORTIX_TOKEN; tools derive every router endpoint
       // from KORTIX_API_URL and auth with KORTIX_TOKEN.
       KORTIX_API_URL: `${sandboxApiBase}/v1`,
+      // Frontend base for user-facing dashboard links (never the API host).
+      // Guaranteed here too so it is present even if a caller's env map omits it.
+      KORTIX_FRONTEND_URL: sandboxFrontendBaseUrl(),
       // Session identity, git context, KORTIX_TOKEN, and the project's own
       // secrets (incl. provider keys set via `kortix providers`, picked up by
       // opencode at boot) — see buildSessionSandboxEnvVars() and

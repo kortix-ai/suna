@@ -65,6 +65,14 @@ link (Slack); you never see the value. Then end your turn; when they say "done",
 verify (`kortix secrets ls` / `executor connectors`) and continue. See the
 `kortix-system` skill's **credentials-and-setup-links** reference.
 
+**Linking to a project, session, or dashboard? Use `$KORTIX_FRONTEND_URL`.**
+Never hand a human a URL built from `$KORTIX_API_URL` — that is the API host
+(e.g. `https://api-prod.kortix.com`) and is not browsable. The browsable
+dashboard base is `$KORTIX_FRONTEND_URL` (e.g. `https://kortix.com`), so a
+project link is `$KORTIX_FRONTEND_URL/projects/<id>`. Better still, let the
+`kortix` CLI build it for you (`kortix projects open`, `kortix sessions open`) —
+it already resolves the right host.
+
 If the user asks about OpenCode itself (agent personas, custom
 commands, providers), point at <https://opencode.ai/docs/>. The
 platform doesn't read those — OpenCode does.
