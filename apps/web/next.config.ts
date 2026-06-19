@@ -133,7 +133,6 @@ const nextConfig = (): NextConfig => ({
     // Optimize package imports for faster builds and smaller bundles
     optimizePackageImports: [
       'lucide-react',
-      'framer-motion',
       '@radix-ui/react-icons',
       'recharts',
       'date-fns',
