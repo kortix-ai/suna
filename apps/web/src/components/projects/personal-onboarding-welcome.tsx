@@ -5,8 +5,8 @@ import { CalendarDays, Mail, MessageCircle, X } from 'lucide-react';
 import Image from 'next/image';
 import { useCallback, useEffect, useState } from 'react';
 
-import { DemoQualifierDialog } from '@/components/contact/demo-qualifier-dialog';
 import { Button } from '@/components/ui/button';
+import { DemoQualifierModal } from '@/features/contact/demo-qualifier-modal';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useProjectOnboarding } from '@/hooks/projects/use-project-onboarding';
 import { usePersonalContactTier } from '@/hooks/use-show-personal-contact';
@@ -176,7 +176,7 @@ export function PersonalOnboardingWelcome({
 
       {/* Same screening gate as the public demo: teams under 11 are captured
           as a lead and confirmed, not put onto Marko's calendar. */}
-      <DemoQualifierDialog
+      <DemoQualifierModal
         open={qualifierOpen}
         onOpenChange={setQualifierOpen}
         calLink={MARKO_CAL_LINK}

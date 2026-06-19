@@ -7,12 +7,12 @@ import { Loader2, RotateCcw } from 'lucide-react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
-import { ProjectShell } from '@/components/projects/project-shell';
-import { SessionChat } from '@/components/session/session-chat';
-import { SessionLayout } from '@/components/session/session-layout';
-import { SessionStartingLoader } from '@/components/session/session-starting-loader';
 import { Button } from '@/components/ui/button';
+import { ProjectShell } from '@/features/co-worker/project-layout/project-shell';
 import { useAuth } from '@/features/providers/auth-provider';
+import { SessionChat } from '@/features/session/session-chat';
+import { SessionLayout } from '@/features/session/session-layout';
+import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { useAccountState } from '@/hooks/billing';
 import {
   clearOpencodeEnsureGuard,
@@ -20,6 +20,7 @@ import {
 } from '@/hooks/opencode/use-canonical-opencode-session';
 import { OpenCodeEventStreamProvider } from '@/hooks/opencode/use-opencode-events';
 import { useSandboxConnection } from '@/hooks/platform/use-sandbox-connection';
+import { useProjectPresence } from '@/hooks/platform/use-project-presence';
 import { isBillingEnabled } from '@/lib/config';
 import { setActiveInstanceCookie } from '@/lib/instance-routes';
 import { formatOpenCodeRuntimeError } from '@/lib/opencode-errors';
@@ -64,6 +65,11 @@ export default function ProjectSessionPage() {
   const { id: projectId, sessionId } = useParams<{ id: string; sessionId: string }>();
   const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
+
+  // Warm-pool presence: heartbeat while this project tab is open so a spare stays
+  // ready for the next session, and reap it on close. Keeps warm cost scoped to
+  // open projects (no-op unless the pool is enabled + the member can launch).
+  useProjectPresence(projectId);
 
   // Billing gate. An account with no active plan can't run a session — the
   // backend would never provision a sandbox, so polling for one spins forever.

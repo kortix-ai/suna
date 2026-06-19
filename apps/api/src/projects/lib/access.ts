@@ -333,8 +333,12 @@ export async function loadProjectForUser(c: Context, projectId: string, action: 
   // project (loading it, polling its sessions) means they're around and likely
   // to start a session — keep a warm box ready. No-op unless the pool is on;
   // throttled internally. Only members who can launch sessions count.
-  if (action !== 'read' || roleAllows(effectiveRole as ProjectRole, 'write')) {
-    notePoolPresence(projectId, userId);
+  // Skip on the explicit leave beacon: the user is LEAVING the project, so
+  // recording presence (would re-arm a spare) or pre-resuming a session there is
+  // exactly backwards — the leave handler drops presence + reaps instead.
+  const isLeaveBeacon = !!(c as any).req?.path?.endsWith?.('/presence/leave');
+  if (!isLeaveBeacon && (action !== 'read' || roleAllows(effectiveRole as ProjectRole, 'write'))) {
+    notePoolPresence(projectId, row.accountId);
     // Same presence signal drives pre-resume: proactively wake the user's most
     // recently-stopped session(s) so the resume overlaps their navigation.
     // No-op unless KORTIX_PRERESUME_ENABLED; throttled + idempotent internally.

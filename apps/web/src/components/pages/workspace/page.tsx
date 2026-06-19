@@ -2,7 +2,46 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useCallback, useMemo, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { PageSearchBar } from '@/components/ui/page-search-bar';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { Skeleton } from '@/components/ui/skeleton';
+import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
+import { WorkspaceItemCard } from '@/components/ui/workspace-item-card';
+import {
+  OpenCodeSettingsDialog,
+  type OpenCodeSettingsTab,
+} from '@/features/session/opencode-settings-dialog';
+import { useSkills } from '@/features/skills/hooks';
+import { getSkillSource, type Skill } from '@/features/skills/types';
+import {
+  useCreateOpenCodeSession,
+  useOpenCodeAgents,
+  useOpenCodeCommands,
+  useOpenCodeMcpStatus,
+  useOpenCodeToolIds,
+  type Agent,
+  type Command,
+  type McpStatus,
+} from '@/hooks/opencode/use-opencode-sessions';
+import { toast } from '@/lib/toast';
+import { cn } from '@/lib/utils';
+import { useServerStore } from '@/stores/server-store';
+import { openTabAndNavigate } from '@/stores/tab-store';
 import {
   Blocks,
   Bot,
@@ -13,54 +52,13 @@ import {
   Loader2,
   Plug,
   Plus,
-  Search,
   Settings,
   Sparkles,
   Terminal,
   Wrench,
-  X,
 } from 'lucide-react';
 import { AnimatePresence } from 'motion/react';
-import { toast } from '@/lib/toast';
-import { cn } from '@/lib/utils';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { FilterBar, FilterBarItem } from '@/components/ui/tabs';
-import { PageSearchBar } from '@/components/ui/page-search-bar';
-import { Skeleton } from '@/components/ui/skeleton';
-import { WorkspaceItemCard } from '@/components/ui/workspace-item-card';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet';
-import {
-  OpenCodeSettingsDialog,
-  type OpenCodeSettingsTab,
-} from '@/components/session/opencode-settings-dialog';
-import {
-  useCreateOpenCodeSession,
-  useOpenCodeAgents,
-  useOpenCodeCommands,
-  useOpenCodeToolIds,
-  useOpenCodeMcpStatus,
-  type Agent,
-  type Command,
-  type McpStatus,
-} from '@/hooks/opencode/use-opencode-sessions';
-import { useSkills } from '@/features/skills/hooks';
-import { getSkillSource, type Skill } from '@/features/skills/types';
-import { openTabAndNavigate } from '@/stores/tab-store';
-import { useServerStore } from '@/stores/server-store';
+import { useCallback, useMemo, useState } from 'react';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -87,10 +85,7 @@ interface WorkspaceItem {
     | { serverName: string; status: McpStatus };
 }
 
-const COMPOSER_PRESETS: Record<
-  WorkspaceComposerKind,
-  { title: string; prompt: string }
-> = {
+const COMPOSER_PRESETS: Record<WorkspaceComposerKind, { title: string; prompt: string }> = {
   agent: {
     title: 'New agent',
     prompt:
@@ -182,8 +177,7 @@ function DetailSheet({
     if (a.variant) rows.push({ label: 'Variant', value: a.variant });
     if (a.temperature !== undefined)
       rows.push({ label: 'Temperature', value: String(a.temperature) });
-    if (a.steps !== undefined)
-      rows.push({ label: 'Max Steps', value: String(a.steps) });
+    if (a.steps !== undefined) rows.push({ label: 'Max Steps', value: String(a.steps) });
     if (a.prompt) content = a.prompt;
   }
   if (item?.kind === 'skill' && item.raw) {
@@ -196,8 +190,7 @@ function DetailSheet({
     if (c.source) rows.push({ label: 'Source', value: c.source });
     if (c.agent) rows.push({ label: 'Agent', value: c.agent });
     if (c.model) rows.push({ label: 'Model', value: c.model, mono: true });
-    if (c.hints?.length)
-      rows.push({ label: 'Hints', value: c.hints.join(', ') });
+    if (c.hints?.length) rows.push({ label: 'Hints', value: c.hints.join(', ') });
     if (c.template) content = c.template;
   }
   if (item?.kind === 'tool' && item.raw) {
@@ -229,30 +222,25 @@ function DetailSheet({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-lg p-0 flex flex-col gap-0 [&>button:last-child]:hidden"
+        className="flex w-full flex-col gap-0 p-0 sm:max-w-lg [&>button:last-child]:hidden"
       >
         {item && (
           <>
             {/* Header */}
-            <SheetHeader className="px-6 pt-6 pb-4 border-b border-border/50 gap-0 space-y-0">
+            <SheetHeader className="border-border/50 gap-0 space-y-0 border-b px-6 pt-6 pb-4">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 flex-1">
                   <SheetTitle
-                    className={cn(
-                      'text-sm break-all',
-                      item.kind === 'command' && 'font-mono',
-                    )}
+                    className={cn('text-sm break-all', item.kind === 'command' && 'font-mono')}
                   >
                     {item.name}
                   </SheetTitle>
                   <SheetDescription className="sr-only">
                     {kindCfg.label}
-                    {tHardcodedUi.raw(
-                      'componentsPagesWorkspacePage.line204JsxTextDetailsFor',
-                    )}{' '}
+                    {tHardcodedUi.raw('componentsPagesWorkspacePage.line204JsxTextDetailsFor')}{' '}
                     {item.name}
                   </SheetDescription>
-                  <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <Badge variant="secondary" className="text-xs">
                       {kindCfg.label}
                     </Badge>
@@ -260,16 +248,14 @@ function DetailSheet({
                       {SCOPE_LABEL[item.scope]}
                     </Badge>
                     {item.meta && (
-                      <span className="text-xs text-muted-foreground/50">
-                        {item.meta}
-                      </span>
+                      <span className="text-muted-foreground/50 text-xs">{item.meta}</span>
                     )}
                   </div>
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-2.5 text-xs text-muted-foreground hover:text-foreground shrink-0 gap-1"
+                  className="text-muted-foreground hover:text-foreground h-7 shrink-0 gap-1 px-2.5 text-xs"
                   onClick={() => copy(item.name, 'name')}
                 >
                   {copied === 'name' ? (
@@ -286,7 +272,7 @@ function DetailSheet({
                 </Button>
               </div>
               {item.description && (
-                <p className="text-xs text-muted-foreground leading-relaxed mt-3">
+                <p className="text-muted-foreground mt-3 text-xs leading-relaxed">
                   {item.description}
                 </p>
               )}
@@ -297,21 +283,16 @@ function DetailSheet({
               {/* Properties */}
               {rows.length > 0 && (
                 <div className="px-6 py-5">
-                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60 mb-3">
+                  <p className="text-muted-foreground/60 mb-3 text-xs font-semibold tracking-widest uppercase">
                     Properties
                   </p>
                   <div className="space-y-3">
                     {rows.map((row) => (
-                      <div
-                        key={row.label}
-                        className="grid grid-cols-[100px_1fr] gap-2"
-                      >
-                        <span className="text-xs text-muted-foreground">
-                          {row.label}
-                        </span>
+                      <div key={row.label} className="grid grid-cols-[100px_1fr] gap-2">
+                        <span className="text-muted-foreground text-xs">{row.label}</span>
                         <span
                           className={cn(
-                            'text-xs text-foreground break-all',
+                            'text-foreground text-xs break-all',
                             row.mono && 'font-mono',
                           )}
                         >
@@ -326,17 +307,17 @@ function DetailSheet({
               {/* Content preview */}
               {content && (
                 <>
-                  <div className="flex items-center justify-between px-6 py-3 border-y border-border/50 bg-muted/30">
+                  <div className="border-border/50 bg-muted/30 flex items-center justify-between border-y px-6 py-3">
                     <div className="flex items-center gap-2">
-                      <FileText className="h-3 w-3 text-muted-foreground/50" />
-                      <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground/60">
+                      <FileText className="text-muted-foreground/50 h-3 w-3" />
+                      <span className="text-muted-foreground/60 text-xs font-semibold tracking-widest uppercase">
                         {contentLabel}
                       </span>
                     </div>
                     <Button
                       variant="ghost"
                       size="sm"
-                      className="h-6 px-2 text-xs gap-1 text-muted-foreground hover:text-foreground"
+                      className="text-muted-foreground hover:text-foreground h-6 gap-1 px-2 text-xs"
                       onClick={() => copy(content!, 'content')}
                     >
                       {copied === 'content' ? (
@@ -353,7 +334,7 @@ function DetailSheet({
                     </Button>
                   </div>
                   <div className="px-6 py-4">
-                    <pre className="text-xs leading-relaxed text-foreground/80 whitespace-pre-wrap font-mono">
+                    <pre className="text-foreground/80 font-mono text-xs leading-relaxed whitespace-pre-wrap">
                       <code>{content}</code>
                     </pre>
                   </div>
@@ -362,7 +343,7 @@ function DetailSheet({
 
               {/* Empty fallback */}
               {rows.length === 0 && !content && (
-                <div className="flex flex-col items-center justify-center py-20 text-muted-foreground/30">
+                <div className="text-muted-foreground/30 flex flex-col items-center justify-center py-20">
                   <p className="text-xs">
                     {tHardcodedUi.raw(
                       'componentsPagesWorkspacePage.line280JsxTextNoAdditionalDetails',
@@ -384,15 +365,15 @@ function DetailSheet({
 
 function LoadingSkeleton() {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
       {Array.from({ length: 8 }).map((_, i) => (
-        <div key={i} className="rounded-2xl border bg-card p-4 sm:p-5">
+        <div key={i} className="bg-card rounded-2xl border p-4 sm:p-5">
           <div className="mb-3 space-y-2">
             <Skeleton className="h-4 w-32" />
             <Skeleton className="h-3 w-20" />
           </div>
-          <Skeleton className="h-3 w-full mb-1" />
-          <Skeleton className="h-3 w-4/5 mb-4" />
+          <Skeleton className="mb-1 h-3 w-full" />
+          <Skeleton className="mb-4 h-3 w-4/5" />
           <div className="flex justify-end">
             <Skeleton className="h-8 w-16" />
           </div>
@@ -402,42 +383,25 @@ function LoadingSkeleton() {
   );
 }
 
-function EmptyState({
-  hasFilters,
-  onClear,
-}: {
-  hasFilters: boolean;
-  onClear: () => void;
-}) {
+function EmptyState({ hasFilters, onClear }: { hasFilters: boolean; onClear: () => void }) {
   const tHardcodedUi = useTranslations('hardcodedUi');
   if (hasFilters) {
     return (
-      <div className="py-12 text-center text-sm text-muted-foreground">
-        {tHardcodedUi.raw(
-          'componentsPagesWorkspacePage.line340JsxTextNoItemsMatchYourFilters',
-        )}{' '}
-        <Button
-          onClick={onClear}
-          variant="link"
-          size="sm"
-          className="h-auto p-0 "
-        >
-          {tHardcodedUi.raw(
-            'componentsPagesWorkspacePage.line342JsxTextClearFilters',
-          )}
+      <div className="text-muted-foreground py-12 text-center text-sm">
+        {tHardcodedUi.raw('componentsPagesWorkspacePage.line340JsxTextNoItemsMatchYourFilters')}{' '}
+        <Button onClick={onClear} variant="link" size="sm" className="h-auto p-0">
+          {tHardcodedUi.raw('componentsPagesWorkspacePage.line342JsxTextClearFilters')}
         </Button>
       </div>
     );
   }
   return (
-    <div className="flex flex-col items-center justify-center py-20 rounded-2xl border border-dashed border-border/50">
-      <Blocks className="h-7 w-7 text-muted-foreground/30 mb-3" />
-      <p className="text-sm font-medium text-foreground mb-1">
-        {tHardcodedUi.raw(
-          'componentsPagesWorkspacePage.line350JsxTextNothingHereYet',
-        )}
+    <div className="border-border/50 flex flex-col items-center justify-center rounded-2xl border border-dashed py-20">
+      <Blocks className="text-muted-foreground/30 mb-3 h-7 w-7" />
+      <p className="text-foreground mb-1 text-sm font-medium">
+        {tHardcodedUi.raw('componentsPagesWorkspacePage.line350JsxTextNothingHereYet')}
       </p>
-      <p className="text-xs text-muted-foreground text-center max-w-xs">
+      <p className="text-muted-foreground max-w-xs text-center text-xs">
         {tHardcodedUi.raw(
           'componentsPagesWorkspacePage.line352JsxTextUseTheActionsAboveToAddAgentsSkills',
         )}
@@ -456,8 +420,7 @@ export default function WorkspacePage() {
   const [kindFilter, setKindFilter] = useState<KindFilter>('all');
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] =
-    useState<OpenCodeSettingsTab>('general');
+  const [settingsTab, setSettingsTab] = useState<OpenCodeSettingsTab>('general');
   const [selectedItem, setSelectedItem] = useState<WorkspaceItem | null>(null);
   const createSession = useCreateOpenCodeSession();
 
@@ -473,10 +436,7 @@ export default function WorkspacePage() {
         const session = await createSession.mutateAsync({
           title: preset.title,
         });
-        sessionStorage.setItem(
-          `opencode_pending_prompt:${session.id}`,
-          preset.prompt,
-        );
+        sessionStorage.setItem(`opencode_pending_prompt:${session.id}`, preset.prompt);
         openTabAndNavigate({
           id: session.id,
           title: preset.title,
@@ -526,11 +486,7 @@ export default function WorkspacePage() {
       .forEach((s) => {
         const src = getSkillSource(s.location);
         const scope: ItemScope =
-          src === 'project'
-            ? 'project'
-            : src === 'global'
-              ? 'global'
-              : 'external';
+          src === 'project' ? 'project' : src === 'global' ? 'global' : 'external';
         items.push({
           id: `skill:${s.name}`,
           name: s.name,
@@ -587,8 +543,7 @@ export default function WorkspacePage() {
           items.push({
             id: `mcp:${name}`,
             name,
-            description:
-              status.status === 'failed' ? (status as any).error : undefined,
+            description: status.status === 'failed' ? (status as any).error : undefined,
             kind: 'mcp',
             scope: 'external',
             meta: label,
@@ -621,10 +576,7 @@ export default function WorkspacePage() {
       external: 0,
       'built-in': 0,
     };
-    const base =
-      kindFilter === 'all'
-        ? allItems
-        : allItems.filter((i) => i.kind === kindFilter);
+    const base = kindFilter === 'all' ? allItems : allItems.filter((i) => i.kind === kindFilter);
     c.all = base.length;
     base.forEach((i) => c[i.scope]++);
     return c;
@@ -647,21 +599,15 @@ export default function WorkspacePage() {
   }, [allItems, kindFilter, scopeFilter, search]);
 
   const activeScopeTabs = useMemo(() => {
-    const tabs: { value: ScopeFilter; label: string }[] = [
-      { value: 'all', label: 'All' },
-    ];
-    if (scopeCounts.project > 0)
-      tabs.push({ value: 'project', label: 'Workspace' });
+    const tabs: { value: ScopeFilter; label: string }[] = [{ value: 'all', label: 'All' }];
+    if (scopeCounts.project > 0) tabs.push({ value: 'project', label: 'Workspace' });
     if (scopeCounts.global > 0) tabs.push({ value: 'global', label: 'Global' });
-    if (scopeCounts.external > 0)
-      tabs.push({ value: 'external', label: 'External' });
-    if (scopeCounts['built-in'] > 0)
-      tabs.push({ value: 'built-in', label: 'Built-in' });
+    if (scopeCounts.external > 0) tabs.push({ value: 'external', label: 'External' });
+    if (scopeCounts['built-in'] > 0) tabs.push({ value: 'built-in', label: 'Built-in' });
     return tabs;
   }, [scopeCounts]);
 
-  const hasFilters =
-    search.trim() !== '' || kindFilter !== 'all' || scopeFilter !== 'all';
+  const hasFilters = search.trim() !== '' || kindFilter !== 'all' || scopeFilter !== 'all';
   const clearFilters = () => {
     setSearch('');
     setKindFilter('all');
@@ -703,14 +649,14 @@ export default function WorkspacePage() {
   return (
     <>
       <div className="flex-1 overflow-y-auto">
-        <div className="container mx-auto max-w-7xl space-y-5 px-3 py-5 sm:px-4 sm:py-6 animate-in fade-in-0 slide-in-from-bottom-2 duration-300">
+        <div className="animate-in fade-in-0 slide-in-from-bottom-2 container mx-auto max-w-7xl space-y-5 px-3 py-5 duration-300 sm:px-4 sm:py-6">
           {/* Header — title + actions in one row, like /settings/* pages.
               The tab bar already says "Workspace" so no need for a giant
               banner; this keeps actions one click away. */}
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <h1 className="text-lg sm:text-xl font-semibold">Workspace</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <h1 className="text-lg font-semibold sm:text-xl">Workspace</h1>
+              <p className="text-muted-foreground mt-1 text-sm">
                 {tHardcodedUi.raw(
                   'componentsPagesWorkspacePage.line501JsxTextAgentsSkillsCommandsToolsAndMcpServers',
                 )}
@@ -719,11 +665,7 @@ export default function WorkspacePage() {
             <div className="flex shrink-0 items-center gap-2">
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={createSession.isPending}
-                  >
+                  <Button variant="outline" size="sm" disabled={createSession.isPending}>
                     {createSession.isPending ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
@@ -737,42 +679,36 @@ export default function WorkspacePage() {
                   <DropdownMenuItem onClick={() => openComposer('agent')}>
                     <Bot className="mr-2 h-3.5 w-3.5" />
                     Agent
-                    <span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
+                    <span className="text-muted-foreground/50 ml-auto text-xs tabular-nums">
                       {kindCounts.agent}
                     </span>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openComposer('skill')}>
                     <Sparkles className="mr-2 h-3.5 w-3.5" />
                     Skill
-                    <span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
+                    <span className="text-muted-foreground/50 ml-auto text-xs tabular-nums">
                       {kindCounts.skill}
                     </span>
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={() => openComposer('command')}>
                     <Terminal className="mr-2 h-3.5 w-3.5" />
                     Command
-                    <span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
+                    <span className="text-muted-foreground/50 ml-auto text-xs tabular-nums">
                       {kindCounts.command}
                     </span>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => openSettings('mcp')}>
                     <Plug className="mr-2 h-3.5 w-3.5" />
-                    {tHardcodedUi.raw(
-                      'componentsPagesWorkspacePage.line542JsxTextMcpServer',
-                    )}
-                    <span className="ml-auto text-xs text-muted-foreground/50 tabular-nums">
+                    {tHardcodedUi.raw('componentsPagesWorkspacePage.line542JsxTextMcpServer')}
+                    <span className="text-muted-foreground/50 ml-auto text-xs tabular-nums">
                       {kindCounts.mcp}
                     </span>
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
 
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => openSettings('general')}
-              >
+              <Button variant="outline" size="sm" onClick={() => openSettings('general')}>
                 <Settings className="h-4 w-4" />
                 Settings
               </Button>
@@ -800,15 +736,11 @@ export default function WorkspacePage() {
                       setKindFilter(tab.value);
                       setScopeFilter('all');
                     }}
-                    data-state={
-                      kindFilter === tab.value ? 'active' : 'inactive'
-                    }
+                    data-state={kindFilter === tab.value ? 'active' : 'inactive'}
                   >
                     {tab.label}
                     {kindCounts[tab.value] > 0 && (
-                      <span className="ml-1 opacity-50 tabular-nums">
-                        {kindCounts[tab.value]}
-                      </span>
+                      <span className="ml-1 tabular-nums opacity-50">{kindCounts[tab.value]}</span>
                     )}
                   </FilterBarItem>
                 ))}
@@ -820,7 +752,7 @@ export default function WorkspacePage() {
                   setKindFilter(e.target.value as KindFilter);
                   setScopeFilter('all');
                 }}
-                className="lg:hidden h-9 rounded-2xl border border-input bg-card px-3 text-sm cursor-pointer"
+                className="border-input bg-card h-9 cursor-pointer rounded-2xl border px-3 text-sm lg:hidden"
               >
                 {kindTabs.map((tab) => (
                   <option key={tab.value} value={tab.value}>
@@ -837,14 +769,10 @@ export default function WorkspacePage() {
                     key={tab.value}
                     value={tab.value}
                     onClick={() => setScopeFilter(tab.value)}
-                    data-state={
-                      scopeFilter === tab.value ? 'active' : 'inactive'
-                    }
+                    data-state={scopeFilter === tab.value ? 'active' : 'inactive'}
                   >
                     {tab.label}{' '}
-                    <span className="ml-1 opacity-50 tabular-nums">
-                      {scopeCounts[tab.value]}
-                    </span>
+                    <span className="ml-1 tabular-nums opacity-50">{scopeCounts[tab.value]}</span>
                   </FilterBarItem>
                 ))}
               </FilterBar>
@@ -867,7 +795,7 @@ export default function WorkspacePage() {
               <EmptyState hasFilters={hasFilters} onClear={clearFilters} />
             ) : (
               <AnimatePresence mode="popLayout">
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                   {filteredItems.map((item, index) => (
                     <WorkspaceItemCard
                       key={item.id}

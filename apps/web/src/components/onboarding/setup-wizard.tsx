@@ -13,14 +13,14 @@ import { useTranslations } from 'next-intl';
  * - Get Started — launches the onboarding chat session
  */
 
-import { AutoTopupCard } from '@/components/billing/auto-topup-card';
-import type { FlatModel } from '@/components/session/session-chat-input';
-import { flattenModels } from '@/components/session/session-chat-input';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { AutoTopupCard } from '@/features/billing/auto-topup-card';
 import { PROVIDER_LABELS, ProviderLogo } from '@/features/providers/provider-branding';
+import type { FlatModel } from '@/features/session/session-chat-input';
+import { flattenModels } from '@/features/session/session-chat-input';
 import { useModelStore } from '@/hooks/opencode/use-model-store';
 import { useOpenCodeProviders } from '@/hooks/opencode/use-opencode-sessions';
 import { backendApi } from '@/lib/api-client';

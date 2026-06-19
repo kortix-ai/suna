@@ -1,6 +1,7 @@
 'use client';
 
 import { cn } from '@/lib/utils';
+import { floatingZ, useDialogDepth } from '@/lib/z-stack';
 // import { ChevronRight, Circle } from "@mynaui/icons-react";
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { Check, ChevronRight, Circle } from 'lucide-react';
@@ -12,15 +13,17 @@ const DropdownMenuTrigger = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Trigger>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Trigger>
 >(({ className, ...props }, ref) => (
-  <DropdownMenuPrimitive.Trigger
-    ref={ref}
-    className={cn('focus:border-kortix-blue focus:border-[0.6px]', className)}
-    {...props}
-  />
+  <DropdownMenuPrimitive.Trigger ref={ref} className={className} {...props} />
 ));
 DropdownMenuTrigger.displayName = DropdownMenuPrimitive.Trigger.displayName;
 
-const DropdownMenuGroup = DropdownMenuPrimitive.Group;
+const DropdownMenuGroup = React.forwardRef<
+  React.ElementRef<typeof DropdownMenuPrimitive.Group>,
+  React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Group>
+>(({ className, ...props }, ref) => (
+  <DropdownMenuPrimitive.Group ref={ref} className={cn('p-1', className)} {...props} />
+));
+DropdownMenuGroup.displayName = DropdownMenuPrimitive.Group.displayName;
 
 const DropdownMenuPortal = DropdownMenuPrimitive.Portal;
 
@@ -57,41 +60,51 @@ const DropdownMenuSubContent = React.forwardRef<
     side?: 'top' | 'bottom' | 'left' | 'right';
     align?: 'start' | 'center' | 'end';
   }
->(({ className, side, align, ...props }, ref) => (
-  <DropdownMenuPrimitive.SubContent
-    ref={ref}
-    className={cn(
-      'bg-sidebar text-sidebar-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-[10001] mb-10 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-lg',
-      className,
-      side === 'top' && 'data-[side=top]:slide-in-from-bottom-2',
-      side === 'bottom' && 'data-[side=bottom]:slide-in-from-top-2',
-      side === 'left' && 'data-[side=left]:slide-in-from-right-2',
-      side === 'right' && 'data-[side=right]:slide-in-from-left-2',
-      align === 'start' && 'data-[align=start]:slide-in-from-end-2',
-      align === 'center' && 'data-[align=center]:slide-in-from-center-2',
-      align === 'end' && 'data-[align=end]:slide-in-from-start-2',
-    )}
-    {...props}
-  />
-));
+>(({ className, side, align, style, ...props }, ref) => {
+  const depth = useDialogDepth();
+
+  return (
+    <DropdownMenuPrimitive.SubContent
+      ref={ref}
+      className={cn(
+        'bg-sidebar text-sidebar-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 mb-10 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-lg',
+        className,
+        side === 'top' && 'data-[side=top]:slide-in-from-bottom-2',
+        side === 'bottom' && 'data-[side=bottom]:slide-in-from-top-2',
+        side === 'left' && 'data-[side=left]:slide-in-from-right-2',
+        side === 'right' && 'data-[side=right]:slide-in-from-left-2',
+        align === 'start' && 'data-[align=start]:slide-in-from-end-2',
+        align === 'center' && 'data-[align=center]:slide-in-from-center-2',
+        align === 'end' && 'data-[align=end]:slide-in-from-start-2',
+      )}
+      style={{ zIndex: floatingZ(depth), ...style }}
+      {...props}
+    />
+  );
+});
 DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayName;
 
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content>
->(({ className, sideOffset = 4, ...props }, ref) => (
-  <DropdownMenuPrimitive.Portal>
-    <DropdownMenuPrimitive.Content
-      ref={ref}
-      sideOffset={sideOffset}
-      className={cn(
-        'bg-sidebar text-sidebar-foreground hover:text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 z-[10001] min-w-[14rem] overflow-hidden rounded-lg border p-1 shadow-sm',
-        className,
-      )}
-      {...props}
-    />
-  </DropdownMenuPrimitive.Portal>
-));
+>(({ className, sideOffset = 4, style, ...props }, ref) => {
+  const depth = useDialogDepth();
+
+  return (
+    <DropdownMenuPrimitive.Portal>
+      <DropdownMenuPrimitive.Content
+        ref={ref}
+        sideOffset={sideOffset}
+        className={cn(
+          'bg-sidebar text-sidebar-foreground hover:text-foreground data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 min-w-[14rem] overflow-hidden rounded-lg border p-1 shadow-sm',
+          className,
+        )}
+        style={{ zIndex: floatingZ(depth), ...style }}
+        {...props}
+      />
+    </DropdownMenuPrimitive.Portal>
+  );
+});
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName;
 
 const DropdownMenuItem = React.forwardRef<
@@ -182,7 +195,11 @@ const DropdownMenuLabel = React.forwardRef<
 >(({ className, inset, ...props }, ref) => (
   <DropdownMenuPrimitive.Label
     ref={ref}
-    className={cn('px-2 py-1.5 text-sm font-semibold tracking-normal', inset && 'pl-8', className)}
+    className={cn(
+      'text-muted-foreground px-2.5 py-0.5 text-[13px] font-medium tracking-normal',
+      inset && 'pl-8',
+      className,
+    )}
     {...props}
   />
 ));

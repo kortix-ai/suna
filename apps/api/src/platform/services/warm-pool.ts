@@ -24,9 +24,9 @@
  * so the claimed row's config.serviceKey MUST stay the park key — the proxy
  * authenticates upstream with it.
  */
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 
-import { projects, projectSessions, sessionSandboxes } from '@kortix/db';
+import { projects, projectSessions, sessionSandboxes, warmPoolPresence } from '@kortix/db';
 import { config, type SandboxProviderName } from '../../config';
 import { db } from '../../shared/db';
 import { getProvider } from '../providers';
@@ -34,6 +34,7 @@ import { selectProvider } from './provider-balancer';
 import { createApiKey } from '../../repositories/api-keys';
 import { createAccountToken } from '../../repositories/account-tokens';
 import { accountEntitledToLlmGateway } from '../../shared/account-limits';
+import { checkBillingActive } from '../../billing/services/billing-gate';
 import { ensureSandboxImage, DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
 import { buildSpareSandboxEnvVars } from '../../projects/lib/sessions';
 import { resolvePreviewLink } from '../../sandbox-proxy/backend';
@@ -271,7 +272,14 @@ async function claimSpare(projectId: string): Promise<ClaimedSpare | null> {
       SELECT s.sandbox_id FROM kortix.session_sandboxes s
       WHERE s.project_id = ${projectId}
         AND s.pool_state = 'parked'
-        AND s.status = 'provisioning'
+        -- A parked spare's box has finished provisioning, so its status is
+        -- 'active' (the box-ready finish in session-sandbox.ts sets it); it is
+        -- 'provisioning' only in the brief window before that finish lands. The
+        -- old 'provisioning'-only filter never matched a parked spare, so EVERY
+        -- claim missed and fell back to a cold create — the pool never worked.
+        -- Accept both healthy states; pool_state='parked' already scopes to
+        -- session-less spares, and error/failed/stopped are excluded.
+        AND s.status IN ('active', 'provisioning')
         AND s.external_id IS NOT NULL
       ORDER BY s.created_at ASC
       LIMIT 1
@@ -470,15 +478,59 @@ export async function claimSpareForSession(input: ClaimSpareForSessionInput): Pr
 
 // ── Refill + presence + reconcile ────────────────────────────────────────────
 
-/** Per-instance presence map (projectId → last-seen ms) gating refill. */
-const presenceSeen = new Map<string, number>();
+/** Reap a project's spares this long after its last presence heartbeat — the
+ *  fallback for a tab that closed WITHOUT firing its leave beacon (crash, network
+ *  drop, hard kill). The leave beacon reaps immediately; this just bounds the
+ *  worst case to ~3× the client heartbeat interval. */
+const POOL_PRESENCE_STALE_MS = 3 * 60 * 1000;
+/** Per-pod write throttle so a burst of project requests doesn't upsert presence
+ *  on every call — one write per project per window is plenty (heartbeat ~45s). */
+const PRESENCE_WRITE_THROTTLE_MS = 20_000;
+
+/** Per-pod throttle of the presence upsert (projectId → last DB-write ms). */
+const presenceWroteAt = new Map<string, number>();
 const refillInFlight = new Set<string>();
 
-/** Record that a user is present in a project; kick a refill so a spare is ready. */
-export function notePoolPresence(projectId: string, userId?: string | null): void {
-  if (!warmPoolEnabled() || !projectId) return;
-  presenceSeen.set(projectId, Date.now());
-  void refillProjectPool(projectId, userId).catch(() => {});
+/** Record that a user has the project OPEN: refresh the cross-pod DB presence row
+ *  (so the leader reconcile sees it) and kick a refill so a spare is ready. The
+ *  DB write is throttled per project per pod; the refill is idempotent. */
+export function notePoolPresence(projectId: string, accountId?: string | null): void {
+  if (!warmPoolEnabled() || !projectId || !accountId) return;
+  const now = Date.now();
+  const last = presenceWroteAt.get(projectId) ?? 0;
+  if (now - last >= PRESENCE_WRITE_THROTTLE_MS) {
+    presenceWroteAt.set(projectId, now);
+    const seen = new Date(now);
+    void db
+      .insert(warmPoolPresence)
+      .values({ projectId, accountId, lastSeenAt: seen })
+      .onConflictDoUpdate({ target: warmPoolPresence.projectId, set: { lastSeenAt: seen, accountId } })
+      .catch((err) => console.warn('[warm-pool] presence upsert failed:', err instanceof Error ? err.message : err));
+  }
+  void refillProjectPool(projectId).catch(() => {});
+}
+
+/** The user left the project (tab closed/hidden): drop presence and reap its
+ *  parked/booting spares immediately, so cost tracks projects-open-now instead of
+ *  the 6h age rule. Best-effort. */
+export async function dropPoolPresence(projectId: string): Promise<void> {
+  if (!projectId) return;
+  presenceWroteAt.delete(projectId);
+  await db.delete(warmPoolPresence).where(eq(warmPoolPresence.projectId, projectId)).catch(() => {});
+  await reapProjectSpares(projectId).catch((err) =>
+    console.warn('[warm-pool] leave-reap failed:', err instanceof Error ? err.message : err),
+  );
+}
+
+/** Reap every parked/booting spare for a project (leave + stale-presence reap).
+ *  Never touches 'claiming' rows — a live claim is in flight there. */
+async function reapProjectSpares(projectId: string): Promise<number> {
+  const rows = await db
+    .select({ sandboxId: sessionSandboxes.sandboxId, externalId: sessionSandboxes.externalId, provider: sessionSandboxes.provider })
+    .from(sessionSandboxes)
+    .where(and(eq(sessionSandboxes.projectId, projectId), inArray(sessionSandboxes.poolState, ['booting', 'parked'])));
+  for (const row of rows) await reapWarmSandbox(row);
+  return rows.length;
 }
 
 /** Bring a project's parked spares toward its desired size (best-effort). */
@@ -493,6 +545,12 @@ export async function refillProjectPool(projectId: string, _forUserId?: string |
       .where(eq(projects.projectId, projectId))
       .limit(1);
     if (!project || !project.repoUrl) return;
+    // Don't pre-warm an account that can't create sessions: session-create 402s
+    // for it (assertBillingActive), so any spare we'd park can never be claimed —
+    // it would just consume the global MAX_TOTAL cap and starve projects that CAN
+    // use one (the dominant reason a returning user's project had no spare ready
+    // → cold start). Mirrors the session-create billing gate.
+    if (!(await checkBillingActive(project.accountId)).ok) return;
     const cfg = resolveWarmConfig(project.metadata);
     if (!cfg.enabled || cfg.size <= 0) return;
 
@@ -523,6 +581,21 @@ export async function refillProjectPool(projectId: string, _forUserId?: string |
  */
 export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: number; projects: number }> {
   let reaped = 0;
+  const enabled = warmPoolEnabled();
+
+  // Present projects = a fresh presence heartbeat, read from the DB (cross-pod,
+  // so the leader sees presence recorded on any pod).
+  const presentCutoff = new Date(now.getTime() - POOL_PRESENCE_STALE_MS);
+  const presentRows = enabled
+    ? await db
+        .select({ projectId: warmPoolPresence.projectId })
+        .from(warmPoolPresence)
+        .where(gte(warmPoolPresence.lastSeenAt, presentCutoff))
+    : [];
+  const present = new Set(presentRows.map((r) => r.projectId));
+  // Prune stale presence rows so the table stays small.
+  await db.delete(warmPoolPresence).where(lt(warmPoolPresence.lastSeenAt, presentCutoff)).catch(() => {});
+
   const poolRows = await db
     .select({
       sandboxId: sessionSandboxes.sandboxId,
@@ -537,9 +610,16 @@ export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: num
     .from(sessionSandboxes)
     .where(inArray(sessionSandboxes.poolState, ['booting', 'parked', 'claiming', 'reap']));
 
-  const enabled = warmPoolEnabled();
   for (const row of poolRows) {
-    const reason = enabled ? warmBoxReapReason(row, now.getTime()) : 'disabled';
+    // Reap when: disabled; the box is dead/aged/stuck (warmBoxReapReason); OR its
+    // project is no longer present (tab closed — usually the leave beacon already
+    // reaped, this catches missed beacons). Never presence-reap a 'claiming' row:
+    // a live claim is binding it (a dead claimant is still caught by claim-timeout).
+    const presenceReap =
+      enabled && row.poolState !== 'claiming' && !!row.projectId && !present.has(row.projectId);
+    const reason = !enabled
+      ? 'disabled'
+      : warmBoxReapReason(row, now.getTime()) || (presenceReap ? 'no-presence' : null);
     if (reason) {
       await reapWarmSandbox(row);
       reaped++;
@@ -547,11 +627,9 @@ export async function reconcileWarmPool(now = new Date()): Promise<{ reaped: num
   }
   if (!enabled) return { reaped, projects: 0 };
 
-  // Refill projects with fresh presence.
-  const cutoff = now.getTime() - config.KORTIX_WARM_POOL_PRESENCE_MINUTES * 60_000;
+  // Refill present projects toward their per-project SIZE.
   let refilled = 0;
-  for (const [projectId, seenAt] of presenceSeen) {
-    if (seenAt < cutoff) { presenceSeen.delete(projectId); continue; }
+  for (const projectId of present) {
     await refillProjectPool(projectId);
     refilled++;
   }

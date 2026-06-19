@@ -37,9 +37,17 @@ const optInt = (def: number) =>
     return Number.isNaN(n) ? def : n;
   });
 
-/** Optional boolean — 'true' → true, anything else → false. */
+/** Optional boolean. optBoolFalse accepts the common truthy spellings
+ * (case-insensitive) so a "1" / "yes" / "on" from a k8s env or secret bundle
+ * isn't silently dropped — the bug that left KORTIX_WARM_POOL_CLONE_AT_PARK="1"
+ * parsing as false (Stage-1, re-clone on claim) even though the daemon itself
+ * sets that env to '1'. optBoolTrue keeps its original 'anything but false' rule. */
 const optBoolTrue = z.string().optional().default('true').transform((v) => v !== 'false');
-const optBoolFalse = z.string().optional().default('false').transform((v) => v === 'true');
+const optBoolFalse = z
+  .string()
+  .optional()
+  .default('false')
+  .transform((v) => ['true', '1', 'yes', 'on'].includes(v.trim().toLowerCase()));
 
 // ─── Env Schema ─────────────────────────────────────────────────────────────
 //

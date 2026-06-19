@@ -2,15 +2,12 @@
 
 import { useTranslations } from 'next-intl';
 
-import { useState } from 'react';
-import {
-  ToolPartRenderer,
-  ToolActivateContext,
-} from '@/components/session/tool-renderers';
-import { SessionActionsPanel } from '@/components/session/session-actions-panel';
-import { SessionFilesPanel } from '@/components/session/session-files-panel';
-import { SessionFilesExplorer } from '@/components/session/session-files-explorer';
+import { SessionActionsPanel } from '@/features/session/session-actions-panel';
+import { SessionFilesExplorer } from '@/features/session/session-files-explorer';
+import { SessionFilesPanel } from '@/features/session/session-files-panel';
+import { ToolActivateContext, ToolPartRenderer } from '@/features/session/tool-renderers';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useState } from 'react';
 
 /**
  * /debug/tools
@@ -161,28 +158,21 @@ const GROUPS: Group[] = [
         label: 'edit (diff)',
         node: part(
           'edit',
-          done(
-            { filePath: '/workspace/apps/web/src/lib/math.ts' },
-            '',
-            {
-              filediff: {
-                additions: 3,
-                deletions: 1,
-                before: EDIT_BEFORE,
-                after: EDIT_AFTER,
-              },
+          done({ filePath: '/workspace/apps/web/src/lib/math.ts' }, '', {
+            filediff: {
+              additions: 3,
+              deletions: 1,
+              before: EDIT_BEFORE,
+              after: EDIT_AFTER,
             },
-          ),
+          }),
         ),
       },
       {
         label: 'write',
         node: part(
           'write',
-          done(
-            { filePath: '/workspace/apps/web/src/app/globals.css', content: WRITE_CONTENT },
-            '',
-          ),
+          done({ filePath: '/workspace/apps/web/src/app/globals.css', content: WRITE_CONTENT }, ''),
         ),
       },
       {
@@ -218,16 +208,12 @@ const GROUPS: Group[] = [
         label: 'read (loaded list)',
         node: part(
           'read',
-          done(
-            { filePath: '/workspace/apps/web/src/app/page.tsx' },
-            '',
-            {
-              loaded: [
-                '/workspace/apps/web/src/app/page.tsx',
-                '/workspace/apps/web/src/app/layout.tsx',
-              ],
-            },
-          ),
+          done({ filePath: '/workspace/apps/web/src/app/page.tsx' }, '', {
+            loaded: [
+              '/workspace/apps/web/src/app/page.tsx',
+              '/workspace/apps/web/src/app/layout.tsx',
+            ],
+          }),
         ),
       },
       {
@@ -274,7 +260,10 @@ const GROUPS: Group[] = [
         label: 'webfetch (markdown)',
         node: part(
           'webfetch',
-          done({ url: 'https://nextjs.org/docs/app', format: 'markdown' }, '# App Router\n\nThe App Router is a new paradigm for building applications using React’s latest features.'),
+          done(
+            { url: 'https://nextjs.org/docs/app', format: 'markdown' },
+            '# App Router\n\nThe App Router is a new paradigm for building applications using React’s latest features.',
+          ),
         ),
       },
       {
@@ -299,11 +288,31 @@ const GROUPS: Group[] = [
           done(
             {
               todos: [
-                { content: 'Create project directory and generate palette', status: 'completed', priority: 'high' },
-                { content: 'Build the portfolio HTML with full design system', status: 'in_progress', priority: 'high' },
-                { content: 'Preview the site via static server', status: 'pending', priority: 'high' },
-                { content: 'Playwright QA screenshots at desktop + mobile', status: 'pending', priority: 'medium' },
-                { content: 'Polish and fix any issues found in QA', status: 'pending', priority: 'medium' },
+                {
+                  content: 'Create project directory and generate palette',
+                  status: 'completed',
+                  priority: 'high',
+                },
+                {
+                  content: 'Build the portfolio HTML with full design system',
+                  status: 'in_progress',
+                  priority: 'high',
+                },
+                {
+                  content: 'Preview the site via static server',
+                  status: 'pending',
+                  priority: 'high',
+                },
+                {
+                  content: 'Playwright QA screenshots at desktop + mobile',
+                  status: 'pending',
+                  priority: 'medium',
+                },
+                {
+                  content: 'Polish and fix any issues found in QA',
+                  status: 'pending',
+                  priority: 'medium',
+                },
               ],
             },
             '',
@@ -323,12 +332,25 @@ const GROUPS: Group[] = [
               questions: [
                 {
                   header: 'Site type',
-                  question: 'What kind of site are you looking for? Give me a quick description and I’ll run with it.',
+                  question:
+                    'What kind of site are you looking for? Give me a quick description and I’ll run with it.',
                   options: [
-                    { label: 'Personal / portfolio', description: 'A simple personal landing page, portfolio, or bio site' },
-                    { label: 'Small business / brand', description: 'A landing page for a brand, product, or small business' },
-                    { label: 'Fun / experimental', description: 'A playful or experimental micro-site' },
-                    { label: 'Dashboard / tool', description: 'A small web app, dashboard, or utility tool' },
+                    {
+                      label: 'Personal / portfolio',
+                      description: 'A simple personal landing page, portfolio, or bio site',
+                    },
+                    {
+                      label: 'Small business / brand',
+                      description: 'A landing page for a brand, product, or small business',
+                    },
+                    {
+                      label: 'Fun / experimental',
+                      description: 'A playful or experimental micro-site',
+                    },
+                    {
+                      label: 'Dashboard / tool',
+                      description: 'A small web app, dashboard, or utility tool',
+                    },
                   ],
                 },
               ],
@@ -443,16 +465,22 @@ export default function DebugToolsPage() {
   const focusToolCall = useKortixComputerStore((s) => s.focusToolCall);
 
   return (
-    <div className="min-h-screen w-full bg-background text-foreground">
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-border/60 bg-background/80 px-6 py-3 backdrop-blur">
+    <div className="bg-background text-foreground min-h-screen w-full">
+      <div className="border-border/60 bg-background/80 sticky top-0 z-10 flex items-center justify-between border-b px-6 py-3 backdrop-blur">
         <div>
-          <h1 className="text-base font-semibold">{tHardcodedUi.raw('appDebugToolsPage.line268JsxTextToolRenderers')}</h1>
-          <p className="text-xs text-muted-foreground">{tHardcodedUi.raw('appDebugToolsPage.line270JsxTextDebugToolsVisualHarnessForSessionToolChrome')}</p>
+          <h1 className="text-base font-semibold">
+            {tHardcodedUi.raw('appDebugToolsPage.line268JsxTextToolRenderers')}
+          </h1>
+          <p className="text-muted-foreground text-xs">
+            {tHardcodedUi.raw(
+              'appDebugToolsPage.line270JsxTextDebugToolsVisualHarnessForSessionToolChrome',
+            )}
+          </p>
         </div>
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="rounded-full border border-border bg-card px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
+          className="border-border bg-card hover:bg-muted rounded-full border px-3 py-1.5 text-xs font-medium transition-colors"
         >
           {open ? 'Collapse all' : 'Expand all'}
         </button>
@@ -461,8 +489,10 @@ export default function DebugToolsPage() {
       {/* Side-panel Actions view preview — the focused navigator that reuses
           the same ToolPartRenderer handlers, fed the mock tool parts. */}
       <div className="mx-auto w-full max-w-3xl px-6 pt-10">
-        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{tHardcodedUi.raw('appDebugToolsPage.line286JsxTextSidePanelActions')}</h2>
-        <div className="h-[560px] w-full overflow-hidden rounded-2xl border border-border bg-card">
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
+          {tHardcodedUi.raw('appDebugToolsPage.line286JsxTextSidePanelActions')}
+        </h2>
+        <div className="border-border bg-card h-[560px] w-full overflow-hidden rounded-2xl border">
           <SessionActionsPanel
             sessionId="debug"
             messages={[
@@ -478,9 +508,10 @@ export default function DebugToolsPage() {
       {/* Side-panel Changes view preview — explanation + agent CR button +
           git-status list (empty here, no sandbox). */}
       <div className="mx-auto w-full max-w-3xl px-6 pt-10">
-        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          {tHardcodedUi.raw('appDebugToolsPage.line305JsxTextSidePanelChanges')}</h2>
-        <div className="h-[420px] w-full overflow-hidden rounded-2xl border border-border bg-card">
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
+          {tHardcodedUi.raw('appDebugToolsPage.line305JsxTextSidePanelChanges')}
+        </h2>
+        <div className="border-border bg-card h-[420px] w-full overflow-hidden rounded-2xl border">
           <SessionFilesPanel />
         </div>
       </div>
@@ -489,10 +520,10 @@ export default function DebugToolsPage() {
           /files FileExplorerPage, in preview mode). Without a live sandbox it
           shows its "server not reachable" empty state. */}
       <div className="mx-auto w-full max-w-3xl px-6 pt-10">
-        <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
           Side panel · Files (explorer)
         </h2>
-        <div className="h-[420px] w-full overflow-hidden rounded-2xl border border-border bg-card">
+        <div className="border-border bg-card h-[420px] w-full overflow-hidden rounded-2xl border">
           <SessionFilesExplorer />
         </div>
       </div>
@@ -501,19 +532,21 @@ export default function DebugToolsPage() {
           chat → side-panel flow), via ToolActivateContext + focusToolCall. */}
       <ToolActivateContext.Provider value={(callID) => focusToolCall(callID)}>
         <div className="mx-auto w-full max-w-3xl px-6 py-10">
-          <p className="mb-6 text-xs text-muted-foreground/60">{tHardcodedUi.raw('appDebugToolsPage.line306JsxTextClickAnyRowBelowItOpensInThe')}</p>
+          <p className="text-muted-foreground/60 mb-6 text-xs">
+            {tHardcodedUi.raw('appDebugToolsPage.line306JsxTextClickAnyRowBelowItOpensInThe')}
+          </p>
           {GROUPS.map((group) => (
             <section key={group.title} className="mb-12">
-              <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <h2 className="text-muted-foreground mb-4 text-xs font-semibold tracking-wide uppercase">
                 {group.title}
               </h2>
               <div className="space-y-3">
                 {group.rows.map((row) => (
                   <div key={row.label}>
-                    <div className="mb-1 text-xs font-mono uppercase tracking-wide text-muted-foreground/50">
+                    <div className="text-muted-foreground/50 mb-1 font-mono text-xs tracking-wide uppercase">
                       {row.label}
                     </div>
-                    <div className="rounded-2xl border border-border/40 bg-card/30 px-4 py-3">
+                    <div className="border-border/40 bg-card/30 rounded-2xl border px-4 py-3">
                       <ToolPartRenderer
                         part={row.node as any}
                         sessionId="debug"
