@@ -192,7 +192,7 @@ async function main() {
   // Warm-SEED builder boot (autoClone but NO session): this VM is booted by
   // Platinum's stateful-capture machinery to be snapshotted fully warm — repo
   // cloned, opencode up. Forked sessions land their real env (KORTIX_SESSION_ID,
-  // tokens, branch) in /etc/dnah-env via the host's reconfigure; the snapshot
+  // tokens, branch) in /etc/pt-env via the host's reconfigure; the snapshot
   // resumes THIS process, so it must adopt that env itself: without this the
   // fork keeps the seed's baked tokens and stays on the default branch (caught
   // live 2026-06-10 — forks answered health on `main` with the deriving
@@ -248,7 +248,7 @@ async function main() {
 // Adopt a forked session inside a warm-seed clone. Mirrors the warm-pool claim
 // path, but the repo is already baked — materializeRepo() takes its local-only
 // branch (remote set-url + `checkout -B <session>`), so adoption is ~100ms.
-// Trigger: KORTIX_SESSION_ID appearing in /etc/dnah-env (the seed's own env
+// Trigger: KORTIX_SESSION_ID appearing in /etc/pt-env (the seed's own env
 // never contains it — platinum-seed.ts strips it from captureEnv).
 function armSeedAdoption(
   opencode: ReturnType<typeof createOpencodeSupervisor>,
@@ -288,7 +288,7 @@ function armSeedAdoption(
   process.on('SIGHUP', () => adopt('sighup'))
   const poll = setInterval(() => {
     let txt = ''
-    try { txt = readFileSync('/etc/dnah-env', 'utf8') } catch { return }
+    try { txt = readFileSync('/etc/pt-env', 'utf8') } catch { return }
     if (/^KORTIX_SESSION_ID=\S/m.test(txt)) { clearInterval(poll); adopt('env-poll') }
   }, 250)
 }
@@ -344,16 +344,16 @@ async function startSessionRuntime(
 
 // Read KEY=VALUE lines from the per-session env file into process.env. TWO
 // writers stage it on DIFFERENT paths and we must accept either:
-//   • /tmp/dnah-env — the warm-pool claim POSTs it via the daemon's /file/upload
+//   • /tmp/pt-env — the warm-pool claim POSTs it via the daemon's /file/upload
 //     (its allowed-roots gate, routes/files.ts, permits /tmp + workspace but
 //     REJECTS /etc, so the claim-write must target /tmp).
-//   • /etc/dnah-env — the PLATINUM on-demand restore writes it directly into the
+//   • /etc/pt-env — the PLATINUM on-demand restore writes it directly into the
 //     guest pre-boot (host-agent writeEnvIntoOverlay via debugfs / writeGuestEnv).
 //     The platinum fork never goes through /file/upload, so its env lands in /etc.
 // Reading both is what makes a pool-mode spare adopt regardless of which flow
 // forked it (the cross-codebase merge left these two paths disagreeing → forks
 // stayed tokenless/unconfigured, hanging at "Starting the agent").
-function reloadSessionEnv(paths: string[] = ['/etc/dnah-env', '/tmp/dnah-env']): void {
+function reloadSessionEnv(paths: string[] = ['/etc/pt-env', '/tmp/pt-env']): void {
   for (const path of paths) {
     let txt: string
     try { txt = readFileSync(path, 'utf8') } catch { continue }
@@ -486,10 +486,10 @@ async function runPoolMode(
   }
   process.on('SIGHUP', () => claim('sighup'))
   const poll = setInterval(() => {
-    // The claimant env lands at /tmp/dnah-env (warm-pool claim via /file/upload)
-    // OR /etc/dnah-env (platinum on-demand restore writes it pre-boot). Poll both
+    // The claimant env lands at /tmp/pt-env (warm-pool claim via /file/upload)
+    // OR /etc/pt-env (platinum on-demand restore writes it pre-boot). Poll both
     // so the spare adopts regardless of which flow forked it.
-    for (const p of ['/etc/dnah-env', '/tmp/dnah-env']) {
+    for (const p of ['/etc/pt-env', '/tmp/pt-env']) {
       let txt = ''
       try { txt = readFileSync(p, 'utf8') } catch { continue }
       if (/^KORTIX_API_URL=\S/m.test(txt)) { clearInterval(poll); claim(`env-poll:${p}`); return }

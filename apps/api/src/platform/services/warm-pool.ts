@@ -14,7 +14,7 @@
  *                  row's sandbox_id is a throwaway SPARE uuid (NOT a session id).
  *   - claim:       createProjectSession owns the session id; the allocator calls
  *                  claimSpareForSession, which atomically grabs a parked spare,
- *                  stages the session env into the box (/tmp/dnah-env via the
+ *                  stages the session env into the box (/tmp/pt-env via the
  *                  daemon /file/upload — the daemon's env-poll then clones +
  *                  warms), and BINDS a fresh session_sandboxes row keyed
  *                  sandbox_id == session_id at the spare's external_id.
@@ -46,7 +46,7 @@ const POOL_MAX_AGE_MS = 6 * 60 * 60 * 1000; // parked longer than this → cycle
 const CLAIM_STALE_MS = 5 * 60 * 1000; // a 'claiming' row older than this → the claimant died → reap (>> a normal claim's <15s, so reconcile never races a live claim)
 const READY_PROBE_INTERVAL_MS = 2000;
 const MAX_WARM_SIZE = 25;
-const DNAH_ENV_PATH = '/tmp/dnah-env'; // MUST match the daemon (main.ts reloadSessionEnv + poll)
+const PT_ENV_PATH = '/tmp/pt-env'; // MUST match the daemon (main.ts reloadSessionEnv + poll)
 const DAEMON_PORT = 8000;
 
 export interface WarmPoolConfig {
@@ -292,7 +292,7 @@ async function releaseSpare(spareSandboxId: string, to: 'parked' | 'reap'): Prom
   await db.update(sessionSandboxes).set({ poolState: to, updatedAt: new Date() }).where(eq(sessionSandboxes.sandboxId, spareSandboxId)).catch(() => {});
 }
 
-/** Stage the session env into the spare box's /tmp/dnah-env via the daemon's
+/** Stage the session env into the spare box's /tmp/pt-env via the daemon's
  *  /file/upload (field-name-as-path). The daemon's env-poll then adopts the
  *  session (clone + opencode warm). Returns false on any failure → cold fallback. */
 async function stageClaimEnv(externalId: string, serviceKey: string, userId: string, envVars: Record<string, string>): Promise<boolean> {
@@ -328,16 +328,16 @@ async function stageClaimEnv(externalId: string, serviceKey: string, userId: str
 
     const form = new FormData();
     // field NAME is the destination path (files.ts field-name-as-path convention).
-    form.append(DNAH_ENV_PATH, new Blob([body], { type: 'text/plain' }), 'dnah-env');
+    form.append(PT_ENV_PATH, new Blob([body], { type: 'text/plain' }), 'pt-env');
     const res = await fetch(`${url.replace(/\/$/, '')}/file/upload`, { method: 'POST', headers, body: form, signal: AbortSignal.timeout(15_000) });
     if (!res.ok) {
       console.warn(`[warm-pool] claim env stage → ${res.status}`);
       return false;
     }
     // writeUploadUnique never overwrites: a collision lands at a SUFFIXED path the
-    // daemon never reads. Confirm the bytes landed exactly at DNAH_ENV_PATH.
+    // daemon never reads. Confirm the bytes landed exactly at PT_ENV_PATH.
     const out = (await res.json().catch(() => null)) as Array<{ path?: string }> | null;
-    const landed = Array.isArray(out) && out.some((r) => r?.path === DNAH_ENV_PATH);
+    const landed = Array.isArray(out) && out.some((r) => r?.path === PT_ENV_PATH);
     if (!landed) {
       console.warn('[warm-pool] claim env did not land at the expected path (collision?) — cold fallback');
       return false;

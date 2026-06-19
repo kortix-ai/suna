@@ -9,13 +9,13 @@ import type { Opencode } from '../opencode'
  * The branch this VM's session is supposed to be on, read from the host-
  * written env file rather than process.env: warm-seed forks resume a process
  * whose env predates the session (adoption reloads it ~250ms later), but
- * /etc/dnah-env carries the session's KORTIX_BRANCH_NAME from the instant the
+ * /etc/pt-env carries the session's KORTIX_BRANCH_NAME from the instant the
  * VM exists — so the readiness gate below is correct even pre-adoption.
  * Empty when this VM is a seed builder (no session) → gate inert.
  */
 function wantedSessionBranch(): string {
   try {
-    const m = readFileSync('/etc/dnah-env', 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
+    const m = readFileSync('/etc/pt-env', 'utf8').match(/^KORTIX_BRANCH_NAME=(\S+)/m)
     if (m?.[1]) return m[1]
   } catch { /* no env file (local dev) */ }
   return (process.env.KORTIX_BRANCH_NAME ?? '').trim()
@@ -33,7 +33,7 @@ function wantedSessionBranch(): string {
 function sessionWantsRepo(cfgAutoClone: boolean): boolean {
   if (cfgAutoClone) return true
   try {
-    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync('/etc/dnah-env', 'utf8'))
+    return /^KORTIX_PROJECT_AUTO_CLONE=1/m.test(readFileSync('/etc/pt-env', 'utf8'))
   } catch {
     return false
   }
