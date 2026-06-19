@@ -15,6 +15,8 @@ import { randomUUID } from 'node:crypto';
 import { resolveProjectGitAuth } from './git';
 import { isReservedSandboxEnvName, RESERVED_SANDBOX_ENV_NAMES } from './sandbox-env-names';
 import { selectProvider } from '../../platform/services/provider-balancer';
+import { ProvisionTimeline } from '../../platform/services/provision-timeline';
+import { provisionSessionSandbox } from '../../platform/services/session-sandbox';
 import { ACTIVE_SESSION_STATUSES, PROVISIONING_SESSION_STATUSES, ProjectRow, ProjectSessionRow, RequestAuditContext, UUID_V4_REGEX, deriveKortixApiRoot, normalizeJsonObject, normalizeString } from './serializers';
 import { allocateSessionRuntime } from './session-runtime-allocator';
 import { buildSessionRuntimeEnv } from './session-runtime-env';
@@ -555,6 +557,8 @@ export async function createProjectSession(input: {
       // immediately, so this remote push runs fully in the background. The
       // metadata writes that record success/failure are pure telemetry —
       // fire-and-forget so they never block the IIFE itself.
+      const branchAlreadyCreated =
+        body.branch_already_created === true || body.branchAlreadyCreated === true;
       const branchPromise: Promise<void> = branchAlreadyCreated
         ? Promise.resolve()
         : projectWithGitAuthPromise.then((projectWithGitAuth) =>
