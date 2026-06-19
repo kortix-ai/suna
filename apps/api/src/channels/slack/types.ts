@@ -69,6 +69,15 @@ export interface SlackEvent {
   subtype?: string;
   team?: string;
   tab?: 'home' | 'messages';
+  // Present on assistant_thread_started / assistant_thread_context_changed.
+  // The AI-Assistant DM pane delivers its own thread coordinates here (NOT on
+  // the top-level event), so the picker has to read channel/thread from this.
+  assistant_thread?: {
+    user_id?: string;
+    channel_id?: string;
+    thread_ts?: string;
+    context?: Record<string, unknown>;
+  };
 }
 
 export interface SlackInteractionPayload {
