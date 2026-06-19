@@ -94,16 +94,26 @@ jobs:
             done
           fi
 
+      # The image build + values bump above are the deploy (ArgoCD GitOps rolls
+      # the rest). The steps below only WATCH the rollout for fast feedback, and
+      # need cluster access — best-effort so the run stays green even if the dev
+      # deploy IAM role doesn't trust this branch yet (it currently trusts only
+      # `main`; add refs/heads/gateway to kortix-gha-eks-deploy-dev to enable).
       - name: Configure AWS credentials (OIDC)
+        id: aws
+        continue-on-error: true
         uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ env.ROLE }}
           aws-region: ${{ env.AWS_REGION }}
+          retry-max-attempts: 1
 
       - name: Update kubeconfig
+        if: steps.aws.outcome == 'success'
         run: aws eks update-kubeconfig --name "$CLUSTER" --region "$AWS_REGION"
 
       - name: Wait for gateway Deployment rolled out @ ${{ env.TAG }}
+        if: steps.aws.outcome == 'success'
         continue-on-error: true
         run: |
           set -uo pipefail
