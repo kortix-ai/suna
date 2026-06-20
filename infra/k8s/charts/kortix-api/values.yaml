@@ -182,6 +182,25 @@ serviceMonitor:
   path: /metrics
   interval: 30s
 
+# Default-deny NetworkPolicy. OFF by default: ingress is restricted to the API
+# port from allowIngressCidrs (the ALB), egress is open to the internet EXCEPT the
+# instance metadata endpoint (SSRF/credential-theft hardening; IRSA uses STS, not
+# IMDS). Validate on dev before enabling — a misjudged CIDR drops live traffic.
+networkPolicy:
+  enabled: false
+  allowIngressCidrs:
+    - 0.0.0.0/0
+
+# PodSecurityAdmission labels on the chart-owned namespace (previews). enforce is
+# empty (audit/warn only) so it never blocks; set it to 'baseline' or 'restricted'
+# per env once violations are clean. dev/prod namespaces are external — label them
+# out-of-band.
+podSecurity:
+  enforce: ""
+  audit: restricted
+  warn: restricted
+  version: latest
+
 # Progressive delivery (Argo Rollouts). enabled=false → a plain Deployment.
 # enabled=true → a canary Rollout that shifts traffic through `steps` while a
 # background CloudWatch AnalysisRun watches ALB error-rate + latency and ABORTS
