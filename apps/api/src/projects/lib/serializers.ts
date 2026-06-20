@@ -456,7 +456,17 @@ export function serializeBuildSummary(b: Awaited<ReturnType<typeof listSnapshotB
 }
 
 
-export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTemplates>>[number]) {
+export interface TemplateWarmStatus {
+  enabled: boolean;
+  size: number;
+  ready: number;
+  warming: number;
+}
+
+export function serializeTemplate(
+  t: Awaited<ReturnType<typeof listSandboxTemplates>>[number],
+  warm?: TemplateWarmStatus | null,
+) {
   return {
     template_id: t.templateId,
     slug: t.slug,
@@ -478,6 +488,9 @@ export function serializeTemplate(t: Awaited<ReturnType<typeof listSandboxTempla
     daytona_state: t.daytonaState,
     provider_state: t.providerState,
     ready: t.ready,
+    // Per-template warm pool config + live counts (null when the operator gate
+    // is off, i.e. the feature isn't available platform-wide).
+    warm_pool: warm ?? null,
   };
 }
 

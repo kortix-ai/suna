@@ -58,7 +58,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       ...(input.extraEnvVars ?? {}),
     };
 
-    // Warm fast-path (gated off by default — KORTIX_WARM_POOL_MAX_TOTAL=0).
+    // Warm fast-path (available by default — KORTIX_WARM_POOL_ENABLED; off per template).
     // Claim a pre-booted spare and bind it to THIS session id, staging the exact
     // env the cold path would inject. Any miss/error returns null and falls
     // through to the unchanged cold provisionSessionSandbox below.
@@ -70,6 +70,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
           projectId: input.projectId,
           userId: input.userId,
           provider: input.providerName,
+          slug: input.sandboxSlug,
           builtEnvVars: extraEnvVars,
           sessionMetadata: input.sessionMetadata,
         });
@@ -90,6 +91,7 @@ async function allocateSessionRuntimeAsync(input: AllocateSessionRuntimeInput): 
       accountId: input.accountId,
       projectId: input.projectId,
       userId: input.userId,
+      agentName: input.agentName,
       provider: input.providerName,
       metadata: {
         session_id: input.sessionId,

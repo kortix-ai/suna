@@ -1,23 +1,61 @@
 import { describe, expect, test } from 'bun:test';
-import { resolveWarmConfig, warmBoxReapReason, warmPoolEnabled } from '../platform/services/warm-pool';
+import {
+  listProjectWarmTemplates,
+  resolveTemplateWarmConfig,
+  resolveWarmConfig,
+  warmBoxReapReason,
+  warmPoolEnabled,
+} from '../platform/services/warm-pool';
 
-test('sandbox-level warm pool is retired from the session lifecycle', () => {
-  expect(warmPoolEnabled()).toBe(false);
+test('warm pool is AVAILABLE by default (KORTIX_WARM_POOL_ENABLED on), off per template', () => {
+  expect(warmPoolEnabled()).toBe(true);
 });
 
-describe('resolveWarmConfig', () => {
-  // Default size comes from KORTIX_WARM_POOL_SIZE (operator default), so just
-  // assert the per-project UI value is honored over it.
-  test('honors the per-project UI size while keeping the retired pool disabled', () => {
-    expect(resolveWarmConfig({ warm_pool: { enabled: false, size: 3 } })).toEqual({ enabled: false, size: 3 });
-    expect(resolveWarmConfig({ warm_pool: { enabled: true, size: 0 } })).toEqual({ enabled: false, size: 0 });
+describe('resolveTemplateWarmConfig (per-template, opt-in)', () => {
+  // The feature is available by default, so `enabled` mirrors the per-template
+  // opt-in: true only when that slug was explicitly turned on.
+  test('reads per-template config keyed by slug; enabled mirrors the opt-in', () => {
+    const meta = {
+      warm_pool_templates: { default: { enabled: true, size: 3 }, 'suna-dev': { enabled: false, size: 5 } },
+    };
+    expect(resolveTemplateWarmConfig(meta, 'default')).toEqual({ enabled: true, size: 3 });
+    expect(resolveTemplateWarmConfig(meta, 'suna-dev')).toEqual({ enabled: false, size: 5 });
   });
-  test('clamps oversized size', () => {
-    expect(resolveWarmConfig({ warm_pool: { enabled: true, size: 999 } })).toEqual({ enabled: false, size: 25 });
+  test('defaults to disabled + size 1 when a slug is unset (opt-in)', () => {
+    expect(resolveTemplateWarmConfig({ warm_pool_templates: {} }, 'default')).toEqual({ enabled: false, size: 1 });
+    expect(resolveTemplateWarmConfig(null, 'default')).toEqual({ enabled: false, size: 1 });
+    expect(resolveTemplateWarmConfig({}, 'whatever')).toEqual({ enabled: false, size: 1 });
   });
-  test('defaults to disabled when unset', () => {
-    expect(resolveWarmConfig(null).enabled).toBe(false);
-    expect(resolveWarmConfig({}).enabled).toBe(false);
+  test('clamps oversized size and rejects non-integer', () => {
+    expect(resolveTemplateWarmConfig({ warm_pool_templates: { default: { enabled: true, size: 999 } } }, 'default').size).toBe(25);
+    expect(resolveTemplateWarmConfig({ warm_pool_templates: { default: { enabled: true, size: 2.5 } } }, 'default').size).toBe(1);
+  });
+  test('ignores the legacy project-wide warm_pool opt-out field', () => {
+    // The old opt-out config must NOT enable anything under the new opt-in model.
+    expect(resolveTemplateWarmConfig({ warm_pool: { enabled: true, size: 4 } }, 'default')).toEqual({ enabled: false, size: 1 });
+  });
+});
+
+describe('listProjectWarmTemplates', () => {
+  test('lists every configured slug with its resolved config', () => {
+    const meta = {
+      warm_pool_templates: { default: { enabled: true, size: 2 }, custom: { enabled: false, size: 0 } },
+    };
+    expect(listProjectWarmTemplates(meta)).toEqual([
+      { slug: 'default', enabled: true, size: 2 },
+      { slug: 'custom', enabled: false, size: 0 },
+    ]);
+  });
+  test('empty when unset', () => {
+    expect(listProjectWarmTemplates(null)).toEqual([]);
+    expect(listProjectWarmTemplates({})).toEqual([]);
+  });
+});
+
+describe('resolveWarmConfig (back-compat = default-template config)', () => {
+  test('delegates to the default slug', () => {
+    expect(resolveWarmConfig({ warm_pool_templates: { default: { enabled: true, size: 3 } } })).toEqual({ enabled: true, size: 3 });
+    expect(resolveWarmConfig(null)).toEqual({ enabled: false, size: 1 });
   });
 });
 

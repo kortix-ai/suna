@@ -1298,6 +1298,18 @@ export const kortixApiKeys = kortixSchema.table(
 // Account-scoped, minted from the dashboard, used as
 // `Authorization: Bearer <kortix_pat_...>` by the `kortix` CLI.
 
+/**
+ * Per-agent authorization grant stored on a session's account token. The single
+ * canonical shape — imported by the resolution, enforcement, and context layers
+ * so it's never re-declared. `kortixCli`/`connectors` are `"all"` (everything,
+ * capped at the launching user) or an explicit list; `[]` = deny.
+ */
+export interface AgentGrant {
+  agent: string;
+  kortixCli: string[] | 'all';
+  connectors: string[] | 'all';
+}
+
 export const accountTokens = kortixSchema.table(
   'account_tokens',
   {
@@ -1321,6 +1333,12 @@ export const accountTokens = kortixSchema.table(
     lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    /** Per-agent authorization grant for a sandbox session token: which Kortix
+     *  CLI/API actions + connector profiles the running agent may use. Resolved
+     *  from kortix.toml's [[agents]] overlay at session birth (= declared ∩ the
+     *  launching user's role; the default `kortix` agent = "all" ∩ user). Null
+     *  for non-agent tokens (laptop CLI PATs, etc.) — which keep full access. */
+    agentGrant: jsonb('agent_grant').$type<AgentGrant>(),
   },
   (table) => [
     uniqueIndex('idx_account_tokens_public_key').on(table.publicKey),

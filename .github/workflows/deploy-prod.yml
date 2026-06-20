@@ -471,7 +471,7 @@ jobs:
       id-token: write # OIDC → read the cluster
       contents: read
     env:
-      AWS_REGION: us-west-2
+      AWS_REGION: eu-west-2
       CLUSTER: kortix-prod-eks
       NAMESPACE: kortix-prod
       APP: kortix-api

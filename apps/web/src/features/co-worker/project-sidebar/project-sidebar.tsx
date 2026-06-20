@@ -28,7 +28,6 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { errorToast } from '@/components/ui/toast';
 import {
   ProjectAppsNavItem,
   ProjectAppsRailItem,
@@ -54,15 +53,12 @@ import { UserMenu } from '@/features/layout/user-menu';
 import { useAuth } from '@/features/providers/auth-provider';
 import { useAdminRole } from '@/hooks/admin';
 import { useIsMobile } from '@/hooks/utils';
-import {
-  createProjectSession,
-  listProjectSessions,
-  prefetchSessionStart,
-} from '@/lib/projects-client';
+import { useNewProjectSession } from '@/hooks/projects/use-new-project-session';
+import { listProjectSessions } from '@/lib/projects-client';
 import { beginSessionTiming, markSessionClick, sessionMark } from '@/lib/session-timing';
 import { cn } from '@/lib/utils';
 import { Icon as IconMynauiType, UsersSolid } from '@mynaui/icons-react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
   CalendarClock,
   ChevronRight,
@@ -96,7 +92,6 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
   const router = useRouter();
   const { state, setOpenMobile, toggleSidebar } = useSidebar();
   const isExpanded = state === 'expanded';
-  const queryClient = useQueryClient();
   const isMobile = useIsMobile();
   const sessionsGroupRef = useRef<HTMLDivElement>(null);
 
@@ -136,28 +131,19 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
     [authUser, isAdmin],
   );
 
-  const createSession = useMutation({
-    mutationFn: () => createProjectSession(projectId),
-    onSuccess: (session) => {
-      beginSessionTiming(session.session_id);
-      sessionMark(session.session_id, 'session-created');
-      queryClient.invalidateQueries({ queryKey: ['project-sessions', projectId] });
-      prefetchSessionStart(queryClient, projectId, session.session_id);
-      router.prefetch(`/projects/${projectId}/sessions/${session.session_id}`);
-      router.push(`/projects/${projectId}/sessions/${session.session_id}`);
-      if (isMobile) setOpenMobile(false);
-    },
-    onError: (err) => {
-      if ((err as any)?.code === 'concurrent_session_limit') return;
-      errorToast(err instanceof Error ? err.message : 'Failed to start session');
-    },
-  });
-
+  // Optimistic + shared with every other entry point (see useNewProjectSession).
+  // The timing marks + mobile-drawer close fire on the synchronous navigation.
+  const newSession = useNewProjectSession(projectId);
   const handleNewSession = useCallback(() => {
-    if (createSession.isPending) return;
     markSessionClick();
-    createSession.mutate();
-  }, [createSession]);
+    newSession({
+      onNavigate: (sessionId) => {
+        beginSessionTiming(sessionId);
+        sessionMark(sessionId, 'session-created');
+        if (isMobile) setOpenMobile(false);
+      },
+    });
+  }, [newSession, isMobile, setOpenMobile]);
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -241,9 +227,7 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
                 size="icon"
                 aria-label="New session"
                 onClick={handleNewSession}
-                disabled={createSession.isPending}
                 className={cn(
-                  createSession.isPending && 'cursor-not-allowed opacity-50',
                   'text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 flex size-8 items-center justify-center border-[1.2px] [&_svg]:size-4!',
                 )}
               >
@@ -272,11 +256,10 @@ export function ProjectSidebar({ projectId }: { projectId: string }) {
               <SidebarMenuItem>
                 <SidebarMenuButton
                   onClick={handleNewSession}
-                  disabled={createSession.isPending}
                   size="md"
                   className="group/menu-button text-sidebar-foreground border-border dark:bg-background dark:hover:bg-background/90 bg-background hover:bg-background/90 flex items-center justify-center border-[1.2px] text-center !text-sm [&_svg]:!size-5"
                 >
-                  {createSession.isPending ? 'Creating…' : 'New session'}
+                  New session
                   <KbdGroup className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-200 group-hover/menu-button:opacity-100">
                     <Kbd>{modSymbol}</Kbd>
                     <Kbd>J</Kbd>

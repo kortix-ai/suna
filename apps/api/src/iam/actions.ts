@@ -71,6 +71,12 @@ export const PROJECT_ACTIONS = {
   PROJECT_DELETE: 'project.delete',
   PROJECT_DEPLOY: 'project.deploy',
 
+  // Change requests. Distinct from write/deploy so an agent can be granted
+  // "open a CR" WITHOUT "merge it to the base branch" — merge is the canonical
+  // destructive action (it lands code on main), and stays human/explicit.
+  PROJECT_CR_OPEN: 'project.cr.open',
+  PROJECT_CR_MERGE: 'project.cr.merge',
+
   PROJECT_SESSION_READ: 'project.session.read',
   PROJECT_SESSION_START: 'project.session.start',
   PROJECT_SESSION_EXEC: 'project.session.exec',

@@ -7,6 +7,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
 import { getPtyWebSocketUrl, useUpdatePty } from '@/hooks/opencode/use-opencode-pty';
+import { invalidateTokenCache } from '@/lib/auth-token';
 import type { Pty } from '@opencode-ai/sdk/v2/client';
 
 // ============================================================================
@@ -240,6 +241,13 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
       if (disposedRef.current) return;
       if (reconnectTimeoutRef.current) return;
 
+      // The auth token is baked into the WS URL as a query param (browsers can't
+      // set WS headers), and a failed upgrade is most often a stale/expired JWT —
+      // the browser only ever surfaces it as a bare error + 1006 close, never the
+      // underlying 401. Drop the cached token so the next connect fetches (and
+      // refreshes) a fresh one, instead of looping forever on the dead token.
+      invalidateTokenCache();
+
       reconnectAttemptsRef.current += 1;
       const delay = Math.min(1000 * 2 ** (reconnectAttemptsRef.current - 1), 15000);
       const suffix = reason ? ` (${reason})` : '';
@@ -315,12 +323,15 @@ export const PtyTerminal = forwardRef<PtyTerminalHandle, PtyTerminalProps>(funct
         }
       };
 
-      ws.onerror = (err) => {
+      ws.onerror = () => {
         if (connectionIdRef.current !== myConnectionId || disposedRef.current) return;
-        console.error('[PtyTerminal] WebSocket error:', err);
+        // Browser WS error events carry no detail (always an empty Event) and the
+        // status (e.g. a 401) is never exposed. The onclose that follows drives
+        // backoff/reconnect, so just flag it — don't spam the terminal with red
+        // text on every attempt, and never echo the token-bearing URL into the
+        // visible buffer. The "Reconnecting in Ns..." line gives the user signal.
+        console.warn('[PtyTerminal] WebSocket connection error — will retry');
         hadErrorRef.current = true;
-        term.writeln('\r\n\x1b[31mFailed to connect to terminal.\x1b[0m');
-        term.writeln('\x1b[90mURL: ' + wsUrl + '\x1b[0m');
         updateStatus('error');
       };
 

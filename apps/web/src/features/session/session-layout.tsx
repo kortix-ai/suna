@@ -30,8 +30,10 @@ import { SessionFilesExplorer } from '@/features/session/session-files-explorer'
 import { SessionTerminalPanel } from '@/features/session/session-terminal-panel';
 import { SessionActionsPanel } from '@/features/session/session-actions-panel';
 import { SessionWallpaperLayerContext } from '@/features/session/session-wallpaper-layer';
+import { SessionStartingLoader } from '@/features/session/session-starting-loader';
 import { Drawer, DrawerContent } from '@/components/ui/drawer';
 import { X } from 'lucide-react';
+import type { SessionStartStage } from '@/lib/projects-client';
 
 // ============================================================================
 // Session Layout
@@ -42,6 +44,20 @@ interface SessionLayoutProps {
   projectId?: string;
   projectSessionId?: string;
   children: React.ReactNode;
+  /**
+   * When set, the side-panel CONTENT is the centered "Kortix Computer is
+   * starting" loader instead of the runtime-coupled Actions/Files/Terminal/
+   * Browser views (which need a live sandbox). The instant shell clears this once
+   * the runtime is ready, so the panel falls back to the real (empty) Actions
+   * view. Panel VISIBILITY stays user-controlled — this never force-opens it.
+   */
+  bootStage?: SessionStartStage | null;
+  /**
+   * Marks this as the transient instant-session shell: its per-session
+   * active-registration effects are skipped so it never fights the real
+   * SessionLayout that crossfades in over it.
+   */
+  transient?: boolean;
 }
 
 export const SessionLayout = memo(function SessionLayout({
@@ -49,8 +65,11 @@ export const SessionLayout = memo(function SessionLayout({
   projectId,
   projectSessionId,
   children,
+  bootStage = null,
+  transient = false,
 }: SessionLayoutProps) {
   const isMobile = useIsMobile();
+  const booting = !!bootStage;
 
   const { data: messages } = useOpenCodeMessages(sessionId);
 
@@ -73,10 +92,11 @@ export const SessionLayout = memo(function SessionLayout({
   const isActiveTab = useTabStore((s) => s.activeTabId === sessionId);
 
   useEffect(() => {
+    if (transient) return; // transient shell — don't claim the active session
     if (isActiveTab) {
       setActiveSession(sessionId);
     }
-  }, [isActiveTab, sessionId, setActiveSession]);
+  }, [transient, isActiveTab, sessionId, setActiveSession]);
 
   // Right-side panel view — actions (tool calls) or internal browser.
   // Per-session, so each session remembers which view the user prefers.
@@ -116,10 +136,11 @@ export const SessionLayout = memo(function SessionLayout({
   // ref) so SessionChat re-renders the portal once the layer mounts.
   const [wallpaperLayer, setWallpaperLayer] = useState<HTMLDivElement | null>(null);
 
-  // Side panel is visible whenever the user has opened it — full stop. The
-  // panel hosts Actions / Browser / Files / Terminal, all of which are useful
-  // even on an empty session with no tool calls (the Actions view shows its
-  // own empty state), so opening is gated purely on the user's intent.
+  // Side panel is visible whenever the user has opened it — full stop. Opening
+  // is gated purely on the user's intent (the instant shell auto-opens it once a
+  // task is kicked off). While booting, its CONTENT is the "Kortix Computer is
+  // starting" loader instead of Actions — so opening it any time before the
+  // computer is ready shows boot status, switching to Actions once booted.
   const shouldShowPanel = isSidePanelOpen;
 
   // ⌘I / Ctrl+I toggles the side panel open/closed.
@@ -140,6 +161,7 @@ export const SessionLayout = memo(function SessionLayout({
   // if we still own the slot.
   const isVisibleLayout = isInTabSystem ? isActiveTab : true;
   useEffect(() => {
+    if (transient) return; // transient shell — the real layout owns panel routing
     if (!isVisibleLayout) return;
     setActivePanelSession(sessionId);
     return () => {
@@ -147,7 +169,7 @@ export const SessionLayout = memo(function SessionLayout({
         setActivePanelSession(null);
       }
     };
-  }, [isVisibleLayout, sessionId, setActivePanelSession]);
+  }, [transient, isVisibleLayout, sessionId, setActivePanelSession]);
   useEffect(() => {
     if (!shouldHandleHotkey) return;
     const onKey = (e: KeyboardEvent) => {
@@ -318,6 +340,18 @@ export const SessionLayout = memo(function SessionLayout({
     </div>
   );
 
+  // While booting, the panel is JUST the dead-center "Kortix Computer is
+  // starting" loader — no header bar (the loader has its own heading, so a panel
+  // title would be redundant), filling the whole card so it's perfectly
+  // centered. The runtime-coupled views (Actions/Files/Terminal/Browser) need a
+  // live sandbox, so they only render once booted.
+  const effectivePanelHeader = booting ? null : panelHeader;
+  const effectivePanelBody = booting ? (
+    <SessionStartingLoader stage={bootStage ?? 'provisioning'} delayMs={0} />
+  ) : (
+    panelBody
+  );
+
   // Mobile
   if (isMobile) {
     return (
@@ -332,8 +366,8 @@ export const SessionLayout = memo(function SessionLayout({
           }}
         >
           <DrawerContent className="flex h-[85dvh] max-h-[85dvh] flex-col overflow-hidden p-0">
-            {panelHeader}
-            <div className="min-h-0 flex-1 overflow-hidden">{panelBody}</div>
+            {effectivePanelHeader}
+            <div className="min-h-0 flex-1 overflow-hidden">{effectivePanelBody}</div>
           </DrawerContent>
         </Drawer>
       </div>
@@ -405,7 +439,7 @@ export const SessionLayout = memo(function SessionLayout({
               "h-full transition-[padding] duration-300 ease-out bg-background",
               isExpanded ? "p-0" : "pt-3 pb-6 pr-3 sm:pr-4 pl-1.5"
             )}>
-              <SidePanelFrame header={panelHeader}>{panelBody}</SidePanelFrame>
+              <SidePanelFrame header={effectivePanelHeader}>{effectivePanelBody}</SidePanelFrame>
             </div>
           </ResizablePanel>
         </ResizablePanelGroup>

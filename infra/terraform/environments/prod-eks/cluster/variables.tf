@@ -1,7 +1,7 @@
 variable "aws_region" {
-  description = "AWS region for the EKS prod resources."
+  description = "AWS region for the EKS prod resources (colocated with the Supabase DB)."
   type        = string
-  default     = "us-west-2"
+  default     = "eu-west-2"
 }
 
 variable "vpc_cidr" {

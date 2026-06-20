@@ -1,7 +1,7 @@
-import { config } from '../../config';
 import { getProvider as getDeploymentProvider } from '../../deployments/providers';
 import { auth, errors, json } from '../../openapi';
 import { getWarmPoolCounts, refillProjectPool, resolveWarmConfig, warmPoolEnabled } from '../../platform/services/warm-pool';
+import { DEFAULT_SANDBOX_SLUG } from '../../snapshots/builder';
 import { db } from '../../shared/db';
 import { deployAppSpec, getLatestDeployment } from '../app-sweep';
 import { loadProjectApps, manifestHashForApp } from '../apps';
@@ -748,24 +748,30 @@ projectsApp.openapi(
   if (!loaded) return c.json({ error: 'Not found' }, 404);
 
   const meta = (loaded.row.metadata ?? {}) as Record<string, unknown>;
-  const prev = (meta.warm_pool && typeof meta.warm_pool === 'object' && !Array.isArray(meta.warm_pool)
-    ? meta.warm_pool
+  // Per-template (per sandbox-template slug) warm config, opt-in. Stored DB-only
+  // in projects.metadata.warm_pool_templates[slug] — never in kortix.toml.
+  const slug = normalizeString(body.slug) || DEFAULT_SANDBOX_SLUG;
+  const templatesMap = (meta.warm_pool_templates && typeof meta.warm_pool_templates === 'object' && !Array.isArray(meta.warm_pool_templates)
+    ? { ...(meta.warm_pool_templates as Record<string, unknown>) }
+    : {}) as Record<string, unknown>;
+  const prev = (templatesMap[slug] && typeof templatesMap[slug] === 'object' && !Array.isArray(templatesMap[slug])
+    ? templatesMap[slug]
     : {}) as Record<string, unknown>;
   const enabled =
-    typeof body.enabled === 'boolean' ? body.enabled : typeof prev.enabled === 'boolean' ? prev.enabled : true;
+    typeof body.enabled === 'boolean' ? body.enabled : typeof prev.enabled === 'boolean' ? prev.enabled : false;
   let size =
     body.size !== undefined && Number.isFinite(Number(body.size))
       ? Math.floor(Number(body.size))
       : typeof prev.size === 'number'
         ? prev.size
-        : config.KORTIX_WARM_POOL_SIZE;
+        : 1;
   if (size < 0) size = 0;
   if (size > 25) size = 25;
-  const warm_pool = { enabled, size };
+  templatesMap[slug] = { enabled, size };
 
   const [row] = await db
     .update(projects)
-    .set({ metadata: { ...meta, warm_pool }, updatedAt: new Date() })
+    .set({ metadata: { ...meta, warm_pool_templates: templatesMap }, updatedAt: new Date() })
     .where(eq(projects.projectId, projectId))
     .returning();
   if (!row) return c.json({ error: 'Not found' }, 404);

@@ -41,6 +41,7 @@ import { STARTER_PROMPTS } from '@/lib/starter-prompts';
 import { cn } from '@/lib/utils';
 import { useComposerPrefillStore } from '@/stores/composer-prefill-store';
 import { useCustomizeStore } from '@/stores/customize-store';
+import { chalkColors } from '@kortix/shared';
 import { HiOutlineViewGrid } from 'react-icons/hi';
 
 const Q = { staleTime: 60_000, refetchOnWindowFocus: false } as const;
@@ -130,7 +131,7 @@ export function ProjectHome({
 
       <div className="relative z-10 flex min-h-0 flex-1 flex-col items-center justify-center overflow-y-auto">
         <div className="flex w-full max-w-3xl items-center justify-start py-8 xl:py-8">
-          <h1 className="text-muted-foreground text-left text-[2.5rem] leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
+          <h1 className="text-muted-foreground text-left text-[2.3rem] leading-[1.2] tracking-tight text-balance max-sm:text-3xl">
             Give <span className="text-foreground">{displayName}</span> something real to work on.
           </h1>
         </div>
@@ -264,6 +265,7 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
           <div className="inline-flex w-max justify-start gap-2">
             {STARTER_PROMPTS.map((p) => {
               const TabIcon = p.icon;
+              const chalk = chalkColors(p.label);
               return (
                 <Button
                   key={p.id}
@@ -272,7 +274,11 @@ function StarterPromptsCarousel({ onPick }: { onPick: (text: string) => void }) 
                   variant="secondary"
                   className="shrink-0 gap-1.5 text-sm"
                 >
-                  <TabIcon className="size-4 shrink-0" aria-hidden />
+                  <TabIcon
+                    className="size-4 shrink-0"
+                    style={{ color: chalk.foreground }}
+                    aria-hidden
+                  />
                   {p.label}
                 </Button>
               );
@@ -487,6 +493,7 @@ function ProjectHomeSections({ projectId }: { projectId: string }) {
         {tiles.map((tile) => {
           const { icon: Icon, title, desc, count, section } = tile;
           const isSet = (count ?? 0) > 0;
+
           return (
             <Button
               key={section}

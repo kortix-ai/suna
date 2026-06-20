@@ -356,11 +356,10 @@ const healthHandler = (c: any) =>
     // values.yaml extraEnv that never reached the running pod (e.g. a stuck
     // Argo sync) is visible remotely instead of silently leaving every start
     // cold. Config-only — no DB query, so /health stays cheap (see the Better
-    // Stack logging-spiral fix). enabled === KORTIX_WARM_POOL_MAX_TOTAL > 0.
+    // Stack logging-spiral fix). enabled === KORTIX_WARM_POOL_ENABLED (no global cap).
     warm_pool: {
       enabled: warmPoolEnabled(),
-      max_total: config.KORTIX_WARM_POOL_MAX_TOTAL,
-      size: config.KORTIX_WARM_POOL_SIZE,
+      default_size: config.KORTIX_WARM_POOL_SIZE,
       clone_at_park: config.KORTIX_WARM_POOL_CLONE_AT_PARK,
       presence_minutes: config.KORTIX_WARM_POOL_PRESENCE_MINUTES,
     },
