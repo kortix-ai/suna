@@ -96,7 +96,7 @@ export function ManageModelsDialog({
 // Import from canonical UI component and re-export for consumers
 import { Tag } from '@/components/ui/tag';
 
-const SHOW_OPENCODE_ZEN = false;
+const SHOW_OPENCODE_ZEN = true;
 
 const MANAGED_MODEL_IDS = new Set<string>(DEFAULT_MANAGED_MODEL_IDS);
 
@@ -402,8 +402,9 @@ export function ModelSelector({ models, selectedModel, onSelect }: ModelSelector
                       const isSelected =
                         selectedModel?.providerID === model.providerID &&
                         selectedModel?.modelID === model.modelID;
-                      const isFree =
-                        model.providerID === 'opencode' && (!model.cost || model.cost.input === 0);
+                      // Every opencode (Zen) model is free: it routes natively,
+                      // never through the gateway, so kortix never bills it.
+                      const isFree = model.providerID === 'opencode';
                       const modelKey = { providerID: model.providerID, modelID: model.modelID };
                       // "Latest" models are always shown; older ones get an
                       // activation switch so they can be pinned into the picker.

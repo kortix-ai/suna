@@ -269,6 +269,8 @@ export function useModelStore(
       const key = `${model.providerID}:${model.modelID}`;
       const state = visibilityMap.get(key);
       if (state === 'hide') return false;
+      // OpenCode Zen free models — always offered (native route, never billed).
+      if (model.providerID === 'opencode') return true;
       // Gateway (kortix) models. The catalog is namespaced `<provider>/<model>`,
       // and connection is AUTHORITATIVE — it overrides any stale `show` pin, so a
       // disconnected provider's models disappear (even ones you'd used) and a
