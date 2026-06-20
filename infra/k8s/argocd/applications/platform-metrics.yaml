@@ -91,7 +91,7 @@ spec:
               domain: grafana.kortix.com
               root_url: "https://%(domain)s/"
             auth:
-              disable_login_form: false
+              disable_login_form: true
             auth.github:
               enabled: true
               allow_sign_up: true
