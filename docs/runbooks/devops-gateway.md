@@ -83,3 +83,11 @@ Do these in order so the gateway is never reachable unauthenticated.
   `argocd login devops.kortix.com --grpc-web` (the gRPC path lives under the
   same host).
 - This runbook supersedes the `ops.kortix.com` section of `infra/GITOPS.md`.
+
+## Argo rootpath note (applied live)
+
+`/argo` requires argocd-server to run with `server.rootpath=/argo`,
+`server.basehref=/argo`, `server.insecure=true`. These were merge-patched live
+onto `argocd-cmd-params-cm` (preserving the Helm-managed keys). For permanence,
+set them in the Argo CD Helm values in `modules/eks/platform` so a fresh cluster
+gets them — do NOT ship a standalone ConfigMap (it clobbers the Helm-owned keys).
