@@ -66,3 +66,9 @@ variable "cloudflare_zone_id" {
   EOT
   type        = string
 }
+
+variable "argocd_domain_override" {
+  description = "Override the Argo CD URL host (e.g. argo.kortix.com when exposed via the shared DevOps gateway). Empty falls back to the cluster's argocd_domain."
+  type        = string
+  default     = ""
+}

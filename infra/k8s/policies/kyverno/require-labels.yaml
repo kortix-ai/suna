@@ -1,0 +1,36 @@
+# Audit: pods must carry the standard app.kubernetes.io/name label so workloads
+# are discoverable and joinable across dashboards / selectors. Audit mode.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-labels
+  annotations:
+    policies.kyverno.io/title: Require Standard Labels
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/description: >-
+      Pods must carry the app.kubernetes.io/name recommended label so workloads
+      are consistently identifiable across selectors and dashboards.
+spec:
+  background: true
+  rules:
+    - name: require-app-name-label
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-node-lease
+                - kube-public
+      validate:
+        failureAction: Audit
+        message: "The label 'app.kubernetes.io/name' is required."
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "?*"

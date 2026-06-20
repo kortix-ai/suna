@@ -67,6 +67,8 @@ resources:
   limits:
     cpu: "1"
     memory: "512Mi"
+health:
+  livenessPath: /health/live
 serviceAccount:
   name: kortix-api
   # IRSA role from the dev-eks cluster layer (module.app_irsa, name

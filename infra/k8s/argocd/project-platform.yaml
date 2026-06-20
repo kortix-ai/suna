@@ -1,0 +1,49 @@
+# Argo CD project for the self-contained DevOps console bundle (devops.<domain>).
+#
+# Kept separate from the `kortix` app project so the platform has its own blast
+# radius: it deploys only into the `kortix-platform` / `monitoring` namespaces and
+# may pull the upstream Headlamp / Grafana / Prometheus helm charts (the `kortix`
+# project is git-only on purpose). A self-hoster applies this project + the
+# applications under applications/platform-*.yaml and gets the whole console.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+spec:
+  description: Kortix DevOps console — single lens over the infra (Headlamp + Grafana/Loki)
+  sourceRepos:
+    - https://github.com/kortix-ai/suna.git
+    - https://kubernetes-sigs.github.io/headlamp/
+    - https://grafana.github.io/helm-charts
+    - https://prometheus-community.github.io/helm-charts
+    - https://kyverno.github.io/kyverno/
+    - https://falcosecurity.github.io/charts
+    - https://vmware-tanzu.github.io/helm-charts
+    - https://opencost.github.io/opencost-helm-chart
+    - https://open-telemetry.github.io/opentelemetry-helm-charts
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: kortix-platform
+    - server: https://kubernetes.default.svc
+      namespace: monitoring
+    - server: https://kubernetes.default.svc
+      namespace: kyverno
+    - server: https://kubernetes.default.svc
+      namespace: falco
+    - server: https://kubernetes.default.svc
+      namespace: velero
+    - server: https://kubernetes.default.svc
+      namespace: opencost
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+    # kube-prometheus-stack places kubelet/coredns scrape Services here so it can
+    # collect core-component + node/pod metrics. Standard for a monitoring stack.
+    - server: https://kubernetes.default.svc
+      namespace: kube-system
+  clusterResourceWhitelist:
+    - group: "*"
+      kind: "*"
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

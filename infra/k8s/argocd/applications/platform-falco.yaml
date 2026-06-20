@@ -1,0 +1,101 @@
+# Runtime security — Falco. A per-node DaemonSet that watches syscalls via the
+# modern eBPF probe (modern_ebpf needs no kernel headers, so it just works on the
+# EKS AMI) and fires on suspicious behaviour at runtime. Ships with the default
+# ruleset plus a small Kortix ruleset (see customRules below). Alerts route
+# through falcosidekick.
+#
+# PREREQUISITE: falcosidekick outputs are all disabled here. Wire a real Slack
+# webhook / SIEM endpoint (the placeholder below) and flip the relevant output on
+# before alerts go anywhere.
+#
+# Single-source: chart from the upstream helm repo, all config inline.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-platform-falco
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://falcosecurity.github.io/charts
+    chart: falco
+    targetRevision: 9.1.0
+    helm:
+      releaseName: falco
+      values: |
+        driver:
+          kind: modern_ebpf
+        metrics:
+          enabled: false
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+        falcosidekick:
+          enabled: true
+          config:
+            slack:
+              webhookurl: ""
+        customRules:
+          kortix-rules.yaml: |-
+            - macro: kortix_container
+              condition: (container.image.repository startswith "kortix-" or k8s.pod.name startswith "kortix-")
+
+            - rule: Shell spawned in Kortix container
+              desc: A shell was spawned inside a kortix-* container — Kortix workloads
+                should not exec interactive shells at runtime.
+              condition: >
+                spawned_process and container and kortix_container
+                and shell_procs
+              output: >
+                Shell spawned in a Kortix container (user=%user.name shell=%proc.name
+                parent=%proc.pname container=%container.name image=%container.image.repository
+                pod=%k8s.pod.name)
+              priority: WARNING
+              tags: [kortix, shell, container]
+
+            - rule: Write below etc in Kortix container
+              desc: A file was written below /etc inside a kortix-* container, which is
+                immutable at runtime under normal operation.
+              condition: >
+                open_write and container and kortix_container
+                and fd.name startswith /etc
+              output: >
+                File written below /etc in a Kortix container (user=%user.name
+                file=%fd.name proc=%proc.name container=%container.name
+                pod=%k8s.pod.name)
+              priority: ERROR
+              tags: [kortix, filesystem, container]
+
+            - rule: Unexpected outbound connection from Kortix workload
+              desc: An outbound network connection was opened from a kortix-* workload
+                pod — review for data exfiltration or C2.
+              condition: >
+                outbound and container and kortix_container
+                and not fd.snet in (rfc_1918_addresses)
+              output: >
+                Unexpected outbound connection from a Kortix workload
+                (proc=%proc.name connection=%fd.name container=%container.name
+                pod=%k8s.pod.name image=%container.image.repository)
+              priority: NOTICE
+              tags: [kortix, network, container]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: falco
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

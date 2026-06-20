@@ -1,0 +1,104 @@
+# The DevOps console — Headlamp, the single lens over the infra.
+#
+# See/manage pods across every namespace and cluster: status, events, live logs,
+# exec a shell, restart/scale/delete, nodes — all gated by k8s RBAC mapped to the
+# logged-in user (read-only viewer vs admin). Today: token login over port-forward.
+# Phase 3 wires OIDC SSO + the devops.<domain> ingress (config.oidc + ingress below).
+#
+# Single-source: the chart comes from the upstream Headlamp helm repo and all
+# config is inline here, so there is no multi-source $values revision race (same
+# rationale as the kortix-api app).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kortix-platform-console
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: platform
+  source:
+    repoURL: https://kubernetes-sigs.github.io/headlamp/
+    chart: headlamp
+    targetRevision: 0.43.0
+    helm:
+      releaseName: headlamp
+      values: |
+        replicaCount: 2
+        config:
+          inCluster: true
+          inClusterContextName: prod-eks
+          # No token prompt: authenticate every user as the pod's service account.
+          # SAFE ONLY because devops.kortix.com sits behind Cloudflare Access
+          # (GitHub IdP + @kortix.com) on a Cloudflare-IP-locked ALB — that gate IS
+          # Headlamp's authentication. The SA's RBAC (below) bounds what users can do.
+          unsafeUseServiceAccountToken: true
+          # Federate dev + per-PR previews (kortix-dev-eks, us-west-2) from a
+          # mounted kubeconfig so one console = every env.
+          extraArgs:
+            - -kubeconfig=/headlamp/clusters/config
+          oidc:
+            secret:
+              create: false
+        # Headlamp serves the UI; API calls use the logged-in user's token, so
+        # this binding only backs token-login admins. Per-user RBAC supersedes it
+        # once SSO is on.
+        serviceAccount:
+          create: true
+          name: headlamp
+        clusterRoleBinding:
+          create: true
+          clusterRoleName: cluster-admin
+        service:
+          type: ClusterIP
+          port: 80
+        ingress:
+          enabled: true
+          ingressClassName: alb
+          annotations:
+            alb.ingress.kubernetes.io/group.name: kortix-devops
+            alb.ingress.kubernetes.io/scheme: internet-facing
+            alb.ingress.kubernetes.io/target-type: ip
+            alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+            alb.ingress.kubernetes.io/ssl-redirect: '443'
+            alb.ingress.kubernetes.io/backend-protocol: HTTP
+            alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-west-2:935064898258:certificate/dd3ed42d-536b-480a-b757-c9b0f1dbe1b6
+            alb.ingress.kubernetes.io/inbound-cidrs: 173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22
+          hosts:
+            - host: devops.kortix.com
+              paths:
+                - path: /
+                  type: Prefix
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+        # Mount the federated kubeconfig (dev + previews). The secret is
+        # provisioned out-of-band today; in production it's an ExternalSecret
+        # (ESO is already in-cluster) so nothing sensitive lives in git.
+        volumeMounts:
+          - name: clusters
+            mountPath: /headlamp/clusters
+            readOnly: true
+        volumes:
+          - name: clusters
+            secret:
+              secretName: headlamp-kubeconfig
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kortix-platform
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

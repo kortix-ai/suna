@@ -1,0 +1,37 @@
+# Audit: pods must not share the host's Linux namespaces — hostNetwork, hostPID
+# and hostIPC must not be true (sharing them collapses isolation). Audit mode.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-namespaces
+  annotations:
+    policies.kyverno.io/title: Disallow Host Namespaces
+    policies.kyverno.io/category: Pod Security Standards (Baseline)
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Pods must not share the host network, PID or IPC namespaces. hostNetwork,
+      hostPID and hostIPC must not be set to true.
+spec:
+  background: true
+  rules:
+    - name: deny-host-namespaces
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces:
+                - kube-system
+                - kube-node-lease
+                - kube-public
+      validate:
+        failureAction: Audit
+        message: "hostNetwork, hostPID and hostIPC must not be set to true."
+        pattern:
+          spec:
+            =(hostNetwork): "false"
+            =(hostPID): "false"
+            =(hostIPC): "false"

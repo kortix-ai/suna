@@ -45,6 +45,15 @@ output "argocd_domain" {
   value = var.argocd_domain
 }
 
+output "devops_certificate_arn" {
+  description = "Cert ARN for the consolidated DevOps gateway ALB (devops.kortix.com)."
+  value       = module.acm_devops.certificate_arn
+}
+
+output "devops_domain" {
+  value = var.devops_domain
+}
+
 output "app_irsa_role_arn" {
   description = "IRSA role ARN for the app ServiceAccount (Secrets Manager read)."
   value       = module.app_irsa.role_arn

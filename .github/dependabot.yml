@@ -27,3 +27,27 @@ updates:
       interval: "weekly"
       day: "monday"
     labels: ["dependencies", "github-actions"]
+
+  - package-ecosystem: "terraform"
+    directories:
+      - "/infra/terraform/modules/*"
+      - "/infra/terraform/environments/*"
+      - "/infra/terraform/environments/*/*"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 10
+    labels: ["dependencies", "terraform"]
+
+  - package-ecosystem: "docker"
+    directories:
+      - "/apps/api"
+      - "/apps/web"
+      - "/apps/sandbox"
+      - "/.kortix"
+    target-branch: "main"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels: ["dependencies", "docker"]
