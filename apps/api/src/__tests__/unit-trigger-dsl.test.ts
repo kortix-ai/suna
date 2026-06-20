@@ -129,6 +129,34 @@ prompt = "x"
     expect(errors[0]!.error).toMatch(/expression or a one-off/);
   });
 
+  test('a bad IANA timezone is rejected at parse time', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "bad-tz"
+type = "cron"
+cron = "0 0 9 * * 1"
+timezone = "Not/AZone"
+prompt = "x"
+`));
+    const { errors } = extractTriggers(parsed);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]!.error).toMatch(/timezone must be a valid IANA name/);
+  });
+
+  test('a valid named timezone is accepted', () => {
+    const parsed = parseManifestString(manifestWith(`
+[[triggers]]
+slug = "good-tz"
+type = "cron"
+cron = "0 0 9 * * 1"
+timezone = "America/New_York"
+prompt = "x"
+`));
+    const { specs, errors } = extractTriggers(parsed);
+    expect(errors).toEqual([]);
+    expect(specs[0]!.timezone).toBe('America/New_York');
+  });
+
   test('parses a webhook trigger with secret_env reference', () => {
     const parsed = parseManifestString(manifestWith(`
 [[triggers]]

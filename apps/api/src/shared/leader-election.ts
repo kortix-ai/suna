@@ -135,7 +135,22 @@ async function promote(): Promise<void> {
   try {
     await handlers?.onAcquire();
   } catch (err) {
-    logger.error('[leader] onAcquire failed', { error: err instanceof Error ? err.message : String(err) });
+    // If startup of the singleton workers throws, do NOT stay leader=true with
+    // nothing running — that silently halts every cron trigger fleet-wide and
+    // no peer takes over (we'd hold the lease forever). Step down + clean up;
+    // the next tick re-acquires the (still-held) lease and retries onAcquire,
+    // so a transient failure self-heals instead of becoming a permanent stall.
+    logger.error('[leader] onAcquire failed — stepping down to retry next tick', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    leader = false;
+    try {
+      await handlers?.onRelease();
+    } catch (releaseErr) {
+      logger.error('[leader] onRelease during onAcquire recovery failed', {
+        error: releaseErr instanceof Error ? releaseErr.message : String(releaseErr),
+      });
+    }
   }
 }
 

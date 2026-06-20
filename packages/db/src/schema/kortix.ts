@@ -634,6 +634,13 @@ export const projectTriggerRuntime = kortixSchema.table(
       .references(() => projects.projectId, { onDelete: 'cascade' }),
     slug: varchar('slug', { length: 128 }).notNull(),
     lastFiredAt: timestamp('last_fired_at', { withTimezone: true }),
+    // Observability for "why isn't my trigger running": outcome of the most
+    // recent attempt ('fired' | 'queued' | 'failed'), the error if it failed
+    // (or a parse error), and when that attempt happened (distinct from
+    // last_fired_at, which only advances on a successful/queued fire).
+    lastStatus: varchar('last_status', { length: 32 }),
+    lastError: text('last_error'),
+    lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [

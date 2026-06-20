@@ -297,6 +297,20 @@ interface ParseErr {
   error: GitTriggerParseError;
 }
 
+// A bad IANA timezone (typo, or an abbreviation like "PST") otherwise slips
+// through parsing and only fails later inside the cron due-check, where it's
+// swallowed to `false` — the trigger then silently never fires. Catch it at
+// parse time so it surfaces as a visible trigger error instead.
+function isValidTimeZone(tz: string): boolean {
+  if (tz === 'UTC') return true;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
     return err('(invalid)', `[[triggers]] entry #${index + 1} is not a table`);
@@ -358,6 +372,9 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
     const timezone = typeof row.timezone === 'string' && row.timezone.trim()
       ? row.timezone.trim()
       : 'UTC';
+    if (!isValidTimeZone(timezone)) {
+      return err(slug, `timezone must be a valid IANA name like "UTC" or "America/New_York" (got "${timezone}")`);
+    }
 
     // A one-off ("run once") schedule carries `run_at` instead of `cron`.
     if (runAtRaw) {
