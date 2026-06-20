@@ -159,6 +159,29 @@ ingress:
 topologySpread:
   enabled: true
 
+# Pod/container hardening. The non-root baseline is safe for the bun image (it
+# already runs as USER bun) and is on by default. readOnlyRootFilesystem is
+# opt-in: it requires an emptyDir for every runtime write path (writableMounts),
+# so it stays off until validated per env (the API writes to /tmp + .kortix-data).
+security:
+  enabled: true
+  runAsNonRoot: true
+  seccompProfile: RuntimeDefault
+  allowPrivilegeEscalation: false
+  dropAllCapabilities: true
+  readOnlyRootFilesystem: false
+  writableMounts:
+    - /tmp
+
+priorityClassName: ""
+
+# ServiceMonitor for Prometheus-operator scraping. OFF until (a) the operator CRDs
+# exist in the target cluster and (b) the API exposes a Prometheus /metrics route.
+serviceMonitor:
+  enabled: false
+  path: /metrics
+  interval: 30s
+
 # Progressive delivery (Argo Rollouts). enabled=false → a plain Deployment.
 # enabled=true → a canary Rollout that shifts traffic through `steps` while a
 # background CloudWatch AnalysisRun watches ALB error-rate + latency and ABORTS
