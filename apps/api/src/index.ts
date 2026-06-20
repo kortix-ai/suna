@@ -668,6 +668,35 @@ app.route('/v1/router', router);        // /v1/router/chat/completions, /v1/rout
       },
     ),
   );
+
+  // Internal routes the STANDALONE gateway (apps/llm-gateway) calls back for
+  // auth / upstream resolution / billing / budget / usage / trace / model
+  // catalog. Without this mount, the standalone gateway 404s and opencode falls
+  // back to its minimal model list.
+  const { createInternalGatewayRoutes } = await import('./llm-gateway/internal-routes');
+  app.route('/internal/gateway', createInternalGatewayRoutes());
+
+  // Dev/worktree: reverse-proxy /v1/llm-gateway/* to the standalone gateway so
+  // sandboxes reach it through the API's own origin/tunnel (no separate tunnel).
+  if (config.LLM_GATEWAY_PROXY_PORT || config.LLM_GATEWAY_PROXY_TARGET) {
+    const proxyBase = (
+      config.LLM_GATEWAY_PROXY_TARGET || `http://127.0.0.1:${config.LLM_GATEWAY_PROXY_PORT}`
+    ).replace(/\/+$/, '');
+    app.all('/v1/llm-gateway/*', async (c) => {
+      const tail = c.req.path.slice('/v1/llm-gateway'.length) || '/';
+      const target = `${proxyBase}${tail}`;
+      const init: RequestInit & { duplex?: 'half' } = {
+        method: c.req.method,
+        headers: c.req.raw.headers,
+      };
+      if (c.req.method !== 'GET' && c.req.method !== 'HEAD') {
+        init.body = c.req.raw.body;
+        init.duplex = 'half';
+      }
+      const upstream = await fetch(target, init);
+      return new Response(upstream.body, { status: upstream.status, headers: upstream.headers });
+    });
+  }
 }
 
 app.route('/v1/billing', billingApp);   // /v1/billing/account-state, /v1/billing/webhooks/*
