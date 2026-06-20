@@ -28,6 +28,17 @@ function resetSDKClient(): void {
   _resetClient?.();
 }
 
+// Connection-store reset on server switch. Registered by sandbox-connection-
+// store at module load — SAME pattern as registerClientResetter above — so
+// server-store never statically imports sandbox-connection-store. A static
+// import re-entered this module via the logger→opencode-sdk→server-store chain
+// before `_resetClient` initialized → 'Cannot access _resetClient before
+// initialization' TDZ (caught live 2026-06-13).
+let _connSwitchReset: (() => void) | null = null;
+export function registerConnSwitchReset(fn: () => void): void {
+  _connSwitchReset = fn;
+}
+
 export type SandboxProvider = 'daytona' | 'local_docker' | 'justavps';
 
 export interface ServerEntry {
@@ -486,6 +497,15 @@ export const useServerStore = create<ServerStore>()(
 
         // Force SDK client to recreate for the new server URL
         resetSDKClient();
+        // Reset the connection store SYNCHRONOUSLY with the switch: its
+        // status/healthy belonged to the PREVIOUS server, and every consumer
+        // that reads it before the next health poll (runtime-ready marks, the
+        // ensure/opencode query gates) was acting on another sandbox's health
+        // — observed live as runtime-ready firing 1ms BEFORE server-switched
+        // and the chat wedging against a mid-claim runtime. Null-safe: the
+        // connection store registers this lazily (see registerConnSwitchReset);
+        // before then the hook's effect-reset covers it.
+        _connSwitchReset?.();
         syncActiveInstanceCookie(target);
 
         set({

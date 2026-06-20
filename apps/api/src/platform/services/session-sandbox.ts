@@ -39,6 +39,7 @@ import {
 } from '../../snapshots/builder';
 import { ensureWarmBaseReady, warmPathPaused } from '../../snapshots/warm-bake';
 import { config } from '../../config';
+import { providerFallbackSetting } from './runtime-settings';
 import { selectProvider } from './provider-balancer';
 import { ProvisionTimeline } from './provision-timeline';
 import { recordProviderEvent } from './provider-events';
@@ -177,14 +178,23 @@ export async function provisionSessionSandbox(opts: {
    * and provisioning still completes to `active`.
    */
   beforeActive?: (externalId: string) => Promise<void>;
+  /**
+   * Set when this box is a warm-pool spare (its sessionSandboxes.poolState).
+   * Such boxes opt OUT of provider auto-stop so they stay warm until claimed;
+   * normal session sandboxes leave it undefined and auto-stop on idle. (Warm
+   * pool is disabled by default — see warm-pool.ts / KORTIX_WARM_POOL_SIZE.)
+   */
+  poolState?: string | null;
 }): Promise<ProvisionSessionSandboxResult> {
   const { sandboxId, accountId, projectId, userId, serverType, location } = opts;
   // Resolution order:
   //   1. Explicit per-request `opts.provider` (set by callers that need a
   //      specific runtime, e.g. when restarting an existing sandbox).
   //   2. `config.getDefaultProvider()` — head of ALLOWED_SANDBOX_PROVIDERS.
-  const providerName = opts.provider || (await selectProvider());
-  const provider = getProvider(providerName);
+  // `let`, not `const`: provider failover (one-shot, admin-gated) reassigns
+  // these in the provision loop's catch when the primary fails at birth.
+  let providerName = opts.provider || (await selectProvider());
+  let provider = getProvider(providerName);
   const tl = new ProvisionTimeline(sandboxId, 'provision');
 
   const slug = (opts.sandboxSlug ?? '').trim() || DEFAULT_SANDBOX_SLUG;
@@ -363,6 +373,15 @@ export async function provisionSessionSandbox(opts: {
           }
         : {}),
     },
+    // Session sandboxes auto-stop on idle at the PROVIDER level (Platinum
+    // enforces auto_stop_minutes; the in-repo hibernate sweep is never
+    // scheduled, which left session VMs running for days — caught live
+    // 2026-06-10). Stopped sandboxes keep their disk and wake automatically
+    // on inbound preview traffic, so the UX cost is one ~2s resume after an
+    // idle gap. Warm-pool boxes (legacy; pool is disabled) opt out.
+    ...(opts.poolState
+      ? { autoStopInterval: 0 }
+      : { autoStopInterval: Math.max(0, Number(process.env.KORTIX_SANDBOX_AUTO_STOP_MIN ?? 30) || 0) }),
   };
 
   // Detach the actual provisioning — the API caller navigates immediately
@@ -373,6 +392,9 @@ export async function provisionSessionSandbox(opts: {
     // and reports "not found", we rebuild and retry once. More than once means
     // something is genuinely broken — surface the error.
     let healedStaleSnapshot = false;
+    // Provider failover (one-shot, on init): set true once we've handed off to a
+    // second provider, so a session never bounces between providers forever.
+    let fallbackAttempted = false;
     let imageInfo: { snapshotName: string; slug: string; contentHash: string; isDefault: boolean } | null = null;
     provisioning: while (true) {
     try {
@@ -647,6 +669,51 @@ export async function provisionSessionSandbox(opts: {
       }
 
       const bgMessage = bgErr instanceof Error ? bgErr.message : String(bgErr);
+
+      // ── Provider failover (one-shot, on init) ────────────────────────────
+      // Admin-gated (DB `provider_fallback`, OFF by default). When ON, a
+      // provider that fails to provision the session AT BIRTH hands off ONCE to
+      // the next allowed provider before the session is marked failed. Init
+      // only — a running box is never migrated here. The new provider re-resolves
+      // its own image (the snapshot is provider-specific), so we clear all image
+      // state and re-enter the loop.
+      if (!fallbackAttempted && providerFallbackSetting().enabled) {
+        const next = config.ALLOWED_SANDBOX_PROVIDERS.find((p) => p !== providerName);
+        if (next) {
+          fallbackAttempted = true;
+          console.warn(
+            `[session-sandbox] ${providerName} provisioning failed for ${sandbox.sandboxId} — failing over to ${next}: ${bgMessage.slice(0, 160)}`,
+          );
+          const foTl = tl.summary();
+          recordProviderEvent({
+            provider: providerName, kind: 'provision', outcome: 'error',
+            totalMs: foTl.totalMs, marks: foTl.marks,
+            errorClass: 'other', error: `failover→${next}: ${bgMessage}`,
+            sessionId: sandbox.sandboxId, accountId,
+          });
+          if (bgExternalId) {
+            await provider.remove(bgExternalId).catch(() => {});
+            bgExternalId = null;
+          }
+          providerName = next;
+          provider = getProvider(next);
+          warmBase = null;
+          warmIsProjectSnapshot = false;
+          providerCreateInput.snapshot = undefined;
+          providerCreateInput.warmBaseSnapshot = undefined;
+          firstImagePromise = null;
+          imageInfo = null;
+          healedStaleSnapshot = false;
+          await db
+            .update(sessionSandboxes)
+            .set({ provider: next, status: 'provisioning', updatedAt: new Date() })
+            .where(eq(sessionSandboxes.sandboxId, sandbox.sandboxId))
+            .catch(() => {});
+          tl.mark(`failover:${next}`);
+          continue provisioning;
+        }
+      }
+
       // Provider-capacity errors (Daytona "No available runners", rate limits)
       // are transient outages, not session failures. Log them as a warning so
       // they don't read as code bugs in the console, and present a friendly

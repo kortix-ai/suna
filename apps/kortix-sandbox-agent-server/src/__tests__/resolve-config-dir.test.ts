@@ -33,6 +33,8 @@ function cfg(overrides: Partial<Config> = {}): Config {
     apiUrl: undefined,
     repoUrl: undefined,
     branchName: undefined,
+    sessionFresh: false,
+    baseSha: undefined,
     kortixToken: undefined,
     gitUserName: 'Kortix Agent',
     gitUserEmail: 'agent@kortix.ai',
