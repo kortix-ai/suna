@@ -368,6 +368,22 @@ async function runPoolMode(
         bootMark('claim-repo-materialized')
         if (!bootState.repoMaterializationError) await configureRepoCredentialHelper(cfg2, cfg2.projectTarget).catch(() => {})
       }
+
+      // A warm spare's opencode process is started before claim, when it has no
+      // session-scoped Executor/CLI/LLM env and (for Stage-1) before the project
+      // config dir exists. Restart it after adopting the claimant env + repo so
+      // OPENCODE_CONFIG_CONTENT includes the Executor MCP and project config.
+      const claimOpencodeConfigDir = bootState.repoMaterializationError
+        ? cfg2.defaultOpencodeConfigDir
+        : await resolveOpencodeConfigDir(cfg2)
+      await ensureOpencodeConfigDeps(claimOpencodeConfigDir).catch((err) =>
+        logger.warn('[pool] claim config deps failed', { err: (err as Error).message }),
+      )
+      opencode.reconfigure(cfg2, claimOpencodeConfigDir, projectEnv)
+      await opencode.restart().catch((err) =>
+        logger.warn('[pool] claim opencode restart failed', { err: (err as Error).message }),
+      )
+      bootMark('claim-opencode-restarted')
       await startSessionRuntime(opencode, cfg2, bootState, bootMark)
       logger.info('[pool] claim complete', { claimMs: Date.now() - t0, timeline: bootState.timeline })
     })()

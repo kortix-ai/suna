@@ -28,7 +28,7 @@
  */
 import { and, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 
-import { projects, projectSessions, sessionSandboxes, warmPoolPresence } from '@kortix/db';
+import { kortixApiKeys, projects, projectSessions, sessionSandboxes, warmPoolPresence } from '@kortix/db';
 import { config, type SandboxProviderName } from '../../config';
 import { db } from '../../shared/db';
 import { getProvider } from '../providers';
@@ -430,10 +430,18 @@ async function bindClaimedSpare(input: {
     return false;
   }
   try {
-    // ATOMIC: insert the session row + delete the spare row in ONE tx. Both rows
-    // share the same external_id; if the spare row lingered (insert ok, delete
-    // failed) a later claim-timeout reap would provider.remove() the box out
-    // from under the now-bound session. The tx makes "bound" ⇒ "spare row gone".
+    // ATOMIC: insert the session row, re-scope the spare's sandbox token to that
+    // session row, then delete the spare row in ONE tx. Both rows share the same
+    // external_id; if the spare row lingered (insert ok, delete failed) a later
+    // claim-timeout reap would provider.remove() the box out from under the
+    // now-bound session. The tx makes "bound" ⇒ "spare row gone".
+    //
+    // The box keeps the same KORTIX_TOKEN bytes it received while parked. Git
+    // proxy auth resolves those bytes via api_keys.sandbox_id, then requires a
+    // live session_sandboxes row for that sandbox id. If we delete the spare row
+    // without moving the api_key scope, post-claim clones/fetches fail with
+    // "sandbox token is not scoped to this project". Re-scope before the delete
+    // so old-token bytes authenticate as the real session id after commit.
     // The delete is GUARDED on poolState='claiming': if reconcileWarmPool reaped
     // the spare row mid-claim (claim outran CLAIM_STALE_MS), the guard deletes 0
     // rows → we throw → the whole bind rolls back → cold fallback, so we never
@@ -457,6 +465,19 @@ async function bindClaimedSpare(input: {
         metadata: { ...input.sessionMetadata, claimed_from_spare: input.spare.spareSandboxId },
         lastUsedAt: new Date(),
       });
+      const movedKeys = await tx
+        .update(kortixApiKeys)
+        .set({ sandboxId: input.sessionId })
+        .where(and(
+          eq(kortixApiKeys.sandboxId, input.spare.spareSandboxId),
+          eq(kortixApiKeys.accountId, input.accountId),
+          eq(kortixApiKeys.type, 'sandbox'),
+          eq(kortixApiKeys.status, 'active'),
+        ))
+        .returning({ id: kortixApiKeys.keyId });
+      if (movedKeys.length === 0) {
+        throw new Error('spare sandbox token missing — rolling back bind');
+      }
       const removed = await tx
         .delete(sessionSandboxes)
         .where(and(eq(sessionSandboxes.sandboxId, input.spare.spareSandboxId), eq(sessionSandboxes.poolState, 'claiming')))
