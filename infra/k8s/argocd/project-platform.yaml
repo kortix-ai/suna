@@ -34,6 +34,8 @@ spec:
       namespace: velero
     - server: https://kubernetes.default.svc
       namespace: opencost
+    - server: https://kubernetes.default.svc
+      namespace: argocd
     # kube-prometheus-stack places kubelet/coredns scrape Services here so it can
     # collect core-component + node/pod metrics. Standard for a monitoring stack.
     - server: https://kubernetes.default.svc
