@@ -34,13 +34,26 @@ import { BottomSheetModal } from '@gorhom/bottom-sheet';
 
 import { useAuthContext } from '@/contexts';
 import { useSandboxContext } from '@/contexts/SandboxContext';
-import { useSessions, useCreateSession, useDeleteSession, useArchiveSession, useUnarchiveSession } from '@/lib/platform/hooks';
+import {
+  useSessions,
+  useCreateSession,
+  useDeleteSession,
+  useArchiveSession,
+  useUnarchiveSession,
+} from '@/lib/platform/hooks';
 import { useSyncStore } from '@/lib/opencode/sync-store';
 import { getAuthToken } from '@/api/config';
 import type { Session } from '@/lib/opencode/types';
 import { SessionPage } from '@/components/session/SessionPage';
-import { SessionConnecting, type SessionConnectError } from '@/components/session/SessionConnecting';
-import { SessionChatInput, type PromptOptions, type TrackedMention } from '@/components/session/SessionChatInput';
+import {
+  SessionConnecting,
+  type SessionConnectError,
+} from '@/components/session/SessionConnecting';
+import {
+  SessionChatInput,
+  type PromptOptions,
+  type TrackedMention,
+} from '@/components/session/SessionChatInput';
 import { BottomBar } from '@/components/session/BottomBar';
 import type { BottomBarRef } from '@/components/session/BottomBar';
 import { TabsOverview } from '@/components/session/TabsOverview';
@@ -105,14 +118,42 @@ import { useSandboxPoller } from '@/lib/platform/use-sandbox-poller';
 import type { SandboxProviderName } from '@/lib/platform/client';
 import { getSandboxUrl } from '@/lib/platform/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { useProjectSessions, useCreateProjectSession, useProject, useAccounts, projectKeys } from '@/lib/projects/hooks';
-import { startProjectSession, restartProjectSession, deleteProjectSession } from '@/lib/projects/projects-client';
+import {
+  useProjectSessions,
+  useCreateProjectSession,
+  useProject,
+  useAccounts,
+  projectKeys,
+} from '@/lib/projects/hooks';
+import {
+  startProjectSession,
+  restartProjectSession,
+  deleteProjectSession,
+} from '@/lib/projects/projects-client';
 import type { ProjectSession, ProjectSessionStatus } from '@/lib/projects/projects-client';
+import { getUpgradeGate } from '@/lib/billing/upgrade-gate';
+import { useUpgradeSheetStore } from '@/stores/upgrade-sheet-store';
 import { Avatar } from '@/components/ui/Avatar';
 import {
-  Eye, EyeOff, RefreshCw, Upload, Image, FolderPlus, FilePlus, LayoutGrid, List,
-  FileText, Copy, Pencil, Trash2,
-  Bot, Sparkles, Terminal, FolderOpen, Plug, Settings,
+  Eye,
+  EyeOff,
+  RefreshCw,
+  Upload,
+  Image,
+  FolderPlus,
+  FilePlus,
+  LayoutGrid,
+  List,
+  FileText,
+  Copy,
+  Pencil,
+  Trash2,
+  Bot,
+  Sparkles,
+  Terminal,
+  FolderOpen,
+  Plug,
+  Settings,
   ChevronsUpDown,
 } from 'lucide-react-native';
 import type { BottomBarMenuItem } from '@/components/session/BottomBar';
@@ -160,12 +201,13 @@ function AnimatedCollapsible({
     }).start();
   }, [expanded, anim]);
 
-  const animatedHeight = contentHeight > 0
-    ? anim.interpolate({
-        inputRange: [0, 1],
-        outputRange: [0, contentHeight],
-      })
-    : undefined;
+  const animatedHeight =
+    contentHeight > 0
+      ? anim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [0, contentHeight],
+        })
+      : undefined;
 
   const opacity = anim.interpolate({
     inputRange: [0, 0.3, 1],
@@ -181,8 +223,7 @@ function AnimatedCollapsible({
         onLayout={(e) => {
           const h = e.nativeEvent.layout.height;
           if (h > 0 && h !== contentHeight) setContentHeight(h);
-        }}
-      >
+        }}>
         {children}
       </View>
       {/* Animated container */}
@@ -195,7 +236,15 @@ function AnimatedCollapsible({
 
 // ─── Animated chevron ───────────────────────────────────────────────────────
 
-function AnimatedChevron({ expanded, color, size = 16 }: { expanded: boolean; color: string; size?: number }) {
+function AnimatedChevron({
+  expanded,
+  color,
+  size = 16,
+}: {
+  expanded: boolean;
+  color: string;
+  size?: number;
+}) {
   const rotation = useRef(new Animated.Value(expanded ? 1 : 0)).current;
 
   useEffect(() => {
@@ -266,28 +315,58 @@ function ConnectingToWorkspace({
     phase === 'awaiting-sandbox'
       ? 'Waiting for sandbox to be assigned.'
       : phase === 'provisioning'
-      ? 'Sandbox is still provisioning.'
-      : 'Checking sandbox health and restoring your session.';
+        ? 'Sandbox is still provisioning.'
+        : 'Checking sandbox health and restoring your session.';
 
   // Restart only makes sense if we actually have a sandbox to talk to.
   const canRestart = phase === 'checking-env';
 
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: isDark ? '#09090b' : '#FFFFFF', paddingHorizontal: 40 }}>
+    <View
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: isDark ? '#09090b' : '#FFFFFF',
+        paddingHorizontal: 40,
+      }}>
       <View style={{ flexDirection: 'column', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <KortixLogo size={22} variant="symbol" color={isDark ? 'dark' : 'light'} />
-        <Text style={{ fontSize: 13, fontFamily: 'Roobert', letterSpacing: 2, textTransform: 'uppercase', color: isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)' }}>
+        <Text
+          style={{
+            fontSize: 13,
+            fontFamily: 'Roobert',
+            letterSpacing: 2,
+            textTransform: 'uppercase',
+            color: isDark ? 'rgba(248,248,248,0.3)' : 'rgba(18,18,21,0.3)',
+          }}>
           Connecting to Workspace
         </Text>
       </View>
       <ActivityIndicator size="small" color={isDark ? '#ffffff' : '#000000'} />
-      <Text style={{ marginTop: 24, fontSize: 14, fontFamily: 'Roobert', color: isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)', textAlign: 'center', lineHeight: 22, maxWidth: 300 }}>
+      <Text
+        style={{
+          marginTop: 24,
+          fontSize: 14,
+          fontFamily: 'Roobert',
+          color: isDark ? 'rgba(248,248,248,0.4)' : 'rgba(18,18,21,0.4)',
+          textAlign: 'center',
+          lineHeight: 22,
+          maxWidth: 300,
+        }}>
         {phaseText}
       </Text>
 
       {/* Recovery row — appears after 10s of waiting */}
       {showEscape && (
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 20, flexWrap: 'wrap', justifyContent: 'center' }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            gap: 8,
+            marginTop: 20,
+            flexWrap: 'wrap',
+            justifyContent: 'center',
+          }}>
           {canRestart && (
             <TouchableOpacity
               onPress={handleRestart}
@@ -302,14 +381,18 @@ function ConnectingToWorkspace({
                 borderRadius: 999,
                 backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
                 opacity: restarting ? 0.5 : 1,
-              }}
-            >
+              }}>
               <Ionicons
                 name="refresh-outline"
                 size={14}
                 color={isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)'}
               />
-              <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}>
+              <Text
+                style={{
+                  fontSize: 13,
+                  fontFamily: 'Roobert-Medium',
+                  color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)',
+                }}>
                 {restarting ? 'Restarting…' : 'Restart'}
               </Text>
             </TouchableOpacity>
@@ -325,14 +408,18 @@ function ConnectingToWorkspace({
               paddingVertical: 10,
               borderRadius: 999,
               backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-            }}
-          >
+            }}>
             <Ionicons
               name="arrow-back-outline"
               size={14}
               color={isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)'}
             />
-            <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)' }}>
+            <Text
+              style={{
+                fontSize: 13,
+                fontFamily: 'Roobert-Medium',
+                color: isDark ? 'rgba(248,248,248,0.6)' : 'rgba(18,18,21,0.5)',
+              }}>
               Back to Instances
             </Text>
           </TouchableOpacity>
@@ -377,7 +464,10 @@ function SessionListItem({
 
   return (
     <TouchableOpacity
-      onPress={() => { haptics.tap(); onPress(item); }}
+      onPress={() => {
+        haptics.tap();
+        onPress(item);
+      }}
       onLongPress={() => {
         haptics.medium();
         Alert.alert(item.title || 'Session', undefined, [
@@ -386,19 +476,15 @@ function SessionListItem({
           { text: 'Cancel', style: 'cancel' },
         ]);
       }}
-      className={`rounded-2xl px-3 py-2.5 mb-1 ${isActive ? 'bg-muted' : ''}`}
-      activeOpacity={0.6}
-    >
+      className={`mb-1 rounded-2xl px-3 py-2.5 ${isActive ? 'bg-muted' : ''}`}
+      activeOpacity={0.6}>
       <View className="flex-row items-center">
-        {isSessionBusy && (
-          <View className="h-2 w-2 rounded-full bg-primary mr-2" />
-        )}
+        {isSessionBusy && <View className="mr-2 h-2 w-2 rounded-full bg-primary" />}
         <Text
           className={`flex-1 text-sm ${
-            isActive ? 'text-foreground font-semibold' : 'text-foreground'
+            isActive ? 'font-semibold text-foreground' : 'text-foreground'
           }`}
-          numberOfLines={1}
-        >
+          numberOfLines={1}>
           {item.title || 'New Session'}
         </Text>
 
@@ -416,37 +502,41 @@ function SessionListItem({
             accessibilityLabel={isExpanded ? 'Collapse sub-sessions' : 'Expand sub-sessions'}
             className={`ml-2 rounded-full px-2 py-0.5 ${
               isExpanded
-                ? isDark ? 'bg-white/10' : 'bg-black/10'
-                : isDark ? 'bg-white/[0.04]' : 'bg-black/[0.04]'
-            }`}
-          >
+                ? isDark
+                  ? 'bg-white/10'
+                  : 'bg-black/10'
+                : isDark
+                  ? 'bg-white/[0.04]'
+                  : 'bg-black/[0.04]'
+            }`}>
             <Text
-              className={`text-[10px] ${
-                isExpanded ? 'text-foreground' : 'text-muted-foreground'
-              }`}
-              style={{ fontVariant: ['tabular-nums'] }}
-            >
+              className={`text-[10px] ${isExpanded ? 'text-foreground' : 'text-muted-foreground'}`}
+              style={{ fontVariant: ['tabular-nums'] }}>
               {childCount}
             </Text>
           </TouchableOpacity>
         )}
 
         {isActive && (
-          <View className="flex-row items-center ml-2">
+          <View className="ml-2 flex-row items-center">
             <TouchableOpacity
-              onPress={() => { haptics.medium(); onArchive?.(item.id); }}
-              className="p-1.5 mr-0.5"
+              onPress={() => {
+                haptics.medium();
+                onArchive?.(item.id);
+              }}
+              className="mr-0.5 p-1.5"
               hitSlop={6}
-              activeOpacity={0.6}
-            >
+              activeOpacity={0.6}>
               <Ionicons name="archive-outline" size={16} color={mutedColor} />
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => { haptics.medium(); onDelete?.(item.id); }}
+              onPress={() => {
+                haptics.medium();
+                onDelete?.(item.id);
+              }}
               className="p-1.5"
               hitSlop={6}
-              activeOpacity={0.6}
-            >
+              activeOpacity={0.6}>
               <Ionicons name="trash-outline" size={16} color={mutedColor} />
             </TouchableOpacity>
           </View>
@@ -541,7 +631,7 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
         toValue: 1,
         duration: 1000,
         useNativeDriver: true,
-      }),
+      })
     );
     animation.start();
     return () => animation.stop();
@@ -577,9 +667,7 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
             strokeWidth={1.5}
             strokeDasharray="3 3.4"
           />
-          {(isProvisioning || status === 'failed') && (
-            <Circle cx={8} cy={8} r={4} fill={color} />
-          )}
+          {(isProvisioning || status === 'failed') && <Circle cx={8} cy={8} r={4} fill={color} />}
         </Svg>
       </Animated.View>
     </View>
@@ -600,15 +688,13 @@ function ProjectSessionListItem({
   return (
     <TouchableOpacity
       onPress={() => onPress(item)}
-      className={`rounded-2xl px-3 py-2.5 mb-1 ${isActive ? 'bg-muted' : ''}`}
-      activeOpacity={0.6}
-    >
+      className={`mb-1 rounded-2xl px-3 py-2.5 ${isActive ? 'bg-muted' : ''}`}
+      activeOpacity={0.6}>
       <View className="flex-row items-center gap-2">
         <SessionStatusDot status={item.status} />
         <Text
-          className={`flex-1 text-sm ${isActive ? 'text-foreground font-semibold' : 'text-foreground'}`}
-          numberOfLines={1}
-        >
+          className={`flex-1 text-sm ${isActive ? 'font-semibold text-foreground' : 'text-foreground'}`}
+          numberOfLines={1}>
           {title}
         </Text>
       </View>
@@ -693,8 +779,7 @@ function SessionGroup({
           style={{
             borderLeftWidth: 1,
             borderLeftColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
-          }}
-        >
+          }}>
           {childSessions.map((child) => {
             const grandchildIds = childMap.get(child.id);
             const hasGrandchildren = !!grandchildIds && grandchildIds.length > 0;
@@ -770,7 +855,8 @@ async function probeSandboxHealth(sandboxUrl: string): Promise<SandboxHealth> {
       typeof data?.boot_error === 'string' && data.boot_error ? data.boot_error : null;
     if (data?.runtimeReady === true) return { status: 'ready' };
     if (data?.opencode === 'ok' || data?.opencode === true) return { status: 'ready' };
-    if (data?.status && !['starting', 'down', 'error'].includes(data.status)) return { status: 'ready' };
+    if (data?.status && !['starting', 'down', 'error'].includes(data.status))
+      return { status: 'ready' };
     return { status: 'starting', bootError };
   } catch {
     return { status: 'unreachable' };
@@ -787,7 +873,7 @@ async function probeSandboxHealth(sandboxUrl: string): Promise<SandboxHealth> {
 async function sendOpencodePrompt(
   sandboxUrl: string,
   opencodeSessionId: string,
-  text: string,
+  text: string
 ): Promise<boolean> {
   try {
     const token = await getAuthToken();
@@ -800,7 +886,7 @@ async function sendOpencodePrompt(
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ parts: [{ type: 'text', text }] }),
-      },
+      }
     );
     if (!res.ok) {
       log.error('[connect] initial prompt failed:', res.status, await res.text().catch(() => ''));
@@ -833,8 +919,14 @@ export default function ProjectSessionScreen() {
   const isDark = colorScheme === 'dark';
   const router = useRouter();
   const {
-    sandboxUrl, sandboxId, isLoading: sandboxLoading, error: sandboxError,
-    provisioningSandboxId, provisioningExternalId, provisioningProvider, onProvisioningComplete,
+    sandboxUrl,
+    sandboxId,
+    isLoading: sandboxLoading,
+    error: sandboxError,
+    provisioningSandboxId,
+    provisioningExternalId,
+    provisioningProvider,
+    onProvisioningComplete,
     switchSandbox,
   } = useSandboxContext();
   // Project view (web model): never gate on a global sandbox. Sandboxes are
@@ -860,7 +952,9 @@ export default function ProjectSessionScreen() {
   // 'checking' = waiting for sandbox to be reachable, then checking env
   // 'needed'   = setup not complete, show wizard
   // 'done'     = setup complete, show main app
-  const [setupState, setSetupState] = useState<'checking' | 'needed' | 'onboarding' | 'done'>('done');
+  const [setupState, setSetupState] = useState<'checking' | 'needed' | 'onboarding' | 'done'>(
+    'done'
+  );
 
   useEffect(() => {
     // Project view: the global-sandbox setup gate is disabled — the screen
@@ -913,7 +1007,10 @@ export default function ProjectSessionScreen() {
           // Any other HTTP response (even 404 for missing key) means sandbox is up
           reachable = true;
           if (cancelled) return;
-          log.log('[Home] Setup check: sandbox reachable, INSTANCE_SETUP_COMPLETE response:', res.status);
+          log.log(
+            '[Home] Setup check: sandbox reachable, INSTANCE_SETUP_COMPLETE response:',
+            res.status
+          );
           if (res.ok) {
             const data = await res.json();
             log.log('[Home] INSTANCE_SETUP_COMPLETE value:', data?.INSTANCE_SETUP_COMPLETE);
@@ -949,14 +1046,20 @@ export default function ProjectSessionScreen() {
                   return;
                 }
                 // Non-200 (5xx, 403, etc.) — can't tell. Defer to main app.
-                log.warn('[Home] ONBOARDING_COMPLETE returned', onbRes.status, '— deferring, not entering onboarding');
+                log.warn(
+                  '[Home] ONBOARDING_COMPLETE returned',
+                  onbRes.status,
+                  '— deferring, not entering onboarding'
+                );
                 setSetupState('done');
                 return;
               } catch {
                 // Network error — sandbox unreachable for this check.
                 // Don't default to onboarding. Show main app and let
                 // the user retry or wait for the sandbox to come back.
-                log.warn('[Home] Failed to check ONBOARDING_COMPLETE — deferring, not entering onboarding');
+                log.warn(
+                  '[Home] Failed to check ONBOARDING_COMPLETE — deferring, not entering onboarding'
+                );
                 setSetupState('done');
                 return;
               }
@@ -966,7 +1069,9 @@ export default function ProjectSessionScreen() {
           // If we previously completed setup, the sandbox is likely still booting
           // — keep polling instead of immediately showing the wizard.
           if (wasSetupDone) {
-            log.log('[Home] Setup check: env not ready yet but setup was done before, keep polling...');
+            log.log(
+              '[Home] Setup check: env not ready yet but setup was done before, keep polling...'
+            );
             await new Promise((r) => setTimeout(r, pollMs));
             continue;
           }
@@ -1003,7 +1108,9 @@ export default function ProjectSessionScreen() {
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [sandboxUrl, isProvisioning]);
 
   const handleSetupComplete = useCallback(() => {
@@ -1079,7 +1186,9 @@ export default function ProjectSessionScreen() {
   }, [colorScheme]);
 
   // Validate persisted tab screenshots (remove stale entries on startup)
-  useEffect(() => { validatePersistedScreenshots(); }, []);
+  useEffect(() => {
+    validatePersistedScreenshots();
+  }, []);
 
   // Compact session mutation
   const compactSession = useCompactSession();
@@ -1130,6 +1239,7 @@ export default function ProjectSessionScreen() {
   const erroredSessionRef = useRef<string | null>(null);
   const createProjectSession = useCreateProjectSession(projectId);
   const { data: project } = useProject(projectId);
+  const openUpgradeSheet = useUpgradeSheetStore((state) => state.openUpgradeSheet);
   const projectName = project?.name || 'Your project';
   const connectingStatusLabel = useMemo(() => {
     const ps = projectSessions.find((s) => s.session_id === connectingProjectSessionId);
@@ -1142,13 +1252,13 @@ export default function ProjectSessionScreen() {
   // OpenCode/Kortix proxy hooks must stay disabled to avoid 403s
   // ("Not authorized to access this sandbox").
   const sessionSandboxUrl = activeSessionId ? sandboxUrl : undefined;
-  const { data: sessions = [], isLoading: sessionsLoading } =
-    useSessions(sessionSandboxUrl);
+  const { data: sessions = [], isLoading: sessionsLoading } = useSessions(sessionSandboxUrl);
   const { data: kortixProjects } = useKortixProjects(sessionSandboxUrl);
   const sortedProjects = useMemo(() => {
     if (!kortixProjects || !Array.isArray(kortixProjects)) return [];
     return [...kortixProjects].sort(
-      (a: KortixProject, b: KortixProject) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+      (a: KortixProject, b: KortixProject) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
   }, [kortixProjects]);
   const createSession = useCreateSession(sandboxUrl);
@@ -1159,11 +1269,11 @@ export default function ProjectSessionScreen() {
   // Split sessions into active and archived
   const activeSessions = useMemo(
     () => sessions.filter((s) => !(s.time as any).archived),
-    [sessions],
+    [sessions]
   );
   const archivedSessions = useMemo(
     () => sessions.filter((s) => !!(s.time as any).archived),
-    [sessions],
+    [sessions]
   );
 
   // Tabs shown as pills in the BottomBar (session tabs + page tabs)
@@ -1213,12 +1323,27 @@ export default function ProjectSessionScreen() {
 
   // Agent/model/variant for dashboard input
   const { data: agents = [] } = useOpenCodeAgents(sessionSandboxUrl);
-  const { data: dashVisibleModels = [], allModels: dashAllModels = [], defaults: dashDefaults } = useOpenCodeModels(sessionSandboxUrl);
+  const {
+    data: dashVisibleModels = [],
+    allModels: dashAllModels = [],
+    defaults: dashDefaults,
+  } = useOpenCodeModels(sessionSandboxUrl);
   const { data: dashConfig } = useOpenCodeConfig(sessionSandboxUrl);
   const resolved = useResolvedConfig(agents, dashAllModels, dashConfig, dashDefaults);
 
   // Stable error message (prevents re-render loops from error object identity)
   const sandboxErrorMsg = sandboxError?.message || null;
+  const sandboxUpgradeGate = getUpgradeGate(sandboxError);
+
+  const showUpgradeForError = useCallback(
+    (error: unknown) => {
+      const gate = getUpgradeGate(error);
+      if (!gate) return false;
+      openUpgradeSheet(gate);
+      return true;
+    },
+    [openUpgradeSheet]
+  );
 
   // Open file selected from command palette once Files page is active.
   useEffect(() => {
@@ -1238,10 +1363,22 @@ export default function ProjectSessionScreen() {
   // Soft selection tick on drawer open/close so swipe-to-open and swipe-to-close
   // feel snappy. The Drawer component fires these callbacks once per transition,
   // so they don't repeat during the slide animation.
-  const handleDrawerOpen = useCallback(() => { haptics.selection(); setDrawerOpen(true); }, []);
-  const handleDrawerClose = useCallback(() => { haptics.selection(); setDrawerOpen(false); }, []);
-  const handleRightDrawerOpen = useCallback(() => { haptics.selection(); setRightDrawerOpen(true); }, []);
-  const handleRightDrawerClose = useCallback(() => { haptics.selection(); setRightDrawerOpen(false); }, []);
+  const handleDrawerOpen = useCallback(() => {
+    haptics.selection();
+    setDrawerOpen(true);
+  }, []);
+  const handleDrawerClose = useCallback(() => {
+    haptics.selection();
+    setDrawerOpen(false);
+  }, []);
+  const handleRightDrawerOpen = useCallback(() => {
+    haptics.selection();
+    setRightDrawerOpen(true);
+  }, []);
+  const handleRightDrawerClose = useCallback(() => {
+    haptics.selection();
+    setRightDrawerOpen(false);
+  }, []);
 
   const handleNewSession = useCallback(async () => {
     if (!projectId) return;
@@ -1258,68 +1395,78 @@ export default function ProjectSessionScreen() {
       erroredSessionRef.current = null;
       setConnectingProjectSessionId(session.session_id);
     } catch (err: any) {
+      if (showUpgradeForError(err)) return;
       log.error('❌ [Project] Failed to create session:', err?.message || err);
       Alert.alert('Error', err?.message || 'Failed to create session');
     }
-  }, [projectId, createProjectSession, navigateToSession]);
+  }, [projectId, createProjectSession, navigateToSession, showUpgradeForError]);
 
-  const handleCreateSessionWithPrompt = useCallback(async (title: string, prompt: string) => {
-    if (!sandboxUrl) return;
-    try {
-      const session = await createSession.mutateAsync({ title });
+  const handleCreateSessionWithPrompt = useCallback(
+    async (title: string, prompt: string) => {
+      if (!sandboxUrl) return;
+      try {
+        const session = await createSession.mutateAsync({ title });
+        navigateToSession(session.id);
+        // Send the preset prompt into the new session
+        const token = await getAuthToken();
+        await fetch(`${sandboxUrl}/session/${session.id}/prompt_async`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ parts: [{ type: 'text', text: prompt }] }),
+        });
+      } catch (err: any) {
+        log.error('❌ [Home] Failed to create session with prompt:', err?.message || err);
+      }
+    },
+    [sandboxUrl, createSession, navigateToSession]
+  );
+
+  const handleSessionPress = useCallback(
+    (session: Session) => {
       navigateToSession(session.id);
-      // Send the preset prompt into the new session
-      const token = await getAuthToken();
-      await fetch(`${sandboxUrl}/session/${session.id}/prompt_async`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ parts: [{ type: 'text', text: prompt }] }),
-      });
-    } catch (err: any) {
-      log.error('❌ [Home] Failed to create session with prompt:', err?.message || err);
-    }
-  }, [sandboxUrl, createSession, navigateToSession]);
-
-  const handleSessionPress = useCallback((session: Session) => {
-    navigateToSession(session.id);
-    setDrawerOpen(false);
-  }, [navigateToSession]);
+      setDrawerOpen(false);
+    },
+    [navigateToSession]
+  );
 
   // Composer prompts awaiting their session's OpenCode root, keyed by session id.
   const pendingPromptsRef = useRef<Record<string, string>>({});
 
   // Switch the SandboxContext to a session's sandbox and render its chat. Needs
   // both the sandbox URL and the resolved OpenCode pin (opencode_session_id).
-  const connectToProjectSession = useCallback((ps: ProjectSession) => {
-    if (!ps.sandbox_url || !ps.opencode_session_id) return false;
-    const externalId =
-      ps.sandbox_url.match(/\/p\/([^/]+)\//)?.[1] || ps.sandbox_id || ps.session_id;
-    switchSandbox({
-      sandbox_id: ps.sandbox_id || ps.session_id,
-      external_id: externalId,
-      name: ps.name || 'Session',
-      provider: (ps.sandbox_provider as SandboxProviderName) || 'daytona',
-      base_url: ps.sandbox_url,
-      status: 'running',
-      created_at: ps.created_at,
-      updated_at: ps.updated_at,
-    });
-    setConnectingProjectSessionId(null);
-    setConnectError(null);
-    erroredSessionRef.current = null;
-    setActiveProjectSessionId(ps.session_id);
-    navigateToSession(ps.opencode_session_id);
-    // Deliver the composer's first prompt now that the OpenCode root exists.
-    const pending = pendingPromptsRef.current[ps.session_id];
-    if (pending) {
-      delete pendingPromptsRef.current[ps.session_id];
-      void sendOpencodePrompt(ps.sandbox_url, ps.opencode_session_id, pending);
-    }
-    return true;
-  }, [switchSandbox, navigateToSession]);
+  const connectToProjectSession = useCallback(
+    (ps: ProjectSession) => {
+      if (!ps.sandbox_url || !ps.opencode_session_id) return false;
+      const externalId =
+        ps.sandbox_url.match(/\/p\/([^/]+)\//)?.[1] || ps.sandbox_id || ps.session_id;
+      switchSandbox({
+        sandbox_id: ps.sandbox_id || ps.session_id,
+        external_id: externalId,
+        name: ps.name || 'Session',
+        provider: (ps.sandbox_provider as SandboxProviderName) || 'daytona',
+        base_url: ps.sandbox_url,
+        status: 'running',
+        created_at: ps.created_at,
+        updated_at: ps.updated_at,
+      });
+      setConnectingProjectSessionId(null);
+      setConnectError(null);
+      erroredSessionRef.current = null;
+      setActiveProjectSessionId(ps.session_id);
+      navigateToSession(ps.opencode_session_id);
+      // Deliver the composer's first prompt now that the OpenCode root exists.
+      const pending = pendingPromptsRef.current[ps.session_id];
+      if (pending) {
+        delete pendingPromptsRef.current[ps.session_id];
+        void sendOpencodePrompt(ps.sandbox_url, ps.opencode_session_id, pending);
+      }
+      return true;
+    },
+    [switchSandbox, navigateToSession]
+  );
 
   // Resolve the session's canonical runtime through the unified /start endpoint,
   // then open the chat. The sandbox can still be warming, so retry patiently.
@@ -1336,122 +1483,144 @@ export default function ProjectSessionScreen() {
   // returns a readiness payload. The client only polls that one contract.
   // A cold boot can take minutes, so we poll patiently and fail only on a
   // definitive error/timeout.
-  const ensureAndOpen = useCallback(async (sessionId: string) => {
-    if (!projectId || ensuringRef.current === sessionId) return;
-    ensuringRef.current = sessionId;
-    const startedAt = Date.now();
-    const MAX_WAIT_MS = 4 * 60_000;
-    try {
-      let attempt = 0;
-      while (Date.now() - startedAt < MAX_WAIT_MS) {
-        if (ensuringRef.current !== sessionId) return; // superseded by another open
-        attempt += 1;
+  const ensureAndOpen = useCallback(
+    async (sessionId: string) => {
+      if (!projectId || ensuringRef.current === sessionId) return;
+      ensuringRef.current = sessionId;
+      const startedAt = Date.now();
+      const MAX_WAIT_MS = 4 * 60_000;
+      try {
+        let attempt = 0;
+        while (Date.now() - startedAt < MAX_WAIT_MS) {
+          if (ensuringRef.current !== sessionId) return; // superseded by another open
+          attempt += 1;
 
-        // ONE server call: POST /start idempotently provisions/resumes the
-        // sandbox AND resolves the OpenCode pin server-side. We just poll it until
-        // stage='ready'; provisioning, resume, and OpenCode pinning are server-side.
-        const start = await startProjectSession(projectId, sessionId);
-        const sandbox = start?.sandbox ?? null;
+          // ONE server call: POST /start idempotently provisions/resumes the
+          // sandbox AND resolves the OpenCode pin server-side. We just poll it until
+          // stage='ready'; provisioning, resume, and OpenCode pinning are server-side.
+          const start = await startProjectSession(projectId, sessionId);
+          const sandbox = start?.sandbox ?? null;
 
-        if (start?.stage === 'failed' || sandbox?.status === 'error') {
-          failConnect(sessionId, {
-            title: 'Session failed to start',
-            message: 'The sandbox could not be provisioned.',
-          });
-          return;
-        }
-
-        if (sandbox?.status === 'active' && sandbox.external_id) {
-          const sandboxUrl = getSandboxUrl(sandbox.external_id);
-
-          const health = await probeSandboxHealth(sandboxUrl);
-
-          // Fatal runtime boot failure (e.g. repo materialization / git clone
-          // failed): stop waiting and surface it with a Restart button — web
-          // parity with the "OpenCode runtime is not ready" screen. boot_error
-          // is null during a normal boot, so this never false-positives.
-          if (health.bootError) {
+          if (start?.stage === 'failed' || sandbox?.status === 'error') {
             failConnect(sessionId, {
-              title: 'OpenCode runtime is not ready',
-              message: 'The sandbox booted, but the project runtime did not become usable.',
-              detail: health.bootError,
+              title: 'Session failed to start',
+              message: 'The sandbox could not be provisioned.',
             });
             return;
           }
 
-          log.log(
-            `💓 [connect] attempt ${attempt}: stage=${start?.stage} health=${health.status} pin=${start?.opencode_session_id ? 'ok' : '-'}`,
-          );
+          if (sandbox?.status === 'active' && sandbox.external_id) {
+            const sandboxUrl = getSandboxUrl(sandbox.external_id);
 
-          if (start?.stage === 'ready' && start.opencode_session_id) {
-            connectToProjectSession({
-              session_id: sessionId,
-              sandbox_id: sandbox.sandbox_id,
-              sandbox_url: sandboxUrl,
-              opencode_session_id: start.opencode_session_id,
-              sandbox_provider: sandbox.provider ?? 'daytona',
-              created_at: sandbox.created_at,
-              updated_at: sandbox.updated_at,
-            } as ProjectSession);
-            return;
+            const health = await probeSandboxHealth(sandboxUrl);
+
+            // Fatal runtime boot failure (e.g. repo materialization / git clone
+            // failed): stop waiting and surface it with a Restart button — web
+            // parity with the "OpenCode runtime is not ready" screen. boot_error
+            // is null during a normal boot, so this never false-positives.
+            if (health.bootError) {
+              failConnect(sessionId, {
+                title: 'OpenCode runtime is not ready',
+                message: 'The sandbox booted, but the project runtime did not become usable.',
+                detail: health.bootError,
+              });
+              return;
+            }
+
+            log.log(
+              `💓 [connect] attempt ${attempt}: stage=${start?.stage} health=${health.status} pin=${start?.opencode_session_id ? 'ok' : '-'}`
+            );
+
+            if (start?.stage === 'ready' && start.opencode_session_id) {
+              connectToProjectSession({
+                session_id: sessionId,
+                sandbox_id: sandbox.sandbox_id,
+                sandbox_url: sandboxUrl,
+                opencode_session_id: start.opencode_session_id,
+                sandbox_provider: sandbox.provider ?? 'daytona',
+                created_at: sandbox.created_at,
+                updated_at: sandbox.updated_at,
+              } as ProjectSession);
+              return;
+            }
+          } else {
+            log.log(`💓 [connect] attempt ${attempt}: stage=${start?.stage ?? 'provisioning'}`);
           }
-        } else {
-          log.log(`💓 [connect] attempt ${attempt}: stage=${start?.stage ?? 'provisioning'}`);
-        }
 
-        await new Promise((r) => setTimeout(r, 1_500));
+          await new Promise((r) => setTimeout(r, 1_500));
+        }
+        failConnect(sessionId, {
+          title: 'Could not start session',
+          message: 'The session runtime did not become ready in time. Please try again.',
+        });
+      } catch (err) {
+        if (showUpgradeForError(err)) {
+          setConnectingProjectSessionId(null);
+          return;
+        }
+        failConnect(sessionId, {
+          title: 'Could not start session',
+          message: err instanceof Error ? err.message : 'The session runtime could not be started.',
+        });
+      } finally {
+        if (ensuringRef.current === sessionId) ensuringRef.current = null;
       }
-      failConnect(sessionId, {
-        title: 'Could not start session',
-        message: 'The session runtime did not become ready in time. Please try again.',
-      });
-    } finally {
-      if (ensuringRef.current === sessionId) ensuringRef.current = null;
-    }
-  }, [projectId, connectToProjectSession, failConnect]);
+    },
+    [projectId, connectToProjectSession, failConnect, showUpgradeForError]
+  );
 
   // Open a project session from the drawer. Always enter the connecting state —
   // ensureAndOpen polls the sandbox endpoint (re-provisioning/waking as needed)
   // before opening, so even a previously-idle session comes back cleanly.
-  const handleOpenProjectSession = useCallback((ps: ProjectSession) => {
-    haptics.tap();
-    setActiveProjectSessionId(ps.session_id);
-    setDrawerOpen(false);
-    navigateToSession(null);
-    setConnectError(null);
-    erroredSessionRef.current = null;
-    setConnectingProjectSessionId(ps.session_id);
-  }, [navigateToSession]);
+  const handleOpenProjectSession = useCallback(
+    (ps: ProjectSession) => {
+      haptics.tap();
+      setActiveProjectSessionId(ps.session_id);
+      setDrawerOpen(false);
+      navigateToSession(null);
+      setConnectError(null);
+      erroredSessionRef.current = null;
+      setConnectingProjectSessionId(ps.session_id);
+    },
+    [navigateToSession]
+  );
 
   // Open a session by raw id (e.g. Fix-with-agent returns a new session). Same
   // connecting flow as handleOpenProjectSession, minus the ProjectSession shell.
-  const handleOpenSessionById = useCallback((sessionId: string) => {
-    setActiveProjectSessionId(sessionId);
-    setDrawerOpen(false);
-    navigateToSession(null);
-    setConnectError(null);
-    erroredSessionRef.current = null;
-    setConnectingProjectSessionId(sessionId);
-  }, [navigateToSession]);
+  const handleOpenSessionById = useCallback(
+    (sessionId: string) => {
+      setActiveProjectSessionId(sessionId);
+      setDrawerOpen(false);
+      navigateToSession(null);
+      setConnectError(null);
+      erroredSessionRef.current = null;
+      setConnectingProjectSessionId(sessionId);
+    },
+    [navigateToSession]
+  );
 
   // Start an agent-led config session (New / Edit from the Agents/Skills/
   // Commands pages). Mirrors web's useConfigureThread: create the session with
   // the seed prompt and drop into the connecting state.
-  const handleConfigureSession = useCallback(async (prompt: string) => {
-    if (!projectId) return;
-    try {
-      haptics.tap();
-      const session = await createProjectSession.mutateAsync({ initial_prompt: prompt });
-      setActiveProjectSessionId(session.session_id);
-      navigateToSession(null);
-      setConnectError(null);
-      erroredSessionRef.current = null;
-      setConnectingProjectSessionId(session.session_id);
-    } catch (err: any) {
-      log.error('❌ [Project] Failed to start config session:', err?.message || err);
-      Alert.alert('Error', err?.message || 'Failed to start session');
-    }
-  }, [projectId, createProjectSession, navigateToSession]);
+  const handleConfigureSession = useCallback(
+    async (prompt: string) => {
+      if (!projectId) return;
+      try {
+        haptics.tap();
+        const session = await createProjectSession.mutateAsync({ initial_prompt: prompt });
+        setActiveProjectSessionId(session.session_id);
+        navigateToSession(null);
+        setConnectError(null);
+        erroredSessionRef.current = null;
+        setConnectingProjectSessionId(session.session_id);
+      } catch (err: any) {
+        if (showUpgradeForError(err)) return;
+        log.error('❌ [Project] Failed to start config session:', err?.message || err);
+        Alert.alert('Error', err?.message || 'Failed to start session');
+      }
+    },
+    [projectId, createProjectSession, navigateToSession, showUpgradeForError]
+  );
 
   // Restart a session whose runtime failed to boot (web parity:
   // restartProjectSession). Tears down + re-provisions the sandbox, clears the
@@ -1492,11 +1661,11 @@ export default function ProjectSessionScreen() {
   const activeProjectSession = useMemo(
     () =>
       activeSessionId
-        ? projectSessions.find(
-            (s) => s.opencode_session_id === activeSessionId || s.session_id === activeSessionId,
-          ) ?? null
+        ? (projectSessions.find(
+            (s) => s.opencode_session_id === activeSessionId || s.session_id === activeSessionId
+          ) ?? null)
         : null,
-    [projectSessions, activeSessionId],
+    [projectSessions, activeSessionId]
   );
 
   const handleOpenChangeRequest = useCallback(async () => {
@@ -1505,7 +1674,10 @@ export default function ProjectSessionScreen() {
     const targetSessionId = ps?.opencode_session_id || activeSessionId;
 
     if (!ps || !targetSandboxUrl || !targetSessionId) {
-      Alert.alert('Open change request', 'Open a running session before asking the agent to create a change request.');
+      Alert.alert(
+        'Open change request',
+        'Open a running session before asking the agent to create a change request.'
+      );
       return;
     }
 
@@ -1556,7 +1728,7 @@ export default function ProjectSessionScreen() {
             }
           },
         },
-      ],
+      ]
     );
   }, [activeProjectSession, restartingSession, projectId, ensureAndOpen]);
 
@@ -1593,7 +1765,7 @@ export default function ProjectSessionScreen() {
             }
           },
         },
-      ],
+      ]
     );
   }, [activeProjectSession, projectId, closeTab, navigateToSession, queryClient]);
 
@@ -1624,40 +1796,49 @@ export default function ProjectSessionScreen() {
 
   const handleBack = useCallback(() => navigateToSession(null), [navigateToSession]);
 
-  const handleArchive = useCallback((sessionId: string) => {
-    Alert.alert('Archive Session', 'Move this session to archived?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Archive',
-        onPress: () => {
-          if (useTabStore.getState().activeSessionId === sessionId) {
-            navigateToSession(null);
-          }
-          archiveSession.mutate(sessionId);
+  const handleArchive = useCallback(
+    (sessionId: string) => {
+      Alert.alert('Archive Session', 'Move this session to archived?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Archive',
+          onPress: () => {
+            if (useTabStore.getState().activeSessionId === sessionId) {
+              navigateToSession(null);
+            }
+            archiveSession.mutate(sessionId);
+          },
         },
-      },
-    ]);
-  }, [archiveSession, navigateToSession]);
+      ]);
+    },
+    [archiveSession, navigateToSession]
+  );
 
-  const handleUnarchive = useCallback((sessionId: string) => {
-    unarchiveSession.mutate(sessionId);
-  }, [unarchiveSession]);
+  const handleUnarchive = useCallback(
+    (sessionId: string) => {
+      unarchiveSession.mutate(sessionId);
+    },
+    [unarchiveSession]
+  );
 
-  const handleDelete = useCallback((sessionId: string) => {
-    Alert.alert('Delete Session', 'This cannot be undone.', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Delete',
-        style: 'destructive',
-        onPress: () => {
-          if (useTabStore.getState().activeSessionId === sessionId) {
-            navigateToSession(null);
-          }
-          deleteSession.mutate(sessionId);
+  const handleDelete = useCallback(
+    (sessionId: string) => {
+      Alert.alert('Delete Session', 'This cannot be undone.', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            if (useTabStore.getState().activeSessionId === sessionId) {
+              navigateToSession(null);
+            }
+            deleteSession.mutate(sessionId);
+          },
         },
-      },
-    ]);
-  }, [deleteSession, navigateToSession]);
+      ]);
+    },
+    [deleteSession, navigateToSession]
+  );
 
   // Simplified dashboard send flow (ported from web 3f150e0).
   // Single `isSending` guard, `finally` cleanup, parallel session create + fade.
@@ -1688,13 +1869,21 @@ export default function ProjectSessionScreen() {
         navigateToSession(null);
         setConnectingProjectSessionId(session.session_id);
       } catch (err: any) {
+        if (showUpgradeForError(err)) return;
         log.error('❌ [Project] Dashboard send failed:', err?.message || err);
         Alert.alert('Error', err?.message || 'Failed to start session');
       } finally {
         setIsDashboardSending(false);
       }
     },
-    [projectId, isDashboardSending, createProjectSession, connectToProjectSession, navigateToSession],
+    [
+      projectId,
+      isDashboardSending,
+      createProjectSession,
+      connectToProjectSession,
+      navigateToSession,
+      showUpgradeForError,
+    ]
   );
 
   // Capture a screenshot of the current tab before showing tabs overview.
@@ -1751,45 +1940,48 @@ export default function ProjectSessionScreen() {
   const [themeTransitionUri, setThemeTransitionUri] = useState<string | null>(null);
   const themeTransitionOpacity = useRef(new Animated.Value(1)).current;
 
-  const handleThemeSelect = useCallback(async (value: ThemePreference) => {
-    if (value === themePreference) return;
+  const handleThemeSelect = useCallback(
+    async (value: ThemePreference) => {
+      if (value === themePreference) return;
 
-    // Capture the current screen so we can crossfade from old theme to new
-    let snapshotUri: string | null = null;
-    try {
-      snapshotUri = await captureScreen({
-        format: 'jpg',
-        quality: 0.8,
-        result: 'tmpfile',
-      });
-    } catch {
-      // Capture failed — fall through to instant switch
-    }
-
-    if (snapshotUri) {
-      themeTransitionOpacity.setValue(1);
-      setThemeTransitionUri(snapshotUri);
-    }
-
-    setThemePreference(value);
-    try {
-      await AsyncStorage.setItem(THEME_PREFERENCE_KEY, value);
-    } catch {}
-    setColorScheme(value === 'system' ? 'system' : value);
-
-    if (snapshotUri) {
-      // Let the new theme paint a frame before fading the snapshot out
-      requestAnimationFrame(() => {
-        Animated.timing(themeTransitionOpacity, {
-          toValue: 0,
-          duration: 400,
-          useNativeDriver: true,
-        }).start(() => {
-          setThemeTransitionUri(null);
+      // Capture the current screen so we can crossfade from old theme to new
+      let snapshotUri: string | null = null;
+      try {
+        snapshotUri = await captureScreen({
+          format: 'jpg',
+          quality: 0.8,
+          result: 'tmpfile',
         });
-      });
-    }
-  }, [themePreference, setColorScheme, themeTransitionOpacity]);
+      } catch {
+        // Capture failed — fall through to instant switch
+      }
+
+      if (snapshotUri) {
+        themeTransitionOpacity.setValue(1);
+        setThemeTransitionUri(snapshotUri);
+      }
+
+      setThemePreference(value);
+      try {
+        await AsyncStorage.setItem(THEME_PREFERENCE_KEY, value);
+      } catch {}
+      setColorScheme(value === 'system' ? 'system' : value);
+
+      if (snapshotUri) {
+        // Let the new theme paint a frame before fading the snapshot out
+        requestAnimationFrame(() => {
+          Animated.timing(themeTransitionOpacity, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }).start(() => {
+            setThemeTransitionUri(null);
+          });
+        });
+      }
+    },
+    [themePreference, setColorScheme, themeTransitionOpacity]
+  );
 
   const handleUserMenuOpen = useCallback(() => {
     setDrawerOpen(false);
@@ -1800,26 +1992,22 @@ export default function ProjectSessionScreen() {
 
   const handleSignOut = useCallback(() => {
     if (isSigningOut) return;
-    Alert.alert(
-      'Sign out',
-      'Sign out of Kortix?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Sign out',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              closeUserMenuSheet();
-              setDrawerOpen(false);
-              await signOut();
-            } catch (err: any) {
-              log.error('❌ [Home] Sign out failed:', err?.message || err);
-            }
-          },
+    Alert.alert('Sign out', 'Sign out of Kortix?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            closeUserMenuSheet();
+            setDrawerOpen(false);
+            await signOut();
+          } catch (err: any) {
+            log.error('❌ [Home] Sign out failed:', err?.message || err);
+          }
         },
-      ],
-    );
+      },
+    ]);
   }, [signOut, isSigningOut, closeUserMenuSheet]);
 
   // ── Drawer content ──
@@ -1829,42 +2017,46 @@ export default function ProjectSessionScreen() {
     const mutedColor = isDark ? '#999999' : '#6e6e6e';
 
     return (
-      <View
-        className="flex-1 bg-chrome-background"
-        style={{ paddingTop: insets.top }}
-      >
+      <View className="flex-1 bg-chrome-background" style={{ paddingTop: insets.top }}>
         {/* Kortix wordmark — tap to go back to the projects list */}
-        <View className="flex-row items-center justify-between px-5 pt-3 pb-4">
-          <TouchableOpacity onPress={goToProjects} activeOpacity={0.6} hitSlop={{ top: 8, bottom: 8, left: 8, right: 12 }}>
+        <View className="flex-row items-center justify-between px-5 pb-4 pt-3">
+          <TouchableOpacity
+            onPress={goToProjects}
+            activeOpacity={0.6}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 12 }}>
             <KortixLogo variant="logomark" size={18} color={isDark ? 'dark' : 'light'} />
           </TouchableOpacity>
         </View>
 
         {/* Top-level actions: New session / Search / Projects */}
-        <View className="px-2 mb-2">
+        <View className="mb-2 px-2">
           <TouchableOpacity
-            onPress={() => { haptics.tap(); handleNewSession(); }}
+            onPress={() => {
+              haptics.tap();
+              handleNewSession();
+            }}
             className="flex-row items-center rounded-lg px-3 py-2.5"
-            activeOpacity={0.6}
-          >
+            activeOpacity={0.6}>
             <Ionicons name="create-outline" size={18} color={iconColor} />
-            <Text className="flex-1 text-sm font-medium ml-3 text-foreground">New session</Text>
+            <Text className="ml-3 flex-1 text-sm font-medium text-foreground">New session</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={() => { haptics.tap(); setDrawerOpen(false); setCommandPaletteOpen(true); }}
+            onPress={() => {
+              haptics.tap();
+              setDrawerOpen(false);
+              setCommandPaletteOpen(true);
+            }}
             className="flex-row items-center rounded-lg px-3 py-2.5"
-            activeOpacity={0.6}
-          >
+            activeOpacity={0.6}>
             <Ionicons name="search-outline" size={18} color={iconColor} />
-            <Text className="flex-1 text-sm font-medium ml-3 text-foreground">Search</Text>
+            <Text className="ml-3 flex-1 text-sm font-medium text-foreground">Search</Text>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={goToProjects}
             className="flex-row items-center rounded-lg px-3 py-2.5"
-            activeOpacity={0.6}
-          >
+            activeOpacity={0.6}>
             <Ionicons name="albums-outline" size={18} color={iconColor} />
-            <Text className="flex-1 text-sm font-medium ml-3 text-foreground">All projects</Text>
+            <Text className="ml-3 flex-1 text-sm font-medium text-foreground">All projects</Text>
           </TouchableOpacity>
         </View>
 
@@ -1874,19 +2066,20 @@ export default function ProjectSessionScreen() {
             <View className="flex-row items-center justify-between px-5 py-2.5">
               <TouchableOpacity
                 onPress={goToProjects}
-                className="flex-row items-center flex-1"
-                activeOpacity={0.6}
-              >
+                className="flex-1 flex-row items-center"
+                activeOpacity={0.6}>
                 <Ionicons name="folder-outline" size={18} color={iconColor} />
-                <Text className="text-sm font-medium ml-3 text-foreground">Projects</Text>
+                <Text className="ml-3 text-sm font-medium text-foreground">Projects</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => { haptics.selection(); setProjectsExpanded((v) => !v); }}
+                onPress={() => {
+                  haptics.selection();
+                  setProjectsExpanded((v) => !v);
+                }}
                 className="flex-row items-center"
                 activeOpacity={0.6}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <View className="bg-muted rounded-full px-2 py-0.5 mr-1">
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <View className="mr-1 rounded-full bg-muted px-2 py-0.5">
                   <Text className="text-xs text-muted-foreground">{sortedProjects.length}</Text>
                 </View>
                 <AnimatedChevron expanded={projectsExpanded} color={mutedColor} size={16} />
@@ -1898,16 +2091,23 @@ export default function ProjectSessionScreen() {
                 {sortedProjects.map((project: KortixProject) => (
                   <TouchableOpacity
                     key={project.id}
-                    onPress={() => { haptics.tap(); handleProjectPress(project); }}
-                    className="flex-row items-center rounded-lg px-4 py-2 mb-0.5"
-                    activeOpacity={0.6}
-                  >
-                    <Ionicons name="folder-outline" size={14} color={mutedColor} style={{ marginRight: 8 }} />
+                    onPress={() => {
+                      haptics.tap();
+                      handleProjectPress(project);
+                    }}
+                    className="mb-0.5 flex-row items-center rounded-lg px-4 py-2"
+                    activeOpacity={0.6}>
+                    <Ionicons
+                      name="folder-outline"
+                      size={14}
+                      color={mutedColor}
+                      style={{ marginRight: 8 }}
+                    />
                     <Text className="flex-1 text-sm text-muted-foreground" numberOfLines={1}>
                       {project.name}
                     </Text>
                     {(project.sessionCount ?? 0) > 0 && (
-                      <Text className="text-xs text-muted-foreground/50 ml-2">
+                      <Text className="ml-2 text-xs text-muted-foreground/50">
                         {project.sessionCount}
                       </Text>
                     )}
@@ -1920,13 +2120,15 @@ export default function ProjectSessionScreen() {
 
         {/* Sessions header (collapsible) */}
         <TouchableOpacity
-          onPress={() => { haptics.selection(); setSessionsExpanded((v) => !v); }}
+          onPress={() => {
+            haptics.selection();
+            setSessionsExpanded((v) => !v);
+          }}
           className="flex-row items-center justify-between px-5 py-2.5"
-          activeOpacity={0.6}
-        >
+          activeOpacity={0.6}>
           <View className="flex-row items-center">
             <Ionicons name="list-outline" size={18} color={iconColor} />
-            <Text className="text-sm font-medium ml-3 text-foreground">Sessions</Text>
+            <Text className="ml-3 text-sm font-medium text-foreground">Sessions</Text>
           </View>
           <AnimatedChevron expanded={sessionsExpanded} color={mutedColor} size={16} />
         </TouchableOpacity>
@@ -1940,8 +2142,7 @@ export default function ProjectSessionScreen() {
           ) : (
             <ScrollView
               className="flex-1"
-              contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 20 }}
-            >
+              contentContainerStyle={{ paddingHorizontal: 8, paddingBottom: 20 }}>
               <AnimatedCollapsible expanded={sessionsExpanded}>
                 {projectSessions.length === 0 ? (
                   <View className="items-center py-8">
@@ -1968,58 +2169,53 @@ export default function ProjectSessionScreen() {
           <LegacyChatsSection iconColor={iconColor} mutedColor={mutedColor} isDark={isDark} />
 
           {/* Bottom: user info — card style matching desktop */}
-          <View
-            className="px-3 pt-2"
-            style={{ paddingBottom: insets.bottom + 8 }}
-          >
-          <TouchableOpacity
-            onPress={() => { haptics.tap(); handleUserMenuOpen(); }}
-            activeOpacity={0.8}
-            className="flex-row items-center rounded-xl border border-border"
-            style={{
-              height: 48,
-              paddingHorizontal: 8,
-              gap: 8,
-              backgroundColor: isDark ? 'rgba(45, 45, 45, 0.4)' : 'rgba(229, 229, 229, 0.4)',
-            }}
-          >
-            <View className="relative">
-              <View
-                className="h-8 w-8 rounded-lg items-center justify-center border border-border"
-                style={{
-                  backgroundColor: userChalk.background,
-                  borderColor: userChalk.border,
-                }}
-              >
+          <View className="px-3 pt-2" style={{ paddingBottom: insets.bottom + 8 }}>
+            <TouchableOpacity
+              onPress={() => {
+                haptics.tap();
+                handleUserMenuOpen();
+              }}
+              activeOpacity={0.8}
+              className="flex-row items-center rounded-xl border border-border"
+              style={{
+                height: 48,
+                paddingHorizontal: 8,
+                gap: 8,
+                backgroundColor: isDark ? 'rgba(45, 45, 45, 0.4)' : 'rgba(229, 229, 229, 0.4)',
+              }}>
+              <View className="relative">
+                <View
+                  className="h-8 w-8 items-center justify-center rounded-lg border border-border"
+                  style={{
+                    backgroundColor: userChalk.background,
+                    borderColor: userChalk.border,
+                  }}>
+                  <Text
+                    className="text-xs font-semibold uppercase"
+                    style={{ color: userChalk.foreground }}>
+                    {userDisplayName.charAt(0)}
+                  </Text>
+                </View>
+                {hasUpdate && (
+                  <View className="absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-background bg-red-500" />
+                )}
+              </View>
+              <View className="flex-1" style={{ gap: 2 }}>
                 <Text
-                  className="text-xs font-semibold uppercase"
-                  style={{ color: userChalk.foreground }}
-                >
-                  {userDisplayName.charAt(0)}
+                  className="font-medium text-foreground"
+                  style={{ fontSize: 13, lineHeight: 16 }}
+                  numberOfLines={1}>
+                  {userDisplayName}
+                </Text>
+                <Text
+                  className="text-muted-foreground"
+                  style={{ fontSize: 11, lineHeight: 14 }}
+                  numberOfLines={1}>
+                  {userEmail || planLabel}
                 </Text>
               </View>
-              {hasUpdate && (
-                <View className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 border-2 border-background" />
-              )}
-            </View>
-            <View className="flex-1" style={{ gap: 2 }}>
-              <Text
-                className="font-medium text-foreground"
-                style={{ fontSize: 13, lineHeight: 16 }}
-                numberOfLines={1}
-              >
-                {userDisplayName}
-              </Text>
-              <Text
-                className="text-muted-foreground"
-                style={{ fontSize: 11, lineHeight: 14 }}
-                numberOfLines={1}
-              >
-                {userEmail || planLabel}
-              </Text>
-            </View>
-            <ChevronsUpDown size={14} color={mutedColor} />
-          </TouchableOpacity>
+              <ChevronsUpDown size={14} color={mutedColor} />
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -2046,7 +2242,7 @@ export default function ProjectSessionScreen() {
 
   const renderRightDrawerContent = useCallback(
     () => <RightDrawerContent onClose={handleRightDrawerClose} projectId={projectId} />,
-    [handleRightDrawerClose],
+    [handleRightDrawerClose]
   );
 
   // ── Render ──
@@ -2076,8 +2272,8 @@ export default function ProjectSessionScreen() {
       !sandboxUrl && isProvisioning
         ? 'provisioning'
         : !sandboxUrl
-        ? 'awaiting-sandbox'
-        : 'checking-env';
+          ? 'awaiting-sandbox'
+          : 'checking-env';
     return (
       <>
         <Stack.Screen options={{ headerShown: false }} />
@@ -2128,8 +2324,7 @@ export default function ProjectSessionScreen() {
         swipeEnabled={!rightDrawerOpen}
         swipeEdgeWidth={80}
         swipeMinDistance={30}
-        renderDrawerContent={renderDrawerContent}
-      >
+        renderDrawerContent={renderDrawerContent}>
         <Drawer
           open={rightDrawerOpen}
           onOpen={handleRightDrawerOpen}
@@ -2149,607 +2344,682 @@ export default function ProjectSessionScreen() {
           swipeEnabled={!drawerOpen}
           swipeEdgeWidth={80}
           swipeMinDistance={30}
-          renderDrawerContent={renderRightDrawerContent}
-        >
-        {React.createElement(
-          ViewShotComponent || View,
-          ViewShotComponent
-            ? { ref: viewShotRef, style: { flex: 1, backgroundColor: isDark ? '#09090B' : '#FFFFFF' } }
-            : { className: 'flex-1 bg-background' },
-          <>
-          {/* Side hairlines — only needed for SessionPage / Dashboard, where the
+          renderDrawerContent={renderRightDrawerContent}>
+          {React.createElement(
+            ViewShotComponent || View,
+            ViewShotComponent
+              ? {
+                  ref: viewShotRef,
+                  style: { flex: 1, backgroundColor: isDark ? '#09090B' : '#FFFFFF' },
+                }
+              : { className: 'flex-1 bg-background' },
+            <>
+              {/* Side hairlines — only needed for SessionPage / Dashboard, where the
               chat input pushes the page card up so its own borders don't reach
               the bottom of the screen. Other pages use PageContent which spans
               full height and renders its own side borders. */}
-          {!activePageId && !showTabsOverview && (
-            <>
-              <View
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  left: 0,
-                  top: insets.top + 68,
-                  bottom: 0,
-                  width: 2,
-                  backgroundColor: isDark ? '#222222' : '#e6e6e5',
-                  zIndex: 10,
-                }}
-              />
-              <View
-                pointerEvents="none"
-                style={{
-                  position: 'absolute',
-                  right: 0,
-                  top: insets.top + 68,
-                  bottom: 0,
-                  width: 2,
-                  backgroundColor: isDark ? '#222222' : '#e6e6e5',
-                  zIndex: 10,
-                }}
-              />
+              {!activePageId && !showTabsOverview && (
+                <>
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: insets.top + 68,
+                      bottom: 0,
+                      width: 2,
+                      backgroundColor: isDark ? '#222222' : '#e6e6e5',
+                      zIndex: 10,
+                    }}
+                  />
+                  <View
+                    pointerEvents="none"
+                    style={{
+                      position: 'absolute',
+                      right: 0,
+                      top: insets.top + 68,
+                      bottom: 0,
+                      width: 2,
+                      backgroundColor: isDark ? '#222222' : '#e6e6e5',
+                      zIndex: 10,
+                    }}
+                  />
+                </>
+              )}
+              {/* Loading sandbox */}
+              {sandboxLoading ? (
+                <View className="flex-1 items-center justify-center">
+                  <ActivityIndicator size="large" color={isDark ? '#999999' : '#6e6e6e'} />
+                  <Text className="mt-3 text-sm text-muted-foreground">
+                    Connecting to sandbox...
+                  </Text>
+                </View>
+              ) : /* Sandbox error */
+              sandboxErrorMsg ? (
+                <View className="flex-1 items-center justify-center px-8">
+                  <Text className="mb-2 text-base font-medium text-foreground">
+                    {sandboxUpgradeGate ? 'Plan required' : 'Connection Error'}
+                  </Text>
+                  <Text className="text-center text-sm text-muted-foreground">
+                    {sandboxErrorMsg}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={
+                      sandboxUpgradeGate ? () => openUpgradeSheet(sandboxUpgradeGate) : goToProjects
+                    }
+                    className="mt-6 rounded-full bg-foreground px-5 py-3"
+                    activeOpacity={0.8}>
+                    <Text className="font-roobert-medium text-sm text-background">
+                      {sandboxUpgradeGate ? 'View plans' : 'Back to projects'}
+                    </Text>
+                  </TouchableOpacity>
+                  {sandboxUpgradeGate ? (
+                    <TouchableOpacity
+                      onPress={goToProjects}
+                      className="mt-3 rounded-full border border-border px-5 py-3"
+                      activeOpacity={0.8}>
+                      <Text className="font-roobert-medium text-sm text-foreground">Go back</Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+              ) : /* Active page tab — Files */
+              activePageId === 'page:files' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <FilesPage
+                  ref={filesPageRef}
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                  onFileSelectionChange={(file) => setFilesSelectedName(file?.name ?? null)}
+                  onRequestMenu={() => bottomBarRef.current?.presentMenu()}
+                />
+              ) : /* Active page tab — Memory */
+              activePageId === 'page:memory' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <MemoryPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — LLM Providers */
+              activePageId === 'page:llm-providers' &&
+                PAGE_TABS[activePageId] &&
+                !showTabsOverview ? (
+                <LlmProvidersPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Secrets */
+              activePageId === 'page:secrets' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <SecretsPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Agents (web sidebar BUILD) */
+              activePageId === 'page:agents' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <AgentsPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onConfigure={handleConfigureSession}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Skills (web sidebar BUILD) */
+              activePageId === 'page:skills' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <SkillsPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onConfigure={handleConfigureSession}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Commands (web sidebar BUILD) */
+              activePageId === 'page:commands' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <CommandsPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onConfigure={handleConfigureSession}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Connectors (web sidebar CONNECT) */
+              activePageId === 'page:connectors' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <ConnectorsPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Secrets (web sidebar CONNECT) */
+              activePageId === 'page:secrets-nav' &&
+                PAGE_TABS[activePageId] &&
+                !showTabsOverview ? (
+                <SecretsNavPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Channels (web sidebar CONNECT) */
+              activePageId === 'page:channels-nav' &&
+                PAGE_TABS[activePageId] &&
+                !showTabsOverview ? (
+                <ChannelsNavPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Schedules (web sidebar AUTOMATE) */
+              activePageId === 'page:schedules' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <SchedulesPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Webhooks (web sidebar AUTOMATE) */
+              activePageId === 'page:webhooks' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <WebhooksPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Changes (change requests) */
+              activePageId === 'page:changes' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <ChangesPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Files (project repo browser) */
+              activePageId === 'page:files-nav' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <FilesNavPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Sandbox (project runtime image) */
+              activePageId === 'page:sandbox' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <SandboxPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                  onOpenSession={handleOpenSessionById}
+                />
+              ) : /* Active page tab — Dev (local-dev guide) */
+              activePageId === 'page:dev' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <DevPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Members (project access) */
+              activePageId === 'page:members' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <MembersNavPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Settings (project settings) */
+              activePageId === 'page:settings' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <SettingsNavPage
+                  page={PAGE_TABS[activePageId]}
+                  projectId={projectId}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Terminal */
+              activePageId === 'page:terminal' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <TerminalPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Updates */
+              activePageId === 'page:updates' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <UpdatesPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — SSH */
+              activePageId === 'page:ssh' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <SSHPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Running Services */
+              activePageId === 'page:running-services' &&
+                PAGE_TABS[activePageId] &&
+                !showTabsOverview ? (
+                <RunningServicesPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Browser */
+              activePageId === 'page:browser' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <BrowserPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Agent Browser */
+              activePageId === 'page:agent-browser' &&
+                PAGE_TABS[activePageId] &&
+                !showTabsOverview ? (
+                <AgentBrowserPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Integrations */
+              activePageId === 'page:integrations' &&
+                PAGE_TABS[activePageId] &&
+                !showTabsOverview ? (
+                <IntegrationsTabPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Triggers / Scheduled Tasks */
+              activePageId === 'page:triggers' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <ScheduledTasksTabPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — API Keys */
+              activePageId === 'page:api' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <ApiKeysTabPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Channels */
+              activePageId === 'page:channels' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <ChannelsTabPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Tunnel */
+              activePageId === 'page:tunnel' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <TunnelTabPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Workspace */
+              activePageId === 'page:workspace' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <WorkspacePage
+                  ref={workspacePageRef}
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                  onCreateSessionWithPrompt={handleCreateSessionWithPrompt}
+                />
+              ) : /* Active page tab — Projects list */
+              activePageId === 'page:projects' && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <ProjectsPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — Single project detail (dynamic: page:project:{id}) */
+              activePageId?.startsWith('page:project:') && !showTabsOverview ? (
+                <ProjectDetailPage
+                  projectId={activePageId.replace('page:project:', '')}
+                  onBack={() => {
+                    // Go back to projects list
+                    useTabStore.getState().navigateToPage('page:projects');
+                  }}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active page tab — other pages (placeholder) */
+              activePageId && PAGE_TABS[activePageId] && !showTabsOverview ? (
+                <PlaceholderPage
+                  page={PAGE_TABS[activePageId]}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Active session */
+              activeSessionId && !showTabsOverview ? (
+                <SessionPage
+                  sessionId={activeSessionId}
+                  onBack={handleBack}
+                  onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                  onOpenRightDrawer={
+                    rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                  }
+                  isDrawerOpen={drawerOpen}
+                  isRightDrawerOpen={rightDrawerOpen}
+                />
+              ) : /* Connecting — a project session is provisioning */
+              connectingProjectSessionId && !showTabsOverview ? (
+                <View style={{ flex: 1 }} className="bg-background">
+                  <PageHeader
+                    title={projectName}
+                    onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                    isDrawerOpen={drawerOpen}
+                    onOpenRightDrawer={
+                      rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                    }
+                    isRightDrawerOpen={rightDrawerOpen}
+                  />
+                  <View
+                    style={{
+                      flex: 1,
+                      marginTop: -24,
+                      borderTopLeftRadius: 24,
+                      borderTopRightRadius: 24,
+                      overflow: 'hidden',
+                      borderTopWidth: 1.5,
+                      borderLeftWidth: 1.5,
+                      borderRightWidth: 1.5,
+                      borderColor: isDark ? '#222222' : '#e6e6e5',
+                    }}
+                    className="bg-background">
+                    <SessionConnecting
+                      statusLabel={connectingStatusLabel}
+                      error={connectError}
+                      onRestart={handleRestartSession}
+                      restarting={restartingSession}
+                    />
+                  </View>
+                </View>
+              ) : /* Tabs overview */
+              showTabsOverview ? (
+                <TabsOverview
+                  sessions={activeSessions}
+                  openTabIds={openTabIds}
+                  activeSessionId={activeSessionId}
+                  onSelectTab={(id) => navigateToSession(id)}
+                  onCloseTab={(id) => {
+                    closeTab(id);
+                    useTabScreenshotStore.getState().removeScreenshot(id);
+                  }}
+                  onCloseAll={() => {
+                    closeAllTabs();
+                    useTabScreenshotStore.getState().clear();
+                  }}
+                  onNewSession={handleNewSession}
+                  onDismiss={() => setShowTabsOverview(false)}
+                />
+              ) : (
+                /* Dashboard */
+                <KeyboardAvoidingView
+                  style={{ flex: 1 }}
+                  behavior="padding"
+                  className="bg-background">
+                  <PageHeader
+                    title={projectName}
+                    onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
+                    isDrawerOpen={drawerOpen}
+                    onOpenRightDrawer={
+                      rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen
+                    }
+                    isRightDrawerOpen={rightDrawerOpen}
+                  />
+
+                  {/* Rounded card tucks under the header (curved edge), matching SessionPage */}
+                  <Animated.View
+                    style={{
+                      flex: 1,
+                      marginTop: -24,
+                      borderTopLeftRadius: 20,
+                      borderTopRightRadius: 20,
+                      overflow: 'hidden',
+                      borderTopWidth: 1.5,
+                      borderLeftWidth: 1.5,
+                      borderRightWidth: 1.5,
+                      borderColor: isDark ? '#222222' : '#e6e6e5',
+                      opacity: isDashboardSending ? 0.3 : 1,
+                    }}
+                    className="items-center justify-center bg-background px-8">
+                    {/* Kortix brandmark wallpaper — faded symbol behind the hero,
+                    clipped by the card (web parity: ProjectHome brandmark). */}
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        StyleSheet.absoluteFill,
+                        {
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          opacity: isDark ? 0.55 : 0.65,
+                        },
+                      ]}>
+                      {(() => {
+                        const Brandmark = isDark ? BrandmarkWhite : BrandmarkBlack;
+                        const brandW = windowWidth * 1.15;
+                        return <Brandmark width={brandW} height={brandW * (462 / 393)} />;
+                      })()}
+                    </View>
+
+                    <Avatar variant="custom" size={64} fallbackText={projectName} />
+                    <Text
+                      className="mt-4 text-center text-2xl font-bold text-foreground"
+                      numberOfLines={2}>
+                      {projectName}
+                    </Text>
+                    <Text
+                      className="mt-2 text-center text-sm text-muted-foreground"
+                      style={{ maxWidth: 320 }}>
+                      Describe a task and your agent gets to work.
+                    </Text>
+                  </Animated.View>
+
+                  {/* Quick-start suggestion chips (web parity) — tap to start a session */}
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    keyboardShouldPersistTaps="handled"
+                    style={{ flexGrow: 0 }}
+                    contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 10, gap: 8 }}>
+                    {STARTER_PROMPTS.map((p) => (
+                      <TouchableOpacity
+                        key={p.id}
+                        onPress={() => {
+                          haptics.tap();
+                          handleDashboardSend(p.prompt, {});
+                        }}
+                        disabled={isDashboardSending}
+                        activeOpacity={0.7}
+                        className="flex-row items-center rounded-full border border-border bg-card px-3 py-1.5">
+                        <Ionicons
+                          name={p.icon as any}
+                          size={13}
+                          color={isDark ? '#999999' : '#6e6e6e'}
+                          style={{ marginRight: 6 }}
+                        />
+                        <Text className="text-xs text-muted-foreground">{p.label}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+
+                  <View>
+                    <SessionChatInput
+                      onSend={handleDashboardSend}
+                      placeholder="Describe a task to start a session…"
+                      disabled={isDashboardSending}
+                      agent={resolved.agent}
+                      agents={resolved.agents}
+                      model={resolved.model}
+                      models={dashVisibleModels}
+                      modelKey={resolved.modelKey}
+                      variant={resolved.variant}
+                      variants={resolved.variants}
+                      onAgentChange={resolved.setAgent}
+                      onModelChange={resolved.setModel}
+                      onVariantCycle={resolved.cycleVariant}
+                      onVariantSet={resolved.setVariant}
+                      sessions={sessions}
+                      sandboxUrl={sessionSandboxUrl}
+                    />
+                  </View>
+                </KeyboardAvoidingView>
+              )}
             </>
           )}
-          {/* Loading sandbox */}
-          {sandboxLoading ? (
-            <View className="flex-1 items-center justify-center">
-              <ActivityIndicator size="large" color={isDark ? '#999999' : '#6e6e6e'} />
-              <Text className="text-sm mt-3 text-muted-foreground">
-                Connecting to sandbox...
-              </Text>
-            </View>
-
-          /* Sandbox error */
-          ) : sandboxErrorMsg ? (
-            <View className="flex-1 items-center justify-center px-8">
-              <Text className="text-base font-medium mb-2 text-foreground">
-                Connection Error
-              </Text>
-              <Text className="text-sm text-center text-muted-foreground">
-                {sandboxErrorMsg}
-              </Text>
-            </View>
-
-          /* Active page tab — Files */
-          ) : activePageId === 'page:files' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <FilesPage
-              ref={filesPageRef}
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-              onFileSelectionChange={(file) => setFilesSelectedName(file?.name ?? null)}
-              onRequestMenu={() => bottomBarRef.current?.presentMenu()}
-            />
-
-          /* Active page tab — Memory */
-          ) : activePageId === 'page:memory' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <MemoryPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — LLM Providers */
-          ) : activePageId === 'page:llm-providers' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <LlmProvidersPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Secrets */
-          ) : activePageId === 'page:secrets' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <SecretsPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Agents (web sidebar BUILD) */
-          ) : activePageId === 'page:agents' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <AgentsPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onConfigure={handleConfigureSession}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Skills (web sidebar BUILD) */
-          ) : activePageId === 'page:skills' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <SkillsPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onConfigure={handleConfigureSession}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Commands (web sidebar BUILD) */
-          ) : activePageId === 'page:commands' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <CommandsPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onConfigure={handleConfigureSession}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Connectors (web sidebar CONNECT) */
-          ) : activePageId === 'page:connectors' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <ConnectorsPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Secrets (web sidebar CONNECT) */
-          ) : activePageId === 'page:secrets-nav' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <SecretsNavPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Channels (web sidebar CONNECT) */
-          ) : activePageId === 'page:channels-nav' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <ChannelsNavPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Schedules (web sidebar AUTOMATE) */
-          ) : activePageId === 'page:schedules' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <SchedulesPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Webhooks (web sidebar AUTOMATE) */
-          ) : activePageId === 'page:webhooks' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <WebhooksPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Changes (change requests) */
-          ) : activePageId === 'page:changes' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <ChangesPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Files (project repo browser) */
-          ) : activePageId === 'page:files-nav' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <FilesNavPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Sandbox (project runtime image) */
-          ) : activePageId === 'page:sandbox' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <SandboxPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-              onOpenSession={handleOpenSessionById}
-            />
-
-          /* Active page tab — Dev (local-dev guide) */
-          ) : activePageId === 'page:dev' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <DevPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Members (project access) */
-          ) : activePageId === 'page:members' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <MembersNavPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Settings (project settings) */
-          ) : activePageId === 'page:settings' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <SettingsNavPage
-              page={PAGE_TABS[activePageId]}
-              projectId={projectId}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Terminal */
-          ) : activePageId === 'page:terminal' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <TerminalPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Updates */
-          ) : activePageId === 'page:updates' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <UpdatesPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — SSH */
-          ) : activePageId === 'page:ssh' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <SSHPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Running Services */
-          ) : activePageId === 'page:running-services' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <RunningServicesPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Browser */
-          ) : activePageId === 'page:browser' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <BrowserPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Agent Browser */
-          ) : activePageId === 'page:agent-browser' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <AgentBrowserPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Integrations */
-          ) : activePageId === 'page:integrations' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <IntegrationsTabPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Triggers / Scheduled Tasks */
-          ) : activePageId === 'page:triggers' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <ScheduledTasksTabPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — API Keys */
-          ) : activePageId === 'page:api' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <ApiKeysTabPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Channels */
-          ) : activePageId === 'page:channels' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <ChannelsTabPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Tunnel */
-          ) : activePageId === 'page:tunnel' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <TunnelTabPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Workspace */
-          ) : activePageId === 'page:workspace' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <WorkspacePage
-              ref={workspacePageRef}
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-              onCreateSessionWithPrompt={handleCreateSessionWithPrompt}
-            />
-
-          /* Active page tab — Projects list */
-          ) : activePageId === 'page:projects' && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <ProjectsPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — Single project detail (dynamic: page:project:{id}) */
-          ) : activePageId?.startsWith('page:project:') && !showTabsOverview ? (
-            <ProjectDetailPage
-              projectId={activePageId.replace('page:project:', '')}
-              onBack={() => {
-                // Go back to projects list
-                useTabStore.getState().navigateToPage('page:projects');
-              }}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active page tab — other pages (placeholder) */
-          ) : activePageId && PAGE_TABS[activePageId] && !showTabsOverview ? (
-            <PlaceholderPage
-              page={PAGE_TABS[activePageId]}
-              onBack={handleBack}
-              onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-              onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-              isDrawerOpen={drawerOpen}
-              isRightDrawerOpen={rightDrawerOpen}
-            />
-
-          /* Active session */
-          ) : activeSessionId && !showTabsOverview ? (
-            <SessionPage sessionId={activeSessionId} onBack={handleBack} onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen} onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen} isDrawerOpen={drawerOpen} isRightDrawerOpen={rightDrawerOpen} />
-
-          /* Connecting — a project session is provisioning */
-          ) : connectingProjectSessionId && !showTabsOverview ? (
-            <View style={{ flex: 1 }} className="bg-background">
-              <PageHeader
-                title={projectName}
-                onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-                isDrawerOpen={drawerOpen}
-                onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-                isRightDrawerOpen={rightDrawerOpen}
-              />
-              <View
-                style={{
-                  flex: 1,
-                  marginTop: -24,
-                  borderTopLeftRadius: 24,
-                  borderTopRightRadius: 24,
-                  overflow: 'hidden',
-                  borderTopWidth: 1.5,
-                  borderLeftWidth: 1.5,
-                  borderRightWidth: 1.5,
-                  borderColor: isDark ? '#222222' : '#e6e6e5',
-                }}
-                className="bg-background"
-              >
-                <SessionConnecting
-                  statusLabel={connectingStatusLabel}
-                  error={connectError}
-                  onRestart={handleRestartSession}
-                  restarting={restartingSession}
-                />
-              </View>
-            </View>
-
-          /* Tabs overview */
-          ) : showTabsOverview ? (
-            <TabsOverview
-              sessions={activeSessions}
-              openTabIds={openTabIds}
-              activeSessionId={activeSessionId}
-              onSelectTab={(id) => navigateToSession(id)}
-              onCloseTab={(id) => {
-                closeTab(id);
-                useTabScreenshotStore.getState().removeScreenshot(id);
-              }}
-              onCloseAll={() => {
-                closeAllTabs();
-                useTabScreenshotStore.getState().clear();
-              }}
-              onNewSession={handleNewSession}
-              onDismiss={() => setShowTabsOverview(false)}
-            />
-
-          /* Dashboard */
-          ) : (
-            <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" className="bg-background">
-              <PageHeader
-                title={projectName}
-                onOpenDrawer={drawerOpen ? handleDrawerClose : handleDrawerOpen}
-                isDrawerOpen={drawerOpen}
-                onOpenRightDrawer={rightDrawerOpen ? handleRightDrawerClose : handleRightDrawerOpen}
-                isRightDrawerOpen={rightDrawerOpen}
-              />
-
-              {/* Rounded card tucks under the header (curved edge), matching SessionPage */}
-              <Animated.View
-                style={{
-                  flex: 1,
-                  marginTop: -24,
-                  borderTopLeftRadius: 20,
-                  borderTopRightRadius: 20,
-                  overflow: 'hidden',
-                  borderTopWidth: 1.5,
-                  borderLeftWidth: 1.5,
-                  borderRightWidth: 1.5,
-                  borderColor: isDark ? '#222222' : '#e6e6e5',
-                  opacity: isDashboardSending ? 0.3 : 1,
-                }}
-                className="items-center justify-center px-8 bg-background"
-              >
-                {/* Kortix brandmark wallpaper — faded symbol behind the hero,
-                    clipped by the card (web parity: ProjectHome brandmark). */}
-                <View
-                  pointerEvents="none"
-                  style={[
-                    StyleSheet.absoluteFill,
-                    { alignItems: 'center', justifyContent: 'center', opacity: isDark ? 0.55 : 0.65 },
-                  ]}
-                >
-                  {(() => {
-                    const Brandmark = isDark ? BrandmarkWhite : BrandmarkBlack;
-                    const brandW = windowWidth * 1.15;
-                    return <Brandmark width={brandW} height={brandW * (462 / 393)} />;
-                  })()}
-                </View>
-
-                <Avatar variant="custom" size={64} fallbackText={projectName} />
-                <Text
-                  className="mt-4 text-2xl font-bold text-foreground text-center"
-                  numberOfLines={2}
-                >
-                  {projectName}
-                </Text>
-                <Text
-                  className="mt-2 text-sm text-center text-muted-foreground"
-                  style={{ maxWidth: 320 }}
-                >
-                  Describe a task and your agent gets to work.
-                </Text>
-              </Animated.View>
-
-              {/* Quick-start suggestion chips (web parity) — tap to start a session */}
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                style={{ flexGrow: 0 }}
-                contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 10, gap: 8 }}
-              >
-                {STARTER_PROMPTS.map((p) => (
-                  <TouchableOpacity
-                    key={p.id}
-                    onPress={() => { haptics.tap(); handleDashboardSend(p.prompt, {}); }}
-                    disabled={isDashboardSending}
-                    activeOpacity={0.7}
-                    className="flex-row items-center rounded-full border border-border bg-card px-3 py-1.5"
-                  >
-                    <Ionicons
-                      name={p.icon as any}
-                      size={13}
-                      color={isDark ? '#999999' : '#6e6e6e'}
-                      style={{ marginRight: 6 }}
-                    />
-                    <Text className="text-xs text-muted-foreground">{p.label}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              <View>
-                <SessionChatInput
-                  onSend={handleDashboardSend}
-                  placeholder="Describe a task to start a session…"
-                  disabled={isDashboardSending}
-                  agent={resolved.agent}
-                  agents={resolved.agents}
-                  model={resolved.model}
-                  models={dashVisibleModels}
-                  modelKey={resolved.modelKey}
-                  variant={resolved.variant}
-                  variants={resolved.variants}
-                  onAgentChange={resolved.setAgent}
-                  onModelChange={resolved.setModel}
-                  onVariantCycle={resolved.cycleVariant}
-                  onVariantSet={resolved.setVariant}
-                  sessions={sessions}
-                  sandboxUrl={sessionSandboxUrl}
-                />
-              </View>
-            </KeyboardAvoidingView>
-          )}
-
-        </>
-        )}
 
           {/* Bottom bar — hidden when tabs overview is showing */}
           {!showTabsOverview && (
@@ -2788,13 +3058,16 @@ export default function ProjectSessionScreen() {
                               { sandboxUrl, sessionId: activeSessionId },
                               {
                                 onError: (err) => {
-                                  Alert.alert('Compact Failed', err.message || 'Failed to compact session.');
+                                  Alert.alert(
+                                    'Compact Failed',
+                                    err.message || 'Failed to compact session.'
+                                  );
                                 },
-                              },
+                              }
                             );
                           },
                         },
-                      ],
+                      ]
                     );
                   }
                 }}
@@ -2803,11 +3076,7 @@ export default function ProjectSessionScreen() {
                     exportTranscriptSheetRef.current?.present();
                   }
                 }}
-                onOpenChangeRequest={
-                  activeProjectSession
-                    ? handleOpenChangeRequest
-                    : undefined
-                }
+                onOpenChangeRequest={activeProjectSession ? handleOpenChangeRequest : undefined}
                 onViewChanges={() => {
                   if (activeSessionId) {
                     viewChangesSheetRef.current?.present();
@@ -2815,9 +3084,7 @@ export default function ProjectSessionScreen() {
                 }}
                 onDiagnostics={() => log.log('TODO: diagnostics')}
                 onRenameSession={
-                  activeProjectSession
-                    ? () => renameSessionSheetRef.current?.present()
-                    : undefined
+                  activeProjectSession ? () => renameSessionSheetRef.current?.present() : undefined
                 }
                 onShareSession={
                   activeProjectSession && activeProjectSession.can_manage_sharing !== false
@@ -2825,7 +3092,9 @@ export default function ProjectSessionScreen() {
                     : undefined
                 }
                 onRestartSession={handleRestartActiveSession}
-                onArchiveSession={() => { if (activeSessionId) handleArchive(activeSessionId); }}
+                onArchiveSession={() => {
+                  if (activeSessionId) handleArchive(activeSessionId);
+                }}
                 onDeleteSession={activeProjectSession ? handleDeleteActiveSession : undefined}
                 customMenuItems={
                   activePageId === 'page:workspace'
@@ -2833,22 +3102,38 @@ export default function ProjectSessionScreen() {
                         {
                           icon: Bot,
                           label: 'New agent',
-                          onPress: () => handleCreateSessionWithPrompt('New agent', "HEY let's build a new agent. Ask what job it should own, then scaffold it in the right workspace location and wire up any supporting skills."),
+                          onPress: () =>
+                            handleCreateSessionWithPrompt(
+                              'New agent',
+                              "HEY let's build a new agent. Ask what job it should own, then scaffold it in the right workspace location and wire up any supporting skills."
+                            ),
                         },
                         {
                           icon: Sparkles,
                           label: 'New skill',
-                          onPress: () => handleCreateSessionWithPrompt('New skill', "HEY let's build a new skill. Ask what should trigger it, then create the SKILL.md and any supporting files in the right workspace location."),
+                          onPress: () =>
+                            handleCreateSessionWithPrompt(
+                              'New skill',
+                              "HEY let's build a new skill. Ask what should trigger it, then create the SKILL.md and any supporting files in the right workspace location."
+                            ),
                         },
                         {
                           icon: Terminal,
                           label: 'New command',
-                          onPress: () => handleCreateSessionWithPrompt('New command', "HEY let's build a new slash command. Ask what the command should do, then add it in the right workspace location and connect it to the correct agent."),
+                          onPress: () =>
+                            handleCreateSessionWithPrompt(
+                              'New command',
+                              "HEY let's build a new slash command. Ask what the command should do, then add it in the right workspace location and connect it to the correct agent."
+                            ),
                         },
                         {
                           icon: FolderOpen,
                           label: 'New project',
-                          onPress: () => handleCreateSessionWithPrompt('New project', "HEY let's set up a new project. Ask for the name and purpose, then create it in the right workspace location with a clean starting structure."),
+                          onPress: () =>
+                            handleCreateSessionWithPrompt(
+                              'New project',
+                              "HEY let's set up a new project. Ask for the name and purpose, then create it in the right workspace location with a clean starting structure."
+                            ),
                         },
                         { type: 'divider' },
                         {
@@ -2869,7 +3154,7 @@ export default function ProjectSessionScreen() {
                         },
                       ] as BottomBarMenuItem[])
                     : activePageId === 'page:files'
-                    ? (filesSelectedName
+                      ? filesSelectedName
                         ? ([
                             // Contextual file actions only (long-press)
                             {
@@ -2943,8 +3228,8 @@ export default function ProjectSessionScreen() {
                               label: 'Refresh',
                               onPress: () => filesPageRef.current?.refetch(),
                             },
-                          ] as BottomBarMenuItem[]))
-                    : undefined
+                          ] as BottomBarMenuItem[])
+                      : undefined
                 }
               />
             </View>
@@ -2965,15 +3250,9 @@ export default function ProjectSessionScreen() {
         />
       ) : null}
 
-      <ViewChangesSheet
-        ref={viewChangesSheetRef}
-        sessionId={activeSessionId}
-      />
+      <ViewChangesSheet ref={viewChangesSheetRef} sessionId={activeSessionId} />
 
-      <ExportTranscriptSheet
-        ref={exportTranscriptSheetRef}
-        sessionId={activeSessionId}
-      />
+      <ExportTranscriptSheet ref={exportTranscriptSheetRef} sessionId={activeSessionId} />
 
       <SessionRenameSheet
         ref={renameSessionSheetRef}
@@ -3013,17 +3292,10 @@ export default function ProjectSessionScreen() {
 
       {/* Theme transition overlay — crossfade snapshot of previous theme */}
       {themeTransitionUri && (
-        <Modal
-          visible
-          transparent
-          statusBarTranslucent
-          animationType="none"
-          hardwareAccelerated
-        >
+        <Modal visible transparent statusBarTranslucent animationType="none" hardwareAccelerated>
           <Animated.View
             style={[StyleSheet.absoluteFillObject, { opacity: themeTransitionOpacity }]}
-            pointerEvents="none"
-          >
+            pointerEvents="none">
             <Animated.Image
               source={{ uri: themeTransitionUri }}
               resizeMode="cover"
