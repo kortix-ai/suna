@@ -19,7 +19,7 @@
 #   NEXT_PUBLIC_SUPABASE_URL  - Supabase URL
 #   NEXT_PUBLIC_SUPABASE_ANON_KEY - Supabase anon key
 #
-FROM node:22-slim AS runner
+FROM node:26-slim AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production
