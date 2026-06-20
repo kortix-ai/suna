@@ -421,7 +421,7 @@ function SessionStatusDot({ status }: { status: ProjectSessionStatus }) {
           height="16"
           viewBox="0 0 16 16"
           width="16"
-          stroke-linejoin="round"
+          strokeLinejoin="round"
           style={{
             color: isProvisioning
               ? 'var(--kortix-yellow)'
