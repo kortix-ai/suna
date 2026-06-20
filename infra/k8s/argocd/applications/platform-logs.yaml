@@ -11,6 +11,8 @@ kind: Application
 metadata:
   name: kortix-platform-logs
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -54,6 +56,25 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
+  ignoreDifferences:
+    - kind: Service
+      jqPathExpressions:
+        - .spec.clusterIP
+        - .spec.clusterIPs
+        - .spec.ipFamilies
+        - .spec.ipFamilyPolicy
+        - .spec.internalTrafficPolicy
+        - .spec.sessionAffinity
+    - kind: Secret
+      jqPathExpressions:
+        - .type
+    - group: apps
+      kind: StatefulSet
+      jqPathExpressions:
+        - .spec.persistentVolumeClaimRetentionPolicy
+        - .spec.revisionHistoryLimit
+        - .spec.podManagementPolicy
+        - .spec.updateStrategy
   syncPolicy:
     automated:
       prune: true

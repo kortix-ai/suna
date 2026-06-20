@@ -20,6 +20,9 @@ spec:
   {{- if .Values.security.enabled }}
   securityContext:
     runAsNonRoot: {{ .Values.security.runAsNonRoot }}
+    runAsUser: {{ .Values.security.runAsUser }}
+    runAsGroup: {{ .Values.security.runAsGroup }}
+    fsGroup: {{ .Values.security.runAsGroup }}
     seccompProfile:
       type: {{ .Values.security.seccompProfile }}
   {{- end }}

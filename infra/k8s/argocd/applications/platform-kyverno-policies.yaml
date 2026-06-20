@@ -7,6 +7,8 @@ kind: Application
 metadata:
   name: kortix-platform-kyverno-policies
   namespace: argocd
+  annotations:
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
@@ -20,6 +22,11 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: kyverno
+  ignoreDifferences:
+    - group: kyverno.io
+      kind: ClusterPolicy
+      managedFieldsManagers:
+        - kyverno
   syncPolicy:
     automated:
       prune: true
