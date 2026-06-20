@@ -23,6 +23,10 @@ import { homedir, tmpdir } from 'node:os';
 import { join, dirname, basename } from 'node:path';
 
 export const STRIDE = 100;
+// Shared internal bearer token between a worktree's API (/internal/gateway/*)
+// and its standalone gateway. Fixed dev constant — both apiLaunchEnv and
+// gatewayLaunchEnv inject the same value so the gateway authenticates locally.
+export const DEV_GATEWAY_INTERNAL_TOKEN = 'wt-gateway-internal-dev';
 export const BASE = {
   web: 13000, api: 13008, gateway: 13090,
   sbApi: 13321, sbDb: 13322, sbStudio: 13323, sbInbucket: 13324,
