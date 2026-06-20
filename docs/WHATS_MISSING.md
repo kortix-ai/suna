@@ -178,3 +178,42 @@ section is the current source of truth.
 - **Real secret wiring** — replace the Slack/PagerDuty placeholders, the Velero
   S3 bucket + IRSA role, and the Falco sidekick webhook with provisioned values.
 - **DR drill** — `scripts/dr-test.sh` + a real Velero restore to prove RTO/RPO.
+
+## Reconciliation sweep (updated 2026-06-21)
+
+State across prod-eu / dev / preview, and the GitOps gaps.
+
+### Works
+- **prod-eu:** kortix-api 3/3; gateway all 4 hosts (devops/grafana/argo/cost) 302-gated;
+  platform stack Healthy (console, metrics, logs, cost, falco, velero, tracing, otel).
+- **dev (us-west-2):** kortix-api 2/2; kortix-dev + kortix-gateway-dev Synced/Healthy.
+- **SSO:** Grafana (GitHub-only), Argo (GitHub via Dex), Headlamp (gate-trust).
+
+### Broken / out of sync — needs action
+- **Preview envs are DOWN.** The `kortix-previews` ApplicationSet is NOT applied on
+  dev-eks; 3 orphaned `kortix-pr-*` namespaces linger (3435, 3455 running; 3446 empty).
+  Root cause: the PullRequest generator needs a one-time secret
+  `preview-pr-generator-github` (a GitHub token) in dev-eks argocd — absent. FIX:
+  create that secret, `kubectl apply` the appset; it then reconciles/prunes the orphans.
+- **No app-of-apps applied on EITHER cluster.** `kortix-apps` (app-of-apps.yaml) is
+  not present, so every Application (kortix-prod/dev + all platform-*) was applied by
+  hand, not GitOps-managed. FIX: land the platform manifests on the tracked branches
+  (prod for prod-eu, main for dev) and apply the app-of-apps once → Argo self-manages.
+- **platform-console / platform-logs OutOfSync (Healthy):** benign helm-chart runtime
+  drift (Headlamp/loki-stack mutate fields). Cosmetic.
+- **platform-kyverno OutOfSync (Healthy):** Kyverno CRDs exceed the 256KB client-side
+  annotation limit; Replace=true added but Argo still flags drift. Policies ARE loaded
+  + enforcing (audit). Cosmetic/known-issue.
+
+### Live infra now codified (this sweep)
+- **EBS CSI driver + gp3** → `modules/eks/cluster/ebs-csi.tf` + gp3 manifest. NOTE:
+  the live role/addon were created imperatively — `terraform import` them before a
+  clean cluster apply or it errors EntityAlreadyExists.
+
+### Still drift (live, not yet owned by code/state)
+- **Cloudflare DNS records** (devops/grafana/argo/cost) + the **Access app** —
+  created via API/dashboard, not in the `cloudflare-dns` TF module.
+- **Argo SSO config** — fully in the TF module code, but TF state lags (helm provider
+  won't diff raw values without a release replace); reconciles on next argo chart bump.
+- **Out-of-band secrets** (correct pattern, but move to External Secrets eventually):
+  grafana-github-oauth, headlamp-kubeconfig, argocd-secret dex, preview generator token.
