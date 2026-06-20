@@ -3,6 +3,14 @@ import './lib/sentry';
 import { captureException, flushSentry, addBreadcrumb } from './lib/sentry';
 import { logger as appLogger, isLoggingTransportError } from './lib/logger';
 import { emitOtelSpan } from './lib/otel';
+import {
+  recordHttpRequest,
+  incInFlight,
+  decInFlight,
+  setEventLoopLagSeconds,
+  renderMetrics,
+  metricsEnabled,
+} from './lib/metrics';
 import { getRequestContext, runWithContext, setContextField } from './lib/request-context';
 import { getRequestUrl } from './lib/request-url';
 
@@ -112,6 +120,31 @@ const app = new OpenAPIHono();
 // Exported so tooling/tests can introspect the route table (app.routes) without
 // booting the server. See the import.meta.main guard around startup below.
 export { app };
+
+app.use('*', async (c, next) => {
+  const path = c.req.path;
+  if (path === '/metrics' || path.startsWith('/health') || path.startsWith('/v1/health')) {
+    return next();
+  }
+  const start = performance.now();
+  incInFlight();
+  let status = 0;
+  try {
+    await next();
+    status = c.res.status;
+  } catch (err) {
+    status = 500;
+    throw err;
+  } finally {
+    decInFlight();
+    recordHttpRequest({
+      method: c.req.method,
+      route: c.req.routePath || path,
+      status: status || c.res.status,
+      durationSeconds: (performance.now() - start) / 1000,
+    });
+  }
+});
 
 // === Global Middleware === 
 
@@ -401,6 +434,7 @@ let eventLoopLagMs = 0;
     // How much longer than the interval the loop took to come back to this tick.
     eventLoopLagMs = Math.max(0, now - lastSample - SAMPLE_INTERVAL_MS);
     lastSample = now;
+    setEventLoopLagSeconds(eventLoopLagMs / 1000);
   }, SAMPLE_INTERVAL_MS);
   // Never keep the process alive just for the sampler.
   (lagTimer as { unref?: () => void }).unref?.();
@@ -421,6 +455,12 @@ const livenessHandler = (c: any) => {
 // Unversioned + /v1 forms so either can be wired as the kubelet liveness probe.
 app.get('/health/live', livenessHandler);
 app.get('/v1/health/live', livenessHandler);
+
+app.get('/metrics', (c) => {
+  if (!metricsEnabled()) return c.text('metrics disabled\n', 404);
+  c.header('content-type', 'text/plain; version=0.0.4; charset=utf-8');
+  return c.body(renderMetrics());
+});
 
 // Health check under /v1 prefix (frontend uses NEXT_PUBLIC_BACKEND_URL which includes /v1)
 app.openapi(

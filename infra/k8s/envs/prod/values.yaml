@@ -70,6 +70,11 @@ ingress:
   certificateArn: arn:aws:acm:eu-west-2:935064898258:certificate/27dd2310-c468-428c-b97a-ec46b1eed6fd
   cloudflareProxied: true
 
+serviceMonitor:
+  enabled: true
+  labels:
+    release: kps
+
 # Plain rolling Deployment (no canary). The EKS wins we actually want —
 # auto-healing (probes restart hung/stale pods), autoscaling (HPA + cluster
 # autoscaler), zero-downtime rolling deploys — all come from the Deployment, not

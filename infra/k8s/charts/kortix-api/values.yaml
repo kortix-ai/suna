@@ -181,6 +181,7 @@ serviceMonitor:
   enabled: false
   path: /metrics
   interval: 30s
+  labels: {}
 
 # Default-deny NetworkPolicy. OFF by default: ingress is restricted to the API
 # port from allowIngressCidrs (the ALB), egress is open to the internet EXCEPT the
