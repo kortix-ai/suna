@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const AUTH_CALLBACK_STATE_KEY = '@kortix_auth_callback_state';
+const WEB_REGISTRATION_HANDOFF_KEY = '@kortix_web_registration_handoff';
 const AUTH_CALLBACK_STATE_TTL_MS = 10 * 60 * 1000;
 
 function randomState(): string {
@@ -15,14 +16,19 @@ function randomState(): string {
 
 export async function createAuthCallbackState(): Promise<string> {
   const state = randomState();
-  await AsyncStorage.setItem(AUTH_CALLBACK_STATE_KEY, JSON.stringify({
-    state,
-    expiresAt: Date.now() + AUTH_CALLBACK_STATE_TTL_MS,
-  }));
+  await AsyncStorage.setItem(
+    AUTH_CALLBACK_STATE_KEY,
+    JSON.stringify({
+      state,
+      expiresAt: Date.now() + AUTH_CALLBACK_STATE_TTL_MS,
+    })
+  );
   return state;
 }
 
-export async function createAuthCallbackRedirect(params?: Record<string, string | boolean | undefined>): Promise<string> {
+export async function createAuthCallbackRedirect(
+  params?: Record<string, string | boolean | undefined>
+): Promise<string> {
   const search = new URLSearchParams();
   const state = await createAuthCallbackState();
   search.set('state', state);
@@ -40,10 +46,39 @@ export async function consumeAuthCallbackState(state: string | null | undefined)
   if (!raw) return false;
   try {
     const parsed = JSON.parse(raw) as { state?: unknown; expiresAt?: unknown };
-    return parsed.state === state &&
+    return (
+      parsed.state === state &&
       typeof parsed.expiresAt === 'number' &&
-      parsed.expiresAt >= Date.now();
+      parsed.expiresAt >= Date.now()
+    );
   } catch {
     return false;
   }
+}
+
+/** Allow exactly one newly-created session after a verified web handoff. */
+export async function grantWebRegistrationHandoff(): Promise<void> {
+  await AsyncStorage.setItem(
+    WEB_REGISTRATION_HANDOFF_KEY,
+    JSON.stringify({
+      expiresAt: Date.now() + AUTH_CALLBACK_STATE_TTL_MS,
+    })
+  );
+}
+
+/** Consume the short-lived new-account admission grant. */
+export async function consumeWebRegistrationHandoff(): Promise<boolean> {
+  const raw = await AsyncStorage.getItem(WEB_REGISTRATION_HANDOFF_KEY);
+  await AsyncStorage.removeItem(WEB_REGISTRATION_HANDOFF_KEY);
+  if (!raw) return false;
+  try {
+    const parsed = JSON.parse(raw) as { expiresAt?: unknown };
+    return typeof parsed.expiresAt === 'number' && parsed.expiresAt >= Date.now();
+  } catch {
+    return false;
+  }
+}
+
+export async function clearWebRegistrationHandoff(): Promise<void> {
+  await AsyncStorage.removeItem(WEB_REGISTRATION_HANDOFF_KEY);
 }

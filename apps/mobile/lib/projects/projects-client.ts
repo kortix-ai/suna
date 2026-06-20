@@ -6,6 +6,7 @@
  */
 
 import { API_URL, getAuthToken } from '@/api/config';
+import { createApiRequestError, getUpgradeGate } from '@/lib/billing/upgrade-gate';
 
 // ── Types (mirror web) ─────────────────────────────────────────────────────
 
@@ -134,14 +135,13 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
 
   if (!res.ok) {
     const text = await res.text().catch(() => '');
-    let message = `Request failed (${res.status})`;
+    let body: unknown = null;
     try {
-      const body = JSON.parse(text);
-      message = body.message || body.error || body.detail || message;
+      body = JSON.parse(text);
     } catch {
-      if (text) message = text.slice(0, 200);
+      body = text ? { message: text.slice(0, 200) } : null;
     }
-    throw new Error(message);
+    throw createApiRequestError(res.status, body);
   }
 
   if (res.status === 204) return undefined as T;
@@ -192,17 +192,23 @@ export interface RepoCollaboratorInvite {
 export function inviteRepoCollaborator(
   projectId: string,
   githubUsername: string,
-  permission: 'read' | 'write' = 'write',
+  permission: 'read' | 'write' = 'write'
 ) {
-  return apiFetch<RepoCollaboratorInvite>(`/projects/${encodeURIComponent(projectId)}/git/collaborators`, {
-    method: 'POST',
-    body: JSON.stringify({ github_username: githubUsername, permission }),
-  });
+  return apiFetch<RepoCollaboratorInvite>(
+    `/projects/${encodeURIComponent(projectId)}/git/collaborators`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ github_username: githubUsername, permission }),
+    }
+  );
 }
 
 /** True when this project's repo is a Kortix-managed GitHub repo (invitable). */
-export function isManagedGithubProject(project: { metadata?: Record<string, unknown> | null }): boolean {
-  const git = (project.metadata as { git?: { provider?: string; managed?: boolean } } | undefined)?.git;
+export function isManagedGithubProject(project: {
+  metadata?: Record<string, unknown> | null;
+}): boolean {
+  const git = (project.metadata as { git?: { provider?: string; managed?: boolean } } | undefined)
+    ?.git;
   return git?.provider === 'github' && git?.managed === true;
 }
 
@@ -289,14 +295,15 @@ export interface SessionStartResult {
  */
 export async function startProjectSession(
   projectId: string,
-  sessionId: string,
+  sessionId: string
 ): Promise<SessionStartResult | null> {
   try {
     return await apiFetch<SessionStartResult>(
       `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
-      { method: 'POST', body: JSON.stringify({}) },
+      { method: 'POST', body: JSON.stringify({}) }
     );
-  } catch {
+  } catch (error) {
+    if (getUpgradeGate(error)) throw error;
     return null;
   }
 }
@@ -326,7 +333,7 @@ export interface ProjectSessionSandbox {
 export function restartProjectSession(projectId: string, sessionId: string) {
   return apiFetch<{ ok: boolean; session_id: string; status: string }>(
     `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/restart`,
-    { method: 'POST', body: JSON.stringify({}) },
+    { method: 'POST', body: JSON.stringify({}) }
   );
 }
 
@@ -338,11 +345,11 @@ export function restartProjectSession(projectId: string, sessionId: string) {
 export function updateProjectSession(
   projectId: string,
   sessionId: string,
-  input: { name?: string; metadata?: Record<string, unknown> },
+  input: { name?: string; metadata?: Record<string, unknown> }
 ) {
   return apiFetch<ProjectSession>(
     `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`,
-    { method: 'PATCH', body: JSON.stringify(input) },
+    { method: 'PATCH', body: JSON.stringify(input) }
   );
 }
 
@@ -354,7 +361,7 @@ export function updateProjectSession(
 export function deleteProjectSession(projectId: string, sessionId: string) {
   return apiFetch<{ ok: boolean }>(
     `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}`,
-    { method: 'DELETE' },
+    { method: 'DELETE' }
   );
 }
 
@@ -365,11 +372,11 @@ export function deleteProjectSession(projectId: string, sessionId: string) {
 export function setProjectSessionSharing(
   projectId: string,
   sessionId: string,
-  intent: SessionSharing,
+  intent: SessionSharing
 ) {
   return apiFetch<ProjectSession>(
     `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/sharing`,
-    { method: 'PUT', body: JSON.stringify(intent) },
+    { method: 'PUT', body: JSON.stringify(intent) }
   );
 }
 
@@ -409,7 +416,7 @@ export function readProjectFile(projectId: string, path: string, ref?: string) {
   const params = new URLSearchParams({ path });
   if (ref) params.set('ref', ref);
   return apiFetch<{ path: string; ref: string; content: string }>(
-    `/projects/${encodeURIComponent(projectId)}/files/content?${params.toString()}`,
+    `/projects/${encodeURIComponent(projectId)}/files/content?${params.toString()}`
   );
 }
 
@@ -481,7 +488,12 @@ export interface ConnectorDraftInput {
   spec?: string;
   credential?: 'shared' | 'per_user';
   sharing?: ConnectorSharing;
-  auth?: { type?: 'none' | 'bearer' | 'basic' | 'custom'; in?: 'header' | 'query'; name?: string; prefix?: string };
+  auth?: {
+    type?: 'none' | 'bearer' | 'basic' | 'custom';
+    in?: 'header' | 'query';
+    name?: string;
+    prefix?: string;
+  };
 }
 
 const connectorsBase = (projectId: string) =>
@@ -507,14 +519,14 @@ export function deleteConnector(projectId: string, slug: string) {
 export function setConnectorSharing(projectId: string, slug: string, intent: ConnectorSharing) {
   return apiFetch<{ ok: boolean }>(
     `${connectorsBase(projectId)}/${encodeURIComponent(slug)}/sharing`,
-    { method: 'PUT', body: JSON.stringify(intent) },
+    { method: 'PUT', body: JSON.stringify(intent) }
   );
 }
 
 export function setConnectorCredential(projectId: string, slug: string, value: string) {
   return apiFetch<{ ok: boolean }>(
     `${connectorsBase(projectId)}/${encodeURIComponent(slug)}/credential`,
-    { method: 'PUT', body: JSON.stringify({ value }) },
+    { method: 'PUT', body: JSON.stringify({ value }) }
   );
 }
 
@@ -522,7 +534,7 @@ export function setConnectorCredential(projectId: string, slug: string, value: s
 export function disconnectConnector(projectId: string, slug: string) {
   return apiFetch<{ ok: boolean }>(
     `${connectorsBase(projectId)}/${encodeURIComponent(slug)}/credential`,
-    { method: 'DELETE' },
+    { method: 'DELETE' }
   );
 }
 
@@ -542,17 +554,19 @@ export function createConnector(projectId: string, draft: ConnectorDraftInput) {
 export function pipedreamConnect(
   projectId: string,
   slug: string,
-  redirects?: { successRedirectUri?: string; errorRedirectUri?: string },
+  redirects?: { successRedirectUri?: string; errorRedirectUri?: string }
 ) {
   return apiFetch<{ token?: string; app?: string; connectUrl?: string }>(
     `${connectorsBase(projectId)}/${encodeURIComponent(slug)}/connect`,
     {
       method: 'POST',
       body: JSON.stringify({
-        ...(redirects?.successRedirectUri ? { success_redirect_uri: redirects.successRedirectUri } : {}),
+        ...(redirects?.successRedirectUri
+          ? { success_redirect_uri: redirects.successRedirectUri }
+          : {}),
         ...(redirects?.errorRedirectUri ? { error_redirect_uri: redirects.errorRedirectUri } : {}),
       }),
-    },
+    }
   );
 }
 
@@ -560,7 +574,7 @@ export function pipedreamConnect(
 export function pipedreamFinalize(projectId: string, slug: string) {
   return apiFetch<{ connected: boolean; accountId?: string }>(
     `${connectorsBase(projectId)}/${encodeURIComponent(slug)}/connect/finalize`,
-    { method: 'POST', body: JSON.stringify({}) },
+    { method: 'POST', body: JSON.stringify({}) }
   );
 }
 
@@ -571,7 +585,7 @@ export function listPipedreamApps(projectId: string, q?: string, cursor?: string
   if (cursor) params.set('cursor', cursor);
   const qs = params.toString();
   return apiFetch<PipedreamAppsPage>(
-    `/executor/projects/${encodeURIComponent(projectId)}/pipedream/apps${qs ? `?${qs}` : ''}`,
+    `/executor/projects/${encodeURIComponent(projectId)}/pipedream/apps${qs ? `?${qs}` : ''}`
   );
 }
 
@@ -614,16 +628,22 @@ export function listProjectAccess(projectId: string) {
 }
 
 export function updateProjectAccess(projectId: string, userId: string, role: ProjectRole) {
-  return apiFetch<ProjectAccessMember>(`/projects/${encodeURIComponent(projectId)}/access/${encodeURIComponent(userId)}`, {
-    method: 'PUT',
-    body: JSON.stringify({ role }),
-  });
+  return apiFetch<ProjectAccessMember>(
+    `/projects/${encodeURIComponent(projectId)}/access/${encodeURIComponent(userId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ role }),
+    }
+  );
 }
 
 export function revokeProjectAccess(projectId: string, userId: string) {
-  return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}/access/${encodeURIComponent(userId)}`, {
-    method: 'DELETE',
-  });
+  return apiFetch<{ ok: boolean }>(
+    `/projects/${encodeURIComponent(projectId)}/access/${encodeURIComponent(userId)}`,
+    {
+      method: 'DELETE',
+    }
+  );
 }
 
 /** Two-shape response: an existing user is granted instantly (ProjectAccessMember
@@ -642,16 +662,19 @@ export type InviteProjectMemberResult =
     };
 
 export function isInviteSent(
-  r: InviteProjectMemberResult,
+  r: InviteProjectMemberResult
 ): r is Extract<InviteProjectMemberResult, { status: 'invited' }> {
   return 'status' in r && r.status === 'invited';
 }
 
 export function inviteProjectMember(projectId: string, email: string, role: ProjectRole) {
-  return apiFetch<InviteProjectMemberResult>(`/projects/${encodeURIComponent(projectId)}/access/invite`, {
-    method: 'POST',
-    body: JSON.stringify({ email, role }),
-  });
+  return apiFetch<InviteProjectMemberResult>(
+    `/projects/${encodeURIComponent(projectId)}/access/invite`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ email, role }),
+    }
+  );
 }
 
 // ── Pending project invites (non-Kortix users not signed up yet) ─────────────
@@ -668,13 +691,15 @@ export interface PendingProjectInvite {
 }
 
 export function listPendingProjectInvites(projectId: string) {
-  return apiFetch<{ pending: PendingProjectInvite[] }>(`/projects/${encodeURIComponent(projectId)}/access/pending-invites`);
+  return apiFetch<{ pending: PendingProjectInvite[] }>(
+    `/projects/${encodeURIComponent(projectId)}/access/pending-invites`
+  );
 }
 
 export function revokePendingProjectInvite(projectId: string, inviteId: string) {
   return apiFetch<{ ok: boolean; invitation_cancelled: boolean }>(
     `/projects/${encodeURIComponent(projectId)}/access/pending-invites/${encodeURIComponent(inviteId)}`,
-    { method: 'DELETE' },
+    { method: 'DELETE' }
   );
 }
 
@@ -689,7 +714,7 @@ export interface ResendProjectInviteResult {
 export function resendPendingProjectInvite(projectId: string, inviteId: string) {
   return apiFetch<ResendProjectInviteResult>(
     `/projects/${encodeURIComponent(projectId)}/access/pending-invites/${encodeURIComponent(inviteId)}/resend`,
-    { method: 'POST', body: JSON.stringify({}) },
+    { method: 'POST', body: JSON.stringify({}) }
   );
 }
 
@@ -718,38 +743,48 @@ export interface AccountGroup {
 }
 
 export function listProjectGroupGrants(projectId: string) {
-  return apiFetch<{ grants: ProjectGroupGrant[] }>(`/projects/${encodeURIComponent(projectId)}/group-grants`);
+  return apiFetch<{ grants: ProjectGroupGrant[] }>(
+    `/projects/${encodeURIComponent(projectId)}/group-grants`
+  );
 }
 
 export function attachGroupToProject(projectId: string, groupId: string, role: ProjectRole) {
-  return apiFetch<{ project_id: string; group_id: string; role: ProjectRole }>(`/projects/${encodeURIComponent(projectId)}/group-grants`, {
-    method: 'POST',
-    body: JSON.stringify({ group_id: groupId, role }),
-  });
+  return apiFetch<{ project_id: string; group_id: string; role: ProjectRole }>(
+    `/projects/${encodeURIComponent(projectId)}/group-grants`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ group_id: groupId, role }),
+    }
+  );
 }
 
 export function updateProjectGroupGrant(projectId: string, groupId: string, role: ProjectRole) {
   return apiFetch<{ project_id: string; group_id: string; role: ProjectRole }>(
     `/projects/${encodeURIComponent(projectId)}/group-grants/${encodeURIComponent(groupId)}`,
-    { method: 'PATCH', body: JSON.stringify({ role }) },
+    { method: 'PATCH', body: JSON.stringify({ role }) }
   );
 }
 
 export function detachGroupFromProject(projectId: string, groupId: string) {
-  return apiFetch<{ ok: boolean }>(`/projects/${encodeURIComponent(projectId)}/group-grants/${encodeURIComponent(groupId)}`, {
-    method: 'DELETE',
-  });
+  return apiFetch<{ ok: boolean }>(
+    `/projects/${encodeURIComponent(projectId)}/group-grants/${encodeURIComponent(groupId)}`,
+    {
+      method: 'DELETE',
+    }
+  );
 }
 
 /** Account groups (IAM) — for the group-attach picker. */
 export function listAccountGroups(accountId: string) {
-  return apiFetch<{ groups: AccountGroup[] }>(`/accounts/${encodeURIComponent(accountId)}/iam/groups`).then((r) => r.groups);
+  return apiFetch<{ groups: AccountGroup[] }>(
+    `/accounts/${encodeURIComponent(accountId)}/iam/groups`
+  ).then((r) => r.groups);
 }
 
 export function removeGroupMember(accountId: string, groupId: string, userId: string) {
   return apiFetch<{ removed: boolean }>(
     `/accounts/${encodeURIComponent(accountId)}/iam/groups/${encodeURIComponent(groupId)}/members/${encodeURIComponent(userId)}`,
-    { method: 'DELETE' },
+    { method: 'DELETE' }
   );
 }
 
@@ -772,13 +807,15 @@ export interface ProjectPoliciesResponse {
 }
 
 export function listProjectPolicies(projectId: string) {
-  return apiFetch<ProjectPoliciesResponse>(`/executor/projects/${encodeURIComponent(projectId)}/policies`);
+  return apiFetch<ProjectPoliciesResponse>(
+    `/executor/projects/${encodeURIComponent(projectId)}/policies`
+  );
 }
 
 export function setProjectPolicies(
   projectId: string,
   policies: ProjectPolicy[],
-  defaultMode: PolicyDefaultMode,
+  defaultMode: PolicyDefaultMode
 ) {
   return apiFetch<{ ok: boolean }>(`/executor/projects/${encodeURIComponent(projectId)}/policies`, {
     method: 'PUT',
@@ -795,7 +832,7 @@ export function archiveProject(projectId: string) {
 /** Patch project fields (Settings → General / Repository). */
 export function updateProject(
   projectId: string,
-  input: { name?: string; default_branch?: string; manifest_path?: string },
+  input: { name?: string; default_branch?: string; manifest_path?: string }
 ) {
   return apiFetch<KortixProject>(`/projects/${encodeURIComponent(projectId)}`, {
     method: 'PATCH',
@@ -808,7 +845,7 @@ export function updateProject(
 export function updateExperimentalFeature(
   projectId: string,
   feature: ExperimentalFeatureKey,
-  enabled: boolean | null,
+  enabled: boolean | null
 ) {
   return apiFetch<KortixProject>(`/projects/${encodeURIComponent(projectId)}/experimental`, {
     method: 'PATCH',
@@ -827,16 +864,14 @@ export function provisionProject(input: ProvisionProjectInput) {
 
 export function listGitHubInstallations(accountId: string) {
   return apiFetch<GitHubInstallationsResponse>(
-    `/projects/github/installations?account_id=${encodeURIComponent(accountId)}`,
+    `/projects/github/installations?account_id=${encodeURIComponent(accountId)}`
   );
 }
 
 export function listGitHubRepositories(accountId: string, installationId?: string | null) {
   const params = new URLSearchParams({ account_id: accountId });
   if (installationId) params.set('installation_id', installationId);
-  return apiFetch<GitHubRepositoriesResponse>(
-    `/projects/github/repositories?${params.toString()}`,
-  );
+  return apiFetch<GitHubRepositoriesResponse>(`/projects/github/repositories?${params.toString()}`);
 }
 
 /** Disconnect a GitHub App installation (Account → Git). */
@@ -895,8 +930,7 @@ export interface ProjectSecretsResponse {
   manifest_error?: string;
 }
 
-const secretsBase = (projectId: string) =>
-  `/projects/${encodeURIComponent(projectId)}/secrets`;
+const secretsBase = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/secrets`;
 
 export async function listProjectSecrets(projectId: string): Promise<ProjectSecretsResponse> {
   const res = await apiFetch<ProjectSecretsResponse | ProjectSecret[]>(secretsBase(projectId));
@@ -907,7 +941,7 @@ export async function listProjectSecrets(projectId: string): Promise<ProjectSecr
 
 export function upsertProjectSecret(
   projectId: string,
-  input: { name: string; value?: string; sharing?: ConnectorSharing },
+  input: { name: string; value?: string; sharing?: ConnectorSharing }
 ) {
   return apiFetch<ProjectSecret>(secretsBase(projectId), {
     method: 'POST',
@@ -924,18 +958,18 @@ export function deleteProjectSecret(projectId: string, name: string) {
 export function setPersonalProjectSecret(
   projectId: string,
   name: string,
-  input: { value?: string; active?: boolean },
+  input: { value?: string; active?: boolean }
 ) {
-  return apiFetch<ProjectSecret>(
-    `${secretsBase(projectId)}/${encodeURIComponent(name)}/personal`,
-    { method: 'PUT', body: JSON.stringify(input) },
-  );
+  return apiFetch<ProjectSecret>(`${secretsBase(projectId)}/${encodeURIComponent(name)}/personal`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
 }
 
 export function deletePersonalProjectSecret(projectId: string, name: string) {
   return apiFetch<{ ok: boolean }>(
     `${secretsBase(projectId)}/${encodeURIComponent(name)}/personal`,
-    { method: 'DELETE' },
+    { method: 'DELETE' }
   );
 }
 
@@ -956,8 +990,7 @@ export interface SlackMode {
   install_url: string | null;
 }
 
-const channelsBase = (projectId: string) =>
-  `/projects/${encodeURIComponent(projectId)}/channels`;
+const channelsBase = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/channels`;
 
 /** Current Slack install, or null when not connected. */
 export function getSlackInstallation(projectId: string) {
@@ -972,7 +1005,7 @@ export function getSlackMode(projectId: string) {
 /** BYO connect: validate a bot token + signing secret against Slack. */
 export function connectSlack(
   projectId: string,
-  input: { bot_token: string; signing_secret: string },
+  input: { bot_token: string; signing_secret: string }
 ) {
   return apiFetch<SlackInstallation>(`${channelsBase(projectId)}/slack/connect`, {
     method: 'POST',
@@ -1053,8 +1086,7 @@ export interface FireProjectTriggerResponse {
   error?: string;
 }
 
-const triggersBase = (projectId: string) =>
-  `/projects/${encodeURIComponent(projectId)}/triggers`;
+const triggersBase = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/triggers`;
 
 export function listProjectTriggers(projectId: string) {
   return apiFetch<ProjectTriggerListing>(triggersBase(projectId));
@@ -1070,7 +1102,7 @@ export function createProjectTrigger(projectId: string, input: CreateProjectTrig
 export function updateProjectTrigger(
   projectId: string,
   slug: string,
-  input: UpdateProjectTriggerInput,
+  input: UpdateProjectTriggerInput
 ) {
   return apiFetch<ProjectTriggerListing>(`${triggersBase(projectId)}/${encodeURIComponent(slug)}`, {
     method: 'PATCH',
@@ -1087,7 +1119,7 @@ export function deleteProjectTrigger(projectId: string, slug: string) {
 export function fireProjectTrigger(projectId: string, slug: string) {
   return apiFetch<FireProjectTriggerResponse>(
     `${triggersBase(projectId)}/${encodeURIComponent(slug)}/fire`,
-    { method: 'POST', body: JSON.stringify({}) },
+    { method: 'POST', body: JSON.stringify({}) }
   );
 }
 
@@ -1202,8 +1234,7 @@ export interface VersionDiffPreview {
   is_same_ref: boolean;
 }
 
-const crBase = (projectId: string) =>
-  `/projects/${encodeURIComponent(projectId)}/change-requests`;
+const crBase = (projectId: string) => `/projects/${encodeURIComponent(projectId)}/change-requests`;
 
 export function listChangeRequests(projectId: string, status?: ChangeRequestStatus | 'all') {
   const qs = status && status !== 'all' ? `?status=${status}` : '';
@@ -1212,7 +1243,7 @@ export function listChangeRequests(projectId: string, status?: ChangeRequestStat
 
 export function getChangeRequest(projectId: string, crId: string) {
   return apiFetch<{ change_request: ChangeRequest }>(
-    `${crBase(projectId)}/${encodeURIComponent(crId)}`,
+    `${crBase(projectId)}/${encodeURIComponent(crId)}`
   );
 }
 
@@ -1222,7 +1253,7 @@ export function getChangeRequestDiff(projectId: string, crId: string) {
 
 export function getChangeRequestMergePreview(projectId: string, crId: string) {
   return apiFetch<ChangeRequestMergePreview>(
-    `${crBase(projectId)}/${encodeURIComponent(crId)}/merge-preview`,
+    `${crBase(projectId)}/${encodeURIComponent(crId)}/merge-preview`
   );
 }
 
@@ -1236,7 +1267,7 @@ export function openChangeRequest(projectId: string, input: OpenChangeRequestInp
 export function mergeChangeRequest(projectId: string, crId: string, message?: string) {
   return apiFetch<ChangeRequestMergeResult>(
     `${crBase(projectId)}/${encodeURIComponent(crId)}/merge`,
-    { method: 'POST', body: JSON.stringify(message ? { message } : {}) },
+    { method: 'POST', body: JSON.stringify(message ? { message } : {}) }
   );
 }
 
@@ -1257,7 +1288,7 @@ export function reopenChangeRequest(projectId: string, crId: string) {
 export function patchChangeRequest(
   projectId: string,
   crId: string,
-  input: { title?: string; description?: string },
+  input: { title?: string; description?: string }
 ) {
   return apiFetch<ChangeRequest>(`${crBase(projectId)}/${encodeURIComponent(crId)}`, {
     method: 'PATCH',
@@ -1266,15 +1297,13 @@ export function patchChangeRequest(
 }
 
 export function listProjectBranches(projectId: string) {
-  return apiFetch<ProjectBranchesResponse>(
-    `/projects/${encodeURIComponent(projectId)}/branches`,
-  );
+  return apiFetch<ProjectBranchesResponse>(`/projects/${encodeURIComponent(projectId)}/branches`);
 }
 
 export function getVersionDiff(projectId: string, from: string, into: string) {
   const params = new URLSearchParams({ from, into });
   return apiFetch<VersionDiffPreview>(
-    `/projects/${encodeURIComponent(projectId)}/version-diff?${params.toString()}`,
+    `/projects/${encodeURIComponent(projectId)}/version-diff?${params.toString()}`
   );
 }
 
@@ -1317,7 +1346,7 @@ export function listProjectFiles(projectId: string, options?: { ref?: string; pa
   if (options?.path) params.set('path', options.path);
   const qs = params.toString();
   return apiFetch<ProjectFileEntry[]>(
-    `/projects/${encodeURIComponent(projectId)}/files${qs ? `?${qs}` : ''}`,
+    `/projects/${encodeURIComponent(projectId)}/files${qs ? `?${qs}` : ''}`
   );
 }
 
@@ -1325,14 +1354,14 @@ export function listProjectFiles(projectId: string, options?: { ref?: string; pa
 export function getProjectFileHistory(
   projectId: string,
   path: string,
-  options?: { ref?: string; limit?: number; skip?: number },
+  options?: { ref?: string; limit?: number; skip?: number }
 ) {
   const params = new URLSearchParams({ path });
   if (options?.ref) params.set('ref', options.ref);
   if (options?.limit != null) params.set('limit', String(options.limit));
   if (options?.skip != null) params.set('skip', String(options.skip));
   return apiFetch<ProjectFileHistoryResponse>(
-    `/projects/${encodeURIComponent(projectId)}/files/history?${params.toString()}`,
+    `/projects/${encodeURIComponent(projectId)}/files/history?${params.toString()}`
   );
 }
 
@@ -1349,7 +1378,7 @@ export function getProjectCommitDiff(projectId: string, sha: string, path?: stri
   if (path) params.set('path', path);
   const qs = params.toString();
   return apiFetch<ProjectCommitDiffResponse>(
-    `/projects/${encodeURIComponent(projectId)}/commits/${encodeURIComponent(sha)}/diff${qs ? `?${qs}` : ''}`,
+    `/projects/${encodeURIComponent(projectId)}/commits/${encodeURIComponent(sha)}/diff${qs ? `?${qs}` : ''}`
   );
 }
 
@@ -1369,7 +1398,13 @@ export function projectArchiveUrl(projectId: string, ref: string, path?: string)
 
 export type ProjectSnapshotStatus = 'building' | 'ready' | 'failed';
 export type SnapshotErrorCategory =
-  | 'dockerfile' | 'tunnel' | 'provider' | 'timeout' | 'runtime' | 'git' | 'unknown';
+  | 'dockerfile'
+  | 'tunnel'
+  | 'provider'
+  | 'timeout'
+  | 'runtime'
+  | 'git'
+  | 'unknown';
 
 export interface SandboxTemplate {
   template_id: string | null;
@@ -1402,7 +1437,14 @@ export interface ProjectSnapshotBuild {
   status: ProjectSnapshotStatus;
   error: string | null;
   error_category: SnapshotErrorCategory | null;
-  source: 'session-start' | 'project-create' | 'cr-merge' | 'manual' | 'background' | 'startup' | null;
+  source:
+    | 'session-start'
+    | 'project-create'
+    | 'cr-merge'
+    | 'manual'
+    | 'background'
+    | 'startup'
+    | null;
   started_at: string;
   finished_at: string | null;
 }
@@ -1450,30 +1492,37 @@ export function listProjectSnapshots(projectId: string) {
 }
 
 export function createSandboxTemplate(projectId: string, input: CreateSandboxTemplateInput) {
-  return apiFetch<{ template_id: string; slug: string }>(`${projectBase(projectId)}/sandbox-templates`, {
-    method: 'POST',
-    body: JSON.stringify(input),
-  });
+  return apiFetch<{ template_id: string; slug: string }>(
+    `${projectBase(projectId)}/sandbox-templates`,
+    {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }
+  );
 }
 
-export function updateSandboxTemplate(projectId: string, templateId: string, input: UpdateSandboxTemplateInput) {
+export function updateSandboxTemplate(
+  projectId: string,
+  templateId: string,
+  input: UpdateSandboxTemplateInput
+) {
   return apiFetch<{ template_id: string; slug: string }>(
     `${projectBase(projectId)}/sandbox-templates/${encodeURIComponent(templateId)}`,
-    { method: 'PATCH', body: JSON.stringify(input) },
+    { method: 'PATCH', body: JSON.stringify(input) }
   );
 }
 
 export function buildSandboxTemplate(projectId: string, templateId: string) {
   return apiFetch<{ status: string; template_id: string; slug: string }>(
     `${projectBase(projectId)}/sandbox-templates/${encodeURIComponent(templateId)}/build`,
-    { method: 'POST', body: JSON.stringify({}) },
+    { method: 'POST', body: JSON.stringify({}) }
   );
 }
 
 export function deleteSandboxTemplate(projectId: string, templateId: string) {
   return apiFetch<void>(
     `${projectBase(projectId)}/sandbox-templates/${encodeURIComponent(templateId)}`,
-    { method: 'DELETE' },
+    { method: 'DELETE' }
   );
 }
 

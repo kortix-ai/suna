@@ -20,6 +20,7 @@ import { getAuthToken } from '@/api/config';
 import * as Linking from 'expo-linking';
 import { PageHeader } from '@/components/ui/page-header';
 import { PageContent } from '@/components/ui/page-content';
+import { ViewStyle } from 'react-native';
 
 interface BrowserPageProps {
   page: PageTab;
@@ -168,10 +169,10 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const titleNode = (
     <View className="flex-1 flex-row items-center" style={{ gap: 2 }}>
       <Pressable onPress={handleGoBack} disabled={!canGoBack} hitSlop={6} className="p-1">
-        <Icon as={ArrowLeft} size={16} style={{ color: canGoBack ? fgColor : mutedColor }} strokeWidth={2.2} />
+        <Icon as={ArrowLeft} size={16} style={{ color: canGoBack ? fgColor : mutedColor } as ViewStyle} strokeWidth={2.2} />
       </Pressable>
       <Pressable onPress={handleGoForward} disabled={!canGoForward} hitSlop={6} className="p-1 mr-1">
-        <Icon as={ArrowRight} size={16} style={{ color: canGoForward ? fgColor : mutedColor }} strokeWidth={2.2} />
+        <Icon as={ArrowRight} size={16} style={{ color: canGoForward ? fgColor : mutedColor } as ViewStyle} strokeWidth={2.2} />
       </Pressable>
 
       <View
@@ -188,7 +189,7 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
           overflow: 'hidden',
         }}
       >
-        {!isLoading && <Icon as={Globe} size={12} style={{ color: mutedColor }} strokeWidth={2} />}
+        {!isLoading && <Icon as={Globe} size={12} style={{ color: mutedColor } as ViewStyle} strokeWidth={2} />}
         {isLoading && <ActivityIndicator size={10} color={mutedColor} />}
         <TextInput
           value={urlInput}
@@ -223,10 +224,10 @@ export function BrowserPage({ page, onBack, onOpenDrawer, onOpenRightDrawer, isD
   const rightActions = (
     <View className="flex-row items-center">
       <Pressable onPress={isLoading ? handleStop : handleRefresh} hitSlop={6} className="p-1">
-        <Icon as={isLoading ? X : RefreshCw} size={15} style={{ color: fgColor }} strokeWidth={2.2} />
+        <Icon as={isLoading ? X : RefreshCw} size={15} style={{ color: fgColor } as ViewStyle} strokeWidth={2.2} />
       </Pressable>
       <Pressable onPress={handleOpenExternal} hitSlop={6} className="p-1 ml-1">
-        <Icon as={ExternalLink} size={15} style={{ color: mutedColor }} strokeWidth={2.2} />
+        <Icon as={ExternalLink} size={15} style={{ color: mutedColor } as ViewStyle} strokeWidth={2.2} />
       </Pressable>
     </View>
   );

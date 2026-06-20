@@ -9,6 +9,7 @@
  */
 
 import { API_URL, getAuthToken } from '@/api/config';
+import { createApiRequestError } from '@/lib/billing/upgrade-gate';
 import { log } from '@/lib/logger';
 
 // ─── Port Constants ──────────────────────────────────────────────────────────
@@ -92,10 +93,7 @@ export function getSandboxPortUrl(sandboxExternalId: string, port: string): stri
   return `${API_URL}/p/${sandboxExternalId}/${port}`;
 }
 
-async function apiFetch<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await getAuthToken();
   if (!token) {
     throw new Error('Not authenticated');
@@ -113,16 +111,22 @@ async function apiFetch<T>(
   });
 
   const text = await res.text();
-  const body = text ? JSON.parse(text) : null;
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text ? { message: text.slice(0, 200) } : null;
+  }
   if (!res.ok) {
-    throw new Error(body?.error || body?.message || `API error ${res.status}`);
+    throw createApiRequestError(res.status, body, `API error ${res.status}`);
   }
   return body as T;
 }
 
 function normalizeSessionStatus(status: string | undefined): string {
   if (status === 'running') return 'active';
-  if (status === 'queued' || status === 'branching' || status === 'provisioning') return 'provisioning';
+  if (status === 'queued' || status === 'branching' || status === 'provisioning')
+    return 'provisioning';
   if (status === 'failed') return 'error';
   if (status === 'stopped' || status === 'completed') return 'stopped';
   return status || 'unknown';
@@ -131,16 +135,20 @@ function normalizeSessionStatus(status: string | undefined): string {
 function toSandboxInfo(
   project: ProjectSummary,
   session: ProjectSessionSummary,
-  runtime?: ProjectSessionSandbox | null,
+  runtime?: ProjectSessionSandbox | null
 ): SandboxInfo {
-  const externalId = runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
+  const externalId =
+    runtime?.external_id || session.sandbox_url?.match(/\/p\/([^/]+)\//)?.[1] || session.sandbox_id;
   const status = normalizeSessionStatus(runtime?.status || session.status);
   return {
     sandbox_id: runtime?.sandbox_id || session.sandbox_id || session.session_id,
     external_id: externalId,
     name: session.name || `${project.name} session`,
     provider: runtime?.provider || session.sandbox_provider || 'daytona',
-    base_url: runtime?.base_url || session.sandbox_url || (runtime?.external_id ? getSandboxUrl(runtime.external_id) : ''),
+    base_url:
+      runtime?.base_url ||
+      session.sandbox_url ||
+      (runtime?.external_id ? getSandboxUrl(runtime.external_id) : ''),
     status,
     version: null,
     metadata: {
@@ -166,14 +174,14 @@ async function listProjectSessions(projectId: string): Promise<ProjectSessionSum
 
 async function getProjectSessionSandbox(
   projectId: string,
-  sessionId: string,
+  sessionId: string
 ): Promise<ProjectSessionSandbox | null> {
   try {
     // Unified session-open endpoint: provisions/resumes + resolves the pin
     // server-side, returning the sandbox row in its payload.
     const r = await apiFetch<{ sandbox: ProjectSessionSandbox | null }>(
       `/projects/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(sessionId)}/start`,
-      { method: 'POST', body: JSON.stringify({}) },
+      { method: 'POST', body: JSON.stringify({}) }
     );
     return r?.sandbox ?? null;
   } catch {
@@ -181,12 +189,14 @@ async function getProjectSessionSandbox(
   }
 }
 
-async function listProjectSessionSandboxes(): Promise<Array<{
-  project: ProjectSummary;
-  session: ProjectSessionSummary;
-  runtime: ProjectSessionSandbox | null;
-  sandbox: SandboxInfo;
-}>> {
+async function listProjectSessionSandboxes(): Promise<
+  Array<{
+    project: ProjectSummary;
+    session: ProjectSessionSummary;
+    runtime: ProjectSessionSandbox | null;
+    sandbox: SandboxInfo;
+  }>
+> {
   const projects = await listProjects();
   const results: Array<{
     project: ProjectSummary;
@@ -226,12 +236,15 @@ export async function findProjectSessionSandbox(sandboxId?: string): Promise<{
 } | null> {
   const rows = await listProjectSessionSandboxes();
   if (!sandboxId) return rows[0] ?? null;
-  return rows.find((row) =>
-    row.sandbox.sandbox_id === sandboxId ||
-    row.sandbox.external_id === sandboxId ||
-    row.session.session_id === sandboxId ||
-    row.runtime?.external_id === sandboxId
-  ) ?? null;
+  return (
+    rows.find(
+      (row) =>
+        row.sandbox.sandbox_id === sandboxId ||
+        row.sandbox.external_id === sandboxId ||
+        row.session.session_id === sandboxId ||
+        row.runtime?.external_id === sandboxId
+    ) ?? null
+  );
 }
 
 // ─── API Methods ─────────────────────────────────────────────────────────────
@@ -257,10 +270,13 @@ export async function ensureSandbox(opts?: {
     throw new Error('Create a project before starting a sandbox');
   }
 
-  const session = await apiFetch<ProjectSessionSummary>(`/projects/${encodeURIComponent(project.project_id)}/sessions`, {
-    method: 'POST',
-    body: JSON.stringify({}),
-  });
+  const session = await apiFetch<ProjectSessionSummary>(
+    `/projects/${encodeURIComponent(project.project_id)}/sessions`,
+    {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }
+  );
   const runtime = await getProjectSessionSandbox(project.project_id, session.session_id);
   const sandbox = toSandboxInfo(project, session, runtime);
 
@@ -294,10 +310,9 @@ export async function listSandboxes(sandboxId?: string): Promise<SandboxInfo[]> 
     const rows = await listProjectSessionSandboxes();
     return rows
       .map((row) => row.sandbox)
-      .filter((sandbox) =>
-        !sandboxId ||
-        sandbox.sandbox_id === sandboxId ||
-        sandbox.external_id === sandboxId
+      .filter(
+        (sandbox) =>
+          !sandboxId || sandbox.sandbox_id === sandboxId || sandbox.external_id === sandboxId
       );
   } catch {
     return [];
@@ -325,8 +340,8 @@ export async function restartSandbox(sandboxId?: string): Promise<void> {
   await apiFetch<void>(
     `/projects/${encodeURIComponent(row.project.project_id)}/sessions/${encodeURIComponent(row.session.session_id)}/restart`,
     {
-    method: 'POST',
-    },
+      method: 'POST',
+    }
   );
 }
 
@@ -347,7 +362,7 @@ export async function deleteSandbox(sandboxId: string): Promise<void> {
   if (!row) throw new Error('Project session sandbox not found');
   await apiFetch<void>(
     `/projects/${encodeURIComponent(row.project.project_id)}/sessions/${encodeURIComponent(row.session.session_id)}`,
-    { method: 'DELETE' },
+    { method: 'DELETE' }
   );
 }
 
@@ -371,11 +386,15 @@ export interface LocalSandboxProgress {
 
 export async function initLocalSandbox(
   _name?: string,
-  onProgress?: (progress: LocalSandboxProgress) => void,
+  onProgress?: (progress: LocalSandboxProgress) => void
 ): Promise<SandboxInfo> {
   onProgress?.({ status: 'starting', progress: 0, message: 'Starting project session...' });
   const result = await ensureSandbox();
-  onProgress?.({ status: result.sandbox.status, progress: result.sandbox.status === 'active' ? 100 : 25, message: 'Project session started' });
+  onProgress?.({
+    status: result.sandbox.status,
+    progress: result.sandbox.status === 'active' ? 100 : 25,
+    message: 'Project session started',
+  });
   return result.sandbox;
 }
 
@@ -515,7 +534,9 @@ export async function getFullChangelog(): Promise<ChangelogEntry[]> {
 }
 
 export async function triggerSandboxUpdate(_version: string): Promise<void> {
-  throw new Error('Sandbox image updates are managed by project-session provisioning in the current API');
+  throw new Error(
+    'Sandbox image updates are managed by project-session provisioning in the current API'
+  );
 }
 
 export async function getSandboxUpdateStatus(): Promise<SandboxUpdateStatus> {
@@ -595,13 +616,13 @@ export type ServiceAction = 'start' | 'stop' | 'restart' | 'delete';
 async function serviceRequest<T = any>(
   sandboxUrl: string,
   path: string,
-  init?: RequestInit,
+  init?: RequestInit
 ): Promise<T | null> {
   try {
     const token = await getAuthToken();
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      ...(init?.headers as Record<string, string> || {}),
+      ...((init?.headers as Record<string, string>) || {}),
     };
     if (token) headers.Authorization = `Bearer ${token}`;
 
@@ -624,12 +645,12 @@ async function serviceRequest<T = any>(
 
 export async function getSandboxServices(
   sandboxUrl: string,
-  includeAll = false,
+  includeAll = false
 ): Promise<SandboxService[]> {
   const query = includeAll ? '?all=true' : '';
   const data = await serviceRequest<{ services?: SandboxService[] }>(
     sandboxUrl,
-    `/kortix/services${query}`,
+    `/kortix/services${query}`
   );
   return data?.services ?? [];
 }
@@ -637,7 +658,7 @@ export async function getSandboxServices(
 export async function sandboxServiceAction(
   sandboxUrl: string,
   serviceId: string,
-  action: ServiceAction,
+  action: ServiceAction
 ): Promise<boolean> {
   const isDelete = action === 'delete';
   const method = isDelete ? 'DELETE' : 'POST';
@@ -650,18 +671,18 @@ export async function sandboxServiceAction(
 
 export async function getSandboxServiceLogs(
   sandboxUrl: string,
-  serviceId: string,
+  serviceId: string
 ): Promise<string[]> {
   const data = await serviceRequest<{ logs?: string[] }>(
     sandboxUrl,
-    `/kortix/services/${encodeURIComponent(serviceId)}/logs`,
+    `/kortix/services/${encodeURIComponent(serviceId)}/logs`
   );
   return data?.logs ?? [];
 }
 
 export async function reconcileSandboxServices(
   sandboxUrl: string,
-  reload = false,
+  reload = false
 ): Promise<boolean> {
   const query = reload ? '?reload=true' : '';
   const data = await serviceRequest(sandboxUrl, `/kortix/services/reconcile${query}`, {
@@ -672,7 +693,7 @@ export async function reconcileSandboxServices(
 
 export async function sandboxRuntimeReload(
   sandboxUrl: string,
-  mode: 'dispose-only' | 'full',
+  mode: 'dispose-only' | 'full'
 ): Promise<boolean> {
   const data = await serviceRequest(sandboxUrl, `/kortix/services/system/reload`, {
     method: 'POST',

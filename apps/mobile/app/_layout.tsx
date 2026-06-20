@@ -4,7 +4,15 @@ import { ROOBERT_FONTS } from '@/lib/utils/fonts';
 import { NAV_THEME } from '@/lib/utils/theme';
 import { initializeI18n } from '@/lib/utils/i18n';
 import { usePresence } from '@/hooks/usePresence';
-import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, AdvancedFeaturesProvider, TrackingProvider, useAuthContext } from '@/contexts';
+import {
+  AuthProvider,
+  LanguageProvider,
+  AgentProvider,
+  BillingProvider,
+  AdvancedFeaturesProvider,
+  TrackingProvider,
+  useAuthContext,
+} from '@/contexts';
 import { PresenceProvider } from '@/contexts/PresenceContext';
 import { SandboxProvider } from '@/contexts/SandboxContext';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
@@ -13,6 +21,10 @@ import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
 import { ToastProvider } from '@/components/ui/toast-provider';
 import { OfflineBanner } from '@/components/ui/OfflineBanner';
+import {
+  GlobalUpgradeSheet,
+  SandboxUpgradeGateListener,
+} from '@/components/billing/GlobalUpgradeSheet';
 import { useFonts } from 'expo-font';
 import { Stack, SplashScreen, useRouter, useSegments } from 'expo-router';
 import { StatusBar, setStatusBarStyle } from 'expo-status-bar';
@@ -31,7 +43,15 @@ import { log } from '@/lib/logger';
 import { useAppearanceStore } from '@/stores/appearance-store';
 import { useThemeStore } from '@/stores/theme-store';
 import { installHapticsGate } from '@/lib/haptics';
-import { consumeAuthCallbackState } from '@/lib/auth/callback-state';
+import {
+  clearWebRegistrationHandoff,
+  consumeAuthCallbackState,
+  grantWebRegistrationHandoff,
+} from '@/lib/auth/callback-state';
+import {
+  isMobileAuthCallbackUrl,
+  isMobileRegistrationHandoffUrl,
+} from '@/lib/auth/web-registration-handoff';
 
 // Patch expo-haptics globally so every Haptics.* call across the app respects
 // the user's "Haptic Feedback" toggle in Settings → Sounds.
@@ -39,9 +59,7 @@ installHapticsGate();
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
 
-LogBox.ignoreLogs([
-  'A props object containing a "key" prop is being spread into JSX',
-]);
+LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
 
 configureReanimatedLogger({
   level: ReanimatedLogLevel.warn,
@@ -50,9 +68,7 @@ configureReanimatedLogger({
 
 SplashScreen.preventAutoHideAsync();
 
-export {
-  ErrorBoundary,
-} from 'expo-router';
+export { ErrorBoundary } from 'expo-router';
 
 export default function RootLayout() {
   const { colorScheme, setColorScheme } = useColorScheme();
@@ -60,15 +76,18 @@ export default function RootLayout() {
   const [i18nInitialized, setI18nInitialized] = useState(false);
   const router = useRouter();
 
-  const [queryClient] = useState(() => new QueryClient({
-    defaultOptions: {
-      queries: {
-        retry: 2,
-        staleTime: 5 * 60 * 1000,
-        refetchOnWindowFocus: false,
-      },
-    },
-  }));
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: {
+            retry: 2,
+            staleTime: 5 * 60 * 1000,
+            refetchOnWindowFocus: false,
+          },
+        },
+      })
+  );
 
   const queryClientRef = React.useRef(queryClient);
   React.useEffect(() => {
@@ -133,7 +152,6 @@ export default function RootLayout() {
     };
   }, []);
 
-
   useEffect(() => {
     if (Platform.OS === 'ios') {
       const activeScheme = colorScheme ?? 'light';
@@ -141,7 +159,6 @@ export default function RootLayout() {
       SystemUI.setBackgroundColorAsync(backgroundColor);
     }
   }, [colorScheme]);
-
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
@@ -153,7 +170,7 @@ export default function RootLayout() {
   // OTA UPDATE SYSTEM - Instant Updates
   // ==========================================
   // Uses expo-updates hook for reactive update detection + manual checks
-  // 
+  //
   // How it works:
   // 1. Native code checks for updates on launch (checkAutomatically: "ON_LOAD")
   // 2. useUpdates() hook detects when update is downloaded
@@ -187,7 +204,14 @@ export default function RootLayout() {
       checkError: checkError?.message,
       downloadError: downloadError?.message,
     });
-  }, [isUpdateAvailable, isUpdatePending, isDownloading, downloadedUpdate, checkError, downloadError]);
+  }, [
+    isUpdateAvailable,
+    isUpdatePending,
+    isDownloading,
+    downloadedUpdate,
+    checkError,
+    downloadError,
+  ]);
 
   // Immediately reload when an update is downloaded and pending
   useEffect(() => {
@@ -301,7 +325,8 @@ export default function RootLayout() {
       });
 
       // Check for universal links (https://kortix.com/share/xxx or https://staging.kortix.com/share/xxx)
-      const isUniversalLink = parsedUrl.scheme === 'https' &&
+      const isUniversalLink =
+        parsedUrl.scheme === 'https' &&
         (parsedUrl.hostname === 'kortix.com' ||
           parsedUrl.hostname === 'www.kortix.com' ||
           parsedUrl.hostname === 'staging.kortix.com');
@@ -320,8 +345,8 @@ export default function RootLayout() {
         return;
       }
 
-      // Handle custom scheme: kortix://auth/callback
-      if (parsedUrl.hostname === 'auth' && parsedUrl.path === 'callback') {
+      // Handle custom scheme callbacks and verified HTTPS universal links.
+      if (isMobileAuthCallbackUrl(url)) {
         log.log('📧 Auth callback received, processing...');
 
         try {
@@ -331,9 +356,8 @@ export default function RootLayout() {
           if (hashIndex !== -1) {
             hashFragment = url.substring(hashIndex + 1);
           }
-          let callbackState = typeof parsedUrl.queryParams?.state === 'string'
-            ? parsedUrl.queryParams.state
-            : null;
+          let callbackState =
+            typeof parsedUrl.queryParams?.state === 'string' ? parsedUrl.queryParams.state : null;
           if (!callbackState && hashFragment) {
             try {
               callbackState = new URLSearchParams(hashFragment).get('state');
@@ -390,11 +414,13 @@ export default function RootLayout() {
           const termsAccepted = parsedUrl.queryParams?.terms_accepted === 'true';
           // Default to index (splash) screen - it will route based on user state
           // Only use explicit returnUrl if provided (e.g., from web redirect)
-          const returnUrl = parsedUrl.queryParams?.returnUrl as string || '/';
+          const returnUrl = (parsedUrl.queryParams?.returnUrl as string) || '/';
 
           // Extract tokens - check query params first (from smart redirect), then hash fragment (legacy)
           let access_token: string | null = null;
           let refresh_token: string | null = null;
+          const code =
+            typeof parsedUrl.queryParams?.code === 'string' ? parsedUrl.queryParams.code : null;
 
           // Method 1: Query params (from smart redirect page)
           if (parsedUrl.queryParams?.access_token && parsedUrl.queryParams?.refresh_token) {
@@ -424,8 +450,12 @@ export default function RootLayout() {
                 // Try direct extraction
                 const accessTokenMatch = hashFragment.match(/access_token=([^&]+)/);
                 const refreshTokenMatch = hashFragment.match(/refresh_token=([^&]+)/);
-                access_token = access_token || (accessTokenMatch ? decodeURIComponent(accessTokenMatch[1]) : null);
-                refresh_token = refresh_token || (refreshTokenMatch ? decodeURIComponent(refreshTokenMatch[1]) : null);
+                access_token =
+                  access_token ||
+                  (accessTokenMatch ? decodeURIComponent(accessTokenMatch[1]) : null);
+                refresh_token =
+                  refresh_token ||
+                  (refreshTokenMatch ? decodeURIComponent(refreshTokenMatch[1]) : null);
               }
             }
           }
@@ -433,11 +463,12 @@ export default function RootLayout() {
           log.log('🔑 Token extraction result:', {
             hasAccessToken: !!access_token,
             hasRefreshToken: !!refresh_token,
+            hasCode: !!code,
             termsAccepted,
             returnUrl,
           });
 
-          if (access_token && refresh_token) {
+          if ((access_token && refresh_token) || code) {
             const stateOk = await consumeAuthCallbackState(callbackState);
             if (!stateOk) {
               log.warn('⚠️ Auth callback rejected: missing or invalid state');
@@ -446,29 +477,48 @@ export default function RootLayout() {
               return;
             }
 
-            log.log('✅ Setting session with tokens...');
+            if (isMobileRegistrationHandoffUrl(url)) {
+              await grantWebRegistrationHandoff();
+            }
 
-            const { data, error } = await supabase.auth.setSession({
-              access_token,
-              refresh_token,
-            });
+            let callbackUser: {
+              email?: string | null;
+              user_metadata?: Record<string, unknown>;
+            } | null = null;
+            let sessionError: Error | null = null;
 
-            if (error) {
-              log.error('❌ Failed to set session:', error);
+            if (access_token && refresh_token) {
+              log.log('✅ Setting session with tokens...');
+              const { data, error } = await supabase.auth.setSession({
+                access_token,
+                refresh_token,
+              });
+              callbackUser = data.user;
+              sessionError = error;
+            } else if (code) {
+              log.log('✅ Exchanging auth callback code...');
+              const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+              callbackUser = data.user;
+              sessionError = error;
+            }
+
+            if (sessionError) {
+              await clearWebRegistrationHandoff();
+              log.error('❌ Failed to establish session:', sessionError);
               isHandlingDeepLink = false;
               router.replace('/auth');
               return;
             }
 
-            log.log('✅ Session set! User logged in:', data.user?.email);
+            log.log('✅ Session set! User logged in:', callbackUser?.email);
 
             // Immediately invalidate React Query cache to fetch fresh account state
             log.log('🔄 Invalidating cache to fetch fresh account state');
             queryClientRef.current.invalidateQueries({ queryKey: ['account-state'] });
 
             // Save terms acceptance date if terms were accepted and not already saved
-            if (termsAccepted && data.user) {
-              const currentMetadata = data.user.user_metadata || {};
+            if (termsAccepted && callbackUser) {
+              const currentMetadata = callbackUser.user_metadata || {};
               if (!currentMetadata.terms_accepted_at) {
                 try {
                   await supabase.auth.updateUser({
@@ -485,7 +535,7 @@ export default function RootLayout() {
             }
 
             // Small delay to ensure auth state propagates
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise((resolve) => setTimeout(resolve, 100));
 
             // Always navigate to splash screen - it will determine the correct destination
             // This ensures smooth transition with loader while checking account state
@@ -502,6 +552,7 @@ export default function RootLayout() {
             router.replace('/auth');
           }
         } catch (err) {
+          await clearWebRegistrationHandoff();
           log.error('❌ Error handling auth callback:', err);
           isHandlingDeepLink = false;
           router.replace('/auth');
@@ -575,111 +626,131 @@ export default function RootLayout() {
             <LanguageProvider>
               <AuthProvider>
                 <SandboxProvider>
-                <BillingProvider>
-                  <AgentProvider>
-                    <AdvancedFeaturesProvider>
-                      <PresenceProvider>
-                        <ToastProvider>
-                          <BottomSheetModalProvider>
-                            <ThemeProvider value={NAV_THEME[activeColorScheme]}>
-                              <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
-                              <View className={`flex-1 ${appearanceThemeClass}`}>
-                                <AuthProtection>
-                                  <Stack
-                                    screenOptions={{
-                                      headerShown: false,
-                                      animation: 'fade',
-                                    }}
-                                  >
-                                    <Stack.Screen name="index" options={{ animation: 'none' }} />
-                                    <Stack.Screen name="setting-up" />
-                                    <Stack.Screen name="onboarding" />
-                                    <Stack.Screen
-                                      name="home"
-                                      options={{
-                                        gestureEnabled: false,
-                                      }}
-                                    />
-                                    <Stack.Screen
-                                      name="projects"
-                                      options={{
-                                        gestureEnabled: false,
-                                      }}
-                                    />
-                                    <Stack.Screen
-                                      name="auth"
-                                      options={{
-                                        gestureEnabled: false,
+                  <BillingProvider>
+                    <AgentProvider>
+                      <AdvancedFeaturesProvider>
+                        <PresenceProvider>
+                          <ToastProvider>
+                            <BottomSheetModalProvider>
+                              <ThemeProvider value={NAV_THEME[activeColorScheme]}>
+                                <StatusBar
+                                  style={activeColorScheme === 'dark' ? 'light' : 'dark'}
+                                />
+                                <View className={`flex-1 ${appearanceThemeClass}`}>
+                                  <AuthProtection>
+                                    <Stack
+                                      screenOptions={{
+                                        headerShown: false,
                                         animation: 'fade',
-                                      }}
-                                    />
-                                    <Stack.Screen
-                                      name="(settings)"
-                                      options={{
-                                        animation: Platform.OS === 'ios' ? 'default' : 'slide_from_right',
-                                        gestureEnabled: true,
-                                        fullScreenGestureEnabled: true,
-                                        presentation: 'card',
-                                      }}
-                                    />
-                                    <Stack.Screen
-                                      name="plans"
-                                      options={{
-                                        animation: 'slide_from_right',
-                                        gestureEnabled: true,
-                                      }}
-                                    />
-                                    <Stack.Screen
-                                      name="billing"
-                                      options={{
-                                        animation: 'slide_from_right',
-                                        gestureEnabled: true,
-                                      }}
-                                    />
-                                    <Stack.Screen
-                                      name="usage"
-                                      options={{
-                                        animation: 'slide_from_right',
-                                        gestureEnabled: true,
-                                      }}
-                                    />
-                                    <Stack.Screen
-                                      name="accounts/index"
-                                      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
-                                    />
-                                    <Stack.Screen
-                                      name="accounts/[id]"
-                                      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
-                                    />
-                                    <Stack.Screen
-                                      name="accounts/[id]/groups/[groupId]"
-                                      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
-                                    />
-                                    <Stack.Screen
-                                      name="accounts/[id]/members/[userId]"
-                                      options={{ animation: 'slide_from_right', gestureEnabled: true, fullScreenGestureEnabled: true }}
-                                    />
-                                    <Stack.Screen name="trigger-detail" />
-                                    <Stack.Screen name="worker-config" />
-                                    <Stack.Screen
-                                      name="share/[threadId]"
-                                      options={{
-                                        animation: 'slide_from_right',
-                                        gestureEnabled: true,
-                                      }}
-                                    />
-                                  </Stack>
-                                </AuthProtection>
-                              </View>
-                              <PortalHost />
-                              <OfflineBanner />
-                            </ThemeProvider>
-                          </BottomSheetModalProvider>
-                        </ToastProvider>
-                      </PresenceProvider>
-                    </AdvancedFeaturesProvider>
-                  </AgentProvider>
-                </BillingProvider>
+                                      }}>
+                                      <Stack.Screen name="index" options={{ animation: 'none' }} />
+                                      <Stack.Screen name="setting-up" />
+                                      <Stack.Screen name="onboarding" />
+                                      <Stack.Screen
+                                        name="home"
+                                        options={{
+                                          gestureEnabled: false,
+                                        }}
+                                      />
+                                      <Stack.Screen
+                                        name="projects"
+                                        options={{
+                                          gestureEnabled: false,
+                                        }}
+                                      />
+                                      <Stack.Screen
+                                        name="auth"
+                                        options={{
+                                          gestureEnabled: false,
+                                          animation: 'fade',
+                                        }}
+                                      />
+                                      <Stack.Screen
+                                        name="(settings)"
+                                        options={{
+                                          animation:
+                                            Platform.OS === 'ios' ? 'default' : 'slide_from_right',
+                                          gestureEnabled: true,
+                                          fullScreenGestureEnabled: true,
+                                          presentation: 'card',
+                                        }}
+                                      />
+                                      <Stack.Screen
+                                        name="plans"
+                                        options={{
+                                          animation: 'slide_from_right',
+                                          gestureEnabled: true,
+                                        }}
+                                      />
+                                      <Stack.Screen
+                                        name="billing"
+                                        options={{
+                                          animation: 'slide_from_right',
+                                          gestureEnabled: true,
+                                        }}
+                                      />
+                                      <Stack.Screen
+                                        name="usage"
+                                        options={{
+                                          animation: 'slide_from_right',
+                                          gestureEnabled: true,
+                                        }}
+                                      />
+                                      <Stack.Screen
+                                        name="accounts/index"
+                                        options={{
+                                          animation: 'slide_from_right',
+                                          gestureEnabled: true,
+                                          fullScreenGestureEnabled: true,
+                                        }}
+                                      />
+                                      <Stack.Screen
+                                        name="accounts/[id]"
+                                        options={{
+                                          animation: 'slide_from_right',
+                                          gestureEnabled: true,
+                                          fullScreenGestureEnabled: true,
+                                        }}
+                                      />
+                                      <Stack.Screen
+                                        name="accounts/[id]/groups/[groupId]"
+                                        options={{
+                                          animation: 'slide_from_right',
+                                          gestureEnabled: true,
+                                          fullScreenGestureEnabled: true,
+                                        }}
+                                      />
+                                      <Stack.Screen
+                                        name="accounts/[id]/members/[userId]"
+                                        options={{
+                                          animation: 'slide_from_right',
+                                          gestureEnabled: true,
+                                          fullScreenGestureEnabled: true,
+                                        }}
+                                      />
+                                      <Stack.Screen name="trigger-detail" />
+                                      <Stack.Screen name="worker-config" />
+                                      <Stack.Screen
+                                        name="share/[threadId]"
+                                        options={{
+                                          animation: 'slide_from_right',
+                                          gestureEnabled: true,
+                                        }}
+                                      />
+                                    </Stack>
+                                  </AuthProtection>
+                                </View>
+                                <SandboxUpgradeGateListener />
+                                <GlobalUpgradeSheet />
+                                <PortalHost />
+                                <OfflineBanner />
+                              </ThemeProvider>
+                            </BottomSheetModalProvider>
+                          </ToastProvider>
+                        </PresenceProvider>
+                      </AdvancedFeaturesProvider>
+                    </AgentProvider>
+                  </BillingProvider>
                 </SandboxProvider>
               </AuthProvider>
             </LanguageProvider>
@@ -690,14 +761,14 @@ export default function RootLayout() {
   );
 }
 
-
 function AuthProtection({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading: authLoading } = useAuthContext();
   const segments = useSegments();
   const router = useRouter();
 
   const segmentsArray = segments as string[];
-  const threadId = (segmentsArray.length > 3 && segmentsArray[2] === 'thread') ? segmentsArray[3] : undefined;
+  const threadId =
+    segmentsArray.length > 3 && segmentsArray[2] === 'thread' ? segmentsArray[3] : undefined;
   usePresence(threadId);
 
   useEffect(() => {

@@ -22,7 +22,6 @@ import { useRouter, Stack } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 
 import { Text } from '@/components/ui/text';
 import { KortixLogo } from '@/components/ui/KortixLogo';
@@ -32,6 +31,8 @@ import { useAuthContext } from '@/contexts';
 import { supabase } from '@/api/supabase';
 import { getFrontendUrl } from '@/api/config';
 import { log } from '@/lib/logger';
+import { createAuthCallbackState } from '@/lib/auth/callback-state';
+import { buildMobileRegistrationUrl } from '@/lib/auth/web-registration-handoff';
 import {
   magicLinkEnabled,
   passwordEnabled,
@@ -42,7 +43,8 @@ import {
 
 const friendlySignInError = (msg?: string): string => {
   if (!msg) return 'Could not sign in';
-  if (msg.includes('Invalid login credentials')) return 'Invalid email or password. Please try again.';
+  if (msg.includes('Invalid login credentials'))
+    return 'Invalid email or password. Please try again.';
   if (msg.includes('Email not confirmed')) return 'Please confirm your email before signing in.';
   return msg;
 };
@@ -115,9 +117,15 @@ export default function AuthScreen() {
     setOtpCode('');
   }, []);
 
-  const openWebRegister = React.useCallback(() => {
-    const base = getFrontendUrl().replace(/\/$/, '');
-    Linking.openURL(`${base}/auth`).catch(() => {});
+  const openWebRegister = React.useCallback(async () => {
+    try {
+      const state = await createAuthCallbackState();
+      const registrationUrl = buildMobileRegistrationUrl(getFrontendUrl(), state);
+      await Linking.openURL(registrationUrl);
+    } catch (error) {
+      log.warn('Unable to open web registration:', error);
+      setErrorMessage('Could not open registration. Please try again.');
+    }
   }, []);
 
   // ── Submit (email methods) ────────────────────────────────────────────────
@@ -139,7 +147,6 @@ export default function AuthScreen() {
           setErrorMessage(friendlyMagicError(res?.error?.message));
           return;
         }
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setSentEmail(trimmedEmail);
         setOtpCode('');
         setInfo(`We sent a 6-digit code to ${trimmedEmail}`);
@@ -184,7 +191,7 @@ export default function AuthScreen() {
         setErrorMessage(
           /expired|invalid/i.test(error.message)
             ? 'Code expired or invalid. Please request a new one.'
-            : error.message,
+            : error.message
         );
         return;
       }
@@ -236,7 +243,7 @@ export default function AuthScreen() {
         setOauthLoading(null);
       }
     },
-    [signInWithOAuth],
+    [signInWithOAuth]
   );
 
   const submitLabel = method === 'magic' ? 'Email me a sign-in code' : 'Sign in';
@@ -247,35 +254,36 @@ export default function AuthScreen() {
       <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} />
       <KeyboardAvoidingView
         className="flex-1 bg-background"
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
         <View
           className="flex-1 justify-center px-8"
-          style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 32 }}
-        >
+          style={{ paddingTop: insets.top, paddingBottom: insets.bottom + 32 }}>
           {/* Logo + heading */}
-          <View className="items-start mb-8">
+          <View className="mb-8 items-start">
             <KortixLogo variant="symbol" size={36} color={isDark ? 'dark' : 'light'} />
-            <Text className="text-[28px] font-roobert-semibold text-foreground mt-5 leading-tight">
+            <Text className="mt-5 font-roobert-semibold text-[28px] leading-tight text-foreground">
               {awaitingCode ? 'Check your\nemail' : 'Sign in to\nKortix'}
             </Text>
-            <Text className="text-[15px] text-muted-foreground mt-2 font-roobert">
-              {awaitingCode ? `We sent a code to ${(sentEmail ?? email).trim()}` : 'Your AI Computer'}
+            <Text className="mt-2 font-roobert text-[15px] text-muted-foreground">
+              {awaitingCode
+                ? `We sent a code to ${(sentEmail ?? email).trim()}`
+                : 'Your AI Computer'}
             </Text>
           </View>
 
           {/* Banners */}
           {errorMessage && (
             <View className="mb-4 rounded-2xl bg-destructive/10 px-4 py-3">
-              <Text className="text-sm text-destructive text-center font-roobert">{errorMessage}</Text>
+              <Text className="text-center font-roobert text-sm text-destructive">
+                {errorMessage}
+              </Text>
             </View>
           )}
           {info && !errorMessage && (
             <View
               className="mb-4 rounded-2xl px-4 py-3"
-              style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}
-            >
-              <Text className="text-sm text-center font-roobert" style={{ color: muted }}>
+              style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)' }}>
+              <Text className="text-center font-roobert text-sm" style={{ color: muted }}>
                 {info}
               </Text>
             </View>
@@ -303,7 +311,8 @@ export default function AuthScreen() {
                 variant="primary"
                 showArrow={false}
               />
-              <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 16, gap: 16 }}>
+              <View
+                style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 16, gap: 16 }}>
                 <TouchableOpacity onPress={handleSubmit} disabled={loading}>
                   <Text style={{ fontSize: 14, fontFamily: 'Roobert-Medium', color: fg }}>
                     Resend code
@@ -366,8 +375,7 @@ export default function AuthScreen() {
                     setMethod(method === 'magic' ? 'password' : 'magic');
                     resetTransient();
                   }}
-                  style={{ marginTop: 16, alignSelf: 'center' }}
-                >
+                  style={{ marginTop: 16, alignSelf: 'center' }}>
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>
                     {method === 'magic' ? 'Use password instead' : 'Use email code instead'}
                   </Text>
@@ -376,7 +384,9 @@ export default function AuthScreen() {
 
               {/* Forgot password (password method only) */}
               {method === 'password' && (
-                <TouchableOpacity onPress={handleForgotPassword} style={{ marginTop: 12, alignSelf: 'center' }}>
+                <TouchableOpacity
+                  onPress={handleForgotPassword}
+                  style={{ marginTop: 12, alignSelf: 'center' }}>
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>
                     Forgot your password?
                   </Text>
@@ -388,7 +398,13 @@ export default function AuthScreen() {
                 <>
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 20 }}>
                     <View style={{ flex: 1, height: 1, backgroundColor: border }} />
-                    <Text style={{ fontSize: 12, fontFamily: 'Roobert', color: muted, marginHorizontal: 12 }}>
+                    <Text
+                      style={{
+                        fontSize: 12,
+                        fontFamily: 'Roobert',
+                        color: muted,
+                        marginHorizontal: 12,
+                      }}>
                       or
                     </Text>
                     <View style={{ flex: 1, height: 1, backgroundColor: border }} />
@@ -399,8 +415,7 @@ export default function AuthScreen() {
                       onPress={() => handleOAuth('google')}
                       disabled={!!oauthLoading}
                       activeOpacity={0.7}
-                      style={providerButtonStyle(isDark, border, oauthLoading, 'google')}
-                    >
+                      style={providerButtonStyle(isDark, border, oauthLoading, 'google')}>
                       {oauthLoading === 'google' ? (
                         <ActivityIndicator size="small" color={fg} style={{ marginRight: 2 }} />
                       ) : (
@@ -417,8 +432,10 @@ export default function AuthScreen() {
                       onPress={() => handleOAuth('apple')}
                       disabled={!!oauthLoading}
                       activeOpacity={0.7}
-                      style={{ ...providerButtonStyle(isDark, border, oauthLoading, 'apple'), marginTop: 10 }}
-                    >
+                      style={{
+                        ...providerButtonStyle(isDark, border, oauthLoading, 'apple'),
+                        marginTop: 10,
+                      }}>
                       {oauthLoading === 'apple' ? (
                         <ActivityIndicator size="small" color={fg} style={{ marginRight: 2 }} />
                       ) : (
@@ -433,8 +450,11 @@ export default function AuthScreen() {
               )}
 
               {/* Register lives on the web */}
-              <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 24, gap: 5 }}>
-                <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>New to Kortix?</Text>
+              <View
+                style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 24, gap: 5 }}>
+                <Text style={{ fontSize: 13, fontFamily: 'Roobert', color: muted }}>
+                  New to Kortix?
+                </Text>
                 <TouchableOpacity onPress={openWebRegister}>
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: fg }}>
                     Register on the web
@@ -453,7 +473,7 @@ function providerButtonStyle(
   isDark: boolean,
   border: string,
   oauthLoading: 'google' | 'apple' | null,
-  self: 'google' | 'apple',
+  self: 'google' | 'apple'
 ) {
   return {
     flexDirection: 'row' as const,

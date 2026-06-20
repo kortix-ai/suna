@@ -1,12 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { authRedirectUrl } from '@/lib/desktop';
-import { toast } from '@/lib/toast';
-import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
+import { KortixLoader } from '@/components/ui/kortix-loader';
+import { authRedirectUrl } from '@/lib/desktop';
+import { createClient } from '@/lib/supabase/client';
+import { toast } from '@/lib/toast';
 import { useTranslations } from 'next-intl';
+import { useState } from 'react';
 
 function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -28,15 +28,20 @@ function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
         fill="#EA4335"
       />
     </svg>
-  )
+  );
 }
 
 interface GoogleSignInProps {
   returnUrl?: string;
   referralCode?: string;
+  mobileCallbackState?: string;
 }
 
-export default function GoogleSignIn({ returnUrl, referralCode }: GoogleSignInProps) {
+export default function GoogleSignIn({
+  returnUrl,
+  referralCode,
+  mobileCallbackState,
+}: GoogleSignInProps) {
   const [isLoading, setIsLoading] = useState(false);
   const supabase = createClient();
   const t = useTranslations('auth');
@@ -44,12 +49,18 @@ export default function GoogleSignIn({ returnUrl, referralCode }: GoogleSignInPr
   const handleGoogleSignIn = async () => {
     try {
       setIsLoading(true);
-      
+
       if (referralCode) {
         document.cookie = `pending-referral-code=${referralCode.trim().toUpperCase()}; path=/; max-age=600; SameSite=Lax`;
       }
-      
-      const callbackPath = `/auth/callback${returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ''}`;
+
+      const callbackParams = new URLSearchParams();
+      if (returnUrl) callbackParams.set('returnUrl', returnUrl);
+      if (mobileCallbackState) {
+        callbackParams.set('mobile_callback', '1');
+        callbackParams.set('state', mobileCallbackState);
+      }
+      const callbackPath = `${mobileCallbackState ? '/auth/mobile/callback' : '/auth/callback'}${callbackParams.size ? `?${callbackParams.toString()}` : ''}`;
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
@@ -77,17 +88,11 @@ export default function GoogleSignIn({ returnUrl, referralCode }: GoogleSignInPr
       disabled={isLoading}
       variant="outline"
       size="lg"
-      className="w-full h-11 rounded-xl"
+      className="h-11 w-full rounded-xl"
       type="button"
     >
-      {isLoading ? (
-        <KortixLoader size="small" />
-      ) : (
-        <GoogleIcon className="w-4 h-4" />
-      )}
-      <span>
-        {isLoading ? t('signingIn') : t('continueWithGoogle')}
-      </span>
+      {isLoading ? <KortixLoader size="small" /> : <GoogleIcon className="h-4 w-4" />}
+      <span>{isLoading ? t('signingIn') : t('continueWithGoogle')}</span>
     </Button>
   );
 }

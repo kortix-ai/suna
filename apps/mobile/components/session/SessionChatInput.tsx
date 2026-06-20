@@ -8,7 +8,7 @@
  * - @mention autocomplete for files, agents, and sessions
  */
 
-import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { forwardRef, useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   View,
   TextInput,
@@ -282,8 +282,14 @@ export function SessionChatInput({
   const isDark = colorScheme === 'dark';
   const themeColors = useThemeColors();
 
-  // Config sheet
-  const [showConfigSheet, setShowConfigSheet] = useState(false);
+  // Config sheet — imperative BottomSheetModal ref (same pattern as ProjectPicker).
+  const configSheetRef = useRef<BottomSheetModal>(null);
+  const openConfigSheet = useCallback(() => {
+    Keyboard.dismiss();
+    requestAnimationFrame(() => {
+      configSheetRef.current?.present();
+    });
+  }, []);
 
   // ── Slash commands ───────────────────────────────────────────────────────
 
@@ -958,7 +964,7 @@ export function SessionChatInput({
 
                     {/* Compact config label */}
                     <TouchableOpacity
-                      onPress={() => setShowConfigSheet(true)}
+                      onPress={openConfigSheet}
                       activeOpacity={0.7}
                       hitSlop={6}
                       style={{
@@ -972,7 +978,7 @@ export function SessionChatInput({
                       <Text
                         numberOfLines={1}
                         style={{
-                          fontSize: 11,
+                          fontSize: 13,
                           fontFamily: 'Roobert',
                           color: isDark ? '#71717a' : '#a1a1aa',
                           maxWidth: 140,
@@ -1130,7 +1136,7 @@ export function SessionChatInput({
         onClose={() => setShowActionsSheet(false)}
         isDark={isDark}
         onAttach={() => { setShowActionsSheet(false); setTimeout(handleAttachPress, 300); }}
-        onConfig={() => { setShowActionsSheet(false); setTimeout(() => setShowConfigSheet(true), 300); }}
+        onConfig={() => { setShowActionsSheet(false); setTimeout(openConfigSheet, 300); }}
         onAutoContinue={availableAutoAlgorithms.length > 0 ? () => { setShowActionsSheet(false); setTimeout(() => setShowAutoSheet(true), 300); } : undefined}
         autocontinueLabel={autocontinueMode ? (currentAutoAlgorithm?.label || 'Auto') : 'Off'}
         autocontinueActive={!!autocontinueMode}
@@ -1140,7 +1146,7 @@ export function SessionChatInput({
 
       {/* Config bottom sheet — agent, model, variant (dynamic-sized) */}
       <ConfigSheet
-        visible={showConfigSheet}
+        ref={configSheetRef}
         isDark={isDark}
         agents={agents}
         selectedAgent={agent || null}
@@ -1151,7 +1157,6 @@ export function SessionChatInput({
         variants={variants}
         selectedVariant={variant || null}
         onVariantSet={(v) => onVariantSet?.(v)}
-        onClose={() => setShowConfigSheet(false)}
       />
 
       <AutoContinueSheet
@@ -1826,33 +1831,35 @@ const TAB_CONFIG: { key: ConfigTab; label: string; icon: string }[] = [
   { key: 'thinking', label: 'Thinking', icon: 'flash-outline' },
 ];
 
-function ConfigSheet({
-  isDark,
-  visible,
-  agents,
-  selectedAgent,
-  onAgentChange,
-  models,
-  selectedModel,
-  onModelChange,
-  variants,
-  selectedVariant,
-  onVariantSet,
-  onClose,
-}: {
-  isDark: boolean;
-  visible: boolean;
-  agents: Agent[];
-  selectedAgent: Agent | null;
-  onAgentChange: (name: string) => void;
-  models: FlatModel[];
-  selectedModel: FlatModel | null;
-  onModelChange: (providerId: string, modelId: string) => void;
-  variants: string[];
-  selectedVariant: string | null;
-  onVariantSet: (variant: string | null) => void;
-  onClose: () => void;
-}) {
+const ConfigSheet = forwardRef<
+  BottomSheetModal,
+  {
+    isDark: boolean;
+    agents: Agent[];
+    selectedAgent: Agent | null;
+    onAgentChange: (name: string) => void;
+    models: FlatModel[];
+    selectedModel: FlatModel | null;
+    onModelChange: (providerId: string, modelId: string) => void;
+    variants: string[];
+    selectedVariant: string | null;
+    onVariantSet: (variant: string | null) => void;
+  }
+>(function ConfigSheet(
+  {
+    isDark,
+    agents,
+    selectedAgent,
+    onAgentChange,
+    models,
+    selectedModel,
+    onModelChange,
+    variants,
+    selectedVariant,
+    onVariantSet,
+  },
+  ref,
+) {
   const insets = useSafeAreaInsets();
   const { height: screenHeight } = useWindowDimensions();
   const [activeTab, setActiveTab] = useState<ConfigTab>('agent');
@@ -1864,26 +1871,6 @@ function ConfigSheet({
   // Sticky header bg must match the sheet bg so the area above the tabs
   // (around the drag handle) doesn't look like a different shade.
   const bg = getSheetBg(isDark);
-
-  // Imperative BottomSheetModal ↔ visible prop bridge (same pattern as
-  // ActionsSheet/UserMenuSheet elsewhere in the app).
-  const sheetRef = useRef<BottomSheetModal>(null);
-  const dismissingRef = useRef(false);
-
-  useEffect(() => {
-    if (visible) {
-      dismissingRef.current = false;
-      sheetRef.current?.present();
-    } else {
-      dismissingRef.current = true;
-      sheetRef.current?.dismiss();
-    }
-  }, [visible]);
-
-  const handleSheetDismiss = useCallback(() => {
-    if (!dismissingRef.current) onClose();
-    dismissingRef.current = false;
-  }, [onClose]);
 
   const renderBackdrop = useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -1906,14 +1893,25 @@ function ConfigSheet({
     return false;
   });
 
+  const handleSheetChange = useCallback(
+    (index: number) => {
+      if (index < 0) return;
+      if (visibleTabs.length === 0) return;
+      if (!visibleTabs.some((t) => t.key === activeTab)) {
+        setActiveTab(visibleTabs[0].key);
+      }
+    },
+    [activeTab, visibleTabs],
+  );
+
   return (
     <BottomSheetModal
-      ref={sheetRef}
+      ref={ref}
       enableDynamicSizing
       maxDynamicContentSize={Math.floor(screenHeight * 0.86)}
       enablePanDownToClose
       enableOverDrag={false}
-      onDismiss={handleSheetDismiss}
+      onChange={handleSheetChange}
       handleIndicatorStyle={{
         backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
         width: 36,
@@ -1935,6 +1933,7 @@ function ConfigSheet({
       <BottomSheetScrollView
         contentContainerStyle={{ paddingBottom: insets.bottom + 12 }}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
         stickyHeaderIndices={[0]}
       >
       {/* Sticky header block: title + tab bar. Solid bg so scrolled items
@@ -2207,4 +2206,4 @@ function ConfigSheet({
       </BottomSheetScrollView>
     </BottomSheetModal>
   );
-}
+});

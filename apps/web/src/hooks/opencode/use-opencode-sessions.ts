@@ -235,9 +235,18 @@ export function useOpenCodeSessions() {
     staleTime: 5 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
+    // With the scaffold-warm seed, opencode is ALREADY 'ok' for /workspace and a
+    // root session is pinned the moment runtimeReady flips — so the first list
+    // normally returns the pinned session in one shot. The only misses left are
+    // the server-switch client race + the ~350ms health-poll enable lag, both of
+    // which clear in one fast retry. So poll TIGHT (16 x 150ms = ~2.4s) to land
+    // the first success in <300ms instead of mid-400ms-window; exponential tail
+    // (cap 10s) covers the rare genuinely-stuck case. The old 8x400ms backoff
+    // (~3.2s) was the entire 'opencode-listed' wall in the browser trace.
     retry: (failureCount, error) =>
-      !isOpenCodeConfigInvalidError(error) && failureCount < 3,
-    retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 10000),
+      !isOpenCodeConfigInvalidError(error) && failureCount < 16,
+    retryDelay: (attempt) =>
+      attempt < 16 ? 150 : Math.min(150 * Math.pow(2, attempt - 16), 10000),
   });
 }
 

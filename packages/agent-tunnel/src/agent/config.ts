@@ -46,6 +46,16 @@ const DEFAULTS: Partial<TunnelConfig> = {
   shellEnvPassthrough: ['PATH', 'HOME', 'USER', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TMPDIR', 'NODE_ENV', 'HOSTNAME'],
 };
 
+function compactConfig(input: Partial<TunnelConfig>): Partial<TunnelConfig> {
+  const output: Partial<TunnelConfig> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (value !== undefined) {
+      (output as Record<string, unknown>)[key] = value;
+    }
+  }
+  return output;
+}
+
 export function loadConfig(overrides: Partial<TunnelConfig> = {}): TunnelConfig {
   let fileConfig: Partial<TunnelConfig> = {};
   if (existsSync(CONFIG_FILE)) {
@@ -65,9 +75,9 @@ export function loadConfig(overrides: Partial<TunnelConfig> = {}): TunnelConfig 
 
   const merged = {
     ...DEFAULTS,
-    ...fileConfig,
+    ...compactConfig(fileConfig),
     ...envConfig,
-    ...overrides,
+    ...compactConfig(overrides),
   } as TunnelConfig;
 
   return merged;

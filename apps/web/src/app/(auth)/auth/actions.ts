@@ -1,8 +1,9 @@
 'use server';
 
+import { buildMobileSessionHandoffUrl } from '@/lib/auth/mobile-handoff';
 import { sanitizeAuthReturnUrl } from '@/lib/auth/return-url';
-import { createClient } from '@/lib/supabase/server';
 import { getServerPublicEnv } from '@/lib/public-env-server';
+import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 
 function normalizeTrustedOrigin(value?: string | null): string | null {
@@ -26,18 +27,52 @@ function normalizeTrustedOrigin(value?: string | null): string | null {
 }
 
 function trustedWebOrigin(origin?: string | null): string {
-  const configured = getServerPublicEnv().APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
+  const configured =
+    getServerPublicEnv().APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.VERCEL_URL;
   // Prefer the configured app URL, but if it is missing or malformed fall back
   // to the real browser origin the request came from before localhost. Supabase's
   // redirect-URL allowlist is the authority on where the link may actually land,
   // so trusting the request origin here cannot widen the redirect surface.
   return (
-    normalizeTrustedOrigin(configured) ||
-    normalizeTrustedOrigin(origin) ||
-    'http://localhost:3000'
+    normalizeTrustedOrigin(configured) || normalizeTrustedOrigin(origin) || 'http://localhost:3000'
   );
 }
 
+function mobileCallbackState(formData: FormData): string | null {
+  if (formData.get('mobileCallback') !== 'true') return null;
+  const state = formData.get('mobileCallbackState');
+  return typeof state === 'string' && state.length > 0 ? state : null;
+}
+
+function emailRedirectUrl({
+  origin,
+  returnUrl,
+  email,
+  acceptedTerms = false,
+  mobileState,
+}: {
+  origin: string;
+  returnUrl: string;
+  email: string;
+  acceptedTerms?: boolean;
+  mobileState?: string | null;
+}): string {
+  // This route intentionally is not an app universal-link path: the browser
+  // owns the PKCE verifier and must exchange the code before bouncing the
+  // resulting session to the installed app.
+  const url = new URL(
+    mobileState ? '/auth/mobile/callback' : '/auth/callback',
+    trustedWebOrigin(origin),
+  );
+  url.searchParams.set('returnUrl', returnUrl);
+  url.searchParams.set('email', email);
+  if (acceptedTerms) url.searchParams.set('terms_accepted', 'true');
+  if (mobileState) {
+    url.searchParams.set('mobile_callback', '1');
+    url.searchParams.set('state', mobileState);
+  }
+  return url.toString();
+}
 
 export async function signIn(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
@@ -45,6 +80,7 @@ export async function signIn(prevState: any, formData: FormData) {
   const origin = formData.get('origin') as string;
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
   const isDesktopApp = formData.get('isDesktopApp') === 'true';
+  const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -66,7 +102,13 @@ export async function signIn(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = emailRedirectUrl({
+      origin,
+      returnUrl,
+      email: normalizedEmail,
+      acceptedTerms,
+      mobileState,
+    });
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -96,6 +138,7 @@ export async function signUp(prevState: any, formData: FormData) {
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
   const referralCode = formData.get('referralCode') as string | undefined;
   const isDesktopApp = formData.get('isDesktopApp') === 'true';
+  const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -140,7 +183,13 @@ export async function signUp(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = emailRedirectUrl({
+      origin,
+      returnUrl,
+      email: normalizedEmail,
+      acceptedTerms,
+      mobileState,
+    });
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -148,9 +197,11 @@ export async function signUp(prevState: any, formData: FormData) {
     options: {
       emailRedirectTo,
       shouldCreateUser: true,
-      data: referralCode ? {
-        referral_code: referralCode.trim().toUpperCase(),
-      } : undefined,
+      data: referralCode
+        ? {
+            referral_code: referralCode.trim().toUpperCase(),
+          }
+        : undefined,
     },
   });
 
@@ -186,7 +237,10 @@ export async function requestAccess(prevState: any, formData: FormData) {
       }),
     });
     if (res.ok) {
-      return { success: true, message: 'Your access request has been submitted. We\'ll be in touch!' };
+      return {
+        success: true,
+        message: "Your access request has been submitted. We'll be in touch!",
+      };
     }
     return { message: 'Failed to submit request. Please try again.' };
   } catch {
@@ -252,6 +306,7 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
   const origin = formData.get('origin') as string;
   const acceptedTerms = formData.get('acceptedTerms') === 'true';
   const isDesktopApp = formData.get('isDesktopApp') === 'true';
+  const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -273,7 +328,13 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = emailRedirectUrl({
+      origin,
+      returnUrl,
+      email: normalizedEmail,
+      acceptedTerms,
+      mobileState,
+    });
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -301,6 +362,7 @@ export async function sendOtpCode(prevState: any, formData: FormData) {
   const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
   const origin = formData.get('origin') as string;
   const isDesktopApp = formData.get('isDesktopApp') === 'true';
+  const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -313,7 +375,12 @@ export async function sendOtpCode(prevState: any, formData: FormData) {
   if (isDesktopApp && origin.startsWith('kortix://')) {
     emailRedirectTo = 'kortix://auth/callback';
   } else {
-    emailRedirectTo = `${trustedWebOrigin(origin)}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}&email=${encodeURIComponent(normalizedEmail)}`;
+    emailRedirectTo = emailRedirectUrl({
+      origin,
+      returnUrl,
+      email: normalizedEmail,
+      mobileState,
+    });
   }
 
   const { error } = await supabase.auth.signInWithOtp({
@@ -339,6 +406,8 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const password = formData.get('password') as string;
   const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
+  const origin = formData.get('origin') as string;
+  const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -360,9 +429,9 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
   }
 
   // Determine if new user (for analytics)
-  const isNewUser = data.user && (Date.now() - new Date(data.user.created_at).getTime()) < 60000;
+  const isNewUser = data.user && Date.now() - new Date(data.user.created_at).getTime() < 60000;
   const authEvent = isNewUser ? 'signup' : 'login';
-  
+
   // Return success — let the client redirect after auth state hydrates.
   const finalReturnUrl = returnUrl;
   const redirectUrl = new URL(finalReturnUrl, 'http://localhost');
@@ -374,6 +443,12 @@ export async function signInWithPassword(prevState: any, formData: FormData) {
     redirectTo: `${redirectUrl.pathname}${redirectUrl.search}`,
     accessToken: data.session?.access_token || null,
     refreshToken: data.session?.refresh_token || null,
+    mobileHandoffUrl: buildMobileSessionHandoffUrl({
+      origin: trustedWebOrigin(origin),
+      state: mobileState,
+      accessToken: data.session?.access_token,
+      refreshToken: data.session?.refresh_token,
+    }),
   };
 }
 
@@ -395,6 +470,7 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   const confirmPassword = formData.get('confirmPassword') as string;
   const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
   const origin = formData.get('origin') as string;
+  const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -407,8 +483,12 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   }
 
   const supabase = await createClient();
-  const baseUrl = trustedWebOrigin(origin);
-  const emailRedirectTo = `${baseUrl}/auth/callback?returnUrl=${encodeURIComponent(returnUrl)}`;
+  const emailRedirectTo = emailRedirectUrl({
+    origin,
+    returnUrl,
+    email,
+    mobileState,
+  });
 
   const { error: signUpError } = await supabase.auth.signUp({
     email,
@@ -416,11 +496,11 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     options: { emailRedirectTo },
   });
 
-  const alreadyExists = signUpError && (
-    signUpError.message?.toLowerCase().includes('already registered') ||
-    signUpError.message?.toLowerCase().includes('already exists') ||
-    signUpError.status === 422
-  );
+  const alreadyExists =
+    signUpError &&
+    (signUpError.message?.toLowerCase().includes('already registered') ||
+      signUpError.message?.toLowerCase().includes('already exists') ||
+      signUpError.status === 422);
 
   if (signUpError && !alreadyExists) {
     return { message: signUpError.message || 'Could not create account' };
@@ -432,8 +512,16 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
   });
 
   if (signInError) {
-    if (signInError.message?.toLowerCase().includes('email_not_confirmed') || signInError.message?.toLowerCase().includes('not confirmed')) {
-      return { success: true, message: 'Check your email to confirm your account', email, requiresEmailConfirmation: true };
+    if (
+      signInError.message?.toLowerCase().includes('email_not_confirmed') ||
+      signInError.message?.toLowerCase().includes('not confirmed')
+    ) {
+      return {
+        success: true,
+        message: 'Check your email to confirm your account',
+        email,
+        requiresEmailConfirmation: true,
+      };
     }
     if (alreadyExists) {
       return { message: 'An account with this email already exists. Try signing in instead.' };
@@ -446,6 +534,12 @@ export async function signUpWithPassword(prevState: any, formData: FormData) {
     redirectTo: returnUrl,
     accessToken: signInData.session?.access_token || null,
     refreshToken: signInData.session?.refresh_token || null,
+    mobileHandoffUrl: buildMobileSessionHandoffUrl({
+      origin: trustedWebOrigin(origin),
+      state: mobileState,
+      accessToken: signInData.session?.access_token,
+      refreshToken: signInData.session?.refresh_token,
+    }),
   };
 }
 
@@ -458,7 +552,9 @@ export async function signOut() {
   // isn't configured. We DON'T fail the signOut on backend errors —
   // the user should always be able to sign out client-side.
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
     if (session?.access_token) {
       const backendUrl = getServerPublicEnv().BACKEND_URL || 'http://localhost:8008/v1';
       await fetch(`${backendUrl}/auth/logout`, {
@@ -490,6 +586,8 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   const email = formData.get('email') as string;
   const token = formData.get('token') as string;
   const returnUrl = sanitizeAuthReturnUrl(formData.get('returnUrl') as string | undefined);
+  const origin = formData.get('origin') as string;
+  const mobileState = mobileCallbackState(formData);
 
   if (!email || !email.includes('@')) {
     return { message: 'Please enter a valid email address' };
@@ -512,7 +610,7 @@ export async function verifyOtp(prevState: any, formData: FormData) {
   }
 
   // Determine if new user (for analytics)
-  const isNewUser = data.user && (Date.now() - new Date(data.user.created_at).getTime()) < 60000;
+  const isNewUser = data.user && Date.now() - new Date(data.user.created_at).getTime() < 60000;
   const authEvent = isNewUser ? 'signup' : 'login';
 
   // For new cloud users with no plan yet, land in account management. The
@@ -523,10 +621,13 @@ export async function verifyOtp(prevState: any, formData: FormData) {
 
   if (billingEnabled && isNewUser && data.session?.access_token) {
     try {
-      const backendUrl = (process.env.BACKEND_URL || runtimeEnv.BACKEND_URL || '').replace(/\/v1\/?$/, '');
+      const backendUrl = (process.env.BACKEND_URL || runtimeEnv.BACKEND_URL || '').replace(
+        /\/v1\/?$/,
+        '',
+      );
       if (backendUrl) {
         const accountStateRes = await fetch(`${backendUrl}/v1/billing/account-state`, {
-          headers: { 'Authorization': `Bearer ${data.session.access_token}` },
+          headers: { Authorization: `Bearer ${data.session.access_token}` },
           signal: AbortSignal.timeout(5000),
         });
         if (accountStateRes.ok) {
@@ -553,5 +654,11 @@ export async function verifyOtp(prevState: any, formData: FormData) {
     // bounces the user back to /auth for ~15s until the session lands.
     accessToken: data.session?.access_token ?? null,
     refreshToken: data.session?.refresh_token ?? null,
+    mobileHandoffUrl: buildMobileSessionHandoffUrl({
+      origin: trustedWebOrigin(origin),
+      state: mobileState,
+      accessToken: data.session?.access_token,
+      refreshToken: data.session?.refresh_token,
+    }),
   };
 }

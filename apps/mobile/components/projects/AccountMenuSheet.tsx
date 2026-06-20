@@ -7,7 +7,7 @@
  */
 
 import React, { useCallback, useEffect, useRef } from 'react';
-import { View, Pressable, Linking } from 'react-native';
+import { View, Pressable, Linking, InteractionManager } from 'react-native';
 import { BottomSheetBackdrop, BottomSheetModal, BottomSheetView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
@@ -61,8 +61,16 @@ export function AccountMenuSheet({
   const setPreference = useThemeStore((s) => s.setPreference);
 
   useEffect(() => {
-    if (open) sheetRef.current?.present();
-    else sheetRef.current?.dismiss();
+    if (!open) {
+      sheetRef.current?.dismiss();
+      return;
+    }
+    const task = InteractionManager.runAfterInteractions(() => {
+      requestAnimationFrame(() => {
+        sheetRef.current?.present();
+      });
+    });
+    return () => task.cancel();
   }, [open]);
 
   const renderBackdrop = useCallback(

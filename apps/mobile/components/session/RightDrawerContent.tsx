@@ -128,7 +128,7 @@ export function RightDrawerContent({ onClose, projectId }: RightDrawerContentPro
   );
 
   return (
-    <View style={{ flex: 1, backgroundColor: bgColor, paddingTop: insets.top }}>
+    <View style={{ flex: 1,  paddingTop: insets.top }} className='bg-chrome-background'>
       <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 8 }}>
         {topSections.map((section) => (
           <View key={section.title} style={{ marginBottom: 8 }}>

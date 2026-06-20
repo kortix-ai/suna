@@ -202,6 +202,7 @@ function CRDetailSheet({
       {
         onSuccess: (r) => {
           haptics.success();
+          onClose();
           Alert.alert('Merged', r.merge.fast_forward ? 'Merged (fast-forward).' : `Merged ${shortSha(r.merge.merge_commit_sha)}.`);
         },
         onError: (e: any) => Alert.alert('Merge failed', e?.message || 'Could not merge.'),
@@ -471,16 +472,22 @@ function BranchPills({
   );
 }
 
-function OpenCRSheet({
+export function OpenCRSheet({
   projectId,
   onClose,
   onCreated,
   isDark,
+  initialHeadRef,
+  initialBaseRef,
+  initialTitle,
 }: {
   projectId: string;
   onClose: () => void;
   onCreated: (crId: string, number: number) => void;
   isDark: boolean;
+  initialHeadRef?: string | null;
+  initialBaseRef?: string | null;
+  initialTitle?: string;
 }) {
   const theme = useThemeColors();
   const insets = useSafeAreaInsets();
@@ -491,14 +498,27 @@ function OpenCRSheet({
   const allBranches = branchesQuery.data?.branches ?? [];
   const headOptions = useMemo(() => allBranches.filter((b) => !b.is_default), [allBranches]);
 
-  const [headRef, setHeadRef] = useState<string | null>(null);
-  const [baseRef, setBaseRef] = useState<string | null>(null);
-  const [title, setTitle] = useState('');
+  const [headRef, setHeadRef] = useState<string | null>(initialHeadRef ?? null);
+  const [baseRef, setBaseRef] = useState<string | null>(initialBaseRef ?? null);
+  const [title, setTitle] = useState(initialTitle ?? '');
   const [description, setDescription] = useState('');
 
   useEffect(() => {
-    if (!baseRef && defaultBranch) setBaseRef(defaultBranch);
-  }, [defaultBranch, baseRef]);
+    setHeadRef(initialHeadRef ?? null);
+  }, [initialHeadRef]);
+
+  useEffect(() => {
+    setTitle(initialTitle ?? '');
+    setDescription('');
+  }, [initialTitle, initialHeadRef, initialBaseRef]);
+
+  useEffect(() => {
+    if (initialBaseRef) {
+      setBaseRef(initialBaseRef);
+    } else if (!baseRef && defaultBranch) {
+      setBaseRef(defaultBranch);
+    }
+  }, [initialBaseRef, defaultBranch, baseRef]);
 
   const vdiff = useVersionDiff(projectId, headRef ?? '', baseRef ?? '', !!headRef && !!baseRef && headRef !== baseRef);
   const preview = vdiff.data;

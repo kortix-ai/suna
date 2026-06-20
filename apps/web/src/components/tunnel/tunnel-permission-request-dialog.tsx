@@ -21,10 +21,9 @@ import { useApprovePermissionRequest, useDenyPermissionRequest, type TunnelPermi
 import { useTunnelStore } from '@/stores/tunnel-store';
 import { toast } from '@/lib/toast';
 import { EXPIRY_OPTIONS, getExpiresAt, getCapabilityInfo, getDefaultScope } from './types';
-import type { PermissionScope, FilesystemScope, ShellScope, NetworkScope } from './types';
+import type { PermissionScope, FilesystemScope, ShellScope } from './types';
 import { FilesystemScopeEditor } from './scope-editors/filesystem-scope-editor';
 import { ShellScopeEditor } from './scope-editors/shell-scope-editor';
-import { NetworkScopeEditor } from './scope-editors/network-scope-editor';
 import { getScopeEditorCapability } from './scope-editors';
 
 type Mode = 'once' | 'scoped' | 'all';
@@ -177,12 +176,6 @@ export function TunnelPermissionRequestDialog() {
                       onChange={(s) => setCustomScope(s)}
                     />
                   )}
-                  {scopeEditorType === 'network' && (
-                    <NetworkScopeEditor
-                      scope={customScope as NetworkScope}
-                      onChange={(s) => setCustomScope(s)}
-                    />
-                  )}
                 </div>
               </CollapsibleContent>
             </Collapsible>
@@ -295,16 +288,6 @@ function extractScopeFromRequest(request: TunnelPermissionRequest): PermissionSc
         ...shBase,
         commands: command ? [command.split(' ')[0]!] : shBase.commands,
       } satisfies ShellScope;
-    }
-    case 'network': {
-      const netBase = base as NetworkScope;
-      const port = (rs as Record<string, unknown>).port as number | undefined;
-      const host = (rs as Record<string, unknown>).host as string | undefined;
-      return {
-        ...netBase,
-        ports: port ? [port] : netBase.ports,
-        hosts: host ? [host] : netBase.hosts,
-      } satisfies NetworkScope;
     }
     default:
       return base;

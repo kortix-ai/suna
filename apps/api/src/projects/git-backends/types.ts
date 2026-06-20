@@ -61,7 +61,7 @@ export interface GitHostBackend {
     ref: GitConnectionRef,
     token: string,
     files: SeedFile[],
-    opts: { branch: string; message: string },
+    opts: { branch: string; message: string; baseFiles?: SeedFile[] },
   ): Promise<void>;
   /**
    * Invite a host user as a collaborator on a MANAGED repo, so the project

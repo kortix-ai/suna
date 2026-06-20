@@ -70,6 +70,7 @@ import {
   useSlackConnect,
 } from '@/hooks/useChannelWizards';
 import { useOpenCodeAgents, useOpenCodeProviders, flattenModels, filterToLatestModels } from '@/lib/opencode/hooks/use-opencode-data';
+import { SlackIcon } from '@/components/icons/slack-icon';
 
 // ─── Channel Type Icons ─────────────────────────────────────────────────────
 
@@ -86,6 +87,28 @@ const CHANNEL_TYPE_ICONS: Record<ChannelType, string> = {
 
 function getChannelIcon(type: ChannelType): string {
   return CHANNEL_TYPE_ICONS[type] || 'radio-outline';
+}
+
+function ChannelTypeIcon({
+  type,
+  size,
+  color,
+  muted,
+}: {
+  type: ChannelType;
+  size: number;
+  color: string;
+  muted?: boolean;
+}) {
+  if (type === 'slack') {
+    return (
+      <View style={{ opacity: muted ? 0.5 : 1 }}>
+        <SlackIcon width={size} height={size} />
+      </View>
+    );
+  }
+
+  return <Ionicons name={getChannelIcon(type) as any} size={size} color={color} />;
 }
 
 const SUPPORTED_CHANNEL_TYPES: ChannelType[] = ['telegram', 'slack'];
@@ -365,7 +388,11 @@ function ChannelRow({ channel, isDark, onPress }: { channel: ChannelConfig; isDa
       >
         {/* Brand icon — transparent, matches ProviderLogo treatment */}
         <View style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center' }}>
-          <Ionicons name={getChannelIcon(platform) as any} size={24} color={isTelegram ? '#29B6F6' : '#E91E63'} />
+          <ChannelTypeIcon
+            type={platform}
+            size={24}
+            color={isTelegram ? '#29B6F6' : fg}
+          />
         </View>
         <View style={{ flex: 1 }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -403,7 +430,7 @@ function ChannelDetailSheet({
   sheetRef, channel, isDark, theme,
   onToggle, onSave, onDelete, onClose,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   channel: ChannelConfig | null;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
@@ -517,7 +544,7 @@ function ChannelDetailSheet({
         {/* Header */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
           <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
-            <Ionicons name={getChannelIcon(platform) as any} size={20} color={fg} />
+            <ChannelTypeIcon type={platform} size={20} color={fg} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 18, fontFamily: 'Roobert-Semibold', color: fg }} numberOfLines={1}>{channel.name}</Text>
@@ -691,7 +718,7 @@ function AddChannelSheet({
   sheetRef, isDark, theme, renderBackdrop, sandboxUrl, sandboxUuid,
   onCreate, onCreated, isCreating,
 }: {
-  sheetRef: React.RefObject<BottomSheetModal>;
+  sheetRef: React.RefObject<BottomSheetModal | null>;
   isDark: boolean;
   theme: ReturnType<typeof useThemeColors>;
   renderBackdrop: (props: any) => React.ReactElement;
@@ -763,7 +790,7 @@ function AddChannelSheet({
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
           <View style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)', alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
             {selectedType ? (
-              <Ionicons name={getChannelIcon(selectedType) as any} size={20} color={fg} />
+              <ChannelTypeIcon type={selectedType} size={20} color={fg} />
             ) : (
               <Radio size={20} color={fg} />
             )}
@@ -791,7 +818,7 @@ function AddChannelSheet({
                     alignItems: 'center', gap: 8, opacity: isSupported ? 1 : 0.5,
                   }}
                 >
-                  <Ionicons name={getChannelIcon(ct.type) as any} size={24} color={isSupported ? fg : muted} />
+                  <ChannelTypeIcon type={ct.type} size={24} color={isSupported ? fg : muted} muted={!isSupported} />
                   <Text style={{ fontSize: 13, fontFamily: 'Roobert-Medium', color: isSupported ? fg : muted }}>{ct.label}</Text>
                   {!isSupported && (
                     <View style={{ paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, backgroundColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)' }}>

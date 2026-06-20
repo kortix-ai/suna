@@ -57,7 +57,9 @@ load_local_env() {
   export ENV_MODE=local
   # `local_docker` was removed when we consolidated on cloud — listing it here
   # only made the API log "Unknown sandbox provider" twice on every boot.
-  export ALLOWED_SANDBOX_PROVIDERS="daytona"
+  # Default only — the shared .env (decrypted above) or a personal .env.local
+  # (below) decides the real provider order (e.g. "platinum,daytona").
+  export ALLOWED_SANDBOX_PROVIDERS="${ALLOWED_SANDBOX_PROVIDERS:-daytona}"
   # Warm SNAPSHOT baking OFF for local dev. The [warm-bake] builder (gated by
   # warmSnapshotsEnabled() = KORTIX_WARM_SNAPSHOT_ENABLED + DAYTONA_WARM_TARGET)
   # keeps trying to bake a `kortix-warm-runtime-*` base on Daytona's experimental
@@ -90,6 +92,17 @@ load_local_env() {
     export LLM_GATEWAY_PROXY_PORT="$GATEWAY_PORT"
     export GATEWAY_INTERNAL_TOKEN="$DEV_GATEWAY_INTERNAL_TOKEN"
   fi
+
+  # Personal per-machine overrides — sourced LAST so they beat both the shared
+  # encrypted env and the defaults above. Gitignored plaintext KEY=VALUE files
+  # (no spaces in unquoted values). This is where billing-off, provider order,
+  # DOCKER_HOST, etc. live for YOUR machine — never in the committed .env.
+  for _f in apps/api/.env.local apps/web/.env.local; do
+    if [[ -f "$ROOT_DIR/$_f" ]]; then
+      set -a; source "$ROOT_DIR/$_f"; set +a
+      echo "[dev] personal overrides loaded from $_f"
+    fi
+  done
 }
 
 # Front the local API with a public Cloudflare quick tunnel so cloud Daytona
@@ -100,15 +113,25 @@ ensure_dev_tunnel() {
   local api_origin="http://localhost:${api_port}"
   local default_provider="${ALLOWED_SANDBOX_PROVIDERS%%,*}"
 
-  # Respect an explicit public KORTIX_URL (named tunnel, staging API, …).
+  # Respect an explicit public KORTIX_URL (named tunnel, staging API, …) — but
+  # only if it actually ANSWERS. FAA: a stale/bogus value (e.g. a dead quick-
+  # tunnel URL or a leftover like https://api.trycloudflare.com baked into .env)
+  # used to be trusted blindly, so no tunnel started and every sandbox got a 404
+  # callback URL — sessions reach 'running' in ~2s but the UI panel loads a dead
+  # URL → infinite spinner that looks like "kortix is broken". Probe it first;
+  # fall through to a fresh quick tunnel if it's unreachable.
   if [[ -n "${KORTIX_URL:-}" && "$KORTIX_URL" != http://localhost:* && "$KORTIX_URL" != http://127.0.0.1:* ]]; then
-    echo "[dev] Using KORTIX_URL from environment: $KORTIX_URL"
-    return 0
+    if curl -fsS -m 6 "${KORTIX_URL%/}/health" >/dev/null 2>&1; then
+      echo "[dev] Using KORTIX_URL from environment: $KORTIX_URL"
+      return 0
+    fi
+    echo "[dev] ⚠️  KORTIX_URL=$KORTIX_URL is set but UNREACHABLE (sandboxes would get a dead callback URL → blank session UI) — ignoring it and starting a fresh tunnel."
+    unset KORTIX_URL
   fi
 
   # Local-docker sandboxes run on this machine — no public callback needed.
   # Honor an explicit opt-out too.
-  if [[ "${KORTIX_DEV_TUNNEL:-auto}" == "0" || "$default_provider" != "daytona" ]]; then
+  if [[ "${KORTIX_DEV_TUNNEL:-auto}" == "0" || ( "$default_provider" != "daytona" && "$default_provider" != "platinum" ) ]]; then
     export KORTIX_URL="$api_origin"
     echo "[dev] Tunnel skipped — KORTIX_URL=$KORTIX_URL"
     if [[ "$default_provider" == "daytona" ]]; then
@@ -152,7 +175,61 @@ ensure_dev_tunnel() {
   fi
 
   export KORTIX_URL="$url"
+  TUNNEL_URL_FILE="${TUNNEL_URL_FILE:-$(mktemp -t kortix-tunnel-url.XXXXXX)}"
+  printf '%s' "$url" > "$TUNNEL_URL_FILE"
   echo "[dev] ✅ Cloud sandbox callback ready: KORTIX_URL=$KORTIX_URL"
+}
+
+# Quick tunnels rot silently every few hours (the URL dies while cloudflared
+# keeps running) — every death looks like "kortix is broken" until someone
+# restarts the stack by hand. This watchdog probes the tunnel URL each minute;
+# two consecutive failures WHILE the local API is healthy means the tunnel is
+# dead: rotate cloudflared, write the fresh URL, and bounce the supervised API
+# (its KORTIX_URL is baked at spawn). Sessions created on the old URL can't be
+# saved (their baked env is gone with it) — but everything new just works.
+start_tunnel_watchdog() {
+  (
+    while :; do
+      sleep 60
+      # If the local API is down it's not the tunnel's fault — skip.
+      curl -fsS -m 2 "http://localhost:${PORT:-8008}/health" >/dev/null 2>&1 || continue
+      url="$(cat "$TUNNEL_URL_FILE" 2>/dev/null || true)"
+      cf_alive() { pgrep -f 'cloudflared tunnel --no-autoupdate' >/dev/null 2>&1; }
+      # FAA: healthy = url present AND cloudflared alive AND the url answers.
+      # The old `cat … || continue` skipped a MISSING url-file forever, and it
+      # never checked whether cloudflared itself had died — so a silently-rotted
+      # tunnel left every new session stuck on a dead/empty KORTIX_URL with no
+      # recovery. Now any of {missing url, dead cloudflared, dead url} triggers
+      # a (re)establish, so the stack self-heals within ~1 min instead of needing
+      # a hand restart.
+      if [[ -n "$url" ]] && cf_alive && curl -fsS -m 8 "$url/health" >/dev/null 2>&1; then continue; fi
+      # Confirm (avoid a transient blip) before bouncing the stack.
+      if [[ -n "$url" ]] && cf_alive; then
+        sleep 5; curl -fsS -m 8 "$url/health" >/dev/null 2>&1 && continue
+      fi
+      echo "[dev] ⚠️  tunnel ${url:-<none>} DEAD/MISSING (cloudflared $(pgrep -fc 'cloudflared tunnel' 2>/dev/null || echo 0) procs) — (re)establishing + restarting API..."
+      [[ -n "${TUNNEL_PID:-}" ]] && kill "$TUNNEL_PID" 2>/dev/null || true
+      pkill -f 'cloudflared tunnel --no-autoupdate' 2>/dev/null || true
+      TUNNEL_LOG="$(mktemp -t kortix-tunnel.XXXXXX)"
+      cloudflared tunnel --no-autoupdate --url "http://localhost:${PORT:-8008}" >"$TUNNEL_LOG" 2>&1 &
+      TUNNEL_PID=$!
+      newurl=""
+      for i in $(seq 1 30); do
+        newurl="$(grep -oE 'https://[a-z0-9.-]+\.trycloudflare\.com' "$TUNNEL_LOG" 2>/dev/null | head -1 || true)"
+        [[ -n "$newurl" ]] && break
+        sleep 1
+      done
+      if [[ -z "$newurl" ]]; then
+        echo "[dev] ⚠️  tunnel rotation FAILED — will retry next minute"
+        continue
+      fi
+      printf '%s' "$newurl" > "$TUNNEL_URL_FILE"
+      touch "$TUNNEL_URL_FILE.rotated"
+      echo "[dev] ✅ tunnel rotated: KORTIX_URL=$newurl (API restarting)"
+      pkill -f 'bun run --hot src/index.ts' 2>/dev/null || true
+    done
+  ) &
+  WATCHDOG_PID=$!
 }
 
 # Forward Stripe webhooks to the local API so billing flows (checkout →
@@ -354,6 +431,10 @@ cleanup() {
 
   if [[ -n "${TUNNEL_PID:-}" ]] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
     kill "$TUNNEL_PID" 2>/dev/null || true
+  fi
+
+  if [[ -n "${WATCHDOG_PID:-}" ]] && kill -0 "$WATCHDOG_PID" 2>/dev/null; then
+    kill "$WATCHDOG_PID" 2>/dev/null || true
   fi
 
   if [[ -n "${STRIPE_PID:-}" ]] && kill -0 "$STRIPE_PID" 2>/dev/null; then
@@ -598,6 +679,7 @@ if [[ "$BUILD_MODE" == "1" ]]; then
   ( cd "$ROOT_DIR" && KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api start ) &
   API_PID=$!
 
+
   # Production build of the web app on :3000. NEXT_PUBLIC_* values are inlined at
   # BUILD time, so the build must run with the env load_local_env() exported (it
   # has). KORTIX_PREVIEW_BUILD trims prod-only build work for speed — skips the
@@ -628,7 +710,69 @@ else
   pnpm --filter Kortix-Computer-Frontend dev &
   FRONTEND_PID=$!
 
-  echo "[dev] Starting API..."
+  # Pre-compile the heavy routes so the FIRST human navigation doesn't pay
+  # Turbopack's on-demand compile (measured: /projects/[id] 16.1s,
+  # /projects/[id]/sessions/[sessionId] 5.2s — which read as "creating a
+  # session takes 6+ seconds" when it was the ROUTE compiling, not the
+  # sandbox). Unauthenticated requests still compile the route bundle before
+  # the auth redirect, so dummy ids are fine.
+  (
+    until curl -sf -o /dev/null -m 2 "http://localhost:${WEB_PORT:-3000}" 2>/dev/null; do sleep 2; done
+    # An UNAUTHED hit compiles the bundle but redirects before the page's
+    # module graph ever evaluates — the first real (authed) navigation then
+    # paid 4-6s of module eval anyway (measured: authed render #1 4.5s,
+    # #2 0.28s). Mint a real session via the local supabase admin API and
+    # warm WITH it; falls back to unauthed compile-only warming.
+    WARM_COOKIE=""
+    if [[ -n "${SUPABASE_SERVICE_ROLE_KEY:-}" ]]; then
+      _email="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/users?per_page=1" \
+        -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+        | python3 -c 'import json,sys; us=json.load(sys.stdin).get("users",[]); print(us[0]["email"] if us else "")' 2>/dev/null || true)"
+      if [[ -n "$_email" ]]; then
+        _ht="$(curl -s -m 5 "http://127.0.0.1:54321/auth/v1/admin/generate_link" \
+          -H "apikey: $SUPABASE_SERVICE_ROLE_KEY" -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE_KEY" \
+          -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"email\":\"$_email\"}" \
+          | python3 -c 'import json,sys; print(json.load(sys.stdin).get("hashed_token",""))' 2>/dev/null || true)"
+        if [[ -n "$_ht" ]]; then
+          _anon="${SUPABASE_ANON_KEY:-${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}}"
+          curl -s -m 5 "http://127.0.0.1:54321/auth/v1/verify" -H "apikey: $_anon" \
+            -H 'content-type: application/json' -d "{\"type\":\"magiclink\",\"token_hash\":\"$_ht\"}" > /tmp/kortix-warm-session.json 2>/dev/null || true
+          WARM_COOKIE="$(python3 - <<'PYC' 2>/dev/null || true
+import json, base64
+d = json.load(open('/tmp/kortix-warm-session.json'))
+if 'access_token' in d:
+    s = {"access_token": d["access_token"], "token_type": "bearer", "expires_in": d.get("expires_in", 3600),
+         "expires_at": d.get("expires_at", 9999999999), "refresh_token": d["refresh_token"], "user": d.get("user", {})}
+    raw = json.dumps(s, separators=(',', ':'))
+    print('base64-' + base64.urlsafe_b64encode(raw.encode()).decode().rstrip('='))
+PYC
+)"
+          rm -f /tmp/kortix-warm-session.json
+        fi
+      fi
+    fi
+    _hdr=()
+    [[ -n "$WARM_COOKIE" ]] && _hdr=(-H "Cookie: sb-kortix-auth-token-${WEB_PORT:-3000}=$WARM_COOKIE")
+    for p in "/projects" "/projects/warmup-id" "/projects/warmup-id/sessions/warmup-id" "/projects/warmup-id/files"; do
+      curl -s -o /dev/null -m 120 "${_hdr[@]}" "http://localhost:${WEB_PORT:-3000}$p" || true
+    done
+    if [[ -n "$WARM_COOKIE" ]]; then
+      echo "[dev] ✅ frontend routes pre-rendered AUTHED — first navigation ~0.3s"
+    else
+      echo "[dev] ✅ frontend routes pre-compiled (unauthed — first navigation still pays module eval)"
+    fi
+  ) &
+
+  start_tunnel_watchdog
+
+  echo "[dev] Starting API (supervised — auto-restarts on tunnel rotation)..."
   cd "$ROOT_DIR"
-  KORTIX_SKIP_ENSURE_SCHEMA=1 pnpm --filter kortix-api dev
+  while :; do
+    KORTIX_SKIP_ENSURE_SCHEMA=1 KORTIX_URL="$(cat "$TUNNEL_URL_FILE")" pnpm --filter kortix-api dev || true
+    # Restart only when the watchdog rotated the tunnel; a plain exit (ctrl-C,
+    # crash without rotation) leaves the loop so the script terminates normally.
+    [[ -f "$TUNNEL_URL_FILE.rotated" ]] || break
+    rm -f "$TUNNEL_URL_FILE.rotated"
+    echo "[dev] ♻️  API restarting with rotated KORTIX_URL=$(cat "$TUNNEL_URL_FILE")"
+  done
 fi

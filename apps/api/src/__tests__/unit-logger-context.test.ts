@@ -40,7 +40,7 @@ mock.module('@logtail/node', () => ({
 
 process.env.BETTERSTACK_API_LOG_TOKEN = 'log-token-test';
 process.env.BETTERSTACK_API_LOG_HOST = 'logs.example.test';
-process.env.INTERNAL_KORTIX_ENV = 'test';
+process.env.INTERNAL_KORTIX_ENV = 'dev';
 process.env.SANDBOX_VERSION = 'test-version';
 
 const { logger } = await import('../lib/logger');

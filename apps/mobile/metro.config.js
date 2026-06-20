@@ -33,6 +33,7 @@ config.resolver = {
   extraNodeModules: {
     'react': path.resolve(mobileNodeModules, 'react'),
     'react-native': path.resolve(mobileNodeModules, 'react-native'),
+    '@kortix/shared': path.resolve(monorepoRoot, 'packages/shared'),
   },
   // Custom resolver to force React resolution from mobile's node_modules
   // This is critical for monorepo setups where shared packages use React hooks

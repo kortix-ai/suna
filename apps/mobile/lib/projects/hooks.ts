@@ -91,6 +91,7 @@ import {
   type UpdateProjectTriggerInput,
   type UpdateSandboxTemplateInput,
 } from './projects-client';
+import { invalidateAfterProjectCreation } from './project-mutation-cache';
 
 export const projectKeys = {
   accounts: ['accounts'] as const,
@@ -99,7 +100,8 @@ export const projectKeys = {
   projectDetail: (projectId: string | null | undefined) => ['project-detail', projectId] as const,
   projectFile: (projectId: string | null | undefined, path: string | null | undefined) =>
     ['project-file', projectId, path] as const,
-  projectSessions: (projectId: string | null | undefined) => ['project-sessions', projectId] as const,
+  projectSessions: (projectId: string | null | undefined) =>
+    ['project-sessions', projectId] as const,
   connectors: (projectId: string | null | undefined) => ['project-connectors', projectId] as const,
   secrets: (projectId: string | null | undefined) => ['project-secrets', projectId] as const,
   slackInstall: (projectId: string | null | undefined) => ['slack-install', projectId] as const,
@@ -111,24 +113,37 @@ export const projectKeys = {
     ['change-request', projectId, crId] as const,
   changeRequestDiff: (projectId: string | null | undefined, crId: string | null | undefined) =>
     ['change-request-diff', projectId, crId] as const,
-  changeRequestMergePreview: (projectId: string | null | undefined, crId: string | null | undefined) =>
-    ['change-request-merge-preview', projectId, crId] as const,
+  changeRequestMergePreview: (
+    projectId: string | null | undefined,
+    crId: string | null | undefined
+  ) => ['change-request-merge-preview', projectId, crId] as const,
   branches: (projectId: string | null | undefined) => ['project-branches', projectId] as const,
   projectFiles: (projectId: string | null | undefined, ref: string) =>
     ['project-files', projectId, ref] as const,
-  projectFileContent: (projectId: string | null | undefined, path: string | null | undefined, ref: string) =>
-    ['project-file-content', projectId, path, ref] as const,
-  projectFileHistory: (projectId: string | null | undefined, path: string | null | undefined, ref: string) =>
-    ['project-file-history', projectId, path, ref] as const,
-  projectCommitDiff: (projectId: string | null | undefined, sha: string | null | undefined, path: string) =>
-    ['project-commit-diff', projectId, sha, path] as const,
+  projectFileContent: (
+    projectId: string | null | undefined,
+    path: string | null | undefined,
+    ref: string
+  ) => ['project-file-content', projectId, path, ref] as const,
+  projectFileHistory: (
+    projectId: string | null | undefined,
+    path: string | null | undefined,
+    ref: string
+  ) => ['project-file-history', projectId, path, ref] as const,
+  projectCommitDiff: (
+    projectId: string | null | undefined,
+    sha: string | null | undefined,
+    path: string
+  ) => ['project-commit-diff', projectId, sha, path] as const,
   snapshots: (projectId: string | null | undefined) => ['project-snapshots', projectId] as const,
   warmPool: (projectId: string | null | undefined) => ['warm-pool-status', projectId] as const,
   versionDiff: (projectId: string | null | undefined, from: string, into: string) =>
     ['version-diff', projectId, from, into] as const,
   projectAccess: (projectId: string | null | undefined) => ['project-access', projectId] as const,
-  pendingInvites: (projectId: string | null | undefined) => ['project-pending-invites', projectId] as const,
-  groupGrants: (projectId: string | null | undefined) => ['project-group-grants', projectId] as const,
+  pendingInvites: (projectId: string | null | undefined) =>
+    ['project-pending-invites', projectId] as const,
+  groupGrants: (projectId: string | null | undefined) =>
+    ['project-group-grants', projectId] as const,
   accountGroups: (accountId: string | null | undefined) => ['account-groups', accountId] as const,
   policies: (projectId: string | null | undefined) => ['project-policies', projectId] as const,
   pipedreamApps: (projectId: string | null | undefined, q: string) =>
@@ -137,8 +152,10 @@ export const projectKeys = {
     ['pipedream-app-meta', projectId, slug] as const,
   githubInstallations: (accountId: string | null | undefined) =>
     ['github-installations', accountId] as const,
-  githubRepositories: (accountId: string | null | undefined, installationId: string | null | undefined) =>
-    ['github-repositories', accountId, installationId] as const,
+  githubRepositories: (
+    accountId: string | null | undefined,
+    installationId: string | null | undefined
+  ) => ['github-repositories', accountId, installationId] as const,
 };
 
 export function useAccounts(enabled = true) {
@@ -197,8 +214,13 @@ export function useUpdateProject(projectId: string) {
 export function useUpdateExperimentalFeature(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ feature, enabled }: { feature: ExperimentalFeatureKey; enabled: boolean | null }) =>
-      updateExperimentalFeature(projectId, feature, enabled),
+    mutationFn: ({
+      feature,
+      enabled,
+    }: {
+      feature: ExperimentalFeatureKey;
+      enabled: boolean | null;
+    }) => updateExperimentalFeature(projectId, feature, enabled),
     onSuccess: (updated) => {
       queryClient.setQueryData(projectKeys.project(projectId), updated);
       queryClient.invalidateQueries({ queryKey: projectKeys.projectDetail(projectId) });
@@ -289,8 +311,13 @@ export function useProjectPolicies(projectId: string | null) {
 export function useSetProjectPolicies(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ policies, defaultMode }: { policies: ProjectPolicy[]; defaultMode: PolicyDefaultMode }) =>
-      setProjectPolicies(projectId, policies, defaultMode),
+    mutationFn: ({
+      policies,
+      defaultMode,
+    }: {
+      policies: ProjectPolicy[];
+      defaultMode: PolicyDefaultMode;
+    }) => setProjectPolicies(projectId, policies, defaultMode),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.policies(projectId) }),
   });
 }
@@ -379,7 +406,8 @@ export function useResendProjectInvite(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (inviteId: string) => resendPendingProjectInvite(projectId, inviteId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.pendingInvites(projectId) }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: projectKeys.pendingInvites(projectId) }),
   });
 }
 
@@ -387,7 +415,8 @@ export function useRevokeProjectInvite(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (inviteId: string) => revokePendingProjectInvite(projectId, inviteId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.pendingInvites(projectId) }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: projectKeys.pendingInvites(projectId) }),
   });
 }
 
@@ -461,9 +490,7 @@ export function useProjectSessions(projectId: string | null) {
     // Poll so freshly-provisioning session sandboxes flip to running in the list.
     refetchInterval: (query) => {
       const data = query.state.data;
-      const pending = data?.some((s) =>
-        ['queued', 'branching', 'provisioning'].includes(s.status),
-      );
+      const pending = data?.some((s) => ['queued', 'branching', 'provisioning'].includes(s.status));
       return pending ? 3_000 : false;
     },
   });
@@ -494,7 +521,7 @@ export function useProvisionProject() {
   return useMutation({
     mutationFn: provisionProject,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      invalidateAfterProjectCreation(queryClient);
     },
   });
 }
@@ -504,7 +531,7 @@ export function useLinkRepository() {
   return useMutation({
     mutationFn: linkRepository,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['projects'] });
+      invalidateAfterProjectCreation(queryClient);
     },
   });
 }
@@ -521,7 +548,7 @@ export function useGitHubInstallations(accountId: string | null, enabled: boolea
 export function useGitHubRepositories(
   accountId: string | null,
   installationId: string | null,
-  enabled: boolean,
+  enabled: boolean
 ) {
   return useQuery({
     queryKey: projectKeys.githubRepositories(accountId, installationId),
@@ -609,7 +636,8 @@ export function useConnectSlack(projectId: string) {
   return useMutation({
     mutationFn: (input: { bot_token: string; signing_secret: string }) =>
       connectSlack(projectId, input),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.slackInstall(projectId) }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: projectKeys.slackInstall(projectId) }),
   });
 }
 
@@ -617,7 +645,8 @@ export function useDisconnectSlack(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: () => disconnectSlack(projectId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.slackInstall(projectId) }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: projectKeys.slackInstall(projectId) }),
   });
 }
 
@@ -710,7 +739,7 @@ export function useChangeRequestDiff(projectId: string | null, crId: string | nu
 export function useChangeRequestMergePreview(
   projectId: string | null,
   crId: string | null,
-  enabled: boolean,
+  enabled: boolean
 ) {
   return useQuery({
     queryKey: projectKeys.changeRequestMergePreview(projectId, crId),
@@ -765,8 +794,15 @@ export function useReopenChangeRequest(projectId: string) {
 export function usePatchChangeRequest(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ crId, title, description }: { crId: string; title?: string; description?: string }) =>
-      patchChangeRequest(projectId, crId, { title, description }),
+    mutationFn: ({
+      crId,
+      title,
+      description,
+    }: {
+      crId: string;
+      title?: string;
+      description?: string;
+    }) => patchChangeRequest(projectId, crId, { title, description }),
     onSuccess: (_d, { crId }) => {
       invalidateChangeWorld(queryClient, projectId);
       queryClient.invalidateQueries({ queryKey: projectKeys.changeRequest(projectId, crId) });
@@ -785,7 +821,12 @@ export function useProjectBranches(projectId: string | null, enabled = true) {
 }
 
 /** Cheap version-diff preview — gates the Open-CR submit button (no CR created). */
-export function useVersionDiff(projectId: string | null, from: string, into: string, enabled: boolean) {
+export function useVersionDiff(
+  projectId: string | null,
+  from: string,
+  into: string,
+  enabled: boolean
+) {
   return useQuery({
     queryKey: projectKeys.versionDiff(projectId, from, into),
     queryFn: () => getVersionDiff(projectId!, from, into),
@@ -856,7 +897,9 @@ export function useProjectSnapshots(projectId: string | null) {
       if (!data) return false;
       const anyBuilding =
         (data.builds ?? []).some((b) => b.status === 'building') ||
-        (data.templates ?? []).some((t) => ['pulling', 'building'].includes((t.daytona_state || '').toLowerCase()));
+        (data.templates ?? []).some((t) =>
+          ['pulling', 'building'].includes((t.daytona_state || '').toLowerCase())
+        );
       return anyBuilding ? 5_000 : false;
     },
   });
@@ -873,8 +916,13 @@ export function useCreateSandboxTemplate(projectId: string) {
 export function useUpdateSandboxTemplate(projectId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ templateId, input }: { templateId: string; input: UpdateSandboxTemplateInput }) =>
-      updateSandboxTemplate(projectId, templateId, input),
+    mutationFn: ({
+      templateId,
+      input,
+    }: {
+      templateId: string;
+      input: UpdateSandboxTemplateInput;
+    }) => updateSandboxTemplate(projectId, templateId, input),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: projectKeys.snapshots(projectId) }),
   });
 }
