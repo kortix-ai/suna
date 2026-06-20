@@ -134,6 +134,8 @@ export interface ProjectTrigger {
   timezone: string;
   secret_env: string | null;
   prompt_template: string;
+  /** 'fresh' (default) mints a new session per fire; 'reuse' re-prompts one persistent session. */
+  session_mode: 'fresh' | 'reuse';
   last_fired_at: string | null;
   webhook_url: string | null;
 }

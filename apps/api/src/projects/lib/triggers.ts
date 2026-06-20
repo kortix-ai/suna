@@ -4,15 +4,15 @@ import { db } from '../../shared/db';
 import { runProjectAppSweep } from '../app-sweep';
 import { commitFileToBranch, invalidateProjectMirror } from '../git';
 import { commitFile, getFileSha, type GitHubAuthContext } from '../github';
-import { KNOWN_SCHEMA_VERSION, MANIFEST_FILENAME, loadProjectTriggers, readManifest, serializeManifest, triggerSpecToTomlEntry, type GitTriggerSpec, type ParsedManifest } from '../triggers';
-import { projectTriggerRuntime, projects } from '@kortix/db';
+import { KNOWN_SCHEMA_VERSION, MANIFEST_FILENAME, loadProjectTriggers, readManifest, serializeManifest, triggerSpecToTomlEntry, type GitTriggerSessionMode, type GitTriggerSpec, type ParsedManifest } from '../triggers';
+import { projectSessions, projectTriggerRuntime, projects } from '@kortix/db';
 import { Cron } from 'croner';
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq, ne, sql } from 'drizzle-orm';
 import { Context } from 'hono';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { parseGitHubRepoUrl, resolveProjectGitAuth, withProjectGitAuth } from './git';
 import { ProjectRow, RequestAuditContext, deriveKortixApiRoot, isPlainObject, normalizeBoolean, normalizeString } from './serializers';
-import { createSession, drainSessionLifecycleQueue, resolveProjectAutomationActor, sessionBackpressureState } from '../session-lifecycle';
+import { continueSession, createSession, drainSessionLifecycleQueue, resolveProjectAutomationActor, sessionBackpressureState } from '../session-lifecycle';
 
 export function normalizeSignatureHeader(value: string | null): string | null {
   const header = normalizeString(value);
@@ -301,6 +301,33 @@ export async function markGitTriggerFired(projectId: string, slug: string, when:
 }
 
 /**
+ * Find the canonical session to reuse for a `session_mode = "reuse"` trigger:
+ * the most recent NON-failed session this trigger created. Sessions are matched
+ * via the `trigger_slug` + `trigger_kind` we stamp into `project_sessions.metadata`
+ * at fire time (no extra column / migration needed). Failed sessions are skipped
+ * so a dead run is abandoned in favor of a freshly-created canonical session.
+ */
+export async function findReusableTriggerSession(
+  projectId: string,
+  slug: string,
+): Promise<{ sessionId: string } | null> {
+  const [row] = await db
+    .select({ sessionId: projectSessions.sessionId })
+    .from(projectSessions)
+    .where(
+      and(
+        eq(projectSessions.projectId, projectId),
+        ne(projectSessions.status, 'failed'),
+        sql`${projectSessions.metadata} ->> 'trigger_slug' = ${slug}`,
+        sql`${projectSessions.metadata} ->> 'trigger_kind' = 'git'`,
+      ),
+    )
+    .orderBy(desc(projectSessions.createdAt))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
  * Fire a git-backed trigger. Triggers are file-defined (kortix.toml), so there
  * is no DB trigger/event row — the project_sessions row carries `trigger_slug`
  * in metadata so audits can still reconstruct the firing path.
@@ -319,6 +346,35 @@ export async function fireGitTrigger(input: {
   const actor = await resolveGitTriggerActor(project.accountId);
   if (!actor) {
     return { status: 'failed', error: 'No account owner available to own the session' };
+  }
+
+  // Session reuse — when a trigger opts into `session_mode = "reuse"`, re-prompt
+  // the canonical session this trigger already created (resuming its sandbox +
+  // opencode root) so ONE long-lived session accumulates context across fires,
+  // instead of minting a brand-new session every time. If no reusable session
+  // exists yet, or the last one is gone/failed, we fall through to createSession
+  // below and that fresh session becomes the canonical one for next time.
+  if (spec.sessionMode === 'reuse') {
+    const reusable = await findReusableTriggerSession(project.projectId, spec.slug);
+    if (reusable) {
+      const outcome = await continueSession({
+        source: `trigger:${source}`,
+        sessionId: reusable.sessionId,
+        text: renderedPrompt,
+        userId: actor,
+      });
+      if (outcome === 'delivered') {
+        return { status: 'fired', sessionId: reusable.sessionId };
+      }
+      if (outcome === 'pending') {
+        // Runtime still spinning up (e.g. resuming an archived sandbox). The
+        // prompt will land once it's ready — treat as a successful fire so the
+        // scheduler records last_fired_at and doesn't immediately create a dupe.
+        return { status: 'queued', sessionId: reusable.sessionId, reason: 'session resuming' };
+      }
+      // outcome === 'no-session' | 'failed' → canonical session is unusable;
+      // fall through to create a fresh one below.
+    }
   }
 
   const sessionResult = await createSession({
@@ -558,6 +614,7 @@ export async function loadTriggersForResponse(projectId: string, project: Projec
       timezone: spec.timezone,
       secret_env: spec.secretEnv,
       prompt_template: spec.promptTemplate,
+      session_mode: spec.sessionMode,
       last_fired_at: lastFiredBySlug.get(spec.slug) ?? null,
       webhook_url:
         spec.type === 'webhook'
@@ -580,6 +637,7 @@ export interface TriggerDraft {
   runAt: string | null;
   timezone: string;
   secretEnv: string | null;
+  sessionMode: GitTriggerSessionMode;
 }
 
 
@@ -607,6 +665,12 @@ export function parseTriggerDraft(
   const agent = normalizeString((body as any).agent ?? (body as any).agent_name) ?? 'default';
   const enabled = normalizeBoolean((body as any).enabled) ?? true;
 
+  const sessionModeRaw = normalizeString((body as any).session_mode ?? (body as any).sessionMode);
+  if (sessionModeRaw && sessionModeRaw !== 'fresh' && sessionModeRaw !== 'reuse') {
+    return { error: 'session_mode must be "fresh" or "reuse"' };
+  }
+  const sessionMode: GitTriggerSessionMode = sessionModeRaw === 'reuse' ? 'reuse' : 'fresh';
+
   if (type === 'cron') {
     const timezone = normalizeString((body as any).timezone) ?? 'UTC';
     // One-off ("run once") schedules carry `run_at` instead of `cron`.
@@ -627,6 +691,7 @@ export function parseTriggerDraft(
         runAt: new Date(parsed).toISOString(),
         timezone,
         secretEnv: null,
+        sessionMode,
       };
     }
     const cron = normalizeString((body as any).cron ?? (body as any).schedule);
@@ -642,6 +707,7 @@ export function parseTriggerDraft(
       runAt: null,
       timezone,
       secretEnv: null,
+      sessionMode,
     };
   }
 
@@ -661,6 +727,7 @@ export function parseTriggerDraft(
     runAt: null,
     timezone: 'UTC',
     secretEnv,
+    sessionMode,
   };
 }
 
@@ -678,6 +745,7 @@ export function specToBody(spec: GitTriggerSpec): Record<string, unknown> {
     cron: spec.cron,
     timezone: spec.timezone,
     secret_env: spec.secretEnv,
+    session_mode: spec.sessionMode,
   };
 }
 
@@ -705,6 +773,7 @@ export function draftToSpec(draft: TriggerDraft): GitTriggerSpec {
     runAt: draft.runAt,
     timezone: draft.timezone,
     secretEnv: draft.secretEnv,
+    sessionMode: draft.sessionMode,
   };
 }
 

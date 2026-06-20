@@ -85,7 +85,23 @@ export interface GitTriggerSpec {
    * signing secret. The actual secret value is never inline.
    */
   secretEnv: string | null;
+  /**
+   * Session reuse policy.
+   * - `'fresh'` (default): every fire mints a brand-new session (new sandbox +
+   *   new ephemeral branch) — the historical behavior.
+   * - `'reuse'`: re-prompt the most recent session this trigger created
+   *   (resuming its sandbox + opencode root) so ONE long-lived session
+   *   accumulates context across fires. If no reusable session exists yet (or
+   *   the last one is dead/failed), a fresh one is created and becomes the
+   *   canonical session going forward. Primarily meant for recurring cron
+   *   triggers that should feel like a single persistent agent run.
+   */
+  sessionMode: GitTriggerSessionMode;
 }
+
+export type GitTriggerSessionMode = 'fresh' | 'reuse';
+
+export const GIT_TRIGGER_SESSION_MODES: readonly GitTriggerSessionMode[] = ['fresh', 'reuse'];
 
 export interface GitTriggerParseError {
   slug: string;
@@ -253,6 +269,11 @@ export function triggerSpecToTomlEntry(spec: GitTriggerSpec): Record<string, unk
     agent: spec.agent,
     enabled: spec.enabled,
   };
+  // Only emit session_mode when it deviates from the default ('fresh') so
+  // existing manifests stay byte-stable on round-trip.
+  if (spec.sessionMode === 'reuse') {
+    entry.session_mode = spec.sessionMode;
+  }
   if (spec.type === 'cron') {
     if (spec.runAt) {
       entry.run_at = spec.runAt;
@@ -311,6 +332,16 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
       : 'default';
   const enabled = coerceBool(row.enabled, true);
 
+  const sessionModeRaw = typeof row.session_mode === 'string'
+    ? row.session_mode.trim().toLowerCase()
+    : typeof row.sessionMode === 'string'
+      ? row.sessionMode.trim().toLowerCase()
+      : '';
+  if (sessionModeRaw && sessionModeRaw !== 'fresh' && sessionModeRaw !== 'reuse') {
+    return err(slug, `session_mode must be "fresh" or "reuse" (got "${sessionModeRaw}")`);
+  }
+  const sessionMode: GitTriggerSessionMode = sessionModeRaw === 'reuse' ? 'reuse' : 'fresh';
+
   const path = `${MANIFEST_FILENAME}#triggers.${slug}`;
 
   if (type === 'cron') {
@@ -348,6 +379,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
           runAt: new Date(parsed).toISOString(),
           timezone,
           secretEnv: null,
+          sessionMode,
         },
       };
     }
@@ -367,6 +399,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
         runAt: null,
         timezone,
         secretEnv: null,
+        sessionMode,
       },
     };
   }
@@ -397,6 +430,7 @@ function parseTriggerEntry(entry: unknown, index: number): ParseOk | ParseErr {
       runAt: null,
       timezone: 'UTC',
       secretEnv,
+      sessionMode,
     },
   };
 }

@@ -313,6 +313,32 @@ prompt = "Daily digest"
 `);
     expect(valid).toBe(true);
   });
+
+  test('session_mode = "reuse" is accepted', () => {
+    const { valid } = summarize(`
+kortix_version = 1
+[[triggers]]
+slug = "sweep"
+type = "cron"
+cron = "0 0 */6 * * *"
+session_mode = "reuse"
+prompt = "Error sweep"
+`);
+    expect(valid).toBe(true);
+  });
+
+  test('an invalid session_mode is rejected', () => {
+    const { errorPaths } = summarize(`
+kortix_version = 1
+[[triggers]]
+slug = "sweep"
+type = "cron"
+cron = "0 0 */6 * * *"
+session_mode = "sticky"
+prompt = "Error sweep"
+`);
+    expect(errorPaths).toContain('triggers[0].session_mode');
+  });
 });
 
 describe('validateManifest — [[connectors]]', () => {

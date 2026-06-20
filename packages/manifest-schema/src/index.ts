@@ -588,6 +588,17 @@ function validateTriggers(node: unknown, path: string, issues: ManifestIssue[]):
         severity: 'error',
       });
     }
+    if (entry.session_mode !== undefined) {
+      const sessionMode =
+        typeof entry.session_mode === 'string' ? entry.session_mode.trim() : '';
+      if (sessionMode !== 'fresh' && sessionMode !== 'reuse') {
+        issues.push({
+          path: `${where}.session_mode`,
+          message: 'session_mode must be "fresh" or "reuse".',
+          severity: 'error',
+        });
+      }
+    }
   });
 }
 
